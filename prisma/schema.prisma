@@ -1,0 +1,49 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Department {
+  id          Int        @id @default(autoincrement())
+  name        String     @unique
+  nameEn      String
+  description String
+  color       String     @default("#3b82f6")
+  icon        String     @default("🏢")
+  workflows   Workflow[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model Workflow {
+  id           Int        @id @default(autoincrement())
+  name         String
+  description  String
+  order        Int
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  departmentId Int
+  steps        Step[]
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model Step {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String
+  order       Int
+  status      String   @default("pending") // pending, in_progress, completed
+  assignee    String?
+  deadline    String?
+  workflow    Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workflowId  Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
