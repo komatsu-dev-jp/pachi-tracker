@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { C, f, sc, sp, tsNow, font, mono } from "../constants";
-import { NI, Card, MiniStat, Btn, SecLabel, KV } from "./Atoms";
+import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle } from "./Atoms";
 
 /* ================================================================
    RotTab — 回転数入力 + リアルタイム実測統計パネル
@@ -35,8 +35,8 @@ export function RotTab({ border, rows, setRows, S, ev }) {
         const newInvest = (last ? last.invest : 0) + 1000;
         const newAvg = parseFloat(((val - S.startRot) / (newInvest / 1000)).toFixed(1));
 
-        setRows((r) => [...r, { type: "data", thisRot, cumRot: val, avgRot: newAvg, invest: newInvest }]);
-        S.pushLog({ type: "1K決定", time: tsNow(), rot: thisRot, cash: 1000 });
+        setRows((r) => [...r, { type: "data", thisRot, cumRot: val, avgRot: newAvg, invest: newInvest, mode: S.playMode }]);
+        S.pushLog({ type: "1K決定", time: tsNow(), rot: thisRot, cash: 1000, mode: S.playMode });
         setInput("");
     };
 
@@ -52,15 +52,14 @@ export function RotTab({ border, rows, setRows, S, ev }) {
 
     const handleHitSubmit = () => {
         const tray = Number(trayBalls) || 0;
-        // 上皿玉数を記録 — 投資補正用に加算
         S.setTotalTrayBalls((p) => p + tray);
-        // jpLog に初当たりエントリ（未完了）を追加
         S.pushJP({
+            chainId: Date.now(),
             trayBalls: tray,
-            displayBalls: 0,
-            rounds: 0,
-            finalBalls: null,  // null = 連チャン中（未確定）
-            netGain: 0,
+            hits: [],
+            finalBalls: null,
+            summary: null,
+            completed: false,
             time: tsNow(),
         });
         S.pushLog({ type: "初当たり", time: tsNow(), tray });
@@ -89,9 +88,12 @@ export function RotTab({ border, rows, setRows, S, ev }) {
                     </div>
                 )}
                 {rows.map((row, i) => {
+                    const isMochi = row.mode === "mochi";
+                    const badgeColor = isMochi ? C.orange : C.blue;
+                    const badgeLabel = isMochi ? "持" : "現";
                     if (row.type === "start") return (
                         <div key={i} className="fin" style={{ display: "grid", gridTemplateColumns: "55px 1fr 1fr 1fr 70px", padding: "12px 4px", background: "rgba(255,255,255,0.02)", borderBottom: `1px solid ${C.border}` }}>
-                            <div style={{ textAlign: "center" }}><span style={{ fontSize: 10, fontWeight: 700, color: C.blue, background: C.blue + "20", borderRadius: 6, padding: "3px 7px", border: `1px solid ${C.blue}40` }}>現</span></div>
+                            <div style={{ textAlign: "center" }}><span style={{ fontSize: 10, fontWeight: 700, color: badgeColor, background: badgeColor + "20", borderRadius: 6, padding: "3px 7px", border: `1px solid ${badgeColor}40` }}>{badgeLabel}</span></div>
                             <div style={{ textAlign: "center", fontSize: 14, color: C.subHi, fontFamily: mono }}>{f(row.cumRot)}</div>
                             <div style={{ textAlign: "center", fontSize: 11, color: C.sub }}>—</div>
                             <div style={{ textAlign: "center", fontSize: 11, fontWeight: 800, color: C.yellow, letterSpacing: 2 }}>START</div>
@@ -100,7 +102,7 @@ export function RotTab({ border, rows, setRows, S, ev }) {
                     );
                     return (
                         <div key={i} className="fin" style={{ display: "grid", gridTemplateColumns: "55px 1fr 1fr 1fr 70px", padding: "14px 4px", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)", borderBottom: `1px solid ${C.border}` }}>
-                            <div style={{ textAlign: "center" }}><span style={{ fontSize: 10, fontWeight: 700, color: C.blue, background: C.blue + "20", borderRadius: 6, padding: "3px 7px", border: `1px solid ${C.blue}40` }}>現</span></div>
+                            <div style={{ textAlign: "center" }}><span style={{ fontSize: 10, fontWeight: 700, color: badgeColor, background: badgeColor + "20", borderRadius: 6, padding: "3px 7px", border: `1px solid ${badgeColor}40` }}>{badgeLabel}</span></div>
                             <div style={{ textAlign: "center", fontSize: 14, color: C.subHi, fontFamily: mono }}>{f(row.cumRot)}</div>
                             <div style={{ textAlign: "center", fontSize: 16, fontWeight: 700, color: rotCol(row.thisRot), fontFamily: mono }}>{row.thisRot}</div>
                             <div style={{ textAlign: "center", fontSize: 16, fontWeight: 600, color: rotCol(row.avgRot), fontFamily: mono }}>{row.avgRot}</div>
@@ -147,6 +149,16 @@ export function RotTab({ border, rows, setRows, S, ev }) {
                     </div>
                 </div>
 
+                {/* Mode Toggle + Mochi Ratio */}
+                <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 12, padding: "0 12px 10px" }}>
+                    <ModeToggle mode={S.playMode === "mochi" ? "持ち玉" : "現金"} setMode={(m) => S.setPlayMode(m === "持ち玉" ? "mochi" : "cash")} />
+                    {ev.mochiRatio > 0 && (
+                        <span style={{ fontSize: 10, color: C.orange, fontFamily: mono, fontWeight: 700 }}>
+                            持玉{Math.round(ev.mochiRatio * 100)}%
+                        </span>
+                    )}
+                </div>
+
                 {/* Input */}
                 <div style={{ padding: "0 12px 12px" }}>
                     <NI v={input} set={setInput} w="100%" ph="データカウンタの数値を入力" big onEnter={decide} />
@@ -181,78 +193,99 @@ export function RotTab({ border, rows, setRows, S, ev }) {
 }
 
 /* ================================================================
-   HistoryTab — 大当たり履歴（R数/表記出玉/最終残玉入力）
+   HistoryTab — 大当たり履歴（チェーンベース連チャン記録）
 ================================================================ */
 export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev }) {
     const [sub, setSub] = useState("jp");
 
     // 連チャン入力 state
+    const [iSapoCount, setISapoCount] = useState("");
+    const [iHitRot, setIHitRot] = useState("");
     const [iRounds, setIRounds] = useState("");
     const [iDisplayBalls, setIDisplayBalls] = useState("");
-    const [iFinalBalls, setIFinalBalls] = useState("");
+    const [iActualBalls, setIActualBalls] = useState("");
 
-    // 最新の未完了エントリがあるか
-    const lastEntry = jpLog.length > 0 ? jpLog[jpLog.length - 1] : null;
-    const isChainActive = lastEntry && lastEntry.finalBalls == null;
+    // 最新の未完了チェーンがあるか
+    const lastChain = jpLog.length > 0 ? jpLog[jpLog.length - 1] : null;
+    const isChainActive = lastChain && !lastChain.completed;
 
-    // 連チャン終了：最終残玉を確定
-    const handleChainEnd = () => {
+    const clearInputs = () => {
+        setISapoCount("");
+        setIHitRot("");
+        setIRounds("");
+        setIDisplayBalls("");
+        setIActualBalls("");
+    };
+
+    // 連チャン追加: チェーンにヒットを追加
+    const addHitToChain = () => {
         const rounds = Number(iRounds) || 0;
-        const displayBalls = Number(iDisplayBalls) || 0;
-        const finalBalls = Number(iFinalBalls) || 0;
-        if (rounds <= 0 || finalBalls <= 0) return;
+        if (rounds <= 0) return;
 
-        const trayBalls = lastEntry.trayBalls || 0;
-        const netGain = finalBalls - trayBalls;
-
-        // 最新エントリを上書き（確定）
         S.setJpLog((prev) => {
             const updated = [...prev];
-            updated[updated.length - 1] = {
-                ...updated[updated.length - 1],
+            const chain = { ...updated[updated.length - 1] };
+            chain.hits = [...chain.hits, {
+                hitNumber: chain.hits.length + 1,
+                sapoCount: Number(iSapoCount) || 0,
+                hitRot: Number(iHitRot) || 0,
                 rounds,
-                displayBalls,
-                finalBalls,
-                netGain,
+                displayBalls: Number(iDisplayBalls) || 0,
+                actualBalls: Number(iActualBalls) || 0,
+                time: tsNow(),
+            }];
+            updated[updated.length - 1] = chain;
+            return updated;
+        });
+        S.pushLog({ type: "連チャン追加", time: tsNow(), rounds: Number(iRounds) || 0 });
+        clearInputs();
+    };
+
+    // 最終大当たり終了: 最後のヒットを追加してチェーン完了
+    const handleChainEnd = () => {
+        const rounds = Number(iRounds) || 0;
+        if (rounds <= 0) return;
+
+        S.setJpLog((prev) => {
+            const updated = [...prev];
+            const chain = { ...updated[updated.length - 1] };
+            // 最後のヒットを追加
+            chain.hits = [...chain.hits, {
+                hitNumber: chain.hits.length + 1,
+                sapoCount: Number(iSapoCount) || 0,
+                hitRot: Number(iHitRot) || 0,
+                rounds,
+                displayBalls: Number(iDisplayBalls) || 0,
+                actualBalls: Number(iActualBalls) || 0,
+                time: tsNow(),
+            }];
+            // サマリー計算
+            const totalRounds = chain.hits.reduce((s, h) => s + h.rounds, 0);
+            const totalDisplayBalls = chain.hits.reduce((s, h) => s + h.displayBalls, 0);
+            const totalActualBalls = chain.hits.reduce((s, h) => s + h.actualBalls, 0);
+            const finalBalls = totalActualBalls;
+            const trayBalls = chain.trayBalls || 0;
+
+            chain.finalBalls = finalBalls;
+            chain.completed = true;
+            chain.summary = {
+                totalRounds,
+                totalDisplayBalls,
+                totalActualBalls,
+                avg1R: totalRounds > 0 ? totalDisplayBalls / totalRounds : 0,
+                sapoDelta: finalBalls - trayBalls - totalDisplayBalls,
+                netGain: finalBalls - trayBalls,
             };
+            updated[updated.length - 1] = chain;
             return updated;
         });
 
-        S.pushLog({ type: "連チャン終了", time: tsNow(), rounds, displayBalls, finalBalls, netGain });
-        setIRounds("");
-        setIDisplayBalls("");
-        setIFinalBalls("");
-
-        // 即座に回転数入力画面へ遷移
+        S.pushLog({ type: "連チャン終了", time: tsNow() });
+        clearInputs();
+        // 持ち玉モードに自動切替
+        S.setPlayMode("mochi");
         S.setTab("rot");
     };
-
-    // 通常の履歴保存（連チャン中でないとき — 手動エントリ）
-    const handleManualSave = () => {
-        const rounds = Number(iRounds) || 0;
-        const displayBalls = Number(iDisplayBalls) || 0;
-        const finalBalls = Number(iFinalBalls) || 0;
-        if (rounds <= 0) return;
-
-        const trayBalls = 0;
-        const netGain = finalBalls - trayBalls;
-
-        pushJP({
-            trayBalls,
-            displayBalls,
-            rounds,
-            finalBalls: finalBalls > 0 ? finalBalls : null,
-            netGain: finalBalls > 0 ? netGain : 0,
-            time: tsNow(),
-        });
-
-        setIRounds("");
-        setIDisplayBalls("");
-        setIFinalBalls("");
-    };
-
-    // 完了済みエントリのサマリー
-    const completedEntries = jpLog.filter(j => j.finalBalls != null);
 
     return (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -273,36 +306,53 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                         {/* 連チャン中バナー */}
                         {isChainActive && (
                             <div style={{ background: `linear-gradient(135deg, ${C.orange}20, ${C.red}10)`, border: `1px solid ${C.orange}40`, borderRadius: 12, padding: "12px 16px", marginBottom: 12 }}>
-                                <div style={{ fontSize: 12, fontWeight: 800, color: C.orange, marginBottom: 4 }}>🔥 連チャン中</div>
-                                <div style={{ fontSize: 10, color: C.sub }}>上皿玉: {f(lastEntry.trayBalls)}玉 ｜ {lastEntry.time}</div>
+                                <div style={{ fontSize: 12, fontWeight: 800, color: C.orange, marginBottom: 4 }}>連チャン中 — {lastChain.hits.length}連目まで記録済み</div>
+                                <div style={{ fontSize: 10, color: C.sub }}>上皿玉: {f(lastChain.trayBalls)}玉 | {lastChain.time}</div>
                             </div>
                         )}
 
-                        {/* Input Card */}
-                        <Card style={{ padding: 16, marginBottom: 16 }}>
-                            <SecLabel label={isChainActive ? "連チャン終了入力" : "履歴追加"} />
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
-                                <div>
-                                    <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>ラウンド数(R)</div>
-                                    <NI v={iRounds} set={setIRounds} w="100%" center ph="40" />
+                        {/* Input Card — 連チャン中のみ表示 */}
+                        {isChainActive ? (
+                            <Card style={{ padding: 16, marginBottom: 16 }}>
+                                <SecLabel label={`${lastChain.hits.length + 1}連目 入力`} />
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                                    <div>
+                                        <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>サポ回数</div>
+                                        <NI v={iSapoCount} set={setISapoCount} w="100%" center ph="0" />
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>当たり回転/時短</div>
+                                        <NI v={iHitRot} set={setIHitRot} w="100%" center ph="0" />
+                                    </div>
                                 </div>
-                                <div>
-                                    <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>表記出玉</div>
-                                    <NI v={iDisplayBalls} set={setIDisplayBalls} w="100%" center ph="4500" />
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
+                                    <div>
+                                        <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>ラウンド数(R)</div>
+                                        <NI v={iRounds} set={setIRounds} w="100%" center ph="10" />
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>出玉(液晶)</div>
+                                        <NI v={iDisplayBalls} set={setIDisplayBalls} w="100%" center ph="1500" />
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>実際の出玉</div>
+                                        <NI v={iActualBalls} set={setIActualBalls} w="100%" center ph="1200" />
+                                    </div>
                                 </div>
-                                <div>
-                                    <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>最終残玉</div>
-                                    <NI v={iFinalBalls} set={setIFinalBalls} w="100%" center ph="5200" />
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                    <Btn label="連チャン追加" onClick={addHitToChain} bg={C.green} fg="#fff" bd="none" />
+                                    <Btn label="最終大当たり終了" onClick={handleChainEnd} bg={C.orange} fg="#fff" bd="none" />
                                 </div>
-                            </div>
-                            {isChainActive ? (
-                                <Btn label="🏁 連チャン終了 → 通常時へ" onClick={handleChainEnd} bg={C.orange} fg="#fff" bd="none" />
-                            ) : (
-                                <Btn label="履歴を保存" onClick={handleManualSave} primary />
-                            )}
-                        </Card>
+                            </Card>
+                        ) : (
+                            <Card style={{ padding: 20, marginBottom: 16, textAlign: "center" }}>
+                                <div style={{ fontSize: 12, color: C.sub, lineHeight: 1.6 }}>
+                                    回転数タブの「初当たり」ボタンから<br />チェーンを開始してください
+                                </div>
+                            </Card>
+                        )}
 
-                        {/* 実測サマリー — 常時表示 */}
+                        {/* 実測サマリー */}
                         <div style={{ margin: "0 0 16px", background: "rgba(0,0,0,0.2)", border: `1px solid ${C.teal}30`, borderRadius: 12, overflow: "hidden" }}>
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
                                 {[
@@ -320,35 +370,64 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                             </div>
                         </div>
 
-                        {/* History Cards */}
+                        {/* History — Chain Cards */}
                         {jpLog.length === 0 ? (
                             <div style={{ textAlign: "center", color: C.sub, padding: "40px 16px", fontSize: 12 }}>履歴がありません</div>
                         ) : (
-                            [...jpLog].reverse().map((j, i) => (
-                                <Card key={i} style={{ padding: "12px 16px", background: j.finalBalls == null ? "rgba(249, 115, 22, 0.05)" : "rgba(255,255,255,0.02)" }}>
+                            [...jpLog].reverse().map((chain, ci) => (
+                                <Card key={chain.chainId || ci} style={{ padding: "12px 16px", background: !chain.completed ? "rgba(249, 115, 22, 0.05)" : "rgba(255,255,255,0.02)" }}>
+                                    {/* Chain Header */}
                                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                                        <span style={{ fontSize: 10, fontWeight: 800, color: j.finalBalls == null ? C.orange : C.blue, background: (j.finalBalls == null ? C.orange : C.blue) + "20", padding: "2px 6px", borderRadius: 4 }}>
-                                            {j.finalBalls == null ? "連チャン中" : `${j.rounds}R`}
+                                        <span style={{ fontSize: 11, fontWeight: 800, color: !chain.completed ? C.orange : C.blue }}>
+                                            {!chain.completed ? "連チャン中" : `第${jpLog.length - ci}初当たり — ${chain.hits.length}連`}
                                         </span>
-                                        <span style={{ fontSize: 10, color: C.sub, fontFamily: mono }}>{j.time}</span>
+                                        <span style={{ fontSize: 10, color: C.sub, fontFamily: mono }}>{chain.time}</span>
                                     </div>
-                                    {j.finalBalls != null ? (
-                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                                            <div>
-                                                <div style={{ fontSize: 8, color: C.sub }}>表記出玉</div>
-                                                <div style={{ fontSize: 14, fontWeight: 700, color: C.yellow, fontFamily: mono }}>{f(j.displayBalls)}</div>
+
+                                    {/* Individual Hits */}
+                                    {chain.hits.map((hit, hi) => (
+                                        <div key={hi} style={{ padding: "6px 0", borderTop: hi > 0 ? `1px solid ${C.border}` : "none" }}>
+                                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                                                <span style={{ fontSize: 10, fontWeight: 700, color: C.yellow }}>{hit.hitNumber}連目</span>
+                                                <span style={{ fontSize: 9, color: C.sub, fontFamily: mono }}>{hit.time}</span>
                                             </div>
-                                            <div>
-                                                <div style={{ fontSize: 8, color: C.sub }}>純増出玉</div>
-                                                <div style={{ fontSize: 14, fontWeight: 700, color: C.green, fontFamily: mono }}>{f(j.netGain)}</div>
-                                            </div>
-                                            <div>
-                                                <div style={{ fontSize: 8, color: C.sub }}>最終残玉</div>
-                                                <div style={{ fontSize: 14, fontWeight: 700, color: C.teal, fontFamily: mono }}>{f(j.finalBalls)}</div>
+                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
+                                                <div>
+                                                    <div style={{ fontSize: 7, color: C.sub }}>サポ</div>
+                                                    <div style={{ fontSize: 12, fontWeight: 600, color: C.subHi, fontFamily: mono }}>{hit.sapoCount}回</div>
+                                                </div>
+                                                <div>
+                                                    <div style={{ fontSize: 7, color: C.sub }}>{hit.hitRot > 0 ? "回転/時短" : ""}</div>
+                                                    <div style={{ fontSize: 12, fontWeight: 600, color: C.subHi, fontFamily: mono }}>{hit.hitRot > 0 ? hit.hitRot : "—"}</div>
+                                                </div>
+                                                <div>
+                                                    <div style={{ fontSize: 7, color: C.sub }}>出玉(液晶)</div>
+                                                    <div style={{ fontSize: 12, fontWeight: 600, color: C.yellow, fontFamily: mono }}>{f(hit.displayBalls)}</div>
+                                                </div>
+                                                <div>
+                                                    <div style={{ fontSize: 7, color: C.sub }}>実出玉</div>
+                                                    <div style={{ fontSize: 12, fontWeight: 600, color: C.green, fontFamily: mono }}>{f(hit.actualBalls)}</div>
+                                                </div>
                                             </div>
                                         </div>
-                                    ) : (
-                                        <div style={{ fontSize: 11, color: C.sub }}>上皿: {f(j.trayBalls)}玉 — 大当たり中…</div>
+                                    ))}
+
+                                    {/* Chain Summary (completed only) */}
+                                    {chain.completed && chain.summary && (
+                                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}`, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                            <div style={{ textAlign: "center" }}>
+                                                <div style={{ fontSize: 8, color: C.sub }}>1R出玉</div>
+                                                <div style={{ fontSize: 14, fontWeight: 700, color: C.teal, fontFamily: mono }}>{f(chain.summary.avg1R, 1)}発</div>
+                                            </div>
+                                            <div style={{ textAlign: "center" }}>
+                                                <div style={{ fontSize: 8, color: C.sub }}>サポ増減</div>
+                                                <div style={{ fontSize: 14, fontWeight: 700, color: sc(chain.summary.sapoDelta), fontFamily: mono }}>{sp(chain.summary.sapoDelta, 0)}発</div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {!chain.completed && chain.hits.length === 0 && (
+                                        <div style={{ fontSize: 11, color: C.sub }}>上皿: {f(chain.trayBalls)}玉 — 大当たり中…</div>
                                     )}
                                 </Card>
                             ))
@@ -384,10 +463,39 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
 }
 
 /* ================================================================
-   SettingsTab — 設定＆リセット
+   SettingsTab — 設定＆リセット＆アーカイブ保存
 ================================================================ */
 export function SettingsTab({ s, onReset }) {
     const [confirming, setConfirming] = useState(false);
+    const [archiveConfirm, setArchiveConfirm] = useState(false);
+    const [saved, setSaved] = useState(false);
+
+    const handleArchive = () => {
+        const archive = {
+            id: Date.now(),
+            date: new Date().toISOString().slice(0, 10),
+            rotRows: s.rotRows,
+            jpLog: s.jpLog,
+            sesLog: s.sesLog,
+            settings: {
+                rentBalls: s.rentBalls, exRate: s.exRate,
+                synthDenom: s.synthDenom, rotPerHour: s.rotPerHour,
+                border: s.border, ballVal: s.ballVal,
+            },
+            stats: s.ev ? { ...s.ev } : {},
+            totalTrayBalls: s.totalTrayBalls,
+            startRot: s.startRot,
+        };
+        s.setArchives((prev) => [...prev, archive]);
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+    };
+
+    const handleArchiveAndReset = () => {
+        handleArchive();
+        onReset();
+        setArchiveConfirm(false);
+    };
 
     return (
         <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px 80px" }}>
@@ -410,8 +518,32 @@ export function SettingsTab({ s, onReset }) {
                 ))}
             </Card>
 
+            {/* セッション保存 */}
+            <Card style={{ padding: 16 }}>
+                <SecLabel label="セッション保存" />
+                <div style={{ fontSize: 11, color: C.sub, marginBottom: 12, lineHeight: 1.6, padding: "0 4px" }}>
+                    現在のセッションデータをアーカイブに保存します。記録タブから過去のデータを閲覧できます。
+                </div>
+                {saved && (
+                    <div style={{ fontSize: 12, color: C.green, fontWeight: 700, textAlign: "center", marginBottom: 8 }}>保存しました</div>
+                )}
+                {!archiveConfirm ? (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        <Btn label="保存のみ" onClick={handleArchive} primary />
+                        <Btn label="保存してリセット" onClick={() => setArchiveConfirm(true)} bg={C.orange} fg="#fff" bd="none" />
+                    </div>
+                ) : (
+                    <div style={{ display: "flex", gap: 10 }}>
+                        <Btn label="保存＆リセット実行" onClick={handleArchiveAndReset} bg={C.orange} fg="#fff" bd="none" />
+                        <Btn label="キャンセル" onClick={() => setArchiveConfirm(false)} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
+                    </div>
+                )}
+            </Card>
+
             <div style={{ padding: "0 4px" }}>
-                <div style={{ fontSize: 11, color: C.sub, marginBottom: 16, lineHeight: 1.6 }}>⚠️ 以下のボタンを押すと、現在のセッションデータ（回転数、獲得出玉、履歴など）がすべて消去されます。設定値は保持されます。</div>
+                <div style={{ fontSize: 11, color: C.sub, marginBottom: 16, lineHeight: 1.6 }}>
+                    以下のボタンを押すと、現在のセッションデータ（回転数、獲得出玉、履歴など）がすべて消去されます。設定値は保持されます。
+                </div>
 
                 {!confirming ? (
                     <Btn label="データをリセット" onClick={() => setConfirming(true)} bg="linear-gradient(135deg, #180808, #2d1010)" fg={C.red} bd={C.red + "40"} />
@@ -422,6 +554,190 @@ export function SettingsTab({ s, onReset }) {
                     </div>
                 )}
             </div>
+        </div>
+    );
+}
+
+/* ================================================================
+   ArchiveTab — 過去の実践データ閲覧
+================================================================ */
+export function ArchiveTab({ S, onReset }) {
+    const [selectedId, setSelectedId] = useState(null);
+    const [delConfirm, setDelConfirm] = useState(null);
+    const archives = S.archives || [];
+    const selected = selectedId ? archives.find(a => a.id === selectedId) : null;
+
+    const deleteArchive = (id) => {
+        S.setArchives((prev) => prev.filter(a => a.id !== id));
+        setDelConfirm(null);
+    };
+
+    // Detail View
+    if (selected) {
+        const stats = selected.stats || {};
+        return (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <div style={{ padding: "12px 14px", flexShrink: 0 }}>
+                    <button className="b" onClick={() => setSelectedId(null)} style={{
+                        background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                        color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600
+                    }}>← 一覧に戻る</button>
+                </div>
+                <div style={{ flex: 1, overflowY: "auto", padding: "0 14px 80px" }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: C.text, marginBottom: 12 }}>{selected.date}</div>
+
+                    {/* Stats Summary */}
+                    <div style={{ margin: "0 0 16px", background: "rgba(0,0,0,0.2)", border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr" }}>
+                            {[
+                                { label: "実測ボーダー", val: stats.measuredBorder > 0 ? f(stats.measuredBorder, 1) : "—", unit: "回/K", col: C.subHi },
+                                { label: "1Kスタート", val: stats.start1K > 0 ? f(stats.start1K, 1) : "—", unit: "回/K", col: sc(stats.bDiff) },
+                                { label: "期待値/K", val: stats.ev1K != null && stats.ev1K !== 0 ? sp(stats.ev1K, 0) : "—", unit: "円", col: sc(stats.ev1K) },
+                            ].map(({ label, val, unit, col }, idx) => (
+                                <div key={label} style={{ textAlign: "center", padding: "10px 2px", borderRight: idx < 2 ? `1px solid ${C.border}` : "none" }}>
+                                    <div style={{ fontSize: 8, color: C.sub, letterSpacing: 0.5, marginBottom: 4, fontWeight: 600 }}>{label}</div>
+                                    <div style={{ fontSize: 14, fontWeight: 800, color: col, fontFamily: mono, lineHeight: 1 }}>{val}</div>
+                                    <div style={{ fontSize: 8, color: C.sub, marginTop: 2 }}>{unit}</div>
+                                </div>
+                            ))}
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", borderTop: `1px solid ${C.border}` }}>
+                            {[
+                                { label: "仕事量", val: stats.workAmount != null && stats.workAmount !== 0 ? sp(stats.workAmount, 0) : "—", unit: "円", col: sc(stats.workAmount) },
+                                { label: "時給", val: stats.wage != null && stats.wage !== 0 ? sp(stats.wage, 0) : "—", unit: "円/h", col: sc(stats.wage) },
+                                { label: "平均1R出玉", val: stats.avg1R > 0 ? f(stats.avg1R, 1) : "—", unit: "玉", col: C.teal },
+                            ].map(({ label, val, unit, col }, idx) => (
+                                <div key={label} style={{ textAlign: "center", padding: "10px 2px", borderRight: idx < 2 ? `1px solid ${C.border}` : "none" }}>
+                                    <div style={{ fontSize: 8, color: C.sub, letterSpacing: 0.5, marginBottom: 4, fontWeight: 600 }}>{label}</div>
+                                    <div style={{ fontSize: 14, fontWeight: 800, color: col, fontFamily: mono, lineHeight: 1 }}>{val}</div>
+                                    <div style={{ fontSize: 8, color: C.sub, marginTop: 2 }}>{unit}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Rotation Rows (Read-Only) */}
+                    {selected.rotRows && selected.rotRows.length > 0 && (
+                        <Card style={{ overflow: "hidden", marginBottom: 16 }}>
+                            <SecLabel label="回転数データ" />
+                            <div style={{ display: "grid", gridTemplateColumns: "45px 1fr 1fr 1fr 65px", background: "rgba(249,115,22,0.15)", padding: "8px 4px" }}>
+                                {["種別", "総回転", "今回", "平均", "投資額"].map(h => (
+                                    <div key={h} style={{ textAlign: "center", fontSize: 9, fontWeight: 700, color: C.sub }}>{h}</div>
+                                ))}
+                            </div>
+                            {selected.rotRows.map((row, i) => {
+                                const isMochi = row.mode === "mochi";
+                                const badgeCol = isMochi ? C.orange : C.blue;
+                                const badge = isMochi ? "持" : "現";
+                                return (
+                                    <div key={i} style={{ display: "grid", gridTemplateColumns: "45px 1fr 1fr 1fr 65px", padding: "8px 4px", borderBottom: `1px solid ${C.border}` }}>
+                                        <div style={{ textAlign: "center" }}>
+                                            <span style={{ fontSize: 9, fontWeight: 700, color: badgeCol, background: badgeCol + "20", borderRadius: 4, padding: "2px 5px" }}>{badge}</span>
+                                        </div>
+                                        <div style={{ textAlign: "center", fontSize: 12, color: C.subHi, fontFamily: mono }}>{f(row.cumRot)}</div>
+                                        <div style={{ textAlign: "center", fontSize: 12, color: C.text, fontFamily: mono }}>{row.type === "start" ? "START" : row.thisRot}</div>
+                                        <div style={{ textAlign: "center", fontSize: 12, color: C.text, fontFamily: mono }}>{row.avgRot || "—"}</div>
+                                        <div style={{ textAlign: "center", fontSize: 10, color: C.sub, fontFamily: mono }}>{row.invest ? f(row.invest) + "円" : "—"}</div>
+                                    </div>
+                                );
+                            })}
+                        </Card>
+                    )}
+
+                    {/* JP History (Read-Only) */}
+                    {selected.jpLog && selected.jpLog.length > 0 && (
+                        <div>
+                            <SecLabel label="大当たり履歴" />
+                            {[...selected.jpLog].reverse().map((chain, ci) => (
+                                <Card key={chain.chainId || ci} style={{ padding: "12px 16px" }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                                        <span style={{ fontSize: 11, fontWeight: 800, color: C.blue }}>
+                                            第{selected.jpLog.length - ci}初当たり — {(chain.hits || []).length}連
+                                        </span>
+                                        <span style={{ fontSize: 10, color: C.sub, fontFamily: mono }}>{chain.time}</span>
+                                    </div>
+                                    {(chain.hits || []).map((hit, hi) => (
+                                        <div key={hi} style={{ padding: "4px 0", borderTop: hi > 0 ? `1px solid ${C.border}` : "none" }}>
+                                            <div style={{ fontSize: 10, fontWeight: 700, color: C.yellow, marginBottom: 2 }}>{hit.hitNumber}連目</div>
+                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
+                                                <div><div style={{ fontSize: 7, color: C.sub }}>サポ</div><div style={{ fontSize: 11, color: C.subHi, fontFamily: mono }}>{hit.sapoCount}回</div></div>
+                                                <div><div style={{ fontSize: 7, color: C.sub }}>{hit.rounds}R</div><div style={{ fontSize: 11, color: C.subHi, fontFamily: mono }}>{hit.hitRot > 0 ? hit.hitRot : "—"}</div></div>
+                                                <div><div style={{ fontSize: 7, color: C.sub }}>出玉</div><div style={{ fontSize: 11, color: C.yellow, fontFamily: mono }}>{f(hit.displayBalls)}</div></div>
+                                                <div><div style={{ fontSize: 7, color: C.sub }}>実出玉</div><div style={{ fontSize: 11, color: C.green, fontFamily: mono }}>{f(hit.actualBalls)}</div></div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {chain.summary && (
+                                        <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${C.border}`, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                            <div style={{ textAlign: "center" }}>
+                                                <div style={{ fontSize: 8, color: C.sub }}>1R出玉</div>
+                                                <div style={{ fontSize: 13, fontWeight: 700, color: C.teal, fontFamily: mono }}>{f(chain.summary.avg1R, 1)}発</div>
+                                            </div>
+                                            <div style={{ textAlign: "center" }}>
+                                                <div style={{ fontSize: 8, color: C.sub }}>サポ増減</div>
+                                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(chain.summary.sapoDelta), fontFamily: mono }}>{sp(chain.summary.sapoDelta, 0)}発</div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </Card>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    // List View
+    return (
+        <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px 80px" }}>
+            <SecLabel label="過去の実践データ" />
+            {archives.length === 0 ? (
+                <div style={{ textAlign: "center", color: C.sub, padding: "60px 16px", fontSize: 12, lineHeight: 1.8 }}>
+                    アーカイブがありません<br />設定タブの「セッション保存」から保存できます
+                </div>
+            ) : (
+                [...archives].reverse().map((a) => {
+                    const st = a.stats || {};
+                    return (
+                        <Card key={a.id} style={{ padding: "14px 16px" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                                <span style={{ fontSize: 14, fontWeight: 800, color: C.text }}>{a.date}</span>
+                                <div style={{ display: "flex", gap: 6 }}>
+                                    <button className="b" onClick={() => setSelectedId(a.id)} style={{
+                                        background: C.blue + "20", border: `1px solid ${C.blue}40`, borderRadius: 6,
+                                        color: C.blue, fontSize: 10, padding: "4px 10px", fontWeight: 700, fontFamily: font
+                                    }}>詳細</button>
+                                    {delConfirm === a.id ? (
+                                        <button className="b" onClick={() => deleteArchive(a.id)} style={{
+                                            background: C.red, border: "none", borderRadius: 6,
+                                            color: "#fff", fontSize: 10, padding: "4px 10px", fontWeight: 700, fontFamily: font
+                                        }}>削除確定</button>
+                                    ) : (
+                                        <button className="b" onClick={() => setDelConfirm(a.id)} style={{
+                                            background: "rgba(239,68,68,0.1)", border: `1px solid ${C.red}40`, borderRadius: 6,
+                                            color: C.red, fontSize: 10, padding: "4px 10px", fontWeight: 700, fontFamily: font
+                                        }}>削除</button>
+                                    )}
+                                </div>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
+                                {[
+                                    { label: "総回転", val: st.netRot > 0 ? f(st.netRot) : "—", col: C.subHi },
+                                    { label: "初当たり", val: st.jpCount > 0 ? st.jpCount + "回" : "—", col: C.green },
+                                    { label: "期待値/K", val: st.ev1K != null && st.ev1K !== 0 ? sp(st.ev1K, 0) : "—", col: sc(st.ev1K) },
+                                    { label: "仕事量", val: st.workAmount != null && st.workAmount !== 0 ? sp(st.workAmount, 0) : "—", col: sc(st.workAmount) },
+                                ].map(({ label, val, col }) => (
+                                    <div key={label} style={{ textAlign: "center" }}>
+                                        <div style={{ fontSize: 8, color: C.sub, marginBottom: 2 }}>{label}</div>
+                                        <div style={{ fontSize: 12, fontWeight: 700, color: col, fontFamily: mono }}>{val}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </Card>
+                    );
+                })
+            )}
         </div>
     );
 }
