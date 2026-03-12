@@ -28,13 +28,15 @@ export function useLS(key, init) {
 ================================================================ */
 export function deriveFromRows(rotRows, startRot = 0) {
     const dataRows = (rotRows || []).filter(r => r.type === "data");
-    if (dataRows.length === 0) return { rot: 0, kCount: 0, invest: 0 };
+    if (dataRows.length === 0) return { rot: 0, kCount: 0, invest: 0, cashKCount: 0, mochiKCount: 0 };
 
     const lastRow = dataRows[dataRows.length - 1];
     const totalRot = lastRow.cumRot;
     const netRot = totalRot - startRot;
     const invest = lastRow.invest || 0;
-    return { rot: netRot, kCount: dataRows.length, invest };
+    const cashKCount = dataRows.filter(r => r.mode !== "mochi").length;
+    const mochiKCount = dataRows.filter(r => r.mode === "mochi").length;
+    return { rot: netRot, kCount: dataRows.length, invest, cashKCount, mochiKCount };
 }
 
 /* ================================================================
@@ -46,10 +48,10 @@ export function calcPreciseEV({
     rentBalls, exRate, synthDenom, rotPerHour,
     totalTrayBalls,  // Σ全初当たり時の上皿玉数
 }) {
-    const { rot: netRot, invest: rawInvest } = deriveFromRows(rotRows, startRot);
+    const { rot: netRot, invest: rawInvest, cashKCount, mochiKCount } = deriveFromRows(rotRows, startRot);
 
-    // ── 実測パラメータを jpLog から集計 ──
-    const completedEntries = (jpLog || []).filter(j => j.finalBalls != null);
+    // ── 実測パラメータを jpLog から集計（v3チェーン構造対応） ──
+    const completedEntries = (jpLog || []).filter(j => j.completed === true);
     const jpCount = completedEntries.length;
 
     let totalRounds = 0;
@@ -58,12 +60,14 @@ export function calcPreciseEV({
     let totalFinalBalls = 0;
     let totalEntryTray = 0;
 
-    completedEntries.forEach(j => {
-        totalRounds += (j.rounds || 0);
-        totalDisplayBalls += (j.displayBalls || 0);
-        totalFinalBalls += (j.finalBalls || 0);
-        totalEntryTray += (j.trayBalls || 0);
-        totalNetGain += (j.netGain || 0);
+    completedEntries.forEach(chain => {
+        if (chain.summary) {
+            totalRounds += (chain.summary.totalRounds || 0);
+            totalDisplayBalls += (chain.summary.totalDisplayBalls || 0);
+            totalNetGain += (chain.summary.netGain || 0);
+        }
+        totalFinalBalls += (chain.finalBalls || 0);
+        totalEntryTray += (chain.trayBalls || 0);
     });
 
     // ── 派生指標 ──
@@ -84,7 +88,10 @@ export function calcPreciseEV({
 
     // ── 投資玉数の補正（上皿玉を除外した真の消費玉） ──
     const trayCorrection = totalTrayBalls || 0;
-    const correctedInvestYen = Math.max(rawInvest - (trayCorrection * (1000 / (rentBalls || 250))), 0);
+    // 持ち玉混合コスト: 現金=1000円/K, 持ち玉=1000×(交換率/貸し玉)円/K
+    const mochiCostPerK = (exRate && rentBalls) ? 1000 * exRate / rentBalls : 1000;
+    const blendedInvest = cashKCount * 1000 + mochiKCount * mochiCostPerK;
+    const correctedInvestYen = Math.max(blendedInvest - (trayCorrection * (1000 / (rentBalls || 250))), 0);
 
     // ── 回転率（1Kスタート） ──
     const start1K = correctedInvestYen > 0 ? netRot / (correctedInvestYen / 1000) : 0;
@@ -143,6 +150,11 @@ export function calcPreciseEV({
         netRot,
         rawInvest,
         correctedInvestYen,
+
+        // 持ち玉比率
+        cashKCount,
+        mochiKCount,
+        mochiRatio: (cashKCount + mochiKCount) > 0 ? mochiKCount / (cashKCount + mochiKCount) : 0,
     };
 }
 

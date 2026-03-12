@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useLS, calcPreciseEV } from "./logic";
 import { C, f, font, mono, sc, sp } from "./constants";
-import { RotTab, HistoryTab, SettingsTab } from "./components/Tabs";
+import { RotTab, HistoryTab, SettingsTab, ArchiveTab } from "./components/Tabs";
 
 export default function App() {
   const [tab, setTab] = useState("rot");
@@ -15,33 +15,20 @@ export default function App() {
   const [ballVal, setBallVal] = useLS("pt_ballVal", 4);
 
   // Logs
-  const [jpLog, setJpLog] = useLS("pt_jpLog2", []);    // v2 data structure
+  const [jpLog, setJpLog] = useLS("pt_jpLog3", []);    // v3: chain-based structure
   const [sesLog, setSesLog] = useLS("pt_sesLog", []);
   const [rotRows, setRotRows] = useLS("pt_rotRows", []);
   const [startRot, setStartRot] = useLS("pt_startRot", 0);
   const [totalTrayBalls, setTotalTrayBalls] = useLS("pt_totalTrayBalls", 0);
+  const [playMode, setPlayMode] = useLS("pt_playMode", "cash");
+
+  // Archives
+  const [archives, setArchives] = useLS("pt_archives", []);
 
   const pushJP = (j) => setJpLog((p) => [...p, j]);
   const delJPLast = () => setJpLog((p) => p.slice(0, -1));
   const pushLog = (e) => setSesLog((p) => [...p, e]);
   const delSesLast = () => setSesLog((p) => p.slice(0, -1));
-
-  const S = {
-    rentBalls, setRentBalls, exRate, setExRate, synthDenom, setSynthDenom,
-    rotPerHour, setRotPerHour, border, setBorder, ballVal, setBallVal,
-    rotRows, setRotRows,
-    jpLog, setJpLog, pushJP,
-    pushLog, startRot, setStartRot, setTab,
-    totalTrayBalls, setTotalTrayBalls,
-  };
-
-  const resetAll = () => {
-    setJpLog([]);
-    setSesLog([]);
-    setRotRows([]);
-    setStartRot(0);
-    setTotalTrayBalls(0);
-  };
 
   // ── 高精度期待値エンジン ──
   const ev = calcPreciseEV({
@@ -50,9 +37,32 @@ export default function App() {
     totalTrayBalls,
   });
 
+  const S = {
+    rentBalls, setRentBalls, exRate, setExRate, synthDenom, setSynthDenom,
+    rotPerHour, setRotPerHour, border, setBorder, ballVal, setBallVal,
+    rotRows, setRotRows,
+    jpLog, setJpLog, pushJP,
+    sesLog, setSesLog,
+    pushLog, startRot, setStartRot, setTab,
+    totalTrayBalls, setTotalTrayBalls,
+    playMode, setPlayMode,
+    archives, setArchives,
+    ev,
+  };
+
+  const resetAll = () => {
+    setJpLog([]);
+    setSesLog([]);
+    setRotRows([]);
+    setStartRot(0);
+    setTotalTrayBalls(0);
+    setPlayMode("cash");
+  };
+
   const nav = [
     { id: "rot", label: "回転数", icon: "📊" },
     { id: "history", label: "大当たり", icon: "📋" },
+    { id: "archive", label: "記録", icon: "📁" },
     { id: "settings", label: "設定", icon: "⚙️" },
   ];
 
@@ -83,6 +93,7 @@ export default function App() {
       <main style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {tab === "rot" && <RotTab border={border} rows={rotRows} setRows={setRotRows} S={S} ev={ev} />}
         {tab === "history" && <HistoryTab jpLog={jpLog} sesLog={sesLog} pushJP={pushJP} delJPLast={delJPLast} delSesLast={delSesLast} S={S} ev={ev} />}
+        {tab === "archive" && <ArchiveTab S={S} onReset={resetAll} />}
         {tab === "settings" && <SettingsTab s={S} onReset={resetAll} />}
       </main>
 
