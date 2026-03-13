@@ -1,6 +1,121 @@
 import React, { useState, useEffect, useRef } from "react";
 import { C, f, sc, sp, tsNow, font, mono } from "../constants";
 import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle } from "./Atoms";
+import { searchMachines } from "../machineDB";
+
+/* ================================================================
+   MachineTab — 実機データ検索
+================================================================ */
+export function MachineTab({ S }) {
+    const [query, setQuery] = useState("");
+    const [selected, setSelected] = useState(null);
+    const results = searchMachines(query);
+
+    const applyMachine = (m) => {
+        S.setSynthDenom(m.synthProb);
+        setSelected(null);
+    };
+
+    if (selected) {
+        // 交換率キー一覧
+        const borderKeys = Object.keys(selected.border).sort((a, b) => Number(b) - Number(a));
+        return (
+            <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                <button className="b" onClick={() => setSelected(null)} style={{
+                    background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                    color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600, marginBottom: 12
+                }}>← 一覧に戻る</button>
+
+                <Card style={{ padding: 16, marginBottom: 12 }}>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: C.text, marginBottom: 4 }}>{selected.name}</div>
+                    <div style={{ fontSize: 11, color: C.sub, marginBottom: 12 }}>{selected.maker} | {selected.type}</div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>大当たり確率</div>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: C.yellow, fontFamily: mono }}>{selected.prob}</div>
+                        </div>
+                        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>平均1R出玉</div>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: C.teal, fontFamily: mono }}>{f(selected.avg1R)}</div>
+                        </div>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+                        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>平均ラウンド</div>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: C.blue, fontFamily: mono }}>{selected.avgRound}R</div>
+                        </div>
+                        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>ラウンド振り分け</div>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: C.subHi, lineHeight: 1.5 }}>{selected.roundDist}</div>
+                        </div>
+                    </div>
+                </Card>
+
+                {/* ボーダー表 */}
+                <Card style={{ overflow: "hidden", marginBottom: 12 }}>
+                    <SecLabel label="交換率別ボーダー" />
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", padding: "10px 16px 6px", borderBottom: `1px solid ${C.border}` }}>
+                        <span style={{ fontSize: 11, color: C.sub, fontWeight: 700 }}>交換率</span>
+                        <span style={{ fontSize: 11, color: C.sub, fontWeight: 700, textAlign: "right" }}>ボーダー (回/K)</span>
+                    </div>
+                    {borderKeys.map(key => (
+                        <div key={key} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", padding: "12px 16px", borderBottom: `1px solid ${C.border}` }}>
+                            <span style={{ fontSize: 13, color: C.text }}>{key}円</span>
+                            <span style={{ fontSize: 15, fontWeight: 800, color: C.green, fontFamily: mono, textAlign: "right" }}>{selected.border[key]}</span>
+                        </div>
+                    ))}
+                </Card>
+
+                {/* 設定に反映ボタン */}
+                <Btn label="この機種の確率を設定に反映" onClick={() => applyMachine(selected)} bg={C.blue} fg="#fff" bd="none" />
+            </div>
+        );
+    }
+
+    return (
+        <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+            {/* 検索バー */}
+            <div style={{ marginBottom: 12 }}>
+                <input
+                    type="text"
+                    value={query}
+                    onChange={e => setQuery(e.target.value)}
+                    placeholder="機種名・メーカーで検索..."
+                    style={{
+                        width: "100%", boxSizing: "border-box", background: C.surface, border: `1px solid ${C.border}`,
+                        borderRadius: 10, padding: "12px 14px", fontSize: 14, color: C.text, fontFamily: font,
+                        outline: "none",
+                    }}
+                />
+            </div>
+
+            {/* 結果一覧 */}
+            {results.length === 0 ? (
+                <div style={{ textAlign: "center", color: C.sub, padding: "40px 16px", fontSize: 12 }}>該当する機種がありません</div>
+            ) : (
+                results.map((m, i) => (
+                    <button key={i} className="b" onClick={() => setSelected(m)} style={{
+                        width: "100%", background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent",
+                        border: "none", borderBottom: `1px solid ${C.border}`, padding: "14px 16px",
+                        display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer",
+                        textAlign: "left",
+                    }}>
+                        <div>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3 }}>{m.name}</div>
+                            <div style={{ fontSize: 10, color: C.sub }}>{m.maker} | {m.type}</div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                            <div style={{ fontSize: 14, fontWeight: 800, color: C.yellow, fontFamily: mono }}>{m.prob}</div>
+                            <div style={{ fontSize: 9, color: C.sub }}>1R: {f(m.avg1R)}玉</div>
+                        </div>
+                    </button>
+                ))
+            )}
+        </div>
+    );
+}
 
 /* ================================================================
    DataTab — 全データ一覧表示
@@ -28,7 +143,7 @@ export function DataTab({ ev, jpLog, S }) {
 
             {/* 期待値・収支 */}
             <Card>
-                <SecLabel label="期待値・収支" />
+                <SecLabel label={ev.evSource === "border" ? "期待値・収支（ボーダー基準）" : "期待値・収支"} />
                 {stat("期待値/K", ev.ev1K !== 0 ? sp(ev.ev1K, 0) : "—", "円", sc(ev.ev1K))}
                 {stat("仕事量", ev.workAmount !== 0 ? sp(ev.workAmount, 0) : "—", "円", sc(ev.workAmount))}
                 {stat("時給", ev.wage !== 0 ? sp(ev.wage, 0) : "—", "円/h", sc(ev.wage))}
@@ -61,6 +176,7 @@ export function DataTab({ ev, jpLog, S }) {
 export function RotTab({ border, rows, setRows, S, ev }) {
     const [input, setInput] = useState("");
     const [showHitModal, setShowHitModal] = useState(false);
+    const [showMoveModal, setShowMoveModal] = useState(false);
     const [trayBalls, setTrayBalls] = useState("");
     const tableRef = useRef(null);
 
@@ -185,12 +301,36 @@ export function RotTab({ border, rows, setRows, S, ev }) {
                 </div>
 
                 {/* Action Buttons */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, padding: "0 12px 12px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, padding: "0 12px 8px" }}>
                     <Btn label="1K決定" onClick={decide} primary />
                     <Btn label="スタート" onClick={doStart} bg={C.green} fg="#fff" bd="none" />
                     <Btn label="初当たり" onClick={() => setShowHitModal(true)} bg={C.orange} fg="#fff" bd="none" />
                 </div>
+                {/* 台移動ボタン */}
+                <div style={{ padding: "0 12px 12px" }}>
+                    <button className="b" onClick={() => setShowMoveModal(true)} style={{
+                        width: "100%", background: "rgba(139, 92, 246, 0.1)", border: `1px solid ${C.purple}40`,
+                        borderRadius: 10, color: C.purple, fontSize: 13, fontWeight: 700, padding: "10px 0",
+                        fontFamily: font, letterSpacing: 1
+                    }}>🔄 台移動</button>
+                </div>
             </div>
+
+            {/* Move Modal — 台移動確認 */}
+            {showMoveModal && (
+                <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
+                    <Card style={{ width: "100%", maxWidth: 320, padding: 20 }}>
+                        <SecLabel label="台移動" />
+                        <div style={{ fontSize: 13, color: C.sub, marginBottom: 16, lineHeight: 1.6 }}>
+                            現在のデータを自動保存して新しい台の記録を開始します。
+                        </div>
+                        <div style={{ display: "flex", gap: 10 }}>
+                            <Btn label="移動する" onClick={() => { setShowMoveModal(false); S.handleMoveTable(); }} bg={C.purple} fg="#fff" bd="none" />
+                            <Btn label="キャンセル" onClick={() => setShowMoveModal(false)} />
+                        </div>
+                    </Card>
+                </div>
+            )}
 
             {/* Hit Modal — 初当たり時の上皿玉数入力 */}
             {showHitModal && (

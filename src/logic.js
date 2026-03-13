@@ -47,6 +47,7 @@ export function calcPreciseEV({
     rotRows, startRot, jpLog,
     rentBalls, exRate, synthDenom, rotPerHour,
     totalTrayBalls,  // Σ全初当たり時の上皿玉数
+    border,          // 設定ボーダー（初当たりなし時のEV算出用）
 }) {
     const { rot: netRot, invest: rawInvest, cashKCount, mochiKCount } = deriveFromRows(rotRows, startRot);
 
@@ -104,11 +105,20 @@ export function calcPreciseEV({
         ? (synthDenom * 1000) / netGainYenPerJP
         : 0;
 
-    // ── 期待値/K（実測ベース） ──
-    // 1Kあたりの回転で引ける確率 × 1初当たりあたりの純増円 - 1K
-    const ev1K = (start1K > 0 && avgNetGainPerJP > 0)
-        ? (start1K / synthDenom) * netGainYenPerJP - 1000
-        : 0;
+    // ── 期待値/K ──
+    // 初当たりがある場合: 実測データベース
+    // 初当たりがない場合: 設定ボーダーベース（回転数だけで算出）
+    let ev1K = 0;
+    if (start1K > 0 && avgNetGainPerJP > 0) {
+        // 実測ベース
+        ev1K = (start1K / synthDenom) * netGainYenPerJP - 1000;
+    } else if (start1K > 0 && border > 0) {
+        // ボーダーベース: 期待値/K = (start1K / border - 1) × 1000
+        ev1K = (start1K / border - 1) * 1000;
+    }
+
+    // EVソース: 実測 or ボーダーベース
+    const evSource = (jpCount > 0 && avgNetGainPerJP > 0) ? "measured" : (start1K > 0 && border > 0 ? "border" : "none");
 
     // ── 仕事量（確定済み期待値） ──
     // = 期待値/K × (通常総回転数 / 1Kスタート)
@@ -122,7 +132,8 @@ export function calcPreciseEV({
         : 0;
 
     // ── ボーダー差 ──
-    const bDiff = start1K - measuredBorder;
+    // 実測ボーダーがある場合はそれと比較、なければ設定ボーダーと比較
+    const bDiff = measuredBorder > 0 ? start1K - measuredBorder : (border > 0 ? start1K - border : 0);
 
     return {
         // 実測パラメータ
@@ -145,6 +156,7 @@ export function calcPreciseEV({
         ev1K,
         workAmount,
         wage,
+        evSource,
 
         // 投資情報
         netRot,
