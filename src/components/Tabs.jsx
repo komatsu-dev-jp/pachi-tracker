@@ -113,7 +113,7 @@ export function RotTab({ border, rows, setRows, S, ev }) {
             </div>
 
             {/* Bottom Panel */}
-            <div style={{ background: C.surface, borderTop: `1px solid ${C.border}`, flexShrink: 0, paddingBottom: 70, boxShadow: "0 -4px 20px rgba(0,0,0,0.4)", borderTopLeftRadius: 20, borderTopRightRadius: 20 }}>
+            <div style={{ background: C.surface, borderTop: `1px solid ${C.border}`, flexShrink: 0, paddingBottom: "calc(80px + env(safe-area-inset-bottom))", boxShadow: "0 -4px 20px rgba(0,0,0,0.4)", borderTopLeftRadius: 20, borderTopRightRadius: 20 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 16px 10px" }}>
                     <span style={{ fontSize: 12, color: C.sub, fontWeight: 600 }}>操作</span>
                     <button className="b" onClick={() => setRows((r) => r.slice(0, -1))} style={{ background: "rgba(239, 68, 68, 0.1)", border: `1px solid ${C.red}40`, borderRadius: 8, color: C.red, fontSize: 11, padding: "6px 12px", fontFamily: font, fontWeight: 700 }}>一行削除</button>
@@ -303,7 +303,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                 ))}
             </div>
 
-            <div style={{ flex: 1, overflowY: "auto", padding: "0 14px 80px" }}>
+            <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(80px + env(safe-area-inset-bottom))" }}>
                 {sub === "jp" ? (
                     <div>
                         {/* 連チャン中バナー */}
@@ -491,7 +491,7 @@ export function SettingsTab({ s, onReset }) {
     };
 
     return (
-        <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px 80px" }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
             <Card>
                 <SecLabel label="基本設定" />
                 {[
@@ -576,7 +576,7 @@ export function ArchiveTab({ S, onReset }) {
                         color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600
                     }}>← 一覧に戻る</button>
                 </div>
-                <div style={{ flex: 1, overflowY: "auto", padding: "0 14px 80px" }}>
+                <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(80px + env(safe-area-inset-bottom))" }}>
                     <div style={{ fontSize: 16, fontWeight: 800, color: C.text, marginBottom: 12 }}>{selected.date}</div>
 
                     {/* Stats Summary */}
@@ -683,7 +683,7 @@ export function ArchiveTab({ S, onReset }) {
 
     // List View
     return (
-        <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px 80px" }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
             <SecLabel label="過去の実践データ" />
             {archives.length === 0 ? (
                 <div style={{ textAlign: "center", color: C.sub, padding: "60px 16px", fontSize: 12, lineHeight: 1.8 }}>
