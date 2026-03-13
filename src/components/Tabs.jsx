@@ -199,8 +199,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     const [sub, setSub] = useState("jp");
 
     // 連チャン入力 state
-    const [iSapoCount, setISapoCount] = useState("");
-    const [iHitRot, setIHitRot] = useState("");
+    const [iSapoRot, setISapoRot] = useState("");
     const [iRounds, setIRounds] = useState("");
     const [iDisplayBalls, setIDisplayBalls] = useState("");
     const [iActualBalls, setIActualBalls] = useState("");
@@ -210,8 +209,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     const isChainActive = lastChain && !lastChain.completed;
 
     const clearInputs = () => {
-        setISapoCount("");
-        setIHitRot("");
+        setISapoRot("");
         setIRounds("");
         setIDisplayBalls("");
         setIActualBalls("");
@@ -227,8 +225,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
             const chain = { ...updated[updated.length - 1] };
             chain.hits = [...chain.hits, {
                 hitNumber: chain.hits.length + 1,
-                sapoCount: Number(iSapoCount) || 0,
-                hitRot: Number(iHitRot) || 0,
+                sapoRot: Number(iSapoRot) || 0,
                 rounds,
                 displayBalls: Number(iDisplayBalls) || 0,
                 actualBalls: Number(iActualBalls) || 0,
@@ -243,22 +240,28 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
 
     // 最終大当たり終了: 最後のヒットを追加してチェーン完了
     const handleChainEnd = () => {
+        if (!isChainActive) return;
+
         const rounds = Number(iRounds) || 0;
-        if (rounds <= 0) return;
+        const currentHitsCount = lastChain.hits.length;
+
+        // ヒットが0かつ新規入力もない場合は終了できない
+        if (currentHitsCount === 0 && rounds <= 0) return;
 
         S.setJpLog((prev) => {
             const updated = [...prev];
             const chain = { ...updated[updated.length - 1] };
-            // 最後のヒットを追加
-            chain.hits = [...chain.hits, {
-                hitNumber: chain.hits.length + 1,
-                sapoCount: Number(iSapoCount) || 0,
-                hitRot: Number(iHitRot) || 0,
-                rounds,
-                displayBalls: Number(iDisplayBalls) || 0,
-                actualBalls: Number(iActualBalls) || 0,
-                time: tsNow(),
-            }];
+            // ラウンド入力がある場合は最後のヒットを追加
+            if (rounds > 0) {
+                chain.hits = [...chain.hits, {
+                    hitNumber: chain.hits.length + 1,
+                    sapoRot: Number(iSapoRot) || 0,
+                    rounds,
+                    displayBalls: Number(iDisplayBalls) || 0,
+                    actualBalls: Number(iActualBalls) || 0,
+                    time: tsNow(),
+                }];
+            }
             // サマリー計算
             const totalRounds = chain.hits.reduce((s, h) => s + h.rounds, 0);
             const totalDisplayBalls = chain.hits.reduce((s, h) => s + h.displayBalls, 0);
@@ -315,15 +318,9 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                         {isChainActive ? (
                             <Card style={{ padding: 16, marginBottom: 16 }}>
                                 <SecLabel label={`${lastChain.hits.length + 1}連目 入力`} />
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-                                    <div>
-                                        <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>サポ回数</div>
-                                        <NI v={iSapoCount} set={setISapoCount} w="100%" center ph="0" />
-                                    </div>
-                                    <div>
-                                        <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>当たり回転/時短</div>
-                                        <NI v={iHitRot} set={setIHitRot} w="100%" center ph="0" />
-                                    </div>
+                                <div style={{ marginBottom: 10 }}>
+                                    <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>電サポ回転数</div>
+                                    <NI v={iSapoRot} set={setISapoRot} w="100%" center ph="0" />
                                 </div>
                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
                                     <div>
@@ -359,7 +356,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                     { label: "平均1R出玉", val: ev.avg1R > 0 ? f(ev.avg1R, 1) : "—", unit: "玉", col: C.teal },
                                     { label: "サポ増減/回", val: ev.jpCount > 0 ? sp(ev.sapoPerJP, 1) : "—", unit: "玉", col: sc(ev.sapoPerJP) },
                                     { label: "平均R数", val: ev.avgRpJ > 0 ? f(ev.avgRpJ, 1) : "—", unit: "R", col: C.blue },
-                                    { label: "初当たり", val: ev.jpCount > 0 ? ev.jpCount.toString() : "0", unit: "回", col: C.green },
+                                    { label: "初当たり", val: jpLog.length > 0 ? jpLog.length.toString() : "0", unit: "回", col: C.green },
                                 ].map(({ label, val, unit, col }, idx) => (
                                     <div key={label} style={{ textAlign: "center", padding: "10px 2px", borderRight: idx < 3 ? `1px solid ${C.border}` : "none" }}>
                                         <div style={{ fontSize: 8, color: C.sub, letterSpacing: 0.5, marginBottom: 4, fontWeight: 600 }}>{label}</div>
@@ -391,14 +388,10 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                                 <span style={{ fontSize: 10, fontWeight: 700, color: C.yellow }}>{hit.hitNumber}連目</span>
                                                 <span style={{ fontSize: 9, color: C.sub, fontFamily: mono }}>{hit.time}</span>
                                             </div>
-                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
+                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4 }}>
                                                 <div>
-                                                    <div style={{ fontSize: 7, color: C.sub }}>サポ</div>
-                                                    <div style={{ fontSize: 12, fontWeight: 600, color: C.subHi, fontFamily: mono }}>{hit.sapoCount}回</div>
-                                                </div>
-                                                <div>
-                                                    <div style={{ fontSize: 7, color: C.sub }}>{hit.hitRot > 0 ? "回転/時短" : ""}</div>
-                                                    <div style={{ fontSize: 12, fontWeight: 600, color: C.subHi, fontFamily: mono }}>{hit.hitRot > 0 ? hit.hitRot : "—"}</div>
+                                                    <div style={{ fontSize: 7, color: C.sub }}>電サポ回転</div>
+                                                    <div style={{ fontSize: 12, fontWeight: 600, color: C.subHi, fontFamily: mono }}>{hit.sapoRot || hit.sapoCount || 0}回</div>
                                                 </div>
                                                 <div>
                                                     <div style={{ fontSize: 7, color: C.sub }}>出玉(液晶)</div>
