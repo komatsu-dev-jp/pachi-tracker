@@ -9,10 +9,14 @@ export default function App() {
   // Settings
   const [rentBalls, setRentBalls] = useLS("pt_rentBalls", 250);
   const [exRate, setExRate] = useLS("pt_exRate", 250);
-  const [synthDenom, setSynthDenom] = useLS("pt_synthDenom", 319);
+  const [synthDenom, setSynthDenom] = useLS("pt_synthDenom", 319.6);
   const [rotPerHour, setRotPerHour] = useLS("pt_rotPerHour", 250);
   const [border, setBorder] = useLS("pt_border", 20);
   const [ballVal, setBallVal] = useLS("pt_ballVal", 4);
+  // 機種スペック（P tools互換）
+  const [spec1R, setSpec1R] = useLS("pt_spec1R", 140);
+  const [specAvgRounds, setSpecAvgRounds] = useLS("pt_specAvgRounds", 34.17);
+  const [specSapo, setSpecSapo] = useLS("pt_specSapo", 0);
 
   // Logs
   const [jpLog, setJpLog] = useLS("pt_jpLog3", []);    // v3: chain-based structure
@@ -35,6 +39,7 @@ export default function App() {
     rotRows, startRot, jpLog,
     rentBalls, exRate, synthDenom, rotPerHour,
     totalTrayBalls, border,
+    spec1R, specAvgRounds, specSapo,
   });
 
   const resetAll = () => {
@@ -69,6 +74,7 @@ export default function App() {
   const S = {
     rentBalls, setRentBalls, exRate, setExRate, synthDenom, setSynthDenom,
     rotPerHour, setRotPerHour, border, setBorder, ballVal, setBallVal,
+    spec1R, setSpec1R, specAvgRounds, setSpecAvgRounds, specSapo, setSpecSapo,
     rotRows, setRotRows,
     jpLog, setJpLog, pushJP,
     sesLog, setSesLog,

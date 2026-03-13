@@ -13,6 +13,9 @@ export function MachineTab({ S }) {
 
     const applyMachine = (m) => {
         S.setSynthDenom(m.synthProb);
+        if (m.spec1R) S.setSpec1R(m.spec1R);
+        if (m.specAvgTotalRounds) S.setSpecAvgRounds(m.specAvgTotalRounds);
+        if (m.specSapo != null) S.setSpecSapo(m.specSapo);
         setSelected(null);
     };
 
@@ -36,15 +39,15 @@ export function MachineTab({ S }) {
                             <div style={{ fontSize: 18, fontWeight: 800, color: C.yellow, fontFamily: mono }}>{selected.prob}</div>
                         </div>
                         <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
-                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>平均1R出玉</div>
-                            <div style={{ fontSize: 18, fontWeight: 800, color: C.teal, fontFamily: mono }}>{f(selected.avg1R)}</div>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>1R出玉（実出玉）</div>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: C.teal, fontFamily: mono }}>{f(selected.spec1R)}</div>
                         </div>
                     </div>
 
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
                         <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
-                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>平均ラウンド</div>
-                            <div style={{ fontSize: 18, fontWeight: 800, color: C.blue, fontFamily: mono }}>{selected.avgRound}R</div>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>平均総R/初当たり</div>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: C.blue, fontFamily: mono }}>{selected.specAvgTotalRounds}R</div>
                         </div>
                         <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
                             <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>ラウンド振り分け</div>
@@ -108,7 +111,7 @@ export function MachineTab({ S }) {
                         </div>
                         <div style={{ textAlign: "right" }}>
                             <div style={{ fontSize: 14, fontWeight: 800, color: C.yellow, fontFamily: mono }}>{m.prob}</div>
-                            <div style={{ fontSize: 9, color: C.sub }}>1R: {f(m.avg1R)}玉</div>
+                            <div style={{ fontSize: 9, color: C.sub }}>1R: {f(m.spec1R)}玉</div>
                         </div>
                     </button>
                 ))
@@ -137,14 +140,16 @@ export function DataTab({ ev, jpLog, S }) {
             <Card style={{ marginTop: 12 }}>
                 <SecLabel label="回転率・ボーダー" />
                 {stat("1Kスタート", ev.start1K > 0 ? f(ev.start1K, 1) : "—", "回/K", sc(ev.bDiff))}
-                {stat("実測ボーダー", ev.measuredBorder > 0 ? f(ev.measuredBorder, 1) : "—", "回/K", C.subHi)}
+                {stat("理論ボーダー", ev.theoreticalBorder > 0 ? f(ev.theoreticalBorder, 1) : "—", "回/K", C.subHi)}
+                {ev.measuredBorder > 0 && stat("実測ボーダー", f(ev.measuredBorder, 1), "回/K", C.teal)}
                 {stat("ボーダー差", ev.bDiff !== 0 ? sp(ev.bDiff, 1) : "—", "回/K", sc(ev.bDiff))}
             </Card>
 
             {/* 期待値・収支 */}
             <Card>
-                <SecLabel label={ev.evSource === "border" ? "期待値・収支（ボーダー基準）" : "期待値・収支"} />
+                <SecLabel label={ev.evSource === "spec" ? "期待値・収支（スペック基準）" : ev.evSource === "measured" ? "期待値・収支（実測）" : "期待値・収支"} />
                 {stat("期待値/K", ev.ev1K !== 0 ? sp(ev.ev1K, 0) : "—", "円", sc(ev.ev1K))}
+                {stat("単価", ev.evPerRot !== 0 ? sp(ev.evPerRot, 2) : "—", "円/回", sc(ev.evPerRot))}
                 {stat("仕事量", ev.workAmount !== 0 ? sp(ev.workAmount, 0) : "—", "円", sc(ev.workAmount))}
                 {stat("時給", ev.wage !== 0 ? sp(ev.wage, 0) : "—", "円/h", sc(ev.wage))}
             </Card>
@@ -173,7 +178,9 @@ export function DataTab({ ev, jpLog, S }) {
 /* ================================================================
    RotTab — 回転数入力 + リアルタイム実測統計パネル
 ================================================================ */
-export function RotTab({ border, rows, setRows, S, ev }) {
+export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
+    // 回転色判定にはEVで使用しているボーダーを優先
+    const border = ev.useBorder > 0 ? ev.useBorder : displayBorder;
     const [input, setInput] = useState("");
     const [showHitModal, setShowHitModal] = useState(false);
     const [showMoveModal, setShowMoveModal] = useState(false);
@@ -650,6 +657,12 @@ export function SettingsTab({ s, onReset }) {
         setArchiveConfirm(false);
     };
 
+    // 理論ボーダーのリアルタイム計算
+    const exchP = 1000 / (s.exRate || 1);
+    const avgNetGainSpec = (s.spec1R || 0) * (s.specAvgRounds || 0) + (s.specSapo || 0);
+    const specNetGainYen = avgNetGainSpec * exchP;
+    const calcBorder = specNetGainYen > 0 ? ((s.synthDenom || 1) * 1000) / specNetGainYen : 0;
+
     return (
         <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
             <Card>
@@ -659,7 +672,6 @@ export function SettingsTab({ s, onReset }) {
                     { lbl: "交換率", v: s.exRate, set: s.setExRate, unit: "玉/1K" },
                     { lbl: "合成確率分母", v: s.synthDenom, set: s.setSynthDenom, unit: "1/x" },
                     { lbl: "1h消化回転数", v: s.rotPerHour, set: s.setRotPerHour, unit: "回/h" },
-                    { lbl: "目標ボーダー", v: s.border, set: s.setBorder, unit: "回/K" },
                 ].map(({ lbl, v, set, unit }) => (
                     <div key={lbl} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px", borderBottom: `1px solid ${C.border}` }}>
                         <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{lbl}</div>
@@ -669,6 +681,31 @@ export function SettingsTab({ s, onReset }) {
                         </div>
                     </div>
                 ))}
+            </Card>
+
+            {/* 機種スペック設定（P tools互換） */}
+            <Card>
+                <SecLabel label="機種スペック（期待値算出用）" />
+                {[
+                    { lbl: "1R出玉（実出玉）", v: s.spec1R, set: s.setSpec1R, unit: "玉/R" },
+                    { lbl: "平均総R/初当たり", v: s.specAvgRounds, set: s.setSpecAvgRounds, unit: "R" },
+                    { lbl: "サポ増減/初当たり", v: s.specSapo, set: s.setSpecSapo, unit: "玉" },
+                ].map(({ lbl, v, set, unit }) => (
+                    <div key={lbl} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px", borderBottom: `1px solid ${C.border}` }}>
+                        <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{lbl}</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <NI v={v} set={set} w={80} center />
+                            <span style={{ fontSize: 10, color: C.sub, minWidth: 40 }}>{unit}</span>
+                        </div>
+                    </div>
+                ))}
+                {/* 理論ボーダー表示 */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px", background: "rgba(0,0,0,0.15)", borderRadius: "0 0 12px 12px" }}>
+                    <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>理論ボーダー</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: C.green, fontFamily: mono }}>
+                        {calcBorder > 0 ? f(calcBorder, 1) : "—"}<span style={{ fontSize: 10, color: C.sub, marginLeft: 4 }}>回/K</span>
+                    </div>
+                </div>
             </Card>
 
             {/* セッション保存 */}

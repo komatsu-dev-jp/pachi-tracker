@@ -47,7 +47,10 @@ export function calcPreciseEV({
     rotRows, startRot, jpLog,
     rentBalls, exRate, synthDenom, rotPerHour,
     totalTrayBalls,  // Σ全初当たり時の上皿玉数
-    border,          // 設定ボーダー（初当たりなし時のEV算出用）
+    border,          // 目標ボーダー（表示用）
+    spec1R = 140,    // 機種スペック: 1R出玉（実出玉）
+    specAvgRounds = 0,  // 機種スペック: 平均総R/初当たり（連チャン含む）
+    specSapo = 0,    // 機種スペック: サポ増減/初当たり
 }) {
     const { rot: netRot, invest: rawInvest, cashKCount, mochiKCount } = deriveFromRows(rotRows, startRot);
 
@@ -97,31 +100,45 @@ export function calcPreciseEV({
     // ── 回転率（1Kスタート） ──
     const start1K = correctedInvestYen > 0 ? netRot / (correctedInvestYen / 1000) : 0;
 
-    // ── 実測ボーダー ──
-    // 1初当たりあたりの正味獲得円 = 純増出玉 × 換金レート
+    // ── 実測ボーダー（JP実績がある場合） ──
     const exchP = 1000 / (exRate || 1);  // 1玉あたりの円
     const netGainYenPerJP = avgNetGainPerJP * exchP;
     const measuredBorder = netGainYenPerJP > 0
         ? (synthDenom * 1000) / netGainYenPerJP
         : 0;
 
-    // ── 期待値/K ──
-    // 初当たりがある場合: 実測データベース
-    // 初当たりがない場合: 設定ボーダーベース（回転数だけで算出）
+    // ── 理論ボーダー（機種スペックから算出 — P tools互換） ──
+    // avgNetGainSpec = 1R出玉 × 平均総R/初当たり + サポ増減/初当たり
+    const avgNetGainSpec = (spec1R || 0) * (specAvgRounds || 0) + (specSapo || 0);
+    const specNetGainYen = avgNetGainSpec * exchP;
+    const theoreticalBorder = specNetGainYen > 0
+        ? (synthDenom * 1000) / specNetGainYen
+        : 0;
+
+    // ── 期待値/K（P tools互換計算式） ──
+    // EV/K = (回転率/synthDenom) × 純増出玉円 - 1000
+    // 初当たりデータがある場合は実測値、ない場合は機種スペックから算出
     let ev1K = 0;
-    if (start1K > 0 && avgNetGainPerJP > 0) {
+    let useBorder = 0;  // 使用するボーダー
+    if (start1K > 0 && jpCount > 0 && avgNetGainPerJP > 0) {
         // 実測ベース
         ev1K = (start1K / synthDenom) * netGainYenPerJP - 1000;
+        useBorder = measuredBorder;
+    } else if (start1K > 0 && theoreticalBorder > 0) {
+        // 機種スペックベース（P tools互換）
+        ev1K = (start1K / synthDenom) * specNetGainYen - 1000;
+        useBorder = theoreticalBorder;
     } else if (start1K > 0 && border > 0) {
-        // ボーダーベース: 期待値/K = (start1K / border - 1) × 1000
+        // フォールバック: 手動ボーダー
         ev1K = (start1K / border - 1) * 1000;
+        useBorder = border;
     }
 
-    // EVソース: 実測 or ボーダーベース
-    const evSource = (jpCount > 0 && avgNetGainPerJP > 0) ? "measured" : (start1K > 0 && border > 0 ? "border" : "none");
+    // EVソース
+    const evSource = (jpCount > 0 && avgNetGainPerJP > 0) ? "measured"
+        : (theoreticalBorder > 0 ? "spec" : (border > 0 ? "border" : "none"));
 
-    // ── 仕事量（確定済み期待値） ──
-    // = 期待値/K × (通常総回転数 / 1Kスタート)
+    // ── 仕事量 = 期待値/K × 投資K数 ──
     const workAmount = (start1K > 0 && ev1K !== 0)
         ? ev1K * (netRot / start1K)
         : 0;
@@ -132,8 +149,10 @@ export function calcPreciseEV({
         : 0;
 
     // ── ボーダー差 ──
-    // 実測ボーダーがある場合はそれと比較、なければ設定ボーダーと比較
-    const bDiff = measuredBorder > 0 ? start1K - measuredBorder : (border > 0 ? start1K - border : 0);
+    const bDiff = useBorder > 0 ? start1K - useBorder : 0;
+
+    // ── 単価（EV per rotation — P tools互換） ──
+    const evPerRot = start1K > 0 ? ev1K / start1K : 0;
 
     return {
         // 実測パラメータ
@@ -150,12 +169,15 @@ export function calcPreciseEV({
         // 回転率・ボーダー
         start1K,
         measuredBorder,
+        theoreticalBorder,
+        useBorder,
         bDiff,
 
         // 期待値・仕事量・時給
         ev1K,
         workAmount,
         wage,
+        evPerRot,
         evSource,
 
         // 投資情報
