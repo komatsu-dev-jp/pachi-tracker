@@ -142,27 +142,31 @@ export function InputGrid({ fields }) {
 
 export function ModeToggle({ mode, setMode }) {
     return (
-        <div style={{ display: "flex", background: "rgba(0,0,0,0.3)", borderRadius: 24, padding: 3, gap: 4 }}>
-            {["現金", "持ち玉"].map((m) => (
-                <button
-                    key={m}
-                    className="b"
-                    onClick={() => setMode(m)}
-                    style={{
-                        background: mode === m ? "rgba(255,255,255,0.1)" : "transparent",
-                        border: "none",
-                        borderRadius: 20,
-                        color: mode === m ? C.text : C.sub,
-                        fontSize: 12,
-                        fontWeight: mode === m ? 700 : 500,
-                        padding: "6px 16px",
-                        fontFamily: font,
-                        boxShadow: mode === m ? "0 2px 8px rgba(0,0,0,0.2)" : "none",
-                    }}
-                >
-                    {m}
-                </button>
-            ))}
+        <div style={{ display: "flex", background: "rgba(0,0,0,0.4)", borderRadius: 24, padding: 3, gap: 4, border: `1px solid ${C.borderHi}` }}>
+            {["現金", "持ち玉"].map((m) => {
+                const active = mode === m;
+                const isMochi = m === "持ち玉";
+                return (
+                    <button
+                        key={m}
+                        className="b"
+                        onClick={() => setMode(m)}
+                        style={{
+                            background: active ? (isMochi ? C.orange + "30" : C.blue + "30") : "transparent",
+                            border: active ? `1px solid ${isMochi ? C.orange : C.blue}60` : "1px solid transparent",
+                            borderRadius: 20,
+                            color: active ? (isMochi ? C.orange : C.blue) : C.sub,
+                            fontSize: 13,
+                            fontWeight: active ? 800 : 500,
+                            padding: "8px 20px",
+                            fontFamily: font,
+                            boxShadow: active ? `0 2px 8px ${isMochi ? C.orange : C.blue}20` : "none",
+                        }}
+                    >
+                        {m}
+                    </button>
+                );
+            })}
         </div>
     );
 }
