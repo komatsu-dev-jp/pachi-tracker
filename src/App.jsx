@@ -37,19 +37,6 @@ export default function App() {
     totalTrayBalls, border,
   });
 
-  const S = {
-    rentBalls, setRentBalls, exRate, setExRate, synthDenom, setSynthDenom,
-    rotPerHour, setRotPerHour, border, setBorder, ballVal, setBallVal,
-    rotRows, setRotRows,
-    jpLog, setJpLog, pushJP,
-    sesLog, setSesLog,
-    pushLog, startRot, setStartRot, setTab,
-    totalTrayBalls, setTotalTrayBalls,
-    playMode, setPlayMode,
-    archives, setArchives,
-    ev, handleMoveTable,
-  };
-
   const resetAll = () => {
     setJpLog([]);
     setSesLog([]);
@@ -77,6 +64,19 @@ export default function App() {
     }
     resetAll();
     setTab("rot");
+  };
+
+  const S = {
+    rentBalls, setRentBalls, exRate, setExRate, synthDenom, setSynthDenom,
+    rotPerHour, setRotPerHour, border, setBorder, ballVal, setBallVal,
+    rotRows, setRotRows,
+    jpLog, setJpLog, pushJP,
+    sesLog, setSesLog,
+    pushLog, startRot, setStartRot, setTab,
+    totalTrayBalls, setTotalTrayBalls,
+    playMode, setPlayMode,
+    archives, setArchives,
+    ev, handleMoveTable,
   };
 
   const nav = [
