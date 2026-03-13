@@ -45,7 +45,7 @@ export function RotTab({ border, rows, setRows, S, ev }) {
         if (!input || isNaN(val) || val < 0) return;
 
         S.setStartRot(val);
-        setRows((r) => [...r, { type: "start", cumRot: val, mode: S.playMode }]);
+        setRows((r) => [...r, { type: "start", cumRot: val }]);
         S.pushLog({ type: "スタート", time: tsNow(), rot: val });
         setInput("");
     };
@@ -113,7 +113,7 @@ export function RotTab({ border, rows, setRows, S, ev }) {
             </div>
 
             {/* Bottom Panel */}
-            <div style={{ background: C.surface, borderTop: `1px solid ${C.border}`, flexShrink: 0, paddingBottom: 70, boxShadow: "0 -4px 20px rgba(0,0,0,0.4)", borderTopLeftRadius: 20, borderTopRightRadius: 20 }}>
+            <div style={{ background: C.surface, borderTop: `1px solid ${C.border}`, flexShrink: 0, paddingBottom: 10, boxShadow: "0 -4px 20px rgba(0,0,0,0.4)", borderTopLeftRadius: 20, borderTopRightRadius: 20 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 16px 10px" }}>
                     <span style={{ fontSize: 12, color: C.sub, fontWeight: 600 }}>操作</span>
                     <button className="b" onClick={() => setRows((r) => r.slice(0, -1))} style={{ background: "rgba(239, 68, 68, 0.1)", border: `1px solid ${C.red}40`, borderRadius: 8, color: C.red, fontSize: 11, padding: "6px 12px", fontFamily: font, fontWeight: 700 }}>一行削除</button>
@@ -149,19 +149,19 @@ export function RotTab({ border, rows, setRows, S, ev }) {
                     </div>
                 </div>
 
-                {/* Input */}
-                <div style={{ padding: "0 12px 12px" }}>
-                    <NI v={input} set={setInput} w="100%" ph="データカウンタの数値を入力" big onEnter={decide} />
-                </div>
-
                 {/* Mode Toggle + Mochi Ratio */}
-                <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 12, padding: "0 12px 12px" }}>
+                <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 12, padding: "0 12px 10px" }}>
                     <ModeToggle mode={S.playMode === "mochi" ? "持ち玉" : "現金"} setMode={(m) => S.setPlayMode(m === "持ち玉" ? "mochi" : "cash")} />
                     {ev.mochiRatio > 0 && (
                         <span style={{ fontSize: 10, color: C.orange, fontFamily: mono, fontWeight: 700 }}>
                             持玉{Math.round(ev.mochiRatio * 100)}%
                         </span>
                     )}
+                </div>
+
+                {/* Input */}
+                <div style={{ padding: "0 12px 12px" }}>
+                    <NI v={input} set={setInput} w="100%" ph="データカウンタの数値を入力" big onEnter={decide} />
                 </div>
 
                 {/* Action Buttons */}
