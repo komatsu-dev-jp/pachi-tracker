@@ -1,127 +1,79 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { C, f, sc, sp, tsNow, font, mono } from "../constants";
 import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle } from "./Atoms";
 import { searchMachines } from "../machineDB";
 
 /* ================================================================
-   MachineTab — 実機データ検索
+   Simple SVG Line Chart component
 ================================================================ */
-export function MachineTab({ S }) {
-    const [query, setQuery] = useState("");
-    const [selected, setSelected] = useState(null);
-    const results = searchMachines(query);
+function LineChart({ data, width = 320, height = 140, color = "#3b82f6", showZero = true }) {
+    if (!data || data.length < 2) return null;
+    const pad = { top: 10, right: 10, bottom: 20, left: 45 };
+    const w = width - pad.left - pad.right;
+    const h = height - pad.top - pad.bottom;
+    const vals = data.map(d => d.value);
+    const minV = Math.min(...vals, showZero ? 0 : Infinity);
+    const maxV = Math.max(...vals, showZero ? 0 : -Infinity);
+    const range = maxV - minV || 1;
 
-    const applyMachine = (m) => {
-        S.setSynthDenom(m.synthProb);
-        if (m.spec1R) S.setSpec1R(m.spec1R);
-        if (m.specAvgTotalRounds) S.setSpecAvgRounds(m.specAvgTotalRounds);
-        if (m.specSapo != null) S.setSpecSapo(m.specSapo);
-        setSelected(null);
-    };
+    const points = data.map((d, i) => {
+        const x = pad.left + (i / (data.length - 1)) * w;
+        const y = pad.top + h - ((d.value - minV) / range) * h;
+        return { x, y, ...d };
+    });
 
-    if (selected) {
-        // 交換率キー一覧
-        const borderKeys = Object.keys(selected.border).sort((a, b) => Number(b) - Number(a));
-        return (
-            <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
-                <button className="b" onClick={() => setSelected(null)} style={{
-                    background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
-                    color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600, marginBottom: 12
-                }}>← 一覧に戻る</button>
+    const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
 
-                <Card style={{ padding: 16, marginBottom: 12 }}>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: C.text, marginBottom: 4 }}>{selected.name}</div>
-                    <div style={{ fontSize: 11, color: C.sub, marginBottom: 12 }}>{selected.maker} | {selected.type}</div>
+    // Zero line
+    const zeroY = pad.top + h - ((0 - minV) / range) * h;
 
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
-                        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
-                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>大当たり確率</div>
-                            <div style={{ fontSize: 18, fontWeight: 800, color: C.yellow, fontFamily: mono }}>{selected.prob}</div>
-                        </div>
-                        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
-                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>1R出玉（実出玉）</div>
-                            <div style={{ fontSize: 18, fontWeight: 800, color: C.teal, fontFamily: mono }}>{f(selected.spec1R)}</div>
-                        </div>
-                    </div>
-
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
-                        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
-                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>平均総R/初当たり</div>
-                            <div style={{ fontSize: 18, fontWeight: 800, color: C.blue, fontFamily: mono }}>{selected.specAvgTotalRounds}R</div>
-                        </div>
-                        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
-                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>ラウンド振り分け</div>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: C.subHi, lineHeight: 1.5 }}>{selected.roundDist}</div>
-                        </div>
-                    </div>
-                </Card>
-
-                {/* ボーダー表 */}
-                <Card style={{ overflow: "hidden", marginBottom: 12 }}>
-                    <SecLabel label="交換率別ボーダー" />
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", padding: "10px 16px 6px", borderBottom: `1px solid ${C.border}` }}>
-                        <span style={{ fontSize: 11, color: C.sub, fontWeight: 700 }}>交換率</span>
-                        <span style={{ fontSize: 11, color: C.sub, fontWeight: 700, textAlign: "right" }}>ボーダー (回/K)</span>
-                    </div>
-                    {borderKeys.map(key => (
-                        <div key={key} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", padding: "12px 16px", borderBottom: `1px solid ${C.border}` }}>
-                            <span style={{ fontSize: 13, color: C.text }}>{key}円</span>
-                            <span style={{ fontSize: 15, fontWeight: 800, color: C.green, fontFamily: mono, textAlign: "right" }}>{selected.border[key]}</span>
-                        </div>
-                    ))}
-                </Card>
-
-                {/* 設定に反映ボタン */}
-                <Btn label="この機種の確率を設定に反映" onClick={() => applyMachine(selected)} bg={C.blue} fg="#fff" bd="none" />
-            </div>
-        );
-    }
+    // Y-axis labels
+    const yLabels = [maxV, Math.round((maxV + minV) / 2), minV].map(v => ({
+        v, y: pad.top + h - ((v - minV) / range) * h
+    }));
 
     return (
-        <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
-            {/* 検索バー */}
-            <div style={{ marginBottom: 12 }}>
-                <input
-                    type="text"
-                    value={query}
-                    onChange={e => setQuery(e.target.value)}
-                    placeholder="機種名・メーカーで検索..."
-                    style={{
-                        width: "100%", boxSizing: "border-box", background: C.surface, border: `1px solid ${C.border}`,
-                        borderRadius: 10, padding: "12px 14px", fontSize: 14, color: C.text, fontFamily: font,
-                        outline: "none",
-                    }}
-                />
-            </div>
-
-            {/* 結果一覧 */}
-            {results.length === 0 ? (
-                <div style={{ textAlign: "center", color: C.sub, padding: "40px 16px", fontSize: 12 }}>該当する機種がありません</div>
-            ) : (
-                results.map((m, i) => (
-                    <button key={i} className="b" onClick={() => setSelected(m)} style={{
-                        width: "100%", background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent",
-                        border: "none", borderBottom: `1px solid ${C.border}`, padding: "14px 16px",
-                        display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer",
-                        textAlign: "left",
-                    }}>
-                        <div>
-                            <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3 }}>{m.name}</div>
-                            <div style={{ fontSize: 10, color: C.sub }}>{m.maker} | {m.type}</div>
-                        </div>
-                        <div style={{ textAlign: "right" }}>
-                            <div style={{ fontSize: 14, fontWeight: 800, color: C.yellow, fontFamily: mono }}>{m.prob}</div>
-                            <div style={{ fontSize: 9, color: C.sub }}>1R: {f(m.spec1R)}玉</div>
-                        </div>
-                    </button>
-                ))
+        <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ display: "block" }}>
+            {/* Grid lines */}
+            {yLabels.map((l, i) => (
+                <g key={i}>
+                    <line x1={pad.left} y1={l.y} x2={width - pad.right} y2={l.y} stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
+                    <text x={pad.left - 4} y={l.y + 3} textAnchor="end" fill="rgba(255,255,255,0.3)" fontSize={8} fontFamily="monospace">
+                        {l.v >= 1000 || l.v <= -1000 ? (l.v / 1000).toFixed(0) + "k" : l.v.toLocaleString()}
+                    </text>
+                </g>
+            ))}
+            {/* Zero line */}
+            {showZero && minV < 0 && maxV > 0 && (
+                <line x1={pad.left} y1={zeroY} x2={width - pad.right} y2={zeroY} stroke="rgba(255,255,255,0.15)" strokeWidth={1} strokeDasharray="4,3" />
             )}
-        </div>
+            {/* Area fill */}
+            <path d={`${pathD} L ${points[points.length - 1].x} ${pad.top + h} L ${points[0].x} ${pad.top + h} Z`}
+                fill={`url(#grad-${color.replace("#", "")})`} />
+            <defs>
+                <linearGradient id={`grad-${color.replace("#", "")}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+                    <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+                </linearGradient>
+            </defs>
+            {/* Line */}
+            <path d={pathD} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+            {/* Dots */}
+            {points.map((p, i) => (
+                <circle key={i} cx={p.x} cy={p.y} r={3} fill={color} stroke="rgba(0,0,0,0.5)" strokeWidth={1} />
+            ))}
+            {/* X-axis labels (show first, middle, last) */}
+            {[0, Math.floor(data.length / 2), data.length - 1].filter((v, i, a) => a.indexOf(v) === i).map(i => (
+                <text key={i} x={points[i].x} y={height - 4} textAnchor="middle" fill="rgba(255,255,255,0.3)" fontSize={8}>
+                    {data[i].label}
+                </text>
+            ))}
+        </svg>
     );
 }
 
 /* ================================================================
-   DataTab — 全データ一覧表示
+   DataTab — 全データ一覧表示 + グラフ
 ================================================================ */
 export function DataTab({ ev, jpLog, S }) {
     const stat = (label, val, unit, col) => (
@@ -133,6 +85,42 @@ export function DataTab({ ev, jpLog, S }) {
             </div>
         </div>
     );
+
+    // Build cumulative EV graph data from archives + current session
+    const archives = S.archives || [];
+    const evGraphData = useMemo(() => {
+        const points = [];
+        let cumEV = 0;
+        archives.forEach((a) => {
+            const w = a.stats?.workAmount || 0;
+            cumEV += w;
+            points.push({ label: a.date?.slice(5) || "", value: Math.round(cumEV) });
+        });
+        // Add current session
+        if (ev.workAmount !== 0) {
+            cumEV += ev.workAmount;
+            points.push({ label: "今日", value: Math.round(cumEV) });
+        }
+        return points;
+    }, [archives, ev.workAmount]);
+
+    // Build cumulative profit/loss graph from archives (actual results based)
+    const plGraphData = useMemo(() => {
+        const points = [];
+        let cumPL = 0;
+        archives.forEach((a) => {
+            const st = a.stats || {};
+            // Use workAmount as proxy for daily result
+            const daily = st.workAmount || 0;
+            cumPL += daily;
+            points.push({ label: a.date?.slice(5) || "", value: Math.round(cumPL) });
+        });
+        if (ev.workAmount !== 0) {
+            cumPL += ev.workAmount;
+            points.push({ label: "今日", value: Math.round(cumPL) });
+        }
+        return points;
+    }, [archives, ev.workAmount]);
 
     return (
         <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(80px + env(safe-area-inset-bottom))" }}>
@@ -153,6 +141,14 @@ export function DataTab({ ev, jpLog, S }) {
                 {stat("仕事量", ev.workAmount !== 0 ? sp(ev.workAmount, 0) : "—", "円", sc(ev.workAmount))}
                 {stat("時給", ev.wage !== 0 ? sp(ev.wage, 0) : "—", "円/h", sc(ev.wage))}
             </Card>
+
+            {/* 期待値グラフ */}
+            {evGraphData.length >= 2 && (
+                <Card style={{ padding: "12px 8px" }}>
+                    <SecLabel label="累計期待値（仕事量）推移" />
+                    <LineChart data={evGraphData} color="#3b82f6" />
+                </Card>
+            )}
 
             {/* 出玉データ */}
             <Card>
@@ -244,9 +240,6 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         S.setTab("history");
     };
 
-    // Stats from ev engine
-    const hasData = ev.jpCount > 0;
-
     return (
         <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
             {/* Table Header */}
@@ -319,7 +312,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         width: "100%", background: "rgba(139, 92, 246, 0.1)", border: `1px solid ${C.purple}40`,
                         borderRadius: 10, color: C.purple, fontSize: 13, fontWeight: 700, padding: "10px 0",
                         fontFamily: font, letterSpacing: 1
-                    }}>🔄 台移動</button>
+                    }}>台移動</button>
                 </div>
             </div>
 
@@ -623,38 +616,311 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
 }
 
 /* ================================================================
-   SettingsTab — 設定＆リセット＆アーカイブ保存
+   CalendarTab — カレンダー式記録 + 詳細表示
+================================================================ */
+export function CalendarTab({ S, onReset }) {
+    const [selectedDate, setSelectedDate] = useState(null);
+    const [viewMonth, setViewMonth] = useState(() => {
+        const now = new Date();
+        return { year: now.getFullYear(), month: now.getMonth() };
+    });
+    const [delConfirm, setDelConfirm] = useState(null);
+
+    const archives = S.archives || [];
+
+    // Group archives by date
+    const byDate = useMemo(() => {
+        const map = {};
+        archives.forEach(a => {
+            const d = a.date || "";
+            if (!map[d]) map[d] = [];
+            map[d].push(a);
+        });
+        return map;
+    }, [archives]);
+
+    // Calculate daily totals
+    const dailyTotals = useMemo(() => {
+        const totals = {};
+        Object.entries(byDate).forEach(([date, items]) => {
+            let work = 0;
+            items.forEach(a => { work += (a.stats?.workAmount || 0); });
+            totals[date] = work;
+        });
+        return totals;
+    }, [byDate]);
+
+    // Monthly total
+    const monthKey = `${viewMonth.year}-${String(viewMonth.month + 1).padStart(2, "0")}`;
+    const monthTotal = useMemo(() => {
+        let total = 0;
+        Object.entries(dailyTotals).forEach(([date, val]) => {
+            if (date.startsWith(monthKey)) total += val;
+        });
+        return total;
+    }, [dailyTotals, monthKey]);
+
+    // Calendar grid
+    const calendarDays = useMemo(() => {
+        const first = new Date(viewMonth.year, viewMonth.month, 1);
+        const lastDay = new Date(viewMonth.year, viewMonth.month + 1, 0).getDate();
+        const startDow = first.getDay(); // 0=Sun
+        const days = [];
+        // Empty slots
+        for (let i = 0; i < startDow; i++) days.push(null);
+        for (let d = 1; d <= lastDay; d++) days.push(d);
+        return days;
+    }, [viewMonth]);
+
+    const prevMonth = () => setViewMonth(p => {
+        const m = p.month - 1;
+        return m < 0 ? { year: p.year - 1, month: 11 } : { year: p.year, month: m };
+    });
+    const nextMonth = () => setViewMonth(p => {
+        const m = p.month + 1;
+        return m > 11 ? { year: p.year + 1, month: 0 } : { year: p.year, month: m };
+    });
+
+    const today = new Date();
+    const isToday = (day) => day && today.getFullYear() === viewMonth.year && today.getMonth() === viewMonth.month && today.getDate() === day;
+
+    const dateStr = (day) => `${viewMonth.year}-${String(viewMonth.month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+
+    const deleteArchive = (id) => {
+        S.setArchives((prev) => prev.filter(a => a.id !== id));
+        setDelConfirm(null);
+    };
+
+    // Detail View for selected date
+    if (selectedDate) {
+        const dateArchives = byDate[selectedDate] || [];
+        return (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <div style={{ padding: "12px 14px", flexShrink: 0 }}>
+                    <button className="b" onClick={() => setSelectedDate(null)} style={{
+                        background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                        color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600
+                    }}>← カレンダーに戻る</button>
+                </div>
+                <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: C.text, marginBottom: 4 }}>{selectedDate}</div>
+                    {dailyTotals[selectedDate] != null && (
+                        <div style={{ fontSize: 14, fontWeight: 700, color: sc(dailyTotals[selectedDate]), fontFamily: mono, marginBottom: 12 }}>
+                            仕事量合計: {sp(Math.round(dailyTotals[selectedDate]), 0)}円
+                        </div>
+                    )}
+
+                    {dateArchives.length === 0 ? (
+                        <div style={{ textAlign: "center", color: C.sub, padding: "40px 16px", fontSize: 12 }}>この日の記録はありません</div>
+                    ) : (
+                        dateArchives.map((a) => {
+                            const st = a.stats || {};
+                            return (
+                                <Card key={a.id} style={{ padding: "14px 16px" }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                                        <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
+                                            {a.time || a.date}{a.isMoveArchive ? " (台移動)" : ""}
+                                        </span>
+                                        <div style={{ display: "flex", gap: 6 }}>
+                                            {delConfirm === a.id ? (
+                                                <button className="b" onClick={() => deleteArchive(a.id)} style={{
+                                                    background: C.red, border: "none", borderRadius: 6,
+                                                    color: "#fff", fontSize: 10, padding: "4px 10px", fontWeight: 700, fontFamily: font
+                                                }}>削除確定</button>
+                                            ) : (
+                                                <button className="b" onClick={() => setDelConfirm(a.id)} style={{
+                                                    background: "rgba(239,68,68,0.1)", border: `1px solid ${C.red}40`, borderRadius: 6,
+                                                    color: C.red, fontSize: 10, padding: "4px 10px", fontWeight: 700, fontFamily: font
+                                                }}>削除</button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Stats grid */}
+                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, marginBottom: 8 }}>
+                                        {[
+                                            { label: "1Kスタート", val: st.start1K > 0 ? f(st.start1K, 1) : "—", col: sc(st.bDiff) },
+                                            { label: "期待値/K", val: st.ev1K != null && st.ev1K !== 0 ? sp(st.ev1K, 0) : "—", col: sc(st.ev1K) },
+                                            { label: "仕事量", val: st.workAmount != null && st.workAmount !== 0 ? sp(st.workAmount, 0) : "—", col: sc(st.workAmount) },
+                                        ].map(({ label, val, col }) => (
+                                            <div key={label} style={{ textAlign: "center", background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: "8px 2px" }}>
+                                                <div style={{ fontSize: 8, color: C.sub, marginBottom: 2, fontWeight: 600 }}>{label}</div>
+                                                <div style={{ fontSize: 14, fontWeight: 800, color: col, fontFamily: mono }}>{val}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4 }}>
+                                        {[
+                                            { label: "総回転", val: st.netRot > 0 ? f(st.netRot) : "—", col: C.subHi },
+                                            { label: "初当たり", val: st.jpCount > 0 ? st.jpCount + "回" : "—", col: C.green },
+                                            { label: "時給", val: st.wage != null && st.wage !== 0 ? sp(st.wage, 0) : "—", col: sc(st.wage) },
+                                        ].map(({ label, val, col }) => (
+                                            <div key={label} style={{ textAlign: "center", background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: "8px 2px" }}>
+                                                <div style={{ fontSize: 8, color: C.sub, marginBottom: 2, fontWeight: 600 }}>{label}</div>
+                                                <div style={{ fontSize: 13, fontWeight: 700, color: col, fontFamily: mono }}>{val}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Rotation data summary */}
+                                    {a.rotRows && a.rotRows.length > 0 && (
+                                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
+                                            <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>回転数データ ({a.rotRows.filter(r => r.type === "data").length}K)</div>
+                                        </div>
+                                    )}
+
+                                    {/* JP history summary */}
+                                    {a.jpLog && a.jpLog.length > 0 && (
+                                        <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${C.border}` }}>
+                                            {[...a.jpLog].reverse().map((chain, ci) => (
+                                                <div key={chain.chainId || ci} style={{ padding: "4px 0", borderBottom: ci < a.jpLog.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                                        <span style={{ fontSize: 10, fontWeight: 700, color: C.blue }}>
+                                                            第{a.jpLog.length - ci}初当たり — {(chain.hits || []).length}連
+                                                        </span>
+                                                        <span style={{ fontSize: 9, color: C.sub, fontFamily: mono }}>{chain.time}</span>
+                                                    </div>
+                                                    {chain.summary && (
+                                                        <div style={{ display: "flex", gap: 12, marginTop: 2 }}>
+                                                            <span style={{ fontSize: 10, color: C.teal }}>1R: {f(chain.summary.avg1R, 1)}発</span>
+                                                            <span style={{ fontSize: 10, color: sc(chain.summary.sapoDelta) }}>サポ: {sp(chain.summary.sapoDelta, 0)}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </Card>
+                            );
+                        })
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    // Calendar View
+    return (
+        <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+            {/* Month header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <button className="b" onClick={prevMonth} style={{ background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8, color: C.text, fontSize: 16, padding: "6px 12px", fontWeight: 700 }}>‹</button>
+                <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{viewMonth.year}年 {viewMonth.month + 1}月</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: sc(monthTotal), fontFamily: mono, marginTop: 2 }}>
+                        {monthTotal !== 0 ? sp(Math.round(monthTotal), 0) + "円" : "—"}
+                    </div>
+                </div>
+                <button className="b" onClick={nextMonth} style={{ background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8, color: C.text, fontSize: 16, padding: "6px 12px", fontWeight: 700 }}>›</button>
+            </div>
+
+            {/* Day of week header */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 4 }}>
+                {["日", "月", "火", "水", "木", "金", "土"].map((d, i) => (
+                    <div key={d} style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: i === 0 ? C.red : i === 6 ? C.blue : C.sub, padding: "6px 0" }}>{d}</div>
+                ))}
+            </div>
+
+            {/* Calendar grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+                {calendarDays.map((day, idx) => {
+                    if (day === null) return <div key={`e-${idx}`} />;
+                    const ds = dateStr(day);
+                    const total = dailyTotals[ds];
+                    const hasData = total != null;
+                    const todayBg = isToday(day) ? "rgba(59, 130, 246, 0.15)" : "transparent";
+                    const dow = idx % 7;
+
+                    return (
+                        <button key={day} className="b" onClick={() => hasData && setSelectedDate(ds)} style={{
+                            background: todayBg, border: isToday(day) ? `1px solid ${C.blue}40` : `1px solid transparent`,
+                            borderRadius: 8, padding: "8px 2px", textAlign: "center", minHeight: 56,
+                            cursor: hasData ? "pointer" : "default", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start",
+                        }}>
+                            <div style={{ fontSize: 14, fontWeight: isToday(day) ? 800 : 500, color: dow === 0 ? C.red : dow === 6 ? C.blue : C.text, lineHeight: 1 }}>{day}</div>
+                            {hasData && (
+                                <div style={{ fontSize: 9, fontWeight: 700, color: sc(total), fontFamily: mono, marginTop: 4, lineHeight: 1 }}>
+                                    {total >= 0 ? "+" : ""}{Math.abs(total) >= 1000 ? (total / 1000).toFixed(0) + "k" : Math.round(total)}
+                                </div>
+                            )}
+                        </button>
+                    );
+                })}
+            </div>
+
+            {/* Cumulative EV graph */}
+            {(() => {
+                const monthArchives = archives.filter(a => a.date && a.date.startsWith(monthKey));
+                if (monthArchives.length < 2) return null;
+                const graphData = [];
+                let cum = 0;
+                monthArchives.sort((a, b) => a.date.localeCompare(b.date)).forEach(a => {
+                    cum += (a.stats?.workAmount || 0);
+                    graphData.push({ label: a.date.slice(8), value: Math.round(cum) });
+                });
+                return (
+                    <Card style={{ padding: "12px 8px", marginTop: 12 }}>
+                        <SecLabel label={`${viewMonth.month + 1}月 累計仕事量推移`} />
+                        <LineChart data={graphData} color="#3b82f6" />
+                    </Card>
+                );
+            })()}
+
+            {/* Session save / reset section */}
+            <Card style={{ padding: 16, marginTop: 12 }}>
+                <SecLabel label="セッション保存" />
+                <div style={{ fontSize: 11, color: C.sub, marginBottom: 12, lineHeight: 1.6, padding: "0 4px" }}>
+                    現在のセッションデータをアーカイブに保存します。
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <Btn label="保存のみ" onClick={() => {
+                        const archive = {
+                            id: Date.now(),
+                            date: new Date().toISOString().slice(0, 10),
+                            time: new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
+                            rotRows: S.rotRows, jpLog: S.jpLog, sesLog: S.sesLog,
+                            settings: { rentBalls: S.rentBalls, exRate: S.exRate, synthDenom: S.synthDenom, rotPerHour: S.rotPerHour, border: S.border, ballVal: S.ballVal },
+                            stats: S.ev ? { ...S.ev } : {},
+                            totalTrayBalls: S.totalTrayBalls, startRot: S.startRot,
+                        };
+                        S.setArchives((prev) => [...prev, archive]);
+                    }} primary />
+                    <Btn label="保存してリセット" onClick={() => {
+                        const archive = {
+                            id: Date.now(),
+                            date: new Date().toISOString().slice(0, 10),
+                            time: new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
+                            rotRows: S.rotRows, jpLog: S.jpLog, sesLog: S.sesLog,
+                            settings: { rentBalls: S.rentBalls, exRate: S.exRate, synthDenom: S.synthDenom, rotPerHour: S.rotPerHour, border: S.border, ballVal: S.ballVal },
+                            stats: S.ev ? { ...S.ev } : {},
+                            totalTrayBalls: S.totalTrayBalls, startRot: S.startRot,
+                        };
+                        S.setArchives((prev) => [...prev, archive]);
+                        onReset();
+                    }} bg={C.orange} fg="#fff" bd="none" />
+                </div>
+            </Card>
+        </div>
+    );
+}
+
+/* ================================================================
+   SettingsTab — 設定 + 機種検索（統合）
 ================================================================ */
 export function SettingsTab({ s, onReset }) {
     const [confirming, setConfirming] = useState(false);
-    const [archiveConfirm, setArchiveConfirm] = useState(false);
-    const [saved, setSaved] = useState(false);
+    const [showMachineSearch, setShowMachineSearch] = useState(false);
+    const [query, setQuery] = useState("");
+    const [selected, setSelected] = useState(null);
+    const results = searchMachines(query);
 
-    const handleArchive = () => {
-        const archive = {
-            id: Date.now(),
-            date: new Date().toISOString().slice(0, 10),
-            rotRows: s.rotRows,
-            jpLog: s.jpLog,
-            sesLog: s.sesLog,
-            settings: {
-                rentBalls: s.rentBalls, exRate: s.exRate,
-                synthDenom: s.synthDenom, rotPerHour: s.rotPerHour,
-                border: s.border, ballVal: s.ballVal,
-            },
-            stats: s.ev ? { ...s.ev } : {},
-            totalTrayBalls: s.totalTrayBalls,
-            startRot: s.startRot,
-        };
-        s.setArchives((prev) => [...prev, archive]);
-        setSaved(true);
-        setTimeout(() => setSaved(false), 2000);
-    };
-
-    const handleArchiveAndReset = () => {
-        handleArchive();
-        onReset();
-        setArchiveConfirm(false);
+    const applyMachine = (m) => {
+        s.setSynthDenom(m.synthProb);
+        if (m.spec1R) s.setSpec1R(m.spec1R);
+        if (m.specAvgTotalRounds) s.setSpecAvgRounds(m.specAvgTotalRounds);
+        if (m.specSapo != null) s.setSpecSapo(m.specSapo);
+        setSelected(null);
+        setShowMachineSearch(false);
     };
 
     // 理論ボーダーのリアルタイム計算
@@ -663,8 +929,123 @@ export function SettingsTab({ s, onReset }) {
     const specNetGainYen = avgNetGainSpec * exchP;
     const calcBorder = specNetGainYen > 0 ? ((s.synthDenom || 1) * 1000) / specNetGainYen : 0;
 
+    // Machine detail view
+    if (selected) {
+        const borderKeys = Object.keys(selected.border).sort((a, b) => Number(b) - Number(a));
+        return (
+            <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                <button className="b" onClick={() => setSelected(null)} style={{
+                    background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                    color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600, marginBottom: 12
+                }}>← 一覧に戻る</button>
+
+                <Card style={{ padding: 16, marginBottom: 12 }}>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: C.text, marginBottom: 4 }}>{selected.name}</div>
+                    <div style={{ fontSize: 11, color: C.sub, marginBottom: 12 }}>{selected.maker} | {selected.type}</div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>大当たり確率</div>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: C.yellow, fontFamily: mono }}>{selected.prob}</div>
+                        </div>
+                        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>1R出玉（実出玉）</div>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: C.teal, fontFamily: mono }}>{f(selected.spec1R)}</div>
+                        </div>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+                        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>平均総R/初当たり</div>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: C.blue, fontFamily: mono }}>{selected.specAvgTotalRounds}R</div>
+                        </div>
+                        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>ラウンド振り分け</div>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: C.subHi, lineHeight: 1.5 }}>{selected.roundDist}</div>
+                        </div>
+                    </div>
+                </Card>
+
+                {/* ボーダー表 */}
+                <Card style={{ overflow: "hidden", marginBottom: 12 }}>
+                    <SecLabel label="交換率別ボーダー" />
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", padding: "10px 16px 6px", borderBottom: `1px solid ${C.border}` }}>
+                        <span style={{ fontSize: 11, color: C.sub, fontWeight: 700 }}>交換率</span>
+                        <span style={{ fontSize: 11, color: C.sub, fontWeight: 700, textAlign: "right" }}>ボーダー (回/K)</span>
+                    </div>
+                    {borderKeys.map(key => (
+                        <div key={key} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", padding: "12px 16px", borderBottom: `1px solid ${C.border}` }}>
+                            <span style={{ fontSize: 13, color: C.text }}>{key}円</span>
+                            <span style={{ fontSize: 15, fontWeight: 800, color: C.green, fontFamily: mono, textAlign: "right" }}>{selected.border[key]}</span>
+                        </div>
+                    ))}
+                </Card>
+
+                <Btn label="この機種の確率を設定に反映" onClick={() => applyMachine(selected)} bg={C.blue} fg="#fff" bd="none" />
+            </div>
+        );
+    }
+
+    // Machine search view
+    if (showMachineSearch) {
+        return (
+            <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                <button className="b" onClick={() => { setShowMachineSearch(false); setQuery(""); }} style={{
+                    background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                    color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600, marginBottom: 12
+                }}>← 設定に戻る</button>
+
+                <div style={{ marginBottom: 12 }}>
+                    <input
+                        type="text"
+                        value={query}
+                        onChange={e => setQuery(e.target.value)}
+                        placeholder="機種名・メーカーで検索..."
+                        style={{
+                            width: "100%", boxSizing: "border-box", background: C.surface, border: `1px solid ${C.border}`,
+                            borderRadius: 10, padding: "12px 14px", fontSize: 14, color: C.text, fontFamily: font,
+                            outline: "none",
+                        }}
+                    />
+                </div>
+
+                {results.length === 0 ? (
+                    <div style={{ textAlign: "center", color: C.sub, padding: "40px 16px", fontSize: 12 }}>該当する機種がありません</div>
+                ) : (
+                    results.map((m, i) => (
+                        <button key={i} className="b" onClick={() => setSelected(m)} style={{
+                            width: "100%", background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent",
+                            border: "none", borderBottom: `1px solid ${C.border}`, padding: "14px 16px",
+                            display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer",
+                            textAlign: "left",
+                        }}>
+                            <div>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3 }}>{m.name}</div>
+                                <div style={{ fontSize: 10, color: C.sub }}>{m.maker} | {m.type}</div>
+                            </div>
+                            <div style={{ textAlign: "right" }}>
+                                <div style={{ fontSize: 14, fontWeight: 800, color: C.yellow, fontFamily: mono }}>{m.prob}</div>
+                                <div style={{ fontSize: 9, color: C.sub }}>1R: {f(m.spec1R)}玉</div>
+                            </div>
+                        </button>
+                    ))
+                )}
+            </div>
+        );
+    }
+
+    // Normal settings view
     return (
         <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+            {/* 機種検索ボタン */}
+            <Card style={{ padding: 16 }}>
+                <SecLabel label="機種検索" />
+                <div style={{ fontSize: 11, color: C.sub, marginBottom: 12, lineHeight: 1.6, padding: "0 4px" }}>
+                    機種を検索して確率・スペックを自動設定できます。
+                </div>
+                <Btn label="機種を検索する" onClick={() => setShowMachineSearch(true)} primary />
+            </Card>
+
             <Card>
                 <SecLabel label="基本設定" />
                 {[
@@ -708,28 +1089,6 @@ export function SettingsTab({ s, onReset }) {
                 </div>
             </Card>
 
-            {/* セッション保存 */}
-            <Card style={{ padding: 16 }}>
-                <SecLabel label="セッション保存" />
-                <div style={{ fontSize: 11, color: C.sub, marginBottom: 12, lineHeight: 1.6, padding: "0 4px" }}>
-                    現在のセッションデータをアーカイブに保存します。記録タブから過去のデータを閲覧できます。
-                </div>
-                {saved && (
-                    <div style={{ fontSize: 12, color: C.green, fontWeight: 700, textAlign: "center", marginBottom: 8 }}>保存しました</div>
-                )}
-                {!archiveConfirm ? (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                        <Btn label="保存のみ" onClick={handleArchive} primary />
-                        <Btn label="保存してリセット" onClick={() => setArchiveConfirm(true)} bg={C.orange} fg="#fff" bd="none" />
-                    </div>
-                ) : (
-                    <div style={{ display: "flex", gap: 10 }}>
-                        <Btn label="保存＆リセット実行" onClick={handleArchiveAndReset} bg={C.orange} fg="#fff" bd="none" />
-                        <Btn label="キャンセル" onClick={() => setArchiveConfirm(false)} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
-                    </div>
-                )}
-            </Card>
-
             <div style={{ padding: "0 4px" }}>
                 <div style={{ fontSize: 11, color: C.sub, marginBottom: 16, lineHeight: 1.6 }}>
                     以下のボタンを押すと、現在のセッションデータ（回転数、獲得出玉、履歴など）がすべて消去されます。設定値は保持されます。
@@ -744,190 +1103,6 @@ export function SettingsTab({ s, onReset }) {
                     </div>
                 )}
             </div>
-        </div>
-    );
-}
-
-/* ================================================================
-   ArchiveTab — 過去の実践データ閲覧
-================================================================ */
-export function ArchiveTab({ S, onReset }) {
-    const [selectedId, setSelectedId] = useState(null);
-    const [delConfirm, setDelConfirm] = useState(null);
-    const archives = S.archives || [];
-    const selected = selectedId ? archives.find(a => a.id === selectedId) : null;
-
-    const deleteArchive = (id) => {
-        S.setArchives((prev) => prev.filter(a => a.id !== id));
-        setDelConfirm(null);
-    };
-
-    // Detail View
-    if (selected) {
-        const stats = selected.stats || {};
-        return (
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                <div style={{ padding: "12px 14px", flexShrink: 0 }}>
-                    <button className="b" onClick={() => setSelectedId(null)} style={{
-                        background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
-                        color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600
-                    }}>← 一覧に戻る</button>
-                </div>
-                <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(80px + env(safe-area-inset-bottom))" }}>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: C.text, marginBottom: 12 }}>{selected.date}</div>
-
-                    {/* Stats Summary */}
-                    <div style={{ margin: "0 0 16px", background: "rgba(0,0,0,0.2)", border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr" }}>
-                            {[
-                                { label: "実測ボーダー", val: stats.measuredBorder > 0 ? f(stats.measuredBorder, 1) : "—", unit: "回/K", col: C.subHi },
-                                { label: "1Kスタート", val: stats.start1K > 0 ? f(stats.start1K, 1) : "—", unit: "回/K", col: sc(stats.bDiff) },
-                                { label: "期待値/K", val: stats.ev1K != null && stats.ev1K !== 0 ? sp(stats.ev1K, 0) : "—", unit: "円", col: sc(stats.ev1K) },
-                            ].map(({ label, val, unit, col }, idx) => (
-                                <div key={label} style={{ textAlign: "center", padding: "10px 2px", borderRight: idx < 2 ? `1px solid ${C.border}` : "none" }}>
-                                    <div style={{ fontSize: 8, color: C.sub, letterSpacing: 0.5, marginBottom: 4, fontWeight: 600 }}>{label}</div>
-                                    <div style={{ fontSize: 14, fontWeight: 800, color: col, fontFamily: mono, lineHeight: 1 }}>{val}</div>
-                                    <div style={{ fontSize: 8, color: C.sub, marginTop: 2 }}>{unit}</div>
-                                </div>
-                            ))}
-                        </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", borderTop: `1px solid ${C.border}` }}>
-                            {[
-                                { label: "仕事量", val: stats.workAmount != null && stats.workAmount !== 0 ? sp(stats.workAmount, 0) : "—", unit: "円", col: sc(stats.workAmount) },
-                                { label: "時給", val: stats.wage != null && stats.wage !== 0 ? sp(stats.wage, 0) : "—", unit: "円/h", col: sc(stats.wage) },
-                                { label: "平均1R出玉", val: stats.avg1R > 0 ? f(stats.avg1R, 1) : "—", unit: "玉", col: C.teal },
-                            ].map(({ label, val, unit, col }, idx) => (
-                                <div key={label} style={{ textAlign: "center", padding: "10px 2px", borderRight: idx < 2 ? `1px solid ${C.border}` : "none" }}>
-                                    <div style={{ fontSize: 8, color: C.sub, letterSpacing: 0.5, marginBottom: 4, fontWeight: 600 }}>{label}</div>
-                                    <div style={{ fontSize: 14, fontWeight: 800, color: col, fontFamily: mono, lineHeight: 1 }}>{val}</div>
-                                    <div style={{ fontSize: 8, color: C.sub, marginTop: 2 }}>{unit}</div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Rotation Rows (Read-Only) */}
-                    {selected.rotRows && selected.rotRows.length > 0 && (
-                        <Card style={{ overflow: "hidden", marginBottom: 16 }}>
-                            <SecLabel label="回転数データ" />
-                            <div style={{ display: "grid", gridTemplateColumns: "45px 1fr 1fr 1fr 65px", background: "rgba(249,115,22,0.15)", padding: "8px 4px" }}>
-                                {["種別", "総回転", "今回", "平均", "投資額"].map(h => (
-                                    <div key={h} style={{ textAlign: "center", fontSize: 9, fontWeight: 700, color: C.sub }}>{h}</div>
-                                ))}
-                            </div>
-                            {selected.rotRows.map((row, i) => {
-                                const isMochi = row.mode === "mochi";
-                                const badgeCol = isMochi ? C.orange : C.blue;
-                                const badge = isMochi ? "持" : "現";
-                                return (
-                                    <div key={i} style={{ display: "grid", gridTemplateColumns: "45px 1fr 1fr 1fr 65px", padding: "8px 4px", borderBottom: `1px solid ${C.border}` }}>
-                                        <div style={{ textAlign: "center" }}>
-                                            <span style={{ fontSize: 9, fontWeight: 700, color: badgeCol, background: badgeCol + "20", borderRadius: 4, padding: "2px 5px" }}>{badge}</span>
-                                        </div>
-                                        <div style={{ textAlign: "center", fontSize: 12, color: C.subHi, fontFamily: mono }}>{f(row.cumRot)}</div>
-                                        <div style={{ textAlign: "center", fontSize: 12, color: C.text, fontFamily: mono }}>{row.type === "start" ? "START" : row.thisRot}</div>
-                                        <div style={{ textAlign: "center", fontSize: 12, color: C.text, fontFamily: mono }}>{row.avgRot || "—"}</div>
-                                        <div style={{ textAlign: "center", fontSize: 10, color: C.sub, fontFamily: mono }}>{row.invest ? f(row.invest) + "円" : "—"}</div>
-                                    </div>
-                                );
-                            })}
-                        </Card>
-                    )}
-
-                    {/* JP History (Read-Only) */}
-                    {selected.jpLog && selected.jpLog.length > 0 && (
-                        <div>
-                            <SecLabel label="大当たり履歴" />
-                            {[...selected.jpLog].reverse().map((chain, ci) => (
-                                <Card key={chain.chainId || ci} style={{ padding: "12px 16px" }}>
-                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                                        <span style={{ fontSize: 11, fontWeight: 800, color: C.blue }}>
-                                            第{selected.jpLog.length - ci}初当たり — {(chain.hits || []).length}連
-                                        </span>
-                                        <span style={{ fontSize: 10, color: C.sub, fontFamily: mono }}>{chain.time}</span>
-                                    </div>
-                                    {(chain.hits || []).map((hit, hi) => (
-                                        <div key={hi} style={{ padding: "4px 0", borderTop: hi > 0 ? `1px solid ${C.border}` : "none" }}>
-                                            <div style={{ fontSize: 10, fontWeight: 700, color: C.yellow, marginBottom: 2 }}>{hit.hitNumber}連目</div>
-                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
-                                                <div><div style={{ fontSize: 7, color: C.sub }}>サポ</div><div style={{ fontSize: 11, color: C.subHi, fontFamily: mono }}>{hit.sapoCount}回</div></div>
-                                                <div><div style={{ fontSize: 7, color: C.sub }}>{hit.rounds}R</div><div style={{ fontSize: 11, color: C.subHi, fontFamily: mono }}>{hit.hitRot > 0 ? hit.hitRot : "—"}</div></div>
-                                                <div><div style={{ fontSize: 7, color: C.sub }}>出玉</div><div style={{ fontSize: 11, color: C.yellow, fontFamily: mono }}>{f(hit.displayBalls)}</div></div>
-                                                <div><div style={{ fontSize: 7, color: C.sub }}>実出玉</div><div style={{ fontSize: 11, color: C.green, fontFamily: mono }}>{f(hit.actualBalls)}</div></div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {chain.summary && (
-                                        <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${C.border}`, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                                            <div style={{ textAlign: "center" }}>
-                                                <div style={{ fontSize: 8, color: C.sub }}>1R出玉</div>
-                                                <div style={{ fontSize: 13, fontWeight: 700, color: C.teal, fontFamily: mono }}>{f(chain.summary.avg1R, 1)}発</div>
-                                            </div>
-                                            <div style={{ textAlign: "center" }}>
-                                                <div style={{ fontSize: 8, color: C.sub }}>サポ増減</div>
-                                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(chain.summary.sapoDelta), fontFamily: mono }}>{sp(chain.summary.sapoDelta, 0)}発</div>
-                                            </div>
-                                        </div>
-                                    )}
-                                </Card>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </div>
-        );
-    }
-
-    // List View
-    return (
-        <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
-            <SecLabel label="過去の実践データ" />
-            {archives.length === 0 ? (
-                <div style={{ textAlign: "center", color: C.sub, padding: "60px 16px", fontSize: 12, lineHeight: 1.8 }}>
-                    アーカイブがありません<br />設定タブの「セッション保存」から保存できます
-                </div>
-            ) : (
-                [...archives].reverse().map((a) => {
-                    const st = a.stats || {};
-                    return (
-                        <Card key={a.id} style={{ padding: "14px 16px" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                                <span style={{ fontSize: 14, fontWeight: 800, color: C.text }}>{a.date}</span>
-                                <div style={{ display: "flex", gap: 6 }}>
-                                    <button className="b" onClick={() => setSelectedId(a.id)} style={{
-                                        background: C.blue + "20", border: `1px solid ${C.blue}40`, borderRadius: 6,
-                                        color: C.blue, fontSize: 10, padding: "4px 10px", fontWeight: 700, fontFamily: font
-                                    }}>詳細</button>
-                                    {delConfirm === a.id ? (
-                                        <button className="b" onClick={() => deleteArchive(a.id)} style={{
-                                            background: C.red, border: "none", borderRadius: 6,
-                                            color: "#fff", fontSize: 10, padding: "4px 10px", fontWeight: 700, fontFamily: font
-                                        }}>削除確定</button>
-                                    ) : (
-                                        <button className="b" onClick={() => setDelConfirm(a.id)} style={{
-                                            background: "rgba(239,68,68,0.1)", border: `1px solid ${C.red}40`, borderRadius: 6,
-                                            color: C.red, fontSize: 10, padding: "4px 10px", fontWeight: 700, fontFamily: font
-                                        }}>削除</button>
-                                    )}
-                                </div>
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
-                                {[
-                                    { label: "総回転", val: st.netRot > 0 ? f(st.netRot) : "—", col: C.subHi },
-                                    { label: "初当たり", val: st.jpCount > 0 ? st.jpCount + "回" : "—", col: C.green },
-                                    { label: "期待値/K", val: st.ev1K != null && st.ev1K !== 0 ? sp(st.ev1K, 0) : "—", col: sc(st.ev1K) },
-                                    { label: "仕事量", val: st.workAmount != null && st.workAmount !== 0 ? sp(st.workAmount, 0) : "—", col: sc(st.workAmount) },
-                                ].map(({ label, val, col }) => (
-                                    <div key={label} style={{ textAlign: "center" }}>
-                                        <div style={{ fontSize: 8, color: C.sub, marginBottom: 2 }}>{label}</div>
-                                        <div style={{ fontSize: 12, fontWeight: 700, color: col, fontFamily: mono }}>{val}</div>
-                                    </div>
-                                ))}
-                            </div>
-                        </Card>
-                    );
-                })
-            )}
         </div>
     );
 }

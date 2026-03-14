@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useLS, calcPreciseEV } from "./logic";
 import { C, f, font, mono, sc, sp } from "./constants";
-import { MachineTab, DataTab, RotTab, HistoryTab, SettingsTab, ArchiveTab } from "./components/Tabs";
+import { DataTab, RotTab, HistoryTab, SettingsTab, CalendarTab } from "./components/Tabs";
 
 export default function App() {
   const [tab, setTab] = useState("rot");
@@ -89,8 +89,7 @@ export default function App() {
     { id: "data", label: "データ", icon: "📈" },
     { id: "rot", label: "回転数", icon: "📊" },
     { id: "history", label: "大当たり", icon: "📋" },
-    { id: "machine", label: "機種", icon: "🔍" },
-    { id: "archive", label: "記録", icon: "📁" },
+    { id: "calendar", label: "記録", icon: "📅" },
     { id: "settings", label: "設定", icon: "⚙️" },
   ];
 
@@ -122,8 +121,7 @@ export default function App() {
         {tab === "data" && <DataTab ev={ev} jpLog={jpLog} S={S} />}
         {tab === "rot" && <RotTab border={border} rows={rotRows} setRows={setRotRows} S={S} ev={ev} />}
         {tab === "history" && <HistoryTab jpLog={jpLog} sesLog={sesLog} pushJP={pushJP} delJPLast={delJPLast} delSesLast={delSesLast} S={S} ev={ev} />}
-        {tab === "machine" && <MachineTab S={S} />}
-        {tab === "archive" && <ArchiveTab S={S} onReset={resetAll} />}
+        {tab === "calendar" && <CalendarTab S={S} onReset={resetAll} />}
         {tab === "settings" && <SettingsTab s={S} onReset={resetAll} />}
       </main>
 
