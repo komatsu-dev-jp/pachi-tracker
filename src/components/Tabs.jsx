@@ -181,6 +181,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [showHitModal, setShowHitModal] = useState(false);
     const [showMoveModal, setShowMoveModal] = useState(false);
     const [trayBalls, setTrayBalls] = useState("");
+    const [showStoreDD, setShowStoreDD] = useState(false);
     const tableRef = useRef(null);
 
     useEffect(() => {
@@ -283,7 +284,39 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
             {/* Bottom Panel */}
             <div style={{ background: C.surface, borderTop: `1px solid ${C.border}`, flexShrink: 0, paddingBottom: "calc(80px + env(safe-area-inset-bottom))", boxShadow: "0 -4px 20px rgba(0,0,0,0.4)", borderTopLeftRadius: 20, borderTopRightRadius: 20 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px 8px" }}>
+                {/* Store & Machine Number — pre-session setup */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, padding: "10px 12px 6px" }}>
+                    <div style={{ position: "relative" }}>
+                        <div style={{ fontSize: 9, color: C.sub, marginBottom: 3, fontWeight: 600 }}>店舗</div>
+                        <div style={{ position: "relative" }}>
+                            <input type="text" value={S.storeName || ""} onChange={e => S.setStoreName(e.target.value)} placeholder="店舗名"
+                                style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "8px 28px 8px 10px", fontSize: 12, color: C.text, fontFamily: font, outline: "none" }} />
+                            {(S.stores || []).length > 0 && (
+                                <button className="b" onClick={() => setShowStoreDD(!showStoreDD)} style={{
+                                    position: "absolute", right: 2, top: "50%", transform: "translateY(-50%)",
+                                    background: "transparent", border: "none", color: C.sub, fontSize: 12, padding: "2px 4px", cursor: "pointer"
+                                }}>▼</button>
+                            )}
+                            {showStoreDD && (S.stores || []).length > 0 && (
+                                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 8, zIndex: 10, maxHeight: 120, overflowY: "auto", marginTop: 2, boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}>
+                                    {(S.stores || []).map((st, i) => (
+                                        <button key={i} className="b" onClick={() => { S.setStoreName(st); setShowStoreDD(false); }} style={{
+                                            width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${C.border}`,
+                                            color: C.text, fontSize: 12, padding: "8px 10px", textAlign: "left", fontFamily: font, cursor: "pointer"
+                                        }}>{st}</button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    <div>
+                        <div style={{ fontSize: 9, color: C.sub, marginBottom: 3, fontWeight: 600 }}>台番号</div>
+                        <input type="text" value={S.machineNum || ""} onChange={e => S.setMachineNum(e.target.value)} placeholder="台番号"
+                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "8px 10px", fontSize: 12, color: C.text, fontFamily: font, outline: "none" }} />
+                    </div>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 16px 8px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <ModeToggle mode={S.playMode === "mochi" ? "持ち玉" : "現金"} setMode={(m) => S.setPlayMode(m === "持ち玉" ? "mochi" : "cash")} />
                         {ev.mochiRatio > 0 && (
@@ -620,18 +653,13 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
 ================================================================ */
 export function CalendarTab({ S, onReset }) {
     const [selectedDate, setSelectedDate] = useState(null);
+    const [selectedArchiveId, setSelectedArchiveId] = useState(null); // for detail page
     const [viewMonth, setViewMonth] = useState(() => {
         const now = new Date();
         return { year: now.getFullYear(), month: now.getMonth() };
     });
     const [delConfirm, setDelConfirm] = useState(null);
     const [expandedRot, setExpandedRot] = useState(null); // archive id to show rot detail
-    const [showSaveModal, setShowSaveModal] = useState(false);
-    // Save form temp state
-    const [saveStore, setSaveStore] = useState("");
-    const [saveMachineNum, setSaveMachineNum] = useState("");
-    const [saveInvest, setSaveInvest] = useState("");
-    const [saveRecovery, setSaveRecovery] = useState("");
 
     const archives = S.archives || [];
 
@@ -734,14 +762,6 @@ export function CalendarTab({ S, onReset }) {
         machineName: `1/${S.synthDenom}`,
     });
 
-    const openSaveModal = () => {
-        setSaveStore(S.storeName || "");
-        setSaveMachineNum(S.machineNum || "");
-        setSaveInvest(S.investYen || "");
-        setSaveRecovery(S.recoveryYen || "");
-        setShowSaveModal(true);
-    };
-
     const textInput = (val, set, placeholder) => (
         <input type="text" value={val} onChange={e => set(e.target.value)} placeholder={placeholder}
             style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }}
@@ -753,199 +773,167 @@ export function CalendarTab({ S, onReset }) {
     const storeList = S.stores || [];
     const [showStoreDropdown, setShowStoreDropdown] = useState(false);
 
-    // ── Detail View for selected date ──
-    if (selectedDate) {
-        const dateArchives = byDate[selectedDate] || [];
-        const dayTotal = dailyTotals[selectedDate];
+    // Auto-populate investYen from rotation data
+    const autoInvest = S.ev?.rawInvest || 0;
+
+    // ── Detail View for a specific archive ──
+    if (selectedArchiveId) {
+        const a = archives.find(ar => ar.id === selectedArchiveId);
+        if (!a) { setSelectedArchiveId(null); return null; }
+        const st = a.stats || {};
+        const pl = (a.investYen > 0 || a.recoveryYen > 0) ? (a.recoveryYen || 0) - (a.investYen || 0) : null;
+        const aggKey = `${a.settings?.synthDenom || ""}|${a.machineNum}`;
+        const agg = a.machineNum ? machineAggregates[aggKey] : null;
+
         return (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div style={{ padding: "12px 14px", flexShrink: 0, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <button className="b" onClick={() => { setSelectedDate(null); setExpandedRot(null); }} style={{
+                    <button className="b" onClick={() => { setSelectedArchiveId(null); setExpandedRot(null); }} style={{
                         background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
                         color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600
-                    }}>← カレンダー</button>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{selectedDate}</div>
+                    }}>← 戻る</button>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{a.date}</div>
                 </div>
                 <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(80px + env(safe-area-inset-bottom))" }}>
-
-                    {/* Save section (input fields + buttons) */}
+                    {/* Archive header */}
                     <Card style={{ padding: 14, marginBottom: 8 }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
                             <div>
-                                <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>店舗</div>
-                                <div style={{ position: "relative" }}>
-                                    {textInput(S.storeName, S.setStoreName, "店舗名")}
-                                    {storeList.length > 0 && (
-                                        <button className="b" onClick={() => setShowStoreDropdown(!showStoreDropdown)} style={{
-                                            position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)",
-                                            background: "transparent", border: "none", color: C.sub, fontSize: 14, padding: "4px 6px", cursor: "pointer"
-                                        }}>▼</button>
-                                    )}
-                                    {showStoreDropdown && storeList.length > 0 && (
-                                        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 8, zIndex: 10, maxHeight: 150, overflowY: "auto", marginTop: 2, boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}>
-                                            {storeList.map((st, i) => (
-                                                <button key={i} className="b" onClick={() => { S.setStoreName(st); setShowStoreDropdown(false); }} style={{
-                                                    width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${C.border}`,
-                                                    color: C.text, fontSize: 13, padding: "10px 12px", textAlign: "left", fontFamily: font, cursor: "pointer"
-                                                }}>{st}</button>
-                                            ))}
-                                        </div>
-                                    )}
+                                {a.storeName && <div style={{ fontSize: 11, color: C.sub }}>{a.storeName}</div>}
+                                <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>1/{a.settings?.synthDenom || "—"}</div>
+                                <div style={{ fontSize: 11, color: C.sub }}>
+                                    {a.machineNum ? a.machineNum + "番台" : ""}{a.isMoveArchive ? " (台移動)" : ""}
                                 </div>
+                                {a.time && <div style={{ fontSize: 10, color: C.sub }}>時間: {a.time}</div>}
                             </div>
-                            <div>
-                                <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>台番号</div>
-                                {textInput(S.machineNum, S.setMachineNum, "台番号")}
-                            </div>
-                        </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
-                            <div>
-                                <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>投資額</div>
-                                <NI v={S.investYen} set={S.setInvestYen} w="100%" center ph="10000" />
-                            </div>
-                            <div>
-                                <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>回収額</div>
-                                <NI v={S.recoveryYen} set={S.setRecoveryYen} w="100%" center ph="0" />
+                            <div style={{ textAlign: "right" }}>
+                                {pl != null ? (
+                                    <div style={{ fontSize: 26, fontWeight: 900, color: sc(pl), fontFamily: mono, lineHeight: 1.1 }}>
+                                        {sp(pl, 0)}
+                                    </div>
+                                ) : st.workAmount != null && st.workAmount !== 0 ? (
+                                    <div style={{ fontSize: 26, fontWeight: 900, color: sc(st.workAmount), fontFamily: mono, lineHeight: 1.1 }}>
+                                        {sp(st.workAmount, 0)}
+                                    </div>
+                                ) : null}
                             </div>
                         </div>
-                        {(S.investYen > 0 || S.recoveryYen > 0) && (
-                            <div style={{ textAlign: "right", marginBottom: 8, fontSize: 13, fontWeight: 700, color: sc((S.recoveryYen || 0) - (S.investYen || 0)), fontFamily: mono }}>
-                                収支: {sp((S.recoveryYen || 0) - (S.investYen || 0), 0)}円
-                            </div>
-                        )}
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                            <Btn label="保存" onClick={() => {
-                                const a = makeArchive(); a.date = selectedDate;
-                                S.setArchives((prev) => [...prev, a]);
-                            }} primary fs={12} />
-                            <Btn label="保存してリセット" onClick={() => {
-                                const a = makeArchive(); a.date = selectedDate;
-                                S.setArchives((prev) => [...prev, a]);
-                                onReset();
-                            }} bg={C.orange} fg="#fff" bd="none" fs={12} />
+                        {/* Stats grid */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
+                            {[
+                                { label: "投資", val: a.investYen > 0 ? f(a.investYen) : "0", col: C.red },
+                                { label: "回収", val: a.recoveryYen > 0 ? f(a.recoveryYen) : "0", col: C.green },
+                                { label: "収支", val: pl != null ? sp(pl, 0) : "0", col: pl != null ? sc(pl) : C.subHi },
+                                { label: "仕事量", val: st.workAmount != null && st.workAmount !== 0 ? sp(Math.round(st.workAmount), 0) : "—", col: st.workAmount ? sc(st.workAmount) : C.subHi },
+                            ].map(({ label, val, col }) => (
+                                <div key={label} style={{ textAlign: "center", background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: "8px 2px" }}>
+                                    <div style={{ fontSize: 8, color: C.sub, marginBottom: 3, fontWeight: 600 }}>{label}</div>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: col, fontFamily: mono }}>{val}</div>
+                                </div>
+                            ))}
                         </div>
                     </Card>
 
-                    {/* Day total */}
-                    {dayTotal != null && (
-                        <div style={{ textAlign: "center", fontSize: 13, fontWeight: 700, color: sc(dayTotal), fontFamily: mono, marginBottom: 8 }}>
-                            この日の収支合計: {sp(Math.round(dayTotal), 0)}円
+                    {/* EV stats */}
+                    <Card style={{ overflow: "hidden", marginBottom: 8 }}>
+                        <SecLabel label="EV詳細" />
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0 }}>
+                            {[
+                                { label: "1Kスタート", val: st.start1K > 0 ? f(st.start1K, 1) : "—", unit: "回/K" },
+                                { label: "期待値/K", val: st.ev1K != null && st.ev1K !== 0 ? sp(Math.round(st.ev1K), 0) : "—", unit: "円" },
+                                { label: "時給", val: st.wage ? sp(Math.round(st.wage), 0) : "—", unit: "円/h" },
+                            ].map(({ label, val, unit }) => (
+                                <div key={label} style={{ textAlign: "center", padding: "10px 4px", borderBottom: `1px solid ${C.border}` }}>
+                                    <div style={{ fontSize: 8, color: C.sub, marginBottom: 3, fontWeight: 600 }}>{label}</div>
+                                    <div style={{ fontSize: 14, fontWeight: 700, color: C.subHi, fontFamily: mono }}>{val}</div>
+                                    <div style={{ fontSize: 8, color: C.sub, marginTop: 1 }}>{unit}</div>
+                                </div>
+                            ))}
                         </div>
+                    </Card>
+
+                    {/* Machine aggregate */}
+                    {agg && agg.count > 1 && (
+                        <Card style={{ padding: 12, marginBottom: 8 }}>
+                            <div style={{ fontSize: 10, color: C.blue, fontWeight: 700, marginBottom: 6 }}>台番号 {agg.machineNum} トータル</div>
+                            <div style={{ display: "flex", gap: 12 }}>
+                                <span style={{ fontSize: 11, color: C.subHi }}>座り{agg.count}回</span>
+                                <span style={{ fontSize: 11, color: C.subHi }}>1K: {agg.totalK > 0 ? f(agg.totalRot / agg.totalK, 1) : "—"}回</span>
+                                <span style={{ fontSize: 11, color: C.subHi }}>総{f(agg.totalRot)}回転</span>
+                            </div>
+                        </Card>
                     )}
 
-                    {/* Archive cards — reference app style list */}
-                    {dateArchives.map((a) => {
-                        const st = a.stats || {};
-                        const pl = (a.investYen > 0 || a.recoveryYen > 0)
-                            ? (a.recoveryYen || 0) - (a.investYen || 0) : null;
-                        const aggKey = `${a.settings?.synthDenom || ""}|${a.machineNum}`;
-                        const agg = a.machineNum ? machineAggregates[aggKey] : null;
-
-                        return (
-                            <div key={a.id} style={{ borderBottom: `1px solid ${C.border}`, padding: "12px 0" }}>
-                                {/* Top: store + machine + P&L */}
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-                                    <div style={{ flex: 1 }}>
-                                        {a.storeName && <div style={{ fontSize: 11, color: C.sub }}>{a.storeName}</div>}
-                                        <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>1/{a.settings?.synthDenom || "—"}</div>
-                                        <div style={{ fontSize: 11, color: C.sub }}>
-                                            {a.machineNum ? a.machineNum + "番台" : ""}{a.isMoveArchive ? " (台移動)" : ""}
+                    {/* Rotation data */}
+                    {a.rotRows && a.rotRows.length > 0 && (
+                        <Card style={{ overflow: "hidden", marginBottom: 8 }}>
+                            <SecLabel label={`回転数データ (${a.rotRows.filter(r => r.type === "data").length}K)`} />
+                            <div style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr 1fr 55px", background: "rgba(249,115,22,0.12)", padding: "5px 4px" }}>
+                                {["種別", "総回転", "今回", "平均", "投資"].map(h => (
+                                    <div key={h} style={{ textAlign: "center", fontSize: 8, fontWeight: 700, color: C.sub }}>{h}</div>
+                                ))}
+                            </div>
+                            {a.rotRows.map((row, i) => {
+                                const isMochi = row.mode === "mochi";
+                                const badgeCol = isMochi ? C.orange : C.blue;
+                                const badge = isMochi ? "持" : "現";
+                                return (
+                                    <div key={i} style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr 1fr 55px", padding: "5px 4px", borderBottom: `1px solid ${C.border}` }}>
+                                        <div style={{ textAlign: "center" }}>
+                                            <span style={{ fontSize: 8, fontWeight: 700, color: badgeCol, background: badgeCol + "20", borderRadius: 4, padding: "1px 4px" }}>{badge}</span>
                                         </div>
-                                        {a.time && <div style={{ fontSize: 10, color: C.sub }}>時間: {a.time}</div>}
+                                        <div style={{ textAlign: "center", fontSize: 10, color: C.subHi, fontFamily: mono }}>{f(row.cumRot)}</div>
+                                        <div style={{ textAlign: "center", fontSize: 10, color: C.text, fontFamily: mono }}>{row.type === "start" ? "START" : row.thisRot}</div>
+                                        <div style={{ textAlign: "center", fontSize: 10, color: C.text, fontFamily: mono }}>{row.avgRot || "—"}</div>
+                                        <div style={{ textAlign: "center", fontSize: 9, color: C.sub, fontFamily: mono }}>{row.invest ? f(row.invest) : "—"}</div>
                                     </div>
-                                    <div style={{ textAlign: "right" }}>
-                                        {pl != null ? (
-                                            <div style={{ fontSize: 22, fontWeight: 900, color: sc(pl), fontFamily: mono, lineHeight: 1.1 }}>
-                                                {sp(pl, 0)}
-                                            </div>
-                                        ) : st.workAmount != null && st.workAmount !== 0 ? (
-                                            <div style={{ fontSize: 22, fontWeight: 900, color: sc(st.workAmount), fontFamily: mono, lineHeight: 1.1 }}>
-                                                {sp(st.workAmount, 0)}
-                                            </div>
-                                        ) : null}
-                                    </div>
-                                </div>
+                                );
+                            })}
+                        </Card>
+                    )}
 
-                                {/* Stats row */}
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 2, marginBottom: 4 }}>
-                                    {[
-                                        { label: "投資", val: a.investYen > 0 ? f(a.investYen) : "0" },
-                                        { label: "回収", val: a.recoveryYen > 0 ? f(a.recoveryYen) : "0" },
-                                        { label: "収支", val: pl != null ? sp(pl, 0) : "0" },
-                                        { label: "期待値", val: st.ev1K != null && st.ev1K !== 0 ? sp(Math.round(st.workAmount || 0), 0) : "—" },
-                                    ].map(({ label, val }) => (
-                                        <div key={label} style={{ fontSize: 10, color: C.sub }}>
-                                            <span>{label}: </span><span style={{ fontFamily: mono, color: C.subHi }}>{val}</span>
+                    {/* Jackpot history */}
+                    {a.jpLog && a.jpLog.length > 0 && (
+                        <Card style={{ overflow: "hidden", marginBottom: 8 }}>
+                            <SecLabel label={`大当たり履歴 (${a.jpLog.length}回)`} />
+                            {a.jpLog.map((chain, ci) => (
+                                <div key={chain.chainId || ci} style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                                        <span style={{ fontSize: 10, fontWeight: 700, color: C.blue }}>第{ci + 1}初当たり — {chain.hits?.length || 0}連</span>
+                                        <span style={{ fontSize: 9, color: C.sub, fontFamily: mono }}>{chain.time}</span>
+                                    </div>
+                                    {chain.hits?.map((hit, hi) => (
+                                        <div key={hi} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, padding: "3px 0", borderTop: hi > 0 ? `1px solid ${C.border}` : "none" }}>
+                                            <div style={{ fontSize: 9, color: C.sub }}>{hit.hitNumber}連: {hit.rounds}R</div>
+                                            <div style={{ fontSize: 9, color: C.yellow, fontFamily: mono }}>液晶{f(hit.displayBalls)}</div>
+                                            <div style={{ fontSize: 9, color: C.green, fontFamily: mono }}>実{f(hit.actualBalls)}</div>
                                         </div>
                                     ))}
-                                </div>
-
-                                {/* Machine aggregate */}
-                                {agg && agg.count > 1 && (
-                                    <div style={{ background: "rgba(59,130,246,0.05)", borderRadius: 6, padding: "6px 8px", marginBottom: 4 }}>
-                                        <div style={{ fontSize: 9, color: C.blue, fontWeight: 700, marginBottom: 4 }}>台番号 {agg.machineNum} トータル</div>
-                                        <div style={{ display: "flex", gap: 12 }}>
-                                            <span style={{ fontSize: 10, color: C.subHi }}>座り{agg.count}回</span>
-                                            <span style={{ fontSize: 10, color: C.subHi }}>1K: {agg.totalK > 0 ? f(agg.totalRot / agg.totalK, 1) : "—"}回</span>
-                                            <span style={{ fontSize: 10, color: C.subHi }}>総{f(agg.totalRot)}回転</span>
+                                    {chain.summary && (
+                                        <div style={{ display: "flex", gap: 12, marginTop: 4, paddingTop: 4, borderTop: `1px solid ${C.border}` }}>
+                                            <span style={{ fontSize: 9, color: C.teal }}>1R: {f(chain.summary.avg1R, 1)}発</span>
+                                            <span style={{ fontSize: 9, color: sc(chain.summary.sapoDelta) }}>サポ: {sp(chain.summary.sapoDelta, 0)}発</span>
                                         </div>
-                                    </div>
-                                )}
-
-                                {/* Expandable rotation data */}
-                                {a.rotRows && a.rotRows.length > 0 && (
-                                    <div>
-                                        <button className="b" onClick={() => setExpandedRot(expandedRot === a.id ? null : a.id)} style={{
-                                            background: "transparent", border: "none", color: C.blue, fontSize: 11, fontWeight: 600,
-                                            padding: "4px 0", fontFamily: font, cursor: "pointer"
-                                        }}>
-                                            {expandedRot === a.id ? "▼" : "▶"} 回転数データ ({a.rotRows.filter(r => r.type === "data").length}K)
-                                        </button>
-                                        {expandedRot === a.id && (
-                                            <div style={{ marginTop: 4 }}>
-                                                <div style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr 1fr 55px", background: "rgba(249,115,22,0.12)", padding: "5px 4px", borderRadius: "6px 6px 0 0" }}>
-                                                    {["種別", "総回転", "今回", "平均", "投資"].map(h => (
-                                                        <div key={h} style={{ textAlign: "center", fontSize: 8, fontWeight: 700, color: C.sub }}>{h}</div>
-                                                    ))}
-                                                </div>
-                                                {a.rotRows.map((row, i) => {
-                                                    const isMochi = row.mode === "mochi";
-                                                    const badgeCol = isMochi ? C.orange : C.blue;
-                                                    const badge = isMochi ? "持" : "現";
-                                                    return (
-                                                        <div key={i} style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr 1fr 55px", padding: "5px 4px", borderBottom: `1px solid ${C.border}` }}>
-                                                            <div style={{ textAlign: "center" }}>
-                                                                <span style={{ fontSize: 8, fontWeight: 700, color: badgeCol, background: badgeCol + "20", borderRadius: 4, padding: "1px 4px" }}>{badge}</span>
-                                                            </div>
-                                                            <div style={{ textAlign: "center", fontSize: 10, color: C.subHi, fontFamily: mono }}>{f(row.cumRot)}</div>
-                                                            <div style={{ textAlign: "center", fontSize: 10, color: C.text, fontFamily: mono }}>{row.type === "start" ? "START" : row.thisRot}</div>
-                                                            <div style={{ textAlign: "center", fontSize: 10, color: C.text, fontFamily: mono }}>{row.avgRot || "—"}</div>
-                                                            <div style={{ textAlign: "center", fontSize: 9, color: C.sub, fontFamily: mono }}>{row.invest ? f(row.invest) : "—"}</div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                {/* Delete button */}
-                                <div style={{ textAlign: "right", marginTop: 4 }}>
-                                    {delConfirm === a.id ? (
-                                        <button className="b" onClick={() => deleteArchive(a.id)} style={{
-                                            background: C.red, border: "none", borderRadius: 6,
-                                            color: "#fff", fontSize: 10, padding: "4px 12px", fontWeight: 700, fontFamily: font
-                                        }}>削除確定</button>
-                                    ) : (
-                                        <button className="b" onClick={() => setDelConfirm(a.id)} style={{
-                                            background: "rgba(239,68,68,0.1)", border: `1px solid ${C.red}40`, borderRadius: 6,
-                                            color: C.red, fontSize: 10, padding: "4px 12px", fontWeight: 700, fontFamily: font
-                                        }}>削除</button>
                                     )}
                                 </div>
-                            </div>
-                        );
-                    })}
+                            ))}
+                        </Card>
+                    )}
+
+                    {/* Delete button */}
+                    <div style={{ textAlign: "center", marginTop: 8, marginBottom: 16 }}>
+                        {delConfirm === a.id ? (
+                            <button className="b" onClick={() => { deleteArchive(a.id); setSelectedArchiveId(null); }} style={{
+                                background: C.red, border: "none", borderRadius: 8,
+                                color: "#fff", fontSize: 12, padding: "8px 24px", fontWeight: 700, fontFamily: font
+                            }}>削除確定</button>
+                        ) : (
+                            <button className="b" onClick={() => setDelConfirm(a.id)} style={{
+                                background: "rgba(239,68,68,0.1)", border: `1px solid ${C.red}40`, borderRadius: 8,
+                                color: C.red, fontSize: 12, padding: "8px 24px", fontWeight: 700, fontFamily: font
+                            }}>このデータを削除</button>
+                        )}
+                    </div>
                 </div>
             </div>
         );
@@ -1000,6 +988,125 @@ export function CalendarTab({ S, onReset }) {
                     );
                 })}
             </div>
+
+            {/* ── Inline data strip when date is selected ── */}
+            {selectedDate && (() => {
+                const dateArchives = byDate[selectedDate] || [];
+                const dayTotal = dailyTotals[selectedDate];
+                return (
+                    <div style={{ marginTop: 12 }}>
+                        {/* Selected date header */}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                            <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>{selectedDate}</div>
+                            {dayTotal != null && (
+                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(dayTotal), fontFamily: mono }}>
+                                    {sp(Math.round(dayTotal), 0)}円
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Save current session to this date */}
+                        <Card style={{ padding: 12, marginBottom: 8 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                                <div>
+                                    <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>店舗</div>
+                                    <div style={{ position: "relative" }}>
+                                        {textInput(S.storeName, S.setStoreName, "店舗名")}
+                                        {storeList.length > 0 && (
+                                            <button className="b" onClick={() => setShowStoreDropdown(!showStoreDropdown)} style={{
+                                                position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)",
+                                                background: "transparent", border: "none", color: C.sub, fontSize: 14, padding: "4px 6px", cursor: "pointer"
+                                            }}>▼</button>
+                                        )}
+                                        {showStoreDropdown && storeList.length > 0 && (
+                                            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 8, zIndex: 10, maxHeight: 150, overflowY: "auto", marginTop: 2, boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}>
+                                                {storeList.map((st, i) => (
+                                                    <button key={i} className="b" onClick={() => { S.setStoreName(st); setShowStoreDropdown(false); }} style={{
+                                                        width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${C.border}`,
+                                                        color: C.text, fontSize: 13, padding: "10px 12px", textAlign: "left", fontFamily: font, cursor: "pointer"
+                                                    }}>{st}</button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>台番号</div>
+                                    {textInput(S.machineNum, S.setMachineNum, "台番号")}
+                                </div>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                                <div>
+                                    <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>投資額{autoInvest > 0 ? " (自動)" : ""}</div>
+                                    <NI v={S.investYen || (autoInvest > 0 ? autoInvest : "")} set={S.setInvestYen} w="100%" center ph={autoInvest > 0 ? String(autoInvest) : "10000"} />
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>回収額</div>
+                                    <NI v={S.recoveryYen} set={S.setRecoveryYen} w="100%" center ph="0" />
+                                </div>
+                            </div>
+                            {(S.investYen > 0 || S.recoveryYen > 0) && (
+                                <div style={{ textAlign: "right", marginBottom: 8, fontSize: 13, fontWeight: 700, color: sc((S.recoveryYen || 0) - (S.investYen || 0)), fontFamily: mono }}>
+                                    収支: {sp((S.recoveryYen || 0) - (S.investYen || 0), 0)}円
+                                </div>
+                            )}
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                <Btn label="保存" onClick={() => {
+                                    const a = makeArchive();
+                                    a.date = selectedDate;
+                                    if (autoInvest > 0 && !S.investYen) a.investYen = autoInvest;
+                                    S.setArchives((prev) => [...prev, a]);
+                                }} primary fs={12} />
+                                <Btn label="保存してリセット" onClick={() => {
+                                    const a = makeArchive();
+                                    a.date = selectedDate;
+                                    if (autoInvest > 0 && !S.investYen) a.investYen = autoInvest;
+                                    S.setArchives((prev) => [...prev, a]);
+                                    onReset();
+                                }} bg={C.orange} fg="#fff" bd="none" fs={12} />
+                            </div>
+                        </Card>
+
+                        {/* Archive entries for this date — tappable to detail */}
+                        {dateArchives.map((a) => {
+                            const st = a.stats || {};
+                            const pl = (a.investYen > 0 || a.recoveryYen > 0)
+                                ? (a.recoveryYen || 0) - (a.investYen || 0) : null;
+                            return (
+                                <button key={a.id} className="b" onClick={() => setSelectedArchiveId(a.id)} style={{
+                                    width: "100%", background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}`,
+                                    borderRadius: 10, padding: "10px 12px", marginBottom: 6, cursor: "pointer",
+                                    display: "flex", justifyContent: "space-between", alignItems: "center", textAlign: "left"
+                                }}>
+                                    <div style={{ flex: 1 }}>
+                                        {a.storeName && <div style={{ fontSize: 10, color: C.sub }}>{a.storeName}</div>}
+                                        <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>
+                                            1/{a.settings?.synthDenom || "—"}
+                                            {a.machineNum ? <span style={{ fontSize: 11, color: C.sub, marginLeft: 6 }}>{a.machineNum}番台</span> : null}
+                                        </div>
+                                        <div style={{ display: "flex", gap: 10, marginTop: 2 }}>
+                                            <span style={{ fontSize: 10, color: C.sub }}>投資: <span style={{ fontFamily: mono, color: C.subHi }}>{a.investYen > 0 ? f(a.investYen) : "0"}</span></span>
+                                            <span style={{ fontSize: 10, color: C.sub }}>回収: <span style={{ fontFamily: mono, color: C.subHi }}>{a.recoveryYen > 0 ? f(a.recoveryYen) : "0"}</span></span>
+                                        </div>
+                                    </div>
+                                    <div style={{ textAlign: "right", marginLeft: 8 }}>
+                                        {pl != null ? (
+                                            <div style={{ fontSize: 20, fontWeight: 900, color: sc(pl), fontFamily: mono, lineHeight: 1.1 }}>
+                                                {sp(pl, 0)}
+                                            </div>
+                                        ) : st.workAmount != null && st.workAmount !== 0 ? (
+                                            <div style={{ fontSize: 20, fontWeight: 900, color: sc(st.workAmount), fontFamily: mono, lineHeight: 1.1 }}>
+                                                {sp(st.workAmount, 0)}
+                                            </div>
+                                        ) : <div style={{ fontSize: 12, color: C.sub }}>—</div>}
+                                        <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>▶</div>
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                );
+            })()}
 
             {/* Cumulative EV graph */}
             {(() => {
