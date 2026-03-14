@@ -26,6 +26,12 @@ export default function App() {
   const [totalTrayBalls, setTotalTrayBalls] = useLS("pt_totalTrayBalls", 0);
   const [playMode, setPlayMode] = useLS("pt_playMode", "cash");
 
+  // Session info (店舗・台番号・投資・回収)
+  const [storeName, setStoreName] = useLS("pt_storeName", "");
+  const [machineNum, setMachineNum] = useLS("pt_machineNum", "");
+  const [investYen, setInvestYen] = useLS("pt_investYen", 0);
+  const [recoveryYen, setRecoveryYen] = useLS("pt_recoveryYen", 0);
+
   // Archives
   const [archives, setArchives] = useLS("pt_archives", []);
 
@@ -49,6 +55,10 @@ export default function App() {
     setStartRot(0);
     setTotalTrayBalls(0);
     setPlayMode("cash");
+    setStoreName("");
+    setMachineNum("");
+    setInvestYen(0);
+    setRecoveryYen(0);
   };
 
   // 台移動: 現在のデータを自動保存して新台へ
@@ -63,6 +73,8 @@ export default function App() {
         settings: { rentBalls, exRate, synthDenom, rotPerHour, border, ballVal },
         stats: ev ? { ...ev } : {},
         totalTrayBalls, startRot,
+        storeName, machineNum, investYen, recoveryYen,
+        machineName: `1/${synthDenom}`,
         isMoveArchive: true,
       };
       setArchives((prev) => [...prev, archive]);
@@ -81,6 +93,8 @@ export default function App() {
     pushLog, startRot, setStartRot, setTab,
     totalTrayBalls, setTotalTrayBalls,
     playMode, setPlayMode,
+    storeName, setStoreName, machineNum, setMachineNum,
+    investYen, setInvestYen, recoveryYen, setRecoveryYen,
     archives, setArchives,
     ev, handleMoveTable,
   };

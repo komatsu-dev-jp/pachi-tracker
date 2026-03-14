@@ -625,6 +625,13 @@ export function CalendarTab({ S, onReset }) {
         return { year: now.getFullYear(), month: now.getMonth() };
     });
     const [delConfirm, setDelConfirm] = useState(null);
+    const [expandedRot, setExpandedRot] = useState(null); // archive id to show rot detail
+    const [showSaveModal, setShowSaveModal] = useState(false);
+    // Save form temp state
+    const [saveStore, setSaveStore] = useState("");
+    const [saveMachineNum, setSaveMachineNum] = useState("");
+    const [saveInvest, setSaveInvest] = useState("");
+    const [saveRecovery, setSaveRecovery] = useState("");
 
     const archives = S.archives || [];
 
@@ -639,16 +646,38 @@ export function CalendarTab({ S, onReset }) {
         return map;
     }, [archives]);
 
-    // Calculate daily totals
+    // Calculate daily totals (収支 = recoveryYen - investYen, fallback to workAmount)
     const dailyTotals = useMemo(() => {
         const totals = {};
         Object.entries(byDate).forEach(([date, items]) => {
-            let work = 0;
-            items.forEach(a => { work += (a.stats?.workAmount || 0); });
-            totals[date] = work;
+            let total = 0;
+            items.forEach(a => {
+                if (a.investYen != null && a.recoveryYen != null && (a.investYen > 0 || a.recoveryYen > 0)) {
+                    total += (a.recoveryYen || 0) - (a.investYen || 0);
+                } else {
+                    total += (a.stats?.workAmount || 0);
+                }
+            });
+            totals[date] = total;
         });
         return totals;
     }, [byDate]);
+
+    // Machine number aggregate stats
+    const machineAggregates = useMemo(() => {
+        const agg = {}; // key: "synthDenom|machineNum" → { count, totalRot, totalK, sessions }
+        archives.forEach(a => {
+            if (!a.machineNum) return;
+            const key = `${a.settings?.synthDenom || ""}|${a.machineNum}`;
+            if (!agg[key]) agg[key] = { machineNum: a.machineNum, denom: a.settings?.synthDenom, count: 0, totalRot: 0, totalK: 0, storeName: a.storeName || "" };
+            agg[key].count += 1;
+            const st = a.stats || {};
+            agg[key].totalRot += (st.netRot || 0);
+            agg[key].totalK += (st.correctedInvestYen ? st.correctedInvestYen / 1000 : (st.rawInvest ? st.rawInvest / 1000 : 0));
+            if (a.storeName) agg[key].storeName = a.storeName;
+        });
+        return agg;
+    }, [archives]);
 
     // Monthly total
     const monthKey = `${viewMonth.year}-${String(viewMonth.month + 1).padStart(2, "0")}`;
@@ -664,9 +693,8 @@ export function CalendarTab({ S, onReset }) {
     const calendarDays = useMemo(() => {
         const first = new Date(viewMonth.year, viewMonth.month, 1);
         const lastDay = new Date(viewMonth.year, viewMonth.month + 1, 0).getDate();
-        const startDow = first.getDay(); // 0=Sun
+        const startDow = first.getDay();
         const days = [];
-        // Empty slots
         for (let i = 0; i < startDow; i++) days.push(null);
         for (let d = 1; d <= lastDay; d++) days.push(d);
         return days;
@@ -683,7 +711,6 @@ export function CalendarTab({ S, onReset }) {
 
     const today = new Date();
     const isToday = (day) => day && today.getFullYear() === viewMonth.year && today.getMonth() === viewMonth.month && today.getDate() === day;
-
     const dateStr = (day) => `${viewMonth.year}-${String(viewMonth.month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 
     const deleteArchive = (id) => {
@@ -691,13 +718,44 @@ export function CalendarTab({ S, onReset }) {
         setDelConfirm(null);
     };
 
-    // Detail View for selected date
+    // Helper: create archive object
+    const makeArchive = (store, mNum, invest, recovery) => ({
+        id: Date.now(),
+        date: new Date().toISOString().slice(0, 10),
+        time: new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
+        rotRows: S.rotRows, jpLog: S.jpLog, sesLog: S.sesLog,
+        settings: { rentBalls: S.rentBalls, exRate: S.exRate, synthDenom: S.synthDenom, rotPerHour: S.rotPerHour, border: S.border, ballVal: S.ballVal },
+        stats: S.ev ? { ...S.ev } : {},
+        totalTrayBalls: S.totalTrayBalls, startRot: S.startRot,
+        storeName: store || S.storeName || "",
+        machineNum: mNum || S.machineNum || "",
+        investYen: Number(invest) || S.investYen || 0,
+        recoveryYen: Number(recovery) || S.recoveryYen || 0,
+        machineName: `1/${S.synthDenom}`,
+    });
+
+    const openSaveModal = () => {
+        setSaveStore(S.storeName || "");
+        setSaveMachineNum(S.machineNum || "");
+        setSaveInvest(S.investYen || "");
+        setSaveRecovery(S.recoveryYen || "");
+        setShowSaveModal(true);
+    };
+
+    const textInput = (val, set, placeholder) => (
+        <input type="text" value={val} onChange={e => set(e.target.value)} placeholder={placeholder}
+            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }}
+            onFocus={e => e.target.style.borderColor = "var(--blue)"}
+            onBlur={e => e.target.style.borderColor = "var(--border-hi)"} />
+    );
+
+    // ── Detail View for selected date ──
     if (selectedDate) {
         const dateArchives = byDate[selectedDate] || [];
         return (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div style={{ padding: "12px 14px", flexShrink: 0 }}>
-                    <button className="b" onClick={() => setSelectedDate(null)} style={{
+                    <button className="b" onClick={() => { setSelectedDate(null); setExpandedRot(null); }} style={{
                         background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
                         color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600
                     }}>← カレンダーに戻る</button>
@@ -706,7 +764,7 @@ export function CalendarTab({ S, onReset }) {
                     <div style={{ fontSize: 16, fontWeight: 800, color: C.text, marginBottom: 4 }}>{selectedDate}</div>
                     {dailyTotals[selectedDate] != null && (
                         <div style={{ fontSize: 14, fontWeight: 700, color: sc(dailyTotals[selectedDate]), fontFamily: mono, marginBottom: 12 }}>
-                            仕事量合計: {sp(Math.round(dailyTotals[selectedDate]), 0)}円
+                            収支合計: {sp(Math.round(dailyTotals[selectedDate]), 0)}円
                         </div>
                     )}
 
@@ -715,9 +773,17 @@ export function CalendarTab({ S, onReset }) {
                     ) : (
                         dateArchives.map((a) => {
                             const st = a.stats || {};
+                            const pl = (a.investYen != null && a.recoveryYen != null && (a.investYen > 0 || a.recoveryYen > 0))
+                                ? (a.recoveryYen || 0) - (a.investYen || 0) : null;
+
+                            // Machine aggregate for this archive's machine number
+                            const aggKey = `${a.settings?.synthDenom || ""}|${a.machineNum}`;
+                            const agg = a.machineNum ? machineAggregates[aggKey] : null;
+
                             return (
                                 <Card key={a.id} style={{ padding: "14px 16px" }}>
-                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                                    {/* Header */}
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                                         <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
                                             {a.time || a.date}{a.isMoveArchive ? " (台移動)" : ""}
                                         </span>
@@ -736,7 +802,33 @@ export function CalendarTab({ S, onReset }) {
                                         </div>
                                     </div>
 
-                                    {/* Stats grid */}
+                                    {/* Store / Machine info */}
+                                    {(a.storeName || a.machineNum) && (
+                                        <div style={{ display: "flex", gap: 12, marginBottom: 8, flexWrap: "wrap" }}>
+                                            {a.storeName && <span style={{ fontSize: 11, color: C.subHi, background: "rgba(255,255,255,0.05)", borderRadius: 6, padding: "3px 8px" }}>店舗: {a.storeName}</span>}
+                                            {a.machineNum && <span style={{ fontSize: 11, color: C.subHi, background: "rgba(255,255,255,0.05)", borderRadius: 6, padding: "3px 8px" }}>台番号: {a.machineNum}</span>}
+                                        </div>
+                                    )}
+
+                                    {/* 投資・回収・収支 */}
+                                    {(a.investYen > 0 || a.recoveryYen > 0) && (
+                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, marginBottom: 8 }}>
+                                            <div style={{ textAlign: "center", background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: "8px 2px" }}>
+                                                <div style={{ fontSize: 8, color: C.sub, marginBottom: 2, fontWeight: 600 }}>投資額</div>
+                                                <div style={{ fontSize: 14, fontWeight: 800, color: C.red, fontFamily: mono }}>{f(a.investYen)}</div>
+                                            </div>
+                                            <div style={{ textAlign: "center", background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: "8px 2px" }}>
+                                                <div style={{ fontSize: 8, color: C.sub, marginBottom: 2, fontWeight: 600 }}>回収額</div>
+                                                <div style={{ fontSize: 14, fontWeight: 800, color: C.green, fontFamily: mono }}>{f(a.recoveryYen)}</div>
+                                            </div>
+                                            <div style={{ textAlign: "center", background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: "8px 2px" }}>
+                                                <div style={{ fontSize: 8, color: C.sub, marginBottom: 2, fontWeight: 600 }}>収支</div>
+                                                <div style={{ fontSize: 14, fontWeight: 800, color: sc(pl), fontFamily: mono }}>{sp(pl, 0)}</div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* EV Stats grid */}
                                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, marginBottom: 8 }}>
                                         {[
                                             { label: "1Kスタート", val: st.start1K > 0 ? f(st.start1K, 1) : "—", col: sc(st.bDiff) },
@@ -762,10 +854,63 @@ export function CalendarTab({ S, onReset }) {
                                         ))}
                                     </div>
 
-                                    {/* Rotation data summary */}
+                                    {/* Machine aggregate stats */}
+                                    {agg && agg.count > 1 && (
+                                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}`, background: "rgba(59,130,246,0.05)", borderRadius: 8, padding: 10, marginBottom: 4 }}>
+                                            <div style={{ fontSize: 9, color: C.blue, fontWeight: 700, marginBottom: 6, letterSpacing: 1 }}>台番号 {agg.machineNum} トータル実績</div>
+                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                                                <div style={{ textAlign: "center" }}>
+                                                    <div style={{ fontSize: 8, color: C.sub }}>座り回数</div>
+                                                    <div style={{ fontSize: 14, fontWeight: 800, color: C.text, fontFamily: mono }}>{agg.count}回</div>
+                                                </div>
+                                                <div style={{ textAlign: "center" }}>
+                                                    <div style={{ fontSize: 8, color: C.sub }}>トータル1K</div>
+                                                    <div style={{ fontSize: 14, fontWeight: 800, color: agg.totalK > 0 ? sc(agg.totalRot / agg.totalK - (st.useBorder || 0)) : C.subHi, fontFamily: mono }}>
+                                                        {agg.totalK > 0 ? f(agg.totalRot / agg.totalK, 1) : "—"}
+                                                    </div>
+                                                </div>
+                                                <div style={{ textAlign: "center" }}>
+                                                    <div style={{ fontSize: 8, color: C.sub }}>総回転</div>
+                                                    <div style={{ fontSize: 14, fontWeight: 800, color: C.subHi, fontFamily: mono }}>{f(agg.totalRot)}</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Rotation data detail (expandable) */}
                                     {a.rotRows && a.rotRows.length > 0 && (
                                         <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
-                                            <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>回転数データ ({a.rotRows.filter(r => r.type === "data").length}K)</div>
+                                            <button className="b" onClick={() => setExpandedRot(expandedRot === a.id ? null : a.id)} style={{
+                                                background: "transparent", border: "none", color: C.blue, fontSize: 11, fontWeight: 600,
+                                                padding: 0, fontFamily: font, cursor: "pointer"
+                                            }}>
+                                                {expandedRot === a.id ? "▼" : "▶"} 回転数データ ({a.rotRows.filter(r => r.type === "data").length}K)
+                                            </button>
+                                            {expandedRot === a.id && (
+                                                <div style={{ marginTop: 6 }}>
+                                                    <div style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr 1fr 60px", background: "rgba(249,115,22,0.12)", padding: "6px 4px", borderRadius: "6px 6px 0 0" }}>
+                                                        {["種別", "総回転", "今回", "平均", "投資"].map(h => (
+                                                            <div key={h} style={{ textAlign: "center", fontSize: 9, fontWeight: 700, color: C.sub }}>{h}</div>
+                                                        ))}
+                                                    </div>
+                                                    {a.rotRows.map((row, i) => {
+                                                        const isMochi = row.mode === "mochi";
+                                                        const badgeCol = isMochi ? C.orange : C.blue;
+                                                        const badge = isMochi ? "持" : "現";
+                                                        return (
+                                                            <div key={i} style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr 1fr 60px", padding: "6px 4px", borderBottom: `1px solid ${C.border}` }}>
+                                                                <div style={{ textAlign: "center" }}>
+                                                                    <span style={{ fontSize: 8, fontWeight: 700, color: badgeCol, background: badgeCol + "20", borderRadius: 4, padding: "1px 4px" }}>{badge}</span>
+                                                                </div>
+                                                                <div style={{ textAlign: "center", fontSize: 11, color: C.subHi, fontFamily: mono }}>{f(row.cumRot)}</div>
+                                                                <div style={{ textAlign: "center", fontSize: 11, color: C.text, fontFamily: mono }}>{row.type === "start" ? "START" : row.thisRot}</div>
+                                                                <div style={{ textAlign: "center", fontSize: 11, color: C.text, fontFamily: mono }}>{row.avgRot || "—"}</div>
+                                                                <div style={{ textAlign: "center", fontSize: 9, color: C.sub, fontFamily: mono }}>{row.invest ? f(row.invest) : "—"}</div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
                                         </div>
                                     )}
 
@@ -799,7 +944,7 @@ export function CalendarTab({ S, onReset }) {
         );
     }
 
-    // Calendar View
+    // ── Calendar View ──
     return (
         <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
             {/* Month header */}
@@ -866,36 +1011,45 @@ export function CalendarTab({ S, onReset }) {
                 );
             })()}
 
-            {/* Session save / reset section */}
+            {/* Session save section */}
             <Card style={{ padding: 16, marginTop: 12 }}>
                 <SecLabel label="セッション保存" />
-                <div style={{ fontSize: 11, color: C.sub, marginBottom: 12, lineHeight: 1.6, padding: "0 4px" }}>
-                    現在のセッションデータをアーカイブに保存します。
+
+                {/* Current session store/machine info */}
+                <div style={{ marginBottom: 10 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                        <div>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>店舗</div>
+                            {textInput(S.storeName, S.setStoreName, "店舗名")}
+                        </div>
+                        <div>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>台番号</div>
+                            {textInput(S.machineNum, S.setMachineNum, "台番号")}
+                        </div>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        <div>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>投資額 (円)</div>
+                            <NI v={S.investYen} set={S.setInvestYen} w="100%" center ph="10000" />
+                        </div>
+                        <div>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>回収額 (円)</div>
+                            <NI v={S.recoveryYen} set={S.setRecoveryYen} w="100%" center ph="0" />
+                        </div>
+                    </div>
+                    {(S.investYen > 0 || S.recoveryYen > 0) && (
+                        <div style={{ textAlign: "right", marginTop: 6, fontSize: 13, fontWeight: 700, color: sc((S.recoveryYen || 0) - (S.investYen || 0)), fontFamily: mono }}>
+                            収支: {sp((S.recoveryYen || 0) - (S.investYen || 0), 0)}円
+                        </div>
+                    )}
                 </div>
+
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     <Btn label="保存のみ" onClick={() => {
-                        const archive = {
-                            id: Date.now(),
-                            date: new Date().toISOString().slice(0, 10),
-                            time: new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
-                            rotRows: S.rotRows, jpLog: S.jpLog, sesLog: S.sesLog,
-                            settings: { rentBalls: S.rentBalls, exRate: S.exRate, synthDenom: S.synthDenom, rotPerHour: S.rotPerHour, border: S.border, ballVal: S.ballVal },
-                            stats: S.ev ? { ...S.ev } : {},
-                            totalTrayBalls: S.totalTrayBalls, startRot: S.startRot,
-                        };
-                        S.setArchives((prev) => [...prev, archive]);
+                        S.setArchives((prev) => [...prev, makeArchive()]);
                     }} primary />
                     <Btn label="保存してリセット" onClick={() => {
-                        const archive = {
-                            id: Date.now(),
-                            date: new Date().toISOString().slice(0, 10),
-                            time: new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
-                            rotRows: S.rotRows, jpLog: S.jpLog, sesLog: S.sesLog,
-                            settings: { rentBalls: S.rentBalls, exRate: S.exRate, synthDenom: S.synthDenom, rotPerHour: S.rotPerHour, border: S.border, ballVal: S.ballVal },
-                            stats: S.ev ? { ...S.ev } : {},
-                            totalTrayBalls: S.totalTrayBalls, startRot: S.startRot,
-                        };
-                        S.setArchives((prev) => [...prev, archive]);
+                        S.setArchives((prev) => [...prev, makeArchive()]);
                         onReset();
                     }} bg={C.orange} fg="#fff" bd="none" />
                 </div>
