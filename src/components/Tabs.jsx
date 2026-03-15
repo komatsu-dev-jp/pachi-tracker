@@ -165,6 +165,8 @@ export function DataTab({ ev, jpLog, S }) {
                 {stat("初当たり回数", jpLog.length > 0 ? jpLog.length.toString() : "0", "回", C.green)}
                 {stat("総回転数", ev.netRot > 0 ? f(ev.netRot) : "—", "回", C.subHi)}
                 {stat("総投資額", ev.rawInvest > 0 ? f(ev.rawInvest) : "—", "円", C.red)}
+                {ev.trayBallsYen > 0 && stat("上皿補正", "-" + f(ev.trayBallsYen), "円", C.teal)}
+                {ev.correctedInvestYen > 0 && ev.trayBallsYen > 0 && stat("実質投資", f(Math.round(ev.correctedInvestYen)), "円", C.yellow)}
                 {stat("持ち玉比率", ev.mochiRatio > 0 ? Math.round(ev.mochiRatio * 100).toString() : "0", "%", C.orange)}
             </Card>
         </div>
@@ -569,7 +571,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                     {/* Chain Header */}
                                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                                         <span style={{ fontSize: 11, fontWeight: 800, color: !chain.completed ? C.orange : C.blue }}>
-                                            {!chain.completed ? "連チャン中" : `第${jpLog.length - ci}初当たり — ${chain.hits.length}連`}
+                                            {!chain.completed ? "連チャン中" : `第${jpLog.length - ci}初当たり — ${chain.hits.length <= 1 ? "単発" : chain.hits.length + "連"}`}
                                         </span>
                                         <span style={{ fontSize: 10, color: C.sub, fontFamily: mono }}>{chain.time}</span>
                                     </div>
@@ -600,14 +602,23 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
 
                                     {/* Chain Summary (completed only) */}
                                     {chain.completed && chain.summary && (
-                                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}`, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                                            <div style={{ textAlign: "center" }}>
-                                                <div style={{ fontSize: 8, color: C.sub }}>1R出玉</div>
-                                                <div style={{ fontSize: 14, fontWeight: 700, color: C.teal, fontFamily: mono }}>{f(chain.summary.avg1R, 1)}発</div>
+                                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
+                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 4 }}>
+                                                <div style={{ textAlign: "center" }}>
+                                                    <div style={{ fontSize: 8, color: C.sub }}>1R出玉</div>
+                                                    <div style={{ fontSize: 14, fontWeight: 700, color: C.teal, fontFamily: mono }}>{f(chain.summary.avg1R, 1)}発</div>
+                                                </div>
+                                                <div style={{ textAlign: "center" }}>
+                                                    <div style={{ fontSize: 8, color: C.sub }}>サポ増減</div>
+                                                    <div style={{ fontSize: 14, fontWeight: 700, color: sc(chain.summary.sapoDelta), fontFamily: mono }}>{sp(chain.summary.sapoDelta, 0)}発</div>
+                                                </div>
+                                                <div style={{ textAlign: "center" }}>
+                                                    <div style={{ fontSize: 8, color: C.sub }}>純増出玉</div>
+                                                    <div style={{ fontSize: 14, fontWeight: 700, color: C.green, fontFamily: mono }}>{f(chain.summary.netGain)}発</div>
+                                                </div>
                                             </div>
-                                            <div style={{ textAlign: "center" }}>
-                                                <div style={{ fontSize: 8, color: C.sub }}>サポ増減</div>
-                                                <div style={{ fontSize: 14, fontWeight: 700, color: sc(chain.summary.sapoDelta), fontFamily: mono }}>{sp(chain.summary.sapoDelta, 0)}発</div>
+                                            <div style={{ textAlign: "center", fontSize: 9, color: C.sub, fontFamily: mono }}>
+                                                {f(chain.summary.avg1R, 1)} × {chain.summary.totalRounds}R {chain.summary.sapoDelta >= 0 ? "+" : ""}{f(chain.summary.sapoDelta)} = {f(Math.round(chain.summary.avg1R * chain.summary.totalRounds + chain.summary.sapoDelta))}
                                             </div>
                                         </div>
                                     )}
@@ -746,22 +757,30 @@ export function CalendarTab({ S, onReset }) {
         setDelConfirm(null);
     };
 
-    // Helper: create archive object
+    // Helper: create archive object (all values must be JSON-serializable)
     const makeArchive = () => {
         const autoInvest = S.ev?.rawInvest || 0;
+        const now = new Date();
+        // Extract only numeric stats to avoid serialization issues
+        const safeStats = S.ev ? Object.fromEntries(
+            Object.entries(S.ev).filter(([, v]) => typeof v === "number" || typeof v === "string")
+        ) : {};
         return {
-            id: Date.now(),
-            date: new Date().toISOString().slice(0, 10),
-            time: new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
-            rotRows: S.rotRows, jpLog: S.jpLog, sesLog: S.sesLog,
+            id: now.getTime(),
+            date: now.toISOString().slice(0, 10),
+            time: now.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
+            rotRows: JSON.parse(JSON.stringify(S.rotRows || [])),
+            jpLog: JSON.parse(JSON.stringify(S.jpLog || [])),
+            sesLog: JSON.parse(JSON.stringify(S.sesLog || [])),
             settings: { rentBalls: S.rentBalls, exRate: S.exRate, synthDenom: S.synthDenom, rotPerHour: S.rotPerHour, border: S.border, ballVal: S.ballVal },
-            stats: S.ev ? { ...S.ev } : {},
-            totalTrayBalls: S.totalTrayBalls, startRot: S.startRot,
-            storeName: S.storeName || "",
-            machineNum: S.machineNum || "",
+            stats: safeStats,
+            totalTrayBalls: S.totalTrayBalls || 0,
+            startRot: S.startRot || 0,
+            storeName: String(S.storeName || ""),
+            machineNum: String(S.machineNum || ""),
             investYen: Number(S.investYen) || autoInvest || 0,
             recoveryYen: Number(S.recoveryYen) || 0,
-            machineName: `1/${S.synthDenom}`,
+            machineName: String(S.machineName || `1/${S.synthDenom}`),
         };
     };
 
@@ -781,12 +800,16 @@ export function CalendarTab({ S, onReset }) {
         const recovery = a.recoveryYen || 0;
         const pl = (invest > 0 || recovery > 0) ? recovery - invest : null;
         const displayPL = pl != null ? pl : (st.workAmount || 0);
-        const hours = st.netRot > 0 && (S.rotPerHour || st.rotPerHour)
-            ? (st.netRot / (S.rotPerHour || st.rotPerHour || 200)).toFixed(1)
+        const rph = a.settings?.rotPerHour || S.rotPerHour || 200;
+        const hours = st.netRot > 0 && rph > 0
+            ? (st.netRot / rph).toFixed(1)
             : null;
         const hourlyWage = hours && Number(hours) > 0 && displayPL !== 0
             ? Math.round(displayPL / Number(hours))
             : null;
+        const displayName = a.machineName && a.machineName !== `1/${a.settings?.synthDenom}`
+            ? a.machineName
+            : (a.machineName || `1/${a.settings?.synthDenom || "—"}`);
 
         return (
             <button className="b" onClick={onClick} style={{
@@ -800,8 +823,8 @@ export function CalendarTab({ S, onReset }) {
                         {a.storeName && (
                             <div style={{ fontSize: 12, color: C.sub, marginBottom: 2, fontWeight: 500 }}>{a.storeName}</div>
                         )}
-                        <div style={{ fontSize: 17, fontWeight: 900, color: C.text, marginBottom: 2 }}>
-                            {a.machineName || `1/${a.settings?.synthDenom || "—"}`}
+                        <div style={{ fontSize: 16, fontWeight: 900, color: C.text, marginBottom: 2, lineHeight: 1.2 }}>
+                            {displayName}
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
                             {a.machineNum && (
@@ -886,11 +909,13 @@ export function CalendarTab({ S, onReset }) {
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                             <div>
                                 {a.storeName && <div style={{ fontSize: 12, color: C.sub }}>{a.storeName}</div>}
-                                <div style={{ fontSize: 20, fontWeight: 900, color: C.text }}>
-                                    {a.machineName || `1/${a.settings?.synthDenom || "—"}`}
+                                <div style={{ fontSize: 18, fontWeight: 900, color: C.text, lineHeight: 1.2 }}>
+                                    {a.machineName && a.machineName !== `1/${a.settings?.synthDenom}`
+                                        ? a.machineName
+                                        : (a.machineName || `1/${a.settings?.synthDenom || "—"}`)}
                                 </div>
                                 <div style={{ fontSize: 12, color: C.sub }}>
-                                    {a.machineNum ? a.machineNum + "番台" : ""}{a.isMoveArchive ? " (台移動)" : ""}
+                                    {a.machineNum ? a.machineNum + "番台" : ""}{a.settings?.synthDenom ? `, 1/${a.settings.synthDenom}` : ""}{a.isMoveArchive ? " (台移動)" : ""}
                                 </div>
                                 {a.time && <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>時間: {a.time}</div>}
                             </div>
@@ -1033,7 +1058,7 @@ export function CalendarTab({ S, onReset }) {
                             {a.jpLog.map((chain, ci) => (
                                 <div key={chain.chainId || ci} style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
                                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                                        <span style={{ fontSize: 11, fontWeight: 700, color: C.blue }}>第{ci + 1}初当たり — {chain.hits?.length || 0}連</span>
+                                        <span style={{ fontSize: 11, fontWeight: 700, color: C.blue }}>第{ci + 1}初当たり — {(chain.hits?.length || 0) <= 1 ? "単発" : (chain.hits?.length || 0) + "連"}</span>
                                         <span style={{ fontSize: 10, color: C.sub, fontFamily: mono }}>{chain.time}</span>
                                     </div>
                                     {chain.hits?.map((hit, hi) => (
@@ -1209,6 +1234,7 @@ export function SettingsTab({ s, onReset }) {
         if (m.spec1R) s.setSpec1R(m.spec1R);
         if (m.specAvgTotalRounds) s.setSpecAvgRounds(m.specAvgTotalRounds);
         if (m.specSapo != null) s.setSpecSapo(m.specSapo);
+        if (m.name) s.setMachineName(m.name);
         setSelected(null);
         setShowMachineSearch(false);
     };

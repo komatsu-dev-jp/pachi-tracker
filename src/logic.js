@@ -11,13 +11,16 @@ export function useLS(key, init) {
     });
 
     const set = (v) => {
-        try {
-            const s = v instanceof Function ? v(val) : v;
-            setVal(s);
-            window.localStorage.setItem(key, JSON.stringify(s));
-        } catch (e) {
-            console.error("LocalStorage error:", e);
-        }
+        setVal(prev => {
+            try {
+                const s = v instanceof Function ? v(prev) : v;
+                window.localStorage.setItem(key, JSON.stringify(s));
+                return s;
+            } catch (e) {
+                console.error("LocalStorage error:", e);
+                return prev;
+            }
+        });
     };
 
     return [val, set];
@@ -92,10 +95,12 @@ export function calcPreciseEV({
 
     // ── 投資玉数の補正（上皿玉を除外した真の消費玉） ──
     const trayCorrection = totalTrayBalls || 0;
+    // 上皿玉の円換算（貸し玉レートで）
+    const trayBallsYen = trayCorrection * (1000 / (rentBalls || 250));
     // 持ち玉混合コスト: 現金=1000円/K, 持ち玉=1000×(交換率/貸し玉)円/K
     const mochiCostPerK = (exRate && rentBalls) ? 1000 * exRate / rentBalls : 1000;
     const blendedInvest = cashKCount * 1000 + mochiKCount * mochiCostPerK;
-    const correctedInvestYen = Math.max(blendedInvest - (trayCorrection * (1000 / (rentBalls || 250))), 0);
+    const correctedInvestYen = Math.max(blendedInvest - trayBallsYen, 0);
 
     // ── 回転率（1Kスタート） ──
     const start1K = correctedInvestYen > 0 ? netRot / (correctedInvestYen / 1000) : 0;
@@ -184,6 +189,8 @@ export function calcPreciseEV({
         netRot,
         rawInvest,
         correctedInvestYen,
+        trayBallsYen: Math.round(trayBallsYen),
+        trayCorrection,
 
         // 持ち玉比率
         cashKCount,

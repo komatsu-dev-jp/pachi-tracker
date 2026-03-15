@@ -26,9 +26,10 @@ export default function App() {
   const [totalTrayBalls, setTotalTrayBalls] = useLS("pt_totalTrayBalls", 0);
   const [playMode, setPlayMode] = useLS("pt_playMode", "cash");
 
-  // Session info (店舗・台番号・投資・回収)
+  // Session info (店舗・台番号・投資・回収・機種名)
   const [storeName, setStoreName] = useLS("pt_storeName", "");
   const [machineNum, setMachineNum] = useLS("pt_machineNum", "");
+  const [machineName, setMachineName] = useLS("pt_machineName", "");
   const [investYen, setInvestYen] = useLS("pt_investYen", 0);
   const [recoveryYen, setRecoveryYen] = useLS("pt_recoveryYen", 0);
 
@@ -60,6 +61,7 @@ export default function App() {
     setPlayMode("cash");
     setStoreName("");
     setMachineNum("");
+    setMachineName("");
     setInvestYen(0);
     setRecoveryYen(0);
   };
@@ -68,16 +70,26 @@ export default function App() {
   const handleMoveTable = () => {
     // データがある場合のみ保存
     if (rotRows.length > 0 || jpLog.length > 0) {
+      const now = new Date();
+      const safeStats = ev ? Object.fromEntries(
+        Object.entries(ev).filter(([, v]) => typeof v === "number" || typeof v === "string")
+      ) : {};
       const archive = {
-        id: Date.now(),
-        date: new Date().toISOString().slice(0, 10),
-        time: new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
-        rotRows, jpLog, sesLog,
+        id: now.getTime(),
+        date: now.toISOString().slice(0, 10),
+        time: now.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
+        rotRows: JSON.parse(JSON.stringify(rotRows)),
+        jpLog: JSON.parse(JSON.stringify(jpLog)),
+        sesLog: JSON.parse(JSON.stringify(sesLog)),
         settings: { rentBalls, exRate, synthDenom, rotPerHour, border, ballVal },
-        stats: ev ? { ...ev } : {},
-        totalTrayBalls, startRot,
-        storeName, machineNum, investYen, recoveryYen,
-        machineName: `1/${synthDenom}`,
+        stats: safeStats,
+        totalTrayBalls: totalTrayBalls || 0,
+        startRot: startRot || 0,
+        storeName: String(storeName || ""),
+        machineNum: String(machineNum || ""),
+        investYen: Number(investYen) || 0,
+        recoveryYen: Number(recoveryYen) || 0,
+        machineName: String(machineName || `1/${synthDenom}`),
         isMoveArchive: true,
       };
       setArchives((prev) => [...prev, archive]);
@@ -96,7 +108,7 @@ export default function App() {
     pushLog, startRot, setStartRot, setTab,
     totalTrayBalls, setTotalTrayBalls,
     playMode, setPlayMode,
-    storeName, setStoreName, machineNum, setMachineNum,
+    storeName, setStoreName, machineNum, setMachineNum, machineName, setMachineName,
     investYen, setInvestYen, recoveryYen, setRecoveryYen,
     stores, setStores,
     archives, setArchives,
