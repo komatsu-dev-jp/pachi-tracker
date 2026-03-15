@@ -16,7 +16,7 @@ export function NI({ v, set, w = 80, ph = "0", center = false, big = false, onEn
                 borderRadius: 8,
                 color: C.text,
                 fontFamily: mono,
-                fontSize: big ? 22 : 14,
+                fontSize: big ? 22 : 16,
                 fontWeight: big ? 700 : 500,
                 padding: big ? "12px 14px" : "8px 10px",
                 textAlign: center || big ? "center" : "right",

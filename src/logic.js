@@ -64,9 +64,8 @@ export function calcPreciseEV({
     let totalRounds = 0;
     let totalDisplayBalls = 0;
     let totalNetGain = 0;
-    let totalFinalBalls = 0;
-    let totalEntryTray = 0;
     let totalSapoRot = 0;
+    let totalSapoChange = 0;
 
     completedEntries.forEach(chain => {
         if (chain.summary) {
@@ -74,9 +73,8 @@ export function calcPreciseEV({
             totalDisplayBalls += (chain.summary.totalDisplayBalls || 0);
             totalNetGain += (chain.summary.netGain || 0);
             totalSapoRot += (chain.summary.totalSapoRot || 0);
+            totalSapoChange += (chain.summary.totalSapoChange || chain.summary.sapoDelta || 0);
         }
-        totalFinalBalls += (chain.finalBalls || 0);
-        totalEntryTray += (chain.trayBalls || 0);
     });
 
     // ── 派生指標 ──
@@ -86,8 +84,8 @@ export function calcPreciseEV({
     // 平均R数/初当たり
     const avgRpJ = jpCount > 0 ? totalRounds / jpCount : 0;
 
-    // サポ増減（総量） = Σ最終残玉 - Σ上皿玉 - Σ表記出玉
-    const totalSapoDelta = totalFinalBalls - totalEntryTray - totalDisplayBalls;
+    // サポ増減（総量）= Σ各ヒットの(nextTimingBalls - lastOutBalls)
+    const totalSapoDelta = totalSapoChange;
 
     // サポ増減/初当たり
     const sapoPerJP = jpCount > 0 ? totalSapoDelta / jpCount : 0;
@@ -95,7 +93,7 @@ export function calcPreciseEV({
     // 電サポ効率: 1回転あたりのサポ増減 = 総サポ増減 / 総電サポ回転数
     const sapoPerRot = totalSapoRot > 0 ? totalSapoDelta / totalSapoRot : 0;
 
-    // 平均純増出玉/初当たり = Σ(finalBalls - trayBalls) / jpCount
+    // 平均純増出玉/初当たり
     const avgNetGainPerJP = jpCount > 0 ? totalNetGain / jpCount : 0;
 
     // ── 投資玉数の補正（上皿玉を除外した真の消費玉） ──
