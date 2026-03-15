@@ -653,13 +653,13 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
 ================================================================ */
 export function CalendarTab({ S, onReset }) {
     const [selectedDate, setSelectedDate] = useState(null);
-    const [selectedArchiveId, setSelectedArchiveId] = useState(null); // for detail page
+    const [selectedArchiveId, setSelectedArchiveId] = useState(null);
     const [viewMonth, setViewMonth] = useState(() => {
         const now = new Date();
         return { year: now.getFullYear(), month: now.getMonth() };
     });
     const [delConfirm, setDelConfirm] = useState(null);
-    const [expandedRot, setExpandedRot] = useState(null); // archive id to show rot detail
+    const [expandedRot, setExpandedRot] = useState(null);
 
     const archives = S.archives || [];
 
@@ -674,7 +674,7 @@ export function CalendarTab({ S, onReset }) {
         return map;
     }, [archives]);
 
-    // Calculate daily totals (収支 = recoveryYen - investYen, fallback to workAmount)
+    // Calculate daily totals
     const dailyTotals = useMemo(() => {
         const totals = {};
         Object.entries(byDate).forEach(([date, items]) => {
@@ -693,7 +693,7 @@ export function CalendarTab({ S, onReset }) {
 
     // Machine number aggregate stats
     const machineAggregates = useMemo(() => {
-        const agg = {}; // key: "synthDenom|machineNum" → { count, totalRot, totalK, sessions }
+        const agg = {};
         archives.forEach(a => {
             if (!a.machineNum) return;
             const key = `${a.settings?.synthDenom || ""}|${a.machineNum}`;
@@ -747,34 +747,101 @@ export function CalendarTab({ S, onReset }) {
     };
 
     // Helper: create archive object
-    const makeArchive = (store, mNum, invest, recovery) => ({
-        id: Date.now(),
-        date: new Date().toISOString().slice(0, 10),
-        time: new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
-        rotRows: S.rotRows, jpLog: S.jpLog, sesLog: S.sesLog,
-        settings: { rentBalls: S.rentBalls, exRate: S.exRate, synthDenom: S.synthDenom, rotPerHour: S.rotPerHour, border: S.border, ballVal: S.ballVal },
-        stats: S.ev ? { ...S.ev } : {},
-        totalTrayBalls: S.totalTrayBalls, startRot: S.startRot,
-        storeName: store || S.storeName || "",
-        machineNum: mNum || S.machineNum || "",
-        investYen: Number(invest) || S.investYen || 0,
-        recoveryYen: Number(recovery) || S.recoveryYen || 0,
-        machineName: `1/${S.synthDenom}`,
-    });
+    const makeArchive = () => {
+        const autoInvest = S.ev?.rawInvest || 0;
+        return {
+            id: Date.now(),
+            date: new Date().toISOString().slice(0, 10),
+            time: new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
+            rotRows: S.rotRows, jpLog: S.jpLog, sesLog: S.sesLog,
+            settings: { rentBalls: S.rentBalls, exRate: S.exRate, synthDenom: S.synthDenom, rotPerHour: S.rotPerHour, border: S.border, ballVal: S.ballVal },
+            stats: S.ev ? { ...S.ev } : {},
+            totalTrayBalls: S.totalTrayBalls, startRot: S.startRot,
+            storeName: S.storeName || "",
+            machineNum: S.machineNum || "",
+            investYen: Number(S.investYen) || autoInvest || 0,
+            recoveryYen: Number(S.recoveryYen) || 0,
+            machineName: `1/${S.synthDenom}`,
+        };
+    };
 
     const textInput = (val, set, placeholder) => (
-        <input type="text" value={val} onChange={e => set(e.target.value)} placeholder={placeholder}
-            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }}
-            onFocus={e => e.target.style.borderColor = "var(--blue)"}
-            onBlur={e => e.target.style.borderColor = "var(--border-hi)"} />
+        <input type="text" value={val || ""} onChange={e => set(e.target.value)} placeholder={placeholder}
+            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
     );
 
-    // Store selector helper
     const storeList = S.stores || [];
     const [showStoreDropdown, setShowStoreDropdown] = useState(false);
-
-    // Auto-populate investYen from rotation data
     const autoInvest = S.ev?.rawInvest || 0;
+
+    // ── Inline summary card for an archive entry (reference app style) ──
+    const SummaryCard = ({ a, onClick }) => {
+        const st = a.stats || {};
+        const invest = a.investYen || 0;
+        const recovery = a.recoveryYen || 0;
+        const pl = (invest > 0 || recovery > 0) ? recovery - invest : null;
+        const displayPL = pl != null ? pl : (st.workAmount || 0);
+        const hours = st.netRot > 0 && (S.rotPerHour || st.rotPerHour)
+            ? (st.netRot / (S.rotPerHour || st.rotPerHour || 200)).toFixed(1)
+            : null;
+        const hourlyWage = hours && Number(hours) > 0 && displayPL !== 0
+            ? Math.round(displayPL / Number(hours))
+            : null;
+
+        return (
+            <button className="b" onClick={onClick} style={{
+                width: "100%", background: "rgba(255,255,255,0.03)", border: `1px solid ${C.border}`,
+                borderRadius: 12, padding: "14px 14px", marginBottom: 8, cursor: "pointer",
+                textAlign: "left", display: "block",
+            }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    {/* Left side */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        {a.storeName && (
+                            <div style={{ fontSize: 12, color: C.sub, marginBottom: 2, fontWeight: 500 }}>{a.storeName}</div>
+                        )}
+                        <div style={{ fontSize: 17, fontWeight: 900, color: C.text, marginBottom: 2 }}>
+                            {a.machineName || `1/${a.settings?.synthDenom || "—"}`}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                            {a.machineNum && (
+                                <span style={{ fontSize: 12, color: C.sub }}>{a.machineNum}番台</span>
+                            )}
+                            <span style={{ fontSize: 11, color: C.sub }}>4パチ</span>
+                        </div>
+                        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                            {hours && <span style={{ fontSize: 11, color: C.sub }}>時間: <span style={{ fontFamily: mono, color: C.subHi }}>{hours}h</span></span>}
+                            {hourlyWage != null && (
+                                <span style={{ fontSize: 11, color: C.sub }}>時給: <span style={{ fontFamily: mono, color: sc(hourlyWage) }}>{f(hourlyWage)}/h</span></span>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Right side — P&L large + detail stats */}
+                    <div style={{ textAlign: "right", marginLeft: 10, flexShrink: 0 }}>
+                        <div style={{ fontSize: 24, fontWeight: 900, color: sc(displayPL), fontFamily: mono, lineHeight: 1.1, marginBottom: 6 }}>
+                            {f(displayPL)}
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "auto auto", gap: "1px 8px", justifyContent: "end" }}>
+                            <span style={{ fontSize: 11, color: C.sub, textAlign: "right" }}>投資:</span>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: C.subHi, fontFamily: mono, textAlign: "right" }}>{f(invest)}</span>
+                            <span style={{ fontSize: 11, color: C.sub, textAlign: "right" }}>回収:</span>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: C.subHi, fontFamily: mono, textAlign: "right" }}>{f(recovery)}</span>
+                            <span style={{ fontSize: 11, color: C.sub, textAlign: "right" }}>収支:</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: sc(pl != null ? pl : displayPL), fontFamily: mono, textAlign: "right" }}>
+                                {pl != null ? f(pl) : f(displayPL)}
+                            </span>
+                            <span style={{ fontSize: 11, color: C.sub, textAlign: "right" }}>期待値:</span>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: C.blue, fontFamily: mono, textAlign: "right" }}>
+                                {st.workAmount != null && st.workAmount !== 0 ? f(Math.round(st.workAmount)) : "—"}
+                            </span>
+                        </div>
+                        <div style={{ fontSize: 11, color: C.sub, marginTop: 4 }}>▶</div>
+                    </div>
+                </div>
+            </button>
+        );
+    };
 
     // ── Detail View for a specific archive ──
     if (selectedArchiveId) {
@@ -785,52 +852,119 @@ export function CalendarTab({ S, onReset }) {
         const aggKey = `${a.settings?.synthDenom || ""}|${a.machineNum}`;
         const agg = a.machineNum ? machineAggregates[aggKey] : null;
 
+        // Editable state for this archive
+        const [editStore, setEditStore] = useState(a.storeName || "");
+        const [editMachineNum, setEditMachineNum] = useState(a.machineNum || "");
+        const [editInvest, setEditInvest] = useState(a.investYen || "");
+        const [editRecovery, setEditRecovery] = useState(a.recoveryYen || "");
+        const [showEditStoreDD, setShowEditStoreDD] = useState(false);
+
+        const updateArchive = (doReset) => {
+            S.setArchives(prev => prev.map(ar => ar.id !== a.id ? ar : {
+                ...ar,
+                storeName: editStore,
+                machineNum: editMachineNum,
+                investYen: Number(editInvest) || 0,
+                recoveryYen: Number(editRecovery) || 0,
+            }));
+            if (doReset) onReset();
+        };
+
         return (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div style={{ padding: "12px 14px", flexShrink: 0, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <button className="b" onClick={() => { setSelectedArchiveId(null); setExpandedRot(null); }} style={{
+                    <button className="b" onClick={() => { setSelectedArchiveId(null); setExpandedRot(null); setDelConfirm(null); }} style={{
                         background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
                         color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600
                     }}>← 戻る</button>
                     <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{a.date}</div>
                 </div>
                 <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(80px + env(safe-area-inset-bottom))" }}>
-                    {/* Archive header */}
-                    <Card style={{ padding: 14, marginBottom: 8 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+
+                    {/* Header with P&L */}
+                    <Card style={{ padding: 16, marginBottom: 8 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                             <div>
-                                {a.storeName && <div style={{ fontSize: 11, color: C.sub }}>{a.storeName}</div>}
-                                <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>1/{a.settings?.synthDenom || "—"}</div>
-                                <div style={{ fontSize: 11, color: C.sub }}>
+                                {a.storeName && <div style={{ fontSize: 12, color: C.sub }}>{a.storeName}</div>}
+                                <div style={{ fontSize: 20, fontWeight: 900, color: C.text }}>
+                                    {a.machineName || `1/${a.settings?.synthDenom || "—"}`}
+                                </div>
+                                <div style={{ fontSize: 12, color: C.sub }}>
                                     {a.machineNum ? a.machineNum + "番台" : ""}{a.isMoveArchive ? " (台移動)" : ""}
                                 </div>
-                                {a.time && <div style={{ fontSize: 10, color: C.sub }}>時間: {a.time}</div>}
+                                {a.time && <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>時間: {a.time}</div>}
                             </div>
                             <div style={{ textAlign: "right" }}>
                                 {pl != null ? (
-                                    <div style={{ fontSize: 26, fontWeight: 900, color: sc(pl), fontFamily: mono, lineHeight: 1.1 }}>
-                                        {sp(pl, 0)}
+                                    <div style={{ fontSize: 28, fontWeight: 900, color: sc(pl), fontFamily: mono, lineHeight: 1.1 }}>
+                                        {f(pl)}
                                     </div>
                                 ) : st.workAmount != null && st.workAmount !== 0 ? (
-                                    <div style={{ fontSize: 26, fontWeight: 900, color: sc(st.workAmount), fontFamily: mono, lineHeight: 1.1 }}>
-                                        {sp(st.workAmount, 0)}
+                                    <div style={{ fontSize: 28, fontWeight: 900, color: sc(st.workAmount), fontFamily: mono, lineHeight: 1.1 }}>
+                                        {f(st.workAmount)}
                                     </div>
                                 ) : null}
                             </div>
                         </div>
-                        {/* Stats grid */}
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
                             {[
-                                { label: "投資", val: a.investYen > 0 ? f(a.investYen) : "0", col: C.red },
-                                { label: "回収", val: a.recoveryYen > 0 ? f(a.recoveryYen) : "0", col: C.green },
-                                { label: "収支", val: pl != null ? sp(pl, 0) : "0", col: pl != null ? sc(pl) : C.subHi },
-                                { label: "仕事量", val: st.workAmount != null && st.workAmount !== 0 ? sp(Math.round(st.workAmount), 0) : "—", col: st.workAmount ? sc(st.workAmount) : C.subHi },
+                                { label: "投資", val: f(a.investYen || 0), col: C.red },
+                                { label: "回収", val: f(a.recoveryYen || 0), col: C.green },
+                                { label: "収支", val: pl != null ? f(pl) : "0", col: pl != null ? sc(pl) : C.subHi },
+                                { label: "仕事量", val: st.workAmount != null && st.workAmount !== 0 ? f(Math.round(st.workAmount)) : "—", col: st.workAmount ? sc(st.workAmount) : C.subHi },
                             ].map(({ label, val, col }) => (
                                 <div key={label} style={{ textAlign: "center", background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: "8px 2px" }}>
-                                    <div style={{ fontSize: 8, color: C.sub, marginBottom: 3, fontWeight: 600 }}>{label}</div>
-                                    <div style={{ fontSize: 13, fontWeight: 700, color: col, fontFamily: mono }}>{val}</div>
+                                    <div style={{ fontSize: 9, color: C.sub, marginBottom: 3, fontWeight: 600 }}>{label}</div>
+                                    <div style={{ fontSize: 14, fontWeight: 700, color: col, fontFamily: mono }}>{val}</div>
                                 </div>
                             ))}
+                        </div>
+                    </Card>
+
+                    {/* Edit form */}
+                    <Card style={{ padding: 14, marginBottom: 8 }}>
+                        <SecLabel label="データ編集" />
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                            <div>
+                                <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>店舗</div>
+                                <div style={{ position: "relative" }}>
+                                    {textInput(editStore, setEditStore, "店舗名")}
+                                    {storeList.length > 0 && (
+                                        <button className="b" onClick={() => setShowEditStoreDD(!showEditStoreDD)} style={{
+                                            position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)",
+                                            background: "transparent", border: "none", color: C.sub, fontSize: 14, padding: "4px 6px", cursor: "pointer"
+                                        }}>▼</button>
+                                    )}
+                                    {showEditStoreDD && storeList.length > 0 && (
+                                        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 8, zIndex: 10, maxHeight: 150, overflowY: "auto", marginTop: 2, boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}>
+                                            {storeList.map((st, i) => (
+                                                <button key={i} className="b" onClick={() => { setEditStore(st); setShowEditStoreDD(false); }} style={{
+                                                    width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${C.border}`,
+                                                    color: C.text, fontSize: 13, padding: "10px 12px", textAlign: "left", fontFamily: font, cursor: "pointer"
+                                                }}>{st}</button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>台番号</div>
+                                {textInput(editMachineNum, setEditMachineNum, "台番号")}
+                            </div>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                            <div>
+                                <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>投資額</div>
+                                <NI v={editInvest} set={setEditInvest} w="100%" center ph="10000" />
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>回収額</div>
+                                <NI v={editRecovery} set={setEditRecovery} w="100%" center ph="0" />
+                            </div>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                            <Btn label="保存" onClick={() => updateArchive(false)} primary fs={13} />
+                            <Btn label="保存してリセット" onClick={() => updateArchive(true)} bg={C.orange} fg="#fff" bd="none" fs={13} />
                         </div>
                     </Card>
 
@@ -841,12 +975,12 @@ export function CalendarTab({ S, onReset }) {
                             {[
                                 { label: "1Kスタート", val: st.start1K > 0 ? f(st.start1K, 1) : "—", unit: "回/K" },
                                 { label: "期待値/K", val: st.ev1K != null && st.ev1K !== 0 ? sp(Math.round(st.ev1K), 0) : "—", unit: "円" },
-                                { label: "時給", val: st.wage ? sp(Math.round(st.wage), 0) : "—", unit: "円/h" },
+                                { label: "時給", val: st.wage ? f(Math.round(st.wage)) : "—", unit: "円/h" },
                             ].map(({ label, val, unit }) => (
                                 <div key={label} style={{ textAlign: "center", padding: "10px 4px", borderBottom: `1px solid ${C.border}` }}>
-                                    <div style={{ fontSize: 8, color: C.sub, marginBottom: 3, fontWeight: 600 }}>{label}</div>
-                                    <div style={{ fontSize: 14, fontWeight: 700, color: C.subHi, fontFamily: mono }}>{val}</div>
-                                    <div style={{ fontSize: 8, color: C.sub, marginTop: 1 }}>{unit}</div>
+                                    <div style={{ fontSize: 9, color: C.sub, marginBottom: 3, fontWeight: 600 }}>{label}</div>
+                                    <div style={{ fontSize: 15, fontWeight: 700, color: C.subHi, fontFamily: mono }}>{val}</div>
+                                    <div style={{ fontSize: 9, color: C.sub, marginTop: 1 }}>{unit}</div>
                                 </div>
                             ))}
                         </div>
@@ -855,11 +989,11 @@ export function CalendarTab({ S, onReset }) {
                     {/* Machine aggregate */}
                     {agg && agg.count > 1 && (
                         <Card style={{ padding: 12, marginBottom: 8 }}>
-                            <div style={{ fontSize: 10, color: C.blue, fontWeight: 700, marginBottom: 6 }}>台番号 {agg.machineNum} トータル</div>
+                            <div style={{ fontSize: 11, color: C.blue, fontWeight: 700, marginBottom: 6 }}>台番号 {agg.machineNum} トータル</div>
                             <div style={{ display: "flex", gap: 12 }}>
-                                <span style={{ fontSize: 11, color: C.subHi }}>座り{agg.count}回</span>
-                                <span style={{ fontSize: 11, color: C.subHi }}>1K: {agg.totalK > 0 ? f(agg.totalRot / agg.totalK, 1) : "—"}回</span>
-                                <span style={{ fontSize: 11, color: C.subHi }}>総{f(agg.totalRot)}回転</span>
+                                <span style={{ fontSize: 12, color: C.subHi }}>座り{agg.count}回</span>
+                                <span style={{ fontSize: 12, color: C.subHi }}>1K: {agg.totalK > 0 ? f(agg.totalRot / agg.totalK, 1) : "—"}回</span>
+                                <span style={{ fontSize: 12, color: C.subHi }}>総{f(agg.totalRot)}回転</span>
                             </div>
                         </Card>
                     )}
@@ -870,7 +1004,7 @@ export function CalendarTab({ S, onReset }) {
                             <SecLabel label={`回転数データ (${a.rotRows.filter(r => r.type === "data").length}K)`} />
                             <div style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr 1fr 55px", background: "rgba(249,115,22,0.12)", padding: "5px 4px" }}>
                                 {["種別", "総回転", "今回", "平均", "投資"].map(h => (
-                                    <div key={h} style={{ textAlign: "center", fontSize: 8, fontWeight: 700, color: C.sub }}>{h}</div>
+                                    <div key={h} style={{ textAlign: "center", fontSize: 9, fontWeight: 700, color: C.sub }}>{h}</div>
                                 ))}
                             </div>
                             {a.rotRows.map((row, i) => {
@@ -882,10 +1016,10 @@ export function CalendarTab({ S, onReset }) {
                                         <div style={{ textAlign: "center" }}>
                                             <span style={{ fontSize: 8, fontWeight: 700, color: badgeCol, background: badgeCol + "20", borderRadius: 4, padding: "1px 4px" }}>{badge}</span>
                                         </div>
-                                        <div style={{ textAlign: "center", fontSize: 10, color: C.subHi, fontFamily: mono }}>{f(row.cumRot)}</div>
-                                        <div style={{ textAlign: "center", fontSize: 10, color: C.text, fontFamily: mono }}>{row.type === "start" ? "START" : row.thisRot}</div>
-                                        <div style={{ textAlign: "center", fontSize: 10, color: C.text, fontFamily: mono }}>{row.avgRot || "—"}</div>
-                                        <div style={{ textAlign: "center", fontSize: 9, color: C.sub, fontFamily: mono }}>{row.invest ? f(row.invest) : "—"}</div>
+                                        <div style={{ textAlign: "center", fontSize: 11, color: C.subHi, fontFamily: mono }}>{f(row.cumRot)}</div>
+                                        <div style={{ textAlign: "center", fontSize: 11, color: C.text, fontFamily: mono }}>{row.type === "start" ? "START" : row.thisRot}</div>
+                                        <div style={{ textAlign: "center", fontSize: 11, color: C.text, fontFamily: mono }}>{row.avgRot || "—"}</div>
+                                        <div style={{ textAlign: "center", fontSize: 10, color: C.sub, fontFamily: mono }}>{row.invest ? f(row.invest) : "—"}</div>
                                     </div>
                                 );
                             })}
@@ -899,20 +1033,20 @@ export function CalendarTab({ S, onReset }) {
                             {a.jpLog.map((chain, ci) => (
                                 <div key={chain.chainId || ci} style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
                                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                                        <span style={{ fontSize: 10, fontWeight: 700, color: C.blue }}>第{ci + 1}初当たり — {chain.hits?.length || 0}連</span>
-                                        <span style={{ fontSize: 9, color: C.sub, fontFamily: mono }}>{chain.time}</span>
+                                        <span style={{ fontSize: 11, fontWeight: 700, color: C.blue }}>第{ci + 1}初当たり — {chain.hits?.length || 0}連</span>
+                                        <span style={{ fontSize: 10, color: C.sub, fontFamily: mono }}>{chain.time}</span>
                                     </div>
                                     {chain.hits?.map((hit, hi) => (
                                         <div key={hi} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, padding: "3px 0", borderTop: hi > 0 ? `1px solid ${C.border}` : "none" }}>
-                                            <div style={{ fontSize: 9, color: C.sub }}>{hit.hitNumber}連: {hit.rounds}R</div>
-                                            <div style={{ fontSize: 9, color: C.yellow, fontFamily: mono }}>液晶{f(hit.displayBalls)}</div>
-                                            <div style={{ fontSize: 9, color: C.green, fontFamily: mono }}>実{f(hit.actualBalls)}</div>
+                                            <div style={{ fontSize: 10, color: C.sub }}>{hit.hitNumber}連: {hit.rounds}R</div>
+                                            <div style={{ fontSize: 10, color: C.yellow, fontFamily: mono }}>液晶{f(hit.displayBalls)}</div>
+                                            <div style={{ fontSize: 10, color: C.green, fontFamily: mono }}>実{f(hit.actualBalls)}</div>
                                         </div>
                                     ))}
                                     {chain.summary && (
                                         <div style={{ display: "flex", gap: 12, marginTop: 4, paddingTop: 4, borderTop: `1px solid ${C.border}` }}>
-                                            <span style={{ fontSize: 9, color: C.teal }}>1R: {f(chain.summary.avg1R, 1)}発</span>
-                                            <span style={{ fontSize: 9, color: sc(chain.summary.sapoDelta) }}>サポ: {sp(chain.summary.sapoDelta, 0)}発</span>
+                                            <span style={{ fontSize: 10, color: C.teal }}>1R: {f(chain.summary.avg1R, 1)}発</span>
+                                            <span style={{ fontSize: 10, color: sc(chain.summary.sapoDelta) }}>サポ: {sp(chain.summary.sapoDelta, 0)}発</span>
                                         </div>
                                     )}
                                 </div>
@@ -925,12 +1059,12 @@ export function CalendarTab({ S, onReset }) {
                         {delConfirm === a.id ? (
                             <button className="b" onClick={() => { deleteArchive(a.id); setSelectedArchiveId(null); }} style={{
                                 background: C.red, border: "none", borderRadius: 8,
-                                color: "#fff", fontSize: 12, padding: "8px 24px", fontWeight: 700, fontFamily: font
+                                color: "#fff", fontSize: 13, padding: "10px 24px", fontWeight: 700, fontFamily: font
                             }}>削除確定</button>
                         ) : (
                             <button className="b" onClick={() => setDelConfirm(a.id)} style={{
                                 background: "rgba(239,68,68,0.1)", border: `1px solid ${C.red}40`, borderRadius: 8,
-                                color: C.red, fontSize: 12, padding: "8px 24px", fontWeight: 700, fontFamily: font
+                                color: C.red, fontSize: 13, padding: "10px 24px", fontWeight: 700, fontFamily: font
                             }}>このデータを削除</button>
                         )}
                     </div>
@@ -941,28 +1075,28 @@ export function CalendarTab({ S, onReset }) {
 
     // ── Calendar View ──
     return (
-        <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
-            {/* Month header */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                <button className="b" onClick={prevMonth} style={{ background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8, color: C.text, fontSize: 16, padding: "6px 12px", fontWeight: 700 }}>‹</button>
+        <div style={{ flex: 1, overflowY: "auto", padding: "8px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+            {/* Month header — compact */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <button className="b" onClick={prevMonth} style={{ background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8, color: C.text, fontSize: 14, padding: "4px 10px", fontWeight: 700 }}>‹</button>
                 <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{viewMonth.year}年 {viewMonth.month + 1}月</div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: sc(monthTotal), fontFamily: mono, marginTop: 2 }}>
-                        {monthTotal !== 0 ? sp(Math.round(monthTotal), 0) + "円" : "—"}
+                    <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{viewMonth.year}年 {viewMonth.month + 1}月</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: sc(monthTotal), fontFamily: mono, marginTop: 1 }}>
+                        {monthTotal !== 0 ? f(Math.round(monthTotal)) + "円" : "—"}
                     </div>
                 </div>
-                <button className="b" onClick={nextMonth} style={{ background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8, color: C.text, fontSize: 16, padding: "6px 12px", fontWeight: 700 }}>›</button>
+                <button className="b" onClick={nextMonth} style={{ background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8, color: C.text, fontSize: 14, padding: "4px 10px", fontWeight: 700 }}>›</button>
             </div>
 
-            {/* Day of week header */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 4 }}>
+            {/* Day of week header — compact */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 2 }}>
                 {["日", "月", "火", "水", "木", "金", "土"].map((d, i) => (
-                    <div key={d} style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: i === 0 ? C.red : i === 6 ? C.blue : C.sub, padding: "6px 0" }}>{d}</div>
+                    <div key={d} style={{ textAlign: "center", fontSize: 10, fontWeight: 700, color: i === 0 ? C.red : i === 6 ? C.blue : C.sub, padding: "4px 0" }}>{d}</div>
                 ))}
             </div>
 
-            {/* Calendar grid — any date is tappable */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+            {/* Calendar grid — compact */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 1 }}>
                 {calendarDays.map((day, idx) => {
                     if (day === null) return <div key={`e-${idx}`} />;
                     const ds = dateStr(day);
@@ -973,15 +1107,15 @@ export function CalendarTab({ S, onReset }) {
                     const dow = idx % 7;
 
                     return (
-                        <button key={day} className="b" onClick={() => setSelectedDate(ds)} style={{
+                        <button key={day} className="b" onClick={() => setSelectedDate(isSel ? null : ds)} style={{
                             background: todayBg, border: isToday(day) ? `1px solid ${C.blue}40` : isSel ? `1px solid ${C.blue}30` : `1px solid transparent`,
-                            borderRadius: 8, padding: "8px 2px", textAlign: "center", minHeight: 56,
+                            borderRadius: 6, padding: "5px 1px", textAlign: "center", minHeight: 42,
                             cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start",
                         }}>
-                            <div style={{ fontSize: 14, fontWeight: isToday(day) ? 800 : 500, color: dow === 0 ? C.red : dow === 6 ? C.blue : C.text, lineHeight: 1 }}>{day}</div>
+                            <div style={{ fontSize: 13, fontWeight: isToday(day) ? 800 : 500, color: dow === 0 ? C.red : dow === 6 ? C.blue : C.text, lineHeight: 1 }}>{day}</div>
                             {hasData && (
-                                <div style={{ fontSize: 9, fontWeight: 700, color: sc(total), fontFamily: mono, marginTop: 4, lineHeight: 1 }}>
-                                    {total >= 0 ? "+" : ""}{Math.abs(total) >= 1000 ? (total / 1000).toFixed(0) + "k" : Math.round(total)}
+                                <div style={{ fontSize: 8, fontWeight: 700, color: sc(total), fontFamily: mono, marginTop: 3, lineHeight: 1 }}>
+                                    {f(Math.round(total))}
                                 </div>
                             )}
                         </button>
@@ -993,117 +1127,47 @@ export function CalendarTab({ S, onReset }) {
             {selectedDate && (() => {
                 const dateArchives = byDate[selectedDate] || [];
                 const dayTotal = dailyTotals[selectedDate];
+                const hasCurrentSession = S.rotRows && S.rotRows.length > 0;
                 return (
-                    <div style={{ marginTop: 12 }}>
+                    <div style={{ marginTop: 10 }}>
                         {/* Selected date header */}
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                            <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>{selectedDate}</div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, padding: "0 2px" }}>
+                            <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{selectedDate}</div>
                             {dayTotal != null && (
-                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(dayTotal), fontFamily: mono }}>
-                                    {sp(Math.round(dayTotal), 0)}円
+                                <div style={{ fontSize: 14, fontWeight: 700, color: sc(dayTotal), fontFamily: mono }}>
+                                    {f(Math.round(dayTotal))}円
                                 </div>
                             )}
                         </div>
 
-                        {/* Save current session to this date */}
-                        <Card style={{ padding: 12, marginBottom: 8 }}>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
-                                <div>
-                                    <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>店舗</div>
-                                    <div style={{ position: "relative" }}>
-                                        {textInput(S.storeName, S.setStoreName, "店舗名")}
-                                        {storeList.length > 0 && (
-                                            <button className="b" onClick={() => setShowStoreDropdown(!showStoreDropdown)} style={{
-                                                position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)",
-                                                background: "transparent", border: "none", color: C.sub, fontSize: 14, padding: "4px 6px", cursor: "pointer"
-                                            }}>▼</button>
-                                        )}
-                                        {showStoreDropdown && storeList.length > 0 && (
-                                            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 8, zIndex: 10, maxHeight: 150, overflowY: "auto", marginTop: 2, boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}>
-                                                {storeList.map((st, i) => (
-                                                    <button key={i} className="b" onClick={() => { S.setStoreName(st); setShowStoreDropdown(false); }} style={{
-                                                        width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${C.border}`,
-                                                        color: C.text, fontSize: 13, padding: "10px 12px", textAlign: "left", fontFamily: font, cursor: "pointer"
-                                                    }}>{st}</button>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                                <div>
-                                    <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>台番号</div>
-                                    {textInput(S.machineNum, S.setMachineNum, "台番号")}
+                        {/* Save current session as new entry (compact) */}
+                        {hasCurrentSession && (
+                            <div style={{ marginBottom: 10, padding: "10px 12px", background: "rgba(59,130,246,0.06)", border: `1px solid ${C.blue}30`, borderRadius: 10 }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: C.blue, marginBottom: 6 }}>現在のセッションを保存</div>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                                    <Btn label="保存" onClick={() => {
+                                        const a = makeArchive();
+                                        a.date = selectedDate;
+                                        S.setArchives(prev => [...prev, a]);
+                                    }} primary fs={12} />
+                                    <Btn label="保存+リセット" onClick={() => {
+                                        const a = makeArchive();
+                                        a.date = selectedDate;
+                                        S.setArchives(prev => [...prev, a]);
+                                        onReset();
+                                    }} bg={C.orange} fg="#fff" bd="none" fs={12} />
                                 </div>
                             </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
-                                <div>
-                                    <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>投資額{autoInvest > 0 ? " (自動)" : ""}</div>
-                                    <NI v={S.investYen || (autoInvest > 0 ? autoInvest : "")} set={S.setInvestYen} w="100%" center ph={autoInvest > 0 ? String(autoInvest) : "10000"} />
-                                </div>
-                                <div>
-                                    <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>回収額</div>
-                                    <NI v={S.recoveryYen} set={S.setRecoveryYen} w="100%" center ph="0" />
-                                </div>
-                            </div>
-                            {(S.investYen > 0 || S.recoveryYen > 0) && (
-                                <div style={{ textAlign: "right", marginBottom: 8, fontSize: 13, fontWeight: 700, color: sc((S.recoveryYen || 0) - (S.investYen || 0)), fontFamily: mono }}>
-                                    収支: {sp((S.recoveryYen || 0) - (S.investYen || 0), 0)}円
-                                </div>
-                            )}
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                                <Btn label="保存" onClick={() => {
-                                    const a = makeArchive();
-                                    a.date = selectedDate;
-                                    if (autoInvest > 0 && !S.investYen) a.investYen = autoInvest;
-                                    S.setArchives((prev) => [...prev, a]);
-                                }} primary fs={12} />
-                                <Btn label="保存してリセット" onClick={() => {
-                                    const a = makeArchive();
-                                    a.date = selectedDate;
-                                    if (autoInvest > 0 && !S.investYen) a.investYen = autoInvest;
-                                    S.setArchives((prev) => [...prev, a]);
-                                    onReset();
-                                }} bg={C.orange} fg="#fff" bd="none" fs={12} />
-                            </div>
-                        </Card>
+                        )}
 
-                        {/* Archive entries for this date — tappable to detail */}
-                        {dateArchives.map((a) => {
-                            const st = a.stats || {};
-                            const pl = (a.investYen > 0 || a.recoveryYen > 0)
-                                ? (a.recoveryYen || 0) - (a.investYen || 0) : null;
-                            return (
-                                <button key={a.id} className="b" onClick={() => setSelectedArchiveId(a.id)} style={{
-                                    width: "100%", background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}`,
-                                    borderRadius: 10, padding: "10px 12px", marginBottom: 6, cursor: "pointer",
-                                    display: "flex", justifyContent: "space-between", alignItems: "center", textAlign: "left"
-                                }}>
-                                    <div style={{ flex: 1 }}>
-                                        {a.storeName && <div style={{ fontSize: 10, color: C.sub }}>{a.storeName}</div>}
-                                        <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>
-                                            1/{a.settings?.synthDenom || "—"}
-                                            {a.machineNum ? <span style={{ fontSize: 11, color: C.sub, marginLeft: 6 }}>{a.machineNum}番台</span> : null}
-                                        </div>
-                                        <div style={{ display: "flex", gap: 10, marginTop: 2 }}>
-                                            <span style={{ fontSize: 10, color: C.sub }}>投資: <span style={{ fontFamily: mono, color: C.subHi }}>{a.investYen > 0 ? f(a.investYen) : "0"}</span></span>
-                                            <span style={{ fontSize: 10, color: C.sub }}>回収: <span style={{ fontFamily: mono, color: C.subHi }}>{a.recoveryYen > 0 ? f(a.recoveryYen) : "0"}</span></span>
-                                        </div>
-                                    </div>
-                                    <div style={{ textAlign: "right", marginLeft: 8 }}>
-                                        {pl != null ? (
-                                            <div style={{ fontSize: 20, fontWeight: 900, color: sc(pl), fontFamily: mono, lineHeight: 1.1 }}>
-                                                {sp(pl, 0)}
-                                            </div>
-                                        ) : st.workAmount != null && st.workAmount !== 0 ? (
-                                            <div style={{ fontSize: 20, fontWeight: 900, color: sc(st.workAmount), fontFamily: mono, lineHeight: 1.1 }}>
-                                                {sp(st.workAmount, 0)}
-                                            </div>
-                                        ) : <div style={{ fontSize: 12, color: C.sub }}>—</div>}
-                                        <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>▶</div>
-                                    </div>
-                                </button>
-                            );
-                        })}
+                        {/* Archive entries — reference app style summary cards */}
+                        {dateArchives.length > 0 ? dateArchives.map(a => (
+                            <SummaryCard key={a.id} a={a} onClick={() => setSelectedArchiveId(a.id)} />
+                        )) : !hasCurrentSession && (
+                            <div style={{ textAlign: "center", color: C.sub, fontSize: 12, padding: "20px 0" }}>
+                                この日のデータはありません
+                            </div>
+                        )}
                     </div>
                 );
             })()}
