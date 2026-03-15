@@ -155,7 +155,7 @@ export function DataTab({ ev, jpLog, S }) {
                 <SecLabel label="出玉データ" />
                 {stat("平均1R出玉", ev.avg1R > 0 ? f(ev.avg1R, 1) : "—", "玉", C.teal)}
                 {stat("平均R数/初当たり", ev.avgRpJ > 0 ? f(ev.avgRpJ, 1) : "—", "R", C.blue)}
-                {stat("サポ増減/初当たり", ev.jpCount > 0 ? sp(ev.sapoPerJP, 0) : "—", "玉", sc(ev.sapoPerJP))}
+                {stat("サポ増減/回転", ev.totalSapoRot > 0 ? sp(ev.sapoPerRot, 2) : "—", "玉/回転", sc(ev.sapoPerRot))}
                 {stat("平均純増/初当たり", ev.avgNetGainPerJP > 0 ? f(ev.avgNetGainPerJP, 0) : "—", "玉", C.green)}
             </Card>
 
@@ -461,17 +461,21 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
             const totalRounds = chain.hits.reduce((s, h) => s + h.rounds, 0);
             const totalDisplayBalls = chain.hits.reduce((s, h) => s + h.displayBalls, 0);
             const totalActualBalls = chain.hits.reduce((s, h) => s + h.actualBalls, 0);
+            const totalSapoRot = chain.hits.reduce((s, h) => s + (h.sapoRot || 0), 0);
             const finalBalls = totalActualBalls;
             const trayBalls = chain.trayBalls || 0;
 
             chain.finalBalls = finalBalls;
             chain.completed = true;
+            const sapoDelta = finalBalls - trayBalls - totalDisplayBalls;
             chain.summary = {
                 totalRounds,
                 totalDisplayBalls,
                 totalActualBalls,
+                totalSapoRot,
                 avg1R: totalRounds > 0 ? totalDisplayBalls / totalRounds : 0,
-                sapoDelta: finalBalls - trayBalls - totalDisplayBalls,
+                sapoDelta,
+                sapoPerRot: totalSapoRot > 0 ? sapoDelta / totalSapoRot : 0,
                 netGain: finalBalls - trayBalls,
             };
             updated[updated.length - 1] = chain;
@@ -549,7 +553,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
                                 {[
                                     { label: "平均1R出玉", val: ev.avg1R > 0 ? f(ev.avg1R, 1) : "—", unit: "玉", col: C.teal },
-                                    { label: "サポ増減/回", val: ev.jpCount > 0 ? sp(ev.sapoPerJP, 1) : "—", unit: "玉", col: sc(ev.sapoPerJP) },
+                                    { label: "サポ増減/回転", val: ev.totalSapoRot > 0 ? sp(ev.sapoPerRot, 2) : "—", unit: "玉/回転", col: sc(ev.sapoPerRot) },
                                     { label: "平均R数", val: ev.avgRpJ > 0 ? f(ev.avgRpJ, 1) : "—", unit: "R", col: C.blue },
                                     { label: "初当たり", val: jpLog.length > 0 ? jpLog.length.toString() : "0", unit: "回", col: C.green },
                                 ].map(({ label, val, unit, col }, idx) => (
@@ -571,7 +575,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                     {/* Chain Header */}
                                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                                         <span style={{ fontSize: 11, fontWeight: 800, color: !chain.completed ? C.orange : C.blue }}>
-                                            {!chain.completed ? "連チャン中" : `第${jpLog.length - ci}初当たり — ${chain.hits.length <= 1 ? "単発" : chain.hits.length + "連"}`}
+                                            {!chain.completed ? "連チャン中" : `${jpLog.length - ci}回目データ ${chain.hits.length <= 1 ? "単発" : chain.hits.length + "連チャン"}`}
                                         </span>
                                         <span style={{ fontSize: 10, color: C.sub, fontFamily: mono }}>{chain.time}</span>
                                     </div>
@@ -603,18 +607,24 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                     {/* Chain Summary (completed only) */}
                                     {chain.completed && chain.summary && (
                                         <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
-                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 4 }}>
+                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4, marginBottom: 4 }}>
                                                 <div style={{ textAlign: "center" }}>
-                                                    <div style={{ fontSize: 8, color: C.sub }}>1R出玉</div>
-                                                    <div style={{ fontSize: 14, fontWeight: 700, color: C.teal, fontFamily: mono }}>{f(chain.summary.avg1R, 1)}発</div>
+                                                    <div style={{ fontSize: 7, color: C.sub }}>1R出玉</div>
+                                                    <div style={{ fontSize: 13, fontWeight: 700, color: C.teal, fontFamily: mono }}>{f(chain.summary.avg1R, 1)}</div>
                                                 </div>
                                                 <div style={{ textAlign: "center" }}>
-                                                    <div style={{ fontSize: 8, color: C.sub }}>サポ増減</div>
-                                                    <div style={{ fontSize: 14, fontWeight: 700, color: sc(chain.summary.sapoDelta), fontFamily: mono }}>{sp(chain.summary.sapoDelta, 0)}発</div>
+                                                    <div style={{ fontSize: 7, color: C.sub }}>サポ増減/回転</div>
+                                                    <div style={{ fontSize: 13, fontWeight: 700, color: sc(chain.summary.sapoPerRot || 0), fontFamily: mono }}>
+                                                        {chain.summary.totalSapoRot > 0 ? sp(chain.summary.sapoPerRot, 2) : "—"}
+                                                    </div>
                                                 </div>
                                                 <div style={{ textAlign: "center" }}>
-                                                    <div style={{ fontSize: 8, color: C.sub }}>純増出玉</div>
-                                                    <div style={{ fontSize: 14, fontWeight: 700, color: C.green, fontFamily: mono }}>{f(chain.summary.netGain)}発</div>
+                                                    <div style={{ fontSize: 7, color: C.sub }}>サポ総増減</div>
+                                                    <div style={{ fontSize: 13, fontWeight: 700, color: sc(chain.summary.sapoDelta), fontFamily: mono }}>{sp(chain.summary.sapoDelta, 0)}</div>
+                                                </div>
+                                                <div style={{ textAlign: "center" }}>
+                                                    <div style={{ fontSize: 7, color: C.sub }}>純増出玉</div>
+                                                    <div style={{ fontSize: 13, fontWeight: 700, color: C.green, fontFamily: mono }}>{f(chain.summary.netGain)}</div>
                                                 </div>
                                             </div>
                                             <div style={{ textAlign: "center", fontSize: 9, color: C.sub, fontFamily: mono }}>
@@ -671,6 +681,15 @@ export function CalendarTab({ S, onReset }) {
     });
     const [delConfirm, setDelConfirm] = useState(null);
     const [expandedRot, setExpandedRot] = useState(null);
+    // Edit form state (always declared — not conditional)
+    const [editStore, setEditStore] = useState("");
+    const [editMachineNum, setEditMachineNum] = useState("");
+    const [editInvest, setEditInvest] = useState("");
+    const [editRecovery, setEditRecovery] = useState("");
+    const [showEditStoreDD, setShowEditStoreDD] = useState(false);
+    // Swipe delete state
+    const [swipedId, setSwipedId] = useState(null);
+    const swipeRef = useRef({ startX: 0, id: null });
 
     const archives = S.archives || [];
 
@@ -866,6 +885,25 @@ export function CalendarTab({ S, onReset }) {
         );
     };
 
+    // Initialize edit form when archive selection changes
+    const prevSelectedRef = useRef(null);
+    if (selectedArchiveId && selectedArchiveId !== prevSelectedRef.current) {
+        const target = archives.find(ar => ar.id === selectedArchiveId);
+        if (target) {
+            prevSelectedRef.current = selectedArchiveId;
+            // Defer state updates to avoid render-during-render
+            setTimeout(() => {
+                setEditStore(String(target.storeName || ""));
+                setEditMachineNum(String(target.machineNum || ""));
+                setEditInvest(target.investYen || "");
+                setEditRecovery(target.recoveryYen || "");
+                setShowEditStoreDD(false);
+            }, 0);
+        }
+    } else if (!selectedArchiveId && prevSelectedRef.current) {
+        prevSelectedRef.current = null;
+    }
+
     // ── Detail View for a specific archive ──
     if (selectedArchiveId) {
         const a = archives.find(ar => ar.id === selectedArchiveId);
@@ -874,13 +912,6 @@ export function CalendarTab({ S, onReset }) {
         const pl = (a.investYen > 0 || a.recoveryYen > 0) ? (a.recoveryYen || 0) - (a.investYen || 0) : null;
         const aggKey = `${a.settings?.synthDenom || ""}|${a.machineNum}`;
         const agg = a.machineNum ? machineAggregates[aggKey] : null;
-
-        // Editable state for this archive
-        const [editStore, setEditStore] = useState(a.storeName || "");
-        const [editMachineNum, setEditMachineNum] = useState(a.machineNum || "");
-        const [editInvest, setEditInvest] = useState(a.investYen || "");
-        const [editRecovery, setEditRecovery] = useState(a.recoveryYen || "");
-        const [showEditStoreDD, setShowEditStoreDD] = useState(false);
 
         const updateArchive = (doReset) => {
             S.setArchives(prev => prev.map(ar => ar.id !== a.id ? ar : {
@@ -1058,7 +1089,7 @@ export function CalendarTab({ S, onReset }) {
                             {a.jpLog.map((chain, ci) => (
                                 <div key={chain.chainId || ci} style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
                                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                                        <span style={{ fontSize: 11, fontWeight: 700, color: C.blue }}>第{ci + 1}初当たり — {(chain.hits?.length || 0) <= 1 ? "単発" : (chain.hits?.length || 0) + "連"}</span>
+                                        <span style={{ fontSize: 11, fontWeight: 700, color: C.blue }}>{ci + 1}回目データ {(chain.hits?.length || 0) <= 1 ? "単発" : (chain.hits?.length || 0) + "連チャン"}</span>
                                         <span style={{ fontSize: 10, color: C.sub, fontFamily: mono }}>{chain.time}</span>
                                     </div>
                                     {chain.hits?.map((hit, hi) => (
@@ -1071,7 +1102,9 @@ export function CalendarTab({ S, onReset }) {
                                     {chain.summary && (
                                         <div style={{ display: "flex", gap: 12, marginTop: 4, paddingTop: 4, borderTop: `1px solid ${C.border}` }}>
                                             <span style={{ fontSize: 10, color: C.teal }}>1R: {f(chain.summary.avg1R, 1)}発</span>
-                                            <span style={{ fontSize: 10, color: sc(chain.summary.sapoDelta) }}>サポ: {sp(chain.summary.sapoDelta, 0)}発</span>
+                                            <span style={{ fontSize: 10, color: sc(chain.summary.sapoPerRot || 0) }}>
+                                                サポ/回転: {chain.summary.totalSapoRot > 0 ? sp(chain.summary.sapoPerRot, 2) : "—"}
+                                            </span>
                                         </div>
                                     )}
                                 </div>
@@ -1185,9 +1218,41 @@ export function CalendarTab({ S, onReset }) {
                             </div>
                         )}
 
-                        {/* Archive entries — reference app style summary cards */}
+                        {/* Archive entries — swipeable summary cards */}
                         {dateArchives.length > 0 ? dateArchives.map(a => (
-                            <SummaryCard key={a.id} a={a} onClick={() => setSelectedArchiveId(a.id)} />
+                            <div key={a.id} style={{ position: "relative", overflow: "hidden", borderRadius: 12, marginBottom: 8 }}>
+                                {/* Delete button behind card */}
+                                <div style={{
+                                    position: "absolute", right: 0, top: 0, bottom: 0, width: 80,
+                                    background: C.red, display: "flex", alignItems: "center", justifyContent: "center",
+                                    borderRadius: "0 12px 12px 0",
+                                }}>
+                                    <button className="b" onClick={(e) => { e.stopPropagation(); deleteArchive(a.id); setSwipedId(null); }} style={{
+                                        background: "transparent", border: "none", color: "#fff", fontSize: 13, fontWeight: 700, fontFamily: font, padding: "8px 12px",
+                                    }}>削除</button>
+                                </div>
+                                {/* Swipeable card */}
+                                <div
+                                    style={{
+                                        transform: swipedId === a.id ? "translateX(-80px)" : "translateX(0)",
+                                        transition: "transform 0.25s ease",
+                                        position: "relative", zIndex: 1,
+                                    }}
+                                    onTouchStart={(e) => {
+                                        swipeRef.current = { startX: e.touches[0].clientX, id: a.id };
+                                    }}
+                                    onTouchEnd={(e) => {
+                                        const dx = e.changedTouches[0].clientX - swipeRef.current.startX;
+                                        if (swipeRef.current.id === a.id) {
+                                            if (dx < -50) setSwipedId(a.id);
+                                            else if (dx > 30) setSwipedId(null);
+                                        }
+                                    }}
+                                    onClick={() => { if (swipedId === a.id) { setSwipedId(null); } }}
+                                >
+                                    <SummaryCard a={a} onClick={() => { if (swipedId !== a.id) setSelectedArchiveId(a.id); }} />
+                                </div>
+                            </div>
                         )) : !hasCurrentSession && (
                             <div style={{ textAlign: "center", color: C.sub, fontSize: 12, padding: "20px 0" }}>
                                 この日のデータはありません

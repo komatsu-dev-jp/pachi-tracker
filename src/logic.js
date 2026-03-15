@@ -66,12 +66,14 @@ export function calcPreciseEV({
     let totalNetGain = 0;
     let totalFinalBalls = 0;
     let totalEntryTray = 0;
+    let totalSapoRot = 0;
 
     completedEntries.forEach(chain => {
         if (chain.summary) {
             totalRounds += (chain.summary.totalRounds || 0);
             totalDisplayBalls += (chain.summary.totalDisplayBalls || 0);
             totalNetGain += (chain.summary.netGain || 0);
+            totalSapoRot += (chain.summary.totalSapoRot || 0);
         }
         totalFinalBalls += (chain.finalBalls || 0);
         totalEntryTray += (chain.trayBalls || 0);
@@ -89,6 +91,9 @@ export function calcPreciseEV({
 
     // サポ増減/初当たり
     const sapoPerJP = jpCount > 0 ? totalSapoDelta / jpCount : 0;
+
+    // 電サポ効率: 1回転あたりのサポ増減 = 総サポ増減 / 総電サポ回転数
+    const sapoPerRot = totalSapoRot > 0 ? totalSapoDelta / totalSapoRot : 0;
 
     // 平均純増出玉/初当たり = Σ(finalBalls - trayBalls) / jpCount
     const avgNetGainPerJP = jpCount > 0 ? totalNetGain / jpCount : 0;
@@ -164,6 +169,8 @@ export function calcPreciseEV({
         avg1R,
         avgRpJ,
         sapoPerJP,
+        sapoPerRot,
+        totalSapoRot,
         avgNetGainPerJP,
         jpCount,
         totalRounds,
