@@ -277,7 +277,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             <div style={{ textAlign: "center" }}><span style={{ fontSize: 10, fontWeight: 700, color: badgeColor, background: badgeColor + "20", borderRadius: 6, padding: "3px 7px", border: `1px solid ${badgeColor}40` }}>{badgeLabel}</span></div>
                             <div style={{ textAlign: "center", fontSize: 14, color: C.subHi, fontFamily: mono }}>{f(row.cumRot)}</div>
                             <div style={{ textAlign: "center", fontSize: 16, fontWeight: 700, color: rotCol(row.thisRot), fontFamily: mono }}>{row.thisRot}</div>
-                            <div style={{ textAlign: "center", fontSize: 16, fontWeight: 600, color: rotCol(row.avgRot), fontFamily: mono }}>{row.avgRot}</div>
+                            <div style={{ textAlign: "center", fontSize: 16, fontWeight: 600, color: rotCol(row.invest > 0 ? ((row.cumRot - S.startRot) / (row.invest / 1000)) : row.avgRot), fontFamily: mono }}>
+                                {row.invest > 0 ? ((row.cumRot - S.startRot) / (row.invest / 1000)).toFixed(1) : row.avgRot}
+                            </div>
                             <div style={{ textAlign: "center", fontSize: 12, color: C.sub, fontFamily: mono }}>{f(row.invest)}円</div>
                         </div>
                     );
