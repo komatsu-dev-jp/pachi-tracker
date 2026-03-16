@@ -337,11 +337,17 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 </div>
 
                 {/* Action Buttons */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, padding: "0 12px 8px" }}>
-                    <Btn label="1K決定" onClick={decide} primary />
-                    <Btn label="スタート" onClick={doStart} bg={C.green} fg="#fff" bd="none" />
-                    <Btn label="初当たり" onClick={() => setShowHitModal(true)} bg={C.orange} fg="#fff" bd="none" />
-                </div>
+                {rows.some(r => r.type === "start") ? (
+                    <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8, padding: "0 12px 8px" }}>
+                        <Btn label="1K決定" onClick={decide} primary />
+                        <Btn label="初当たり" onClick={() => setShowHitModal(true)} bg={C.orange} fg="#fff" bd="none" />
+                    </div>
+                ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, padding: "0 12px 8px" }}>
+                        <Btn label="スタート" onClick={doStart} bg={C.green} fg="#fff" bd="none" />
+                        <Btn label="初当たり" onClick={() => setShowHitModal(true)} bg={C.orange} fg="#fff" bd="none" />
+                    </div>
+                )}
                 {/* 台移動ボタン */}
                 <div style={{ padding: "0 12px 12px" }}>
                     <button className="b" onClick={() => setShowMoveModal(true)} style={{
@@ -1271,16 +1277,18 @@ export function CalendarTab({ S, onReset }) {
                         {/* Archive entries — swipeable summary cards */}
                         {dateArchives.length > 0 ? dateArchives.map(a => (
                             <div key={a.id} style={{ position: "relative", overflow: "hidden", borderRadius: 12, marginBottom: 8 }}>
-                                {/* Delete button behind card */}
-                                <div style={{
-                                    position: "absolute", right: 0, top: 0, bottom: 0, width: 80,
-                                    background: C.red, display: "flex", alignItems: "center", justifyContent: "center",
-                                    borderRadius: "0 12px 12px 0",
-                                }}>
-                                    <button className="b" onClick={(e) => { e.stopPropagation(); deleteArchive(a.id); setSwipedId(null); }} style={{
-                                        background: "transparent", border: "none", color: "#fff", fontSize: 13, fontWeight: 700, fontFamily: font, padding: "8px 12px",
-                                    }}>削除</button>
-                                </div>
+                                {/* Delete button behind card — only visible when swiped */}
+                                {swipedId === a.id && (
+                                    <div style={{
+                                        position: "absolute", right: 0, top: 0, bottom: 0, width: 80,
+                                        background: C.red, display: "flex", alignItems: "center", justifyContent: "center",
+                                        borderRadius: "0 12px 12px 0", zIndex: 0,
+                                    }}>
+                                        <button className="b" onClick={(e) => { e.stopPropagation(); deleteArchive(a.id); setSwipedId(null); }} style={{
+                                            background: "transparent", border: "none", color: "#fff", fontSize: 13, fontWeight: 700, fontFamily: font, padding: "8px 12px",
+                                        }}>削除</button>
+                                    </div>
+                                )}
                                 {/* Swipeable card */}
                                 <div
                                     style={{
