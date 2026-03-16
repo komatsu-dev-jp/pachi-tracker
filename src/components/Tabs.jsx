@@ -129,7 +129,6 @@ export function DataTab({ ev, jpLog, S }) {
                 <SecLabel label="回転率・ボーダー" />
                 {stat("1Kスタート", ev.start1K > 0 ? f(ev.start1K, 1) : "—", "回/K", sc(ev.bDiff))}
                 {stat("理論ボーダー", ev.theoreticalBorder > 0 ? f(ev.theoreticalBorder, 1) : "—", "回/K", C.subHi)}
-                {ev.measuredBorder > 0 && stat("実測ボーダー", f(ev.measuredBorder, 1), "回/K", C.teal)}
                 {stat("ボーダー差", ev.bDiff !== 0 ? sp(ev.bDiff, 1) : "—", "回/K", sc(ev.bDiff))}
             </Card>
 
