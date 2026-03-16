@@ -156,8 +156,8 @@ export function calcPreciseEV({
         ? workAmount / (netRot / rotPerHour)
         : 0;
 
-    // ── ボーダー差 ──
-    const bDiff = useBorder > 0 ? start1K - useBorder : 0;
+    // ── ボーダー差 = 実測回転率 - 理論ボーダー（常にスペック基準） ──
+    const bDiff = theoreticalBorder > 0 ? start1K - theoreticalBorder : 0;
 
     // ── 単価（EV per rotation — P tools互換） ──
     const evPerRot = start1K > 0 ? ev1K / start1K : 0;
