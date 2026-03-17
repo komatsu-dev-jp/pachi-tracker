@@ -223,16 +223,29 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     };
 
     const handleStartChain = () => {
+        const val = Number(input);
+        const prevCumRot = last ? last.cumRot : S.startRot;
+        const hitRot = val > 0 ? val : (prevCumRot || 0);
+        const hitThisRot = val > 0 ? val - prevCumRot : 0;
+
+        // 回転数テーブルに初当たりマーカー行を追加
+        if (val > 0) {
+            setRows(r => [...r, { type: "hit", cumRot: val, thisRot: hitThisRot, invest: last ? last.invest : 0, mode: S.playMode }]);
+        }
+
         S.pushJP({
             chainId: Date.now(),
             trayBalls: 0,
             hits: [],
+            hitRot,
+            hitThisRot,
             finalBalls: null,
             summary: null,
             completed: false,
             time: tsNow(),
         });
-        S.pushLog({ type: "初当たり", time: tsNow() });
+        S.pushLog({ type: "初当たり", time: tsNow(), rot: hitRot });
+        setInput("");
         S.setTab("history");
     };
 
@@ -263,6 +276,15 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             <div style={{ textAlign: "center", fontSize: 11, color: C.sub }}>—</div>
                             <div style={{ textAlign: "center", fontSize: 11, fontWeight: 800, color: C.yellow, letterSpacing: 2 }}>START</div>
                             <div style={{ textAlign: "center", fontSize: 11, color: C.sub }}>—</div>
+                        </div>
+                    );
+                    if (row.type === "hit") return (
+                        <div key={i} className="fin" style={{ display: "grid", gridTemplateColumns: "55px 1fr 1fr 1fr 70px", padding: "12px 4px", background: "rgba(249, 115, 22, 0.08)", borderBottom: `1px solid ${C.border}` }}>
+                            <div style={{ textAlign: "center" }}><span style={{ fontSize: 10, fontWeight: 700, color: C.orange, background: C.orange + "20", borderRadius: 6, padding: "3px 7px", border: `1px solid ${C.orange}40` }}>当</span></div>
+                            <div style={{ textAlign: "center", fontSize: 14, color: C.orange, fontFamily: mono, fontWeight: 700 }}>{f(row.cumRot)}</div>
+                            <div style={{ textAlign: "center", fontSize: 16, fontWeight: 700, color: C.orange, fontFamily: mono }}>{row.thisRot}</div>
+                            <div style={{ textAlign: "center", fontSize: 11, fontWeight: 800, color: C.orange, letterSpacing: 1 }}>初当たり</div>
+                            <div style={{ textAlign: "center", fontSize: 12, color: C.sub, fontFamily: mono }}>{f(row.invest)}円</div>
                         </div>
                     );
                     return (
@@ -626,12 +648,19 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                             [...jpLog].reverse().map((chain, ci) => (
                                 <Card key={chain.chainId || ci} style={{ padding: "12px 16px", background: !chain.completed ? "rgba(249, 115, 22, 0.05)" : "rgba(255,255,255,0.02)" }}>
                                     {/* Chain Header */}
-                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                                         <span style={{ fontSize: 11, fontWeight: 800, color: !chain.completed ? C.orange : C.blue }}>
                                             {!chain.completed ? "連チャン中" : `${jpLog.length - ci}回目データ ${chain.hits.length <= 1 ? "単発" : chain.hits.length + "連チャン"}`}
                                         </span>
                                         <span style={{ fontSize: 10, color: C.sub, fontFamily: mono }}>{chain.time}</span>
                                     </div>
+                                    {/* 初当たり回転数 */}
+                                    {chain.hitRot > 0 && (
+                                        <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
+                                            <span style={{ fontSize: 10, color: C.sub }}>総回転: <span style={{ fontWeight: 700, color: C.orange, fontFamily: mono }}>{f(chain.hitRot)}</span></span>
+                                            {chain.hitThisRot > 0 && <span style={{ fontSize: 10, color: C.sub }}>ハマり: <span style={{ fontWeight: 700, color: C.orange, fontFamily: mono }}>{f(chain.hitThisRot)}</span></span>}
+                                        </div>
+                                    )}
 
                                     {/* Individual Hits */}
                                     {chain.hits.map((hit, hi) => {
