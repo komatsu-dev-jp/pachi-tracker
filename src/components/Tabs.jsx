@@ -179,9 +179,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     // 回転色判定にはEVで使用しているボーダーを優先
     const border = ev.useBorder > 0 ? ev.useBorder : displayBorder;
     const [input, setInput] = useState("");
-    const [showHitModal, setShowHitModal] = useState(false);
     const [showMoveModal, setShowMoveModal] = useState(false);
-    const [trayBalls, setTrayBalls] = useState("");
     const [showStoreDD, setShowStoreDD] = useState(false);
     const tableRef = useRef(null);
 
@@ -224,21 +222,17 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         setInput("");
     };
 
-    const handleHitSubmit = () => {
-        const tray = Number(trayBalls) || 0;
-        S.setTotalTrayBalls((p) => p + tray);
+    const handleStartChain = () => {
         S.pushJP({
             chainId: Date.now(),
-            trayBalls: tray,
+            trayBalls: 0,
             hits: [],
             finalBalls: null,
             summary: null,
             completed: false,
             time: tsNow(),
         });
-        S.pushLog({ type: "初当たり", time: tsNow(), tray });
-        setShowHitModal(false);
-        setTrayBalls("");
+        S.pushLog({ type: "初当たり", time: tsNow() });
         S.setTab("history");
     };
 
@@ -340,12 +334,12 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 {rows.some(r => r.type === "start") ? (
                     <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8, padding: "0 12px 8px" }}>
                         <Btn label="1K決定" onClick={decide} primary />
-                        <Btn label="初当たり" onClick={() => setShowHitModal(true)} bg={C.orange} fg="#fff" bd="none" />
+                        <Btn label="初当たり" onClick={() => handleStartChain()} bg={C.orange} fg="#fff" bd="none" />
                     </div>
                 ) : (
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, padding: "0 12px 8px" }}>
                         <Btn label="スタート" onClick={doStart} bg={C.green} fg="#fff" bd="none" />
-                        <Btn label="初当たり" onClick={() => setShowHitModal(true)} bg={C.orange} fg="#fff" bd="none" />
+                        <Btn label="初当たり" onClick={() => handleStartChain()} bg={C.orange} fg="#fff" bd="none" />
                     </div>
                 )}
                 {/* 台移動ボタン */}
@@ -374,22 +368,6 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 </div>
             )}
 
-            {/* Hit Modal — 初当たり時の上皿玉数入力 */}
-            {showHitModal && (
-                <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
-                    <Card style={{ width: "100%", maxWidth: 320, padding: 20 }}>
-                        <SecLabel label="初当たり入力" />
-                        <div style={{ marginBottom: 20 }}>
-                            <div style={{ fontSize: 13, color: C.sub, marginBottom: 12 }}>上皿の残り玉数を入力してください</div>
-                            <NI v={trayBalls} set={setTrayBalls} w="100%" big center ph="0〜125" />
-                        </div>
-                        <div style={{ display: "flex", gap: 10 }}>
-                            <Btn label="決定" onClick={handleHitSubmit} primary />
-                            <Btn label="キャンセル" onClick={() => setShowHitModal(false)} />
-                        </div>
-                    </Card>
-                </div>
-            )}
         </div>
     );
 }
@@ -401,6 +379,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     const [sub, setSub] = useState("jp");
 
     // 連チャン入力 state
+    const [iTrayBalls, setITrayBalls] = useState("");         // 上皿玉（1連目のみ）
     const [iLastOutBalls, setILastOutBalls] = useState("");   // 直前の実出玉
     const [iNextTimingBalls, setINextTimingBalls] = useState(""); // 次のタイミングの出玉
     const [iElecSapoRot, setIElecSapoRot] = useState("");    // 電サポ回転数
@@ -412,6 +391,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     const isChainActive = lastChain && !lastChain.completed;
 
     const clearInputs = () => {
+        setITrayBalls("");
         setILastOutBalls("");
         setINextTimingBalls("");
         setIElecSapoRot("");
@@ -429,10 +409,17 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         const elecRot = Number(iElecSapoRot) || 0;
         const sapoChange = nextTiming - lastOut;
         const sapoPerRot = elecRot > 0 ? sapoChange / elecRot : 0;
+        const isFirstHit = lastChain && lastChain.hits.length === 0;
 
         S.setJpLog((prev) => {
             const updated = [...prev];
             const chain = { ...updated[updated.length - 1] };
+            // 1連目の場合: 上皿玉を保存
+            if (isFirstHit) {
+                const tray = Number(iTrayBalls) || 0;
+                chain.trayBalls = tray;
+                S.setTotalTrayBalls((p) => p + tray);
+            }
             chain.hits = [...chain.hits, {
                 hitNumber: chain.hits.length + 1,
                 lastOutBalls: lastOut,
@@ -447,7 +434,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
             updated[updated.length - 1] = chain;
             return updated;
         });
-        S.pushLog({ type: "連チャン追加", time: tsNow(), rounds: Number(iRounds) || 0 });
+        S.pushLog({ type: isFirstHit ? "初当たり記録" : "連チャン追加", time: tsNow(), rounds: Number(iRounds) || 0 });
         clearInputs();
     };
 
@@ -467,9 +454,17 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         const sapoChange = nextTiming - lastOut;
         const hitSapoPerRot = elecRot > 0 ? sapoChange / elecRot : 0;
 
+        const isFirstHit = lastChain.hits.length === 0;
+
         S.setJpLog((prev) => {
             const updated = [...prev];
             const chain = { ...updated[updated.length - 1] };
+            // 1連目の場合: 上皿玉を保存
+            if (isFirstHit) {
+                const tray = Number(iTrayBalls) || 0;
+                chain.trayBalls = tray;
+                S.setTotalTrayBalls((p) => p + tray);
+            }
             // ラウンド入力がある場合は最後のヒットを追加
             if (rounds > 0) {
                 chain.hits = [...chain.hits, {
@@ -532,8 +527,12 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                         {/* 連チャン中バナー */}
                         {isChainActive && (
                             <div style={{ background: `linear-gradient(135deg, ${C.orange}20, ${C.red}10)`, border: `1px solid ${C.orange}40`, borderRadius: 12, padding: "12px 16px", marginBottom: 12 }}>
-                                <div style={{ fontSize: 12, fontWeight: 800, color: C.orange, marginBottom: 4 }}>連チャン中 — {lastChain.hits.length}連目まで記録済み</div>
-                                <div style={{ fontSize: 10, color: C.sub }}>上皿玉: {f(lastChain.trayBalls)}玉 | {lastChain.time}</div>
+                                <div style={{ fontSize: 12, fontWeight: 800, color: C.orange, marginBottom: 4 }}>
+                                    {lastChain.hits.length === 0 ? "初当たり — 1連目を入力してください" : `連チャン中 — ${lastChain.hits.length}連目まで記録済み`}
+                                </div>
+                                <div style={{ fontSize: 10, color: C.sub }}>
+                                    {lastChain.hits.length > 0 && `上皿玉: ${f(lastChain.trayBalls)}玉 | `}{lastChain.time}
+                                </div>
                             </div>
                         )}
 
@@ -541,6 +540,13 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                         {isChainActive ? (
                             <Card style={{ padding: 16, marginBottom: 16 }}>
                                 <SecLabel label={`${lastChain.hits.length + 1}連目 入力`} />
+                                {/* 1連目のみ: 上皿玉入力 */}
+                                {lastChain.hits.length === 0 && (
+                                    <div style={{ marginBottom: 10 }}>
+                                        <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>上皿の残り玉数</div>
+                                        <NI v={iTrayBalls} set={setITrayBalls} w="100%" center ph="0〜125" />
+                                    </div>
+                                )}
                                 {/* 大当たり情報 */}
                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
                                     <div>
@@ -583,8 +589,8 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                     })()}
                                 </div>
                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                                    <Btn label="連チャン追加" onClick={addHitToChain} bg={C.green} fg="#fff" bd="none" />
-                                    <Btn label="最終大当たり終了" onClick={handleChainEnd} bg={C.orange} fg="#fff" bd="none" />
+                                    <Btn label={lastChain.hits.length === 0 ? "連チャン継続" : "連チャン追加"} onClick={addHitToChain} bg={C.green} fg="#fff" bd="none" />
+                                    <Btn label={lastChain.hits.length === 0 ? "単発終了" : "最終大当たり終了"} onClick={handleChainEnd} bg={C.orange} fg="#fff" bd="none" />
                                 </div>
                             </Card>
                         ) : (
