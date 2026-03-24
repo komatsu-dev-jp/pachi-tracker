@@ -1523,17 +1523,56 @@ export function SettingsTab({ s, onReset }) {
     };
 
     // === CSV機能 ===
-    // 機種データをCSVエクスポート
+    // スプレッドシート形式のヘッダー定義（インポート/エクスポート共通）
+    const csvHeadersJp = [
+        "機種名", "大当り確率", "ボーダー(1k)", "賞球数", "回転単価",
+        "1大当たり平均出玉（削り込み）", "標準偏差", "初期確率", "ムラ係数",
+        "空間感応度", "レジーム感応度", "ヘソ平均出玉(自動)", "RUSH平均出玉",
+        "RUSH突入率", "RUSH継続率", "手動入力値(優先)",
+        "【ヘソ1】出玉", "【ヘソ1】比率", "【ヘソ2】出玉", "【ヘソ2】比率",
+        "【ヘソ3】出玉", "【ヘソ3】比率", "MC期待日当", "MC勝率"
+    ];
+
+    // 機種データをCSVエクスポート（スプレッドシート形式）
     const exportMachinesCSV = () => {
         const machines = s.customMachines || [];
         if (machines.length === 0) {
             alert("エクスポートするカスタム機種がありません");
             return;
         }
-        const headers = ["name", "maker", "type", "prob", "synthProb", "spec1R", "specAvgTotalRounds", "specSapo", "roundDist"];
         const csvContent = [
-            headers.join(","),
-            ...machines.map(m => headers.map(h => `"${String(m[h] || "").replace(/"/g, '""')}"`).join(","))
+            csvHeadersJp.join(","),
+            ...machines.map(m => {
+                const hesoDist = m.hesoDist || [];
+                const formatPercent = (val) => val != null ? `${val}%` : "";
+                const row = [
+                    m.name || "",
+                    m.synthProb || "",
+                    m.border1K || "",
+                    m.prize || "",
+                    m.unitCost || "",
+                    m.avgPayoutPerHit || "",
+                    m.stdDev || "",
+                    m.initialProb || "",
+                    m.muraCoef || "",
+                    m.spatialSens || "",
+                    m.regimeSens || "",
+                    m.hesoAvgPayout || "",
+                    m.rushAvgPayout || "",
+                    formatPercent(m.rushEntryRate),
+                    formatPercent(m.rushContinueRate),
+                    m.manualHesoValue || "",
+                    hesoDist[0]?.payout || "",
+                    formatPercent(hesoDist[0]?.rate),
+                    hesoDist[1]?.payout || "",
+                    formatPercent(hesoDist[1]?.rate),
+                    hesoDist[2]?.payout || "",
+                    formatPercent(hesoDist[2]?.rate),
+                    m.mcExpectedDaily || "",
+                    formatPercent(m.mcWinRate)
+                ];
+                return row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",");
+            })
         ].join("\n");
         downloadCSV(csvContent, "machines.csv");
     };
@@ -1596,28 +1635,119 @@ export function SettingsTab({ s, onReset }) {
         });
     };
 
-    // 機種CSVインポート
+    // 日本語ヘッダーから内部フィールド名へのマッピング
+    const jpHeaderToField = {
+        "機種名": "name",
+        "大当り確率": "synthProb",
+        "ボーダー(1k)": "border1K",
+        "賞球数": "prize",
+        "回転単価": "unitCost",
+        "1大当たり平均出玉（削り込み）": "avgPayoutPerHit",
+        "標準偏差": "stdDev",
+        "初期確率": "initialProb",
+        "ムラ係数": "muraCoef",
+        "空間感応度": "spatialSens",
+        "レジーム感応度": "regimeSens",
+        "ヘソ平均出玉(自動)": "hesoAvgPayout",
+        "RUSH平均出玉": "rushAvgPayout",
+        "RUSH突入率": "rushEntryRate",
+        "RUSH継続率": "rushContinueRate",
+        "手動入力値(優先)": "manualHesoValue",
+        "【ヘソ1】出玉": "heso1Payout",
+        "【ヘソ1】比率": "heso1Rate",
+        "【ヘソ2】出玉": "heso2Payout",
+        "【ヘソ2】比率": "heso2Rate",
+        "【ヘソ3】出玉": "heso3Payout",
+        "【ヘソ3】比率": "heso3Rate",
+        "MC期待日当": "mcExpectedDaily",
+        "MC勝率": "mcWinRate"
+    };
+
+    // パーセント文字列から数値に変換
+    const parsePercent = (val) => {
+        if (val == null || val === "") return null;
+        const str = String(val).replace(/[%％]/g, "").replace(/,/g, "").trim();
+        const num = parseFloat(str);
+        return isNaN(num) ? null : num;
+    };
+
+    // 数値パース（カンマ除去対応）
+    const parseNum = (val) => {
+        if (val == null || val === "") return null;
+        const str = String(val).replace(/,/g, "").trim();
+        const num = parseFloat(str);
+        return isNaN(num) ? null : num;
+    };
+
+    // 機種CSVインポート（スプレッドシート形式対応）
     const importMachinesCSV = (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (ev) => {
             const data = parseCSV(ev.target.result);
-            const newMachines = data.filter(d => d.name).map(d => ({
-                id: Date.now() + Math.random(),
-                name: d.name || "",
-                maker: d.maker || "",
-                type: d.type || "ミドル",
-                prob: d.prob || "1/319.6",
-                synthProb: parseFloat(d.synthProb) || 319.6,
-                spec1R: parseFloat(d.spec1R) || 140,
-                specAvgTotalRounds: parseFloat(d.specAvgTotalRounds) || 30,
-                specSapo: parseFloat(d.specSapo) || 0,
-                roundDist: d.roundDist || "",
-            }));
+            if (data.length === 0) {
+                alert("インポートできるデータがありません");
+                return;
+            }
+            // ヘッダーをチェックして日本語形式か旧形式かを判定
+            const firstRow = data[0];
+            const isJpFormat = "機種名" in firstRow || firstRow.name === undefined;
+
+            const newMachines = data.filter(d => (isJpFormat ? d["機種名"] : d.name)).map(d => {
+                // 日本語ヘッダーからフィールドを取得
+                const get = (jpKey, engKey) => isJpFormat ? d[jpKey] : d[engKey];
+
+                // ヘソ分布を構築
+                const hesoDist = [];
+                const h1p = parseNum(get("【ヘソ1】出玉", "heso1Payout"));
+                const h1r = parsePercent(get("【ヘソ1】比率", "heso1Rate"));
+                if (h1p != null) hesoDist.push({ payout: h1p, rate: h1r || 100 });
+                const h2p = parseNum(get("【ヘソ2】出玉", "heso2Payout"));
+                const h2r = parsePercent(get("【ヘソ2】比率", "heso2Rate"));
+                if (h2p != null) hesoDist.push({ payout: h2p, rate: h2r || 0 });
+                const h3p = parseNum(get("【ヘソ3】出玉", "heso3Payout"));
+                const h3r = parsePercent(get("【ヘソ3】比率", "heso3Rate"));
+                if (h3p != null) hesoDist.push({ payout: h3p, rate: h3r || 0 });
+
+                const synthProb = parseNum(get("大当り確率", "synthProb")) || 319.6;
+
+                return {
+                    id: Date.now() + Math.random(),
+                    name: get("機種名", "name") || "",
+                    maker: d.maker || "",
+                    type: d.type || "ミドル",
+                    prob: `1/${synthProb}`,
+                    synthProb: synthProb,
+                    border1K: parseNum(get("ボーダー(1k)", "border1K")),
+                    prize: parseNum(get("賞球数", "prize")) || 3,
+                    unitCost: parseNum(get("回転単価", "unitCost")),
+                    avgPayoutPerHit: parseNum(get("1大当たり平均出玉（削り込み）", "avgPayoutPerHit")),
+                    stdDev: parseNum(get("標準偏差", "stdDev")),
+                    initialProb: parseNum(get("初期確率", "initialProb")),
+                    muraCoef: parseNum(get("ムラ係数", "muraCoef")),
+                    spatialSens: parseNum(get("空間感応度", "spatialSens")),
+                    regimeSens: parseNum(get("レジーム感応度", "regimeSens")),
+                    hesoAvgPayout: parseNum(get("ヘソ平均出玉(自動)", "hesoAvgPayout")),
+                    rushAvgPayout: parseNum(get("RUSH平均出玉", "rushAvgPayout")),
+                    rushEntryRate: parsePercent(get("RUSH突入率", "rushEntryRate")),
+                    rushContinueRate: parsePercent(get("RUSH継続率", "rushContinueRate")),
+                    manualHesoValue: parseNum(get("手動入力値(優先)", "manualHesoValue")),
+                    hesoDist: hesoDist.length > 0 ? hesoDist : undefined,
+                    mcExpectedDaily: parseNum(get("MC期待日当", "mcExpectedDaily")),
+                    mcWinRate: parsePercent(get("MC勝率", "mcWinRate")),
+                    // 既存フィールドとの互換性
+                    spec1R: parseNum(d.spec1R) || 140,
+                    specAvgTotalRounds: parseNum(d.specAvgTotalRounds) || 30,
+                    specSapo: parseNum(d.specSapo) || 0,
+                    roundDist: d.roundDist || "",
+                };
+            });
             if (newMachines.length > 0) {
                 s.setCustomMachines(prev => [...prev, ...newMachines]);
                 alert(`${newMachines.length}件の機種をインポートしました`);
+            } else {
+                alert("インポートできる機種が見つかりませんでした");
             }
         };
         reader.readAsText(file);
