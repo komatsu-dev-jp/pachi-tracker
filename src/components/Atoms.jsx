@@ -86,7 +86,7 @@ export function SecLabel({ label, color }) {
     );
 }
 
-export function Btn({ label, onClick, bg = C.surfaceHi, fg = C.text, bd = C.borderHi, fs = 14, primary = false }) {
+export function Btn({ label, onClick, bg = C.surfaceHi, fg = C.text, bd = C.borderHi, fs = 14, primary = false, small = false }) {
     return (
         <button
             className="b"
@@ -94,11 +94,11 @@ export function Btn({ label, onClick, bg = C.surfaceHi, fg = C.text, bd = C.bord
             style={{
                 background: primary ? "linear-gradient(135deg, #3b82f6, #2563eb)" : bg,
                 border: primary ? "none" : `1px solid ${bd}`,
-                borderRadius: 12,
+                borderRadius: small ? 10 : 12,
                 color: primary ? "#fff" : fg,
-                fontSize: fs,
+                fontSize: small ? 12 : fs,
                 fontWeight: 700,
-                padding: "16px 0",
+                padding: small ? "10px 0" : "16px 0",
                 width: "100%",
                 fontFamily: font,
                 boxShadow: primary ? "0 4px 12px rgba(59, 130, 246, 0.3)" : "none",
