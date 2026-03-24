@@ -36,6 +36,9 @@ export default function App() {
   // Registered stores
   const [stores, setStores] = useLS("pt_stores", []);
 
+  // Custom machines
+  const [customMachines, setCustomMachines] = useLS("pt_customMachines", []);
+
   // Archives
   const [archives, setArchives] = useLS("pt_archives", []);
 
@@ -111,6 +114,7 @@ export default function App() {
     storeName, setStoreName, machineNum, setMachineNum, machineName, setMachineName,
     investYen, setInvestYen, recoveryYen, setRecoveryYen,
     stores, setStores,
+    customMachines, setCustomMachines,
     archives, setArchives,
     ev, handleMoveTable,
   };

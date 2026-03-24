@@ -190,13 +190,14 @@ export const machineDB = [
   },
 ];
 
-// 機種検索
-export function searchMachines(query) {
-  if (!query || query.trim().length === 0) return machineDB;
+// 機種検索（カスタム機種も含む）
+export function searchMachines(query, customMachines = []) {
+  const allMachines = [...(customMachines || []).map(m => ({ ...m, isCustom: true })), ...machineDB];
+  if (!query || query.trim().length === 0) return allMachines;
   const q = query.trim().toLowerCase();
-  return machineDB.filter(m =>
+  return allMachines.filter(m =>
     m.name.toLowerCase().includes(q) ||
-    m.maker.toLowerCase().includes(q) ||
-    m.type.toLowerCase().includes(q)
+    (m.maker && m.maker.toLowerCase().includes(q)) ||
+    (m.type && m.type.toLowerCase().includes(q))
   );
 }
