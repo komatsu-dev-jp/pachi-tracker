@@ -2144,8 +2144,8 @@ export function SettingsTab({ s, onReset }) {
                     機種を検索して確率・スペックを自動設定、またはオリジナル機種を登録できます。
                 </div>
                 <div style={{ display: "flex", gap: 10 }}>
-                    <Btn label="機種を検索" onClick={() => setShowMachineSearch(true)} primary />
-                    <Btn label="+ 機種を登録" onClick={() => openMachineForm()} bg={C.teal} fg="#fff" bd="none" />
+                    <Btn label="機種を検索" onClick={() => setShowMachineSearch(true)} primary small />
+                    <Btn label="+ 機種を登録" onClick={() => openMachineForm()} bg={C.teal} fg="#fff" bd="none" small />
                 </div>
             </Card>
 
@@ -2156,8 +2156,8 @@ export function SettingsTab({ s, onReset }) {
                     よく行く店舗を登録すると、記録時に選択でき、貸し玉・交換率も自動設定できます。
                 </div>
                 <div style={{ display: "flex", gap: 10 }}>
-                    <Btn label="店舗を検索" onClick={() => setShowStoreSearch(true)} primary />
-                    <Btn label="+ 店舗を登録" onClick={() => openStoreForm()} bg={C.teal} fg="#fff" bd="none" />
+                    <Btn label="店舗を検索" onClick={() => setShowStoreSearch(true)} primary small />
+                    <Btn label="+ 店舗を登録" onClick={() => openStoreForm()} bg={C.teal} fg="#fff" bd="none" small />
                 </div>
             </Card>
 
