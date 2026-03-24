@@ -318,12 +318,22 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             )}
                             {showStoreDD && (S.stores || []).length > 0 && (
                                 <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 8, zIndex: 10, maxHeight: 120, overflowY: "auto", marginTop: 2, boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}>
-                                    {(S.stores || []).map((st, i) => (
-                                        <button key={i} className="b" onClick={() => { S.setStoreName(st); setShowStoreDD(false); }} style={{
-                                            width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${C.border}`,
-                                            color: C.text, fontSize: 12, padding: "8px 10px", textAlign: "left", fontFamily: font, cursor: "pointer"
-                                        }}>{st}</button>
-                                    ))}
+                                    {(S.stores || []).map((st, i) => {
+                                        const storeName = typeof st === "object" ? st.name : st;
+                                        return (
+                                            <button key={st.id || i} className="b" onClick={() => {
+                                                S.setStoreName(storeName);
+                                                if (typeof st === "object") {
+                                                    if (st.rentBalls) S.setRentBalls(st.rentBalls);
+                                                    if (st.exRate) S.setExRate(st.exRate);
+                                                }
+                                                setShowStoreDD(false);
+                                            }} style={{
+                                                width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${C.border}`,
+                                                color: C.text, fontSize: 12, padding: "8px 10px", textAlign: "left", fontFamily: font, cursor: "pointer"
+                                            }}>{storeName}</button>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>
@@ -1084,12 +1094,15 @@ export function CalendarTab({ S, onReset }) {
                                     )}
                                     {showEditStoreDD && storeList.length > 0 && (
                                         <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 8, zIndex: 10, maxHeight: 150, overflowY: "auto", marginTop: 2, boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}>
-                                            {storeList.map((st, i) => (
-                                                <button key={i} className="b" onClick={() => { setEditStore(st); setShowEditStoreDD(false); }} style={{
-                                                    width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${C.border}`,
-                                                    color: C.text, fontSize: 13, padding: "10px 12px", textAlign: "left", fontFamily: font, cursor: "pointer"
-                                                }}>{st}</button>
-                                            ))}
+                                            {storeList.map((st, i) => {
+                                                const storeName = typeof st === "object" ? st.name : st;
+                                                return (
+                                                    <button key={st.id || i} className="b" onClick={() => { setEditStore(storeName); setShowEditStoreDD(false); }} style={{
+                                                        width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${C.border}`,
+                                                        color: C.text, fontSize: 13, padding: "10px 12px", textAlign: "left", fontFamily: font, cursor: "pointer"
+                                                    }}>{storeName}</button>
+                                                );
+                                            })}
                                         </div>
                                     )}
                                 </div>
@@ -1387,7 +1400,13 @@ export function SettingsTab({ s, onReset }) {
     const [editingMachine, setEditingMachine] = useState(null); // 編集中の機種（nullなら新規登録モード）
     const [showMachineForm, setShowMachineForm] = useState(false);
     const results = searchMachines(query, s.customMachines);
-    const [newStore, setNewStore] = useState("");
+
+    // 店舗管理用のstate
+    const [showStoreSearch, setShowStoreSearch] = useState(false);
+    const [storeQuery, setStoreQuery] = useState("");
+    const [selectedStore, setSelectedStore] = useState(null);
+    const [editingStore, setEditingStore] = useState(null);
+    const [showStoreForm, setShowStoreForm] = useState(false);
 
     // 機種フォームの初期値
     const emptyMachine = {
@@ -1396,6 +1415,23 @@ export function SettingsTab({ s, onReset }) {
         border: { "4.00": 0, "3.57": 0, "3.33": 0, "3.03": 0 }
     };
     const [formData, setFormData] = useState(emptyMachine);
+
+    // 店舗フォームの初期値
+    const emptyStore = { name: "", address: "", rentBalls: 250, exRate: 250, memo: "" };
+    const [storeFormData, setStoreFormData] = useState(emptyStore);
+
+    // 店舗データの正規化（旧形式の文字列配列を新形式のオブジェクト配列に変換）
+    const normalizedStores = (s.stores || []).map(st =>
+        typeof st === "string" ? { id: Date.now() + Math.random(), name: st, address: "", rentBalls: 250, exRate: 250, memo: "" } : st
+    );
+
+    // 店舗検索
+    const storeResults = storeQuery.trim()
+        ? normalizedStores.filter(st =>
+            st.name.toLowerCase().includes(storeQuery.toLowerCase()) ||
+            (st.address && st.address.toLowerCase().includes(storeQuery.toLowerCase()))
+        )
+        : normalizedStores;
 
     // 機種登録フォームを開く
     const openMachineForm = (machine = null) => {
@@ -1439,6 +1475,179 @@ export function SettingsTab({ s, onReset }) {
         setSelected(null);
     };
 
+    // 店舗登録フォームを開く
+    const openStoreForm = (store = null) => {
+        if (store) {
+            setEditingStore(store);
+            setStoreFormData({ ...emptyStore, ...store });
+        } else {
+            setEditingStore(null);
+            setStoreFormData(emptyStore);
+        }
+        setShowStoreForm(true);
+    };
+
+    // 店舗を保存
+    const saveStore = () => {
+        if (!storeFormData.name.trim()) return;
+        const storeData = {
+            ...storeFormData,
+            id: editingStore?.id || Date.now(),
+            rentBalls: parseInt(storeFormData.rentBalls) || 250,
+            exRate: parseInt(storeFormData.exRate) || 250,
+        };
+        if (editingStore) {
+            s.setStores(prev => prev.map(st => (typeof st === "object" && st.id === editingStore.id) ? storeData : st));
+        } else {
+            s.setStores(prev => [...prev.filter(st => typeof st === "object"), storeData]);
+        }
+        setShowStoreForm(false);
+        setEditingStore(null);
+        setStoreFormData(emptyStore);
+    };
+
+    // 店舗を削除
+    const deleteStore = (store) => {
+        if (!window.confirm(`「${store.name}」を削除しますか？`)) return;
+        s.setStores(prev => prev.filter(st => typeof st === "object" ? st.id !== store.id : st !== store.name));
+        setSelectedStore(null);
+    };
+
+    // 店舗の設定を反映
+    const applyStore = (store) => {
+        s.setStoreName(store.name);
+        if (store.rentBalls) s.setRentBalls(store.rentBalls);
+        if (store.exRate) s.setExRate(store.exRate);
+        setSelectedStore(null);
+        setShowStoreSearch(false);
+    };
+
+    // === CSV機能 ===
+    // 機種データをCSVエクスポート
+    const exportMachinesCSV = () => {
+        const machines = s.customMachines || [];
+        if (machines.length === 0) {
+            alert("エクスポートするカスタム機種がありません");
+            return;
+        }
+        const headers = ["name", "maker", "type", "prob", "synthProb", "spec1R", "specAvgTotalRounds", "specSapo", "roundDist"];
+        const csvContent = [
+            headers.join(","),
+            ...machines.map(m => headers.map(h => `"${String(m[h] || "").replace(/"/g, '""')}"`).join(","))
+        ].join("\n");
+        downloadCSV(csvContent, "machines.csv");
+    };
+
+    // 店舗データをCSVエクスポート
+    const exportStoresCSV = () => {
+        if (normalizedStores.length === 0) {
+            alert("エクスポートする店舗がありません");
+            return;
+        }
+        const headers = ["name", "address", "rentBalls", "exRate", "memo"];
+        const csvContent = [
+            headers.join(","),
+            ...normalizedStores.map(st => headers.map(h => `"${String(st[h] || "").replace(/"/g, '""')}"`).join(","))
+        ].join("\n");
+        downloadCSV(csvContent, "stores.csv");
+    };
+
+    // CSVダウンロード共通関数
+    const downloadCSV = (content, filename) => {
+        const bom = "\uFEFF";
+        const blob = new Blob([bom + content], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    // CSVパース関数
+    const parseCSV = (text) => {
+        const lines = text.split(/\r?\n/).filter(l => l.trim());
+        if (lines.length < 2) return [];
+        const headers = lines[0].split(",").map(h => h.replace(/^"|"$/g, "").trim());
+        return lines.slice(1).map(line => {
+            const values = [];
+            let current = "";
+            let inQuotes = false;
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                if (char === '"') {
+                    if (inQuotes && line[i + 1] === '"') {
+                        current += '"';
+                        i++;
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === "," && !inQuotes) {
+                    values.push(current.trim());
+                    current = "";
+                } else {
+                    current += char;
+                }
+            }
+            values.push(current.trim());
+            const obj = {};
+            headers.forEach((h, i) => { obj[h] = values[i] || ""; });
+            return obj;
+        });
+    };
+
+    // 機種CSVインポート
+    const importMachinesCSV = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const data = parseCSV(ev.target.result);
+            const newMachines = data.filter(d => d.name).map(d => ({
+                id: Date.now() + Math.random(),
+                name: d.name || "",
+                maker: d.maker || "",
+                type: d.type || "ミドル",
+                prob: d.prob || "1/319.6",
+                synthProb: parseFloat(d.synthProb) || 319.6,
+                spec1R: parseFloat(d.spec1R) || 140,
+                specAvgTotalRounds: parseFloat(d.specAvgTotalRounds) || 30,
+                specSapo: parseFloat(d.specSapo) || 0,
+                roundDist: d.roundDist || "",
+            }));
+            if (newMachines.length > 0) {
+                s.setCustomMachines(prev => [...prev, ...newMachines]);
+                alert(`${newMachines.length}件の機種をインポートしました`);
+            }
+        };
+        reader.readAsText(file);
+        e.target.value = "";
+    };
+
+    // 店舗CSVインポート
+    const importStoresCSV = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const data = parseCSV(ev.target.result);
+            const newStores = data.filter(d => d.name).map(d => ({
+                id: Date.now() + Math.random(),
+                name: d.name || "",
+                address: d.address || "",
+                rentBalls: parseInt(d.rentBalls) || 250,
+                exRate: parseInt(d.exRate) || 250,
+                memo: d.memo || "",
+            }));
+            if (newStores.length > 0) {
+                s.setStores(prev => [...prev.filter(st => typeof st === "object"), ...newStores]);
+                alert(`${newStores.length}件の店舗をインポートしました`);
+            }
+        };
+        reader.readAsText(file);
+        e.target.value = "";
+    };
+
     const applyMachine = (m) => {
         s.setSynthDenom(m.synthProb);
         if (m.spec1R) s.setSpec1R(m.spec1R);
@@ -1454,6 +1663,181 @@ export function SettingsTab({ s, onReset }) {
     const avgNetGainSpec = (s.spec1R || 0) * (s.specAvgRounds || 0) + (s.specSapo || 0);
     const specNetGainYen = avgNetGainSpec * exchP;
     const calcBorder = specNetGainYen > 0 ? ((s.synthDenom || 1) * 1000) / specNetGainYen : 0;
+
+    // Store detail view
+    if (selectedStore) {
+        return (
+            <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                <button className="b" onClick={() => setSelectedStore(null)} style={{
+                    background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                    color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600, marginBottom: 12
+                }}>← 一覧に戻る</button>
+
+                <Card style={{ padding: 16, marginBottom: 12 }}>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: C.text, marginBottom: 4 }}>{selectedStore.name}</div>
+                    {selectedStore.address && <div style={{ fontSize: 11, color: C.sub, marginBottom: 12 }}>{selectedStore.address}</div>}
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>貸し玉</div>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: C.yellow, fontFamily: mono }}>{selectedStore.rentBalls || 250}</div>
+                            <div style={{ fontSize: 9, color: C.sub }}>玉/1K</div>
+                        </div>
+                        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>交換率</div>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: C.teal, fontFamily: mono }}>{selectedStore.exRate || 250}</div>
+                            <div style={{ fontSize: 9, color: C.sub }}>玉/1K</div>
+                        </div>
+                    </div>
+
+                    {selectedStore.memo && (
+                        <div style={{ background: "rgba(0,0,0,0.15)", borderRadius: 10, padding: 12, marginBottom: 12 }}>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>メモ</div>
+                            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>{selectedStore.memo}</div>
+                        </div>
+                    )}
+                </Card>
+
+                <Btn label="この店舗の設定を反映" onClick={() => applyStore(selectedStore)} bg={C.blue} fg="#fff" bd="none" />
+
+                <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                    <Btn label="編集" onClick={() => { setSelectedStore(null); openStoreForm(selectedStore); }} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
+                    <Btn label="削除" onClick={() => deleteStore(selectedStore)} bg="rgba(180,60,60,0.2)" fg={C.red} bd={C.red + "40"} />
+                </div>
+            </div>
+        );
+    }
+
+    // Store form view
+    if (showStoreForm) {
+        return (
+            <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                <button className="b" onClick={() => { setShowStoreForm(false); setEditingStore(null); setStoreFormData(emptyStore); }} style={{
+                    background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                    color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600, marginBottom: 12
+                }}>← 戻る</button>
+
+                <Card style={{ padding: 16, marginBottom: 12 }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: C.text, marginBottom: 16 }}>
+                        {editingStore ? "店舗を編集" : "新規店舗登録"}
+                    </div>
+
+                    {/* 店舗名 */}
+                    <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>店舗名 *</div>
+                        <input type="text" value={storeFormData.name} onChange={e => setStoreFormData({ ...storeFormData, name: e.target.value })}
+                            placeholder="例: パチンコXX店"
+                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                    </div>
+
+                    {/* 住所 */}
+                    <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>住所</div>
+                        <input type="text" value={storeFormData.address} onChange={e => setStoreFormData({ ...storeFormData, address: e.target.value })}
+                            placeholder="例: 東京都渋谷区..."
+                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                    </div>
+
+                    {/* 貸し玉 */}
+                    <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貸し玉（玉/1K）</div>
+                        <input type="number" value={storeFormData.rentBalls} onChange={e => setStoreFormData({ ...storeFormData, rentBalls: e.target.value })}
+                            placeholder="250"
+                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                    </div>
+
+                    {/* 交換率 */}
+                    <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>交換率（玉/1K）</div>
+                        <input type="number" value={storeFormData.exRate} onChange={e => setStoreFormData({ ...storeFormData, exRate: e.target.value })}
+                            placeholder="250"
+                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                    </div>
+
+                    {/* メモ */}
+                    <div style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>メモ</div>
+                        <textarea value={storeFormData.memo} onChange={e => setStoreFormData({ ...storeFormData, memo: e.target.value })}
+                            placeholder="営業時間など..."
+                            rows={3}
+                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none", resize: "vertical" }} />
+                    </div>
+
+                    <Btn label={editingStore ? "更新" : "登録"} onClick={saveStore} bg={C.blue} fg="#fff" bd="none" disabled={!storeFormData.name.trim()} />
+                </Card>
+            </div>
+        );
+    }
+
+    // Store search view
+    if (showStoreSearch) {
+        return (
+            <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                    <button className="b" onClick={() => { setShowStoreSearch(false); setStoreQuery(""); }} style={{
+                        background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                        color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600
+                    }}>← 設定に戻る</button>
+                    <button className="b" onClick={() => openStoreForm()} style={{
+                        background: C.blue, border: "none", borderRadius: 8,
+                        color: "#fff", fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 700
+                    }}>+ 店舗を登録</button>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                    <input
+                        type="text"
+                        value={storeQuery}
+                        onChange={e => setStoreQuery(e.target.value)}
+                        placeholder="店舗名・住所で検索..."
+                        style={{
+                            width: "100%", boxSizing: "border-box", background: C.surface, border: `1px solid ${C.border}`,
+                            borderRadius: 10, padding: "12px 14px", fontSize: 14, color: C.text, fontFamily: font,
+                            outline: "none",
+                        }}
+                    />
+                </div>
+
+                {/* CSV インポート/エクスポート */}
+                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                    <button className="b" onClick={exportStoresCSV} style={{
+                        flex: 1, background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                        color: C.text, fontSize: 11, padding: "8px 12px", fontFamily: font, fontWeight: 600
+                    }}>CSVエクスポート</button>
+                    <label style={{
+                        flex: 1, background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                        color: C.text, fontSize: 11, padding: "8px 12px", fontFamily: font, fontWeight: 600,
+                        textAlign: "center", cursor: "pointer"
+                    }}>
+                        CSVインポート
+                        <input type="file" accept=".csv" onChange={importStoresCSV} style={{ display: "none" }} />
+                    </label>
+                </div>
+
+                {storeResults.length === 0 ? (
+                    <div style={{ textAlign: "center", color: C.sub, padding: "40px 16px", fontSize: 12 }}>登録された店舗がありません</div>
+                ) : (
+                    storeResults.map((st, i) => (
+                        <button key={st.id || i} className="b" onClick={() => setSelectedStore(st)} style={{
+                            width: "100%", background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent",
+                            border: "none", borderBottom: `1px solid ${C.border}`, padding: "14px 16px",
+                            display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer",
+                            textAlign: "left",
+                        }}>
+                            <div>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3 }}>{st.name}</div>
+                                {st.address && <div style={{ fontSize: 10, color: C.sub }}>{st.address}</div>}
+                            </div>
+                            <div style={{ textAlign: "right" }}>
+                                <div style={{ fontSize: 12, fontWeight: 600, color: C.yellow, fontFamily: mono }}>{st.rentBalls || 250}玉</div>
+                                <div style={{ fontSize: 9, color: C.sub }}>{st.exRate || 250}玉交換</div>
+                            </div>
+                        </button>
+                    ))
+                )}
+            </div>
+        );
+    }
 
     // Machine detail view
     if (selected) {
@@ -1706,6 +2090,22 @@ export function SettingsTab({ s, onReset }) {
                     />
                 </div>
 
+                {/* CSV インポート/エクスポート */}
+                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                    <button className="b" onClick={exportMachinesCSV} style={{
+                        flex: 1, background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                        color: C.text, fontSize: 11, padding: "8px 12px", fontFamily: font, fontWeight: 600
+                    }}>CSVエクスポート</button>
+                    <label style={{
+                        flex: 1, background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                        color: C.text, fontSize: 11, padding: "8px 12px", fontFamily: font, fontWeight: 600,
+                        textAlign: "center", cursor: "pointer"
+                    }}>
+                        CSVインポート
+                        <input type="file" accept=".csv" onChange={importMachinesCSV} style={{ display: "none" }} />
+                    </label>
+                </div>
+
                 {results.length === 0 ? (
                     <div style={{ textAlign: "center", color: C.sub, padding: "40px 16px", fontSize: 12 }}>該当する機種がありません</div>
                 ) : (
@@ -1751,34 +2151,14 @@ export function SettingsTab({ s, onReset }) {
 
             {/* 店舗登録 */}
             <Card style={{ padding: 16 }}>
-                <SecLabel label="店舗登録" />
-                <div style={{ fontSize: 11, color: C.sub, marginBottom: 10, lineHeight: 1.6, padding: "0 4px" }}>
-                    よく行く店舗を登録すると、記録時に選択できます。
+                <SecLabel label="店舗検索・登録" />
+                <div style={{ fontSize: 11, color: C.sub, marginBottom: 12, lineHeight: 1.6, padding: "0 4px" }}>
+                    よく行く店舗を登録すると、記録時に選択でき、貸し玉・交換率も自動設定できます。
                 </div>
-                <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                    <input type="text" value={newStore} onChange={e => setNewStore(e.target.value)} placeholder="店舗名を入力"
-                        style={{ flex: 1, background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }}
-                        onFocus={e => e.target.style.borderColor = "var(--blue)"}
-                        onBlur={e => e.target.style.borderColor = "var(--border-hi)"} />
-                    <button className="b" onClick={() => {
-                        if (newStore.trim() && !(s.stores || []).includes(newStore.trim())) {
-                            s.setStores((prev) => [...(prev || []), newStore.trim()]);
-                            setNewStore("");
-                        }
-                    }} style={{ background: C.blue, border: "none", borderRadius: 8, color: "#fff", fontSize: 12, fontWeight: 700, padding: "0 16px", fontFamily: font }}>追加</button>
+                <div style={{ display: "flex", gap: 10 }}>
+                    <Btn label="店舗を検索" onClick={() => setShowStoreSearch(true)} primary />
+                    <Btn label="+ 店舗を登録" onClick={() => openStoreForm()} bg={C.teal} fg="#fff" bd="none" />
                 </div>
-                {(s.stores || []).length > 0 && (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                        {(s.stores || []).map((st, i) => (
-                            <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(255,255,255,0.05)", borderRadius: 8, padding: "6px 10px" }}>
-                                <span style={{ fontSize: 12, color: C.text }}>{st}</span>
-                                <button className="b" onClick={() => s.setStores((prev) => prev.filter((_, j) => j !== i))} style={{
-                                    background: "transparent", border: "none", color: C.red, fontSize: 14, padding: 0, lineHeight: 1, cursor: "pointer"
-                                }}>×</button>
-                            </div>
-                        ))}
-                    </div>
-                )}
             </Card>
 
             <Card>
