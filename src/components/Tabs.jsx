@@ -1384,8 +1384,60 @@ export function SettingsTab({ s, onReset }) {
     const [showMachineSearch, setShowMachineSearch] = useState(false);
     const [query, setQuery] = useState("");
     const [selected, setSelected] = useState(null);
-    const results = searchMachines(query);
+    const [editingMachine, setEditingMachine] = useState(null); // 編集中の機種（nullなら新規登録モード）
+    const [showMachineForm, setShowMachineForm] = useState(false);
+    const results = searchMachines(query, s.customMachines);
     const [newStore, setNewStore] = useState("");
+
+    // 機種フォームの初期値
+    const emptyMachine = {
+        name: "", maker: "", type: "ミドル", prob: "1/319.6", synthProb: 319.6,
+        spec1R: 140, specAvgTotalRounds: 30, specSapo: 0, roundDist: "",
+        border: { "4.00": 0, "3.57": 0, "3.33": 0, "3.03": 0 }
+    };
+    const [formData, setFormData] = useState(emptyMachine);
+
+    // 機種登録フォームを開く
+    const openMachineForm = (machine = null) => {
+        if (machine) {
+            setEditingMachine(machine);
+            setFormData({ ...emptyMachine, ...machine });
+        } else {
+            setEditingMachine(null);
+            setFormData(emptyMachine);
+        }
+        setShowMachineForm(true);
+    };
+
+    // 機種を保存
+    const saveMachine = () => {
+        if (!formData.name.trim()) return;
+        const machineData = {
+            ...formData,
+            id: editingMachine?.id || Date.now(),
+            synthProb: parseFloat(formData.synthProb) || 319.6,
+            spec1R: parseFloat(formData.spec1R) || 140,
+            specAvgTotalRounds: parseFloat(formData.specAvgTotalRounds) || 30,
+            specSapo: parseFloat(formData.specSapo) || 0,
+        };
+        if (editingMachine) {
+            // 編集
+            s.setCustomMachines(prev => prev.map(m => m.id === editingMachine.id ? machineData : m));
+        } else {
+            // 新規登録
+            s.setCustomMachines(prev => [...prev, machineData]);
+        }
+        setShowMachineForm(false);
+        setEditingMachine(null);
+        setFormData(emptyMachine);
+    };
+
+    // 機種を削除
+    const deleteMachine = (machine) => {
+        if (!window.confirm(`「${machine.name}」を削除しますか？`)) return;
+        s.setCustomMachines(prev => prev.filter(m => m.id !== machine.id));
+        setSelected(null);
+    };
 
     const applyMachine = (m) => {
         s.setSynthDenom(m.synthProb);
@@ -1405,7 +1457,7 @@ export function SettingsTab({ s, onReset }) {
 
     // Machine detail view
     if (selected) {
-        const borderKeys = Object.keys(selected.border).sort((a, b) => Number(b) - Number(a));
+        const borderKeys = selected.border ? Object.keys(selected.border).filter(k => selected.border[k] > 0).sort((a, b) => Number(b) - Number(a)) : [];
         return (
             <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
                 <button className="b" onClick={() => setSelected(null)} style={{
@@ -1498,22 +1550,129 @@ export function SettingsTab({ s, onReset }) {
                     )}
                 </Card>
 
-                {/* ボーダー表 */}
-                <Card style={{ overflow: "hidden", marginBottom: 12 }}>
-                    <SecLabel label="交換率別ボーダー" />
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", padding: "10px 16px 6px", borderBottom: `1px solid ${C.border}` }}>
-                        <span style={{ fontSize: 11, color: C.sub, fontWeight: 700 }}>交換率</span>
-                        <span style={{ fontSize: 11, color: C.sub, fontWeight: 700, textAlign: "right" }}>ボーダー (回/K)</span>
-                    </div>
-                    {borderKeys.map(key => (
-                        <div key={key} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", padding: "12px 16px", borderBottom: `1px solid ${C.border}` }}>
-                            <span style={{ fontSize: 13, color: C.text }}>{key}円</span>
-                            <span style={{ fontSize: 15, fontWeight: 800, color: C.green, fontFamily: mono, textAlign: "right" }}>{selected.border[key]}</span>
+                {/* ボーダー表（データがある場合のみ） */}
+                {borderKeys.length > 0 && (
+                    <Card style={{ overflow: "hidden", marginBottom: 12 }}>
+                        <SecLabel label="交換率別ボーダー" />
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", padding: "10px 16px 6px", borderBottom: `1px solid ${C.border}` }}>
+                            <span style={{ fontSize: 11, color: C.sub, fontWeight: 700 }}>交換率</span>
+                            <span style={{ fontSize: 11, color: C.sub, fontWeight: 700, textAlign: "right" }}>ボーダー (回/K)</span>
                         </div>
-                    ))}
-                </Card>
+                        {borderKeys.map(key => (
+                            <div key={key} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", padding: "12px 16px", borderBottom: `1px solid ${C.border}` }}>
+                                <span style={{ fontSize: 13, color: C.text }}>{key}円</span>
+                                <span style={{ fontSize: 15, fontWeight: 800, color: C.green, fontFamily: mono, textAlign: "right" }}>{selected.border[key]}</span>
+                            </div>
+                        ))}
+                    </Card>
+                )}
 
                 <Btn label="この機種の確率を設定に反映" onClick={() => applyMachine(selected)} bg={C.blue} fg="#fff" bd="none" />
+
+                {/* カスタム機種の場合は編集・削除ボタンを表示 */}
+                {selected.isCustom && (
+                    <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                        <Btn label="編集" onClick={() => { setSelected(null); openMachineForm(selected); }} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
+                        <Btn label="削除" onClick={() => deleteMachine(selected)} bg="rgba(180,60,60,0.2)" fg={C.red} bd={C.red + "40"} />
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    // Machine form view (新規登録/編集)
+    if (showMachineForm) {
+        return (
+            <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                <button className="b" onClick={() => { setShowMachineForm(false); setEditingMachine(null); setFormData(emptyMachine); }} style={{
+                    background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                    color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600, marginBottom: 12
+                }}>← 戻る</button>
+
+                <Card style={{ padding: 16, marginBottom: 12 }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: C.text, marginBottom: 16 }}>
+                        {editingMachine ? "機種を編集" : "新規機種登録"}
+                    </div>
+
+                    {/* 機種名 */}
+                    <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>機種名 *</div>
+                        <input type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })}
+                            placeholder="例: 大海物語5"
+                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                    </div>
+
+                    {/* メーカー */}
+                    <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>メーカー</div>
+                        <input type="text" value={formData.maker} onChange={e => setFormData({ ...formData, maker: e.target.value })}
+                            placeholder="例: 三洋"
+                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                    </div>
+
+                    {/* タイプ */}
+                    <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>タイプ</div>
+                        <select value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value })}
+                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }}>
+                            <option value="ミドル">ミドル</option>
+                            <option value="ハイミドル">ハイミドル</option>
+                            <option value="ライトミドル">ライトミドル</option>
+                            <option value="甘デジ">甘デジ</option>
+                            <option value="遊パチ">遊パチ</option>
+                        </select>
+                    </div>
+
+                    {/* 確率表記 */}
+                    <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>大当たり確率（表記用）</div>
+                        <input type="text" value={formData.prob} onChange={e => setFormData({ ...formData, prob: e.target.value })}
+                            placeholder="例: 1/319.6"
+                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                    </div>
+
+                    {/* 確率分母 */}
+                    <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>合成確率分母</div>
+                        <input type="number" value={formData.synthProb} onChange={e => setFormData({ ...formData, synthProb: e.target.value })}
+                            placeholder="319.6"
+                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                    </div>
+
+                    {/* 1R出玉 */}
+                    <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>1R出玉（実出玉）</div>
+                        <input type="number" value={formData.spec1R} onChange={e => setFormData({ ...formData, spec1R: e.target.value })}
+                            placeholder="140"
+                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                    </div>
+
+                    {/* 平均総R */}
+                    <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>平均総R/初当たり</div>
+                        <input type="number" value={formData.specAvgTotalRounds} onChange={e => setFormData({ ...formData, specAvgTotalRounds: e.target.value })}
+                            placeholder="30"
+                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                    </div>
+
+                    {/* サポ増減 */}
+                    <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>サポ増減/初当たり</div>
+                        <input type="number" value={formData.specSapo} onChange={e => setFormData({ ...formData, specSapo: e.target.value })}
+                            placeholder="0"
+                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                    </div>
+
+                    {/* ラウンド振り分け */}
+                    <div style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>ラウンド振り分け</div>
+                        <input type="text" value={formData.roundDist} onChange={e => setFormData({ ...formData, roundDist: e.target.value })}
+                            placeholder="例: 4R:50%, 10R:50%"
+                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                    </div>
+
+                    <Btn label={editingMachine ? "更新" : "登録"} onClick={saveMachine} bg={C.blue} fg="#fff" bd="none" disabled={!formData.name.trim()} />
+                </Card>
             </div>
         );
     }
@@ -1522,10 +1681,16 @@ export function SettingsTab({ s, onReset }) {
     if (showMachineSearch) {
         return (
             <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
-                <button className="b" onClick={() => { setShowMachineSearch(false); setQuery(""); }} style={{
-                    background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
-                    color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600, marginBottom: 12
-                }}>← 設定に戻る</button>
+                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                    <button className="b" onClick={() => { setShowMachineSearch(false); setQuery(""); }} style={{
+                        background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                        color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600
+                    }}>← 設定に戻る</button>
+                    <button className="b" onClick={() => openMachineForm()} style={{
+                        background: C.blue, border: "none", borderRadius: 8,
+                        color: "#fff", fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 700
+                    }}>+ 機種を登録</button>
+                </div>
 
                 <div style={{ marginBottom: 12 }}>
                     <input
@@ -1545,18 +1710,21 @@ export function SettingsTab({ s, onReset }) {
                     <div style={{ textAlign: "center", color: C.sub, padding: "40px 16px", fontSize: 12 }}>該当する機種がありません</div>
                 ) : (
                     results.map((m, i) => (
-                        <button key={i} className="b" onClick={() => setSelected(m)} style={{
+                        <button key={m.isCustom ? `custom-${m.id}` : `db-${i}`} className="b" onClick={() => setSelected(m)} style={{
                             width: "100%", background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent",
                             border: "none", borderBottom: `1px solid ${C.border}`, padding: "14px 16px",
                             display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer",
                             textAlign: "left",
                         }}>
                             <div>
-                                <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3 }}>{m.name}</div>
-                                <div style={{ fontSize: 10, color: C.sub }}>{m.maker} | {m.type}</div>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3, display: "flex", alignItems: "center", gap: 6 }}>
+                                    {m.name}
+                                    {m.isCustom && <span style={{ fontSize: 9, background: C.teal, color: "#fff", padding: "2px 6px", borderRadius: 4, fontWeight: 600 }}>カスタム</span>}
+                                </div>
+                                <div style={{ fontSize: 10, color: C.sub }}>{m.maker || "-"} | {m.type || "-"}</div>
                             </div>
                             <div style={{ textAlign: "right" }}>
-                                <div style={{ fontSize: 14, fontWeight: 800, color: C.yellow, fontFamily: mono }}>{m.prob}</div>
+                                <div style={{ fontSize: 14, fontWeight: 800, color: C.yellow, fontFamily: mono }}>{m.prob || `1/${m.synthProb}`}</div>
                                 <div style={{ fontSize: 9, color: C.sub }}>1R: {f(m.spec1R)}玉</div>
                             </div>
                         </button>
