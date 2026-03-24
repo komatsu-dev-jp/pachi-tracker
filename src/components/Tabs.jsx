@@ -1516,8 +1516,14 @@ export function CalendarTab({ S, onReset }) {
                                         alert("インポートできるデータがありませんでした");
                                         return;
                                     }
-                                    S.setArchives(prev => [...prev, ...newArchives]);
-                                    alert(`${newArchives.length}件のデータをインポートしました`);
+                                    // デバッグ: 最初のエントリの日付を表示
+                                    console.log("Import debug:", newArchives.map(a => ({ date: a.date, invest: a.investYen, recovery: a.recoveryYen, work: a.stats?.workAmount })));
+                                    S.setArchives(prev => {
+                                        const updated = [...prev, ...newArchives];
+                                        console.log("Archives after import:", updated.length);
+                                        return updated;
+                                    });
+                                    alert(`${newArchives.length}件のデータをインポートしました\n日付例: ${newArchives[0]?.date}`);
                                 } catch (err) {
                                     alert("CSVの読み込みに失敗しました: " + err.message);
                                 }
