@@ -1737,13 +1737,16 @@ export function SettingsTab({ s, onReset }) {
     // Normal settings view
     return (
         <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
-            {/* 機種検索ボタン */}
+            {/* 機種検索・登録 */}
             <Card style={{ padding: 16 }}>
-                <SecLabel label="機種検索" />
+                <SecLabel label="機種検索・登録" />
                 <div style={{ fontSize: 11, color: C.sub, marginBottom: 12, lineHeight: 1.6, padding: "0 4px" }}>
-                    機種を検索して確率・スペックを自動設定できます。
+                    機種を検索して確率・スペックを自動設定、またはオリジナル機種を登録できます。
                 </div>
-                <Btn label="機種を検索する" onClick={() => setShowMachineSearch(true)} primary />
+                <div style={{ display: "flex", gap: 10 }}>
+                    <Btn label="機種を検索" onClick={() => setShowMachineSearch(true)} primary />
+                    <Btn label="+ 機種を登録" onClick={() => openMachineForm()} bg={C.teal} fg="#fff" bd="none" />
+                </div>
             </Card>
 
             {/* 店舗登録 */}
