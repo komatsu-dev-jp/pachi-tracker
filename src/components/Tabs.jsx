@@ -1458,33 +1458,49 @@ export function CalendarTab({ S, onReset }) {
                                     }
                                     const headerLine = lines[0];
                                     const headers = headerLine.split(",").map(h => h.trim().replace(/^["']|["']$/g, ""));
-                                    const colIdx = (name) => headers.indexOf(name);
+                                    // カラム名の柔軟なマッチング
+                                    const colIdx = (names) => {
+                                        const arr = Array.isArray(names) ? names : [names];
+                                        for (const name of arr) {
+                                            const idx = headers.indexOf(name);
+                                            if (idx !== -1) return idx;
+                                        }
+                                        return -1;
+                                    };
+                                    const getCol = (cols, names, def = "") => {
+                                        const idx = colIdx(names);
+                                        return idx >= 0 && cols[idx] ? cols[idx] : def;
+                                    };
                                     const newArchives = [];
                                     for (let i = 1; i < lines.length; i++) {
                                         const cols = lines[i].split(",").map(c => c.trim());
-                                        if (cols.length < 5) continue;
-                                        const date = cols[colIdx("日付")] || "";
-                                        const time = cols[colIdx("時刻")] || "";
+                                        if (cols.length < 3) continue;
+                                        // 日付フォーマット変換 (2026/03/13 → 2026-03-13)
+                                        let date = getCol(cols, ["日付", "date"]);
+                                        if (date.includes("/")) date = date.replace(/\//g, "-");
                                         if (!date) continue;
-                                        const invest = parseFloat(cols[colIdx("投資")]) || 0;
-                                        const recovery = parseFloat(cols[colIdx("回収")]) || 0;
-                                        const synthDenom = parseFloat(cols[colIdx("確率分母")]) || 319.6;
-                                        const rentBalls = parseFloat(cols[colIdx("貸玉数")]) || 250;
-                                        const exRate = parseFloat(cols[colIdx("換金率")]) || 250;
-                                        const rotPerHour = parseFloat(cols[colIdx("時間回転数")]) || 250;
-                                        const border = parseFloat(cols[colIdx("ボーダー")]) || 20;
-                                        const ballVal = parseFloat(cols[colIdx("玉単価")]) || 4;
-                                        const workAmount = parseFloat(cols[colIdx("仕事量")]) || 0;
-                                        const ev1K = parseFloat(cols[colIdx("期待値/K")]) || 0;
-                                        const start1K = parseFloat(cols[colIdx("1Kスタート")]) || 0;
-                                        const netRot = parseFloat(cols[colIdx("総回転")]) || 0;
+                                        const time = getCol(cols, ["時刻", "time"]);
+                                        const invest = parseFloat(getCol(cols, ["投資額", "投資", "invest"], "0")) || 0;
+                                        const recovery = parseFloat(getCol(cols, ["回収額", "回収", "recovery"], "0")) || 0;
+                                        const synthDenom = parseFloat(getCol(cols, ["確率分母"], "319.6")) || 319.6;
+                                        const rentBalls = parseFloat(getCol(cols, ["貸玉数"], "250")) || 250;
+                                        const exRate = parseFloat(getCol(cols, ["換金率"], "250")) || 250;
+                                        const rotPerHour = parseFloat(getCol(cols, ["時間回転数"], "250")) || 250;
+                                        const border = parseFloat(getCol(cols, ["ボーダー"], "20")) || 20;
+                                        const ballVal = parseFloat(getCol(cols, ["玉単価"], "4")) || 4;
+                                        const workAmount = parseFloat(getCol(cols, ["仕事量", "期待値"], "0")) || 0;
+                                        const ev1K = parseFloat(getCol(cols, ["期待値/K"], "0")) || 0;
+                                        const start1K = parseFloat(getCol(cols, ["1Kスタート"], "0")) || 0;
+                                        const netRot = parseFloat(getCol(cols, ["総回転"], "0")) || 0;
+                                        const hours = parseFloat(getCol(cols, ["稼働時間"], "0")) || 0;
+                                        const hourlyWage = parseFloat(getCol(cols, ["時給"], "0")) || 0;
                                         newArchives.push({
                                             id: Date.now() + i + Math.random(),
                                             date,
                                             time,
-                                            storeName: (cols[colIdx("店舗名")] || "").replace(/，/g, ","),
-                                            machineNum: cols[colIdx("台番号")] || "",
-                                            machineName: (cols[colIdx("機種名")] || "").replace(/，/g, ","),
+                                            storeName: getCol(cols, ["店舗名", "店舗"]).replace(/，/g, ","),
+                                            machineNum: getCol(cols, ["台番号"]),
+                                            machineName: getCol(cols, ["機種名", "機種"]).replace(/，/g, ","),
                                             investYen: invest,
                                             recoveryYen: recovery,
                                             settings: { synthDenom, rentBalls, exRate, rotPerHour, border, ballVal },
