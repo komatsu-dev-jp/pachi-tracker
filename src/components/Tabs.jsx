@@ -1447,15 +1447,17 @@ export function CalendarTab({ S, onReset }) {
                             const reader = new FileReader();
                             reader.onload = (ev) => {
                                 try {
-                                    const text = ev.target?.result;
+                                    let text = ev.target?.result;
                                     if (typeof text !== "string") return;
+                                    // BOM除去
+                                    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
                                     const lines = text.split(/\r?\n/).filter(l => l.trim());
                                     if (lines.length < 2) {
                                         alert("有効なデータがありません");
                                         return;
                                     }
                                     const headerLine = lines[0];
-                                    const headers = headerLine.split(",").map(h => h.trim());
+                                    const headers = headerLine.split(",").map(h => h.trim().replace(/^["']|["']$/g, ""));
                                     const colIdx = (name) => headers.indexOf(name);
                                     const newArchives = [];
                                     for (let i = 1; i < lines.length; i++) {
