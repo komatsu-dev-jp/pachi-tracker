@@ -1385,6 +1385,131 @@ export function CalendarTab({ S, onReset }) {
                     </Card>
                 );
             })()}
+
+            {/* CSV Import/Export */}
+            <Card style={{ padding: 14, marginTop: 12 }}>
+                <SecLabel label="データ管理" />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <Btn label="CSVエクスポート" onClick={() => {
+                        if (archives.length === 0) {
+                            alert("エクスポートするデータがありません");
+                            return;
+                        }
+                        const headers = [
+                            "日付", "時刻", "店舗名", "台番号", "機種名",
+                            "投資", "回収", "収支", "確率分母", "貸玉数", "換金率",
+                            "時間回転数", "ボーダー", "玉単価", "仕事量", "期待値/K", "1Kスタート", "総回転"
+                        ];
+                        const rows = archives.map(a => {
+                            const st = a.stats || {};
+                            const invest = a.investYen || 0;
+                            const recovery = a.recoveryYen || 0;
+                            return [
+                                a.date || "",
+                                a.time || "",
+                                (a.storeName || "").replace(/,/g, "，"),
+                                a.machineNum || "",
+                                (a.machineName || "").replace(/,/g, "，"),
+                                invest,
+                                recovery,
+                                recovery - invest,
+                                a.settings?.synthDenom || "",
+                                a.settings?.rentBalls || "",
+                                a.settings?.exRate || "",
+                                a.settings?.rotPerHour || "",
+                                a.settings?.border || "",
+                                a.settings?.ballVal || "",
+                                Math.round(st.workAmount || 0),
+                                Math.round(st.ev1K || 0),
+                                st.start1K ? st.start1K.toFixed(2) : "",
+                                Math.round(st.netRot || 0)
+                            ].join(",");
+                        });
+                        const csv = "\uFEFF" + headers.join(",") + "\n" + rows.join("\n");
+                        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement("a");
+                        link.href = url;
+                        link.download = `pachi-tracker-${new Date().toISOString().slice(0, 10)}.csv`;
+                        link.click();
+                        URL.revokeObjectURL(url);
+                    }} fs={12} />
+                    <label style={{
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        background: "linear-gradient(135deg, #3b82f6, #2563eb)", border: "none", borderRadius: 12,
+                        color: "#fff", fontSize: 12, fontWeight: 700, padding: "12px 16px", cursor: "pointer",
+                        fontFamily: font, textAlign: "center"
+                    }}>
+                        CSVインポート
+                        <input type="file" accept=".csv" style={{ display: "none" }} onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                                try {
+                                    const text = ev.target?.result;
+                                    if (typeof text !== "string") return;
+                                    const lines = text.split(/\r?\n/).filter(l => l.trim());
+                                    if (lines.length < 2) {
+                                        alert("有効なデータがありません");
+                                        return;
+                                    }
+                                    const headerLine = lines[0];
+                                    const headers = headerLine.split(",").map(h => h.trim());
+                                    const colIdx = (name) => headers.indexOf(name);
+                                    const newArchives = [];
+                                    for (let i = 1; i < lines.length; i++) {
+                                        const cols = lines[i].split(",").map(c => c.trim());
+                                        if (cols.length < 5) continue;
+                                        const date = cols[colIdx("日付")] || "";
+                                        const time = cols[colIdx("時刻")] || "";
+                                        if (!date) continue;
+                                        const invest = parseFloat(cols[colIdx("投資")]) || 0;
+                                        const recovery = parseFloat(cols[colIdx("回収")]) || 0;
+                                        const synthDenom = parseFloat(cols[colIdx("確率分母")]) || 319.6;
+                                        const rentBalls = parseFloat(cols[colIdx("貸玉数")]) || 250;
+                                        const exRate = parseFloat(cols[colIdx("換金率")]) || 250;
+                                        const rotPerHour = parseFloat(cols[colIdx("時間回転数")]) || 250;
+                                        const border = parseFloat(cols[colIdx("ボーダー")]) || 20;
+                                        const ballVal = parseFloat(cols[colIdx("玉単価")]) || 4;
+                                        const workAmount = parseFloat(cols[colIdx("仕事量")]) || 0;
+                                        const ev1K = parseFloat(cols[colIdx("期待値/K")]) || 0;
+                                        const start1K = parseFloat(cols[colIdx("1Kスタート")]) || 0;
+                                        const netRot = parseFloat(cols[colIdx("総回転")]) || 0;
+                                        newArchives.push({
+                                            id: Date.now() + i + Math.random(),
+                                            date,
+                                            time,
+                                            storeName: (cols[colIdx("店舗名")] || "").replace(/，/g, ","),
+                                            machineNum: cols[colIdx("台番号")] || "",
+                                            machineName: (cols[colIdx("機種名")] || "").replace(/，/g, ","),
+                                            investYen: invest,
+                                            recoveryYen: recovery,
+                                            settings: { synthDenom, rentBalls, exRate, rotPerHour, border, ballVal },
+                                            stats: { workAmount, ev1K, start1K, netRot },
+                                            rotRows: [],
+                                            jpLog: [],
+                                            sesLog: [],
+                                            totalTrayBalls: 0,
+                                            startRot: 0,
+                                        });
+                                    }
+                                    if (newArchives.length === 0) {
+                                        alert("インポートできるデータがありませんでした");
+                                        return;
+                                    }
+                                    S.setArchives(prev => [...prev, ...newArchives]);
+                                    alert(`${newArchives.length}件のデータをインポートしました`);
+                                } catch (err) {
+                                    alert("CSVの読み込みに失敗しました: " + err.message);
+                                }
+                            };
+                            reader.readAsText(file, "UTF-8");
+                            e.target.value = "";
+                        }} />
+                    </label>
+                </div>
+            </Card>
         </div>
     );
 }
