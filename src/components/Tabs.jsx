@@ -1415,7 +1415,7 @@ export function CalendarTab({ S, onReset }) {
             {/* CSV Import/Export */}
             <Card style={{ padding: 14, marginTop: 12 }}>
                 <SecLabel label="データ管理" />
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
                     <Btn label="CSVエクスポート" onClick={() => {
                         if (archives.length === 0) {
                             alert("エクスポートするデータがありません");
@@ -1542,14 +1542,21 @@ export function CalendarTab({ S, onReset }) {
                                         alert("インポートできるデータがありませんでした");
                                         return;
                                     }
-                                    // デバッグ: 最初のエントリの日付を表示
-                                    console.log("Import debug:", newArchives.map(a => ({ date: a.date, invest: a.investYen, recovery: a.recoveryYen, work: a.stats?.workAmount })));
-                                    S.setArchives(prev => {
-                                        const updated = [...prev, ...newArchives];
-                                        console.log("Archives after import:", updated.length);
-                                        return updated;
+                                    // 重複チェック: 日付+店舗+台番号+投資+回収が同じなら除外
+                                    const existingKeys = new Set(archives.map(a =>
+                                        `${a.date}|${a.storeName}|${a.machineNum}|${a.investYen}|${a.recoveryYen}`
+                                    ));
+                                    const uniqueArchives = newArchives.filter(a => {
+                                        const key = `${a.date}|${a.storeName}|${a.machineNum}|${a.investYen}|${a.recoveryYen}`;
+                                        return !existingKeys.has(key);
                                     });
-                                    alert(`${newArchives.length}件のデータをインポートしました\n日付例: ${newArchives[0]?.date}`);
+                                    if (uniqueArchives.length === 0) {
+                                        alert("全て既存データと重複しています。新規データはありません。");
+                                        return;
+                                    }
+                                    const skipped = newArchives.length - uniqueArchives.length;
+                                    S.setArchives(prev => [...prev, ...uniqueArchives]);
+                                    alert(`${uniqueArchives.length}件のデータをインポートしました${skipped > 0 ? `\n（${skipped}件の重複データをスキップ）` : ""}`);
                                 } catch (err) {
                                     alert("CSVの読み込みに失敗しました: " + err.message);
                                 }
@@ -1559,6 +1566,22 @@ export function CalendarTab({ S, onReset }) {
                         }} />
                     </label>
                 </div>
+                {/* 全データリセット */}
+                {archives.length > 0 && (
+                    <Btn
+                        label={`全記録データをリセット（${archives.length}件）`}
+                        onClick={() => {
+                            if (confirm(`本当に全ての記録データ（${archives.length}件）を削除しますか？\nこの操作は取り消せません。`)) {
+                                S.setArchives([]);
+                                alert("全ての記録データを削除しました");
+                            }
+                        }}
+                        bg="transparent"
+                        fg={C.red}
+                        bd={`1px solid ${C.red}40`}
+                        fs={11}
+                    />
+                )}
             </Card>
         </div>
     );
