@@ -2523,6 +2523,47 @@ export function SettingsTab({ s, onReset }) {
     // Normal settings view
     return (
         <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+            {/* テーマ設定 */}
+            <Card style={{ padding: 16 }}>
+                <SecLabel label="テーマ設定" />
+                <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+                    <button
+                        className="b"
+                        onClick={() => s.setTheme("dark")}
+                        style={{
+                            flex: 1,
+                            padding: "16px 12px",
+                            borderRadius: 12,
+                            border: s.theme === "dark" ? `2px solid ${C.blue}` : `1px solid ${C.border}`,
+                            background: s.theme === "dark" ? "linear-gradient(135deg, #1a1a24, #252532)" : C.surface,
+                            cursor: "pointer",
+                            transition: "all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+                        }}
+                    >
+                        <div style={{ fontSize: 24, marginBottom: 8 }}>🌙</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: s.theme === "dark" ? C.blue : C.text }}>ダーク</div>
+                        <div style={{ fontSize: 10, color: C.sub, marginTop: 4 }}>Dark Mode</div>
+                    </button>
+                    <button
+                        className="b"
+                        onClick={() => s.setTheme("light")}
+                        style={{
+                            flex: 1,
+                            padding: "16px 12px",
+                            borderRadius: 12,
+                            border: s.theme === "light" ? `2px solid ${C.blue}` : `1px solid ${C.border}`,
+                            background: s.theme === "light" ? "linear-gradient(135deg, #e8f0fe, #f5f7fa)" : C.surface,
+                            cursor: "pointer",
+                            transition: "all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+                        }}
+                    >
+                        <div style={{ fontSize: 24, marginBottom: 8 }}>☀️</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: s.theme === "light" ? C.blue : C.text }}>ホワイト</div>
+                        <div style={{ fontSize: 10, color: C.sub, marginTop: 4 }}>Light Mode</div>
+                    </button>
+                </div>
+            </Card>
+
             {/* 機種検索・登録 */}
             <Card style={{ padding: 16 }}>
                 <SecLabel label="機種検索・登録" />
