@@ -1518,17 +1518,30 @@ export function CalendarTab({ S, onReset }) {
                                     }
                                     // デバッグ: 最初のエントリの日付を表示
                                     console.log("Import debug:", newArchives.map(a => ({ date: a.date, invest: a.investYen, recovery: a.recoveryYen, work: a.stats?.workAmount })));
-                                    // 既存のデータを上書き（重複防止）
+                                    // 重複チェック用のキー生成関数
+                                    const getKey = (a) => `${a.date}|${a.storeName || ""}|${a.machineNum || ""}|${a.machineName || ""}|${a.investYen || 0}|${a.recoveryYen || 0}`;
                                     // CSVインポートしたデータにはisImportedフラグを付ける
                                     const importedArchives = newArchives.map(a => ({ ...a, isImported: true }));
                                     S.setArchives(prev => {
-                                        // 既存のインポートデータを除外して新しいインポートデータで置き換え
+                                        // 既存のインポートデータを除外
                                         const nonImported = prev.filter(a => !a.isImported);
-                                        const updated = [...nonImported, ...importedArchives];
-                                        console.log("Archives after import:", updated.length, "(non-imported:", nonImported.length, ", imported:", importedArchives.length, ")");
+                                        // 既存データのキーセットを作成
+                                        const existingKeys = new Set(nonImported.map(getKey));
+                                        // 重複を除外した新しいインポートデータ
+                                        const uniqueImported = importedArchives.filter(a => !existingKeys.has(getKey(a)));
+                                        // インポートデータ内での重複も除外
+                                        const seenKeys = new Set();
+                                        const dedupedImported = uniqueImported.filter(a => {
+                                            const key = getKey(a);
+                                            if (seenKeys.has(key)) return false;
+                                            seenKeys.add(key);
+                                            return true;
+                                        });
+                                        const updated = [...nonImported, ...dedupedImported];
+                                        console.log("Archives after import:", updated.length, "(non-imported:", nonImported.length, ", imported:", dedupedImported.length, ", skipped duplicates:", importedArchives.length - dedupedImported.length, ")");
                                         return updated;
                                     });
-                                    alert(`${newArchives.length}件のデータをインポートしました（既存のインポートデータは上書きされました）\n日付例: ${newArchives[0]?.date}`);
+                                    alert(`${newArchives.length}件のデータをインポートしました（重複データは自動的にスキップされました）\n日付例: ${newArchives[0]?.date}`);
                                 } catch (err) {
                                     alert("CSVの読み込みに失敗しました: " + err.message);
                                 }
@@ -1540,38 +1553,94 @@ export function CalendarTab({ S, onReset }) {
                 </div>
             </Card>
 
-            {/* CSVインポートデータ削除 */}
-            {archives.some(a => a.isImported) && (
-                <Card style={{ padding: 14, marginTop: 12 }}>
-                    <SecLabel label="インポートデータ管理" />
-                    <p style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>
-                        CSVからインポートしたデータ: {archives.filter(a => a.isImported).length}件
-                    </p>
-                    <button
-                        className="b"
-                        onClick={() => {
-                            if (window.confirm("CSVでインポートしたデータをすべて削除しますか？\n（手動で記録したデータは残ります）")) {
-                                S.setArchives(prev => prev.filter(a => !a.isImported));
-                                alert("インポートデータを削除しました");
-                            }
-                        }}
-                        style={{
-                            width: "100%",
-                            background: "linear-gradient(135deg, #ef4444, #dc2626)",
-                            border: "none",
-                            borderRadius: 12,
-                            color: "#fff",
-                            fontSize: 13,
-                            fontWeight: 700,
-                            padding: "14px 16px",
-                            cursor: "pointer",
-                            fontFamily: font,
-                        }}
-                    >
-                        CSVインポートデータを削除
-                    </button>
-                </Card>
-            )}
+            {/* 重複データ削除・インポートデータ管理 */}
+            <Card style={{ padding: 14, marginTop: 12 }}>
+                <SecLabel label="データ整理" />
+                {/* 重複データ削除ボタン */}
+                {(() => {
+                    const getKey = (a) => `${a.date}|${a.storeName || ""}|${a.machineNum || ""}|${a.machineName || ""}|${a.investYen || 0}|${a.recoveryYen || 0}`;
+                    const keyCount = {};
+                    archives.forEach(a => {
+                        const key = getKey(a);
+                        keyCount[key] = (keyCount[key] || 0) + 1;
+                    });
+                    const duplicateCount = Object.values(keyCount).reduce((sum, c) => sum + (c > 1 ? c - 1 : 0), 0);
+                    return duplicateCount > 0 ? (
+                        <>
+                            <p style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>
+                                重複データ: {duplicateCount}件検出
+                            </p>
+                            <button
+                                className="b"
+                                onClick={() => {
+                                    if (window.confirm(`${duplicateCount}件の重複データを削除しますか？\n（各データは1件だけ残ります）`)) {
+                                        S.setArchives(prev => {
+                                            const seen = new Set();
+                                            return prev.filter(a => {
+                                                const key = getKey(a);
+                                                if (seen.has(key)) return false;
+                                                seen.add(key);
+                                                return true;
+                                            });
+                                        });
+                                        alert("重複データを削除しました");
+                                    }
+                                }}
+                                style={{
+                                    width: "100%",
+                                    background: "linear-gradient(135deg, #f59e0b, #d97706)",
+                                    border: "none",
+                                    borderRadius: 12,
+                                    color: "#fff",
+                                    fontSize: 13,
+                                    fontWeight: 700,
+                                    padding: "14px 16px",
+                                    cursor: "pointer",
+                                    fontFamily: font,
+                                    marginBottom: 10,
+                                }}
+                            >
+                                重複データを削除
+                            </button>
+                        </>
+                    ) : (
+                        <p style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>
+                            重複データはありません
+                        </p>
+                    );
+                })()}
+                {/* CSVインポートデータ削除 */}
+                {archives.some(a => a.isImported) && (
+                    <>
+                        <p style={{ fontSize: 11, color: C.sub, marginBottom: 10, marginTop: 10 }}>
+                            CSVからインポートしたデータ: {archives.filter(a => a.isImported).length}件
+                        </p>
+                        <button
+                            className="b"
+                            onClick={() => {
+                                if (window.confirm("CSVでインポートしたデータをすべて削除しますか？\n（手動で記録したデータは残ります）")) {
+                                    S.setArchives(prev => prev.filter(a => !a.isImported));
+                                    alert("インポートデータを削除しました");
+                                }
+                            }}
+                            style={{
+                                width: "100%",
+                                background: "linear-gradient(135deg, #ef4444, #dc2626)",
+                                border: "none",
+                                borderRadius: 12,
+                                color: "#fff",
+                                fontSize: 13,
+                                fontWeight: 700,
+                                padding: "14px 16px",
+                                cursor: "pointer",
+                                fontFamily: font,
+                            }}
+                        >
+                            CSVインポートデータを削除
+                        </button>
+                    </>
+                )}
+            </Card>
         </div>
     );
 }
