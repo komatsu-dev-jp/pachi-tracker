@@ -42,6 +42,19 @@ export default function App() {
   // Archives
   const [archives, setArchives] = useLS("pt_archives", []);
 
+  // 一時的なデータクリーンアップ: 3/23のデータのみ残す
+  useEffect(() => {
+    const cleaned = localStorage.getItem("pt_archives_cleaned_0323");
+    if (!cleaned && archives.length > 0) {
+      const filtered = archives.filter(a => a.date === "2026-03-23");
+      if (filtered.length !== archives.length) {
+        setArchives(filtered);
+        localStorage.setItem("pt_archives_cleaned_0323", "true");
+        console.log(`Archives cleaned: ${archives.length} -> ${filtered.length} (kept only 3/23)`);
+      }
+    }
+  }, []);
+
   const pushJP = (j) => setJpLog((p) => [...p, j]);
   const delJPLast = () => setJpLog((p) => p.slice(0, -1));
   const pushLog = (e) => setSesLog((p) => [...p, e]);
