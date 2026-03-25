@@ -21,6 +21,7 @@ export default function App() {
   const touchStartY = useRef(null);
   const touchEndX = useRef(null);
   const containerRef = useRef(null);
+  const isHorizontalSwipe = useRef(null); // Track if swipe direction is determined
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
 
@@ -29,6 +30,7 @@ export default function App() {
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
     touchEndX.current = e.touches[0].clientX;
+    isHorizontalSwipe.current = null; // Reset direction
   }, [isAnimating]);
 
   const handleTouchMove = useCallback((e) => {
@@ -39,8 +41,18 @@ export default function App() {
     const diffX = currentX - touchStartX.current;
     const diffY = currentY - touchStartY.current;
 
-    // Only horizontal swipes (ignore vertical scrolling)
-    if (Math.abs(diffY) > Math.abs(diffX) * 0.8) return;
+    // Determine swipe direction once threshold is met
+    if (isHorizontalSwipe.current === null && (Math.abs(diffX) > 10 || Math.abs(diffY) > 10)) {
+      isHorizontalSwipe.current = Math.abs(diffX) > Math.abs(diffY);
+    }
+
+    // If vertical scroll, let it happen
+    if (isHorizontalSwipe.current === false) return;
+
+    // If horizontal swipe, prevent vertical scrolling
+    if (isHorizontalSwipe.current === true) {
+      e.preventDefault();
+    }
 
     touchEndX.current = currentX;
 
@@ -95,6 +107,7 @@ export default function App() {
     touchStartX.current = null;
     touchStartY.current = null;
     touchEndX.current = null;
+    isHorizontalSwipe.current = null;
   }, [tab, navOrder, isAnimating]);
 
   // Settings
@@ -239,10 +252,10 @@ export default function App() {
   const statBg = theme === "light" ? "rgba(0,0,0,0.03)" : "rgba(255,255,255,0.03)";
 
   return (
-    <div style={{ background: C.bg, minHeight: "100vh", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column", color: C.text, position: "relative", overflow: "hidden" }}>
+    <div style={{ background: C.bg, height: "100dvh", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column", color: C.text, position: "relative", overflow: "hidden" }}>
 
       {/* Header */}
-      <header style={{ background: headerBg, backdropFilter: "blur(12px)", borderBottom: `1px solid ${C.border}`, padding: "14px 16px 12px", zIndex: 100 }}>
+      <header style={{ background: headerBg, backdropFilter: "blur(12px)", borderBottom: `1px solid ${C.border}`, padding: "12px 16px 10px", paddingTop: "max(12px, env(safe-area-inset-top))", zIndex: 100, flexShrink: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <h1 style={{ fontSize: 18, fontWeight: 900, letterSpacing: -0.5, color: headerTextColor, lineHeight: 1.1 }}>PACHI TRACKER</h1>
@@ -271,10 +284,13 @@ export default function App() {
           flex: 1,
           display: "flex",
           flexDirection: "column",
-          overflow: "hidden",
+          overflow: "auto",
+          overflowX: "hidden",
+          paddingBottom: "calc(70px + env(safe-area-inset-bottom))",
           transform: `translateX(${swipeOffset}px)`,
           transition: isAnimating ? "transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94)" : "none",
           willChange: "transform",
+          touchAction: "pan-y pinch-zoom",
         }}
       >
         {tab === "data" && <DataTab ev={ev} jpLog={jpLog} S={S} />}
