@@ -1441,7 +1441,7 @@ export function CalendarTab({ S, onReset }) {
                         fontFamily: font, textAlign: "center"
                     }}>
                         CSVインポート
-                        <input type="file" accept=".csv" style={{ display: "none" }} onChange={(e) => {
+                        <input type="file" accept=".csv,text/csv,text/plain,application/vnd.ms-excel,*/*" style={{ display: "none" }} onChange={(e) => {
                             const file = e.target.files?.[0];
                             if (!file) return;
                             const reader = new FileReader();
@@ -2089,7 +2089,7 @@ export function SettingsTab({ s, onReset }) {
                         textAlign: "center", cursor: "pointer"
                     }}>
                         CSVインポート
-                        <input type="file" accept=".csv" onChange={importStoresCSV} style={{ display: "none" }} />
+                        <input type="file" accept=".csv,text/csv,text/plain,application/vnd.ms-excel,*/*" onChange={importStoresCSV} style={{ display: "none" }} />
                     </label>
                 </div>
 
@@ -2381,7 +2381,7 @@ export function SettingsTab({ s, onReset }) {
                         textAlign: "center", cursor: "pointer"
                     }}>
                         CSVインポート
-                        <input type="file" accept=".csv" onChange={importMachinesCSV} style={{ display: "none" }} />
+                        <input type="file" accept=".csv,text/csv,text/plain,application/vnd.ms-excel,*/*" onChange={importMachinesCSV} style={{ display: "none" }} />
                     </label>
                 </div>
 
