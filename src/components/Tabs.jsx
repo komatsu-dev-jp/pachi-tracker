@@ -804,19 +804,19 @@ export function CalendarTab({ S, onReset }) {
         return map;
     }, [archives]);
 
-    // Calculate daily totals
+    // Calculate daily totals - separate EV and actual P/L
     const dailyTotals = useMemo(() => {
         const totals = {};
         Object.entries(byDate).forEach(([date, items]) => {
-            let total = 0;
+            let ev = 0;      // 期待値（仕事量）
+            let actual = 0;  // 実収支（回収-投資）
             items.forEach(a => {
-                if (a.investYen != null && a.recoveryYen != null && (a.investYen > 0 || a.recoveryYen > 0)) {
-                    total += (a.recoveryYen || 0) - (a.investYen || 0);
-                } else {
-                    total += (a.stats?.workAmount || 0);
+                ev += (a.stats?.workAmount || 0);
+                if (a.investYen != null && a.recoveryYen != null) {
+                    actual += (a.recoveryYen || 0) - (a.investYen || 0);
                 }
             });
-            totals[date] = total;
+            totals[date] = { ev, actual };
         });
         return totals;
     }, [byDate]);
@@ -837,14 +837,17 @@ export function CalendarTab({ S, onReset }) {
         return agg;
     }, [archives]);
 
-    // Monthly total
+    // Monthly total - separate EV and actual
     const monthKey = `${viewMonth.year}-${String(viewMonth.month + 1).padStart(2, "0")}`;
     const monthTotal = useMemo(() => {
-        let total = 0;
+        let ev = 0, actual = 0;
         Object.entries(dailyTotals).forEach(([date, val]) => {
-            if (date.startsWith(monthKey)) total += val;
+            if (date.startsWith(monthKey)) {
+                ev += val.ev || 0;
+                actual += val.actual || 0;
+            }
         });
-        return total;
+        return { ev, actual };
     }, [dailyTotals, monthKey]);
 
     // Calendar grid
@@ -1243,8 +1246,19 @@ export function CalendarTab({ S, onReset }) {
                 <button className="b" onClick={prevMonth} style={{ background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8, color: C.text, fontSize: 14, padding: "4px 10px", fontWeight: 700 }}>‹</button>
                 <div style={{ textAlign: "center" }}>
                     <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{viewMonth.year}年 {viewMonth.month + 1}月</div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: sc(monthTotal), fontFamily: mono, marginTop: 1 }}>
-                        {monthTotal !== 0 ? f(Math.round(monthTotal)) + "円" : "—"}
+                    <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 2 }}>
+                        <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: 8, color: C.sub, fontWeight: 600 }}>期待値</div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: sc(monthTotal.ev), fontFamily: mono }}>
+                                {monthTotal.ev !== 0 ? f(Math.round(monthTotal.ev)) : "—"}
+                            </div>
+                        </div>
+                        <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: 8, color: C.sub, fontWeight: 600 }}>収支</div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: sc(monthTotal.actual), fontFamily: mono }}>
+                                {monthTotal.actual !== 0 ? f(Math.round(monthTotal.actual)) : "—"}
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <button className="b" onClick={nextMonth} style={{ background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8, color: C.text, fontSize: 14, padding: "4px 10px", fontWeight: 700 }}>›</button>
@@ -1262,8 +1276,8 @@ export function CalendarTab({ S, onReset }) {
                 {calendarDays.map((day, idx) => {
                     if (day === null) return <div key={`e-${idx}`} />;
                     const ds = dateStr(day);
-                    const total = dailyTotals[ds];
-                    const hasData = total != null;
+                    const dayData = dailyTotals[ds];
+                    const hasData = dayData != null;
                     const isSel = selectedDate === ds;
                     const todayBg = isToday(day) ? "rgba(59, 130, 246, 0.15)" : isSel ? "rgba(59,130,246,0.1)" : "transparent";
                     const dow = idx % 7;
@@ -1271,13 +1285,18 @@ export function CalendarTab({ S, onReset }) {
                     return (
                         <button key={day} className="b" onClick={() => setSelectedDate(isSel ? null : ds)} style={{
                             background: todayBg, border: isToday(day) ? `1px solid ${C.blue}40` : isSel ? `1px solid ${C.blue}30` : `1px solid transparent`,
-                            borderRadius: 6, padding: "5px 1px", textAlign: "center", minHeight: 42,
+                            borderRadius: 6, padding: "3px 1px", textAlign: "center", minHeight: 48,
                             cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start",
                         }}>
-                            <div style={{ fontSize: 13, fontWeight: isToday(day) ? 800 : 500, color: dow === 0 ? C.red : dow === 6 ? C.blue : C.text, lineHeight: 1 }}>{day}</div>
+                            <div style={{ fontSize: 12, fontWeight: isToday(day) ? 800 : 500, color: dow === 0 ? C.red : dow === 6 ? C.blue : C.text, lineHeight: 1 }}>{day}</div>
                             {hasData && (
-                                <div style={{ fontSize: 8, fontWeight: 700, color: sc(total), fontFamily: mono, marginTop: 3, lineHeight: 1 }}>
-                                    {f(Math.round(total))}
+                                <div style={{ marginTop: 2, lineHeight: 1.1 }}>
+                                    <div style={{ fontSize: 7, fontWeight: 700, color: sc(dayData.ev), fontFamily: mono }}>
+                                        {dayData.ev !== 0 ? f(Math.round(dayData.ev)) : ""}
+                                    </div>
+                                    <div style={{ fontSize: 7, fontWeight: 700, color: sc(dayData.actual), fontFamily: mono, opacity: 0.7 }}>
+                                        {dayData.actual !== 0 ? f(Math.round(dayData.actual)) : ""}
+                                    </div>
                                 </div>
                             )}
                         </button>
@@ -1288,16 +1307,23 @@ export function CalendarTab({ S, onReset }) {
             {/* ── Inline data strip when date is selected ── */}
             {selectedDate && (() => {
                 const dateArchives = byDate[selectedDate] || [];
-                const dayTotal = dailyTotals[selectedDate];
+                const dayData = dailyTotals[selectedDate];
                 const hasCurrentSession = S.rotRows && S.rotRows.length > 0;
                 return (
                     <div style={{ marginTop: 10 }}>
                         {/* Selected date header */}
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, padding: "0 2px" }}>
                             <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{selectedDate}</div>
-                            {dayTotal != null && (
-                                <div style={{ fontSize: 14, fontWeight: 700, color: sc(dayTotal), fontFamily: mono }}>
-                                    {f(Math.round(dayTotal))}円
+                            {dayData != null && (
+                                <div style={{ display: "flex", gap: 10 }}>
+                                    <div style={{ textAlign: "center" }}>
+                                        <div style={{ fontSize: 8, color: C.sub }}>期待値</div>
+                                        <div style={{ fontSize: 12, fontWeight: 700, color: sc(dayData.ev), fontFamily: mono }}>{f(Math.round(dayData.ev))}</div>
+                                    </div>
+                                    <div style={{ textAlign: "center" }}>
+                                        <div style={{ fontSize: 8, color: C.sub }}>収支</div>
+                                        <div style={{ fontSize: 12, fontWeight: 700, color: sc(dayData.actual), fontFamily: mono }}>{f(Math.round(dayData.actual))}</div>
+                                    </div>
                                 </div>
                             )}
                         </div>
