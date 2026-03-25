@@ -1518,12 +1518,17 @@ export function CalendarTab({ S, onReset }) {
                                     }
                                     // デバッグ: 最初のエントリの日付を表示
                                     console.log("Import debug:", newArchives.map(a => ({ date: a.date, invest: a.investYen, recovery: a.recoveryYen, work: a.stats?.workAmount })));
+                                    // 既存のデータを上書き（重複防止）
+                                    // CSVインポートしたデータにはisImportedフラグを付ける
+                                    const importedArchives = newArchives.map(a => ({ ...a, isImported: true }));
                                     S.setArchives(prev => {
-                                        const updated = [...prev, ...newArchives];
-                                        console.log("Archives after import:", updated.length);
+                                        // 既存のインポートデータを除外して新しいインポートデータで置き換え
+                                        const nonImported = prev.filter(a => !a.isImported);
+                                        const updated = [...nonImported, ...importedArchives];
+                                        console.log("Archives after import:", updated.length, "(non-imported:", nonImported.length, ", imported:", importedArchives.length, ")");
                                         return updated;
                                     });
-                                    alert(`${newArchives.length}件のデータをインポートしました\n日付例: ${newArchives[0]?.date}`);
+                                    alert(`${newArchives.length}件のデータをインポートしました（既存のインポートデータは上書きされました）\n日付例: ${newArchives[0]?.date}`);
                                 } catch (err) {
                                     alert("CSVの読み込みに失敗しました: " + err.message);
                                 }
@@ -1534,6 +1539,39 @@ export function CalendarTab({ S, onReset }) {
                     </label>
                 </div>
             </Card>
+
+            {/* CSVインポートデータ削除 */}
+            {archives.some(a => a.isImported) && (
+                <Card style={{ padding: 14, marginTop: 12 }}>
+                    <SecLabel label="インポートデータ管理" />
+                    <p style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>
+                        CSVからインポートしたデータ: {archives.filter(a => a.isImported).length}件
+                    </p>
+                    <button
+                        className="b"
+                        onClick={() => {
+                            if (window.confirm("CSVでインポートしたデータをすべて削除しますか？\n（手動で記録したデータは残ります）")) {
+                                S.setArchives(prev => prev.filter(a => !a.isImported));
+                                alert("インポートデータを削除しました");
+                            }
+                        }}
+                        style={{
+                            width: "100%",
+                            background: "linear-gradient(135deg, #ef4444, #dc2626)",
+                            border: "none",
+                            borderRadius: 12,
+                            color: "#fff",
+                            fontSize: 13,
+                            fontWeight: 700,
+                            padding: "14px 16px",
+                            cursor: "pointer",
+                            fontFamily: font,
+                        }}
+                    >
+                        CSVインポートデータを削除
+                    </button>
+                </Card>
+            )}
         </div>
     );
 }
