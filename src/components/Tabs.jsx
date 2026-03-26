@@ -173,18 +173,26 @@ export function DataTab({ ev, jpLog, S }) {
 }
 
 /* ================================================================
-   RotTab — 回転数入力 + リアルタイム実測統計パネル
+   RotTab — 回転数入力 + リアルタイム実測統計パネル（刷新版）
 ================================================================ */
 export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     // 回転色判定にはEVで使用しているボーダーを優先
     const border = ev.useBorder > 0 ? ev.useBorder : displayBorder;
     const [input, setInput] = useState("");
     const [showMoveModal, setShowMoveModal] = useState(false);
+    const [showSetupModal, setShowSetupModal] = useState(false);
     const [showStoreDD, setShowStoreDD] = useState(false);
     const [showMachineDD, setShowMachineDD] = useState(false);
     const [machineQuery, setMachineQuery] = useState("");
-    const [summaryCollapsed, setSummaryCollapsed] = useState(false);
+    const [summaryCollapsed, setSummaryCollapsed] = useState(true);
     const tableRef = useRef(null);
+
+    // セットアップ用の一時state
+    const [setupStore, setSetupStore] = useState("");
+    const [setupMachineNum, setSetupMachineNum] = useState("");
+    const [setupMachineName, setSetupMachineName] = useState("");
+    const [setupStartRot, setSetupStartRot] = useState("");
+    const [setupInitialBalls, setSetupInitialBalls] = useState("");
 
     // 機種検索結果
     const machineResults = useMemo(() => {
@@ -197,6 +205,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         const stores = S.stores || [];
         return stores.find(st => typeof st === "object" && st.name === S.storeName);
     }, [S.stores, S.storeName]);
+
+    // セッションが開始されているか
+    const sessionActive = rows.some(r => r.type === "start");
 
     useEffect(() => {
         if (tableRef.current) tableRef.current.scrollTop = tableRef.current.scrollHeight;
@@ -227,14 +238,29 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         setInput("");
     };
 
-    const doStart = () => {
-        const val = Number(input);
-        if (!input || isNaN(val) || val < 0) return;
+    // 新規稼働開始
+    const handleStartSession = () => {
+        const val = Number(setupStartRot) || 0;
 
+        // 店舗・機種設定を適用
+        if (setupStore) S.setStoreName(setupStore);
+        if (setupMachineNum) S.setMachineNum(setupMachineNum);
+        if (setupMachineName) S.setMachineName(setupMachineName);
+        if (setupInitialBalls) S.setCurrentMochiBalls(Number(setupInitialBalls) || 0);
+
+        // セッション開始
         S.setStartRot(val);
-        setRows((r) => [...r, { type: "start", cumRot: val }]);
+        S.setSessionStarted(true);
+        setRows((r) => [...r, { type: "start", cumRot: val, mode: S.playMode }]);
         S.pushLog({ type: "スタート", time: tsNow(), rot: val });
-        setInput("");
+
+        // モーダルを閉じてリセット
+        setShowSetupModal(false);
+        setSetupStore("");
+        setSetupMachineNum("");
+        setSetupMachineName("");
+        setSetupStartRot("");
+        setSetupInitialBalls("");
     };
 
     const handleStartChain = () => {
@@ -264,252 +290,347 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         S.setTab("history");
     };
 
+    // セッション未開始：新規稼働ボタンを中央に表示
+    if (!sessionActive) {
+        return (
+            <div style={{ display: "flex", flexDirection: "column", height: "100%", justifyContent: "center", alignItems: "center", padding: 20 }}>
+                {/* 中央の新規稼働ボタン */}
+                <button
+                    className="b"
+                    onClick={() => setShowSetupModal(true)}
+                    style={{
+                        width: 120,
+                        height: 120,
+                        borderRadius: "50%",
+                        background: "linear-gradient(135deg, #f97316, #ea580c)",
+                        border: "none",
+                        boxShadow: "0 8px 32px rgba(249, 115, 22, 0.4)",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 8,
+                        cursor: "pointer",
+                        transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                    }}
+                >
+                    <span style={{ fontSize: 48, color: "#fff", fontWeight: 300, lineHeight: 1 }}>+</span>
+                    <span style={{ fontSize: 11, color: "#fff", fontWeight: 700, letterSpacing: 1 }}>新規稼働</span>
+                </button>
+
+                <p style={{ marginTop: 24, fontSize: 13, color: C.sub, textAlign: "center", lineHeight: 1.6 }}>
+                    タップして稼働を開始
+                </p>
+
+                {/* 貯玉残高表示 */}
+                {currentStoreData?.chodama > 0 && (
+                    <div style={{ marginTop: 20, padding: "12px 24px", background: "rgba(139, 92, 246, 0.1)", borderRadius: 12, border: `1px solid ${C.purple}30` }}>
+                        <div style={{ fontSize: 10, color: C.sub, marginBottom: 4 }}>{currentStoreData.name} 貯玉残高</div>
+                        <div style={{ fontSize: 24, fontWeight: 800, color: C.purple, fontFamily: mono }}>{f(currentStoreData.chodama)}</div>
+                    </div>
+                )}
+
+                {/* セットアップモーダル */}
+                {showSetupModal && (
+                    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+                        <Card style={{ width: "100%", maxWidth: 360, padding: 0, maxHeight: "85vh", overflowY: "auto" }}>
+                            <div style={{ padding: "16px 16px 0", borderBottom: `1px solid ${C.border}` }}>
+                                <h2 style={{ fontSize: 18, fontWeight: 800, color: C.text, marginBottom: 4 }}>稼働開始</h2>
+                                <p style={{ fontSize: 11, color: C.sub, marginBottom: 12 }}>台の情報を入力してください</p>
+                            </div>
+
+                            <div style={{ padding: 16 }}>
+                                {/* 店舗選択 */}
+                                <div style={{ marginBottom: 12, position: "relative" }}>
+                                    <div style={{ fontSize: 10, color: C.sub, marginBottom: 4, fontWeight: 600 }}>店舗</div>
+                                    <div style={{ position: "relative" }}>
+                                        <input
+                                            type="text"
+                                            value={setupStore}
+                                            onChange={e => setSetupStore(e.target.value)}
+                                            placeholder="店舗名を入力"
+                                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 10, padding: "12px 36px 12px 12px", fontSize: 16, color: C.text, fontFamily: font, outline: "none" }}
+                                        />
+                                        {(S.stores || []).length > 0 && (
+                                            <button className="b" onClick={() => setShowStoreDD(!showStoreDD)} style={{
+                                                position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+                                                background: "transparent", border: "none", color: C.sub, fontSize: 14, padding: 4
+                                            }}>▼</button>
+                                        )}
+                                    </div>
+                                    {showStoreDD && (S.stores || []).length > 0 && (
+                                        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 10, zIndex: 20, maxHeight: 150, overflowY: "auto", marginTop: 4, boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+                                            {(S.stores || []).map((st, i) => {
+                                                const name = typeof st === "object" ? st.name : st;
+                                                const chodama = typeof st === "object" ? st.chodama : 0;
+                                                return (
+                                                    <button key={st.id || i} className="b" onClick={() => {
+                                                        setSetupStore(name);
+                                                        if (typeof st === "object") {
+                                                            if (st.rentBalls) S.setRentBalls(st.rentBalls);
+                                                            if (st.exRate) S.setExRate(st.exRate);
+                                                            if (st.chodama) S.setCurrentChodama(st.chodama);
+                                                            S.setSelectedStoreId(st.id);
+                                                        }
+                                                        setShowStoreDD(false);
+                                                    }} style={{
+                                                        width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${C.border}`,
+                                                        color: C.text, fontSize: 14, padding: "12px 14px", textAlign: "left", fontFamily: font, display: "flex", justifyContent: "space-between", alignItems: "center"
+                                                    }}>
+                                                        <span>{name}</span>
+                                                        {chodama > 0 && <span style={{ fontSize: 11, color: C.purple, fontFamily: mono }}>貯玉: {f(chodama)}</span>}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 機種選択 */}
+                                <div style={{ marginBottom: 12, position: "relative" }}>
+                                    <div style={{ fontSize: 10, color: C.sub, marginBottom: 4, fontWeight: 600 }}>機種</div>
+                                    <input
+                                        type="text"
+                                        value={setupMachineName}
+                                        onChange={e => { setSetupMachineName(e.target.value); setMachineQuery(e.target.value); setShowMachineDD(true); }}
+                                        onFocus={() => setShowMachineDD(true)}
+                                        placeholder="機種名を検索..."
+                                        style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 10, padding: "12px", fontSize: 16, color: C.text, fontFamily: font, outline: "none" }}
+                                    />
+                                    {showMachineDD && machineResults.length > 0 && (
+                                        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 10, zIndex: 20, maxHeight: 200, overflowY: "auto", marginTop: 4, boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+                                            {machineResults.map((m, i) => (
+                                                <button key={m.id || i} className="b" onClick={() => {
+                                                    setSetupMachineName(m.name);
+                                                    S.setSynthDenom(m.synthProb);
+                                                    if (m.spec1R) S.setSpec1R(m.spec1R);
+                                                    if (m.specAvgTotalRounds) S.setSpecAvgRounds(m.specAvgTotalRounds);
+                                                    if (m.specSapo != null) S.setSpecSapo(m.specSapo);
+                                                    setShowMachineDD(false);
+                                                    setMachineQuery("");
+                                                }} style={{
+                                                    width: "100%", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)", border: "none", borderBottom: `1px solid ${C.border}`,
+                                                    padding: "12px 14px", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center"
+                                                }}>
+                                                    <div>
+                                                        <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{m.name}</div>
+                                                        <div style={{ fontSize: 10, color: C.sub }}>{m.maker || ""}</div>
+                                                    </div>
+                                                    <div style={{ fontSize: 14, fontWeight: 700, color: C.yellow, fontFamily: mono }}>{m.prob || `1/${m.synthProb}`}</div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 台番号・開始回転数 */}
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                                    <div>
+                                        <div style={{ fontSize: 10, color: C.sub, marginBottom: 4, fontWeight: 600 }}>台番号</div>
+                                        <input
+                                            type="tel"
+                                            inputMode="numeric"
+                                            value={setupMachineNum}
+                                            onChange={e => setSetupMachineNum(e.target.value)}
+                                            placeholder="例: 123"
+                                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 10, padding: "12px", fontSize: 16, color: C.text, fontFamily: mono, outline: "none", textAlign: "center" }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: 10, color: C.sub, marginBottom: 4, fontWeight: 600 }}>開始回転数</div>
+                                        <input
+                                            type="tel"
+                                            inputMode="numeric"
+                                            value={setupStartRot}
+                                            onChange={e => setSetupStartRot(e.target.value)}
+                                            placeholder="0"
+                                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 10, padding: "12px", fontSize: 16, color: C.text, fontFamily: mono, outline: "none", textAlign: "center" }}
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* 初期持ち玉 */}
+                                <div style={{ marginBottom: 20 }}>
+                                    <div style={{ fontSize: 10, color: C.sub, marginBottom: 4, fontWeight: 600 }}>初期持ち玉（任意）</div>
+                                    <input
+                                        type="tel"
+                                        inputMode="numeric"
+                                        value={setupInitialBalls}
+                                        onChange={e => setSetupInitialBalls(e.target.value)}
+                                        placeholder="0"
+                                        style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 10, padding: "12px", fontSize: 16, color: C.text, fontFamily: mono, outline: "none", textAlign: "center" }}
+                                    />
+                                </div>
+
+                                {/* ボタン */}
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                                    <button className="b" onClick={() => setShowSetupModal(false)} style={{
+                                        background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 12, color: C.text, fontSize: 15, fontWeight: 700, padding: "14px 0", fontFamily: font
+                                    }}>キャンセル</button>
+                                    <button className="b" onClick={handleStartSession} style={{
+                                        background: "linear-gradient(135deg, #f97316, #ea580c)", border: "none", borderRadius: 12, color: "#fff", fontSize: 15, fontWeight: 700, padding: "14px 0", fontFamily: font, boxShadow: "0 4px 16px rgba(249, 115, 22, 0.3)"
+                                    }}>稼働開始</button>
+                                </div>
+                            </div>
+                        </Card>
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    // セッション開始後：データ表示とコントロール
     return (
         <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-            {/* サマリセクション（折りたたみ可能） */}
-            {rows.length > 0 && (
-                <div style={{ flexShrink: 0 }}>
-                    <button className="b" onClick={() => setSummaryCollapsed(!summaryCollapsed)} style={{
-                        width: "100%", background: "rgba(0,0,0,0.2)", border: "none", borderBottom: `1px solid ${C.border}`,
-                        padding: "8px 16px", display: "flex", justifyContent: "space-between", alignItems: "center"
-                    }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{S.machineName || "機種未設定"}</span>
-                            <span style={{ fontSize: 10, color: C.sub }}>{S.storeName} {S.machineNum && `| ${S.machineNum}番台`}</span>
+            {/* サマリセクション（折りたたみ可能） - コンパクト化 */}
+            <div style={{ flexShrink: 0 }}>
+                <button className="b" onClick={() => setSummaryCollapsed(!summaryCollapsed)} style={{
+                    width: "100%", background: "rgba(0,0,0,0.3)", border: "none", borderBottom: `1px solid ${C.border}`,
+                    padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center"
+                }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ fontSize: 14, fontWeight: 800, color: C.text }}>{S.machineName || "機種未設定"}</span>
+                        <span style={{ fontSize: 10, color: C.sub }}>{S.storeName} {S.machineNum && `#${S.machineNum}`}</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: sc(ev.ev1K), fontFamily: mono }}>{ev.ev1K !== 0 ? sp(ev.ev1K, 0) : "—"}</span>
+                        <span style={{ fontSize: 9, color: C.sub }}>{summaryCollapsed ? "▼" : "▲"}</span>
+                    </div>
+                </button>
+                {!summaryCollapsed && (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4, padding: "8px 10px", background: "rgba(0,0,0,0.2)", borderBottom: `1px solid ${C.border}` }}>
+                        <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: 8, color: C.sub }}>回転率</div>
+                            <div style={{ fontSize: 16, fontWeight: 800, color: C.text, fontFamily: mono }}>{ev.start1K > 0 ? f(ev.start1K, 1) : "—"}</div>
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                            <span style={{ fontSize: 14, fontWeight: 800, color: C.green, fontFamily: mono }}>{ev.useBorder > 0 ? f(ev.useBorder, 1) : "—"}</span>
-                            <span style={{ fontSize: 10, color: C.sub }}>{summaryCollapsed ? "▼" : "▲"}</span>
+                        <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: 8, color: C.sub }}>EV/K</div>
+                            <div style={{ fontSize: 16, fontWeight: 800, color: sc(ev.ev1K), fontFamily: mono }}>{ev.ev1K !== 0 ? sp(ev.ev1K, 0) : "—"}</div>
                         </div>
-                    </button>
-                    {!summaryCollapsed && (
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, padding: "8px 12px", background: "rgba(0,0,0,0.15)", borderBottom: `1px solid ${C.border}` }}>
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 9, color: C.sub }}>回転率</div>
-                                <div style={{ fontSize: 14, fontWeight: 700, color: C.text, fontFamily: mono }}>{ev.start1K > 0 ? f(ev.start1K, 1) : "—"}</div>
-                            </div>
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 9, color: C.sub }}>EV/K</div>
-                                <div style={{ fontSize: 14, fontWeight: 700, color: sc(ev.ev1K), fontFamily: mono }}>{ev.ev1K !== 0 ? sp(ev.ev1K, 0) : "—"}</div>
-                            </div>
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 9, color: C.sub }}>仕事量</div>
-                                <div style={{ fontSize: 14, fontWeight: 700, color: sc(ev.workAmount), fontFamily: mono }}>{ev.workAmount !== 0 ? sp(ev.workAmount, 0) : "—"}</div>
-                            </div>
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 9, color: C.sub }}>初当たり</div>
-                                <div style={{ fontSize: 14, fontWeight: 700, color: C.orange, fontFamily: mono }}>{ev.jpCount || 0}</div>
-                            </div>
+                        <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: 8, color: C.sub }}>仕事量</div>
+                            <div style={{ fontSize: 16, fontWeight: 800, color: sc(ev.workAmount), fontFamily: mono }}>{ev.workAmount !== 0 ? sp(ev.workAmount, 0) : "—"}</div>
+                        </div>
+                        <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: 8, color: C.sub }}>初当</div>
+                            <div style={{ fontSize: 16, fontWeight: 800, color: C.orange, fontFamily: mono }}>{ev.jpCount || 0}</div>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* リアルタイム玉数表示 - 持ち玉・貯玉 */}
+            {(S.currentMochiBalls > 0 || S.currentChodama > 0 || S.chodamaUsedToday > 0) && (
+                <div style={{ display: "flex", justifyContent: "center", gap: 16, padding: "8px 10px", background: "rgba(0,0,0,0.25)", borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+                    {S.currentMochiBalls > 0 && (
+                        <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: 8, color: C.sub }}>持ち玉</div>
+                            <div style={{ fontSize: 20, fontWeight: 800, color: C.orange, fontFamily: mono }}>{f(S.currentMochiBalls)}</div>
                         </div>
                     )}
-                </div>
-            )}
-
-            {/* リアルタイム玉数表示 */}
-            {(S.currentMochiBalls > 0 || S.currentChodama > 0) && (
-                <div style={{ display: "flex", justifyContent: "center", gap: 20, padding: "8px 12px", background: "rgba(0,0,0,0.25)", borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
-                    <div style={{ textAlign: "center" }}>
-                        <div style={{ fontSize: 9, color: C.sub }}>持ち玉</div>
-                        <div style={{ fontSize: 18, fontWeight: 800, color: C.orange, fontFamily: mono }}>{f(S.currentMochiBalls)}</div>
-                    </div>
                     {S.currentChodama > 0 && (
                         <div style={{ textAlign: "center" }}>
-                            <div style={{ fontSize: 9, color: C.sub }}>貯玉残</div>
-                            <div style={{ fontSize: 18, fontWeight: 800, color: C.purple, fontFamily: mono }}>{f(S.currentChodama)}</div>
+                            <div style={{ fontSize: 8, color: C.sub }}>貯玉残</div>
+                            <div style={{ fontSize: 20, fontWeight: 800, color: C.purple, fontFamily: mono }}>{f(S.currentChodama)}</div>
                         </div>
                     )}
                     {S.chodamaUsedToday > 0 && (
                         <div style={{ textAlign: "center" }}>
-                            <div style={{ fontSize: 9, color: C.sub }}>本日再プレイ</div>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: S.chodamaUsedToday >= S.chodamaReplayLimit ? C.red : C.text, fontFamily: mono }}>
-                                {f(S.chodamaUsedToday)} / {f(S.chodamaReplayLimit)}
+                            <div style={{ fontSize: 8, color: C.sub }}>本日再プレイ</div>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: S.chodamaUsedToday >= S.chodamaReplayLimit ? C.red : C.text, fontFamily: mono }}>
+                                {f(S.chodamaUsedToday)}/{f(S.chodamaReplayLimit)}
                             </div>
                         </div>
                     )}
                 </div>
             )}
 
-            {/* Table Header */}
-            <div style={{ display: "grid", gridTemplateColumns: "55px 1fr 1fr 1fr 70px", background: "linear-gradient(to right, #f97316, #ea580c)", padding: "12px 4px", flexShrink: 0, boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}>
-                {["種別", "総回転数", "今回", "平均", "投資額"].map((h) => (
-                    <div key={h} style={{ textAlign: "center", fontSize: 11, fontWeight: 800, color: "#fff", fontFamily: font, letterSpacing: 1 }}>{h}</div>
+            {/* Table Header - フル幅 */}
+            <div style={{ display: "grid", gridTemplateColumns: "48px 1fr 1fr 1fr 64px", background: "linear-gradient(to right, #f97316, #ea580c)", padding: "10px 2px", flexShrink: 0 }}>
+                {["種別", "総回転", "今回", "平均", "投資"].map((h) => (
+                    <div key={h} style={{ textAlign: "center", fontSize: 11, fontWeight: 800, color: "#fff", fontFamily: font }}>{h}</div>
                 ))}
             </div>
 
-            {/* Data Rows */}
-            <div ref={tableRef} style={{ flex: 1, overflowY: "auto", minHeight: 0, paddingBottom: 10 }}>
-                {rows.length === 0 && (
-                    <div style={{ textAlign: "center", color: C.sub, fontSize: 13, padding: "80px 16px", fontFamily: font, opacity: 0.6 }}>
-                        開始回転数を入力して「スタート」を押してください
-                    </div>
-                )}
+            {/* Data Rows - 最大化 */}
+            <div ref={tableRef} style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
                 {rows.map((row, i) => {
                     if (row.type === "start") return (
-                        <div key={i} className="fin" style={{ display: "grid", gridTemplateColumns: "55px 1fr 1fr 1fr 70px", padding: "12px 4px", background: "rgba(255,255,255,0.02)", borderBottom: `1px solid ${C.border}` }}>
+                        <div key={i} className="fin" style={{ display: "grid", gridTemplateColumns: "48px 1fr 1fr 1fr 64px", padding: "10px 2px", background: "rgba(255,255,255,0.02)", borderBottom: `1px solid ${C.border}` }}>
                             <div style={{ textAlign: "center" }}><ModeBadge mode={row.mode || "cash"} /></div>
-                            <div style={{ textAlign: "center", fontSize: 14, color: C.subHi, fontFamily: mono }}>{f(row.cumRot)}</div>
-                            <div style={{ textAlign: "center", fontSize: 11, color: C.sub }}>—</div>
-                            <div style={{ textAlign: "center", fontSize: 11, fontWeight: 800, color: C.yellow, letterSpacing: 2 }}>START</div>
+                            <div style={{ textAlign: "center", fontSize: 16, color: C.subHi, fontFamily: mono, fontWeight: 600 }}>{f(row.cumRot)}</div>
+                            <div style={{ textAlign: "center", fontSize: 12, color: C.sub }}>—</div>
+                            <div style={{ textAlign: "center", fontSize: 11, fontWeight: 800, color: C.yellow, letterSpacing: 1 }}>START</div>
                             <div style={{ textAlign: "center", fontSize: 11, color: C.sub }}>—</div>
                         </div>
                     );
                     if (row.type === "hit") return (
-                        <div key={i} className="fin" style={{ display: "grid", gridTemplateColumns: "55px 1fr 1fr 1fr 70px", padding: "12px 4px", background: "rgba(249, 115, 22, 0.08)", borderBottom: `1px solid ${C.border}` }}>
-                            <div style={{ textAlign: "center" }}><span style={{ fontSize: 10, fontWeight: 700, color: C.orange, background: C.orange + "20", borderRadius: 6, padding: "3px 7px", border: `1px solid ${C.orange}40` }}>当</span></div>
-                            <div style={{ textAlign: "center", fontSize: 14, color: C.orange, fontFamily: mono, fontWeight: 700 }}>{f(row.cumRot)}</div>
-                            <div style={{ textAlign: "center", fontSize: 16, fontWeight: 700, color: C.orange, fontFamily: mono }}>{row.thisRot}</div>
-                            <div style={{ textAlign: "center", fontSize: 11, fontWeight: 800, color: C.orange, letterSpacing: 1 }}>初当たり</div>
-                            <div style={{ textAlign: "center", fontSize: 12, color: C.sub, fontFamily: mono }}>{f(row.invest)}円</div>
+                        <div key={i} className="fin" style={{ display: "grid", gridTemplateColumns: "48px 1fr 1fr 1fr 64px", padding: "10px 2px", background: "rgba(249, 115, 22, 0.1)", borderBottom: `1px solid ${C.border}` }}>
+                            <div style={{ textAlign: "center" }}><span style={{ fontSize: 10, fontWeight: 700, color: C.orange, background: C.orange + "20", borderRadius: 5, padding: "2px 6px" }}>当</span></div>
+                            <div style={{ textAlign: "center", fontSize: 16, color: C.orange, fontFamily: mono, fontWeight: 700 }}>{f(row.cumRot)}</div>
+                            <div style={{ textAlign: "center", fontSize: 18, fontWeight: 800, color: C.orange, fontFamily: mono }}>{row.thisRot}</div>
+                            <div style={{ textAlign: "center", fontSize: 10, fontWeight: 700, color: C.orange }}>初当たり</div>
+                            <div style={{ textAlign: "center", fontSize: 11, color: C.sub, fontFamily: mono }}>{f(row.invest)}</div>
                         </div>
                     );
                     return (
-                        <div key={i} className="fin" style={{ display: "grid", gridTemplateColumns: "55px 1fr 1fr 1fr 70px", padding: "14px 4px", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)", borderBottom: `1px solid ${C.border}` }}>
+                        <div key={i} className="fin" style={{ display: "grid", gridTemplateColumns: "48px 1fr 1fr 1fr 64px", padding: "12px 2px", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)", borderBottom: `1px solid ${C.border}` }}>
                             <div style={{ textAlign: "center" }}><ModeBadge mode={row.mode || "cash"} /></div>
-                            <div style={{ textAlign: "center", fontSize: 14, color: C.subHi, fontFamily: mono }}>{f(row.cumRot)}</div>
-                            <div style={{ textAlign: "center", fontSize: 16, fontWeight: 700, color: rotCol(row.thisRot), fontFamily: mono }}>{row.thisRot}</div>
-                            <div style={{ textAlign: "center", fontSize: 16, fontWeight: 600, color: rotCol(row.invest > 0 ? ((row.cumRot - S.startRot) / (row.invest / 1000)) : row.avgRot), fontFamily: mono }}>
+                            <div style={{ textAlign: "center", fontSize: 16, color: C.subHi, fontFamily: mono, fontWeight: 600 }}>{f(row.cumRot)}</div>
+                            <div style={{ textAlign: "center", fontSize: 20, fontWeight: 800, color: rotCol(row.thisRot), fontFamily: mono }}>{row.thisRot}</div>
+                            <div style={{ textAlign: "center", fontSize: 18, fontWeight: 700, color: rotCol(row.invest > 0 ? ((row.cumRot - S.startRot) / (row.invest / 1000)) : row.avgRot), fontFamily: mono }}>
                                 {row.invest > 0 ? ((row.cumRot - S.startRot) / (row.invest / 1000)).toFixed(1) : row.avgRot}
                             </div>
-                            <div style={{ textAlign: "center", fontSize: 12, color: C.sub, fontFamily: mono }}>{f(row.invest)}円</div>
+                            <div style={{ textAlign: "center", fontSize: 12, color: C.sub, fontFamily: mono }}>{f(row.invest)}</div>
                         </div>
                     );
                 })}
             </div>
 
-            {/* Bottom Panel */}
-            <div style={{ background: C.surface, borderTop: `1px solid ${C.border}`, flexShrink: 0, paddingBottom: "calc(80px + env(safe-area-inset-bottom))", boxShadow: "0 -4px 20px rgba(0,0,0,0.4)", borderTopLeftRadius: 20, borderTopRightRadius: 20 }}>
-                {/* Store & Machine Number — pre-session setup */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, padding: "10px 12px 6px" }}>
-                    <div style={{ position: "relative" }}>
-                        <div style={{ fontSize: 9, color: C.sub, marginBottom: 3, fontWeight: 600 }}>店舗</div>
-                        <div style={{ position: "relative" }}>
-                            <input type="text" value={S.storeName || ""} onChange={e => S.setStoreName(e.target.value)} placeholder="店舗名"
-                                style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "8px 28px 8px 10px", fontSize: 16, color: C.text, fontFamily: font, outline: "none" }} />
-                            {(S.stores || []).length > 0 && (
-                                <button className="b" onClick={() => setShowStoreDD(!showStoreDD)} style={{
-                                    position: "absolute", right: 2, top: "50%", transform: "translateY(-50%)",
-                                    background: "transparent", border: "none", color: C.sub, fontSize: 12, padding: "2px 4px", cursor: "pointer"
-                                }}>▼</button>
-                            )}
-                            {showStoreDD && (S.stores || []).length > 0 && (
-                                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 8, zIndex: 10, maxHeight: 120, overflowY: "auto", marginTop: 2, boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}>
-                                    {(S.stores || []).map((st, i) => {
-                                        const storeName = typeof st === "object" ? st.name : st;
-                                        return (
-                                            <button key={st.id || i} className="b" onClick={() => {
-                                                S.setStoreName(storeName);
-                                                if (typeof st === "object") {
-                                                    if (st.rentBalls) S.setRentBalls(st.rentBalls);
-                                                    if (st.exRate) S.setExRate(st.exRate);
-                                                    if (st.chodama) S.setCurrentChodama(st.chodama);
-                                                    S.setSelectedStoreId(st.id);
-                                                }
-                                                setShowStoreDD(false);
-                                            }} style={{
-                                                width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${C.border}`,
-                                                color: C.text, fontSize: 12, padding: "8px 10px", textAlign: "left", fontFamily: font, cursor: "pointer"
-                                            }}>{storeName}</button>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                    <div>
-                        <div style={{ fontSize: 9, color: C.sub, marginBottom: 3, fontWeight: 600 }}>台番号</div>
-                        <input type="tel" inputMode="numeric" pattern="[0-9]*" value={S.machineNum || ""} onChange={e => S.setMachineNum(e.target.value)} placeholder="台番号"
-                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "8px 10px", fontSize: 16, color: C.text, fontFamily: font, outline: "none" }} />
-                    </div>
-                </div>
-
-                {/* 機種選択 */}
-                <div style={{ padding: "0 12px 6px", position: "relative" }}>
-                    <div style={{ fontSize: 9, color: C.sub, marginBottom: 3, fontWeight: 600 }}>機種</div>
-                    <input type="text" value={S.machineName || ""} onChange={e => { S.setMachineName(e.target.value); setMachineQuery(e.target.value); setShowMachineDD(true); }} placeholder="機種名を検索..."
-                        onFocus={() => setShowMachineDD(true)}
-                        style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "8px 10px", fontSize: 16, color: C.text, fontFamily: font, outline: "none" }} />
-                    {showMachineDD && machineResults.length > 0 && (
-                        <div style={{ position: "absolute", top: "100%", left: 12, right: 12, background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 8, zIndex: 10, maxHeight: 180, overflowY: "auto", marginTop: 2, boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}>
-                            {machineResults.map((m, i) => (
-                                <button key={m.id || i} className="b" onClick={() => {
-                                    S.setMachineName(m.name);
-                                    S.setSynthDenom(m.synthProb);
-                                    if (m.spec1R) S.setSpec1R(m.spec1R);
-                                    if (m.specAvgTotalRounds) S.setSpecAvgRounds(m.specAvgTotalRounds);
-                                    if (m.specSapo != null) S.setSpecSapo(m.specSapo);
-                                    setShowMachineDD(false);
-                                    setMachineQuery("");
-                                }} style={{
-                                    width: "100%", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)", border: "none", borderBottom: `1px solid ${C.border}`,
-                                    padding: "10px 12px", textAlign: "left", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center"
-                                }}>
-                                    <div>
-                                        <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{m.name}</div>
-                                        <div style={{ fontSize: 10, color: C.sub }}>{m.maker || ""} | {m.type || ""}</div>
-                                    </div>
-                                    <div style={{ fontSize: 13, fontWeight: 700, color: C.yellow, fontFamily: mono }}>{m.prob || `1/${m.synthProb}`}</div>
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                </div>
-
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 16px 8px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <ModeToggle mode={S.playMode} setMode={S.setPlayMode} showChodama={S.currentChodama > 0 || S.initialChodama > 0} compact />
-                        {(ev.mochiRatio > 0 || ev.chodamaRatio > 0) && (
-                            <span style={{ fontSize: 10, color: C.orange, fontFamily: mono, fontWeight: 700 }}>
-                                {ev.mochiRatio > 0 && `持${Math.round(ev.mochiRatio * 100)}%`}
-                                {ev.chodamaRatio > 0 && ` 貯${Math.round(ev.chodamaRatio * 100)}%`}
-                            </span>
-                        )}
-                    </div>
-                    <button className="b" onClick={() => setRows((r) => r.slice(0, -1))} style={{ background: "rgba(239, 68, 68, 0.1)", border: `1px solid ${C.red}40`, borderRadius: 8, color: C.red, fontSize: 11, padding: "6px 12px", fontFamily: font, fontWeight: 700 }}>一行削除</button>
+            {/* Bottom Control Panel - 固定 */}
+            <div style={{ background: C.surface, borderTop: `1px solid ${C.border}`, flexShrink: 0, paddingBottom: "calc(75px + env(safe-area-inset-bottom))", boxShadow: "0 -4px 20px rgba(0,0,0,0.5)", borderTopLeftRadius: 16, borderTopRightRadius: 16 }}>
+                {/* モード切替 & 削除 */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px 6px" }}>
+                    <ModeToggle mode={S.playMode} setMode={S.setPlayMode} showChodama={S.currentChodama > 0 || S.initialChodama > 0} compact />
+                    <button className="b" onClick={() => setRows((r) => r.slice(0, -1))} style={{ background: "rgba(239, 68, 68, 0.15)", border: `1px solid ${C.red}50`, borderRadius: 8, color: C.red, fontSize: 11, padding: "6px 10px", fontFamily: font, fontWeight: 700 }}>削除</button>
                 </div>
 
                 {/* Input */}
-                <div style={{ padding: "0 12px 10px" }}>
-                    <NI v={input} set={setInput} w="100%" ph="データカウンタの数値を入力" big onEnter={decide} />
+                <div style={{ padding: "0 12px 8px" }}>
+                    <input
+                        type="tel"
+                        inputMode="numeric"
+                        value={input}
+                        onChange={e => setInput(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && decide()}
+                        placeholder="データカウンタの数値"
+                        style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "14px 16px", fontSize: 24, fontWeight: 700, color: C.text, fontFamily: mono, textAlign: "center", outline: "none" }}
+                    />
                 </div>
 
                 {/* Action Buttons */}
-                {rows.some(r => r.type === "start") ? (
-                    <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8, padding: "0 12px 8px" }}>
-                        <Btn label="1K決定" onClick={decide} primary />
-                        <Btn label="初当たり" onClick={() => handleStartChain()} bg={C.orange} fg="#fff" bd="none" />
-                    </div>
-                ) : (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, padding: "0 12px 8px" }}>
-                        <Btn label="スタート" onClick={doStart} bg={C.green} fg="#fff" bd="none" />
-                        <Btn label="初当たり" onClick={() => handleStartChain()} bg={C.orange} fg="#fff" bd="none" />
-                    </div>
-                )}
-                {/* 台移動ボタン */}
-                <div style={{ padding: "0 12px 12px" }}>
-                    <button className="b" onClick={() => setShowMoveModal(true)} style={{
-                        width: "100%", background: "rgba(139, 92, 246, 0.1)", border: `1px solid ${C.purple}40`,
-                        borderRadius: 10, color: C.purple, fontSize: 13, fontWeight: 700, padding: "10px 0",
-                        fontFamily: font, letterSpacing: 1
-                    }}>台移動</button>
+                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 8, padding: "0 12px 10px" }}>
+                    <button className="b" onClick={decide} style={{ background: "linear-gradient(135deg, #3b82f6, #2563eb)", border: "none", borderRadius: 12, color: "#fff", fontSize: 16, fontWeight: 800, padding: "14px 0", fontFamily: font, boxShadow: "0 4px 12px rgba(59, 130, 246, 0.3)" }}>1K決定</button>
+                    <button className="b" onClick={handleStartChain} style={{ background: C.orange, border: "none", borderRadius: 12, color: "#fff", fontSize: 13, fontWeight: 700, padding: "14px 0", fontFamily: font }}>初当たり</button>
+                    <button className="b" onClick={() => setShowMoveModal(true)} style={{ background: "rgba(139, 92, 246, 0.2)", border: `1px solid ${C.purple}50`, borderRadius: 12, color: C.purple, fontSize: 13, fontWeight: 700, padding: "14px 0", fontFamily: font }}>台移動</button>
                 </div>
             </div>
 
-            {/* Move Modal — 台移動確認 */}
+            {/* Move Modal */}
             {showMoveModal && (
-                <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
+                <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
                     <Card style={{ width: "100%", maxWidth: 320, padding: 20 }}>
                         <SecLabel label="台移動" />
                         <div style={{ fontSize: 13, color: C.sub, marginBottom: 16, lineHeight: 1.6 }}>
-                            現在のデータを自動保存して新しい台の記録を開始します。
+                            現在のデータを保存して新しい台へ移動します
                         </div>
-                        <div style={{ display: "flex", gap: 10 }}>
-                            <Btn label="移動する" onClick={() => { setShowMoveModal(false); S.handleMoveTable(); }} bg={C.purple} fg="#fff" bd="none" />
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                             <Btn label="キャンセル" onClick={() => setShowMoveModal(false)} />
+                            <Btn label="移動する" onClick={() => { setShowMoveModal(false); S.handleMoveTable(); }} bg={C.purple} fg="#fff" bd="none" />
                         </div>
                     </Card>
                 </div>
             )}
-
         </div>
     );
 }
