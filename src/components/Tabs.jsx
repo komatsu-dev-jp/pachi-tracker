@@ -577,7 +577,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             </div>
 
             {/* Data Rows - 最大化、視認性向上 */}
-            <div ref={tableRef} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "0 12px" }}>
+            <div ref={tableRef} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "0 12px", paddingBottom: 90 }}>
                 {rows.map((row, i) => {
                     if (row.type === "start") return (
                         <div key={i} className="fin row-start" style={{ display: "grid", gridTemplateColumns: "44px 1fr 1fr 1fr 60px", padding: "12px 4px", marginBottom: 4, borderRadius: 10, alignItems: "center" }}>
@@ -611,37 +611,45 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 })}
             </div>
 
-            {/* Bottom Control Panel - プレミアムデザイン */}
-            <div className="card-premium" style={{ flexShrink: 0, paddingBottom: "calc(75px + env(safe-area-inset-bottom))", margin: "8px 12px 0", marginBottom: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 }}>
-                {/* モード切替 & 削除 */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px 8px" }}>
+            {/* Bottom Control Panel - 最下部固定 */}
+            <div style={{
+                position: "fixed",
+                left: 0,
+                right: 0,
+                bottom: "calc(60px + env(safe-area-inset-bottom))",
+                background: "linear-gradient(180deg, rgba(15,15,20,0.95) 0%, rgba(15,15,20,0.98) 100%)",
+                backdropFilter: "blur(12px)",
+                borderTop: `1px solid ${C.border}`,
+                padding: "8px 12px 10px",
+                zIndex: 100
+            }}>
+                {/* モード切替 & 削除 - コンパクト */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                     <ModeToggle mode={S.playMode} setMode={S.setPlayMode} showChodama={S.currentChodama > 0 || S.initialChodama > 0} compact />
-                    <button className="b" onClick={() => { setRows((r) => r.slice(0, -1)); setInputError(""); }} style={{ background: "rgba(239, 68, 68, 0.12)", border: `1px solid rgba(239, 68, 68, 0.3)`, borderRadius: 10, color: C.red, fontSize: 12, padding: "8px 14px", fontFamily: font, fontWeight: 700 }}>直前削除</button>
+                    <button className="b" onClick={() => { setRows((r) => r.slice(0, -1)); setInputError(""); }} style={{ background: "rgba(239, 68, 68, 0.12)", border: `1px solid rgba(239, 68, 68, 0.3)`, borderRadius: 8, color: C.red, fontSize: 11, padding: "6px 10px", fontFamily: font, fontWeight: 700 }}>削除</button>
                 </div>
 
-                {/* Input - 大きく操作しやすく */}
-                <div style={{ padding: "0 14px 6px" }}>
-                    <input
-                        type="tel"
-                        inputMode="numeric"
-                        value={input}
-                        onChange={e => { setInput(e.target.value); setInputError(""); }}
-                        onKeyDown={e => e.key === "Enter" && decide()}
-                        placeholder="データカウンタの数値"
-                        className={`input-premium ${inputError ? "error" : ""}`}
-                        style={{ width: "100%", boxSizing: "border-box", fontFamily: mono }}
-                    />
-                    {inputError && (
-                        <div className="error-msg">{inputError}</div>
-                    )}
+                {/* Input + Buttons - 横並び */}
+                <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+                    <div style={{ flex: 1 }}>
+                        <input
+                            type="tel"
+                            inputMode="numeric"
+                            value={input}
+                            onChange={e => { setInput(e.target.value); setInputError(""); }}
+                            onKeyDown={e => e.key === "Enter" && decide()}
+                            placeholder="回転数"
+                            className={`input-premium ${inputError ? "error" : ""}`}
+                            style={{ width: "100%", boxSizing: "border-box", fontFamily: mono, padding: "12px 14px", fontSize: 18 }}
+                        />
+                    </div>
+                    <button className="b btn-premium btn-primary" onClick={decide} style={{ padding: "12px 16px", fontSize: 13, whiteSpace: "nowrap" }}>1K</button>
+                    <button className="b btn-premium btn-secondary" onClick={handleStartChain} style={{ padding: "12px 14px", fontSize: 12, whiteSpace: "nowrap" }}>当り</button>
+                    <button className="b" onClick={() => setShowMoveModal(true)} style={{ background: "rgba(139, 92, 246, 0.15)", border: `1px solid rgba(139, 92, 246, 0.3)`, borderRadius: 10, color: C.purple, fontSize: 11, fontWeight: 700, padding: "12px 10px", fontFamily: font, whiteSpace: "nowrap" }}>移動</button>
                 </div>
-
-                {/* Action Buttons - より大きく押しやすく */}
-                <div style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 1fr", gap: 10, padding: "6px 14px 12px" }}>
-                    <button className="b btn-premium btn-primary" onClick={decide}>1K 記録</button>
-                    <button className="b btn-premium btn-secondary" onClick={handleStartChain} style={{ fontSize: 14 }}>初当たり</button>
-                    <button className="b" onClick={() => setShowMoveModal(true)} style={{ background: "rgba(139, 92, 246, 0.15)", border: `1px solid rgba(139, 92, 246, 0.3)`, borderRadius: 14, color: C.purple, fontSize: 14, fontWeight: 700, padding: "16px 0", fontFamily: font }}>台移動</button>
-                </div>
+                {inputError && (
+                    <div className="error-msg" style={{ marginTop: 4, fontSize: 11 }}>{inputError}</div>
+                )}
             </div>
 
             {/* Move Modal */}
