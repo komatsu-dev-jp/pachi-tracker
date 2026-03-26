@@ -185,7 +185,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [showStoreDD, setShowStoreDD] = useState(false);
     const [showMachineDD, setShowMachineDD] = useState(false);
     const [machineQuery, setMachineQuery] = useState("");
-    const [summaryCollapsed, setSummaryCollapsed] = useState(false);
+    const [summaryCollapsed, setSummaryCollapsed] = useState(true);
+    const [showInvestSettings, setShowInvestSettings] = useState(false);
     const tableRef = useRef(null);
 
     // セットアップ用の一時state
@@ -245,17 +246,19 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         return val;
     };
 
+    const investPace = S.investPace || 1000;
+
     const decide = () => {
         const val = validateInput();
         if (val === null) return;
 
         const prevCumRot = last ? last.cumRot : S.startRot;
         const thisRot = val - prevCumRot;
-        const newInvest = (last ? last.invest : 0) + 1000;
+        const newInvest = (last ? last.invest : 0) + investPace;
         const newAvg = parseFloat(((val - S.startRot) / (newInvest / 1000)).toFixed(1));
 
         setRows((r) => [...r, { type: "data", thisRot, cumRot: val, avgRot: newAvg, invest: newInvest, mode: S.playMode }]);
-        S.pushLog({ type: "1K決定", time: tsNow(), rot: thisRot, cash: 1000, mode: S.playMode });
+        S.pushLog({ type: `${investPace >= 1000 ? investPace/1000 + "K" : investPace + "円"}決定`, time: tsNow(), rot: thisRot, cash: investPace, mode: S.playMode });
         setInput("");
         setInputError("");
     };
@@ -504,21 +507,30 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     // セッション開始後：データ表示とコントロール
     return (
         <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-            {/* 上部サマリーカード */}
+            {/* 上部：機種情報 + 設定ボタン */}
             <div style={{ flexShrink: 0, padding: "10px 12px 6px" }}>
-                {/* 機種・店舗ヘッダー */}
-                <button className="b" onClick={() => setSummaryCollapsed(!summaryCollapsed)} style={{
-                    width: "100%", background: "transparent", border: "none",
-                    padding: "0 0 8px", display: "flex", justifyContent: "space-between", alignItems: "center"
-                }}>
-                    <div>
-                        <div style={{ fontSize: 15, fontWeight: 800, color: C.text, textAlign: "left" }}>{S.machineName || "機種未設定"}</div>
-                        <div style={{ fontSize: 10, color: C.sub, textAlign: "left", marginTop: 2 }}>{S.storeName} {S.machineNum && `#${S.machineNum}`}</div>
-                    </div>
-                    <span style={{ fontSize: 12, color: C.sub, padding: "4px 8px", background: "rgba(255,255,255,0.05)", borderRadius: 6 }}>{summaryCollapsed ? "▼ 展開" : "▲ 閉じる"}</span>
-                </button>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    {/* 左：機種・店舗（タップで展開） */}
+                    <button className="b" onClick={() => setSummaryCollapsed(!summaryCollapsed)} style={{
+                        flex: 1, background: "transparent", border: "none", padding: 0, display: "flex", alignItems: "center", gap: 8
+                    }}>
+                        <div style={{ textAlign: "left" }}>
+                            <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{S.machineName || "機種未設定"}</div>
+                            <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>{S.storeName} {S.machineNum && `#${S.machineNum}`}</div>
+                        </div>
+                        <span style={{ fontSize: 10, color: C.sub }}>{summaryCollapsed ? "▼" : "▲"}</span>
+                    </button>
+                    {/* 右：設定ボタン */}
+                    <button className="b" onClick={() => setShowInvestSettings(true)} style={{
+                        background: "rgba(255,255,255,0.05)", border: `1px solid ${C.border}`, borderRadius: 8,
+                        padding: "8px 12px", display: "flex", alignItems: "center", gap: 6
+                    }}>
+                        <span style={{ fontSize: 14 }}>⚙️</span>
+                        <span style={{ fontSize: 11, color: C.subHi, fontWeight: 700 }}>{investPace >= 1000 ? `${investPace/1000}K` : `${investPace}円`}</span>
+                    </button>
+                </div>
 
-                {/* サマリーカード群 */}
+                {/* サマリーカード群（折りたたみ） */}
                 {!summaryCollapsed && (
                     <div className="summary-card" style={{ padding: 10, marginBottom: 6 }}>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
@@ -643,7 +655,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             style={{ width: "100%", boxSizing: "border-box", fontFamily: mono, padding: "12px 14px", fontSize: 18 }}
                         />
                     </div>
-                    <button className="b btn-premium btn-primary" onClick={decide} style={{ padding: "12px 16px", fontSize: 13, whiteSpace: "nowrap" }}>1K</button>
+                    <button className="b btn-premium btn-primary" onClick={decide} style={{ padding: "12px 16px", fontSize: 13, whiteSpace: "nowrap" }}>{investPace >= 1000 ? `${investPace/1000}K` : `${investPace}円`}</button>
                     <button className="b btn-premium btn-secondary" onClick={handleStartChain} style={{ padding: "12px 14px", fontSize: 12, whiteSpace: "nowrap" }}>当り</button>
                     <button className="b" onClick={() => setShowMoveModal(true)} style={{ background: "rgba(139, 92, 246, 0.15)", border: `1px solid rgba(139, 92, 246, 0.3)`, borderRadius: 10, color: C.purple, fontSize: 11, fontWeight: 700, padding: "12px 10px", fontFamily: font, whiteSpace: "nowrap" }}>移動</button>
                 </div>
@@ -664,6 +676,35 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             <Btn label="キャンセル" onClick={() => setShowMoveModal(false)} />
                             <Btn label="移動する" onClick={() => { setShowMoveModal(false); S.handleMoveTable(); }} bg={C.purple} fg="#fff" bd="none" />
                         </div>
+                    </Card>
+                </div>
+            )}
+
+            {/* 投資ペース設定モーダル */}
+            {showInvestSettings && (
+                <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
+                    <Card style={{ width: "100%", maxWidth: 320, padding: 20 }}>
+                        <SecLabel label="投資金額ペース" />
+                        <div style={{ fontSize: 12, color: C.sub, marginBottom: 16, lineHeight: 1.6 }}>
+                            1回の記録で加算する投資金額を選択
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
+                            {[500, 1000, 2000].map(pace => (
+                                <button key={pace} className="b" onClick={() => { S.setInvestPace(pace); setShowInvestSettings(false); }} style={{
+                                    padding: "14px 0", borderRadius: 10, fontWeight: 700, fontFamily: mono, fontSize: 15,
+                                    background: investPace === pace ? "linear-gradient(135deg, #3b82f6, #2563eb)" : "rgba(255,255,255,0.05)",
+                                    border: investPace === pace ? "none" : `1px solid ${C.border}`,
+                                    color: investPace === pace ? "#fff" : C.text,
+                                    boxShadow: investPace === pace ? "0 4px 12px rgba(59, 130, 246, 0.3)" : "none"
+                                }}>
+                                    {pace >= 1000 ? `${pace/1000}K` : `${pace}円`}
+                                </button>
+                            ))}
+                        </div>
+                        <button className="b" onClick={() => setShowInvestSettings(false)} style={{
+                            width: "100%", padding: "12px", background: "rgba(255,255,255,0.05)", border: `1px solid ${C.border}`,
+                            borderRadius: 10, color: C.text, fontSize: 14, fontWeight: 600, fontFamily: font
+                        }}>閉じる</button>
                     </Card>
                 </div>
             )}
