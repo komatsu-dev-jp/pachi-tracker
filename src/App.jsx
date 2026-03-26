@@ -302,21 +302,21 @@ export default function App() {
   return (
     <div style={{ background: C.bg, height: "100dvh", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column", color: C.text, position: "relative", overflow: "hidden" }}>
 
-      {/* Header */}
-      <header style={{ background: headerBg, backdropFilter: "blur(12px)", borderBottom: `1px solid ${C.border}`, padding: "12px 16px 10px", paddingTop: "max(12px, env(safe-area-inset-top))", zIndex: 100, flexShrink: 0 }}>
+      {/* Header - プレミアムデザイン */}
+      <header className="glass" style={{ backdropFilter: "blur(16px)", borderBottom: `1px solid ${C.border}`, padding: "14px 16px 12px", paddingTop: "max(14px, env(safe-area-inset-top))", zIndex: 100, flexShrink: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <h1 style={{ fontSize: 18, fontWeight: 900, letterSpacing: -0.5, color: headerTextColor, lineHeight: 1.1 }}>PACHI TRACKER</h1>
+            <h1 style={{ fontSize: 19, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1.1, background: theme === "light" ? "linear-gradient(135deg, #1e293b, #475569)" : "linear-gradient(135deg, #fff, #94a3b8)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>PACHI TRACKER</h1>
             <p style={{ fontSize: 9, color: C.sub, letterSpacing: 3, textTransform: "uppercase", marginTop: 4, fontWeight: 700 }}>Pro EV Engine</p>
           </div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <div style={{ background: statBg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "4px 10px", textAlign: "center", minWidth: 70 }}>
-              <div style={{ fontSize: 7, color: C.sub, marginBottom: 1, fontWeight: 600 }}>期待値/K</div>
-              <div style={{ fontSize: 12, fontWeight: 900, color: sc(ev.ev1K), fontFamily: mono }}>{ev.ev1K !== 0 ? sp(ev.ev1K, 0) : "—"}</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div className="stat-mini" style={{ minWidth: 72, padding: "6px 10px" }}>
+              <div style={{ fontSize: 8, color: C.sub, marginBottom: 2, fontWeight: 700 }}>EV/K</div>
+              <div style={{ fontSize: 14, fontWeight: 900, color: sc(ev.ev1K), fontFamily: mono }}>{ev.ev1K !== 0 ? sp(ev.ev1K, 0) : "—"}</div>
             </div>
-            <div style={{ background: statBg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "4px 10px", textAlign: "center", minWidth: 70 }}>
-              <div style={{ fontSize: 7, color: C.sub, marginBottom: 1, fontWeight: 600 }}>仕事量</div>
-              <div style={{ fontSize: 12, fontWeight: 900, color: sc(ev.workAmount), fontFamily: mono }}>{ev.workAmount !== 0 ? sp(ev.workAmount, 0) : "—"}</div>
+            <div className="stat-mini" style={{ minWidth: 72, padding: "6px 10px" }}>
+              <div style={{ fontSize: 8, color: C.sub, marginBottom: 2, fontWeight: 700 }}>仕事量</div>
+              <div style={{ fontSize: 14, fontWeight: 900, color: sc(ev.workAmount), fontFamily: mono }}>{ev.workAmount !== 0 ? sp(ev.workAmount, 0) : "—"}</div>
             </div>
           </div>
         </div>
