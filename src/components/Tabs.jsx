@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { C, f, sc, sp, tsNow, font, mono } from "../constants";
-import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle } from "./Atoms";
+import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./Atoms";
 import { searchMachines } from "../machineDB";
 
 /* ================================================================
@@ -181,7 +181,22 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [input, setInput] = useState("");
     const [showMoveModal, setShowMoveModal] = useState(false);
     const [showStoreDD, setShowStoreDD] = useState(false);
+    const [showMachineDD, setShowMachineDD] = useState(false);
+    const [machineQuery, setMachineQuery] = useState("");
+    const [summaryCollapsed, setSummaryCollapsed] = useState(false);
     const tableRef = useRef(null);
+
+    // 機種検索結果
+    const machineResults = useMemo(() => {
+        if (!machineQuery.trim()) return [];
+        return searchMachines(machineQuery, S.customMachines).slice(0, 8);
+    }, [machineQuery, S.customMachines]);
+
+    // 店舗の貯玉残高を取得
+    const currentStoreData = useMemo(() => {
+        const stores = S.stores || [];
+        return stores.find(st => typeof st === "object" && st.name === S.storeName);
+    }, [S.stores, S.storeName]);
 
     useEffect(() => {
         if (tableRef.current) tableRef.current.scrollTop = tableRef.current.scrollHeight;
@@ -251,6 +266,69 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
     return (
         <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+            {/* サマリセクション（折りたたみ可能） */}
+            {rows.length > 0 && (
+                <div style={{ flexShrink: 0 }}>
+                    <button className="b" onClick={() => setSummaryCollapsed(!summaryCollapsed)} style={{
+                        width: "100%", background: "rgba(0,0,0,0.2)", border: "none", borderBottom: `1px solid ${C.border}`,
+                        padding: "8px 16px", display: "flex", justifyContent: "space-between", alignItems: "center"
+                    }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{S.machineName || "機種未設定"}</span>
+                            <span style={{ fontSize: 10, color: C.sub }}>{S.storeName} {S.machineNum && `| ${S.machineNum}番台`}</span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                            <span style={{ fontSize: 14, fontWeight: 800, color: C.green, fontFamily: mono }}>{ev.useBorder > 0 ? f(ev.useBorder, 1) : "—"}</span>
+                            <span style={{ fontSize: 10, color: C.sub }}>{summaryCollapsed ? "▼" : "▲"}</span>
+                        </div>
+                    </button>
+                    {!summaryCollapsed && (
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, padding: "8px 12px", background: "rgba(0,0,0,0.15)", borderBottom: `1px solid ${C.border}` }}>
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 9, color: C.sub }}>回転率</div>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: C.text, fontFamily: mono }}>{ev.start1K > 0 ? f(ev.start1K, 1) : "—"}</div>
+                            </div>
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 9, color: C.sub }}>EV/K</div>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: sc(ev.ev1K), fontFamily: mono }}>{ev.ev1K !== 0 ? sp(ev.ev1K, 0) : "—"}</div>
+                            </div>
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 9, color: C.sub }}>仕事量</div>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: sc(ev.workAmount), fontFamily: mono }}>{ev.workAmount !== 0 ? sp(ev.workAmount, 0) : "—"}</div>
+                            </div>
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 9, color: C.sub }}>初当たり</div>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: C.orange, fontFamily: mono }}>{ev.jpCount || 0}</div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* リアルタイム玉数表示 */}
+            {(S.currentMochiBalls > 0 || S.currentChodama > 0) && (
+                <div style={{ display: "flex", justifyContent: "center", gap: 20, padding: "8px 12px", background: "rgba(0,0,0,0.25)", borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+                    <div style={{ textAlign: "center" }}>
+                        <div style={{ fontSize: 9, color: C.sub }}>持ち玉</div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: C.orange, fontFamily: mono }}>{f(S.currentMochiBalls)}</div>
+                    </div>
+                    {S.currentChodama > 0 && (
+                        <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: C.sub }}>貯玉残</div>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: C.purple, fontFamily: mono }}>{f(S.currentChodama)}</div>
+                        </div>
+                    )}
+                    {S.chodamaUsedToday > 0 && (
+                        <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: C.sub }}>本日再プレイ</div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: S.chodamaUsedToday >= S.chodamaReplayLimit ? C.red : C.text, fontFamily: mono }}>
+                                {f(S.chodamaUsedToday)} / {f(S.chodamaReplayLimit)}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* Table Header */}
             <div style={{ display: "grid", gridTemplateColumns: "55px 1fr 1fr 1fr 70px", background: "linear-gradient(to right, #f97316, #ea580c)", padding: "12px 4px", flexShrink: 0, boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}>
                 {["種別", "総回転数", "今回", "平均", "投資額"].map((h) => (
@@ -266,12 +344,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     </div>
                 )}
                 {rows.map((row, i) => {
-                    const isMochi = row.mode === "mochi";
-                    const badgeColor = isMochi ? C.orange : C.blue;
-                    const badgeLabel = isMochi ? "持" : "現";
                     if (row.type === "start") return (
                         <div key={i} className="fin" style={{ display: "grid", gridTemplateColumns: "55px 1fr 1fr 1fr 70px", padding: "12px 4px", background: "rgba(255,255,255,0.02)", borderBottom: `1px solid ${C.border}` }}>
-                            <div style={{ textAlign: "center" }}><span style={{ fontSize: 10, fontWeight: 700, color: badgeColor, background: badgeColor + "20", borderRadius: 6, padding: "3px 7px", border: `1px solid ${badgeColor}40` }}>{badgeLabel}</span></div>
+                            <div style={{ textAlign: "center" }}><ModeBadge mode={row.mode || "cash"} /></div>
                             <div style={{ textAlign: "center", fontSize: 14, color: C.subHi, fontFamily: mono }}>{f(row.cumRot)}</div>
                             <div style={{ textAlign: "center", fontSize: 11, color: C.sub }}>—</div>
                             <div style={{ textAlign: "center", fontSize: 11, fontWeight: 800, color: C.yellow, letterSpacing: 2 }}>START</div>
@@ -289,7 +364,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     );
                     return (
                         <div key={i} className="fin" style={{ display: "grid", gridTemplateColumns: "55px 1fr 1fr 1fr 70px", padding: "14px 4px", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)", borderBottom: `1px solid ${C.border}` }}>
-                            <div style={{ textAlign: "center" }}><span style={{ fontSize: 10, fontWeight: 700, color: badgeColor, background: badgeColor + "20", borderRadius: 6, padding: "3px 7px", border: `1px solid ${badgeColor}40` }}>{badgeLabel}</span></div>
+                            <div style={{ textAlign: "center" }}><ModeBadge mode={row.mode || "cash"} /></div>
                             <div style={{ textAlign: "center", fontSize: 14, color: C.subHi, fontFamily: mono }}>{f(row.cumRot)}</div>
                             <div style={{ textAlign: "center", fontSize: 16, fontWeight: 700, color: rotCol(row.thisRot), fontFamily: mono }}>{row.thisRot}</div>
                             <div style={{ textAlign: "center", fontSize: 16, fontWeight: 600, color: rotCol(row.invest > 0 ? ((row.cumRot - S.startRot) / (row.invest / 1000)) : row.avgRot), fontFamily: mono }}>
@@ -326,6 +401,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                                 if (typeof st === "object") {
                                                     if (st.rentBalls) S.setRentBalls(st.rentBalls);
                                                     if (st.exRate) S.setExRate(st.exRate);
+                                                    if (st.chodama) S.setCurrentChodama(st.chodama);
+                                                    S.setSelectedStoreId(st.id);
                                                 }
                                                 setShowStoreDD(false);
                                             }} style={{
@@ -345,12 +422,45 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     </div>
                 </div>
 
+                {/* 機種選択 */}
+                <div style={{ padding: "0 12px 6px", position: "relative" }}>
+                    <div style={{ fontSize: 9, color: C.sub, marginBottom: 3, fontWeight: 600 }}>機種</div>
+                    <input type="text" value={S.machineName || ""} onChange={e => { S.setMachineName(e.target.value); setMachineQuery(e.target.value); setShowMachineDD(true); }} placeholder="機種名を検索..."
+                        onFocus={() => setShowMachineDD(true)}
+                        style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "8px 10px", fontSize: 16, color: C.text, fontFamily: font, outline: "none" }} />
+                    {showMachineDD && machineResults.length > 0 && (
+                        <div style={{ position: "absolute", top: "100%", left: 12, right: 12, background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 8, zIndex: 10, maxHeight: 180, overflowY: "auto", marginTop: 2, boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}>
+                            {machineResults.map((m, i) => (
+                                <button key={m.id || i} className="b" onClick={() => {
+                                    S.setMachineName(m.name);
+                                    S.setSynthDenom(m.synthProb);
+                                    if (m.spec1R) S.setSpec1R(m.spec1R);
+                                    if (m.specAvgTotalRounds) S.setSpecAvgRounds(m.specAvgTotalRounds);
+                                    if (m.specSapo != null) S.setSpecSapo(m.specSapo);
+                                    setShowMachineDD(false);
+                                    setMachineQuery("");
+                                }} style={{
+                                    width: "100%", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)", border: "none", borderBottom: `1px solid ${C.border}`,
+                                    padding: "10px 12px", textAlign: "left", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center"
+                                }}>
+                                    <div>
+                                        <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{m.name}</div>
+                                        <div style={{ fontSize: 10, color: C.sub }}>{m.maker || ""} | {m.type || ""}</div>
+                                    </div>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: C.yellow, fontFamily: mono }}>{m.prob || `1/${m.synthProb}`}</div>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 16px 8px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <ModeToggle mode={S.playMode === "mochi" ? "持ち玉" : "現金"} setMode={(m) => S.setPlayMode(m === "持ち玉" ? "mochi" : "cash")} />
-                        {ev.mochiRatio > 0 && (
+                        <ModeToggle mode={S.playMode} setMode={S.setPlayMode} showChodama={S.currentChodama > 0 || S.initialChodama > 0} compact />
+                        {(ev.mochiRatio > 0 || ev.chodamaRatio > 0) && (
                             <span style={{ fontSize: 10, color: C.orange, fontFamily: mono, fontWeight: 700 }}>
-                                持玉{Math.round(ev.mochiRatio * 100)}%
+                                {ev.mochiRatio > 0 && `持${Math.round(ev.mochiRatio * 100)}%`}
+                                {ev.chodamaRatio > 0 && ` 貯${Math.round(ev.chodamaRatio * 100)}%`}
                             </span>
                         )}
                     </div>
@@ -1673,12 +1783,14 @@ export function SettingsTab({ s, onReset }) {
     const [formData, setFormData] = useState(emptyMachine);
 
     // 店舗フォームの初期値
-    const emptyStore = { name: "", address: "", rentBalls: 250, exRate: 250, memo: "" };
+    const emptyStore = { name: "", address: "", rentBalls: 250, exRate: 250, memo: "", chodama: 0 };
     const [storeFormData, setStoreFormData] = useState(emptyStore);
 
-    // 店舗データの正規化（旧形式の文字列配列を新形式のオブジェクト配列に変換）
+    // 店舗データの正規化（旧形式の文字列配列を新形式のオブジェクト配列に変換）+ chodamaフィールドの追加
     const normalizedStores = (s.stores || []).map(st =>
-        typeof st === "string" ? { id: Date.now() + Math.random(), name: st, address: "", rentBalls: 250, exRate: 250, memo: "" } : st
+        typeof st === "string"
+            ? { id: Date.now() + Math.random(), name: st, address: "", rentBalls: 250, exRate: 250, memo: "", chodama: 0 }
+            : { ...st, chodama: st.chodama || 0 }
     );
 
     // 店舗検索
@@ -1751,6 +1863,7 @@ export function SettingsTab({ s, onReset }) {
             id: editingStore?.id || Date.now(),
             rentBalls: parseInt(storeFormData.rentBalls) || 250,
             exRate: parseInt(storeFormData.exRate) || 250,
+            chodama: parseInt(storeFormData.chodama) || 0,
         };
         if (editingStore) {
             s.setStores(prev => prev.map(st => (typeof st === "object" && st.id === editingStore.id) ? storeData : st));
@@ -2063,7 +2176,7 @@ export function SettingsTab({ s, onReset }) {
                     <div style={{ fontSize: 18, fontWeight: 800, color: C.text, marginBottom: 4 }}>{selectedStore.name}</div>
                     {selectedStore.address && <div style={{ fontSize: 11, color: C.sub, marginBottom: 12 }}>{selectedStore.address}</div>}
 
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
                         <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
                             <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>貸し玉</div>
                             <div style={{ fontSize: 18, fontWeight: 800, color: C.yellow, fontFamily: mono }}>{selectedStore.rentBalls || 250}</div>
@@ -2073,6 +2186,11 @@ export function SettingsTab({ s, onReset }) {
                             <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>交換率</div>
                             <div style={{ fontSize: 18, fontWeight: 800, color: C.teal, fontFamily: mono }}>{selectedStore.exRate || 250}</div>
                             <div style={{ fontSize: 9, color: C.sub }}>玉/1K</div>
+                        </div>
+                        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>貯玉残高</div>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: C.purple, fontFamily: mono }}>{f(selectedStore.chodama || 0)}</div>
+                            <div style={{ fontSize: 9, color: C.sub }}>玉</div>
                         </div>
                     </div>
 
@@ -2137,6 +2255,14 @@ export function SettingsTab({ s, onReset }) {
                         <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>交換率（玉/1K）</div>
                         <input type="number" value={storeFormData.exRate} onChange={e => setStoreFormData({ ...storeFormData, exRate: e.target.value })}
                             placeholder="250"
+                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                    </div>
+
+                    {/* 貯玉残高 */}
+                    <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貯玉残高（玉）</div>
+                        <input type="number" value={storeFormData.chodama || 0} onChange={e => setStoreFormData({ ...storeFormData, chodama: parseInt(e.target.value) || 0 })}
+                            placeholder="0"
                             style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
                     </div>
 
@@ -2580,11 +2706,64 @@ export function SettingsTab({ s, onReset }) {
             <Card style={{ padding: 16 }}>
                 <SecLabel label="店舗検索・登録" />
                 <div style={{ fontSize: 11, color: C.sub, marginBottom: 12, lineHeight: 1.6, padding: "0 4px" }}>
-                    よく行く店舗を登録すると、記録時に選択でき、貸し玉・交換率も自動設定できます。
+                    よく行く店舗を登録すると、記録時に選択でき、貸し玉・交換率・貯玉も自動設定できます。
                 </div>
                 <div style={{ display: "flex", gap: 10 }}>
                     <Btn label="店舗を検索" onClick={() => setShowStoreSearch(true)} primary small />
                     <Btn label="+ 店舗を登録" onClick={() => openStoreForm()} bg={C.teal} fg="#fff" bd="none" small />
+                </div>
+            </Card>
+
+            {/* 貯玉設定 */}
+            <Card style={{ padding: 16 }}>
+                <SecLabel label="貯玉設定" color={C.purple} />
+                <div style={{ fontSize: 11, color: C.sub, marginBottom: 12, lineHeight: 1.6, padding: "0 4px" }}>
+                    貯玉を使った稼働時の収支計算方法を設定します。
+                </div>
+
+                {/* 貯玉を収支に含める */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                    <div>
+                        <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>貯玉を収支に含める</div>
+                        <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>OFFの場合、貯玉使用分は投資額0円として計算</div>
+                    </div>
+                    <button
+                        className="b"
+                        onClick={() => s.setIncludeChodamaInBalance(!s.includeChodamaInBalance)}
+                        style={{
+                            width: 52,
+                            height: 28,
+                            borderRadius: 14,
+                            border: "none",
+                            background: s.includeChodamaInBalance ? C.purple : "rgba(255,255,255,0.1)",
+                            position: "relative",
+                            transition: "background 0.2s ease",
+                        }}
+                    >
+                        <div style={{
+                            width: 22,
+                            height: 22,
+                            borderRadius: 11,
+                            background: "#fff",
+                            position: "absolute",
+                            top: 3,
+                            left: s.includeChodamaInBalance ? 27 : 3,
+                            transition: "left 0.2s ease",
+                            boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+                        }} />
+                    </button>
+                </div>
+
+                {/* 再プレイ上限 */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0" }}>
+                    <div>
+                        <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>1日の再プレイ上限</div>
+                        <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>上限到達時に警告を表示します</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <NI v={s.chodamaReplayLimit} set={s.setChodamaReplayLimit} w={80} center />
+                        <span style={{ fontSize: 10, color: C.sub, minWidth: 20 }}>玉</span>
+                    </div>
                 </div>
             </Card>
 

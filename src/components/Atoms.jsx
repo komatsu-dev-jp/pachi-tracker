@@ -140,29 +140,59 @@ export function InputGrid({ fields }) {
     );
 }
 
-export function ModeToggle({ mode, setMode }) {
+// モードの値と表示テキストのマッピング
+const modeMap = {
+    cash: { label: "現", fullLabel: "現金", color: C.blue },
+    mochi: { label: "持", fullLabel: "持ち玉", color: C.orange },
+    chodama: { label: "貯", fullLabel: "貯玉", color: C.purple },
+};
+
+export function ModeToggle({ mode, setMode, showChodama = false, compact = false }) {
+    const modes = showChodama ? ["cash", "mochi", "chodama"] : ["cash", "mochi"];
     return (
         <div style={{ display: "flex", background: "rgba(0,0,0,0.3)", borderRadius: 24, padding: 3, gap: 4 }}>
-            {["現金", "持ち玉"].map((m) => (
-                <button
-                    key={m}
-                    className="b"
-                    onClick={() => setMode(m)}
-                    style={{
-                        background: mode === m ? "rgba(255,255,255,0.1)" : "transparent",
-                        border: "none",
-                        borderRadius: 20,
-                        color: mode === m ? C.text : C.sub,
-                        fontSize: 12,
-                        fontWeight: mode === m ? 700 : 500,
-                        padding: "6px 16px",
-                        fontFamily: font,
-                        boxShadow: mode === m ? "0 2px 8px rgba(0,0,0,0.2)" : "none",
-                    }}
-                >
-                    {m}
-                </button>
-            ))}
+            {modes.map((m) => {
+                const isActive = mode === m;
+                const { label, fullLabel, color } = modeMap[m];
+                return (
+                    <button
+                        key={m}
+                        className="b"
+                        onClick={() => setMode(m)}
+                        style={{
+                            background: isActive ? (color + "30") : "transparent",
+                            border: isActive ? `1px solid ${color}50` : "1px solid transparent",
+                            borderRadius: 20,
+                            color: isActive ? color : C.sub,
+                            fontSize: compact ? 11 : 12,
+                            fontWeight: isActive ? 700 : 500,
+                            padding: compact ? "5px 10px" : "6px 16px",
+                            fontFamily: font,
+                            boxShadow: isActive ? "0 2px 8px rgba(0,0,0,0.2)" : "none",
+                        }}
+                    >
+                        {compact ? label : fullLabel}
+                    </button>
+                );
+            })}
         </div>
+    );
+}
+
+// モード表示用バッジ（テーブル行用）
+export function ModeBadge({ mode }) {
+    const { label, color } = modeMap[mode] || modeMap.cash;
+    return (
+        <span style={{
+            fontSize: 10,
+            fontWeight: 700,
+            color: color,
+            background: color + "20",
+            borderRadius: 6,
+            padding: "3px 7px",
+            border: `1px solid ${color}40`,
+        }}>
+            {label}
+        </span>
     );
 }
