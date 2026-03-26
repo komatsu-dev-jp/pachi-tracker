@@ -80,6 +80,12 @@ input[type=number] {
   -moz-appearance: textfield;
 }
 
+/* iOS auto-zoom prevention - minimum 16px for inputs */
+input, select, textarea {
+  font-size: 16px !important;
+  -webkit-text-size-adjust: 100%;
+}
+
 ::-webkit-scrollbar {
   width: 2px;
   height: 2px;

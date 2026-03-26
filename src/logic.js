@@ -31,15 +31,17 @@ export function useLS(key, init) {
 ================================================================ */
 export function deriveFromRows(rotRows, startRot = 0) {
     const dataRows = (rotRows || []).filter(r => r.type === "data");
-    if (dataRows.length === 0) return { rot: 0, kCount: 0, invest: 0, cashKCount: 0, mochiKCount: 0 };
+    if (dataRows.length === 0) return { rot: 0, kCount: 0, invest: 0, cashKCount: 0, mochiKCount: 0, chodamaKCount: 0 };
 
     const lastRow = dataRows[dataRows.length - 1];
     const totalRot = lastRow.cumRot;
     const netRot = totalRot - startRot;
     const invest = lastRow.invest || 0;
-    const cashKCount = dataRows.filter(r => r.mode !== "mochi").length;
+    // 現金: mochi/chodama以外
+    const cashKCount = dataRows.filter(r => r.mode !== "mochi" && r.mode !== "chodama").length;
     const mochiKCount = dataRows.filter(r => r.mode === "mochi").length;
-    return { rot: netRot, kCount: dataRows.length, invest, cashKCount, mochiKCount };
+    const chodamaKCount = dataRows.filter(r => r.mode === "chodama").length;
+    return { rot: netRot, kCount: dataRows.length, invest, cashKCount, mochiKCount, chodamaKCount };
 }
 
 /* ================================================================
@@ -54,8 +56,9 @@ export function calcPreciseEV({
     spec1R = 140,    // 機種スペック: 1R出玉（実出玉）
     specAvgRounds = 0,  // 機種スペック: 平均総R/初当たり（連チャン含む）
     specSapo = 0,    // 機種スペック: サポ増減/初当たり
+    chodamaSettings = {},  // 貯玉設定: { includeChodamaInBalance: true }
 }) {
-    const { rot: netRot, invest: rawInvest, cashKCount, mochiKCount } = deriveFromRows(rotRows, startRot);
+    const { rot: netRot, invest: rawInvest, cashKCount, mochiKCount, chodamaKCount } = deriveFromRows(rotRows, startRot);
 
     // ── 実測パラメータを jpLog から集計（v3チェーン構造対応） ──
     const completedEntries = (jpLog || []).filter(j => j.completed === true);
@@ -102,7 +105,10 @@ export function calcPreciseEV({
     const trayBallsYen = trayCorrection * (1000 / (rentBalls || 250));
     // 持ち玉混合コスト: 現金=1000円/K, 持ち玉=1000×(交換率/貸し玉)円/K
     const mochiCostPerK = (exRate && rentBalls) ? 1000 * exRate / rentBalls : 1000;
-    const blendedInvest = cashKCount * 1000 + mochiKCount * mochiCostPerK;
+    // 貯玉コスト: 収支に含める場合は持ち玉と同じ、含めない場合は0円
+    const includeChodama = chodamaSettings.includeChodamaInBalance !== false;
+    const chodamaCostPerK = includeChodama ? mochiCostPerK : 0;
+    const blendedInvest = cashKCount * 1000 + mochiKCount * mochiCostPerK + chodamaKCount * chodamaCostPerK;
     const correctedInvestYen = Math.max(blendedInvest - trayBallsYen, 0);
 
     // ── 回転率（1Kスタート） = 総回転数 ÷ 投資K数（シンプル計算） ──
@@ -197,10 +203,12 @@ export function calcPreciseEV({
         trayBallsYen: Math.round(trayBallsYen),
         trayCorrection,
 
-        // 持ち玉比率
+        // 持ち玉・貯玉比率
         cashKCount,
         mochiKCount,
-        mochiRatio: (cashKCount + mochiKCount) > 0 ? mochiKCount / (cashKCount + mochiKCount) : 0,
+        chodamaKCount,
+        mochiRatio: (cashKCount + mochiKCount + chodamaKCount) > 0 ? mochiKCount / (cashKCount + mochiKCount + chodamaKCount) : 0,
+        chodamaRatio: (cashKCount + mochiKCount + chodamaKCount) > 0 ? chodamaKCount / (cashKCount + mochiKCount + chodamaKCount) : 0,
     };
 }
 

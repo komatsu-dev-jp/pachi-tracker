@@ -130,6 +130,23 @@ export default function App() {
   const [totalTrayBalls, setTotalTrayBalls] = useLS("pt_totalTrayBalls", 0);
   const [playMode, setPlayMode] = useLS("pt_playMode", "cash");
 
+  // 貯玉関連設定
+  const [includeChodamaInBalance, setIncludeChodamaInBalance] = useLS("pt_includeChodamaInBalance", true);
+  const [chodamaReplayLimit, setChodamaReplayLimit] = useLS("pt_chodamaReplayLimit", 2500);
+  const [chodamaUsedToday, setChodamaUsedToday] = useLS("pt_chodamaUsedToday", 0);
+  const [chodamaLastDate, setChodamaLastDate] = useLS("pt_chodamaLastDate", "");
+
+  // セッション中のリアルタイム玉数
+  const [currentMochiBalls, setCurrentMochiBalls] = useLS("pt_currentMochiBalls", 0);
+  const [currentChodama, setCurrentChodama] = useLS("pt_currentChodama", 0);
+
+  // セッション開始時の初期値
+  const [sessionStarted, setSessionStarted] = useLS("pt_sessionStarted", false);
+  const [startGameCount, setStartGameCount] = useLS("pt_startGameCount", 0);
+  const [initialMochiBalls, setInitialMochiBalls] = useLS("pt_initialMochiBalls", 0);
+  const [initialChodama, setInitialChodama] = useLS("pt_initialChodama", 0);
+  const [selectedStoreId, setSelectedStoreId] = useLS("pt_selectedStoreId", null);
+
   // Session info (店舗・台番号・投資・回収・機種名)
   const [storeName, setStoreName] = useLS("pt_storeName", "");
   const [machineNum, setMachineNum] = useLS("pt_machineNum", "");
@@ -159,6 +176,15 @@ export default function App() {
     }
   }, []);
 
+  // 日付変更時に貯玉使用量をリセット
+  useEffect(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    if (chodamaLastDate !== today) {
+      setChodamaUsedToday(0);
+      setChodamaLastDate(today);
+    }
+  }, [chodamaLastDate]);
+
   const pushJP = (j) => setJpLog((p) => [...p, j]);
   const delJPLast = () => setJpLog((p) => p.slice(0, -1));
   const pushLog = (e) => setSesLog((p) => [...p, e]);
@@ -170,6 +196,7 @@ export default function App() {
     rentBalls, exRate, synthDenom, rotPerHour,
     totalTrayBalls, border,
     spec1R, specAvgRounds, specSapo,
+    chodamaSettings: { includeChodamaInBalance },
   });
 
   const resetAll = () => {
@@ -184,6 +211,14 @@ export default function App() {
     setMachineName("");
     setInvestYen(0);
     setRecoveryYen(0);
+    // セッション関連リセット
+    setSessionStarted(false);
+    setStartGameCount(0);
+    setInitialMochiBalls(0);
+    setInitialChodama(0);
+    setCurrentMochiBalls(0);
+    setCurrentChodama(0);
+    setSelectedStoreId(null);
   };
 
   // 台移動: 現在のデータを自動保存して新台へ
@@ -235,11 +270,24 @@ export default function App() {
     archives, setArchives,
     ev, handleMoveTable,
     theme, setTheme,
+    // 貯玉関連
+    includeChodamaInBalance, setIncludeChodamaInBalance,
+    chodamaReplayLimit, setChodamaReplayLimit,
+    chodamaUsedToday, setChodamaUsedToday,
+    // セッション関連
+    sessionStarted, setSessionStarted,
+    startGameCount, setStartGameCount,
+    initialMochiBalls, setInitialMochiBalls,
+    initialChodama, setInitialChodama,
+    selectedStoreId, setSelectedStoreId,
+    // リアルタイム玉数
+    currentMochiBalls, setCurrentMochiBalls,
+    currentChodama, setCurrentChodama,
   };
 
   const nav = [
     { id: "data", label: "データ", icon: "📈" },
-    { id: "rot", label: "回転数", icon: "📊" },
+    { id: "rot", label: "新規稼働", icon: "🎰" },
     { id: "history", label: "大当たり", icon: "📋" },
     { id: "calendar", label: "記録", icon: "📅" },
     { id: "settings", label: "設定", icon: "⚙️" },
