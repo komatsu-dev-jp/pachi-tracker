@@ -116,6 +116,7 @@ export default function App() {
   const [synthDenom, setSynthDenom] = useLS("pt_synthDenom", 319.6);
   const [rotPerHour, setRotPerHour] = useLS("pt_rotPerHour", 250);
   const [border, setBorder] = useLS("pt_border", 20);
+  const [investPace, setInvestPace] = useLS("pt_investPace", 1000); // 投資金額ペース: 500, 1000円
   const [ballVal, setBallVal] = useLS("pt_ballVal", 4);
   // 機種スペック（P tools互換）
   const [spec1R, setSpec1R] = useLS("pt_spec1R", 140);
@@ -256,6 +257,7 @@ export default function App() {
   const S = {
     rentBalls, setRentBalls, exRate, setExRate, synthDenom, setSynthDenom,
     rotPerHour, setRotPerHour, border, setBorder, ballVal, setBallVal,
+    investPace, setInvestPace,
     spec1R, setSpec1R, specAvgRounds, setSpecAvgRounds, specSapo, setSpecSapo,
     rotRows, setRotRows,
     jpLog, setJpLog, pushJP,
@@ -302,25 +304,8 @@ export default function App() {
   return (
     <div style={{ background: C.bg, height: "100dvh", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column", color: C.text, position: "relative", overflow: "hidden" }}>
 
-      {/* Header - プレミアムデザイン */}
-      <header className="glass" style={{ backdropFilter: "blur(16px)", borderBottom: `1px solid ${C.border}`, padding: "14px 16px 12px", paddingTop: "max(14px, env(safe-area-inset-top))", zIndex: 100, flexShrink: 0 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <h1 style={{ fontSize: 19, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1.1, background: theme === "light" ? "linear-gradient(135deg, #1e293b, #475569)" : "linear-gradient(135deg, #fff, #94a3b8)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>PACHI TRACKER</h1>
-            <p style={{ fontSize: 9, color: C.sub, letterSpacing: 3, textTransform: "uppercase", marginTop: 4, fontWeight: 700 }}>Pro EV Engine</p>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <div className="stat-mini" style={{ minWidth: 72, padding: "6px 10px" }}>
-              <div style={{ fontSize: 8, color: C.sub, marginBottom: 2, fontWeight: 700 }}>EV/K</div>
-              <div style={{ fontSize: 14, fontWeight: 900, color: sc(ev.ev1K), fontFamily: mono }}>{ev.ev1K !== 0 ? sp(ev.ev1K, 0) : "—"}</div>
-            </div>
-            <div className="stat-mini" style={{ minWidth: 72, padding: "6px 10px" }}>
-              <div style={{ fontSize: 8, color: C.sub, marginBottom: 2, fontWeight: 700 }}>仕事量</div>
-              <div style={{ fontSize: 14, fontWeight: 900, color: sc(ev.workAmount), fontFamily: mono }}>{ev.workAmount !== 0 ? sp(ev.workAmount, 0) : "—"}</div>
-            </div>
-          </div>
-        </div>
-      </header>
+      {/* Minimal safe-area spacing */}
+      <div style={{ height: "env(safe-area-inset-top)", flexShrink: 0 }} />
 
       {/* Main Content with Swipe */}
       <main
