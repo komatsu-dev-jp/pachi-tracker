@@ -189,6 +189,11 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [showInvestSettings, setShowInvestSettings] = useState(false);
     const tableRef = useRef(null);
 
+    // 初当たりウィザード用state
+    const [hitWizardOpen, setHitWizardOpen] = useState(false);
+    const [hitWizardStep, setHitWizardStep] = useState(0);
+    const [hitWizardData, setHitWizardData] = useState({ trayBalls: "", rounds: 3, displayBalls: "", actualBalls: "" });
+
     // セットアップ用の一時state
     const [setupStore, setSetupStore] = useState("");
     const [setupMachineNum, setSetupMachineNum] = useState("");
@@ -328,6 +333,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         setSetupInitialBalls("");
     };
 
+    // 初当たりボタン → ウィザード開始
     const handleStartChain = () => {
         const val = Number(input);
         const prevCumRot = last ? last.cumRot : S.startRot;
@@ -352,7 +358,58 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         });
         S.pushLog({ type: "初当たり", time: tsNow(), rot: hitRot });
         setInput("");
-        S.setTab("history");
+        // ウィザードを開始
+        setHitWizardData({ trayBalls: "", rounds: 3, displayBalls: "", actualBalls: "" });
+        setHitWizardStep(0);
+        setHitWizardOpen(true);
+    };
+
+    // 大当たり後スタート: 現在の入力値を新しいスタート回転数として設定
+    const handlePostJackpotStart = () => {
+        const val = Number(input);
+        if (val > 0) {
+            S.setStartRot(val);
+            S.pushLog({ type: "大当たり後スタート", time: tsNow(), rot: val });
+            setInput("");
+        }
+    };
+
+    // ウィザード完了時の処理
+    const handleWizardComplete = () => {
+        const { trayBalls, rounds, displayBalls, actualBalls } = hitWizardData;
+        const rnd = Number(rounds) || 0;
+        const tray = Number(trayBalls) || 0;
+        const disp = Number(displayBalls) || 0;
+        const actual = Number(actualBalls) || 0;
+
+        if (rnd <= 0) {
+            setHitWizardOpen(false);
+            return;
+        }
+
+        S.setJpLog((prev) => {
+            const updated = [...prev];
+            const chain = { ...updated[updated.length - 1] };
+            chain.trayBalls = tray;
+            S.setTotalTrayBalls((p) => p + tray);
+            chain.hits = [...chain.hits, {
+                hitNumber: chain.hits.length + 1,
+                lastOutBalls: 0,
+                nextTimingBalls: 0,
+                elecSapoRot: 0,
+                sapoChange: 0,
+                sapoPerRot: 0,
+                rounds: rnd,
+                displayBalls: disp,
+                actualBalls: actual,
+                time: tsNow(),
+            }];
+            updated[updated.length - 1] = chain;
+            return updated;
+        });
+        S.pushLog({ type: "初当たり記録", time: tsNow(), rounds: rnd });
+        setHitWizardOpen(false);
+        setHitWizardData({ trayBalls: "", rounds: 3, displayBalls: "", actualBalls: "" });
     };
 
     // セッション未開始：新規稼働ボタンを中央に表示
@@ -686,16 +743,21 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     <div className="error-msg" style={{ marginBottom: 8, fontSize: 10 }}>{inputError}</div>
                 )}
 
-                {/* メインボタン 3つ - 大きめ */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
-                    <button className="b btn-premium btn-primary" onClick={decide} style={{ padding: "16px 8px", fontSize: 14, fontWeight: 800 }}>回転数記録</button>
-                    <button className="b btn-premium btn-secondary" onClick={handleStartChain} style={{ padding: "16px 8px", fontSize: 14, fontWeight: 800 }}>当G数</button>
-                    <button className="b" onClick={() => setShowMoveModal(true)} style={{ background: "rgba(139, 92, 246, 0.15)", border: `1px solid rgba(139, 92, 246, 0.3)`, borderRadius: 10, color: C.purple, fontSize: 14, fontWeight: 800, padding: "16px 8px", fontFamily: font }}>台移動</button>
+                {/* メインボタン 2つ - 大きめ */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                    <button className="b btn-premium btn-primary" onClick={decide} style={{ padding: "18px 8px", fontSize: 15, fontWeight: 800 }}>記録</button>
+                    <button className="b btn-premium btn-secondary" onClick={handleStartChain} style={{ padding: "18px 8px", fontSize: 15, fontWeight: 800 }}>初当たり</button>
                 </div>
 
                 {/* モード切替 - 現/持/貯玉 */}
-                <div style={{ display: "flex", justifyContent: "center" }}>
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
                     <ModeToggle mode={S.playMode} setMode={S.setPlayMode} showChodama={true} compact={false} />
+                </div>
+
+                {/* 下段ボタン: 台移動 & 大当たり後スタート */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <button className="b" onClick={() => setShowMoveModal(true)} style={{ background: "rgba(139, 92, 246, 0.15)", border: `1px solid rgba(139, 92, 246, 0.3)`, borderRadius: 10, color: C.purple, fontSize: 12, fontWeight: 700, padding: "12px 8px", fontFamily: font }}>台移動</button>
+                    <button className="b" onClick={handlePostJackpotStart} style={{ background: "rgba(16, 185, 129, 0.15)", border: `1px solid rgba(16, 185, 129, 0.3)`, borderRadius: 10, color: C.green, fontSize: 12, fontWeight: 700, padding: "12px 8px", fontFamily: font }}>大当たり後スタート</button>
                 </div>
             </div>
 
@@ -743,6 +805,118 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     </Card>
                 </div>
             )}
+
+            {/* 初当たりウィザードモーダル */}
+            {hitWizardOpen && (
+                <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: 20 }}>
+                    <Card style={{ width: "100%", maxWidth: 340, padding: 24 }}>
+                        {/* Step 0: 上皿の残り玉数 */}
+                        {hitWizardStep === 0 && (
+                            <>
+                                <SecLabel label="Step 1/4: 上皿の残り玉数" />
+                                <div style={{ fontSize: 13, color: C.sub, marginBottom: 16 }}>大当たり時の上皿に残っている玉数を入力</div>
+                                <NI
+                                    label=""
+                                    val={hitWizardData.trayBalls}
+                                    set={v => setHitWizardData(d => ({ ...d, trayBalls: v }))}
+                                    placeholder="例: 250"
+                                    type="tel"
+                                />
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 20 }}>
+                                    <Btn label="スキップ" onClick={() => setHitWizardStep(1)} />
+                                    <Btn label="次へ" onClick={() => setHitWizardStep(1)} bg={C.blue} fg="#fff" bd="none" />
+                                </div>
+                            </>
+                        )}
+                        {/* Step 1: ラウンド数（縦ルーレット） */}
+                        {hitWizardStep === 1 && (
+                            <>
+                                <SecLabel label="Step 2/4: ラウンド数" />
+                                <div style={{ fontSize: 13, color: C.sub, marginBottom: 16 }}>獲得したラウンド数を選択</div>
+                                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, margin: "20px 0" }}>
+                                    {[1,2,3,4,5,6,7,8,9,10].map(r => (
+                                        <button
+                                            key={r}
+                                            className="b"
+                                            onClick={() => setHitWizardData(d => ({ ...d, rounds: r }))}
+                                            style={{
+                                                width: "100%",
+                                                padding: "14px 0",
+                                                borderRadius: 10,
+                                                fontWeight: 700,
+                                                fontFamily: mono,
+                                                fontSize: hitWizardData.rounds === r ? 20 : 16,
+                                                background: hitWizardData.rounds === r ? "linear-gradient(135deg, #f97316, #ea580c)" : "rgba(255,255,255,0.05)",
+                                                border: hitWizardData.rounds === r ? "none" : `1px solid ${C.border}`,
+                                                color: hitWizardData.rounds === r ? "#fff" : C.sub,
+                                                transform: hitWizardData.rounds === r ? "scale(1.05)" : "scale(1)",
+                                                transition: "all 0.15s ease"
+                                            }}
+                                        >
+                                            {r}R
+                                        </button>
+                                    ))}
+                                </div>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                                    <Btn label="戻る" onClick={() => setHitWizardStep(0)} />
+                                    <Btn label="次へ" onClick={() => setHitWizardStep(2)} bg={C.blue} fg="#fff" bd="none" />
+                                </div>
+                            </>
+                        )}
+                        {/* Step 2: 液晶表示玉数 */}
+                        {hitWizardStep === 2 && (
+                            <>
+                                <SecLabel label="Step 3/4: 液晶表示玉数" />
+                                <div style={{ fontSize: 13, color: C.sub, marginBottom: 16 }}>液晶に表示された獲得玉数を入力</div>
+                                <NI
+                                    label=""
+                                    val={hitWizardData.displayBalls}
+                                    set={v => setHitWizardData(d => ({ ...d, displayBalls: v }))}
+                                    placeholder="例: 1500"
+                                    type="tel"
+                                />
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 20 }}>
+                                    <Btn label="戻る" onClick={() => setHitWizardStep(1)} />
+                                    <Btn label="次へ" onClick={() => setHitWizardStep(3)} bg={C.blue} fg="#fff" bd="none" />
+                                </div>
+                            </>
+                        )}
+                        {/* Step 3: 実玉数 */}
+                        {hitWizardStep === 3 && (
+                            <>
+                                <SecLabel label="Step 4/4: 実玉数" />
+                                <div style={{ fontSize: 13, color: C.sub, marginBottom: 16 }}>実際に獲得した玉数を入力</div>
+                                <NI
+                                    label=""
+                                    val={hitWizardData.actualBalls}
+                                    set={v => setHitWizardData(d => ({ ...d, actualBalls: v }))}
+                                    placeholder="例: 1450"
+                                    type="tel"
+                                />
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 20 }}>
+                                    <Btn label="戻る" onClick={() => setHitWizardStep(2)} />
+                                    <Btn label="記録完了" onClick={handleWizardComplete} bg={C.green} fg="#fff" bd="none" />
+                                </div>
+                                <button
+                                    className="b"
+                                    onClick={() => { setHitWizardOpen(false); S.setTab("history"); }}
+                                    style={{ width: "100%", marginTop: 12, padding: "10px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, color: C.sub, fontSize: 12, fontWeight: 600, fontFamily: font }}
+                                >
+                                    詳細入力（従来の入力画面へ）
+                                </button>
+                            </>
+                        )}
+                        {/* 閉じるボタン（全ステップ共通） */}
+                        <button
+                            className="b"
+                            onClick={() => setHitWizardOpen(false)}
+                            style={{ width: "100%", marginTop: 16, padding: "10px", background: "rgba(239, 68, 68, 0.1)", border: `1px solid rgba(239, 68, 68, 0.3)`, borderRadius: 8, color: C.red, fontSize: 12, fontWeight: 600, fontFamily: font }}
+                        >
+                            キャンセル
+                        </button>
+                    </Card>
+                </div>
+            )}
         </div>
     );
 }
@@ -760,6 +934,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     const [iElecSapoRot, setIElecSapoRot] = useState("");    // 電サポ回転数
     const [iRounds, setIRounds] = useState("");
     const [iDisplayBalls, setIDisplayBalls] = useState("");
+    const [iActualBalls, setIActualBalls] = useState("");     // 実玉数
 
     // 最新の未完了チェーンがあるか
     const lastChain = jpLog.length > 0 ? jpLog[jpLog.length - 1] : null;
@@ -772,6 +947,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         setIElecSapoRot("");
         setIRounds("");
         setIDisplayBalls("");
+        setIActualBalls("");
     };
 
     // 連チャン追加: チェーンにヒットを追加
@@ -804,6 +980,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                 sapoPerRot,
                 rounds,
                 displayBalls: Number(iDisplayBalls) || 0,
+                actualBalls: Number(iActualBalls) || 0,
                 time: tsNow(),
             }];
             updated[updated.length - 1] = chain;
@@ -851,6 +1028,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                     sapoPerRot: hitSapoPerRot,
                     rounds,
                     displayBalls: Number(iDisplayBalls) || 0,
+                    actualBalls: Number(iActualBalls) || 0,
                     time: tsNow(),
                 }];
             }
