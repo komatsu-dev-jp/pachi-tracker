@@ -288,7 +288,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             avgRot: newAvg,
             invest: S.playMode === "mochi" ? prevInvest : newInvest, // 持ち玉モードは投資額変わらない
             mode: S.playMode,
-            ballsConsumed // 消費玉数を記録
+            ballsConsumed, // 消費玉数を記録
+            mochiBalls: S.playMode === "mochi" ? Math.max(0, S.currentMochiBalls - ballsConsumed) : S.currentMochiBalls
         }]);
 
         const logType = S.playMode === "mochi"
@@ -314,7 +315,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         // セッション開始
         S.setStartRot(val);
         S.setSessionStarted(true);
-        setRows((r) => [...r, { type: "start", cumRot: val, mode: S.playMode }]);
+        const initialMochi = Number(setupInitialBalls) || 0;
+        setRows((r) => [...r, { type: "start", cumRot: val, mode: S.playMode, mochiBalls: initialMochi }]);
         S.pushLog({ type: "スタート", time: tsNow(), rot: val });
 
         // モーダルを閉じてリセット
@@ -334,7 +336,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
         // 回転数テーブルに初当たりマーカー行を追加
         if (val > 0) {
-            setRows(r => [...r, { type: "hit", cumRot: val, thisRot: hitThisRot, invest: last ? last.invest : 0, mode: S.playMode }]);
+            setRows(r => [...r, { type: "hit", cumRot: val, thisRot: hitThisRot, invest: last ? last.invest : 0, mode: S.playMode, mochiBalls: S.currentMochiBalls }]);
         }
 
         S.pushJP({
@@ -605,42 +607,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 )}
             </div>
 
-            {/* 種別カテゴリと投資・持ち玉表示 */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", margin: "4px 12px", borderRadius: 10, background: "rgba(255,255,255,0.03)", border: `1px solid ${C.border}`, flexShrink: 0 }}>
-                {/* 左：種別 */}
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 10, color: C.sub }}>種別:</span>
-                    <span style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: S.playMode === "cash" ? C.blue : S.playMode === "mochi" ? C.orange : C.purple,
-                        background: S.playMode === "cash" ? C.blue + "20" : S.playMode === "mochi" ? C.orange + "20" : C.purple + "20",
-                        padding: "3px 10px",
-                        borderRadius: 6,
-                        border: `1px solid ${S.playMode === "cash" ? C.blue : S.playMode === "mochi" ? C.orange : C.purple}40`
-                    }}>
-                        {S.playMode === "cash" ? "現金" : S.playMode === "mochi" ? "持ち玉" : "貯玉"}
-                    </span>
-                </div>
-                {/* 中央：投資 */}
-                <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: 8, color: C.sub }}>投資</div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: S.playMode === "mochi" ? C.sub : C.red, fontFamily: mono }}>
-                        {S.playMode === "mochi" ? "—" : f(last ? last.invest : 0)}
-                    </div>
-                </div>
-                {/* 右：持ち玉/貯玉残 */}
-                <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 8, color: C.sub }}>{S.playMode === "chodama" ? "貯玉残" : "持ち玉"}</div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: S.playMode === "chodama" ? C.purple : C.orange, fontFamily: mono }}>
-                        {S.playMode === "chodama" ? f(S.currentChodama || 0) : f(S.currentMochiBalls || 0)}
-                    </div>
-                </div>
-            </div>
-
             {/* Table Header - コンパクト */}
-            <div style={{ display: "grid", gridTemplateColumns: "36px 1fr 1fr 1fr 50px", background: "linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(139, 92, 246, 0.08))", padding: "8px 4px", margin: "0 12px 4px", borderRadius: 8, flexShrink: 0, border: `1px solid rgba(59, 130, 246, 0.15)` }}>
-                {["種別", "総回転", "今回", "平均", "投資"].map((h) => (
+            <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 48px 52px", background: "linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(139, 92, 246, 0.08))", padding: "8px 4px", margin: "4px 12px 4px", borderRadius: 8, flexShrink: 0, border: `1px solid rgba(59, 130, 246, 0.15)` }}>
+                {["種別", "総回転", "今回", "平均", "投資", "持ち玉"].map((h) => (
                     <div key={h} style={{ textAlign: "center", fontSize: 9, fontWeight: 600, color: C.subHi, fontFamily: font, letterSpacing: 0.3 }}>{h}</div>
                 ))}
             </div>
@@ -652,32 +621,35 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     const investDisplay = row.mode === "mochi" ? "—" : f(row.invest || 0);
 
                     if (row.type === "start") return (
-                        <div key={i} className="fin row-start" style={{ display: "grid", gridTemplateColumns: "36px 1fr 1fr 1fr 50px", padding: "10px 4px", marginBottom: 3, borderRadius: 8, alignItems: "center" }}>
+                        <div key={i} className="fin row-start" style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 48px 52px", padding: "10px 4px", marginBottom: 3, borderRadius: 8, alignItems: "center" }}>
                             <div style={{ textAlign: "center" }}><ModeBadge mode={row.mode || "cash"} /></div>
                             <div style={{ textAlign: "center", fontSize: 14, color: C.blue, fontFamily: mono, fontWeight: 600 }}>{f(row.cumRot)}</div>
                             <div style={{ textAlign: "center", fontSize: 11, color: C.sub }}>—</div>
                             <div style={{ textAlign: "center", fontSize: 9, fontWeight: 700, color: C.blue, letterSpacing: 1, background: "rgba(59, 130, 246, 0.12)", padding: "3px 6px", borderRadius: 5 }}>START</div>
                             <div style={{ textAlign: "center", fontSize: 10, color: C.sub }}>—</div>
+                            <div style={{ textAlign: "center", fontSize: 10, color: C.orange, fontFamily: mono }}>{f(row.mochiBalls || 0)}</div>
                         </div>
                     );
                     if (row.type === "hit") return (
-                        <div key={i} className="fin row-hit" style={{ display: "grid", gridTemplateColumns: "36px 1fr 1fr 1fr 50px", padding: "10px 4px", marginBottom: 3, borderRadius: 8, alignItems: "center" }}>
+                        <div key={i} className="fin row-hit" style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 48px 52px", padding: "10px 4px", marginBottom: 3, borderRadius: 8, alignItems: "center" }}>
                             <div style={{ textAlign: "center" }}><span style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: "linear-gradient(135deg, #f97316, #ea580c)", borderRadius: 5, padding: "3px 6px", boxShadow: "0 2px 6px rgba(249, 115, 22, 0.25)" }}>当</span></div>
                             <div style={{ textAlign: "center", fontSize: 14, color: C.orange, fontFamily: mono, fontWeight: 700 }}>{f(row.cumRot)}</div>
                             <div style={{ textAlign: "center", fontSize: 18, fontWeight: 800, color: C.orange, fontFamily: mono }}>{row.thisRot}</div>
                             <div style={{ textAlign: "center", fontSize: 9, fontWeight: 600, color: C.orange, background: "rgba(249, 115, 22, 0.12)", padding: "3px 5px", borderRadius: 5 }}>当G数</div>
                             <div style={{ textAlign: "center", fontSize: 10, color: C.sub, fontFamily: mono }}>{investDisplay}</div>
+                            <div style={{ textAlign: "center", fontSize: 10, color: C.orange, fontFamily: mono }}>{f(row.mochiBalls || 0)}</div>
                         </div>
                     );
                     return (
-                        <div key={i} className={`fin ${i % 2 === 0 ? "" : "row-data"}`} style={{ display: "grid", gridTemplateColumns: "36px 1fr 1fr 1fr 50px", padding: "10px 4px", marginBottom: 2, borderRadius: 6, alignItems: "center", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)" }}>
+                        <div key={i} className={`fin ${i % 2 === 0 ? "" : "row-data"}`} style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 48px 52px", padding: "10px 4px", marginBottom: 2, borderRadius: 6, alignItems: "center", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)" }}>
                             <div style={{ textAlign: "center" }}><ModeBadge mode={row.mode || "cash"} /></div>
                             <div style={{ textAlign: "center", fontSize: 13, color: C.subHi, fontFamily: mono, fontWeight: 500 }}>{f(row.cumRot)}</div>
                             <div style={{ textAlign: "center", fontSize: 20, fontWeight: 800, color: rotCol(row.thisRot), fontFamily: mono }}>{row.thisRot}</div>
-                            <div style={{ textAlign: "center", fontSize: 16, fontWeight: 700, color: rotCol(row.invest > 0 ? ((row.cumRot - S.startRot) / (row.invest / 1000)) : row.avgRot), fontFamily: mono }}>
-                                {row.invest > 0 ? ((row.cumRot - S.startRot) / (row.invest / 1000)).toFixed(1) : row.avgRot}
+                            <div style={{ textAlign: "center", fontSize: 16, fontWeight: 700, color: rotCol(row.avgRot || 0), fontFamily: mono }}>
+                                {row.avgRot || "—"}
                             </div>
-                            <div style={{ textAlign: "center", fontSize: 10, color: row.mode === "mochi" ? C.sub : C.sub, fontFamily: mono }}>{investDisplay}</div>
+                            <div style={{ textAlign: "center", fontSize: 10, color: C.sub, fontFamily: mono }}>{investDisplay}</div>
+                            <div style={{ textAlign: "center", fontSize: 10, color: C.orange, fontFamily: mono }}>{f(row.mochiBalls || 0)}</div>
                         </div>
                     );
                 })}
@@ -1533,24 +1505,25 @@ export function CalendarTab({ S, onReset }) {
                     {a.rotRows && a.rotRows.length > 0 && (
                         <Card style={{ overflow: "hidden", marginBottom: 8 }}>
                             <SecLabel label={`回転数データ (${a.rotRows.filter(r => r.type === "data").length}K)`} />
-                            <div style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr 1fr 55px", background: "rgba(249,115,22,0.12)", padding: "5px 4px" }}>
-                                {["種別", "総回転", "今回", "平均", "投資"].map(h => (
+                            <div style={{ display: "grid", gridTemplateColumns: "36px 1fr 1fr 1fr 48px 48px", background: "rgba(249,115,22,0.12)", padding: "5px 4px" }}>
+                                {["種別", "総回転", "今回", "平均", "投資", "持ち玉"].map(h => (
                                     <div key={h} style={{ textAlign: "center", fontSize: 9, fontWeight: 700, color: C.sub }}>{h}</div>
                                 ))}
                             </div>
                             {a.rotRows.map((row, i) => {
                                 const isMochi = row.mode === "mochi";
-                                const badgeCol = isMochi ? C.orange : C.blue;
-                                const badge = isMochi ? "持" : "現";
+                                const badgeCol = isMochi ? C.orange : row.mode === "chodama" ? C.purple : C.blue;
+                                const badge = isMochi ? "持" : row.mode === "chodama" ? "貯" : "現";
                                 return (
-                                    <div key={i} style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr 1fr 55px", padding: "5px 4px", borderBottom: `1px solid ${C.border}` }}>
+                                    <div key={i} style={{ display: "grid", gridTemplateColumns: "36px 1fr 1fr 1fr 48px 48px", padding: "5px 4px", borderBottom: `1px solid ${C.border}` }}>
                                         <div style={{ textAlign: "center" }}>
                                             <span style={{ fontSize: 8, fontWeight: 700, color: badgeCol, background: badgeCol + "20", borderRadius: 4, padding: "1px 4px" }}>{badge}</span>
                                         </div>
                                         <div style={{ textAlign: "center", fontSize: 11, color: C.subHi, fontFamily: mono }}>{f(row.cumRot)}</div>
                                         <div style={{ textAlign: "center", fontSize: 11, color: C.text, fontFamily: mono }}>{row.type === "start" ? "START" : row.thisRot}</div>
                                         <div style={{ textAlign: "center", fontSize: 11, color: C.text, fontFamily: mono }}>{row.avgRot || "—"}</div>
-                                        <div style={{ textAlign: "center", fontSize: 10, color: C.sub, fontFamily: mono }}>{row.invest ? f(row.invest) : "—"}</div>
+                                        <div style={{ textAlign: "center", fontSize: 10, color: C.sub, fontFamily: mono }}>{row.mode === "mochi" ? "—" : (row.invest ? f(row.invest) : "—")}</div>
+                                        <div style={{ textAlign: "center", fontSize: 10, color: C.orange, fontFamily: mono }}>{f(row.mochiBalls || 0)}</div>
                                     </div>
                                 );
                             })}
