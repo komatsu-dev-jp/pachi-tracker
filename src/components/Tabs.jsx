@@ -828,28 +828,27 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 </div>
                             </>
                         )}
-                        {/* Step 1: ラウンド数（縦ルーレット） */}
+                        {/* Step 1: ラウンド数（グリッド選択） */}
                         {hitWizardStep === 1 && (
                             <>
                                 <SecLabel label="Step 2/4: ラウンド数" />
-                                <div style={{ fontSize: 13, color: C.sub, marginBottom: 16 }}>獲得したラウンド数を選択</div>
-                                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, margin: "20px 0" }}>
+                                <div style={{ fontSize: 13, color: C.sub, marginBottom: 12 }}>獲得したラウンド数を選択</div>
+                                <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, margin: "16px 0" }}>
                                     {[1,2,3,4,5,6,7,8,9,10].map(r => (
                                         <button
                                             key={r}
                                             className="b"
                                             onClick={() => setHitWizardData(d => ({ ...d, rounds: r }))}
                                             style={{
-                                                width: "100%",
-                                                padding: "14px 0",
+                                                padding: "16px 0",
                                                 borderRadius: 10,
                                                 fontWeight: 700,
                                                 fontFamily: mono,
-                                                fontSize: hitWizardData.rounds === r ? 20 : 16,
+                                                fontSize: hitWizardData.rounds === r ? 18 : 15,
                                                 background: hitWizardData.rounds === r ? "linear-gradient(135deg, #f97316, #ea580c)" : "rgba(255,255,255,0.05)",
                                                 border: hitWizardData.rounds === r ? "none" : `1px solid ${C.border}`,
                                                 color: hitWizardData.rounds === r ? "#fff" : C.sub,
-                                                transform: hitWizardData.rounds === r ? "scale(1.05)" : "scale(1)",
+                                                boxShadow: hitWizardData.rounds === r ? "0 4px 12px rgba(249,115,22,0.3)" : "none",
                                                 transition: "all 0.15s ease"
                                             }}
                                         >
