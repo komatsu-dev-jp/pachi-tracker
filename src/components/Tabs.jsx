@@ -192,7 +192,12 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     // 初当たりウィザード用state
     const [hitWizardOpen, setHitWizardOpen] = useState(false);
     const [hitWizardStep, setHitWizardStep] = useState(0);
-    const [hitWizardData, setHitWizardData] = useState({ trayBalls: "", rounds: 3, displayBalls: "", actualBalls: "" });
+    const [hitWizardData, setHitWizardData] = useState({
+        trayBalls: "", rounds: 3, displayBalls: "", actualBalls: "",
+        hitType: "", // "単発" or "確変"
+        jitanSpins: "", // 時短回数
+        finalBallsAfterJitan: "" // 時短終了後最終出玉
+    });
 
     // セットアップ用の一時state
     const [setupStore, setSetupStore] = useState("");
@@ -359,7 +364,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         S.pushLog({ type: "初当たり", time: tsNow(), rot: hitRot });
         setInput("");
         // ウィザードを開始
-        setHitWizardData({ trayBalls: "", rounds: 3, displayBalls: "", actualBalls: "" });
+        setHitWizardData({ trayBalls: "", rounds: 3, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
         setHitWizardStep(0);
         setHitWizardOpen(true);
     };
@@ -375,12 +380,15 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     };
 
     // ウィザード完了時の処理
+    // ウィザード完了: 単発の場合はチェーン完了、確変の場合はHistoryTabへ
     const handleWizardComplete = () => {
-        const { trayBalls, rounds, displayBalls, actualBalls } = hitWizardData;
+        const { trayBalls, rounds, displayBalls, actualBalls, hitType, jitanSpins, finalBallsAfterJitan } = hitWizardData;
         const rnd = Number(rounds) || 0;
         const tray = Number(trayBalls) || 0;
         const disp = Number(displayBalls) || 0;
         const actual = Number(actualBalls) || 0;
+        const jitan = Number(jitanSpins) || 0;
+        const finalBalls = Number(finalBallsAfterJitan) || 0;
 
         if (rnd <= 0) {
             setHitWizardOpen(false);
@@ -404,12 +412,43 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 actualBalls: actual,
                 time: tsNow(),
             }];
+
+            // 単発の場合: チェーンを完了させる
+            if (hitType === "単発") {
+                chain.hitType = "単発";
+                chain.jitanSpins = jitan;
+                chain.finalBallsAfterJitan = finalBalls;
+                chain.completed = true;
+                const totalRounds = chain.hits.reduce((s, h) => s + h.rounds, 0);
+                const totalDisplayBalls = chain.hits.reduce((s, h) => s + h.displayBalls, 0);
+                chain.summary = {
+                    totalRounds,
+                    totalDisplayBalls,
+                    totalSapoRot: 0,
+                    totalSapoChange: 0,
+                    avg1R: totalRounds > 0 ? totalDisplayBalls / totalRounds : 0,
+                    sapoDelta: 0,
+                    sapoPerRot: 0,
+                    netGain: finalBalls > 0 ? finalBalls : totalDisplayBalls,
+                };
+                chain.finalBalls = finalBalls > 0 ? finalBalls : (tray + totalDisplayBalls);
+            }
+
             updated[updated.length - 1] = chain;
             return updated;
         });
-        S.pushLog({ type: "初当たり記録", time: tsNow(), rounds: rnd });
+
+        S.pushLog({ type: hitType === "単発" ? "単発終了" : "初当たり記録", time: tsNow(), rounds: rnd });
         setHitWizardOpen(false);
-        setHitWizardData({ trayBalls: "", rounds: 3, displayBalls: "", actualBalls: "" });
+        setHitWizardData({ trayBalls: "", rounds: 3, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
+
+        // 確変の場合: HistoryTabで連チャン記録継続
+        if (hitType === "確変") {
+            S.setTab("history");
+        } else {
+            // 単発の場合: 持ち玉モードに切替
+            S.setPlayMode("mochi");
+        }
     };
 
     // セッション未開始：新規稼働ボタンを中央に表示
@@ -883,7 +922,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         {/* Step 3: 実玉数 */}
                         {hitWizardStep === 3 && (
                             <>
-                                <SecLabel label="Step 4/4: 実玉数" />
+                                <SecLabel label="Step 4/6: 実玉数" />
                                 <div style={{ fontSize: 13, color: C.sub, marginBottom: 16 }}>実際に獲得した玉数を入力</div>
                                 <NI
                                     label=""
@@ -894,15 +933,101 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 />
                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 20 }}>
                                     <Btn label="戻る" onClick={() => setHitWizardStep(2)} />
+                                    <Btn label="次へ" onClick={() => setHitWizardStep(4)} bg={C.blue} fg="#fff" bd="none" />
+                                </div>
+                            </>
+                        )}
+                        {/* Step 4: 単発/確変選択 */}
+                        {hitWizardStep === 4 && (
+                            <>
+                                <SecLabel label="Step 5/6: 当たり種別" />
+                                <div style={{ fontSize: 13, color: C.sub, marginBottom: 16 }}>単発か確変かを選択</div>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, margin: "20px 0" }}>
+                                    <button
+                                        className="b"
+                                        onClick={() => setHitWizardData(d => ({ ...d, hitType: "単発" }))}
+                                        style={{
+                                            padding: "24px 0",
+                                            borderRadius: 12,
+                                            fontWeight: 700,
+                                            fontSize: 18,
+                                            background: hitWizardData.hitType === "単発" ? "linear-gradient(135deg, #6366f1, #4f46e5)" : "rgba(255,255,255,0.05)",
+                                            border: hitWizardData.hitType === "単発" ? "none" : `1px solid ${C.border}`,
+                                            color: hitWizardData.hitType === "単発" ? "#fff" : C.sub,
+                                            boxShadow: hitWizardData.hitType === "単発" ? "0 4px 12px rgba(99,102,241,0.3)" : "none"
+                                        }}
+                                    >
+                                        単発
+                                    </button>
+                                    <button
+                                        className="b"
+                                        onClick={() => setHitWizardData(d => ({ ...d, hitType: "確変" }))}
+                                        style={{
+                                            padding: "24px 0",
+                                            borderRadius: 12,
+                                            fontWeight: 700,
+                                            fontSize: 18,
+                                            background: hitWizardData.hitType === "確変" ? "linear-gradient(135deg, #f97316, #ea580c)" : "rgba(255,255,255,0.05)",
+                                            border: hitWizardData.hitType === "確変" ? "none" : `1px solid ${C.border}`,
+                                            color: hitWizardData.hitType === "確変" ? "#fff" : C.sub,
+                                            boxShadow: hitWizardData.hitType === "確変" ? "0 4px 12px rgba(249,115,22,0.3)" : "none"
+                                        }}
+                                    >
+                                        確変
+                                    </button>
+                                </div>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                                    <Btn label="戻る" onClick={() => setHitWizardStep(3)} />
+                                    <Btn
+                                        label="次へ"
+                                        onClick={() => {
+                                            if (hitWizardData.hitType === "単発") {
+                                                setHitWizardStep(5); // 時短入力へ
+                                            } else if (hitWizardData.hitType === "確変") {
+                                                handleWizardComplete(); // 確変はHistoryTabへ
+                                            }
+                                        }}
+                                        bg={hitWizardData.hitType ? C.blue : C.border}
+                                        fg="#fff"
+                                        bd="none"
+                                    />
+                                </div>
+                            </>
+                        )}
+                        {/* Step 5: 時短回数（単発のみ） */}
+                        {hitWizardStep === 5 && (
+                            <>
+                                <SecLabel label="Step 6/6: 時短回数" />
+                                <div style={{ fontSize: 13, color: C.sub, marginBottom: 16 }}>時短（ST）の回転数を入力</div>
+                                <NI
+                                    label=""
+                                    val={hitWizardData.jitanSpins}
+                                    set={v => setHitWizardData(d => ({ ...d, jitanSpins: v }))}
+                                    placeholder="例: 100"
+                                    type="tel"
+                                />
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 20 }}>
+                                    <Btn label="戻る" onClick={() => setHitWizardStep(4)} />
+                                    <Btn label="次へ" onClick={() => setHitWizardStep(6)} bg={C.blue} fg="#fff" bd="none" />
+                                </div>
+                            </>
+                        )}
+                        {/* Step 6: 時短終了後最終出玉（単発のみ） */}
+                        {hitWizardStep === 6 && (
+                            <>
+                                <SecLabel label="最終確認: 時短終了後の出玉" />
+                                <div style={{ fontSize: 13, color: C.sub, marginBottom: 16 }}>時短終了後の最終出玉数を入力</div>
+                                <NI
+                                    label=""
+                                    val={hitWizardData.finalBallsAfterJitan}
+                                    set={v => setHitWizardData(d => ({ ...d, finalBallsAfterJitan: v }))}
+                                    placeholder="例: 1200"
+                                    type="tel"
+                                />
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 20 }}>
+                                    <Btn label="戻る" onClick={() => setHitWizardStep(5)} />
                                     <Btn label="記録完了" onClick={handleWizardComplete} bg={C.green} fg="#fff" bd="none" />
                                 </div>
-                                <button
-                                    className="b"
-                                    onClick={() => { setHitWizardOpen(false); S.setTab("history"); }}
-                                    style={{ width: "100%", marginTop: 12, padding: "10px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, color: C.sub, fontSize: 12, fontWeight: 600, fontFamily: font }}
-                                >
-                                    詳細入力（従来の入力画面へ）
-                                </button>
                             </>
                         )}
                         {/* 閉じるボタン（全ステップ共通） */}
