@@ -446,7 +446,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         if (hitType === "確変") {
             S.setTab("history");
         } else {
-            // 単発の場合: 持ち玉モードに切替
+            // 単発の場合: 持ち玉モードに切替 & 出玉を持ち玉に加算
+            const addBalls = finalBalls > 0 ? finalBalls : (tray + disp);
+            S.setCurrentMochiBalls((prev) => prev + addBalls);
             S.setPlayMode("mochi");
         }
     };
@@ -1051,6 +1053,33 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev }) {
     const [sub, setSub] = useState("jp");
 
+    // スワイプ削除用state
+    const [swipingId, setSwipingId] = useState(null);
+    const [swipeX, setSwipeX] = useState(0);
+    const swipeStartX = useRef(0);
+
+    const handleSwipeStart = (e, chainId) => {
+        swipeStartX.current = e.touches[0].clientX;
+        setSwipingId(chainId);
+    };
+
+    const handleSwipeMove = (e) => {
+        if (swipingId === null) return;
+        const diff = swipeStartX.current - e.touches[0].clientX;
+        setSwipeX(Math.max(0, Math.min(diff, 100)));
+    };
+
+    const handleSwipeEnd = (chainId) => {
+        if (swipeX > 60) {
+            // 削除確認
+            if (confirm("このデータを削除しますか？")) {
+                S.setJpLog((prev) => prev.filter(c => c.chainId !== chainId));
+            }
+        }
+        setSwipeX(0);
+        setSwipingId(null);
+    };
+
     // 連チャン入力 state
     const [iTrayBalls, setITrayBalls] = useState("");         // 上皿玉（1連目のみ）
     const [iLastOutBalls, setILastOutBalls] = useState("");   // 直前の実出玉
@@ -1178,6 +1207,13 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
             return updated;
         });
 
+        // 連チャン終了後の出玉を持ち玉に加算
+        const finalBallsToAdd = (lastChain.trayBalls || 0) +
+            lastChain.hits.reduce((s, h) => s + (h.displayBalls || 0), 0) +
+            lastChain.hits.reduce((s, h) => s + (h.sapoChange || 0), 0) +
+            (rounds > 0 ? (Number(iDisplayBalls) || 0) + sapoChange : 0);
+        S.setCurrentMochiBalls((prev) => prev + finalBallsToAdd);
+
         S.pushLog({ type: "連チャン終了", time: tsNow() });
         clearInputs();
         // 持ち玉モードに自動切替
@@ -1301,7 +1337,37 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                             <div style={{ textAlign: "center", color: C.sub, padding: "40px 16px", fontSize: 12 }}>履歴がありません</div>
                         ) : (
                             [...jpLog].reverse().map((chain, ci) => (
-                                <Card key={chain.chainId || ci} style={{ padding: "12px 16px", background: !chain.completed ? "rgba(249, 115, 22, 0.05)" : "rgba(255,255,255,0.02)" }}>
+                                <div
+                                    key={chain.chainId || ci}
+                                    style={{ position: "relative", overflow: "hidden", marginBottom: 12 }}
+                                    onTouchStart={(e) => handleSwipeStart(e, chain.chainId)}
+                                    onTouchMove={handleSwipeMove}
+                                    onTouchEnd={() => handleSwipeEnd(chain.chainId)}
+                                >
+                                    {/* 削除ボタン（背景） */}
+                                    <div style={{
+                                        position: "absolute",
+                                        right: 0,
+                                        top: 0,
+                                        bottom: 0,
+                                        width: 80,
+                                        background: "linear-gradient(90deg, transparent, #ef4444)",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "flex-end",
+                                        paddingRight: 16,
+                                        color: "#fff",
+                                        fontWeight: 700,
+                                        fontSize: 12
+                                    }}>
+                                        削除
+                                    </div>
+                                    <Card style={{
+                                        padding: "12px 16px",
+                                        background: !chain.completed ? "rgba(249, 115, 22, 0.05)" : "rgba(255,255,255,0.02)",
+                                        transform: swipingId === chain.chainId ? `translateX(-${swipeX}px)` : "translateX(0)",
+                                        transition: swipingId === chain.chainId ? "none" : "transform 0.2s ease"
+                                    }}>
                                     {/* Chain Header */}
                                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                                         <span style={{ fontSize: 11, fontWeight: 800, color: !chain.completed ? C.orange : C.blue }}>
@@ -1382,6 +1448,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                         <div style={{ fontSize: 11, color: C.sub }}>上皿: {f(chain.trayBalls)}玉 — 大当たり中…</div>
                                     )}
                                 </Card>
+                                </div>
                             ))
                         )}
                         <Btn label="最新履歴を削除" onClick={delJPLast} bg="rgba(239, 68, 68, 0.1)" fg={C.red} bd={C.red + "30"} />
