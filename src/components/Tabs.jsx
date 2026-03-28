@@ -979,39 +979,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
                     {/* テンキー（Step 1と4以外で表示） */}
                     {hitWizardStep !== 1 && hitWizardStep !== 4 && (
-                        <div style={{ padding: "8px 12px 20px", background: "rgba(30,30,35,0.98)", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, marginBottom: 6 }}>
-                                {[1,2,3,4,5,6,7,8,9].map(n => (
-                                    <button key={n} className="b" onClick={() => {
-                                        const field = hitWizardStep === 0 ? "trayBalls" : hitWizardStep === 2 ? "displayBalls" : hitWizardStep === 3 ? "actualBalls" : hitWizardStep === 5 ? "jitanSpins" : "finalBallsAfterJitan";
-                                        setHitWizardData(d => ({ ...d, [field]: (d[field] || "") + n }));
-                                    }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 20, fontFamily: mono, background: "rgba(255,255,255,0.08)", border: "none", color: C.text }}>
-                                        {n}
-                                    </button>
-                                ))}
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, marginBottom: 8 }}>
-                                <button className="b" onClick={() => {
-                                    const field = hitWizardStep === 0 ? "trayBalls" : hitWizardStep === 2 ? "displayBalls" : hitWizardStep === 3 ? "actualBalls" : hitWizardStep === 5 ? "jitanSpins" : "finalBallsAfterJitan";
-                                    setHitWizardData(d => ({ ...d, [field]: "" }));
-                                }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 13, background: "rgba(239,68,68,0.2)", border: "none", color: C.red }}>
-                                    AC
-                                </button>
-                                <button className="b" onClick={() => {
-                                    const field = hitWizardStep === 0 ? "trayBalls" : hitWizardStep === 2 ? "displayBalls" : hitWizardStep === 3 ? "actualBalls" : hitWizardStep === 5 ? "jitanSpins" : "finalBallsAfterJitan";
-                                    setHitWizardData(d => ({ ...d, [field]: (d[field] || "") + "0" }));
-                                }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 20, fontFamily: mono, background: "rgba(255,255,255,0.08)", border: "none", color: C.text }}>
-                                    0
-                                </button>
-                                <button className="b" onClick={() => {
-                                    const field = hitWizardStep === 0 ? "trayBalls" : hitWizardStep === 2 ? "displayBalls" : hitWizardStep === 3 ? "actualBalls" : hitWizardStep === 5 ? "jitanSpins" : "finalBallsAfterJitan";
-                                    setHitWizardData(d => ({ ...d, [field]: (d[field] || "").slice(0, -1) }));
-                                }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 16, background: "rgba(255,255,255,0.08)", border: "none", color: C.sub }}>
-                                    ←
-                                </button>
-                            </div>
-                            {/* 戻る/次へボタン */}
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        <div style={{ padding: "8px 12px", paddingBottom: "calc(12px + env(safe-area-inset-bottom))", background: "rgba(30,30,35,0.98)", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
+                            {/* 戻る/次へボタン - 上に配置 */}
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
                                 <button className="b" onClick={() => {
                                     if (hitWizardStep === 0) setHitWizardOpen(false);
                                     else if (hitWizardStep === 2) setHitWizardStep(1);
@@ -1029,6 +999,35 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                         次へ
                                     </button>
                                 )}
+                            </div>
+                            {/* テンキー */}
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
+                                {[1,2,3,4,5,6,7,8,9].map(n => (
+                                    <button key={n} className="b" onClick={() => {
+                                        const field = hitWizardStep === 0 ? "trayBalls" : hitWizardStep === 2 ? "displayBalls" : hitWizardStep === 3 ? "actualBalls" : hitWizardStep === 5 ? "jitanSpins" : "finalBallsAfterJitan";
+                                        setHitWizardData(d => ({ ...d, [field]: (d[field] || "") + n }));
+                                    }} style={{ padding: "12px 0", borderRadius: 8, fontWeight: 700, fontSize: 18, fontFamily: mono, background: "rgba(255,255,255,0.08)", border: "none", color: C.text }}>
+                                        {n}
+                                    </button>
+                                ))}
+                                <button className="b" onClick={() => {
+                                    const field = hitWizardStep === 0 ? "trayBalls" : hitWizardStep === 2 ? "displayBalls" : hitWizardStep === 3 ? "actualBalls" : hitWizardStep === 5 ? "jitanSpins" : "finalBallsAfterJitan";
+                                    setHitWizardData(d => ({ ...d, [field]: "" }));
+                                }} style={{ padding: "12px 0", borderRadius: 8, fontWeight: 700, fontSize: 12, background: "rgba(239,68,68,0.2)", border: "none", color: C.red }}>
+                                    AC
+                                </button>
+                                <button className="b" onClick={() => {
+                                    const field = hitWizardStep === 0 ? "trayBalls" : hitWizardStep === 2 ? "displayBalls" : hitWizardStep === 3 ? "actualBalls" : hitWizardStep === 5 ? "jitanSpins" : "finalBallsAfterJitan";
+                                    setHitWizardData(d => ({ ...d, [field]: (d[field] || "") + "0" }));
+                                }} style={{ padding: "12px 0", borderRadius: 8, fontWeight: 700, fontSize: 18, fontFamily: mono, background: "rgba(255,255,255,0.08)", border: "none", color: C.text }}>
+                                    0
+                                </button>
+                                <button className="b" onClick={() => {
+                                    const field = hitWizardStep === 0 ? "trayBalls" : hitWizardStep === 2 ? "displayBalls" : hitWizardStep === 3 ? "actualBalls" : hitWizardStep === 5 ? "jitanSpins" : "finalBallsAfterJitan";
+                                    setHitWizardData(d => ({ ...d, [field]: (d[field] || "").slice(0, -1) }));
+                                }} style={{ padding: "12px 0", borderRadius: 8, fontWeight: 700, fontSize: 14, background: "rgba(255,255,255,0.08)", border: "none", color: C.sub }}>
+                                    ←
+                                </button>
                             </div>
                         </div>
                     )}
