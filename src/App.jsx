@@ -287,9 +287,17 @@ export default function App() {
     currentChodama, setCurrentChodama,
   };
 
+  // カスタムアイコン: 黄色の＋（空白の○の中）
+  const PlusCircleIcon = ({ active }) => (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{ filter: active ? "none" : "grayscale(1) opacity(0.5)" }}>
+      <circle cx="12" cy="12" r="10" stroke="#facc15" strokeWidth="2" fill="none" />
+      <path d="M12 7v10M7 12h10" stroke="#facc15" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+
   const nav = [
     { id: "data", label: "データ", icon: "📈" },
-    { id: "rot", label: "新規稼働", icon: "🎰" },
+    { id: "rot", label: "新規稼働", icon: "plus" },
     { id: "history", label: "大当たり", icon: "📋" },
     { id: "calendar", label: "記録", icon: "📅" },
     { id: "settings", label: "設定", icon: "⚙️" },
@@ -341,7 +349,11 @@ export default function App() {
             borderTop: tab === id ? `3px solid ${C.blue}` : "3px solid transparent",
             padding: "12px 0 10px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, transition: "all 0.2s ease"
           }}>
-            <span style={{ fontSize: 20, filter: tab === id ? "none" : "grayscale(1) opacity(0.5)" }}>{icon}</span>
+            {icon === "plus" ? (
+              <PlusCircleIcon active={tab === id} />
+            ) : (
+              <span style={{ fontSize: 20, filter: tab === id ? "none" : "grayscale(1) opacity(0.5)" }}>{icon}</span>
+            )}
             <span style={{ fontSize: 10, fontWeight: tab === id ? 800 : 500, color: tab === id ? C.blue : C.sub, fontFamily: font, letterSpacing: 0.5 }}>{label}</span>
           </button>
         ))}
