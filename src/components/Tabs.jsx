@@ -193,11 +193,23 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [hitWizardOpen, setHitWizardOpen] = useState(false);
     const [hitWizardStep, setHitWizardStep] = useState(0);
     const [hitWizardData, setHitWizardData] = useState({
-        trayBalls: "", rounds: 3, displayBalls: "", actualBalls: "",
+        trayBalls: "", rounds: 0, displayBalls: "", actualBalls: "",
         hitType: "", // "単発" or "確変"
         jitanSpins: "", // 時短回数
         finalBallsAfterJitan: "" // 時短終了後最終出玉
     });
+    const [activeKeypadField, setActiveKeypadField] = useState(null); // "trayBalls" | "displayBalls" | "actualBalls" | "jitanSpins" | "finalBalls"
+
+    // 機種からラウンド情報を取得
+    const getMachineRounds = () => {
+        const machine = searchMachines(S.machineName, S.customMachines)[0];
+        if (!machine || !machine.roundDist) return [3, 4, 5, 6, 7, 8, 9, 10]; // デフォルト
+        // roundDist例: "4R:50%, 10R:50%" → [4, 10]
+        const matches = machine.roundDist.match(/(\d+)R/g);
+        if (!matches) return [3, 4, 5, 6, 7, 8, 9, 10];
+        return [...new Set(matches.map(m => parseInt(m)))].sort((a, b) => a - b);
+    };
+    const machineRounds = useMemo(getMachineRounds, [S.machineName, S.customMachines]);
 
     // セットアップ用の一時state
     const [setupStore, setSetupStore] = useState("");
@@ -849,198 +861,172 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
             {/* 初当たりウィザードモーダル */}
             {hitWizardOpen && (
-                <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: 20 }}>
-                    <Card style={{ width: "100%", maxWidth: 340, padding: 24 }}>
-                        {/* Step 0: 上皿の残り玉数 */}
+                <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.95)", zIndex: 1100, display: "flex", flexDirection: "column" }}>
+                    {/* ヘッダー */}
+                    <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <button className="b" onClick={() => setHitWizardOpen(false)} style={{ background: "transparent", border: "none", color: C.red, fontSize: 14, fontWeight: 600 }}>キャンセル</button>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{hitWizardStep <= 3 ? "大当たり記録" : hitWizardStep <= 6 ? "終了設定" : ""}</span>
+                        <div style={{ width: 60 }} />
+                    </div>
+
+                    {/* コンテンツエリア */}
+                    <div style={{ flex: 1, overflow: "auto", padding: 20 }}>
+                        {/* Step 0: 上皿の残り玉数（テンキー） */}
                         {hitWizardStep === 0 && (
-                            <>
-                                <SecLabel label="Step 1/4: 上皿の残り玉数" />
-                                <div style={{ fontSize: 13, color: C.sub, marginBottom: 16 }}>大当たり時の上皿に残っている玉数を入力</div>
-                                <NI
-                                    label=""
-                                    val={hitWizardData.trayBalls}
-                                    set={v => setHitWizardData(d => ({ ...d, trayBalls: v }))}
-                                    placeholder="例: 250"
-                                    type="tel"
-                                />
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 20 }}>
-                                    <Btn label="スキップ" onClick={() => setHitWizardStep(1)} />
-                                    <Btn label="次へ" onClick={() => setHitWizardStep(1)} bg={C.blue} fg="#fff" bd="none" />
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 12, color: C.sub, marginBottom: 8 }}>上皿の残り玉数</div>
+                                <div style={{ fontSize: 36, fontWeight: 800, color: C.text, fontFamily: mono, minHeight: 50 }}>
+                                    {hitWizardData.trayBalls || "0"}
                                 </div>
-                            </>
+                            </div>
                         )}
-                        {/* Step 1: ラウンド数（グリッド選択） */}
+
+                        {/* Step 1: ラウンド数（機種別ボタン） */}
                         {hitWizardStep === 1 && (
-                            <>
-                                <SecLabel label="Step 2/4: ラウンド数" />
-                                <div style={{ fontSize: 13, color: C.sub, marginBottom: 12 }}>獲得したラウンド数を選択</div>
-                                <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, margin: "16px 0" }}>
-                                    {[1,2,3,4,5,6,7,8,9,10].map(r => (
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 12, color: C.sub, marginBottom: 16 }}>ラウンド数を選択</div>
+                                <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 12 }}>
+                                    {machineRounds.map(r => (
                                         <button
                                             key={r}
                                             className="b"
-                                            onClick={() => setHitWizardData(d => ({ ...d, rounds: r }))}
+                                            onClick={() => { setHitWizardData(d => ({ ...d, rounds: r })); setHitWizardStep(2); }}
                                             style={{
-                                                padding: "16px 0",
-                                                borderRadius: 10,
-                                                fontWeight: 700,
+                                                width: 70, height: 70,
+                                                borderRadius: 16,
+                                                fontWeight: 800,
                                                 fontFamily: mono,
-                                                fontSize: hitWizardData.rounds === r ? 18 : 15,
-                                                background: hitWizardData.rounds === r ? "linear-gradient(135deg, #f97316, #ea580c)" : "rgba(255,255,255,0.05)",
-                                                border: hitWizardData.rounds === r ? "none" : `1px solid ${C.border}`,
-                                                color: hitWizardData.rounds === r ? "#fff" : C.sub,
-                                                boxShadow: hitWizardData.rounds === r ? "0 4px 12px rgba(249,115,22,0.3)" : "none",
-                                                transition: "all 0.15s ease"
+                                                fontSize: 22,
+                                                background: "linear-gradient(135deg, #f97316, #ea580c)",
+                                                border: "none",
+                                                color: "#fff",
+                                                boxShadow: "0 4px 12px rgba(249,115,22,0.4)"
                                             }}
                                         >
                                             {r}R
                                         </button>
                                     ))}
                                 </div>
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                                    <Btn label="戻る" onClick={() => setHitWizardStep(0)} />
-                                    <Btn label="次へ" onClick={() => setHitWizardStep(2)} bg={C.blue} fg="#fff" bd="none" />
-                                </div>
-                            </>
+                                <button className="b" onClick={() => setHitWizardStep(0)} style={{ marginTop: 24, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 24px", color: C.sub, fontSize: 13 }}>戻る</button>
+                            </div>
                         )}
-                        {/* Step 2: 液晶表示玉数 */}
+
+                        {/* Step 2: 液晶表示玉数（テンキー） */}
                         {hitWizardStep === 2 && (
-                            <>
-                                <SecLabel label="Step 3/4: 液晶表示玉数" />
-                                <div style={{ fontSize: 13, color: C.sub, marginBottom: 16 }}>液晶に表示された獲得玉数を入力</div>
-                                <NI
-                                    label=""
-                                    val={hitWizardData.displayBalls}
-                                    set={v => setHitWizardData(d => ({ ...d, displayBalls: v }))}
-                                    placeholder="例: 1500"
-                                    type="tel"
-                                />
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 20 }}>
-                                    <Btn label="戻る" onClick={() => setHitWizardStep(1)} />
-                                    <Btn label="次へ" onClick={() => setHitWizardStep(3)} bg={C.blue} fg="#fff" bd="none" />
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 12, color: C.sub, marginBottom: 8 }}>液晶表示玉数</div>
+                                <div style={{ fontSize: 36, fontWeight: 800, color: C.yellow, fontFamily: mono, minHeight: 50 }}>
+                                    {hitWizardData.displayBalls || "0"}
                                 </div>
-                            </>
+                                <div style={{ fontSize: 11, color: C.sub, marginTop: 4 }}>{hitWizardData.rounds}R選択中</div>
+                            </div>
                         )}
-                        {/* Step 3: 実玉数 */}
+
+                        {/* Step 3: 実玉数（テンキー） */}
                         {hitWizardStep === 3 && (
-                            <>
-                                <SecLabel label="Step 4/6: 実玉数" />
-                                <div style={{ fontSize: 13, color: C.sub, marginBottom: 16 }}>実際に獲得した玉数を入力</div>
-                                <NI
-                                    label=""
-                                    val={hitWizardData.actualBalls}
-                                    set={v => setHitWizardData(d => ({ ...d, actualBalls: v }))}
-                                    placeholder="例: 1450"
-                                    type="tel"
-                                />
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 20 }}>
-                                    <Btn label="戻る" onClick={() => setHitWizardStep(2)} />
-                                    <Btn label="次へ" onClick={() => setHitWizardStep(4)} bg={C.blue} fg="#fff" bd="none" />
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 12, color: C.sub, marginBottom: 8 }}>実玉数</div>
+                                <div style={{ fontSize: 36, fontWeight: 800, color: C.green, fontFamily: mono, minHeight: 50 }}>
+                                    {hitWizardData.actualBalls || "0"}
                                 </div>
-                            </>
+                            </div>
                         )}
+
                         {/* Step 4: 単発/確変選択 */}
                         {hitWizardStep === 4 && (
-                            <>
-                                <SecLabel label="Step 5/6: 当たり種別" />
-                                <div style={{ fontSize: 13, color: C.sub, marginBottom: 16 }}>単発か確変かを選択</div>
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, margin: "20px 0" }}>
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 12, color: C.sub, marginBottom: 20 }}>当たり種別</div>
+                                <div style={{ display: "flex", gap: 16, justifyContent: "center" }}>
                                     <button
                                         className="b"
-                                        onClick={() => setHitWizardData(d => ({ ...d, hitType: "単発" }))}
-                                        style={{
-                                            padding: "24px 0",
-                                            borderRadius: 12,
-                                            fontWeight: 700,
-                                            fontSize: 18,
-                                            background: hitWizardData.hitType === "単発" ? "linear-gradient(135deg, #6366f1, #4f46e5)" : "rgba(255,255,255,0.05)",
-                                            border: hitWizardData.hitType === "単発" ? "none" : `1px solid ${C.border}`,
-                                            color: hitWizardData.hitType === "単発" ? "#fff" : C.sub,
-                                            boxShadow: hitWizardData.hitType === "単発" ? "0 4px 12px rgba(99,102,241,0.3)" : "none"
-                                        }}
+                                        onClick={() => { setHitWizardData(d => ({ ...d, hitType: "単発" })); setHitWizardStep(5); }}
+                                        style={{ width: 120, height: 80, borderRadius: 16, fontWeight: 800, fontSize: 20, background: "linear-gradient(135deg, #6366f1, #4f46e5)", border: "none", color: "#fff" }}
                                     >
                                         単発
                                     </button>
                                     <button
                                         className="b"
-                                        onClick={() => setHitWizardData(d => ({ ...d, hitType: "確変" }))}
-                                        style={{
-                                            padding: "24px 0",
-                                            borderRadius: 12,
-                                            fontWeight: 700,
-                                            fontSize: 18,
-                                            background: hitWizardData.hitType === "確変" ? "linear-gradient(135deg, #f97316, #ea580c)" : "rgba(255,255,255,0.05)",
-                                            border: hitWizardData.hitType === "確変" ? "none" : `1px solid ${C.border}`,
-                                            color: hitWizardData.hitType === "確変" ? "#fff" : C.sub,
-                                            boxShadow: hitWizardData.hitType === "確変" ? "0 4px 12px rgba(249,115,22,0.3)" : "none"
-                                        }}
+                                        onClick={() => { setHitWizardData(d => ({ ...d, hitType: "確変" })); handleWizardComplete(); }}
+                                        style={{ width: 120, height: 80, borderRadius: 16, fontWeight: 800, fontSize: 20, background: "linear-gradient(135deg, #f97316, #ea580c)", border: "none", color: "#fff" }}
                                     >
                                         確変
                                     </button>
                                 </div>
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                                    <Btn label="戻る" onClick={() => setHitWizardStep(3)} />
-                                    <Btn
-                                        label="次へ"
-                                        onClick={() => {
-                                            if (hitWizardData.hitType === "単発") {
-                                                setHitWizardStep(5); // 時短入力へ
-                                            } else if (hitWizardData.hitType === "確変") {
-                                                handleWizardComplete(); // 確変はHistoryTabへ
-                                            }
-                                        }}
-                                        bg={hitWizardData.hitType ? C.blue : C.border}
-                                        fg="#fff"
-                                        bd="none"
-                                    />
-                                </div>
-                            </>
+                                <button className="b" onClick={() => setHitWizardStep(3)} style={{ marginTop: 24, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 24px", color: C.sub, fontSize: 13 }}>戻る</button>
+                            </div>
                         )}
-                        {/* Step 5: 時短回数（単発のみ） */}
+
+                        {/* Step 5: 時短回数（テンキー） */}
                         {hitWizardStep === 5 && (
-                            <>
-                                <SecLabel label="Step 6/6: 時短回数" />
-                                <div style={{ fontSize: 13, color: C.sub, marginBottom: 16 }}>時短（ST）の回転数を入力</div>
-                                <NI
-                                    label=""
-                                    val={hitWizardData.jitanSpins}
-                                    set={v => setHitWizardData(d => ({ ...d, jitanSpins: v }))}
-                                    placeholder="例: 100"
-                                    type="tel"
-                                />
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 20 }}>
-                                    <Btn label="戻る" onClick={() => setHitWizardStep(4)} />
-                                    <Btn label="次へ" onClick={() => setHitWizardStep(6)} bg={C.blue} fg="#fff" bd="none" />
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 12, color: C.sub, marginBottom: 8 }}>時短回数</div>
+                                <div style={{ fontSize: 36, fontWeight: 800, color: C.purple, fontFamily: mono, minHeight: 50 }}>
+                                    {hitWizardData.jitanSpins || "0"}
                                 </div>
-                            </>
+                            </div>
                         )}
-                        {/* Step 6: 時短終了後最終出玉（単発のみ） */}
+
+                        {/* Step 6: 時短終了後最終出玉（テンキー） */}
                         {hitWizardStep === 6 && (
-                            <>
-                                <SecLabel label="最終確認: 時短終了後の出玉" />
-                                <div style={{ fontSize: 13, color: C.sub, marginBottom: 16 }}>時短終了後の最終出玉数を入力</div>
-                                <NI
-                                    label=""
-                                    val={hitWizardData.finalBallsAfterJitan}
-                                    set={v => setHitWizardData(d => ({ ...d, finalBallsAfterJitan: v }))}
-                                    placeholder="例: 1200"
-                                    type="tel"
-                                />
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 20 }}>
-                                    <Btn label="戻る" onClick={() => setHitWizardStep(5)} />
-                                    <Btn label="記録完了" onClick={handleWizardComplete} bg={C.green} fg="#fff" bd="none" />
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 12, color: C.sub, marginBottom: 8 }}>時短終了後の出玉</div>
+                                <div style={{ fontSize: 36, fontWeight: 800, color: C.teal, fontFamily: mono, minHeight: 50 }}>
+                                    {hitWizardData.finalBallsAfterJitan || "0"}
                                 </div>
-                            </>
+                            </div>
                         )}
-                        {/* 閉じるボタン（全ステップ共通） */}
-                        <button
-                            className="b"
-                            onClick={() => setHitWizardOpen(false)}
-                            style={{ width: "100%", marginTop: 16, padding: "10px", background: "rgba(239, 68, 68, 0.1)", border: `1px solid rgba(239, 68, 68, 0.3)`, borderRadius: 8, color: C.red, fontSize: 12, fontWeight: 600, fontFamily: font }}
-                        >
-                            キャンセル
-                        </button>
-                    </Card>
+                    </div>
+
+                    {/* テンキー（Step 1と4以外で表示） */}
+                    {hitWizardStep !== 1 && hitWizardStep !== 4 && (
+                        <div style={{ padding: "12px 16px 24px", background: "rgba(30,30,35,0.98)", borderTop: `1px solid ${C.border}` }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 8 }}>
+                                {[1,2,3,4,5,6,7,8,9].map(n => (
+                                    <button key={n} className="b" onClick={() => {
+                                        const field = hitWizardStep === 0 ? "trayBalls" : hitWizardStep === 2 ? "displayBalls" : hitWizardStep === 3 ? "actualBalls" : hitWizardStep === 5 ? "jitanSpins" : "finalBallsAfterJitan";
+                                        setHitWizardData(d => ({ ...d, [field]: (d[field] || "") + n }));
+                                    }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 22, fontFamily: mono, background: "rgba(255,255,255,0.08)", border: "none", color: C.text }}>
+                                        {n}
+                                    </button>
+                                ))}
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                                <button className="b" onClick={() => {
+                                    const field = hitWizardStep === 0 ? "trayBalls" : hitWizardStep === 2 ? "displayBalls" : hitWizardStep === 3 ? "actualBalls" : hitWizardStep === 5 ? "jitanSpins" : "finalBallsAfterJitan";
+                                    setHitWizardData(d => ({ ...d, [field]: "" }));
+                                }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 14, background: "rgba(239,68,68,0.15)", border: "none", color: C.red }}>
+                                    C
+                                </button>
+                                <button className="b" onClick={() => {
+                                    const field = hitWizardStep === 0 ? "trayBalls" : hitWizardStep === 2 ? "displayBalls" : hitWizardStep === 3 ? "actualBalls" : hitWizardStep === 5 ? "jitanSpins" : "finalBallsAfterJitan";
+                                    setHitWizardData(d => ({ ...d, [field]: (d[field] || "") + "0" }));
+                                }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 22, fontFamily: mono, background: "rgba(255,255,255,0.08)", border: "none", color: C.text }}>
+                                    0
+                                </button>
+                                <button className="b" onClick={() => {
+                                    const field = hitWizardStep === 0 ? "trayBalls" : hitWizardStep === 2 ? "displayBalls" : hitWizardStep === 3 ? "actualBalls" : hitWizardStep === 5 ? "jitanSpins" : "finalBallsAfterJitan";
+                                    setHitWizardData(d => ({ ...d, [field]: (d[field] || "").slice(0, -1) }));
+                                }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 18, background: "rgba(255,255,255,0.08)", border: "none", color: C.sub }}>
+                                    ←
+                                </button>
+                            </div>
+                            {/* 次へ/完了ボタン */}
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 }}>
+                                <button className="b" onClick={() => setHitWizardStep(s => Math.max(0, s - 1))} style={{ padding: "14px 0", borderRadius: 12, fontWeight: 700, fontSize: 14, background: "rgba(255,255,255,0.05)", border: `1px solid ${C.border}`, color: C.sub }}>
+                                    戻る
+                                </button>
+                                {hitWizardStep === 6 ? (
+                                    <button className="b" onClick={handleWizardComplete} style={{ padding: "14px 0", borderRadius: 12, fontWeight: 700, fontSize: 14, background: "linear-gradient(135deg, #10b981, #059669)", border: "none", color: "#fff" }}>
+                                        記録完了
+                                    </button>
+                                ) : (
+                                    <button className="b" onClick={() => setHitWizardStep(s => s + 1)} style={{ padding: "14px 0", borderRadius: 12, fontWeight: 700, fontSize: 14, background: "linear-gradient(135deg, #3b82f6, #2563eb)", border: "none", color: "#fff" }}>
+                                        次へ
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
         </div>
@@ -1053,31 +1039,51 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev }) {
     const [sub, setSub] = useState("jp");
 
-    // スワイプ削除用state
+    // スワイプ削除用state（横スワイプのみ反応）
     const [swipingId, setSwipingId] = useState(null);
     const [swipeX, setSwipeX] = useState(0);
+    const [swipeDirection, setSwipeDirection] = useState(null); // "horizontal" | "vertical" | null
     const swipeStartX = useRef(0);
+    const swipeStartY = useRef(0);
 
     const handleSwipeStart = (e, chainId) => {
         swipeStartX.current = e.touches[0].clientX;
+        swipeStartY.current = e.touches[0].clientY;
         setSwipingId(chainId);
+        setSwipeDirection(null);
     };
 
     const handleSwipeMove = (e) => {
         if (swipingId === null) return;
-        const diff = swipeStartX.current - e.touches[0].clientX;
-        setSwipeX(Math.max(0, Math.min(diff, 100)));
+        const diffX = swipeStartX.current - e.touches[0].clientX;
+        const diffY = Math.abs(e.touches[0].clientY - swipeStartY.current);
+
+        // 方向が未確定の場合、10px以上動いたら判定
+        if (swipeDirection === null && (Math.abs(diffX) > 10 || diffY > 10)) {
+            if (diffY > Math.abs(diffX)) {
+                setSwipeDirection("vertical");
+                return;
+            } else {
+                setSwipeDirection("horizontal");
+            }
+        }
+
+        // 横スワイプの場合のみ処理
+        if (swipeDirection === "horizontal") {
+            e.stopPropagation(); // 画面切り替えスワイプを防止
+            setSwipeX(Math.max(0, Math.min(diffX, 80)));
+        }
     };
 
     const handleSwipeEnd = (chainId) => {
-        if (swipeX > 60) {
-            // 削除確認
+        if (swipeDirection === "horizontal" && swipeX > 50) {
             if (confirm("このデータを削除しますか？")) {
                 S.setJpLog((prev) => prev.filter(c => c.chainId !== chainId));
             }
         }
         setSwipeX(0);
         setSwipingId(null);
+        setSwipeDirection(null);
     };
 
     // 連チャン入力 state
@@ -1344,24 +1350,26 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                     onTouchMove={handleSwipeMove}
                                     onTouchEnd={() => handleSwipeEnd(chain.chainId)}
                                 >
-                                    {/* 削除ボタン（背景） */}
-                                    <div style={{
-                                        position: "absolute",
-                                        right: 0,
-                                        top: 0,
-                                        bottom: 0,
-                                        width: 80,
-                                        background: "linear-gradient(90deg, transparent, #ef4444)",
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "flex-end",
-                                        paddingRight: 16,
-                                        color: "#fff",
-                                        fontWeight: 700,
-                                        fontSize: 12
-                                    }}>
-                                        削除
-                                    </div>
+                                    {/* 削除ボタン（スワイプ時のみ表示） */}
+                                    {swipingId === chain.chainId && swipeDirection === "horizontal" && swipeX > 0 && (
+                                        <div style={{
+                                            position: "absolute",
+                                            right: 0,
+                                            top: 0,
+                                            bottom: 0,
+                                            width: 80,
+                                            background: "#ef4444",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            color: "#fff",
+                                            fontWeight: 700,
+                                            fontSize: 12,
+                                            borderRadius: "0 12px 12px 0"
+                                        }}>
+                                            削除
+                                        </div>
+                                    )}
                                     <Card style={{
                                         padding: "12px 16px",
                                         background: !chain.completed ? "rgba(249, 115, 22, 0.05)" : "rgba(255,255,255,0.02)",
