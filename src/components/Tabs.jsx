@@ -333,7 +333,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         if (setupStore) S.setStoreName(setupStore);
         if (setupMachineNum) S.setMachineNum(setupMachineNum);
         if (setupMachineName) S.setMachineName(setupMachineName);
-        if (setupInitialBalls) S.setCurrentMochiBalls(Number(setupInitialBalls) || 0);
+        // 新規稼働開始時は必ず初期持ち玉を設定（未入力なら0でリセット）
+        S.setCurrentMochiBalls(Number(setupInitialBalls) || 0);
 
         // セッション開始
         S.setStartRot(val);
