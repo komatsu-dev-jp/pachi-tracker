@@ -3523,6 +3523,19 @@ export function SettingsTab({ s, onReset }) {
     const specNetGainYen = avgNetGainSpec * exchP;
     const calcBorder = specNetGainYen > 0 ? ((s.synthDenom || 1) * 1000) / specNetGainYen : 0;
 
+    // 交換レート（円/玉）を計算
+    const yenPerBall = 100 / ((s.exRate || 250) / 10);
+    // 交換レートキーを特定（4.00, 3.57, 3.33, 3.03に近い値）
+    const getExRateKey = () => {
+        if (Math.abs(yenPerBall - 4.00) < 0.1) return "4.00";
+        if (Math.abs(yenPerBall - 3.57) < 0.1) return "3.57";
+        if (Math.abs(yenPerBall - 3.33) < 0.1) return "3.33";
+        if (Math.abs(yenPerBall - 3.03) < 0.1) return "3.03";
+        return null; // カスタムレート
+    };
+    const exRateKey = getExRateKey();
+    const exRateLabel = exRateKey ? `${exRateKey}円交換` : `${yenPerBall.toFixed(2)}円交換`;
+
     // Store detail view
     if (selectedStore) {
         return (
@@ -3538,14 +3551,14 @@ export function SettingsTab({ s, onReset }) {
 
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
                         <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
-                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>貸し玉</div>
-                            <div style={{ fontSize: 18, fontWeight: 800, color: C.yellow, fontFamily: mono }}>{selectedStore.rentBalls || 250}</div>
-                            <div style={{ fontSize: 9, color: C.sub }}>玉/1K</div>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>貸玉</div>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: C.yellow, fontFamily: mono }}>{Math.round((selectedStore.rentBalls || 250) / 10)}</div>
+                            <div style={{ fontSize: 9, color: C.sub }}>玉/100円</div>
                         </div>
                         <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
-                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>交換率</div>
-                            <div style={{ fontSize: 18, fontWeight: 800, color: C.teal, fontFamily: mono }}>{selectedStore.exRate || 250}</div>
-                            <div style={{ fontSize: 9, color: C.sub }}>玉/1K</div>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>交換</div>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: C.teal, fontFamily: mono }}>{Math.round((selectedStore.exRate || 250) / 10)}</div>
+                            <div style={{ fontSize: 9, color: C.sub }}>玉/100円</div>
                         </div>
                         <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
                             <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>貯玉残高</div>
@@ -3602,20 +3615,26 @@ export function SettingsTab({ s, onReset }) {
                             style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
                     </div>
 
-                    {/* 貸し玉 */}
+                    {/* 貸玉100円 */}
                     <div style={{ marginBottom: 12 }}>
-                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貸し玉（玉/1K）</div>
-                        <input type="number" value={storeFormData.rentBalls} onChange={e => setStoreFormData({ ...storeFormData, rentBalls: e.target.value })}
-                            placeholder="250"
-                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貸玉（玉/100円）</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <input type="number" value={Math.round((storeFormData.rentBalls || 250) / 10)} onChange={e => setStoreFormData({ ...storeFormData, rentBalls: (parseInt(e.target.value) || 25) * 10 })}
+                                placeholder="25"
+                                style={{ flex: 1, boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                            <span style={{ fontSize: 10, color: C.sub, whiteSpace: "nowrap" }}>{(100 / ((storeFormData.rentBalls || 250) / 10)).toFixed(2)}円/玉</span>
+                        </div>
                     </div>
 
-                    {/* 交換率 */}
+                    {/* 交換100円 */}
                     <div style={{ marginBottom: 12 }}>
-                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>交換率（玉/1K）</div>
-                        <input type="number" value={storeFormData.exRate} onChange={e => setStoreFormData({ ...storeFormData, exRate: e.target.value })}
-                            placeholder="250"
-                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>交換（玉/100円）</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <input type="number" value={Math.round((storeFormData.exRate || 250) / 10)} onChange={e => setStoreFormData({ ...storeFormData, exRate: (parseInt(e.target.value) || 25) * 10 })}
+                                placeholder="25"
+                                style={{ flex: 1, boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                            <span style={{ fontSize: 10, color: C.sub, whiteSpace: "nowrap" }}>{(100 / ((storeFormData.exRate || 250) / 10)).toFixed(2)}円/玉</span>
+                        </div>
                     </div>
 
                     {/* 貯玉残高 */}
@@ -4147,9 +4166,60 @@ export function SettingsTab({ s, onReset }) {
 
             <Card>
                 <SecLabel label="基本設定" />
+                {/* 貸玉100円 */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px", borderBottom: `1px solid ${C.border}` }}>
+                    <div>
+                        <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>貸玉100円</div>
+                        <div style={{ fontSize: 10, color: C.sub }}>{(100 / (s.rentBalls / 10)).toFixed(2)}円/玉</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <NI v={Math.round(s.rentBalls / 10)} set={(v) => s.setRentBalls(v * 10)} w={80} center />
+                        <span style={{ fontSize: 10, color: C.sub, minWidth: 40 }}>玉/100円</span>
+                    </div>
+                </div>
+                {/* 交換100円 */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px", borderBottom: `1px solid ${C.border}` }}>
+                    <div>
+                        <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>交換100円</div>
+                        <div style={{ fontSize: 10, color: C.sub }}>{(100 / (s.exRate / 10)).toFixed(2)}円/玉</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <NI v={Math.round(s.exRate / 10)} set={(v) => s.setExRate(v * 10)} w={80} center />
+                        <span style={{ fontSize: 10, color: C.sub, minWidth: 40 }}>玉/100円</span>
+                    </div>
+                </div>
+                {/* 交換レートプリセット */}
+                <div style={{ display: "flex", gap: 6, padding: "12px 16px", borderBottom: `1px solid ${C.border}`, flexWrap: "wrap" }}>
+                    {[
+                        { label: "等価", balls: 25, yen: "4.00" },
+                        { label: "3.57円", balls: 28, yen: "3.57" },
+                        { label: "3.33円", balls: 30, yen: "3.33" },
+                        { label: "3.03円", balls: 33, yen: "3.03" },
+                    ].map(({ label, balls, yen }) => {
+                        const isActive = Math.round(s.exRate / 10) === balls;
+                        return (
+                            <button
+                                key={yen}
+                                className="b"
+                                onClick={() => s.setExRate(balls * 10)}
+                                style={{
+                                    background: isActive ? C.blue : C.surfaceHi,
+                                    border: `1px solid ${isActive ? C.blue : C.borderHi}`,
+                                    borderRadius: 8,
+                                    color: isActive ? "#fff" : C.text,
+                                    fontSize: 11,
+                                    padding: "8px 12px",
+                                    fontFamily: font,
+                                    fontWeight: isActive ? 700 : 500,
+                                }}
+                            >
+                                {label}
+                            </button>
+                        );
+                    })}
+                </div>
+                {/* その他の設定 */}
                 {[
-                    { lbl: "貸し玉個数", v: s.rentBalls, set: s.setRentBalls, unit: "玉/1K" },
-                    { lbl: "交換率", v: s.exRate, set: s.setExRate, unit: "玉/1K" },
                     { lbl: "合成確率分母", v: s.synthDenom, set: s.setSynthDenom, unit: "1/x" },
                     { lbl: "1h消化回転数", v: s.rotPerHour, set: s.setRotPerHour, unit: "回/h" },
                 ].map(({ lbl, v, set, unit }) => (
@@ -4181,7 +4251,10 @@ export function SettingsTab({ s, onReset }) {
                 ))}
                 {/* 理論ボーダー表示 */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px", background: "rgba(0,0,0,0.15)", borderRadius: "0 0 12px 12px" }}>
-                    <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>理論ボーダー</div>
+                    <div>
+                        <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>理論ボーダー</div>
+                        <div style={{ fontSize: 10, color: C.teal }}>{exRateLabel}</div>
+                    </div>
                     <div style={{ fontSize: 18, fontWeight: 800, color: C.green, fontFamily: mono }}>
                         {calcBorder > 0 ? f(calcBorder, 1) : "—"}<span style={{ fontSize: 10, color: C.sub, marginLeft: 4 }}>回/K</span>
                     </div>
