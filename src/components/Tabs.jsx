@@ -312,7 +312,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             invest: S.playMode === "mochi" ? prevInvest : newInvest, // 持ち玉モードは投資額変わらない
             mode: S.playMode,
             ballsConsumed, // 消費玉数を記録
-            mochiBalls: S.playMode === "mochi" ? Math.max(0, S.currentMochiBalls - ballsConsumed) : S.currentMochiBalls
+            mochiBalls: S.playMode === "mochi" ? Math.max(0, S.currentMochiBalls - ballsConsumed) : S.currentMochiBalls,
+            chodamaBalls: S.playMode === "chodama" ? Math.max(0, S.currentChodama - ballsConsumed) : S.currentChodama
         }]);
 
         const logType = S.playMode === "mochi"
@@ -333,14 +334,16 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         if (setupStore) S.setStoreName(setupStore);
         if (setupMachineNum) S.setMachineNum(setupMachineNum);
         if (setupMachineName) S.setMachineName(setupMachineName);
-        // 新規稼働開始時は必ず初期持ち玉を設定（未入力なら0でリセット）
-        S.setCurrentMochiBalls(Number(setupInitialBalls) || 0);
+        // 新規稼働開始時は貯玉を設定（未入力なら0でリセット）
+        S.setCurrentChodama(Number(setupInitialBalls) || 0);
+        // 持ち玉は0にリセット（移動時に設定する）
+        S.setCurrentMochiBalls(0);
 
         // セッション開始
         S.setStartRot(val);
         S.setSessionStarted(true);
-        const initialMochi = Number(setupInitialBalls) || 0;
-        setRows((r) => [...r, { type: "start", cumRot: val, mode: S.playMode, mochiBalls: initialMochi }]);
+        const initialChodama = Number(setupInitialBalls) || 0;
+        setRows((r) => [...r, { type: "start", cumRot: val, mode: S.playMode, mochiBalls: 0, chodamaBalls: initialChodama }]);
         S.pushLog({ type: "スタート", time: tsNow(), rot: val });
 
         // モーダルを閉じてリセット
@@ -361,7 +364,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
         // 回転数テーブルに初当たりマーカー行を追加
         if (val > 0) {
-            setRows(r => [...r, { type: "hit", cumRot: val, thisRot: hitThisRot, invest: last ? last.invest : 0, mode: S.playMode, mochiBalls: S.currentMochiBalls }]);
+            setRows(r => [...r, { type: "hit", cumRot: val, thisRot: hitThisRot, invest: last ? last.invest : 0, mode: S.playMode, mochiBalls: S.currentMochiBalls, chodamaBalls: S.currentChodama }]);
         }
 
         S.pushJP({
@@ -389,7 +392,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         if (val > 0) {
             S.setStartRot(val);
             // テーブルにスタート行を追加
-            setRows((r) => [...r, { type: "start", cumRot: val, mode: S.playMode, mochiBalls: S.currentMochiBalls, isPostJackpotStart: true }]);
+            setRows((r) => [...r, { type: "start", cumRot: val, mode: S.playMode, mochiBalls: S.currentMochiBalls, chodamaBalls: S.currentChodama, isPostJackpotStart: true }]);
             S.pushLog({ type: "大当たり後スタート", time: tsNow(), rot: val });
             setInput("");
         }
@@ -630,9 +633,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     </div>
                                 </div>
 
-                                {/* 初期持ち玉 */}
+                                {/* 貯玉 */}
                                 <div style={{ marginBottom: 24 }}>
-                                    <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>初期持ち玉（任意）</div>
+                                    <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>貯玉（任意）</div>
                                     <input
                                         type="tel"
                                         inputMode="numeric"
@@ -743,7 +746,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             <div style={{ textAlign: "center", fontSize: 11, color: C.sub }}>—</div>
                             <div style={{ textAlign: "center", fontSize: 9, fontWeight: 700, color: C.blue, letterSpacing: 1, background: "rgba(59, 130, 246, 0.12)", padding: "3px 6px", borderRadius: 5 }}>START</div>
                             <div style={{ textAlign: "center", fontSize: 10, color: C.sub }}>—</div>
-                            <div style={{ textAlign: "center", fontSize: 10, color: C.orange, fontFamily: mono }}>{f(row.mochiBalls || 0)}</div>
+                            <div style={{ textAlign: "center", fontSize: 10, color: row.mode === "chodama" ? C.purple : C.orange, fontFamily: mono }}>{f(row.mode === "chodama" ? (row.chodamaBalls || 0) : (row.mochiBalls || 0))}</div>
                         </div>
                     );
                     if (row.type === "hit") return (
@@ -753,7 +756,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             <div style={{ textAlign: "center", fontSize: 18, fontWeight: 800, color: C.orange, fontFamily: mono }}>{row.thisRot}</div>
                             <div style={{ textAlign: "center", fontSize: 9, fontWeight: 600, color: C.orange, background: "rgba(249, 115, 22, 0.12)", padding: "3px 5px", borderRadius: 5 }}>当G数</div>
                             <div style={{ textAlign: "center", fontSize: 10, color: C.sub, fontFamily: mono }}>{investDisplay}</div>
-                            <div style={{ textAlign: "center", fontSize: 10, color: C.orange, fontFamily: mono }}>{f(row.mochiBalls || 0)}</div>
+                            <div style={{ textAlign: "center", fontSize: 10, color: row.mode === "chodama" ? C.purple : C.orange, fontFamily: mono }}>{f(row.mode === "chodama" ? (row.chodamaBalls || 0) : (row.mochiBalls || 0))}</div>
                         </div>
                     );
                     return (
@@ -765,7 +768,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 {row.avgRot || "—"}
                             </div>
                             <div style={{ textAlign: "center", fontSize: 10, color: C.sub, fontFamily: mono }}>{investDisplay}</div>
-                            <div style={{ textAlign: "center", fontSize: 10, color: C.orange, fontFamily: mono }}>{f(row.mochiBalls || 0)}</div>
+                            <div style={{ textAlign: "center", fontSize: 10, color: row.mode === "chodama" ? C.purple : C.orange, fontFamily: mono }}>{f(row.mode === "chodama" ? (row.chodamaBalls || 0) : (row.mochiBalls || 0))}</div>
                         </div>
                     );
                 })}
@@ -2233,7 +2236,7 @@ export function CalendarTab({ S, onReset }) {
                                         <div style={{ textAlign: "center", fontSize: 11, color: C.text, fontFamily: mono }}>{row.type === "start" ? "START" : row.thisRot}</div>
                                         <div style={{ textAlign: "center", fontSize: 11, color: C.text, fontFamily: mono }}>{row.avgRot || "—"}</div>
                                         <div style={{ textAlign: "center", fontSize: 10, color: C.sub, fontFamily: mono }}>{row.mode === "mochi" ? "—" : (row.invest ? f(row.invest) : "—")}</div>
-                                        <div style={{ textAlign: "center", fontSize: 10, color: C.orange, fontFamily: mono }}>{f(row.mochiBalls || 0)}</div>
+                                        <div style={{ textAlign: "center", fontSize: 10, color: row.mode === "chodama" ? C.purple : C.orange, fontFamily: mono }}>{f(row.mode === "chodama" ? (row.chodamaBalls || 0) : (row.mochiBalls || 0))}</div>
                                     </div>
                                 );
                             })}
