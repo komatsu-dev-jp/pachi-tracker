@@ -148,6 +148,9 @@ export default function App() {
   const [initialChodama, setInitialChodama] = useLS("pt_initialChodama", 0);
   const [selectedStoreId, setSelectedStoreId] = useLS("pt_selectedStoreId", null);
 
+  // 時短/大当たり終了後のスタート入力プロンプト表示フラグ
+  const [showStartPrompt, setShowStartPrompt] = useState(false);
+
   // Session info (店舗・台番号・投資・回収・機種名)
   const [storeName, setStoreName] = useLS("pt_storeName", "");
   const [machineNum, setMachineNum] = useLS("pt_machineNum", "");
@@ -285,6 +288,8 @@ export default function App() {
     // リアルタイム玉数
     currentMochiBalls, setCurrentMochiBalls,
     currentChodama, setCurrentChodama,
+    // スタート入力プロンプト
+    showStartPrompt, setShowStartPrompt,
   };
 
   // カスタムアイコン: 黄色の＋（空白の○の中）

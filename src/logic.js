@@ -111,8 +111,9 @@ export function calcPreciseEV({
     const blendedInvest = cashKCount * 1000 + mochiKCount * mochiCostPerK + chodamaKCount * chodamaCostPerK;
     const correctedInvestYen = Math.max(blendedInvest - trayBallsYen, 0);
 
-    // ── 回転率（1Kスタート） = 総回転数 ÷ 投資K数（シンプル計算） ──
-    const start1K = rawInvest > 0 ? netRot / (rawInvest / 1000) : 0;
+    // ── 回転率（1Kスタート） = 総回転数 ÷ 総K数（全モード合算） ──
+    const totalKCount = cashKCount + mochiKCount + chodamaKCount;
+    const start1K = totalKCount > 0 ? netRot / totalKCount : 0;
 
     // ── 実測ボーダー（JP実績がある場合） ──
     const exchP = 1000 / (exRate || 1);  // 1玉あたりの円

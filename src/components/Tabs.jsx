@@ -235,7 +235,18 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const sessionActive = rows.some(r => r.type === "start");
 
     useEffect(() => {
-        if (tableRef.current) tableRef.current.scrollTop = tableRef.current.scrollHeight;
+        // 新しいデータが追加された時に自動スクロールで最新を表示
+        if (tableRef.current) {
+            // DOMの更新を待ってからスクロール
+            requestAnimationFrame(() => {
+                if (tableRef.current) {
+                    tableRef.current.scrollTo({
+                        top: tableRef.current.scrollHeight,
+                        behavior: 'smooth'
+                    });
+                }
+            });
+        }
     }, [rows]);
 
     const dataRows = rows.filter((r) => r.type === "data");
@@ -298,10 +309,15 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             newInvest = prevInvest + investPace;
         }
 
-        // 投資が0またはmochiモードの場合の平均回転数計算
-        const totalInvestForCalc = S.playMode === "mochi" ? prevInvest : newInvest;
-        const newAvg = totalInvestForCalc > 0
-            ? parseFloat(((val - S.startRot) / (totalInvestForCalc / 1000)).toFixed(1))
+        // 平均回転数計算 - モード別ではなく総K数ベースで計算
+        const dataRowsAll = rows.filter(r => r.type === "data");
+        const cashKCount = dataRowsAll.filter(r => r.mode === "cash" || !r.mode).length;
+        const mochiKCount = dataRowsAll.filter(r => r.mode === "mochi").length;
+        const chodamaKCount = dataRowsAll.filter(r => r.mode === "chodama").length;
+        // 今回の入力で1K増加
+        const totalKCount = cashKCount + mochiKCount + chodamaKCount + 1;
+        const newAvg = totalKCount > 0
+            ? parseFloat(((val - S.startRot) / totalKCount).toFixed(1))
             : 0;
 
         setRows((r) => [...r, {
@@ -467,10 +483,13 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         if (hitType === "確変") {
             S.setTab("history");
         } else {
-            // 単発の場合: 持ち玉モードに切替 & 出玉を持ち玉に加算
+            // 単発の場合: 持ち玉モードに切替 & 出玉を持ち玉に加算 & 回転タブへ
             const addBalls = finalBalls > 0 ? finalBalls : (tray + disp);
             S.setCurrentMochiBalls((prev) => prev + addBalls);
             S.setPlayMode("mochi");
+            S.setTab("rot");
+            // 時短終了後のスタート入力プロンプトを表示
+            S.setShowStartPrompt(true);
         }
     };
 
@@ -1058,6 +1077,103 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 </div>,
                 document.body
             )}
+
+            {/* スタート入力プロンプト - 時短/大当たり終了後 */}
+            {S.showStartPrompt && ReactDOM.createPortal(
+                <div style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: "rgba(0,0,0,0.9)",
+                    backdropFilter: "blur(8px)",
+                    zIndex: 9998,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 20
+                }}>
+                    <div style={{
+                        width: "100%",
+                        maxWidth: 340,
+                        background: C.surface,
+                        borderRadius: 20,
+                        padding: 24,
+                        boxShadow: "0 20px 60px rgba(0,0,0,0.5)"
+                    }}>
+                        <div style={{ textAlign: "center", marginBottom: 20 }}>
+                            <div style={{ fontSize: 20, fontWeight: 800, color: C.orange, marginBottom: 8 }}>
+                                スタート回転数を入力
+                            </div>
+                            <div style={{ fontSize: 12, color: C.sub }}>
+                                時短/大当たり終了後のスタート位置を記録
+                            </div>
+                        </div>
+                        <input
+                            type="tel"
+                            inputMode="numeric"
+                            value={input}
+                            onChange={e => setInput(e.target.value)}
+                            placeholder="回転数"
+                            autoFocus
+                            style={{
+                                width: "100%",
+                                boxSizing: "border-box",
+                                background: C.bg,
+                                border: `2px solid ${C.orange}`,
+                                borderRadius: 12,
+                                padding: "16px",
+                                fontSize: 24,
+                                fontWeight: 700,
+                                color: C.text,
+                                fontFamily: mono,
+                                textAlign: "center",
+                                outline: "none",
+                                marginBottom: 20
+                            }}
+                        />
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                            <button className="b" onClick={() => {
+                                S.setShowStartPrompt(false);
+                                setInput("");
+                            }} style={{
+                                padding: "14px 0",
+                                borderRadius: 12,
+                                fontWeight: 700,
+                                fontSize: 15,
+                                background: "rgba(255,255,255,0.08)",
+                                border: "none",
+                                color: C.sub
+                            }}>
+                                スキップ
+                            </button>
+                            <button className="b" onClick={() => {
+                                const val = Number(input);
+                                if (val > 0) {
+                                    S.setStartRot(val);
+                                    setRows((r) => [...r, { type: "start", cumRot: val, mode: S.playMode, mochiBalls: S.currentMochiBalls, chodamaBalls: S.currentChodama, isPostJackpotStart: true }]);
+                                    S.pushLog({ type: "大当たり後スタート", time: tsNow(), rot: val });
+                                }
+                                S.setShowStartPrompt(false);
+                                setInput("");
+                            }} style={{
+                                padding: "14px 0",
+                                borderRadius: 12,
+                                fontWeight: 700,
+                                fontSize: 15,
+                                background: "linear-gradient(135deg, #f97316, #ea580c)",
+                                border: "none",
+                                color: "#fff",
+                                boxShadow: "0 4px 12px rgba(249,115,22,0.3)"
+                            }}>
+                                記録
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
         </div>
     );
 }
@@ -1372,6 +1488,8 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         // 持ち玉モードに自動切替
         S.setPlayMode("mochi");
         S.setTab("rot");
+        // 大当たり終了後のスタート入力プロンプトを表示
+        S.setShowStartPrompt(true);
     };
 
     return (
