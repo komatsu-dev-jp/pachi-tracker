@@ -201,7 +201,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     });
     const [activeKeypadField, setActiveKeypadField] = useState(null); // "trayBalls" | "displayBalls" | "actualBalls" | "jitanSpins" | "finalBalls"
 
-    // 機種からラウンド情報を取得
+    // 機種からラウンド情報を取得（初当たり用 - roundDist使用）
     const getMachineRounds = () => {
         const machine = searchMachines(S.machineName, S.customMachines)[0];
         if (!machine || !machine.roundDist) return [3, 4, 5, 6, 7, 8, 9, 10]; // デフォルト
@@ -211,6 +211,19 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         return [...new Set(matches.map(m => parseInt(m)))].sort((a, b) => a - b);
     };
     const machineRounds = useMemo(getMachineRounds, [S.machineName, S.customMachines]);
+
+    // 機種から確変中のラウンド情報を取得（連チャン用 - rushDist使用、なければroundDistにフォールバック）
+    const getMachineRushRounds = () => {
+        const machine = searchMachines(S.machineName, S.customMachines)[0];
+        if (!machine) return [3, 4, 5, 6, 7, 8, 9, 10];
+        // rushDistがあればそれを使用、なければroundDistにフォールバック
+        const dist = machine.rushDist || machine.roundDist;
+        if (!dist) return [3, 4, 5, 6, 7, 8, 9, 10];
+        const matches = dist.match(/(\d+)R/g);
+        if (!matches) return [3, 4, 5, 6, 7, 8, 9, 10];
+        return [...new Set(matches.map(m => parseInt(m)))].sort((a, b) => a - b);
+    };
+    const machineRushRounds = useMemo(getMachineRushRounds, [S.machineName, S.customMachines]);
 
     // セットアップ用の一時state
     const [setupStore, setSetupStore] = useState("");
@@ -1255,7 +1268,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     const [directSingleEndStep, setDirectSingleEndStep] = useState(0); // 0: 時短回数, 1: 時短終了後出玉
     const [directSingleEndData, setDirectSingleEndData] = useState({ jitanSpins: "", finalBallsAfterJitan: "" });
 
-    // 機種からラウンド情報を取得
+    // 機種からラウンド情報を取得（初当たり用）
     const getMachineRounds = () => {
         const machine = searchMachines(S.machineName, S.customMachines)[0];
         if (!machine || !machine.roundDist) return [3, 4, 5, 6, 7, 8, 9, 10];
@@ -1264,6 +1277,18 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         return [...new Set(matches.map(m => parseInt(m)))].sort((a, b) => a - b);
     };
     const machineRounds = useMemo(getMachineRounds, [S.machineName, S.customMachines]);
+
+    // 確変中のラウンド情報を取得（連チャン用 - rushDistを優先）
+    const getMachineRushRounds = () => {
+        const machine = searchMachines(S.machineName, S.customMachines)[0];
+        if (!machine) return [3, 4, 5, 6, 7, 8, 9, 10];
+        const dist = machine.rushDist || machine.roundDist;
+        if (!dist) return [3, 4, 5, 6, 7, 8, 9, 10];
+        const matches = dist.match(/(\d+)R/g);
+        if (!matches) return [3, 4, 5, 6, 7, 8, 9, 10];
+        return [...new Set(matches.map(m => parseInt(m)))].sort((a, b) => a - b);
+    };
+    const machineRushRounds = useMemo(getMachineRushRounds, [S.machineName, S.customMachines]);
 
     // 最新の未完了チェーンがあるか
     const lastChain = jpLog.length > 0 ? jpLog[jpLog.length - 1] : null;
@@ -1887,12 +1912,12 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
 
                     {/* コンテンツエリア */}
                     <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "16px 20px", background: "#000" }}>
-                        {/* Step 0: ラウンド数選択 */}
+                        {/* Step 0: ラウンド数選択（確変中振り分けを使用） */}
                         {chainWizardStep === 0 && (
                             <div style={{ textAlign: "center" }}>
                                 <div style={{ fontSize: 22, fontWeight: 700, color: C.orange, marginBottom: 24 }}>ラウンド数</div>
                                 <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 12 }}>
-                                    {machineRounds.map(r => (
+                                    {machineRushRounds.map(r => (
                                         <button
                                             key={r}
                                             className="b"
@@ -3088,7 +3113,7 @@ export function SettingsTab({ s, onReset }) {
     // 機種フォームの初期値
     const emptyMachine = {
         name: "", maker: "", type: "ミドル", prob: "1/319.6", synthProb: 319.6,
-        spec1R: 140, specAvgTotalRounds: 30, specSapo: 0, roundDist: "",
+        spec1R: 140, specAvgTotalRounds: 30, specSapo: 0, roundDist: "", rushDist: "",
         border: { "4.00": 0, "3.57": 0, "3.33": 0, "3.03": 0 }
     };
     const [formData, setFormData] = useState(emptyMachine);
@@ -3210,7 +3235,9 @@ export function SettingsTab({ s, onReset }) {
         "空間感応度", "レジーム感応度", "ヘソ平均出玉(自動)", "RUSH平均出玉",
         "RUSH突入率", "RUSH継続率", "手動入力値(優先)",
         "【ヘソ1】出玉", "【ヘソ1】比率", "【ヘソ2】出玉", "【ヘソ2】比率",
-        "【ヘソ3】出玉", "【ヘソ3】比率", "MC期待日当", "MC勝率"
+        "【ヘソ3】出玉", "【ヘソ3】比率", "MC期待日当", "MC勝率",
+        "ラウンド振り分け", "確変中ラウンド振り分け",
+        "ボーダー(4.00)", "ボーダー(3.57)", "ボーダー(3.33)", "ボーダー(3.03)"
     ];
 
     // 機種データをCSVエクスポート（スプレッドシート形式）
@@ -3224,6 +3251,7 @@ export function SettingsTab({ s, onReset }) {
             csvHeadersJp.join(","),
             ...machines.map(m => {
                 const hesoDist = m.hesoDist || [];
+                const border = m.border || {};
                 const formatPercent = (val) => val != null ? `${val}%` : "";
                 const row = [
                     m.name || "",
@@ -3249,7 +3277,13 @@ export function SettingsTab({ s, onReset }) {
                     hesoDist[2]?.payout || "",
                     formatPercent(hesoDist[2]?.rate),
                     m.mcExpectedDaily || "",
-                    formatPercent(m.mcWinRate)
+                    formatPercent(m.mcWinRate),
+                    m.roundDist || "",
+                    m.rushDist || "",
+                    border["4.00"] || "",
+                    border["3.57"] || "",
+                    border["3.33"] || "",
+                    border["3.03"] || ""
                 ];
                 return row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",");
             })
@@ -3340,7 +3374,13 @@ export function SettingsTab({ s, onReset }) {
         "【ヘソ3】出玉": "heso3Payout",
         "【ヘソ3】比率": "heso3Rate",
         "MC期待日当": "mcExpectedDaily",
-        "MC勝率": "mcWinRate"
+        "MC勝率": "mcWinRate",
+        "ラウンド振り分け": "roundDist",
+        "確変中ラウンド振り分け": "rushDist",
+        "ボーダー(4.00)": "border400",
+        "ボーダー(3.57)": "border357",
+        "ボーダー(3.33)": "border333",
+        "ボーダー(3.03)": "border303"
     };
 
     // パーセント文字列から数値に変換
@@ -3416,11 +3456,20 @@ export function SettingsTab({ s, onReset }) {
                     hesoDist: hesoDist.length > 0 ? hesoDist : undefined,
                     mcExpectedDaily: parseNum(get("MC期待日当", "mcExpectedDaily")),
                     mcWinRate: parsePercent(get("MC勝率", "mcWinRate")),
+                    // ラウンド振り分け
+                    roundDist: get("ラウンド振り分け", "roundDist") || d.roundDist || "",
+                    rushDist: get("確変中ラウンド振り分け", "rushDist") || d.rushDist || "",
+                    // ボーダー（交換率別）
+                    border: {
+                        "4.00": parseNum(get("ボーダー(4.00)", "border400")) || 0,
+                        "3.57": parseNum(get("ボーダー(3.57)", "border357")) || 0,
+                        "3.33": parseNum(get("ボーダー(3.33)", "border333")) || 0,
+                        "3.03": parseNum(get("ボーダー(3.03)", "border303")) || 0,
+                    },
                     // 既存フィールドとの互換性
                     spec1R: parseNum(d.spec1R) || 140,
                     specAvgTotalRounds: parseNum(d.specAvgTotalRounds) || 30,
                     specSapo: parseNum(d.specSapo) || 0,
-                    roundDist: d.roundDist || "",
                 };
             });
             if (newMachines.length > 0) {
@@ -3693,10 +3742,20 @@ export function SettingsTab({ s, onReset }) {
                             <div style={{ fontSize: 18, fontWeight: 800, color: C.blue, fontFamily: mono }}>{selected.specAvgTotalRounds}R</div>
                         </div>
                         <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
-                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>ラウンド振り分け</div>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: C.subHi, lineHeight: 1.5 }}>{selected.roundDist}</div>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>ラウンド振り分け（初当たり）</div>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: C.subHi, lineHeight: 1.5 }}>{selected.roundDist || "未設定"}</div>
                         </div>
                     </div>
+
+                    {/* 確変中ラウンド振り分け */}
+                    {selected.rushDist && (
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8, marginBottom: 12 }}>
+                            <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
+                                <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>確変中ラウンド振り分け（連チャン用）</div>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: C.orange, lineHeight: 1.5 }}>{selected.rushDist}</div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* 追加スペック情報（データがある場合のみ表示） */}
                     {(selected.avgPayoutPerHit || selected.rushEntryRate || selected.prize) && (
@@ -3871,10 +3930,18 @@ export function SettingsTab({ s, onReset }) {
                     </div>
 
                     {/* ラウンド振り分け */}
-                    <div style={{ marginBottom: 16 }}>
-                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>ラウンド振り分け</div>
+                    <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>ラウンド振り分け（初当たり）</div>
                         <input type="text" value={formData.roundDist} onChange={e => setFormData({ ...formData, roundDist: e.target.value })}
                             placeholder="例: 4R:50%, 10R:50%"
+                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                    </div>
+
+                    {/* 確変中ラウンド振り分け */}
+                    <div style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>確変中ラウンド振り分け（連チャン用）</div>
+                        <input type="text" value={formData.rushDist || ""} onChange={e => setFormData({ ...formData, rushDist: e.target.value })}
+                            placeholder="例: 10R:100%（未設定時は初当たり振り分けを使用）"
                             style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
                     </div>
 
