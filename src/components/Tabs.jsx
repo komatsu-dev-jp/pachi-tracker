@@ -1245,8 +1245,15 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     const [chainWizardStep, setChainWizardStep] = useState(0);
     const [chainWizardData, setChainWizardData] = useState({
         rounds: 0, displayBalls: "", lastOutBalls: "", nextTimingBalls: "", elecSapoRot: "",
-        hitType: "" // "継続" or "最終"
+        hitType: "", // "継続" or "最終" or "単発"
+        jitanSpins: "", // 時短回数（単発終了用）
+        finalBallsAfterJitan: "" // 時短終了後出玉（単発終了用）
     });
+
+    // 直接単発終了モーダル state（ヒットが既にある場合用）
+    const [directSingleEndOpen, setDirectSingleEndOpen] = useState(false);
+    const [directSingleEndStep, setDirectSingleEndStep] = useState(0); // 0: 時短回数, 1: 時短終了後出玉
+    const [directSingleEndData, setDirectSingleEndData] = useState({ jitanSpins: "", finalBallsAfterJitan: "" });
 
     // 機種からラウンド情報を取得
     const getMachineRounds = () => {
@@ -1273,7 +1280,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     };
 
     const clearChainWizard = () => {
-        setChainWizardData({ rounds: 0, displayBalls: "", lastOutBalls: "", nextTimingBalls: "", elecSapoRot: "", hitType: "" });
+        setChainWizardData({ rounds: 0, displayBalls: "", lastOutBalls: "", nextTimingBalls: "", elecSapoRot: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
         setChainWizardStep(0);
     };
 
@@ -1412,6 +1419,132 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         clearChainWizard();
     };
 
+    // 単発終了ウィザード完了（時短データ含む）
+    const handleChainWizardSingleEnd = () => {
+        const { rounds, displayBalls, lastOutBalls, nextTimingBalls, elecSapoRot, jitanSpins, finalBallsAfterJitan } = chainWizardData;
+        const rnd = Number(rounds) || 0;
+        if (rnd <= 0) {
+            setChainWizardOpen(false);
+            return;
+        }
+
+        const lastOut = Number(lastOutBalls) || 0;
+        const nextTiming = Number(nextTimingBalls) || 0;
+        const elecRot = Number(elecSapoRot) || 0;
+        const sapoChange = nextTiming - lastOut;
+        const sapoPerRot = elecRot > 0 ? sapoChange / elecRot : 0;
+        const disp = Number(displayBalls) || 0;
+        const jitan = Number(jitanSpins) || 0;
+        const finalBalls = Number(finalBallsAfterJitan) || 0;
+
+        S.setJpLog((prev) => {
+            const updated = [...prev];
+            const chain = { ...updated[updated.length - 1] };
+            chain.hits = [...chain.hits, {
+                hitNumber: chain.hits.length + 1,
+                lastOutBalls: lastOut,
+                nextTimingBalls: nextTiming,
+                elecSapoRot: elecRot,
+                sapoChange,
+                sapoPerRot,
+                rounds: rnd,
+                displayBalls: disp,
+                actualBalls: 0,
+                time: tsNow(),
+            }];
+            // 単発終了として完了
+            chain.hitType = "単発";
+            chain.jitanSpins = jitan;
+            chain.finalBallsAfterJitan = finalBalls;
+            chain.completed = true;
+            // サマリー計算
+            const totalRounds = chain.hits.reduce((s, h) => s + h.rounds, 0);
+            const totalDisplayBalls = chain.hits.reduce((s, h) => s + h.displayBalls, 0);
+            const totalSapoRot = chain.hits.reduce((s, h) => s + (h.elecSapoRot || 0), 0);
+            const totalSapoChange = chain.hits.reduce((s, h) => s + (h.sapoChange || 0), 0);
+            chain.summary = {
+                totalRounds,
+                totalDisplayBalls,
+                totalSapoRot,
+                totalSapoChange,
+                avg1R: totalRounds > 0 ? totalDisplayBalls / totalRounds : 0,
+                sapoDelta: totalSapoChange,
+                sapoPerRot: totalSapoRot > 0 ? totalSapoChange / totalSapoRot : 0,
+                netGain: finalBalls > 0 ? finalBalls : totalDisplayBalls + totalSapoChange,
+            };
+            chain.finalBalls = finalBalls > 0 ? finalBalls : (chain.trayBalls || 0) + totalDisplayBalls + totalSapoChange;
+            updated[updated.length - 1] = chain;
+            return updated;
+        });
+
+        // 出玉を持ち玉に加算
+        const addBalls = finalBalls > 0 ? finalBalls : disp + sapoChange;
+        S.setCurrentMochiBalls((prev) => prev + addBalls);
+        S.pushLog({ type: "単発終了", time: tsNow(), rounds: rnd });
+        S.setPlayMode("mochi");
+        S.setTab("rot");
+        // 時短終了後のスタート入力プロンプトを表示
+        S.setShowStartPrompt(true);
+
+        setChainWizardOpen(false);
+        clearChainWizard();
+    };
+
+    // 直接単発終了を開く（ヒットが既にある場合のみ）
+    const openDirectSingleEnd = () => {
+        if (!isChainActive || lastChain.hits.length === 0) return;
+        setDirectSingleEndData({ jitanSpins: "", finalBallsAfterJitan: "" });
+        setDirectSingleEndStep(0);
+        setDirectSingleEndOpen(true);
+    };
+
+    // 直接単発終了完了
+    const handleDirectSingleEndComplete = () => {
+        if (!isChainActive) return;
+        const jitan = Number(directSingleEndData.jitanSpins) || 0;
+        const finalBalls = Number(directSingleEndData.finalBallsAfterJitan) || 0;
+
+        S.setJpLog((prev) => {
+            const updated = [...prev];
+            const chain = { ...updated[updated.length - 1] };
+            chain.hitType = "単発";
+            chain.jitanSpins = jitan;
+            chain.finalBallsAfterJitan = finalBalls;
+            chain.completed = true;
+            // サマリー計算
+            const totalRounds = chain.hits.reduce((s, h) => s + h.rounds, 0);
+            const totalDisplayBalls = chain.hits.reduce((s, h) => s + h.displayBalls, 0);
+            const totalSapoRot = chain.hits.reduce((s, h) => s + (h.elecSapoRot || 0), 0);
+            const totalSapoChange = chain.hits.reduce((s, h) => s + (h.sapoChange || 0), 0);
+            chain.summary = {
+                totalRounds,
+                totalDisplayBalls,
+                totalSapoRot,
+                totalSapoChange,
+                avg1R: totalRounds > 0 ? totalDisplayBalls / totalRounds : 0,
+                sapoDelta: totalSapoChange,
+                sapoPerRot: totalSapoRot > 0 ? totalSapoChange / totalSapoRot : 0,
+                netGain: finalBalls > 0 ? finalBalls : totalDisplayBalls + totalSapoChange,
+            };
+            chain.finalBalls = finalBalls > 0 ? finalBalls : (chain.trayBalls || 0) + totalDisplayBalls + totalSapoChange;
+            updated[updated.length - 1] = chain;
+            return updated;
+        });
+
+        // 出玉を持ち玉に加算
+        const existingTotal = (lastChain.trayBalls || 0) +
+            lastChain.hits.reduce((s, h) => s + (h.displayBalls || 0) + (h.sapoChange || 0), 0);
+        const addBalls = finalBalls > 0 ? finalBalls : existingTotal;
+        S.setCurrentMochiBalls((prev) => prev + addBalls);
+        S.pushLog({ type: "単発終了", time: tsNow() });
+        S.setPlayMode("mochi");
+        S.setTab("rot");
+        S.setShowStartPrompt(true);
+
+        setDirectSingleEndOpen(false);
+        setDirectSingleEndData({ jitanSpins: "", finalBallsAfterJitan: "" });
+    };
+
     // 最終大当たり終了: 最後のヒットを追加してチェーン完了
     const handleChainEnd = () => {
         if (!isChainActive) return;
@@ -1522,16 +1655,25 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
 
                         {/* アクションボタン — 連チャン中のみ表示 */}
                         {isChainActive ? (
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
                                 <button className="b" onClick={openChainWizard} style={{
-                                    padding: "20px 0", borderRadius: 16, fontWeight: 800, fontSize: 18,
+                                    padding: "16px 0", borderRadius: 14, fontWeight: 800, fontSize: 14,
                                     background: "linear-gradient(135deg, #10b981, #059669)", border: "none", color: "#fff",
                                     boxShadow: "0 4px 16px rgba(16,185,129,0.4)"
                                 }}>
                                     連チャン追加
                                 </button>
+                                <button className="b" onClick={openDirectSingleEnd} disabled={lastChain.hits.length === 0} style={{
+                                    padding: "16px 0", borderRadius: 14, fontWeight: 800, fontSize: 14,
+                                    background: lastChain.hits.length === 0 ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg, #6366f1, #4f46e5)",
+                                    border: "none", color: "#fff",
+                                    boxShadow: lastChain.hits.length === 0 ? "none" : "0 4px 16px rgba(99,102,241,0.4)",
+                                    opacity: lastChain.hits.length === 0 ? 0.5 : 1
+                                }}>
+                                    単発終了
+                                </button>
                                 <button className="b" onClick={handleChainEnd} style={{
-                                    padding: "20px 0", borderRadius: 16, fontWeight: 800, fontSize: 18,
+                                    padding: "16px 0", borderRadius: 14, fontWeight: 800, fontSize: 14,
                                     background: "linear-gradient(135deg, #f97316, #ea580c)", border: "none", color: "#fff",
                                     boxShadow: "0 4px 16px rgba(249,115,22,0.4)"
                                 }}>
@@ -1826,21 +1968,45 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                             </div>
                         )}
 
-                        {/* Step 5: 継続/最終選択 */}
+                        {/* Step 5: 継続/最終/単発選択 */}
                         {chainWizardStep === 5 && (
                             <div style={{ textAlign: "center" }}>
                                 <div style={{ fontSize: 22, fontWeight: 700, color: C.text, marginBottom: 28 }}>この大当たりは？</div>
-                                <div style={{ display: "flex", gap: 16, justifyContent: "center" }}>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center" }}>
                                     <button className="b" onClick={() => handleChainWizardComplete(false)}
-                                        style={{ width: 130, height: 90, borderRadius: 16, fontWeight: 800, fontSize: 20, background: "linear-gradient(135deg, #10b981, #059669)", border: "none", color: "#fff", boxShadow: "0 4px 16px rgba(16,185,129,0.4)" }}>
+                                        style={{ width: 100, height: 80, borderRadius: 16, fontWeight: 800, fontSize: 16, background: "linear-gradient(135deg, #10b981, #059669)", border: "none", color: "#fff", boxShadow: "0 4px 16px rgba(16,185,129,0.4)" }}>
                                         連チャン継続
                                     </button>
+                                    <button className="b" onClick={() => setChainWizardStep(6)}
+                                        style={{ width: 100, height: 80, borderRadius: 16, fontWeight: 800, fontSize: 16, background: "linear-gradient(135deg, #6366f1, #4f46e5)", border: "none", color: "#fff", boxShadow: "0 4px 16px rgba(99,102,241,0.4)" }}>
+                                        単発終了
+                                    </button>
                                     <button className="b" onClick={() => handleChainWizardComplete(true)}
-                                        style={{ width: 130, height: 90, borderRadius: 16, fontWeight: 800, fontSize: 20, background: "linear-gradient(135deg, #f97316, #ea580c)", border: "none", color: "#fff", boxShadow: "0 4px 16px rgba(249,115,22,0.4)" }}>
+                                        style={{ width: 100, height: 80, borderRadius: 16, fontWeight: 800, fontSize: 16, background: "linear-gradient(135deg, #f97316, #ea580c)", border: "none", color: "#fff", boxShadow: "0 4px 16px rgba(249,115,22,0.4)" }}>
                                         最終大当たり
                                     </button>
                                 </div>
                                 <button className="b" onClick={() => setChainWizardStep(4)} style={{ marginTop: 28, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 32px", color: C.sub, fontSize: 14 }}>戻る</button>
+                            </div>
+                        )}
+
+                        {/* Step 6: 時短回数（単発終了用） */}
+                        {chainWizardStep === 6 && (
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 22, fontWeight: 700, color: C.purple, marginBottom: 16 }}>時短回数</div>
+                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
+                                    {chainWizardData.jitanSpins || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>回転</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 7: 時短終了後最終出玉（単発終了用） */}
+                        {chainWizardStep === 7 && (
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginBottom: 16 }}>時短終了後の出玉</div>
+                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
+                                    {chainWizardData.finalBallsAfterJitan || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
+                                </div>
                             </div>
                         )}
                     </div>
@@ -1858,38 +2024,45 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
                                 <button className="b" onClick={() => {
                                     if (chainWizardStep === 1) setChainWizardStep(0);
+                                    else if (chainWizardStep === 6) setChainWizardStep(5);
                                     else setChainWizardStep(s => s - 1);
                                 }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "rgba(255,255,255,0.08)", border: "none", color: C.text }}>
                                     戻る
                                 </button>
-                                <button className="b" onClick={() => setChainWizardStep(s => s + 1)} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "linear-gradient(135deg, #3b82f6, #2563eb)", border: "none", color: "#fff" }}>
-                                    次へ
-                                </button>
+                                {chainWizardStep === 7 ? (
+                                    <button className="b" onClick={handleChainWizardSingleEnd} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "linear-gradient(135deg, #10b981, #059669)", border: "none", color: "#fff" }}>
+                                        記録完了
+                                    </button>
+                                ) : (
+                                    <button className="b" onClick={() => setChainWizardStep(s => s + 1)} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "linear-gradient(135deg, #3b82f6, #2563eb)", border: "none", color: "#fff" }}>
+                                        次へ
+                                    </button>
+                                )}
                             </div>
                             {/* テンキー - 大きくして精度向上 */}
                             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
                                 {[1,2,3,4,5,6,7,8,9].map(n => (
                                     <button key={n} className="b" onClick={() => {
-                                        const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : "nextTimingBalls";
+                                        const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
                                         setChainWizardData(d => ({ ...d, [field]: (d[field] || "") + n }));
                                     }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>
                                         {n}
                                     </button>
                                 ))}
                                 <button className="b" onClick={() => {
-                                    const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : "nextTimingBalls";
+                                    const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
                                     setChainWizardData(d => ({ ...d, [field]: "" }));
                                 }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 15, background: "rgba(239,68,68,0.25)", border: "none", color: C.red, minHeight: 56 }}>
                                     AC
                                 </button>
                                 <button className="b" onClick={() => {
-                                    const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : "nextTimingBalls";
+                                    const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
                                     setChainWizardData(d => ({ ...d, [field]: (d[field] || "") + "0" }));
                                 }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>
                                     0
                                 </button>
                                 <button className="b" onClick={() => {
-                                    const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : "nextTimingBalls";
+                                    const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
                                     setChainWizardData(d => ({ ...d, [field]: (d[field] || "").slice(0, -1) }));
                                 }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 20, background: "rgba(255,255,255,0.1)", border: "none", color: C.sub, minHeight: 56 }}>
                                     ←
@@ -1897,6 +2070,118 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                             </div>
                         </div>
                     )}
+                </div>,
+                document.body
+            )}
+
+            {/* 直接単発終了モーダル */}
+            {directSingleEndOpen && ReactDOM.createPortal(
+                <div style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: "#000",
+                    zIndex: 9999,
+                    display: "flex",
+                    flexDirection: "column",
+                }}>
+                    {/* ヘッダー */}
+                    <div style={{
+                        padding: "12px 16px",
+                        paddingTop: "max(12px, env(safe-area-inset-top))",
+                        borderBottom: `1px solid ${C.border}`,
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        flexShrink: 0,
+                        background: "#000"
+                    }}>
+                        <button className="b" onClick={() => setDirectSingleEndOpen(false)} style={{ background: "transparent", border: "none", color: C.red, fontSize: 14, fontWeight: 600, padding: 8 }}>キャンセル</button>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>単発終了</span>
+                        <div style={{ width: 70 }} />
+                    </div>
+
+                    {/* コンテンツエリア */}
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "16px 20px", background: "#000" }}>
+                        {/* Step 0: 時短回数 */}
+                        {directSingleEndStep === 0 && (
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 22, fontWeight: 700, color: C.purple, marginBottom: 16 }}>時短回数</div>
+                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
+                                    {directSingleEndData.jitanSpins || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>回転</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 1: 時短終了後出玉 */}
+                        {directSingleEndStep === 1 && (
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginBottom: 16 }}>時短終了後の出玉</div>
+                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
+                                    {directSingleEndData.finalBallsAfterJitan || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* テンキー */}
+                    <div style={{
+                        padding: "8px 12px",
+                        paddingBottom: "max(12px, env(safe-area-inset-bottom))",
+                        background: "rgba(20,20,25,1)",
+                        borderTop: `1px solid ${C.border}`,
+                        flexShrink: 0
+                    }}>
+                        {/* 戻る/次へボタン */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                            <button className="b" onClick={() => {
+                                if (directSingleEndStep === 0) setDirectSingleEndOpen(false);
+                                else setDirectSingleEndStep(0);
+                            }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "rgba(255,255,255,0.08)", border: "none", color: C.text }}>
+                                {directSingleEndStep === 0 ? "キャンセル" : "戻る"}
+                            </button>
+                            {directSingleEndStep === 1 ? (
+                                <button className="b" onClick={handleDirectSingleEndComplete} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "linear-gradient(135deg, #10b981, #059669)", border: "none", color: "#fff" }}>
+                                    記録完了
+                                </button>
+                            ) : (
+                                <button className="b" onClick={() => setDirectSingleEndStep(1)} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "linear-gradient(135deg, #3b82f6, #2563eb)", border: "none", color: "#fff" }}>
+                                    次へ
+                                </button>
+                            )}
+                        </div>
+                        {/* テンキー */}
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                            {[1,2,3,4,5,6,7,8,9].map(n => (
+                                <button key={n} className="b" onClick={() => {
+                                    const field = directSingleEndStep === 0 ? "jitanSpins" : "finalBallsAfterJitan";
+                                    setDirectSingleEndData(d => ({ ...d, [field]: (d[field] || "") + n }));
+                                }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>
+                                    {n}
+                                </button>
+                            ))}
+                            <button className="b" onClick={() => {
+                                const field = directSingleEndStep === 0 ? "jitanSpins" : "finalBallsAfterJitan";
+                                setDirectSingleEndData(d => ({ ...d, [field]: "" }));
+                            }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 15, background: "rgba(239,68,68,0.25)", border: "none", color: C.red, minHeight: 56 }}>
+                                AC
+                            </button>
+                            <button className="b" onClick={() => {
+                                const field = directSingleEndStep === 0 ? "jitanSpins" : "finalBallsAfterJitan";
+                                setDirectSingleEndData(d => ({ ...d, [field]: (d[field] || "") + "0" }));
+                            }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>
+                                0
+                            </button>
+                            <button className="b" onClick={() => {
+                                const field = directSingleEndStep === 0 ? "jitanSpins" : "finalBallsAfterJitan";
+                                setDirectSingleEndData(d => ({ ...d, [field]: (d[field] || "").slice(0, -1) }));
+                            }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 20, background: "rgba(255,255,255,0.1)", border: "none", color: C.sub, minHeight: 56 }}>
+                                ←
+                            </button>
+                        </div>
+                    </div>
                 </div>,
                 document.body
             )}
