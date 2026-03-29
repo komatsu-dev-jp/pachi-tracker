@@ -19,6 +19,7 @@ export const machineDB = [
     specAvgTotalRounds: 34.17,
     specSapo: 0,
     roundDist: "10R:100%（確変ループ）",
+    rushDist: "10R:100%",
     border: { "4.00": 16.7, "3.57": 17.6, "3.33": 18.4, "3.03": 19.3 },
     prize: 3,
     unitCost: 11.4,
@@ -40,6 +41,7 @@ export const machineDB = [
     specAvgTotalRounds: 28.0,
     specSapo: 0,
     roundDist: "4R:50%, 10R:50%",
+    rushDist: "4R:30%, 10R:70%",
     border: { "4.00": 22.0, "3.57": 23.2, "3.33": 24.2, "3.03": 25.4 },
   },
   {
