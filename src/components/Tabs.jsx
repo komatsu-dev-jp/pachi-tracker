@@ -1402,63 +1402,24 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                             </div>
                         )}
 
-                        {/* Input Card — 連チャン中のみ表示 */}
+                        {/* アクションボタン — 連チャン中のみ表示 */}
                         {isChainActive ? (
-                            <Card style={{ padding: 16, marginBottom: 16 }}>
-                                <SecLabel label={`${lastChain.hits.length + 1}連目 入力`} />
-                                {/* 1連目のみ: 上皿玉入力 */}
-                                {lastChain.hits.length === 0 && (
-                                    <div style={{ marginBottom: 10 }}>
-                                        <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>上皿の残り玉数</div>
-                                        <NI v={iTrayBalls} set={setITrayBalls} w="100%" center ph="0〜125" />
-                                    </div>
-                                )}
-                                {/* 大当たり情報 */}
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-                                    <div>
-                                        <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>ラウンド数(R)</div>
-                                        <NI v={iRounds} set={setIRounds} w="100%" center ph="10" />
-                                    </div>
-                                    <div>
-                                        <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>出玉(液晶)</div>
-                                        <NI v={iDisplayBalls} set={setIDisplayBalls} w="100%" center ph="1500" />
-                                    </div>
-                                </div>
-                                {/* サポ増減入力 */}
-                                <div style={{ background: "rgba(0,0,0,0.2)", border: `1px solid ${C.teal}30`, borderRadius: 10, padding: "10px 10px 12px", marginBottom: 12 }}>
-                                    <div style={{ fontSize: 10, color: C.teal, fontWeight: 700, marginBottom: 8 }}>サポ増減</div>
-                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
-                                        <div>
-                                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>電サポ回転数</div>
-                                            <NI v={iElecSapoRot} set={setIElecSapoRot} w="100%" center ph="100" />
-                                        </div>
-                                        <div>
-                                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>大当たり直後の上皿+持ち玉</div>
-                                            <NI v={iLastOutBalls} set={setILastOutBalls} w="100%" center ph="1400" />
-                                        </div>
-                                        <div>
-                                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>大当たり後の上皿+持ち玉</div>
-                                            <NI v={iNextTimingBalls} set={setINextTimingBalls} w="100%" center ph="1350" />
-                                        </div>
-                                    </div>
-                                    {/* Auto-calculated display */}
-                                    {(Number(iLastOutBalls) > 0 || Number(iNextTimingBalls) > 0) && (() => {
-                                        const change = (Number(iNextTimingBalls) || 0) - (Number(iLastOutBalls) || 0);
-                                        const rot = Number(iElecSapoRot) || 0;
-                                        const perRot = rot > 0 ? change / rot : 0;
-                                        return (
-                                            <div style={{ display: "flex", gap: 16, justifyContent: "center" }}>
-                                                <span style={{ fontSize: 11, color: C.sub }}>総増減: <span style={{ fontWeight: 700, color: sc(change), fontFamily: mono }}>{change >= 0 ? "+" : ""}{change}</span></span>
-                                                {rot > 0 && <span style={{ fontSize: 11, color: C.sub }}>1回転: <span style={{ fontWeight: 700, color: sc(perRot), fontFamily: mono }}>{perRot >= 0 ? "+" : ""}{perRot.toFixed(2)}</span></span>}
-                                            </div>
-                                        );
-                                    })()}
-                                </div>
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                                    <Btn label={lastChain.hits.length === 0 ? "連チャン継続" : "連チャン追加"} onClick={openChainWizard} bg={C.green} fg="#fff" bd="none" />
-                                    <Btn label={lastChain.hits.length === 0 ? "単発終了" : "最終大当たり終了"} onClick={handleChainEnd} bg={C.orange} fg="#fff" bd="none" />
-                                </div>
-                            </Card>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+                                <button className="b" onClick={openChainWizard} style={{
+                                    padding: "20px 0", borderRadius: 16, fontWeight: 800, fontSize: 18,
+                                    background: "linear-gradient(135deg, #10b981, #059669)", border: "none", color: "#fff",
+                                    boxShadow: "0 4px 16px rgba(16,185,129,0.4)"
+                                }}>
+                                    連チャン追加
+                                </button>
+                                <button className="b" onClick={handleChainEnd} style={{
+                                    padding: "20px 0", borderRadius: 16, fontWeight: 800, fontSize: 18,
+                                    background: "linear-gradient(135deg, #f97316, #ea580c)", border: "none", color: "#fff",
+                                    boxShadow: "0 4px 16px rgba(249,115,22,0.4)"
+                                }}>
+                                    大当り終了
+                                </button>
+                            </div>
                         ) : (
                             <Card style={{ padding: 20, marginBottom: 16, textAlign: "center" }}>
                                 <div style={{ fontSize: 12, color: C.sub, lineHeight: 1.6 }}>
