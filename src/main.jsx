@@ -2,6 +2,21 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import './index.css'
+import { registerSW } from 'virtual:pwa-register'
+
+// Service Workerを登録し、新しいバージョンがあれば自動更新
+registerSW({
+  onNeedRefresh() {
+    // 新しいバージョンがある場合、自動的に更新
+    if (confirm('新しいバージョンが利用可能です。更新しますか？')) {
+      window.location.reload()
+    }
+  },
+  onOfflineReady() {
+    console.log('オフラインで使用できます')
+  },
+  immediate: true
+})
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
