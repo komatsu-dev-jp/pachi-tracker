@@ -1425,16 +1425,16 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                     <div style={{ fontSize: 10, color: C.teal, fontWeight: 700, marginBottom: 8 }}>サポ増減</div>
                                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
                                         <div>
-                                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>直前の実出玉</div>
+                                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>電サポ回転数</div>
+                                            <NI v={iElecSapoRot} set={setIElecSapoRot} w="100%" center ph="100" />
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>大当たり直後の上皿+持ち玉</div>
                                             <NI v={iLastOutBalls} set={setILastOutBalls} w="100%" center ph="1400" />
                                         </div>
                                         <div>
-                                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>次タイミング出玉</div>
+                                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>大当たり後の上皿+持ち玉</div>
                                             <NI v={iNextTimingBalls} set={setINextTimingBalls} w="100%" center ph="1350" />
-                                        </div>
-                                        <div>
-                                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>電サポ回転数</div>
-                                            <NI v={iElecSapoRot} set={setIElecSapoRot} w="100%" center ph="100" />
                                         </div>
                                     </div>
                                     {/* Auto-calculated display */}
@@ -1696,36 +1696,38 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                             </div>
                         )}
 
-                        {/* Step 2: サポ増減 - 直前実出玉 */}
+                        {/* Step 2: サポ増減 - 電サポ回転数 */}
                         {chainWizardStep === 2 && (
                             <div style={{ textAlign: "center" }}>
                                 <div style={{ fontSize: 18, fontWeight: 700, color: C.teal, marginBottom: 8 }}>サポ増減 ①</div>
-                                <div style={{ fontSize: 14, color: C.sub, marginBottom: 16 }}>直前の実出玉</div>
-                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                    {chainWizardData.lastOutBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Step 3: サポ増減 - 次タイミング出玉 */}
-                        {chainWizardStep === 3 && (
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 18, fontWeight: 700, color: C.teal, marginBottom: 8 }}>サポ増減 ②</div>
-                                <div style={{ fontSize: 14, color: C.sub, marginBottom: 16 }}>次タイミングの出玉</div>
-                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                    {chainWizardData.nextTimingBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Step 4: サポ増減 - 電サポ回転数 */}
-                        {chainWizardStep === 4 && (
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 18, fontWeight: 700, color: C.teal, marginBottom: 8 }}>サポ増減 ③</div>
                                 <div style={{ fontSize: 14, color: C.sub, marginBottom: 16 }}>電サポ回転数</div>
                                 <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
                                     {chainWizardData.elecSapoRot || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>回転</span>
                                 </div>
+                            </div>
+                        )}
+
+                        {/* Step 3: サポ増減 - 大当たり直後の上皿+持ち玉 */}
+                        {chainWizardStep === 3 && (
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 18, fontWeight: 700, color: C.teal, marginBottom: 8 }}>サポ増減 ②</div>
+                                <div style={{ fontSize: 14, color: C.sub, marginBottom: 16 }}>大当たり直後の上皿+持ち玉</div>
+                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
+                                    {chainWizardData.lastOutBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
+                                </div>
+                                <div style={{ fontSize: 11, color: C.sub, marginTop: 12 }}>計算式: (大当たり後の上皿+持ち玉) - (大当たり直後の上皿+持ち玉) / 電サポ回転数</div>
+                            </div>
+                        )}
+
+                        {/* Step 4: サポ増減 - 大当たり後の上皿+持ち玉 */}
+                        {chainWizardStep === 4 && (
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 18, fontWeight: 700, color: C.teal, marginBottom: 8 }}>サポ増減 ③</div>
+                                <div style={{ fontSize: 14, color: C.sub, marginBottom: 16 }}>大当たり後の上皿+持ち玉</div>
+                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
+                                    {chainWizardData.nextTimingBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
+                                </div>
+                                <div style={{ fontSize: 11, color: C.sub, marginTop: 12 }}>計算式: ({chainWizardData.nextTimingBalls || 0} - {chainWizardData.lastOutBalls || 0}) / {chainWizardData.elecSapoRot || 0}</div>
                                 {/* サポ増減計算表示 */}
                                 {(Number(chainWizardData.lastOutBalls) > 0 || Number(chainWizardData.nextTimingBalls) > 0) && (() => {
                                     const change = (Number(chainWizardData.nextTimingBalls) || 0) - (Number(chainWizardData.lastOutBalls) || 0);
@@ -1785,26 +1787,26 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
                                 {[1,2,3,4,5,6,7,8,9].map(n => (
                                     <button key={n} className="b" onClick={() => {
-                                        const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "lastOutBalls" : chainWizardStep === 3 ? "nextTimingBalls" : "elecSapoRot";
+                                        const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : "nextTimingBalls";
                                         setChainWizardData(d => ({ ...d, [field]: (d[field] || "") + n }));
                                     }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>
                                         {n}
                                     </button>
                                 ))}
                                 <button className="b" onClick={() => {
-                                    const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "lastOutBalls" : chainWizardStep === 3 ? "nextTimingBalls" : "elecSapoRot";
+                                    const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : "nextTimingBalls";
                                     setChainWizardData(d => ({ ...d, [field]: "" }));
                                 }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 15, background: "rgba(239,68,68,0.25)", border: "none", color: C.red, minHeight: 56 }}>
                                     AC
                                 </button>
                                 <button className="b" onClick={() => {
-                                    const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "lastOutBalls" : chainWizardStep === 3 ? "nextTimingBalls" : "elecSapoRot";
+                                    const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : "nextTimingBalls";
                                     setChainWizardData(d => ({ ...d, [field]: (d[field] || "") + "0" }));
                                 }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>
                                     0
                                 </button>
                                 <button className="b" onClick={() => {
-                                    const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "lastOutBalls" : chainWizardStep === 3 ? "nextTimingBalls" : "elecSapoRot";
+                                    const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : "nextTimingBalls";
                                     setChainWizardData(d => ({ ...d, [field]: (d[field] || "").slice(0, -1) }));
                                 }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 20, background: "rgba(255,255,255,0.1)", border: "none", color: C.sub, minHeight: 56 }}>
                                     ←
