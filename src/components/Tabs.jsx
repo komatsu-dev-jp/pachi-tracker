@@ -4170,10 +4170,10 @@ export function SettingsTab({ s, onReset }) {
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px", borderBottom: `1px solid ${C.border}` }}>
                     <div>
                         <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>貸玉100円</div>
-                        <div style={{ fontSize: 10, color: C.sub }}>{(100 / (s.rentBalls / 10)).toFixed(2)}円/玉</div>
+                        <div style={{ fontSize: 10, color: C.sub }}>{(100 / ((s.rentBalls || 250) / 10)).toFixed(2)}円/玉</div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <NI v={Math.round(s.rentBalls / 10)} set={(v) => s.setRentBalls(v * 10)} w={80} center />
+                        <NI v={Math.round((s.rentBalls || 250) / 10)} set={(v) => s.setRentBalls(v * 10)} w={80} center />
                         <span style={{ fontSize: 10, color: C.sub, minWidth: 40 }}>玉/100円</span>
                     </div>
                 </div>
@@ -4181,10 +4181,10 @@ export function SettingsTab({ s, onReset }) {
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px", borderBottom: `1px solid ${C.border}` }}>
                     <div>
                         <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>交換100円</div>
-                        <div style={{ fontSize: 10, color: C.sub }}>{(100 / (s.exRate / 10)).toFixed(2)}円/玉</div>
+                        <div style={{ fontSize: 10, color: C.sub }}>{(100 / ((s.exRate || 250) / 10)).toFixed(2)}円/玉</div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <NI v={Math.round(s.exRate / 10)} set={(v) => s.setExRate(v * 10)} w={80} center />
+                        <NI v={Math.round((s.exRate || 250) / 10)} set={(v) => s.setExRate(v * 10)} w={80} center />
                         <span style={{ fontSize: 10, color: C.sub, minWidth: 40 }}>玉/100円</span>
                     </div>
                 </div>
@@ -4196,7 +4196,7 @@ export function SettingsTab({ s, onReset }) {
                         { label: "3.33円", balls: 30, yen: "3.33" },
                         { label: "3.03円", balls: 33, yen: "3.03" },
                     ].map(({ label, balls, yen }) => {
-                        const isActive = Math.round(s.exRate / 10) === balls;
+                        const isActive = Math.round((s.exRate || 250) / 10) === balls;
                         return (
                             <button
                                 key={yen}
