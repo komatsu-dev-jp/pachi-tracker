@@ -1061,7 +1061,12 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 {[1,2,3,4,5,6,7,8,9].map(n => (
                                     <button key={n} className="b" onClick={() => {
                                         const field = hitWizardStep === 0 ? "trayBalls" : hitWizardStep === 2 ? "displayBalls" : hitWizardStep === 3 ? "actualBalls" : hitWizardStep === 5 ? "jitanSpins" : "finalBallsAfterJitan";
-                                        setHitWizardData(d => ({ ...d, [field]: (d[field] || "") + n }));
+                                        setHitWizardData(d => {
+                                            const current = d[field] || "";
+                                            // 先頭が0のみの場合は置き換え
+                                            const newVal = current === "0" ? String(n) : current + n;
+                                            return { ...d, [field]: newVal };
+                                        });
                                     }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>
                                         {n}
                                     </button>
@@ -1074,7 +1079,12 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 </button>
                                 <button className="b" onClick={() => {
                                     const field = hitWizardStep === 0 ? "trayBalls" : hitWizardStep === 2 ? "displayBalls" : hitWizardStep === 3 ? "actualBalls" : hitWizardStep === 5 ? "jitanSpins" : "finalBallsAfterJitan";
-                                    setHitWizardData(d => ({ ...d, [field]: (d[field] || "") + "0" }));
+                                    setHitWizardData(d => {
+                                        const current = d[field] || "";
+                                        // 空の場合は0を入れない（表示上は0が見えている）
+                                        if (current === "") return d;
+                                        return { ...d, [field]: current + "0" };
+                                    });
                                 }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>
                                     0
                                 </button>
@@ -1236,7 +1246,17 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     const handleSwipeEnd = (chainId) => {
         if (swipeDirection === "horizontal" && swipeX > 50) {
             if (confirm("このデータを削除しますか？")) {
-                S.setJpLog((prev) => prev.filter(c => c.chainId !== chainId));
+                S.setJpLog((prev) => {
+                    const chainToDelete = prev.find(c => c.chainId === chainId);
+                    // 削除するチェーンが完了している場合、持ち玉と上皿玉を減算
+                    if (chainToDelete && chainToDelete.completed) {
+                        const ballsToRemove = chainToDelete.finalBalls || 0;
+                        const trayToRemove = chainToDelete.trayBalls || 0;
+                        S.setCurrentMochiBalls((p) => Math.max(0, p - ballsToRemove));
+                        S.setTotalTrayBalls((p) => Math.max(0, p - trayToRemove));
+                    }
+                    return prev.filter(c => c.chainId !== chainId);
+                });
             }
         }
         setSwipeX(0);
@@ -2169,7 +2189,19 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                         記録完了
                                     </button>
                                 ) : (
-                                    <button className="b" onClick={() => setChainWizardStep(s => s + 1)} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "linear-gradient(135deg, #3b82f6, #2563eb)", border: "none", color: "#fff" }}>
+                                    <button className="b" onClick={() => {
+                                        // Step 3→4の遷移時、nextTimingBallsを自動計算（直前出玉+液晶表示玉数）
+                                        if (chainWizardStep === 3) {
+                                            const lastOut = Number(chainWizardData.lastOutBalls) || 0;
+                                            const disp = Number(chainWizardData.displayBalls) || 0;
+                                            const suggested = lastOut + disp;
+                                            // nextTimingBallsが未入力の場合のみ自動設定
+                                            if (!chainWizardData.nextTimingBalls) {
+                                                setChainWizardData(d => ({ ...d, nextTimingBalls: String(suggested) }));
+                                            }
+                                        }
+                                        setChainWizardStep(s => s + 1);
+                                    }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "linear-gradient(135deg, #3b82f6, #2563eb)", border: "none", color: "#fff" }}>
                                         次へ
                                     </button>
                                 )}
@@ -2179,7 +2211,12 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                 {[1,2,3,4,5,6,7,8,9].map(n => (
                                     <button key={n} className="b" onClick={() => {
                                         const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
-                                        setChainWizardData(d => ({ ...d, [field]: (d[field] || "") + n }));
+                                        setChainWizardData(d => {
+                                            const current = d[field] || "";
+                                            // 先頭が0のみの場合は置き換え
+                                            const newVal = current === "0" ? String(n) : current + n;
+                                            return { ...d, [field]: newVal };
+                                        });
                                     }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>
                                         {n}
                                     </button>
@@ -2192,7 +2229,12 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                 </button>
                                 <button className="b" onClick={() => {
                                     const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
-                                    setChainWizardData(d => ({ ...d, [field]: (d[field] || "") + "0" }));
+                                    setChainWizardData(d => {
+                                        const current = d[field] || "";
+                                        // 空の場合は0を入れない（表示上は0が見えている）
+                                        if (current === "") return d;
+                                        return { ...d, [field]: current + "0" };
+                                    });
                                 }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>
                                     0
                                 </button>
@@ -2292,7 +2334,12 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                             {[1,2,3,4,5,6,7,8,9].map(n => (
                                 <button key={n} className="b" onClick={() => {
                                     const field = directSingleEndStep === 0 ? "jitanSpins" : "finalBallsAfterJitan";
-                                    setDirectSingleEndData(d => ({ ...d, [field]: (d[field] || "") + n }));
+                                    setDirectSingleEndData(d => {
+                                        const current = d[field] || "";
+                                        // 先頭が0のみの場合は置き換え
+                                        const newVal = current === "0" ? String(n) : current + n;
+                                        return { ...d, [field]: newVal };
+                                    });
                                 }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>
                                     {n}
                                 </button>
@@ -2305,7 +2352,12 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                             </button>
                             <button className="b" onClick={() => {
                                 const field = directSingleEndStep === 0 ? "jitanSpins" : "finalBallsAfterJitan";
-                                setDirectSingleEndData(d => ({ ...d, [field]: (d[field] || "") + "0" }));
+                                setDirectSingleEndData(d => {
+                                    const current = d[field] || "";
+                                    // 空の場合は0を入れない（表示上は0が見えている）
+                                    if (current === "") return d;
+                                    return { ...d, [field]: current + "0" };
+                                });
                             }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>
                                 0
                             </button>

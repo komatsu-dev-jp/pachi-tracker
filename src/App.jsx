@@ -190,7 +190,20 @@ export default function App() {
   }, [chodamaLastDate]);
 
   const pushJP = (j) => setJpLog((p) => [...p, j]);
-  const delJPLast = () => setJpLog((p) => p.slice(0, -1));
+  const delJPLast = () => {
+    setJpLog((p) => {
+      if (p.length === 0) return p;
+      const lastChain = p[p.length - 1];
+      // 削除するチェーンが完了している場合、持ち玉と上皿玉を減算
+      if (lastChain.completed) {
+        const ballsToRemove = lastChain.finalBalls || 0;
+        const trayToRemove = lastChain.trayBalls || 0;
+        setCurrentMochiBalls((prev) => Math.max(0, prev - ballsToRemove));
+        setTotalTrayBalls((prev) => Math.max(0, prev - trayToRemove));
+      }
+      return p.slice(0, -1);
+    });
+  };
   const pushLog = (e) => setSesLog((p) => [...p, e]);
   const delSesLast = () => setSesLog((p) => p.slice(0, -1));
 
