@@ -20,6 +20,7 @@
   --sub-hi: #94a3b8;
   --font-main: 'Inter', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
+  --font-feature-zero: "zero" 0;
   --header-bg: rgba(17, 17, 22, 0.8);
   --nav-bg: rgba(17, 17, 22, 0.95);
   --card-shadow: 0 2px 8px rgba(0,0,0,0.3);
@@ -44,6 +45,7 @@
   --sub-hi: #475569;
   --font-main: 'Inter', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
+  --font-feature-zero: "zero" 0;
   --header-bg: rgba(255, 255, 255, 0.85);
   --nav-bg: rgba(255, 255, 255, 0.95);
   --card-shadow: 0 2px 12px rgba(0,0,0,0.08);
@@ -84,6 +86,11 @@ input[type=number] {
 input, select, textarea {
   font-size: 16px !important;
   -webkit-text-size-adjust: 100%;
+}
+
+/* Remove slashed zero from JetBrains Mono (use normal 0 without dot) */
+* {
+  font-feature-settings: "zero" 0;
 }
 
 ::-webkit-scrollbar {
