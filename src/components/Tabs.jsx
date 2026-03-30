@@ -1309,9 +1309,27 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         setChainWizardStep(0);
     };
 
+    // 前回のラウンド終了時の総持ち玉を取得
+    const getPrevEndBalls = () => {
+        if (!lastChain || lastChain.hits.length === 0) return 0;
+        const lastHit = lastChain.hits[lastChain.hits.length - 1];
+        return lastHit.nextTimingBalls || 0;
+    };
+
     // 連チャン追加ウィザードを開始
     const openChainWizard = () => {
-        clearChainWizard();
+        const prevEndBalls = getPrevEndBalls();
+        setChainWizardData({
+            rounds: 0,
+            displayBalls: "",
+            lastOutBalls: String(prevEndBalls), // 前回の値を初期値として設定
+            nextTimingBalls: "",
+            elecSapoRot: "",
+            hitType: "",
+            jitanSpins: "",
+            finalBallsAfterJitan: ""
+        });
+        setChainWizardStep(0);
         setChainWizardOpen(true);
     };
 
@@ -1957,41 +1975,125 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                             </div>
                         )}
 
-                        {/* Step 3: サポ増減 - 大当たり直後の上皿+持ち玉 */}
-                        {chainWizardStep === 3 && (
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 18, fontWeight: 700, color: C.teal, marginBottom: 8 }}>サポ増減 ②</div>
-                                <div style={{ fontSize: 14, color: C.sub, marginBottom: 16 }}>大当たり直後の上皿+持ち玉</div>
-                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                    {chainWizardData.lastOutBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
-                                </div>
-                                <div style={{ fontSize: 11, color: C.sub, marginTop: 12 }}>計算式: (大当たり後の上皿+持ち玉) - (大当たり直後の上皿+持ち玉) / 電サポ回転数</div>
-                            </div>
-                        )}
-
-                        {/* Step 4: サポ増減 - 大当たり後の上皿+持ち玉 */}
-                        {chainWizardStep === 4 && (
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 18, fontWeight: 700, color: C.teal, marginBottom: 8 }}>サポ増減 ③</div>
-                                <div style={{ fontSize: 14, color: C.sub, marginBottom: 16 }}>大当たり後の上皿+持ち玉</div>
-                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                    {chainWizardData.nextTimingBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
-                                </div>
-                                <div style={{ fontSize: 11, color: C.sub, marginTop: 12 }}>計算式: ({chainWizardData.nextTimingBalls || 0} - {chainWizardData.lastOutBalls || 0}) / {chainWizardData.elecSapoRot || 0}</div>
-                                {/* サポ増減計算表示 */}
-                                {(Number(chainWizardData.lastOutBalls) > 0 || Number(chainWizardData.nextTimingBalls) > 0) && (() => {
-                                    const change = (Number(chainWizardData.nextTimingBalls) || 0) - (Number(chainWizardData.lastOutBalls) || 0);
-                                    const rot = Number(chainWizardData.elecSapoRot) || 0;
-                                    const perRot = rot > 0 ? change / rot : 0;
-                                    return (
-                                        <div style={{ marginTop: 16, display: "flex", gap: 16, justifyContent: "center" }}>
-                                            <span style={{ fontSize: 13, color: C.sub }}>総増減: <span style={{ fontWeight: 700, color: sc(change), fontFamily: mono }}>{change >= 0 ? "+" : ""}{change}</span></span>
-                                            {rot > 0 && <span style={{ fontSize: 13, color: C.sub }}>1回転: <span style={{ fontWeight: 700, color: sc(perRot), fontFamily: mono }}>{perRot >= 0 ? "+" : ""}{perRot.toFixed(2)}</span></span>}
+                        {/* Step 3: 大当たり直前の総持ち玉 */}
+                        {chainWizardStep === 3 && (() => {
+                            const prevEndBalls = getPrevEndBalls();
+                            const current = Number(chainWizardData.lastOutBalls) || 0;
+                            const diff = current - prevEndBalls;
+                            const isWarning = prevEndBalls > 0 && Math.abs(diff) > 500;
+                            return (
+                                <div style={{ textAlign: "center" }}>
+                                    <div style={{ fontSize: 18, fontWeight: 700, color: C.teal, marginBottom: 8 }}>大当たり直前</div>
+                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>現在の総持ち玉（上皿＋カード内）</div>
+                                    {prevEndBalls > 0 && (
+                                        <div style={{ fontSize: 11, color: C.yellow, marginBottom: 12 }}>前回終了時: {f(prevEndBalls)}玉</div>
+                                    )}
+                                    <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
+                                        {chainWizardData.lastOutBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
+                                    </div>
+                                    {/* 微調整ボタン */}
+                                    <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
+                                        {[-50, -10, +10, +50].map(delta => (
+                                            <button key={delta} className="b" onClick={() => {
+                                                const cur = Number(chainWizardData.lastOutBalls) || 0;
+                                                setChainWizardData(d => ({ ...d, lastOutBalls: String(Math.max(0, cur + delta)) }));
+                                            }} style={{
+                                                padding: "8px 14px", borderRadius: 8, fontWeight: 600, fontSize: 13,
+                                                background: delta > 0 ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)",
+                                                border: `1px solid ${delta > 0 ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.4)"}`,
+                                                color: delta > 0 ? C.green : C.red, fontFamily: mono
+                                            }}>
+                                                {delta > 0 ? "+" : ""}{delta}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {/* 変更なしボタン */}
+                                    {prevEndBalls > 0 && (
+                                        <button className="b" onClick={() => {
+                                            setChainWizardData(d => ({ ...d, lastOutBalls: String(prevEndBalls) }));
+                                        }} style={{
+                                            marginTop: 12, padding: "10px 24px", borderRadius: 10, fontWeight: 700, fontSize: 14,
+                                            background: "rgba(59,130,246,0.2)", border: `1px solid ${C.blue}`, color: C.blue
+                                        }}>
+                                            変更なし（前回値を採用）
+                                        </button>
+                                    )}
+                                    {/* 差分表示・警告 */}
+                                    {prevEndBalls > 0 && current > 0 && (
+                                        <div style={{ marginTop: 12 }}>
+                                            <span style={{ fontSize: 12, color: isWarning ? C.orange : C.sub }}>
+                                                電サポ中の増減: <span style={{ fontWeight: 700, color: sc(diff), fontFamily: mono }}>{diff >= 0 ? "+" : ""}{diff}</span>
+                                            </span>
+                                            {isWarning && (
+                                                <div style={{ fontSize: 11, color: C.orange, marginTop: 4 }}>極端な変動です。入力値をご確認ください</div>
+                                            )}
                                         </div>
-                                    );
-                                })()}
-                            </div>
-                        )}
+                                    )}
+                                </div>
+                            );
+                        })()}
+
+                        {/* Step 4: ラウンド終了時の総持ち玉 */}
+                        {chainWizardStep === 4 && (() => {
+                            const prevBalls = Number(chainWizardData.lastOutBalls) || 0;
+                            const currentBalls = Number(chainWizardData.nextTimingBalls) || 0;
+                            const sapoChange = currentBalls - prevBalls;
+                            const rot = Number(chainWizardData.elecSapoRot) || 0;
+                            const perRot = rot > 0 ? sapoChange / rot : 0;
+                            const isWarning = Math.abs(sapoChange) > 2000;
+                            return (
+                                <div style={{ textAlign: "center" }}>
+                                    <div style={{ fontSize: 18, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>ラウンド終了</div>
+                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>現在の総持ち玉（上皿＋カード内）</div>
+                                    {prevBalls > 0 && (
+                                        <div style={{ fontSize: 11, color: C.teal, marginBottom: 12 }}>大当たり直前: {f(prevBalls)}玉</div>
+                                    )}
+                                    <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
+                                        {chainWizardData.nextTimingBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
+                                    </div>
+                                    {/* 微調整ボタン */}
+                                    <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
+                                        {[-50, -10, +10, +50].map(delta => (
+                                            <button key={delta} className="b" onClick={() => {
+                                                const cur = Number(chainWizardData.nextTimingBalls) || 0;
+                                                setChainWizardData(d => ({ ...d, nextTimingBalls: String(Math.max(0, cur + delta)) }));
+                                            }} style={{
+                                                padding: "8px 14px", borderRadius: 8, fontWeight: 600, fontSize: 13,
+                                                background: delta > 0 ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)",
+                                                border: `1px solid ${delta > 0 ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.4)"}`,
+                                                color: delta > 0 ? C.green : C.red, fontFamily: mono
+                                            }}>
+                                                {delta > 0 ? "+" : ""}{delta}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {/* 計算結果表示 */}
+                                    {(prevBalls > 0 || currentBalls > 0) && (
+                                        <div style={{ marginTop: 16, padding: "12px 16px", background: "rgba(0,0,0,0.3)", borderRadius: 12 }}>
+                                            <div style={{ display: "flex", gap: 24, justifyContent: "center", alignItems: "center" }}>
+                                                <div>
+                                                    <div style={{ fontSize: 10, color: C.sub }}>電サポ増減</div>
+                                                    <div style={{ fontSize: 18, fontWeight: 700, color: sc(sapoChange), fontFamily: mono }}>
+                                                        {sapoChange >= 0 ? "+" : ""}{sapoChange}
+                                                    </div>
+                                                </div>
+                                                {rot > 0 && (
+                                                    <div>
+                                                        <div style={{ fontSize: 10, color: C.sub }}>1回転あたり</div>
+                                                        <div style={{ fontSize: 18, fontWeight: 700, color: sc(perRot), fontFamily: mono }}>
+                                                            {perRot >= 0 ? "+" : ""}{perRot.toFixed(2)}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {isWarning && (
+                                                <div style={{ fontSize: 11, color: C.orange, marginTop: 8 }}>極端な増減です。入力値をご確認ください</div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
 
                         {/* Step 5: 継続/最終/単発選択 */}
                         {chainWizardStep === 5 && (
