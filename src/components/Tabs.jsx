@@ -1341,7 +1341,9 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         const lastOut = Number(iLastOutBalls) || 0;
         const nextTiming = Number(iNextTimingBalls) || 0;
         const elecRot = Number(iElecSapoRot) || 0;
-        const sapoChange = nextTiming - lastOut;
+        const disp = Number(iDisplayBalls) || 0;
+        // サポ増減 = ラウンド終了時の玉 - 大当り直前の玉 - 出玉（出玉を除いた純粋な電サポ中の増減）
+        const sapoChange = nextTiming - lastOut - disp;
         const sapoPerRot = elecRot > 0 ? sapoChange / elecRot : 0;
         const isFirstHit = lastChain && lastChain.hits.length === 0;
 
@@ -1385,9 +1387,10 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         const lastOut = Number(lastOutBalls) || 0;
         const nextTiming = Number(nextTimingBalls) || 0;
         const elecRot = Number(elecSapoRot) || 0;
-        const sapoChange = nextTiming - lastOut;
-        const sapoPerRot = elecRot > 0 ? sapoChange / elecRot : 0;
         const disp = Number(displayBalls) || 0;
+        // サポ増減 = ラウンド終了時の玉 - 大当り直前の玉 - 出玉（出玉を除いた純粋な電サポ中の増減）
+        const sapoChange = nextTiming - lastOut - disp;
+        const sapoPerRot = elecRot > 0 ? sapoChange / elecRot : 0;
 
         if (isFinal) {
             // 最終大当たり - チェーンを完了させる
@@ -1474,9 +1477,10 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         const lastOut = Number(lastOutBalls) || 0;
         const nextTiming = Number(nextTimingBalls) || 0;
         const elecRot = Number(elecSapoRot) || 0;
-        const sapoChange = nextTiming - lastOut;
-        const sapoPerRot = elecRot > 0 ? sapoChange / elecRot : 0;
         const disp = Number(displayBalls) || 0;
+        // サポ増減 = ラウンド終了時の玉 - 大当り直前の玉 - 出玉（出玉を除いた純粋な電サポ中の増減）
+        const sapoChange = nextTiming - lastOut - disp;
+        const sapoPerRot = elecRot > 0 ? sapoChange / elecRot : 0;
         const jitan = Number(jitanSpins) || 0;
         const finalBalls = Number(finalBallsAfterJitan) || 0;
 
@@ -1601,7 +1605,9 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         const lastOut = Number(iLastOutBalls) || 0;
         const nextTiming = Number(iNextTimingBalls) || 0;
         const elecRot = Number(iElecSapoRot) || 0;
-        const sapoChange = nextTiming - lastOut;
+        const disp = Number(iDisplayBalls) || 0;
+        // サポ増減 = ラウンド終了時の玉 - 大当り直前の玉 - 出玉（出玉を除いた純粋な電サポ中の増減）
+        const sapoChange = nextTiming - lastOut - disp;
         const hitSapoPerRot = elecRot > 0 ? sapoChange / elecRot : 0;
 
         const isFirstHit = lastChain.hits.length === 0;
@@ -2037,10 +2043,12 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                         {chainWizardStep === 4 && (() => {
                             const prevBalls = Number(chainWizardData.lastOutBalls) || 0;
                             const currentBalls = Number(chainWizardData.nextTimingBalls) || 0;
-                            const sapoChange = currentBalls - prevBalls;
+                            const dispBalls = Number(chainWizardData.displayBalls) || 0;
+                            // サポ増減 = ラウンド終了時の玉 - 大当り直前の玉 - 出玉（出玉を除いた純粋な電サポ中の増減）
+                            const sapoChange = currentBalls - prevBalls - dispBalls;
                             const rot = Number(chainWizardData.elecSapoRot) || 0;
                             const perRot = rot > 0 ? sapoChange / rot : 0;
-                            const isWarning = Math.abs(sapoChange) > 2000;
+                            const isWarning = Math.abs(perRot) > 3; // 1回転あたり±3を超えたら警告
                             return (
                                 <div style={{ textAlign: "center" }}>
                                     <div style={{ fontSize: 18, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>ラウンド終了</div>
