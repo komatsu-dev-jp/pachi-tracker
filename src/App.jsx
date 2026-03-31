@@ -201,7 +201,7 @@ export default function App() {
         setCurrentMochiBalls((prev) => Math.max(0, prev - ballsToRemove));
         setTotalTrayBalls((prev) => Math.max(0, prev - trayToRemove));
 
-        // rotRowsから対応するhit行を削除し、後続行のmochiBallsを調整
+        // rotRowsから対応するhit行と後続のすべての行を削除
         setRotRows((rows) => {
           // 最後のhit行のインデックスを探す
           let lastHitIndex = -1;
@@ -213,17 +213,12 @@ export default function App() {
           }
           if (lastHitIndex === -1) return rows;
 
-          // hit行を削除し、後続のmochiBallsを調整
-          const filtered = rows.filter((_, idx) => idx !== lastHitIndex);
-          return filtered.map((row, idx) => {
-            // 元のインデックスがhit行以降の場合、mochiBallsを減算
-            const originalIdx = idx >= lastHitIndex ? idx + 1 : idx;
-            if (originalIdx > lastHitIndex && row.mochiBalls !== undefined) {
-              return { ...row, mochiBalls: Math.max(0, row.mochiBalls - ballsToRemove) };
-            }
-            return row;
-          });
+          // hit行とそれ以降のすべての行を削除
+          return rows.slice(0, lastHitIndex);
         });
+
+        // プレイモードを現金に戻す
+        setPlayMode("cash");
       }
       return p.slice(0, -1);
     });
