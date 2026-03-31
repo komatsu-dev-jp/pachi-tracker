@@ -200,6 +200,30 @@ export default function App() {
         const trayToRemove = lastChain.trayBalls || 0;
         setCurrentMochiBalls((prev) => Math.max(0, prev - ballsToRemove));
         setTotalTrayBalls((prev) => Math.max(0, prev - trayToRemove));
+
+        // rotRowsから対応するhit行を削除し、後続行のmochiBallsを調整
+        setRotRows((rows) => {
+          // 最後のhit行のインデックスを探す
+          let lastHitIndex = -1;
+          for (let i = rows.length - 1; i >= 0; i--) {
+            if (rows[i].type === "hit") {
+              lastHitIndex = i;
+              break;
+            }
+          }
+          if (lastHitIndex === -1) return rows;
+
+          // hit行を削除し、後続のmochiBallsを調整
+          const filtered = rows.filter((_, idx) => idx !== lastHitIndex);
+          return filtered.map((row, idx) => {
+            // 元のインデックスがhit行以降の場合、mochiBallsを減算
+            const originalIdx = idx >= lastHitIndex ? idx + 1 : idx;
+            if (originalIdx > lastHitIndex && row.mochiBalls !== undefined) {
+              return { ...row, mochiBalls: Math.max(0, row.mochiBalls - ballsToRemove) };
+            }
+            return row;
+          });
+        });
       }
       return p.slice(0, -1);
     });
