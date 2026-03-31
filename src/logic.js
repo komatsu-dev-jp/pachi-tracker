@@ -116,7 +116,7 @@ export function calcPreciseEV({
     const start1K = totalKCount > 0 ? netRot / totalKCount : 0;
 
     // ── 実測ボーダー（JP実績がある場合） ──
-    const exchP = 1000 / (exRate || 1);  // 1玉あたりの円
+    const exchP = 1000 / (exRate || 250);  // 1玉あたりの円（デフォルト4円）
     const netGainYenPerJP = avgNetGainPerJP * exchP;
     const measuredBorder = netGainYenPerJP > 0
         ? (synthDenom * 1000) / netGainYenPerJP
@@ -124,7 +124,9 @@ export function calcPreciseEV({
 
     // ── 理論ボーダー（機種スペックから算出 — P tools互換） ──
     // avgNetGainSpec = 1R出玉 × 平均総R/初当たり + サポ増減/初当たり
-    const avgNetGainSpec = (spec1R || 0) * (specAvgRounds || 0) + (specSapo || 0);
+    // specAvgRoundsが0の場合はデフォルト30Rを使用
+    const effectiveSpecAvgRounds = specAvgRounds > 0 ? specAvgRounds : 30;
+    const avgNetGainSpec = (spec1R || 140) * effectiveSpecAvgRounds + (specSapo || 0);
     const specNetGainYen = avgNetGainSpec * exchP;
     const theoreticalBorder = specNetGainYen > 0
         ? (synthDenom * 1000) / specNetGainYen
