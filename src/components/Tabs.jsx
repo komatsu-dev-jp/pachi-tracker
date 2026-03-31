@@ -1549,8 +1549,11 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
             return updated;
         });
 
-        // 出玉を持ち玉に加算
-        const addBalls = finalBalls > 0 ? finalBalls : disp + sapoChange;
+        // 出玉を持ち玉に加算（既存のヒット + 最後のヒット + 上皿玉）
+        const currentChain = jpLog[jpLog.length - 1];
+        const existingTotal = (currentChain?.trayBalls || 0) +
+            (currentChain?.hits || []).reduce((s, h) => s + (h.displayBalls || 0) + (h.sapoChange || 0), 0);
+        const addBalls = finalBalls > 0 ? finalBalls : existingTotal + disp + sapoChange;
         S.setCurrentMochiBalls((prev) => prev + addBalls);
         S.pushLog({ type: "単発終了", time: tsNow(), rounds: rnd });
         S.setPlayMode("mochi");
