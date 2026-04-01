@@ -334,7 +334,7 @@ export default function App() {
 
   // カスタムアイコン: 黄色の＋（空白の○の中）
   const PlusCircleIcon = ({ active }) => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{ filter: active ? "none" : "grayscale(0.7) opacity(0.65)" }}>
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{ filter: active ? "none" : "grayscale(1) opacity(0.5)" }}>
       <circle cx="12" cy="12" r="10" stroke="#facc15" strokeWidth="2" fill="none" />
       <path d="M12 7v10M7 12h10" stroke="#facc15" strokeWidth="2" strokeLinecap="round" />
     </svg>
@@ -392,12 +392,12 @@ export default function App() {
           <button key={id} className="b" onClick={() => { if (!isAnimating) setTab(id); }} style={{
             flex: 1, background: "transparent", border: "none",
             borderTop: tab === id ? `3px solid ${C.blue}` : "3px solid transparent",
-            padding: "14px 0 14px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minHeight: 48, transition: "all 0.2s ease"
+            padding: "12px 0 10px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, transition: "all 0.2s ease"
           }}>
             {icon === "plus" ? (
               <PlusCircleIcon active={tab === id} />
             ) : (
-              <span style={{ fontSize: 20, filter: tab === id ? "none" : "grayscale(0.7) opacity(0.65)" }}>{icon}</span>
+              <span style={{ fontSize: 20, filter: tab === id ? "none" : "grayscale(1) opacity(0.5)" }}>{icon}</span>
             )}
             <span style={{ fontSize: 10, fontWeight: tab === id ? 800 : 500, color: tab === id ? C.blue : C.sub, fontFamily: font, letterSpacing: 0.5 }}>{label}</span>
           </button>
