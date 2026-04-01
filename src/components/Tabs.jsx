@@ -338,15 +338,16 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             newInvest = prevInvest + investPace;
         }
 
-        // 平均回転数計算 - 投資額ベースで計算（持ち玉モードは投資増えない）
+        // 平均回転数計算 - 累計投資額（現金＋貯玉）ベースで計算
         const firstStartRow = rows.find(r => r.type === "start");
         const initialRot = firstStartRow ? firstStartRow.cumRot : S.startRot;
-        // 持ち玉モードは投資増えないので、prevInvestを使用
-        const effectiveInvest = S.playMode === "mochi" ? prevInvest : newInvest;
-        const totalKCount = effectiveInvest / 1000;
+        // newInvestは現金/貯玉モードで増加、持ち玉モードは増えない
+        // 累計投資を使用（持ち玉モードでも直前の投資額を引き継ぐ）
+        const totalKCount = newInvest / 1000;
+        const totalRot = val - initialRot;
         const newAvg = totalKCount > 0
-            ? parseFloat(((val - initialRot) / totalKCount).toFixed(1))
-            : 0;
+            ? parseFloat((totalRot / totalKCount).toFixed(1))
+            : (totalRot > 0 ? totalRot : 0); // 投資0でも回転数があれば回転数を表示
 
         setRows((r) => [...r, {
             type: "data",
@@ -781,7 +782,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             </div>
 
             {/* Data Rows - 視認性向上、文字小さめ */}
-            <div ref={tableRef} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "0 12px", paddingBottom: 200 }}>
+            <div ref={tableRef} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "0 12px", paddingBottom: 280, overscrollBehavior: "contain" }}>
                 {rows.map((row, i) => {
                     // 投資表示（持ち玉モードは"—"）
                     const investDisplay = row.mode === "mochi" ? "—" : f(row.invest || 0);
