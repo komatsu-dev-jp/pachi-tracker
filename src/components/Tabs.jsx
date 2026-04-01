@@ -1484,10 +1484,10 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                 updated[updated.length - 1] = chain;
                 return updated;
             });
-            // 出玉を持ち玉に加算（setJpLog前の現在状態から計算）
-            const currentChain = jpLog[jpLog.length - 1];
-            const existingTotal = (currentChain?.trayBalls || 0) +
-                (currentChain?.hits || []).reduce((s, h) => s + (h.displayBalls || 0) + (h.sapoChange || 0), 0);
+            // 出玉を持ち玉に加算
+            const lastChainCopy = jpLog[jpLog.length - 1];
+            const existingTotal = (lastChainCopy.trayBalls || 0) +
+                lastChainCopy.hits.reduce((s, h) => s + (h.displayBalls || 0) + (h.sapoChange || 0), 0);
             const finalBallsToAdd = existingTotal + disp + sapoChange;
             S.setCurrentMochiBalls((prev) => prev + finalBallsToAdd);
             S.pushLog({ type: "連チャン終了", time: tsNow() });

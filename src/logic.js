@@ -35,7 +35,7 @@ export function deriveFromRows(rotRows, startRot = 0) {
 
     const lastRow = dataRows[dataRows.length - 1];
     const totalRot = lastRow.cumRot;
-    const netRot = Math.max(0, totalRot - startRot);
+    const netRot = totalRot - startRot;
     const invest = lastRow.invest || 0;
     // 現金: mochi/chodama以外
     const cashKCount = dataRows.filter(r => r.mode !== "mochi" && r.mode !== "chodama").length;
@@ -224,7 +224,7 @@ export function calcCash({ rotRows, startRot, cashRB, cashJP, exRate, synthDenom
 
     const cashRBpJ = cashJP > 0 ? cashRB / cashJP : 0;
     const cash1K = cashInvest > 0 ? netRot / (cashInvest / 1000) : 0;
-    const cashBorder = cashRBpJ > 0 ? (synthDenom * (exRate || 1)) / cashRBpJ : 0;
+    const cashBorder = cashRBpJ > 0 ? (synthDenom * exRate) / cashRBpJ : 0;
     const cashEV = (cash1K > 0 && cashRBpJ > 0) ? (cash1K * cashRBpJ * exchP) / synthDenom - 1000 : 0;
     const cashWage = (cash1K > 0 && rotPerHour > 0) ? (cashEV * rotPerHour) / cash1K : 0;
     const bDiff = cash1K - cashBorder;
