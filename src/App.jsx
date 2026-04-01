@@ -196,9 +196,7 @@ export default function App() {
       const lastChain = p[p.length - 1];
       // 削除するチェーンが完了している場合、持ち玉と上皿玉を減算
       if (lastChain.completed) {
-        const ballsToRemove = lastChain.finalBalls || 0;
         const trayToRemove = lastChain.trayBalls || 0;
-        setCurrentMochiBalls((prev) => Math.max(0, prev - ballsToRemove));
         setTotalTrayBalls((prev) => Math.max(0, prev - trayToRemove));
 
         // rotRowsから対応するhit行と後続のすべての行を削除
@@ -212,6 +210,16 @@ export default function App() {
             }
           }
           if (lastHitIndex === -1) return rows;
+
+          // hit行の時点の持ち玉に戻す（大当たり開始時点）
+          const hitRow = rows[lastHitIndex];
+          setCurrentMochiBalls(hitRow.mochiBalls || 0);
+
+          // 最初のstart行のcumRotをstartRotに復元
+          const firstStartRow = rows.find(r => r.type === "start");
+          if (firstStartRow) {
+            setStartRot(firstStartRow.cumRot || 0);
+          }
 
           // hit行とそれ以降のすべての行を削除
           return rows.slice(0, lastHitIndex);
