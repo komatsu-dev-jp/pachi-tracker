@@ -1463,6 +1463,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
             S.pushLog({ type: "連チャン終了", time: tsNow() });
             S.setPlayMode("mochi");
             S.setTab("rot");
+            S.setShowStartPrompt(true);
         } else {
             // 連チャン継続
             S.setJpLog((prev) => {
@@ -1639,15 +1640,25 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         const hitSapoPerRot = elecRot > 0 ? sapoChange / elecRot : 0;
 
         const isFirstHit = lastChain.hits.length === 0;
+        const trayForFirstHit = isFirstHit ? (Number(iTrayBalls) || 0) : 0;
+
+        // 持ち玉計算を先に行う（setJpLog前の状態から計算）
+        // 既存のヒットの出玉合計 + 今回追加するヒットの出玉（rounds > 0の場合のみ）
+        const existingDisplayBalls = lastChain.hits.reduce((s, h) => s + (h.displayBalls || 0), 0);
+        const existingSapoChange = lastChain.hits.reduce((s, h) => s + (h.sapoChange || 0), 0);
+        const existingTrayBalls = lastChain.trayBalls || 0;
+        // 1連目の場合は今回入力するtrayBallsを使用、そうでなければ既存のtrayBallsを使用
+        const trayBalls = isFirstHit ? trayForFirstHit : existingTrayBalls;
+        const newHitBalls = rounds > 0 ? (disp + sapoChange) : 0;
+        const finalBallsToAdd = trayBalls + existingDisplayBalls + existingSapoChange + newHitBalls;
 
         S.setJpLog((prev) => {
             const updated = [...prev];
             const chain = { ...updated[updated.length - 1] };
             // 1連目の場合: 上皿玉を保存
             if (isFirstHit) {
-                const tray = Number(iTrayBalls) || 0;
-                chain.trayBalls = tray;
-                S.setTotalTrayBalls((p) => p + tray);
+                chain.trayBalls = trayForFirstHit;
+                S.setTotalTrayBalls((p) => p + trayForFirstHit);
             }
             // ラウンド入力がある場合は最後のヒットを追加
             if (rounds > 0) {
@@ -1659,7 +1670,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                     sapoChange,
                     sapoPerRot: hitSapoPerRot,
                     rounds,
-                    displayBalls: Number(iDisplayBalls) || 0,
+                    displayBalls: disp,
                     actualBalls: Number(iActualBalls) || 0,
                     time: tsNow(),
                 }];
@@ -1687,10 +1698,6 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         });
 
         // 連チャン終了後の出玉を持ち玉に加算
-        const finalBallsToAdd = (lastChain.trayBalls || 0) +
-            lastChain.hits.reduce((s, h) => s + (h.displayBalls || 0), 0) +
-            lastChain.hits.reduce((s, h) => s + (h.sapoChange || 0), 0) +
-            (rounds > 0 ? (Number(iDisplayBalls) || 0) + sapoChange : 0);
         S.setCurrentMochiBalls((prev) => prev + finalBallsToAdd);
 
         S.pushLog({ type: "連チャン終了", time: tsNow() });
