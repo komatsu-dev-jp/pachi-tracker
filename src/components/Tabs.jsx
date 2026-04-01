@@ -249,20 +249,24 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
     useEffect(() => {
         // 新しいデータが追加された時に自動スクロールで最新を表示
-        if (tableRef.current) {
-            // DOMの更新を確実に待つため、二重のrequestAnimationFrameを使用
+        if (tableRef.current && rows.length > 0) {
+            // より確実にDOMの更新を待つ
+            const scrollToBottom = () => {
+                if (tableRef.current) {
+                    const element = tableRef.current;
+                    // scrollHeightがcontentの全高、scrollTopを最大にして最下部へ
+                    element.scrollTop = element.scrollHeight;
+                }
+            };
+            // 複数のタイミングでスクロールを試行
             requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    if (tableRef.current) {
-                        tableRef.current.scrollTo({
-                            top: tableRef.current.scrollHeight,
-                            behavior: 'smooth'
-                        });
-                    }
-                });
+                scrollToBottom();
+                // 追加のタイミングで再度スクロール（遅延レンダリング対策）
+                setTimeout(scrollToBottom, 50);
+                setTimeout(scrollToBottom, 150);
             });
         }
-    }, [rows]);
+    }, [rows.length]);
 
     const dataRows = rows.filter((r) => r.type === "data");
     const last = dataRows[dataRows.length - 1];
@@ -273,6 +277,13 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         if (v >= border) return "#86efac";
         if (v >= border - 3) return C.yellow;
         return C.red;
+    };
+
+    // ボーダー超えの行背景色
+    const rowBg = (v, isEven) => {
+        if (v == null || isNaN(v)) return isEven ? "transparent" : "rgba(255,255,255,0.015)";
+        if (v >= border) return "rgba(34, 197, 94, 0.15)"; // 緑ベース
+        return isEven ? "transparent" : "rgba(255,255,255,0.015)";
     };
 
     // バリデーション付き記録関数
@@ -797,16 +808,17 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             <div style={{ textAlign: "center", fontSize: 10, color: row.mode === "chodama" ? C.purple : C.orange, fontFamily: mono }}>{f(row.mode === "chodama" ? (row.chodamaBalls || 0) : (row.mochiBalls || 0))}</div>
                         </div>
                     );
+                    const isAboveBorder = row.avgRot >= border;
                     return (
-                        <div key={i} className={`fin ${i % 2 === 0 ? "" : "row-data"}`} style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 48px 52px", padding: "10px 4px", marginBottom: 2, borderRadius: 6, alignItems: "center", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)" }}>
+                        <div key={i} className={`fin ${i % 2 === 0 ? "" : "row-data"}`} style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 48px 52px", padding: "10px 4px", marginBottom: 2, borderRadius: 6, alignItems: "center", background: rowBg(row.avgRot, i % 2 === 0), border: isAboveBorder ? "1px solid rgba(34, 197, 94, 0.3)" : "none" }}>
                             <div style={{ textAlign: "center" }}><ModeBadge mode={row.mode || "cash"} /></div>
-                            <div style={{ textAlign: "center", fontSize: 13, color: C.subHi, fontFamily: mono, fontWeight: 500 }}>{f(row.cumRot)}</div>
+                            <div style={{ textAlign: "center", fontSize: 13, color: isAboveBorder ? C.green : C.subHi, fontFamily: mono, fontWeight: 500 }}>{f(row.cumRot)}</div>
                             <div style={{ textAlign: "center", fontSize: 20, fontWeight: 800, color: rotCol(row.thisRot), fontFamily: mono }}>{row.thisRot}</div>
                             <div style={{ textAlign: "center", fontSize: 16, fontWeight: 700, color: rotCol(row.avgRot || 0), fontFamily: mono }}>
                                 {row.avgRot || "—"}
                             </div>
-                            <div style={{ textAlign: "center", fontSize: 10, color: C.sub, fontFamily: mono }}>{investDisplay}</div>
-                            <div style={{ textAlign: "center", fontSize: 10, color: row.mode === "chodama" ? C.purple : C.orange, fontFamily: mono }}>{f(row.mode === "chodama" ? (row.chodamaBalls || 0) : (row.mochiBalls || 0))}</div>
+                            <div style={{ textAlign: "center", fontSize: 10, color: isAboveBorder ? C.green : C.sub, fontFamily: mono }}>{investDisplay}</div>
+                            <div style={{ textAlign: "center", fontSize: 10, color: row.mode === "chodama" ? C.purple : (isAboveBorder ? C.green : C.orange), fontFamily: mono }}>{f(row.mode === "chodama" ? (row.chodamaBalls || 0) : (row.mochiBalls || 0))}</div>
                         </div>
                     );
                 })}
