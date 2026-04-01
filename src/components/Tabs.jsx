@@ -337,17 +337,17 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             newInvest = prevInvest + investPace;
         }
 
-        // 平均回転数計算 - 現在のセグメント（最後のstart行以降）のみで計算
-        const lastStartIndex = rows.reduce((acc, row, i) => row.type === "start" ? i : acc, -1);
-        const segmentRows = lastStartIndex >= 0 ? rows.slice(lastStartIndex + 1) : rows;
-        const segmentDataRows = segmentRows.filter(r => r.type === "data");
-        const cashKCount = segmentDataRows.filter(r => r.mode === "cash" || !r.mode).length;
-        const mochiKCount = segmentDataRows.filter(r => r.mode === "mochi").length;
-        const chodamaKCount = segmentDataRows.filter(r => r.mode === "chodama").length;
+        // 平均回転数計算 - 全体のrotRowsで計算（大当たり終了後も独立しない）
+        const allDataRows = rows.filter(r => r.type === "data");
+        const cashKCount = allDataRows.filter(r => r.mode === "cash" || !r.mode).length;
+        const mochiKCount = allDataRows.filter(r => r.mode === "mochi").length;
+        const chodamaKCount = allDataRows.filter(r => r.mode === "chodama").length;
         // 今回の入力で1K増加
         const totalKCount = cashKCount + mochiKCount + chodamaKCount + 1;
+        const firstStartRow = rows.find(r => r.type === "start");
+        const initialRot = firstStartRow ? firstStartRow.cumRot : S.startRot;
         const newAvg = totalKCount > 0
-            ? parseFloat(((val - S.startRot) / totalKCount).toFixed(1))
+            ? parseFloat(((val - initialRot) / totalKCount).toFixed(1))
             : 0;
 
         setRows((r) => [...r, {
@@ -849,7 +849,23 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         style={{ flex: 1, boxSizing: "border-box", fontFamily: mono, padding: "10px 12px", fontSize: 16 }}
                     />
                     {/* 削除ボタン */}
-                    <button className="b" onClick={() => { setRows((r) => r.slice(0, -1)); setInputError(""); }} style={{ background: "rgba(239, 68, 68, 0.12)", border: `1px solid rgba(239, 68, 68, 0.3)`, borderRadius: 8, color: C.red, fontSize: 10, padding: "10px 10px", fontFamily: font, fontWeight: 700 }}>削除</button>
+                    <button className="b" onClick={() => {
+                        setRows((r) => {
+                            if (r.length === 0) return r;
+                            const lastRow = r[r.length - 1];
+                            // 持ち玉/貯玉モードの行を削除する場合、消費玉数を戻す
+                            if (lastRow.type === "data") {
+                                const ballsConsumed = lastRow.ballsConsumed || (rentBalls * (investPace / 1000));
+                                if (lastRow.mode === "mochi") {
+                                    S.setCurrentMochiBalls((prev) => prev + ballsConsumed);
+                                } else if (lastRow.mode === "chodama") {
+                                    S.setCurrentChodama((prev) => prev + ballsConsumed);
+                                }
+                            }
+                            return r.slice(0, -1);
+                        });
+                        setInputError("");
+                    }} style={{ background: "rgba(239, 68, 68, 0.12)", border: `1px solid rgba(239, 68, 68, 0.3)`, borderRadius: 8, color: C.red, fontSize: 10, padding: "10px 10px", fontFamily: font, fontWeight: 700 }}>削除</button>
                 </div>
                 {inputError && (
                     <div className="error-msg" style={{ marginBottom: 8, fontSize: 10 }}>{inputError}</div>
