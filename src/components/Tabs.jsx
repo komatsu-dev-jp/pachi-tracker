@@ -258,12 +258,13 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     element.scrollTop = element.scrollHeight;
                 }
             };
-            // 複数のタイミングでスクロールを試行
+            // 複数のタイミングでスクロールを試行（遅延を増やして確実に）
             requestAnimationFrame(() => {
                 scrollToBottom();
                 // 追加のタイミングで再度スクロール（遅延レンダリング対策）
                 setTimeout(scrollToBottom, 50);
                 setTimeout(scrollToBottom, 150);
+                setTimeout(scrollToBottom, 300);
             });
         }
     }, [rows.length]);
@@ -337,15 +338,12 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             newInvest = prevInvest + investPace;
         }
 
-        // 平均回転数計算 - 全体のrotRowsで計算（大当たり終了後も独立しない）
-        const allDataRows = rows.filter(r => r.type === "data");
-        const cashKCount = allDataRows.filter(r => r.mode === "cash" || !r.mode).length;
-        const mochiKCount = allDataRows.filter(r => r.mode === "mochi").length;
-        const chodamaKCount = allDataRows.filter(r => r.mode === "chodama").length;
-        // 今回の入力で1K増加
-        const totalKCount = cashKCount + mochiKCount + chodamaKCount + 1;
+        // 平均回転数計算 - 投資額ベースで計算（持ち玉モードは投資増えない）
         const firstStartRow = rows.find(r => r.type === "start");
         const initialRot = firstStartRow ? firstStartRow.cumRot : S.startRot;
+        // 持ち玉モードは投資増えないので、prevInvestを使用
+        const effectiveInvest = S.playMode === "mochi" ? prevInvest : newInvest;
+        const totalKCount = effectiveInvest / 1000;
         const newAvg = totalKCount > 0
             ? parseFloat(((val - initialRot) / totalKCount).toFixed(1))
             : 0;
