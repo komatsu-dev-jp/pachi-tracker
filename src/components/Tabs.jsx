@@ -302,7 +302,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         const val = validateInput();
         if (val === null) return;
 
-        const prevCumRot = last ? last.cumRot : S.startRot;
+        // 前回の累計回転数: 全ての行（data, start, hit）で最後の行を見る
+        const lastRow = rows[rows.length - 1];
+        const prevCumRot = lastRow ? lastRow.cumRot : S.startRot;
         const thisRot = val - prevCumRot;
         const prevInvest = last ? last.invest : 0;
 
@@ -324,11 +326,13 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             newInvest = prevInvest + investPace;
         }
 
-        // 平均回転数計算 - モード別ではなく総K数ベースで計算
-        const dataRowsAll = rows.filter(r => r.type === "data");
-        const cashKCount = dataRowsAll.filter(r => r.mode === "cash" || !r.mode).length;
-        const mochiKCount = dataRowsAll.filter(r => r.mode === "mochi").length;
-        const chodamaKCount = dataRowsAll.filter(r => r.mode === "chodama").length;
+        // 平均回転数計算 - 現在のセグメント（最後のstart行以降）のみで計算
+        const lastStartIndex = rows.reduce((acc, row, i) => row.type === "start" ? i : acc, -1);
+        const segmentRows = lastStartIndex >= 0 ? rows.slice(lastStartIndex + 1) : rows;
+        const segmentDataRows = segmentRows.filter(r => r.type === "data");
+        const cashKCount = segmentDataRows.filter(r => r.mode === "cash" || !r.mode).length;
+        const mochiKCount = segmentDataRows.filter(r => r.mode === "mochi").length;
+        const chodamaKCount = segmentDataRows.filter(r => r.mode === "chodama").length;
         // 今回の入力で1K増加
         const totalKCount = cashKCount + mochiKCount + chodamaKCount + 1;
         const newAvg = totalKCount > 0
