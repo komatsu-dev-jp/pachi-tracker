@@ -5,15 +5,33 @@ import './index.css'
 import { registerSW } from 'virtual:pwa-register'
 
 // Service Workerを登録し、新しいバージョンがあれば自動更新
-registerSW({
+const updateSW = registerSW({
   onNeedRefresh() {
-    // 新しいバージョンがある場合、自動的に更新
-    if (confirm('新しいバージョンが利用可能です。更新しますか？')) {
-      window.location.reload()
+    // 更新バナーを表示
+    const banner = document.createElement('div')
+    banner.id = 'pwa-update-banner'
+    banner.innerHTML = `
+      <div style="position:fixed;top:0;left:0;right:0;background:linear-gradient(135deg,#3b82f6,#8b5cf6);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;z-index:9999;font-family:sans-serif;box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+        <span style="font-size:13px;font-weight:600;">新しいバージョンが利用可能です</span>
+        <button id="pwa-update-btn" style="background:#fff;color:#3b82f6;border:none;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;">更新</button>
+      </div>
+    `
+    document.body.appendChild(banner)
+    document.getElementById('pwa-update-btn').onclick = () => {
+      banner.remove()
+      updateSW(true) // 新しいSWをアクティブ化
     }
   },
   onOfflineReady() {
     console.log('オフラインで使用できます')
+  },
+  onRegisteredSW(swUrl, registration) {
+    // 定期的に更新をチェック（1時間ごと）
+    if (registration) {
+      setInterval(() => {
+        registration.update()
+      }, 60 * 60 * 1000)
+    }
   },
   immediate: true
 })
