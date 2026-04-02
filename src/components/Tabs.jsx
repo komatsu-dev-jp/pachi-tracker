@@ -338,13 +338,24 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             newInvest = prevInvest + investPace;
         }
 
-        // 平均回転数計算 - 全モードの消費K数を合算
-        const firstStartRow = rows.find(r => r.type === "start");
-        const initialRot = firstStartRow ? firstStartRow.cumRot : S.startRot;
+        // 平均回転数計算 - 直近のスタート（大当たり後スタートまたは最初のスタート）から計算
+        // 直近のスタート行を探す（大当たり後スタートを優先）
+        const startRows = rows.filter(r => r.type === "start");
+        const lastStartRow = startRows.length > 0 ? startRows[startRows.length - 1] : null;
+        const initialRot = lastStartRow ? lastStartRow.cumRot : S.startRot;
 
-        // 過去のデータ行から持ち玉消費分をK数に換算して合計
-        let totalKUsed = newInvest / 1000; // 現金+貯玉の投資K数
-        const pastDataRows = rows.filter(r => r.type === "data");
+        // 直近のスタート以降のデータ行のみを対象にする
+        const lastStartIndex = lastStartRow ? rows.lastIndexOf(lastStartRow) : -1;
+        const rowsAfterLastStart = lastStartIndex >= 0 ? rows.slice(lastStartIndex + 1) : rows;
+        const pastDataRows = rowsAfterLastStart.filter(r => r.type === "data");
+
+        // このスタート以降の投資のみを使用
+        // 現金/貯玉投資は直前のスタート後の投資だけカウント
+        const lastStartInvest = lastStartRow && lastStartRow.invest != null ? lastStartRow.invest : 0;
+        const investSinceLastStart = newInvest - lastStartInvest;
+        let totalKUsed = investSinceLastStart / 1000;
+
+        // 過去のデータ行から持ち玉消費分をK数に換算して合計（直近スタート以降のみ）
         pastDataRows.forEach(r => {
             if (r.mode === "mochi") {
                 totalKUsed += (r.ballsConsumed || rentBalls) / rentBalls;
@@ -448,8 +459,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         const val = Number(input);
         if (val > 0) {
             S.setStartRot(val);
-            // テーブルにスタート行を追加
-            setRows((r) => [...r, { type: "start", cumRot: val, mode: S.playMode, mochiBalls: S.currentMochiBalls, chodamaBalls: S.currentChodama, isPostJackpotStart: true }]);
+            // テーブルにスタート行を追加（投資額も記録して平均回転数計算の基準にする）
+            setRows((r) => [...r, { type: "start", cumRot: val, mode: S.playMode, mochiBalls: S.currentMochiBalls, chodamaBalls: S.currentChodama, isPostJackpotStart: true, invest: S.investYen }]);
             S.pushLog({ type: "大当たり後スタート", time: tsNow(), rot: val });
             setInput("");
         }
@@ -821,7 +832,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     );
                     const isAboveBorder = row.avgRot >= border;
                     return (
-                        <div key={i} className={`fin ${i % 2 === 0 ? "" : "row-data"}`} style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 48px 52px", padding: "10px 4px", marginBottom: 2, borderRadius: 6, alignItems: "center", background: rowBg(row.avgRot, i % 2 === 0), border: isAboveBorder ? "1px solid rgba(34, 197, 94, 0.3)" : "none" }}>
+                        <div key={i} className={`fin ${i % 2 === 0 ? "" : "row-data"}`} style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 48px 52px", padding: "10px 4px", marginBottom: 2, borderRadius: 6, alignItems: "center", background: rowBg(row.avgRot, i % 2 === 0) }}>
                             <div style={{ textAlign: "center" }}><ModeBadge mode={row.mode || "cash"} /></div>
                             <div style={{ textAlign: "center", fontSize: 13, color: isAboveBorder ? C.green : C.subHi, fontFamily: mono, fontWeight: 500 }}>{f(row.cumRot)}</div>
                             <div style={{ textAlign: "center", fontSize: 20, fontWeight: 800, color: rotCol(row.thisRot), fontFamily: mono }}>{row.thisRot}</div>
