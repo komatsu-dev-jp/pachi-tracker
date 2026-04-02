@@ -338,15 +338,27 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             newInvest = prevInvest + investPace;
         }
 
-        // 平均回転数計算 - 累計投資額（現金＋貯玉）ベースで計算
+        // 平均回転数計算 - 全モードの消費K数を合算
         const firstStartRow = rows.find(r => r.type === "start");
         const initialRot = firstStartRow ? firstStartRow.cumRot : S.startRot;
-        // newInvestは現金/貯玉モードで増加、持ち玉モードは増えない
-        // 累計投資を使用（持ち玉モードでも直前の投資額を引き継ぐ）
-        const totalKCount = newInvest / 1000;
+
+        // 過去のデータ行から持ち玉消費分をK数に換算して合計
+        let totalKUsed = newInvest / 1000; // 現金+貯玉の投資K数
+        const pastDataRows = rows.filter(r => r.type === "data");
+        pastDataRows.forEach(r => {
+            if (r.mode === "mochi") {
+                totalKUsed += (r.ballsConsumed || rentBalls) / rentBalls;
+            }
+        });
+
+        // 今回の持ち玉消費も追加
+        if (S.playMode === "mochi") {
+            totalKUsed += ballsConsumed / rentBalls;
+        }
+
         const totalRot = val - initialRot;
-        const newAvg = totalKCount > 0
-            ? parseFloat((totalRot / totalKCount).toFixed(1))
+        const newAvg = totalKUsed > 0
+            ? parseFloat((totalRot / totalKUsed).toFixed(1))
             : (totalRot > 0 ? totalRot : 0); // 投資0でも回転数があれば回転数を表示
 
         setRows((r) => [...r, {

@@ -29,7 +29,7 @@ export function useLS(key, init) {
 /* ================================================================
    SHARED CALC HELPERS
 ================================================================ */
-export function deriveFromRows(rotRows, startRot = 0) {
+export function deriveFromRows(rotRows, startRot = 0, rentBalls = 250) {
     const dataRows = (rotRows || []).filter(r => r.type === "data");
     if (dataRows.length === 0) return { rot: 0, kCount: 0, invest: 0, cashKCount: 0, mochiKCount: 0, chodamaKCount: 0 };
 
@@ -37,11 +37,32 @@ export function deriveFromRows(rotRows, startRot = 0) {
     const totalRot = lastRow.cumRot;
     const netRot = totalRot - startRot;
     const invest = lastRow.invest || 0;
-    // 現金: mochi/chodama以外
-    const cashKCount = dataRows.filter(r => r.mode !== "mochi" && r.mode !== "chodama").length;
-    const mochiKCount = dataRows.filter(r => r.mode === "mochi").length;
-    const chodamaKCount = dataRows.filter(r => r.mode === "chodama").length;
-    return { rot: netRot, kCount: dataRows.length, invest, cashKCount, mochiKCount, chodamaKCount };
+
+    // 投資金額ベースでK数を計算（行数ではなく実際の投資/消費額から算出）
+    let cashKCount = 0;
+    let mochiKCount = 0;
+    let chodamaKCount = 0;
+
+    let prevInvest = 0;
+    dataRows.forEach(r => {
+        const investDiff = (r.invest || 0) - prevInvest;
+        prevInvest = r.invest || 0;
+
+        if (r.mode === "mochi") {
+            // 持ち玉: 消費玉数からK数を計算（ballsConsumed / rentBalls）
+            // ballsConsumedがない場合は rentBalls 玉消費として計算
+            const consumed = r.ballsConsumed || rentBalls;
+            mochiKCount += consumed / rentBalls;
+        } else if (r.mode === "chodama") {
+            // 貯玉: 投資差分からK数を計算
+            chodamaKCount += investDiff / 1000;
+        } else {
+            // 現金: 投資差分からK数を計算
+            cashKCount += investDiff / 1000;
+        }
+    });
+
+    return { rot: netRot, kCount: cashKCount + mochiKCount + chodamaKCount, invest, cashKCount, mochiKCount, chodamaKCount };
 }
 
 /* ================================================================
@@ -58,7 +79,7 @@ export function calcPreciseEV({
     specSapo = 0,    // 機種スペック: サポ増減/初当たり
     chodamaSettings = {},  // 貯玉設定: { includeChodamaInBalance: true }
 }) {
-    const { rot: netRot, invest: rawInvest, cashKCount, mochiKCount, chodamaKCount } = deriveFromRows(rotRows, startRot);
+    const { rot: netRot, invest: rawInvest, cashKCount, mochiKCount, chodamaKCount } = deriveFromRows(rotRows, startRot, rentBalls);
 
     // ── 実測パラメータを jpLog から集計（v3チェーン構造対応） ──
     const completedEntries = (jpLog || []).filter(j => j.completed === true);
