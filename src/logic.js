@@ -34,9 +34,14 @@ export function deriveFromRows(rotRows, startRot = 0, rentBalls = 250) {
     if (dataRows.length === 0) return { rot: 0, kCount: 0, invest: 0, cashKCount: 0, mochiKCount: 0, chodamaKCount: 0 };
 
     const lastRow = dataRows[dataRows.length - 1];
-    const totalRot = lastRow.cumRot;
-    const netRot = totalRot - startRot;
     const invest = lastRow.invest || 0;
+
+    // 総通常回転数 = 各データ行のthisRotを合計（累積回転数の差分ではなく実際の回転数を使用）
+    // これにより大当たり後スタートのリセットに関わらず正確な総回転数が得られる
+    let netRot = 0;
+    dataRows.forEach(r => {
+        netRot += r.thisRot || 0;
+    });
 
     // 投資金額ベースでK数を計算（行数ではなく実際の投資/消費額から算出）
     let cashKCount = 0;
@@ -54,8 +59,9 @@ export function deriveFromRows(rotRows, startRot = 0, rentBalls = 250) {
             const consumed = r.ballsConsumed || rentBalls;
             mochiKCount += consumed / rentBalls;
         } else if (r.mode === "chodama") {
-            // 貯玉: 投資差分からK数を計算
-            chodamaKCount += investDiff / 1000;
+            // 貯玉: 消費玉数からK数を計算（持ち玉と同じ換算）
+            const consumed = r.ballsConsumed || rentBalls;
+            chodamaKCount += consumed / rentBalls;
         } else {
             // 現金: 投資差分からK数を計算
             cashKCount += investDiff / 1000;
@@ -155,38 +161,38 @@ export function calcPreciseEV({
 
     // ── 期待値/K（P tools互換計算式） ──
     // EV/K = (回転率/synthDenom) × 純増出玉円 - 1000
-    // 初当たりデータがある場合は実測値、ない場合は機種スペックから算出
     let ev1K = 0;
     let useBorder = 0;  // 使用するボーダー
-    // 常にスペック基準で計算（実測データに関係なく機種スペックを使用）
+
+    // 機種スペックベースで計算（P tools準拠）
     if (start1K > 0 && theoreticalBorder > 0) {
-        // 機種スペックベース（P tools互換）
+        // P tools準拠: EV/K = (1Kスタート / 大当たり確率) × 平均純増出玉 × 交換レート - 1000
         ev1K = (start1K / synthDenom) * specNetGainYen - 1000;
         useBorder = theoreticalBorder;
     } else if (start1K > 0 && border > 0) {
-        // フォールバック: 手動ボーダー
-        ev1K = (start1K / border - 1) * 1000;
+        // フォールバック: 手動ボーダーから計算
+        // EV/K = (1Kスタート - ボーダー) / ボーダー × 1000
+        ev1K = ((start1K - border) / border) * 1000;
         useBorder = border;
     }
 
     // EVソース
     const evSource = (theoreticalBorder > 0) ? "spec" : (border > 0 ? "border" : "none");
 
-    // ── 仕事量 = 期待値/K × 投資K数 ──
-    const workAmount = (start1K > 0 && ev1K !== 0)
-        ? ev1K * (netRot / start1K)
-        : 0;
+    // ── 単価（1回転あたりの期待値円 — P tools互換） ──
+    // 単価 = EV/K ÷ 1Kスタート
+    const evPerRot = start1K > 0 ? ev1K / start1K : 0;
 
-    // ── 時給 ──
+    // ── 仕事量 = 単価 × 総通常回転数 ──
+    const workAmount = evPerRot * netRot;
+
+    // ── 時給 = 仕事量 ÷ 稼働時間 ──
     const wage = (rotPerHour > 0 && netRot > 0)
         ? workAmount / (netRot / rotPerHour)
         : 0;
 
-    // ── ボーダー差 = 実測回転率 - 理論ボーダー（常にスペック基準） ──
-    const bDiff = theoreticalBorder > 0 ? start1K - theoreticalBorder : 0;
-
-    // ── 単価（EV per rotation — P tools互換） ──
-    const evPerRot = start1K > 0 ? ev1K / start1K : 0;
+    // ── ボーダー差 = 実測回転率 - 理論ボーダー ──
+    const bDiff = theoreticalBorder > 0 ? start1K - theoreticalBorder : (border > 0 ? start1K - border : 0);
 
     return {
         // 実測パラメータ
