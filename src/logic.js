@@ -158,11 +158,8 @@ export function calcPreciseEV({
     // 初当たりデータがある場合は実測値、ない場合は機種スペックから算出
     let ev1K = 0;
     let useBorder = 0;  // 使用するボーダー
-    if (start1K > 0 && jpCount > 0 && avgNetGainPerJP > 0) {
-        // 実測ベース
-        ev1K = (start1K / synthDenom) * netGainYenPerJP - 1000;
-        useBorder = measuredBorder;
-    } else if (start1K > 0 && theoreticalBorder > 0) {
+    // 常にスペック基準で計算（実測データに関係なく機種スペックを使用）
+    if (start1K > 0 && theoreticalBorder > 0) {
         // 機種スペックベース（P tools互換）
         ev1K = (start1K / synthDenom) * specNetGainYen - 1000;
         useBorder = theoreticalBorder;
@@ -173,8 +170,7 @@ export function calcPreciseEV({
     }
 
     // EVソース
-    const evSource = (jpCount > 0 && avgNetGainPerJP > 0) ? "measured"
-        : (theoreticalBorder > 0 ? "spec" : (border > 0 ? "border" : "none"));
+    const evSource = (theoreticalBorder > 0) ? "spec" : (border > 0 ? "border" : "none");
 
     // ── 仕事量 = 期待値/K × 投資K数 ──
     const workAmount = (start1K > 0 && ev1K !== 0)
