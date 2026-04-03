@@ -357,10 +357,15 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         // 総投資K数 = 実質現金K + 持ち玉K + 貯玉K
         let totalKUsed = correctedCashInvest / 1000;
         allDataRows.forEach(r => {
-            if (r.mode === "mochi") {
-                totalKUsed += (r.ballsConsumed || rentBalls) / rentBalls;
-            } else if (r.mode === "chodama") {
-                totalKUsed += (r.ballsConsumed || rentBalls) / rentBalls;
+            // 持ち玉/貯玉モードの行は、消費玉数を投資K数に換算して追加
+            // ballsConsumedが未定義の場合（古いデータ）はinvestPace相当の玉数を使用
+            if (r.mode === "mochi" || r.mode === "chodama") {
+                const consumed = r.ballsConsumed !== undefined && r.ballsConsumed !== null
+                    ? r.ballsConsumed
+                    : rentBalls * ((S.investPace || 1000) / 1000);
+                if (consumed > 0) {
+                    totalKUsed += consumed / rentBalls;
+                }
             }
         });
         // 今回の持ち玉/貯玉消費も追加
