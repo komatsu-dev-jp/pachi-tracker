@@ -338,39 +338,39 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             newInvest = prevInvest + investPace;
         }
 
-        // 平均回転数計算 - 直近のスタート（大当たり後スタートまたは最初のスタート）から計算
-        // 直近のスタート行を探す（大当たり後スタートを優先）
-        const startRows = rows.filter(r => r.type === "start");
-        const lastStartRow = startRows.length > 0 ? startRows[startRows.length - 1] : null;
-        const initialRot = lastStartRow ? lastStartRow.cumRot : S.startRot;
+        // 平均回転数計算 - セッション全体の累積平均（上皿補正込み）
+        // 総通常回転数 = 全データ行のthisRotの合計
+        const allDataRows = rows.filter(r => r.type === "data");
+        let totalThisRot = 0;
+        allDataRows.forEach(r => {
+            totalThisRot += r.thisRot || 0;
+        });
+        totalThisRot += thisRot; // 今回の回転数も追加
 
-        // 直近のスタート以降のデータ行のみを対象にする
-        const lastStartIndex = lastStartRow ? rows.lastIndexOf(lastStartRow) : -1;
-        const rowsAfterLastStart = lastStartIndex >= 0 ? rows.slice(lastStartIndex + 1) : rows;
-        const pastDataRows = rowsAfterLastStart.filter(r => r.type === "data");
+        // 上皿補正: jpLogから全チェーンのtrayBallsを円換算
+        const totalTrayBalls = (S.jpLog || []).reduce((sum, chain) => sum + (chain.trayBalls || 0), 0);
+        const trayYenCorrection = totalTrayBalls * (1000 / rentBalls); // 上皿玉の円換算
 
-        // このスタート以降の投資のみを使用
-        // 現金/貯玉投資は直前のスタート後の投資だけカウント
-        const lastStartInvest = lastStartRow && lastStartRow.invest != null ? lastStartRow.invest : 0;
-        const investSinceLastStart = newInvest - lastStartInvest;
-        let totalKUsed = investSinceLastStart / 1000;
+        // 実質現金投資 = 現金投資 - 上皿補正（0未満にはしない）
+        const correctedCashInvest = Math.max(newInvest - trayYenCorrection, 0);
 
-        // 過去のデータ行から持ち玉消費分をK数に換算して合計（直近スタート以降のみ）
-        pastDataRows.forEach(r => {
+        // 総投資K数 = 実質現金K + 持ち玉K + 貯玉K
+        let totalKUsed = correctedCashInvest / 1000;
+        allDataRows.forEach(r => {
             if (r.mode === "mochi") {
+                totalKUsed += (r.ballsConsumed || rentBalls) / rentBalls;
+            } else if (r.mode === "chodama") {
                 totalKUsed += (r.ballsConsumed || rentBalls) / rentBalls;
             }
         });
-
-        // 今回の持ち玉消費も追加
-        if (S.playMode === "mochi") {
+        // 今回の持ち玉/貯玉消費も追加
+        if (S.playMode === "mochi" || S.playMode === "chodama") {
             totalKUsed += ballsConsumed / rentBalls;
         }
 
-        const totalRot = val - initialRot;
         const newAvg = totalKUsed > 0
-            ? parseFloat((totalRot / totalKUsed).toFixed(1))
-            : (totalRot > 0 ? totalRot : 0); // 投資0でも回転数があれば回転数を表示
+            ? parseFloat((totalThisRot / totalKUsed).toFixed(1))
+            : (totalThisRot > 0 ? totalThisRot : 0); // 投資0でも回転数があれば回転数を表示
 
         setRows((r) => [...r, {
             type: "data",
@@ -807,8 +807,10 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             {/* Data Rows - 視認性向上、文字小さめ */}
             <div ref={tableRef} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "0 12px", paddingBottom: 280, overscrollBehavior: "contain" }}>
                 {rows.map((row, i) => {
-                    // 投資表示（持ち玉モードは"—"）
-                    const investDisplay = row.mode === "mochi" ? "—" : f(row.invest || 0);
+                    // 投資表示（持ち玉/貯玉モードは消費玉数を円換算で表示）
+                    const investDisplay = (row.mode === "mochi" || row.mode === "chodama")
+                        ? (row.ballsConsumed ? f(row.ballsConsumed * (1000 / rentBalls)) : "—")
+                        : f(row.invest || 0);
 
                     if (row.type === "start") return (
                         <div key={i} className="fin row-start" style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 48px 52px", padding: "10px 4px", marginBottom: 3, borderRadius: 8, alignItems: "center" }}>
