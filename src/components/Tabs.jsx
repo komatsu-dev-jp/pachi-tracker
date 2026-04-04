@@ -280,10 +280,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         return C.red;
     };
 
-    // ボーダー超えの行背景色
+    // 行背景色（ボーダー超えでも帯は表示しない）
     const rowBg = (v, isEven) => {
-        if (v == null || isNaN(v)) return isEven ? "transparent" : "rgba(255,255,255,0.015)";
-        if (v >= border) return "rgba(34, 197, 94, 0.15)"; // 緑ベース
         return isEven ? "transparent" : "rgba(255,255,255,0.015)";
     };
 
