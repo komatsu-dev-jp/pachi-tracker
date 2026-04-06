@@ -2939,7 +2939,7 @@ export function CalendarTab({ S, onReset }) {
                 <button className="b" onClick={prevMonth} style={{ background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8, color: C.text, fontSize: 14, padding: "4px 10px", fontWeight: 700 }}>‹</button>
                 <div style={{ textAlign: "center" }}>
                     <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{viewMonth.year}年 {viewMonth.month + 1}月</div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: sc(monthTotal), fontFamily: mono, marginTop: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: sc(monthTotal), fontFamily: font, marginTop: 1 }}>
                         {monthTotal !== 0 ? f(Math.round(monthTotal)) + "円" : "—"}
                     </div>
                 </div>
@@ -2970,7 +2970,7 @@ export function CalendarTab({ S, onReset }) {
                             borderRadius: 6, padding: "5px 1px", textAlign: "center", minHeight: 42,
                             cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start",
                         }}>
-                            <div style={{ fontSize: 17, fontWeight: isToday(day) ? 800 : 600, color: dow === 0 ? C.red : dow === 6 ? C.blue : C.text, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{day}</div>
+                            <div style={{ fontSize: 19, fontWeight: isToday(day) ? 800 : 600, color: dow === 0 ? C.red : dow === 6 ? C.blue : C.text, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{day}</div>
                             {hasData && (
                                 <div style={{ fontSize: 9, fontWeight: 700, color: sc(total), fontFamily: font, fontVariantNumeric: "tabular-nums", marginTop: 3, lineHeight: 1 }}>
                                     {f(Math.round(total))}
@@ -2992,7 +2992,7 @@ export function CalendarTab({ S, onReset }) {
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, padding: "0 2px" }}>
                             <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{selectedDate}</div>
                             {dayTotal != null && (
-                                <div style={{ fontSize: 14, fontWeight: 700, color: sc(dayTotal), fontFamily: mono }}>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: sc(dayTotal), fontFamily: font }}>
                                     {f(Math.round(dayTotal))}円
                                 </div>
                             )}
