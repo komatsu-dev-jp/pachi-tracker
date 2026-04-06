@@ -2970,9 +2970,9 @@ export function CalendarTab({ S, onReset }) {
                             borderRadius: 6, padding: "5px 1px", textAlign: "center", minHeight: 42,
                             cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start",
                         }}>
-                            <div style={{ fontSize: 13, fontWeight: isToday(day) ? 800 : 500, color: dow === 0 ? C.red : dow === 6 ? C.blue : C.text, lineHeight: 1 }}>{day}</div>
+                            <div style={{ fontSize: 17, fontWeight: isToday(day) ? 800 : 600, color: dow === 0 ? C.red : dow === 6 ? C.blue : C.text, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{day}</div>
                             {hasData && (
-                                <div style={{ fontSize: 8, fontWeight: 700, color: sc(total), fontFamily: mono, marginTop: 3, lineHeight: 1 }}>
+                                <div style={{ fontSize: 9, fontWeight: 700, color: sc(total), fontFamily: font, fontVariantNumeric: "tabular-nums", marginTop: 3, lineHeight: 1 }}>
                                     {f(Math.round(total))}
                                 </div>
                             )}
