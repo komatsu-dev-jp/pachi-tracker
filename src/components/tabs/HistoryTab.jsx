@@ -1,19 +1,15 @@
-import React, { useState, useMemo } from "react";
+import React, { useState } from "react";
 import ReactDOM from "react-dom";
 import { C, f, sc, sp, tsNow, font, mono } from "../../constants";
 import { Card, Btn, SecLabel, NI } from "../Atoms";
 
-export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev }) {
+export function HistoryTab({ jpLog, sesLog, delJPLast, delSesLast, S, ev }) {
     const [sub, setSub] = useState("jp");
     const [swipingId, setSwipingId] = useState(null);
     const [swipeX, setSwipeX] = useState(0);
     const [swipeDirection, setSwipeDirection] = useState(null);
     const startX = React.useRef(0);
     const startY = React.useRef(0);
-
-    const jpLog = S.jpLog || [];
-    const sesLog = S.sesLog || [];
-    const ev = S.ev || {};
 
     const lastChain = jpLog[jpLog.length - 1];
     const isChainActive = lastChain && !lastChain.completed;
@@ -41,18 +37,6 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     });
 
     const machineRushRounds = [2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 16];
-
-    const delJPLast = () => {
-        if (jpLog.length > 0 && window.confirm("最新の大当たり履歴を削除しますか？")) {
-            S.setJpLog(jpLog.slice(0, -1));
-        }
-    };
-
-    const delSesLast = () => {
-        if (sesLog.length > 0 && window.confirm("最新のログを削除しますか？")) {
-            S.setSesLog(sesLog.slice(0, -1));
-        }
-    };
 
     const handleSwipeStart = (e, id) => {
         startX.current = e.touches[0].clientX;
@@ -129,8 +113,6 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         const nextTiming = Number(chainWizardData.nextTimingBalls) || 0;
         const sapoChange = nextTiming - lastOut - disp;
         const perRot = elecRot > 0 ? sapoChange / elecRot : 0;
-
-        const isFirstHit = lastChain.hits.length === 0;
 
         S.setJpLog((prev) => {
             const updated = [...prev];

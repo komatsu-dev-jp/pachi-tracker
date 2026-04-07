@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect } from "react";
-import { C, f, sc, sp, tsNow, font, mono } from "../../constants";
+import React, { useState, useMemo } from "react";
+import { C, f, font, mono } from "../../constants";
 import { Card, Btn, SecLabel, NI } from "../Atoms";
 import { searchMachines } from "../../machineDB";
 
@@ -138,7 +138,7 @@ export function SettingsTab({ s, onReset }) {
                 });
                 s.setCustomMachines([...(s.customMachines || []), ...imported]);
                 alert(`${imported.length}件の機種をインポートしました`);
-            } catch (err) {
+            } catch (_err) {
                 alert("CSVのパースに失敗しました");
             }
         };
@@ -288,7 +288,6 @@ export function SettingsTab({ s, onReset }) {
     }
 
     if (selected) {
-        const borderKeys = selected.border ? Object.keys(selected.border) : [];
         return (
             <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
                 <button className="b" onClick={() => setSelected(null)} style={{ background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8, color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600, marginBottom: 12 }}>← 戻る</button>

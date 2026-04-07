@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useLS, calcPreciseEV } from "./logic";
-import { C, f, font, mono, sc, sp } from "./constants";
+import { C, font } from "./constants";
 import { DataTab, RotTab, HistoryTab, SettingsTab, CalendarTab } from "./components/Tabs";
 
 export default function App() {
@@ -349,10 +349,7 @@ export default function App() {
   ];
 
   // Dynamic styles based on theme
-  const headerBg = theme === "light" ? "var(--header-bg)" : "rgba(17, 17, 22, 0.8)";
   const navBg = theme === "light" ? "var(--nav-bg)" : "rgba(17, 17, 22, 0.95)";
-  const headerTextColor = theme === "light" ? C.text : "#fff";
-  const statBg = theme === "light" ? "rgba(0,0,0,0.03)" : "rgba(255,255,255,0.03)";
 
   return (
     <div style={{ background: C.bg, height: "100dvh", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column", color: C.text, position: "relative", overflow: "hidden" }}>

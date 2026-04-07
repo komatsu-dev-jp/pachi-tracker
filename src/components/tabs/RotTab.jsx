@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { C, f, sc, sp, tsNow, font, mono } from "../../constants";
 import { NI, Card, MiniStat, Btn, SecLabel, ModeToggle, ModeBadge } from "../Atoms";
 
-export function RotTab({ border, rows, setRows, S, ev }) {
+export function RotTab({ S, ev }) {
     const [iRot, setIRot] = useState("");
     const [iInvest, setIInvest] = useState("");
     const [iTray, setITray] = useState("");
@@ -10,11 +10,9 @@ export function RotTab({ border, rows, setRows, S, ev }) {
     const [showUndo, setShowUndo] = useState(false);
     const [showStoreDropdown, setShowStoreDropdown] = useState(false);
 
-    const ev = S.ev || {};
-
     // S.playMode同期
     useEffect(() => {
-        if (S.playMode && S.playMode !== mode) setMode(S.playMode);
+        if (S.playMode && S.playMode !== mode) setMode(S.playMode); // eslint-disable-line react-hooks/set-state-in-effect
     }, [S.playMode]);
 
     useEffect(() => {

@@ -1,4 +1,4 @@
-import { C, font, mono, f } from "../constants";
+import { C, font, mono } from "../constants";
 
 /* ================================================================
    Simple SVG Line Chart component

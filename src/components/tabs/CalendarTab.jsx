@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import ReactDOM from "react-dom";
-import { C, f, sc, sp, tsNow, font, mono } from "../../constants";
+import { C, f, sc, tsNow, mono } from "../../constants";
 import { Card, Btn, SecLabel, MiniStat, LineChart } from "../Atoms";
 
 export function CalendarTab({ S }) {

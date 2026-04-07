@@ -29,7 +29,7 @@ export function useLS(key, init) {
 /* ================================================================
    SHARED CALC HELPERS
 ================================================================ */
-export function deriveFromRows(rotRows, startRot = 0, rentBalls = 250) {
+export function deriveFromRows(rotRows, _startRot = 0, rentBalls = 250) {
     const dataRows = (rotRows || []).filter(r => r.type === "data");
     if (dataRows.length === 0) return { rot: 0, kCount: 0, invest: 0, cashKCount: 0, mochiKCount: 0, chodamaKCount: 0 };
 

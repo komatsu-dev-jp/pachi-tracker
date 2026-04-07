@@ -1,8 +1,8 @@
 import React from "react";
-import { C, f, sc, sp, font, mono } from "../../constants";
+import { C, f, sc, mono } from "../../constants";
 import { Card, SecLabel, LineChart } from "../Atoms";
 
-export function DataTab({ ev, jpLog, S }) {
+export function DataTab({ ev, S }) {
     const archives = S.archives || [];
 
     // Group archives by date to get daily totals for a chart
@@ -26,13 +26,12 @@ export function DataTab({ ev, jpLog, S }) {
 
     // Cumulative work amount data for chart
     const cumWorkData = React.useMemo(() => {
-        let cum = 0;
-        return archives
+        return [...archives]
             .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
-            .map((a) => {
-                cum += a.stats?.workAmount || 0;
-                return { label: a.date?.slice(5) || "", value: Math.round(cum) };
-            });
+            .reduce(({ items, cum }, a) => {
+                const newCum = cum + (a.stats?.workAmount || 0);
+                return { items: [...items, { label: a.date?.slice(5) || "", value: Math.round(newCum) }], cum: newCum };
+            }, { items: [], cum: 0 }).items;
     }, [archives]);
 
     const stats = [
