@@ -151,6 +151,9 @@ export default function App() {
   // 時短/大当たり終了後のスタート入力プロンプト表示フラグ
   const [showStartPrompt, setShowStartPrompt] = useState(false);
 
+  // セッション内サブタブ（稼働中のヘッダーナビゲーション用）
+  const [sessionSubTab, setSessionSubTab] = useState("rot");
+
   // Session info (店舗・台番号・投資・回収・機種名)
   const [storeName, setStoreName] = useLS("pt_storeName", "");
   const [machineNum, setMachineNum] = useLS("pt_machineNum", "");
@@ -330,6 +333,8 @@ export default function App() {
     currentChodama, setCurrentChodama,
     // スタート入力プロンプト
     showStartPrompt, setShowStartPrompt,
+    // セッション内サブタブ
+    sessionSubTab, setSessionSubTab,
   };
 
   // カスタムアイコン: 黄色の＋（空白の○の中）

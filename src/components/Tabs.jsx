@@ -548,6 +548,94 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         }
     };
 
+    // セッション内サブタブのスワイプ処理
+    const sessionSubTabs = ["rot", "history", "data", "settings"];
+    const sessionSubTabLabels = { rot: "回転入力", history: "大当たり", data: "データ", settings: "機種設定" };
+    const headerTouchStartX = useRef(null);
+    const headerTouchStartY = useRef(null);
+    const [headerSwipeOffset, setHeaderSwipeOffset] = useState(0);
+    const [headerIsAnimating, setHeaderIsAnimating] = useState(false);
+    const [headerSwipeDir, setHeaderSwipeDir] = useState(null);
+
+    const handleHeaderTouchStart = (e) => {
+        if (headerIsAnimating) return;
+        headerTouchStartX.current = e.touches[0].clientX;
+        headerTouchStartY.current = e.touches[0].clientY;
+        setHeaderSwipeDir(null);
+    };
+
+    const handleHeaderTouchMove = (e) => {
+        if (headerTouchStartX.current === null || headerIsAnimating) return;
+        const currentX = e.touches[0].clientX;
+        const currentY = e.touches[0].clientY;
+        const diffX = currentX - headerTouchStartX.current;
+        const diffY = currentY - headerTouchStartY.current;
+
+        // 方向が未確定の場合、10px以上動いたら判定
+        if (headerSwipeDir === null && (Math.abs(diffX) > 10 || Math.abs(diffY) > 10)) {
+            if (Math.abs(diffY) > Math.abs(diffX)) {
+                setHeaderSwipeDir("vertical");
+                return;
+            } else {
+                setHeaderSwipeDir("horizontal");
+            }
+        }
+
+        if (headerSwipeDir !== "horizontal") return;
+
+        const currentIndex = sessionSubTabs.indexOf(S.sessionSubTab);
+        const isAtStart = currentIndex === 0 && diffX > 0;
+        const isAtEnd = currentIndex === sessionSubTabs.length - 1 && diffX < 0;
+        const resistance = (isAtStart || isAtEnd) ? 0.15 : 0.4;
+        setHeaderSwipeOffset(diffX * resistance);
+    };
+
+    const handleHeaderTouchEnd = () => {
+        if (headerTouchStartX.current === null || headerIsAnimating || headerSwipeDir !== "horizontal") {
+            headerTouchStartX.current = null;
+            headerTouchStartY.current = null;
+            setHeaderSwipeOffset(0);
+            setHeaderSwipeDir(null);
+            return;
+        }
+
+        const diff = headerSwipeOffset / 0.4;
+        const threshold = 60;
+        const currentIndex = sessionSubTabs.indexOf(S.sessionSubTab);
+
+        if (Math.abs(diff) > threshold) {
+            if (diff > 0 && currentIndex > 0) {
+                setHeaderIsAnimating(true);
+                setHeaderSwipeOffset(window.innerWidth * 0.3);
+                setTimeout(() => {
+                    S.setSessionSubTab(sessionSubTabs[currentIndex - 1]);
+                    setHeaderSwipeOffset(0);
+                    setHeaderIsAnimating(false);
+                }, 250);
+            } else if (diff < 0 && currentIndex < sessionSubTabs.length - 1) {
+                setHeaderIsAnimating(true);
+                setHeaderSwipeOffset(-window.innerWidth * 0.3);
+                setTimeout(() => {
+                    S.setSessionSubTab(sessionSubTabs[currentIndex + 1]);
+                    setHeaderSwipeOffset(0);
+                    setHeaderIsAnimating(false);
+                }, 250);
+            } else {
+                setHeaderIsAnimating(true);
+                setHeaderSwipeOffset(0);
+                setTimeout(() => setHeaderIsAnimating(false), 200);
+            }
+        } else {
+            setHeaderIsAnimating(true);
+            setHeaderSwipeOffset(0);
+            setTimeout(() => setHeaderIsAnimating(false), 200);
+        }
+
+        headerTouchStartX.current = null;
+        headerTouchStartY.current = null;
+        setHeaderSwipeDir(null);
+    };
+
     // セッション未開始：新規稼働ボタンを中央に表示
     if (!sessionActive) {
         return (
@@ -752,10 +840,20 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     // セッション開始後：データ表示とコントロール
     return (
         <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-            {/* 上部ヘッダー：コンパクト表示 */}
-            <div style={{ flexShrink: 0, padding: "6px 12px 4px", borderBottom: `1px solid ${C.border}` }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    {/* 左：機種・店舗（タップで展開） */}
+            {/* セッションヘッダー：スワイプ可能なタブ */}
+            <div
+                style={{
+                    flexShrink: 0,
+                    borderBottom: `1px solid ${C.border}`,
+                    background: "rgba(15,15,20,0.98)",
+                    touchAction: "pan-y"
+                }}
+                onTouchStart={handleHeaderTouchStart}
+                onTouchMove={handleHeaderTouchMove}
+                onTouchEnd={handleHeaderTouchEnd}
+            >
+                {/* 機種・店舗情報 */}
+                <div style={{ padding: "8px 12px 6px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <button className="b" onClick={() => setSummaryCollapsed(!summaryCollapsed)} style={{
                         flex: 1, background: "transparent", border: "none", padding: 0, display: "flex", alignItems: "center", gap: 6
                     }}>
@@ -765,7 +863,6 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         </div>
                         <span style={{ fontSize: 8, color: C.sub }}>{summaryCollapsed ? "▼" : "▲"}</span>
                     </button>
-                    {/* 右：設定ボタン */}
                     <button className="b" onClick={() => setShowInvestSettings(true)} style={{
                         background: "rgba(255,255,255,0.05)", border: `1px solid ${C.border}`, borderRadius: 6,
                         padding: "5px 8px", display: "flex", alignItems: "center", gap: 4
@@ -775,9 +872,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     </button>
                 </div>
 
-                {/* サマリーカード群（折りたたみ）- 半分サイズ */}
+                {/* サマリーカード群（折りたたみ） */}
                 {!summaryCollapsed && (
-                    <div className="summary-card" style={{ padding: 6, marginTop: 4, marginBottom: 2 }}>
+                    <div className="summary-card" style={{ padding: 6, margin: "0 12px 6px", borderRadius: 8 }}>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
                             <div className="stat-mini">
                                 <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>回転率</div>
@@ -798,17 +895,55 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         </div>
                     </div>
                 )}
+
+                {/* スワイプ可能タブバー */}
+                <div
+                    style={{
+                        display: "flex",
+                        overflow: "hidden",
+                        transform: `translateX(${headerSwipeOffset}px)`,
+                        transition: headerIsAnimating ? "transform 0.25s ease-out" : "none"
+                    }}
+                >
+                    {sessionSubTabs.map((tabId) => {
+                        const isActive = S.sessionSubTab === tabId;
+                        return (
+                            <button
+                                key={tabId}
+                                className="b"
+                                onClick={() => S.setSessionSubTab(tabId)}
+                                style={{
+                                    flex: 1,
+                                    background: "transparent",
+                                    border: "none",
+                                    borderBottom: isActive ? `3px solid ${C.blue}` : "3px solid transparent",
+                                    padding: "10px 4px 8px",
+                                    fontSize: 12,
+                                    fontWeight: isActive ? 700 : 500,
+                                    color: isActive ? C.blue : C.sub,
+                                    fontFamily: font,
+                                    transition: "all 0.2s"
+                                }}
+                            >
+                                {sessionSubTabLabels[tabId]}
+                            </button>
+                        );
+                    })}
+                </div>
             </div>
 
-            {/* Table Header - コンパクト */}
-            <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 48px 52px", background: "linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(139, 92, 246, 0.08))", padding: "8px 4px", margin: "4px 12px 4px", borderRadius: 8, flexShrink: 0, border: `1px solid rgba(59, 130, 246, 0.15)` }}>
-                {["種別", "総回転", "今回", "平均", "投資", "持ち玉"].map((h) => (
-                    <div key={h} style={{ textAlign: "center", fontSize: 9, fontWeight: 600, color: C.subHi, fontFamily: font, letterSpacing: 0.3 }}>{h}</div>
-                ))}
-            </div>
+            {/* 回転入力タブ */}
+            {S.sessionSubTab === "rot" && (
+                <>
+                    {/* Table Header - コンパクト */}
+                    <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 48px 52px", background: "linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(139, 92, 246, 0.08))", padding: "8px 4px", margin: "4px 12px 4px", borderRadius: 8, flexShrink: 0, border: `1px solid rgba(59, 130, 246, 0.15)` }}>
+                        {["種別", "総回転", "今回", "平均", "投資", "持ち玉"].map((h) => (
+                            <div key={h} style={{ textAlign: "center", fontSize: 9, fontWeight: 600, color: C.subHi, fontFamily: font, letterSpacing: 0.3 }}>{h}</div>
+                        ))}
+                    </div>
 
-            {/* Data Rows - 視認性向上、文字小さめ */}
-            <div ref={tableRef} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "0 12px", paddingBottom: 280, overscrollBehavior: "contain" }}>
+                    {/* Data Rows - 視認性向上、文字小さめ */}
+                    <div ref={tableRef} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "0 12px", paddingBottom: 280, overscrollBehavior: "contain" }}>
                 {rows.map((row, i) => {
                     // 投資表示（持ち玉/貯玉モードは消費玉数を円換算で表示）
                     const investDisplay = (row.mode === "mochi" || row.mode === "chodama")
@@ -915,6 +1050,152 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     <button className="b" onClick={handlePostJackpotStart} style={{ background: "rgba(16, 185, 129, 0.15)", border: `1px solid rgba(16, 185, 129, 0.3)`, borderRadius: 10, color: C.green, fontSize: 12, fontWeight: 700, padding: "12px 8px", fontFamily: font }}>大当たり後スタート</button>
                 </div>
             </div>
+                </>
+            )}
+
+            {/* 大当たりタブ - セッション内の大当たり履歴 */}
+            {S.sessionSubTab === "history" && (
+                <div style={{ flex: 1, overflowY: "auto", padding: "12px", paddingBottom: "calc(80px + env(safe-area-inset-bottom))" }}>
+                    <SecLabel label="大当たり履歴" />
+                    {S.jpLog.length === 0 ? (
+                        <div style={{ textAlign: "center", padding: 40, color: C.sub }}>
+                            <div style={{ fontSize: 36, marginBottom: 12 }}>📋</div>
+                            <div style={{ fontSize: 14 }}>まだ大当たりがありません</div>
+                        </div>
+                    ) : (
+                        S.jpLog.map((chain, idx) => (
+                            <Card key={chain.chainId || idx} style={{ marginBottom: 12 }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                                    <span style={{ fontSize: 14, fontWeight: 700, color: C.orange }}>{idx + 1}回目</span>
+                                    <span style={{ fontSize: 11, color: C.sub }}>{chain.time || ""}</span>
+                                </div>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                                    <div>
+                                        <div style={{ fontSize: 9, color: C.sub, marginBottom: 2 }}>当選G数</div>
+                                        <div style={{ fontSize: 16, fontWeight: 700, color: C.text, fontFamily: mono }}>{chain.hitThisRot || "—"}</div>
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: 9, color: C.sub, marginBottom: 2 }}>連チャン</div>
+                                        <div style={{ fontSize: 16, fontWeight: 700, color: C.blue, fontFamily: mono }}>{chain.hits?.length || 0}連</div>
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: 9, color: C.sub, marginBottom: 2 }}>出玉</div>
+                                        <div style={{ fontSize: 16, fontWeight: 700, color: C.green, fontFamily: mono }}>{chain.finalBalls ? f(chain.finalBalls) : "—"}</div>
+                                    </div>
+                                </div>
+                                {chain.summary && (
+                                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
+                                        <div style={{ display: "flex", gap: 12, fontSize: 11, color: C.sub }}>
+                                            <span>総R: <span style={{ color: C.text, fontFamily: mono }}>{chain.summary.totalRounds}</span></span>
+                                            <span>平均1R: <span style={{ color: C.teal, fontFamily: mono }}>{f(chain.summary.avg1R, 1)}</span></span>
+                                        </div>
+                                    </div>
+                                )}
+                            </Card>
+                        ))
+                    )}
+                </div>
+            )}
+
+            {/* データタブ - セッション統計 */}
+            {S.sessionSubTab === "data" && (
+                <div style={{ flex: 1, overflowY: "auto", padding: "12px", paddingBottom: "calc(80px + env(safe-area-inset-bottom))" }}>
+                    <Card>
+                        <SecLabel label="回転率・ボーダー" />
+                        <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                            <span style={{ fontSize: 13, color: C.sub }}>1Kスタート</span>
+                            <span style={{ fontSize: 16, fontWeight: 700, color: sc(ev.bDiff), fontFamily: mono }}>{ev.start1K > 0 ? f(ev.start1K, 1) : "—"} <span style={{ fontSize: 10, color: C.sub }}>回/K</span></span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                            <span style={{ fontSize: 13, color: C.sub }}>理論ボーダー</span>
+                            <span style={{ fontSize: 16, fontWeight: 700, color: C.subHi, fontFamily: mono }}>{ev.theoreticalBorder > 0 ? f(ev.theoreticalBorder, 1) : "—"} <span style={{ fontSize: 10, color: C.sub }}>回/K</span></span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0" }}>
+                            <span style={{ fontSize: 13, color: C.sub }}>ボーダー差</span>
+                            <span style={{ fontSize: 16, fontWeight: 700, color: sc(ev.bDiff), fontFamily: mono }}>{ev.bDiff !== 0 ? sp(ev.bDiff, 1) : "—"} <span style={{ fontSize: 10, color: C.sub }}>回/K</span></span>
+                        </div>
+                    </Card>
+                    <Card>
+                        <SecLabel label="期待値・収支" />
+                        <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                            <span style={{ fontSize: 13, color: C.sub }}>期待値/K</span>
+                            <span style={{ fontSize: 16, fontWeight: 700, color: sc(ev.ev1K), fontFamily: mono }}>{ev.ev1K !== 0 ? sp(ev.ev1K, 0) : "—"} <span style={{ fontSize: 10, color: C.sub }}>円</span></span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                            <span style={{ fontSize: 13, color: C.sub }}>仕事量</span>
+                            <span style={{ fontSize: 16, fontWeight: 700, color: sc(ev.workAmount), fontFamily: mono }}>{ev.workAmount !== 0 ? sp(ev.workAmount, 0) : "—"} <span style={{ fontSize: 10, color: C.sub }}>円</span></span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0" }}>
+                            <span style={{ fontSize: 13, color: C.sub }}>時給</span>
+                            <span style={{ fontSize: 16, fontWeight: 700, color: sc(ev.wage), fontFamily: mono }}>{ev.wage !== 0 ? sp(ev.wage, 0) : "—"} <span style={{ fontSize: 10, color: C.sub }}>円/h</span></span>
+                        </div>
+                    </Card>
+                    <Card>
+                        <SecLabel label="稼働データ" />
+                        <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                            <span style={{ fontSize: 13, color: C.sub }}>初当たり回数</span>
+                            <span style={{ fontSize: 16, fontWeight: 700, color: C.orange, fontFamily: mono }}>{S.jpLog.length} <span style={{ fontSize: 10, color: C.sub }}>回</span></span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                            <span style={{ fontSize: 13, color: C.sub }}>総回転数</span>
+                            <span style={{ fontSize: 16, fontWeight: 700, color: C.subHi, fontFamily: mono }}>{ev.netRot > 0 ? f(ev.netRot) : "—"} <span style={{ fontSize: 10, color: C.sub }}>回</span></span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0" }}>
+                            <span style={{ fontSize: 13, color: C.sub }}>総投資額</span>
+                            <span style={{ fontSize: 16, fontWeight: 700, color: C.red, fontFamily: mono }}>{ev.rawInvest > 0 ? f(ev.rawInvest) : "—"} <span style={{ fontSize: 10, color: C.sub }}>円</span></span>
+                        </div>
+                    </Card>
+                </div>
+            )}
+
+            {/* 機種設定タブ */}
+            {S.sessionSubTab === "settings" && (
+                <div style={{ flex: 1, overflowY: "auto", padding: "12px", paddingBottom: "calc(80px + env(safe-area-inset-bottom))" }}>
+                    <Card>
+                        <SecLabel label="機種情報" />
+                        <div style={{ padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>機種名</div>
+                            <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>{S.machineName || "未設定"}</div>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, padding: "12px 0" }}>
+                            <div>
+                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>合成確率</div>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: C.yellow, fontFamily: mono }}>1/{S.synthDenom}</div>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>1Rあたり出玉</div>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: C.teal, fontFamily: mono }}>{S.spec1R}玉</div>
+                            </div>
+                        </div>
+                    </Card>
+                    <Card>
+                        <SecLabel label="交換率・貸玉" />
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, padding: "12px 0" }}>
+                            <div>
+                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貸玉数</div>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: C.text, fontFamily: mono }}>{S.rentBalls}玉/K</div>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>交換率</div>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: C.text, fontFamily: mono }}>{S.exRate}玉/K</div>
+                            </div>
+                        </div>
+                    </Card>
+                    <Card>
+                        <SecLabel label="店舗・台番号" />
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, padding: "12px 0" }}>
+                            <div>
+                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>店舗</div>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{S.storeName || "未設定"}</div>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>台番号</div>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{S.machineNum || "—"}</div>
+                            </div>
+                        </div>
+                    </Card>
+                </div>
+            )}
 
             {/* Move Modal */}
             {showMoveModal && (
