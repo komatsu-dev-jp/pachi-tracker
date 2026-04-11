@@ -861,15 +861,16 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
     // セッション開始後：データ表示とコントロール
     return (
-        <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <div
+            ref={swipeAreaRef}
+            style={{ display: "flex", flexDirection: "column", height: "100%" }}
+        >
             {/* セッションヘッダー：スワイプ可能なタブ */}
             <div
-                ref={swipeAreaRef}
                 style={{
                     flexShrink: 0,
                     borderBottom: `1px solid ${C.border}`,
-                    background: "rgba(15,15,20,0.98)",
-                    touchAction: "none"
+                    background: "rgba(15,15,20,0.98)"
                 }}
             >
                 {/* 機種・店舗情報 */}
