@@ -559,6 +559,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
     const handleHeaderTouchStart = (e) => {
         if (headerIsAnimating) return;
+        e.stopPropagation();
         headerTouchStartX.current = e.touches[0].clientX;
         headerTouchStartY.current = e.touches[0].clientY;
         setHeaderSwipeDir(null);
@@ -583,6 +584,10 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
         if (headerSwipeDir !== "horizontal") return;
 
+        // 水平スワイプ時はブラウザのデフォルト動作を防止し、親への伝播も停止
+        e.preventDefault();
+        e.stopPropagation();
+
         const currentIndex = sessionSubTabs.indexOf(S.sessionSubTab);
         const isAtStart = currentIndex === 0 && diffX > 0;
         const isAtEnd = currentIndex === sessionSubTabs.length - 1 && diffX < 0;
@@ -590,7 +595,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         setHeaderSwipeOffset(diffX * resistance);
     };
 
-    const handleHeaderTouchEnd = () => {
+    const handleHeaderTouchEnd = (e) => {
+        e.stopPropagation();
         if (headerTouchStartX.current === null || headerIsAnimating || headerSwipeDir !== "horizontal") {
             headerTouchStartX.current = null;
             headerTouchStartY.current = null;
