@@ -186,7 +186,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [showStoreDD, setShowStoreDD] = useState(false);
     const [showMachineDD, setShowMachineDD] = useState(false);
     const [machineQuery, setMachineQuery] = useState("");
-    const [summaryCollapsed, setSummaryCollapsed] = useState(true);
+    const [summaryCollapsed, setSummaryCollapsed] = useState(false);
     const [showInvestSettings, setShowInvestSettings] = useState(false);
     const tableRef = useRef(null);
 
@@ -880,16 +880,16 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     }}>
                         <div style={{ textAlign: "left" }}>
                             <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{S.machineName || "機種未設定"}</div>
-                            <div style={{ fontSize: 9, color: C.sub }}>{S.storeName} {S.machineNum && `#${S.machineNum}`}</div>
+                            <div style={{ fontSize: 11, color: C.sub }}>{S.storeName} {S.machineNum && `#${S.machineNum}`}</div>
                         </div>
-                        <span style={{ fontSize: 8, color: C.sub }}>{summaryCollapsed ? "▼" : "▲"}</span>
+                        <span style={{ fontSize: 12, color: C.sub }}>{summaryCollapsed ? "▼" : "▲"}</span>
                     </button>
                     <button className="b" onClick={() => setShowInvestSettings(true)} style={{
                         background: "rgba(255,255,255,0.05)", border: `1px solid ${C.border}`, borderRadius: 6,
-                        padding: "5px 8px", display: "flex", alignItems: "center", gap: 4
+                        padding: "10px 10px", minHeight: 44, display: "flex", alignItems: "center", gap: 4
                     }}>
                         <span style={{ fontSize: 11 }}>⚙️</span>
-                        <span style={{ fontSize: 10, color: C.subHi, fontWeight: 600 }}>{investPace >= 1000 ? `${investPace/1000}K` : `${investPace}円`}</span>
+                        <span style={{ fontSize: 11, color: C.subHi, fontWeight: 600 }}>{investPace >= 1000 ? `${investPace/1000}K` : `${investPace}円`}</span>
                     </button>
                 </div>
 
@@ -898,19 +898,19 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     <div className="summary-card" style={{ padding: 6, margin: "0 12px 6px", borderRadius: 8 }}>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
                             <div className="stat-mini">
-                                <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>回転率</div>
+                                <div style={{ fontSize: 11, color: C.sub, fontWeight: 600, marginBottom: 2 }}>回転率</div>
                                 <div style={{ fontSize: 13, fontWeight: 700, color: sc(ev.bDiff), fontFamily: mono, lineHeight: 1 }}>{ev.start1K > 0 ? f(ev.start1K, 1) : "—"}</div>
                             </div>
                             <div className="stat-mini">
-                                <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>EV/K</div>
+                                <div style={{ fontSize: 11, color: C.sub, fontWeight: 600, marginBottom: 2 }}>EV/K</div>
                                 <div style={{ fontSize: 13, fontWeight: 700, color: sc(ev.ev1K), fontFamily: mono, lineHeight: 1 }}>{ev.ev1K !== 0 ? sp(ev.ev1K, 0) : "—"}</div>
                             </div>
                             <div className="stat-mini">
-                                <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>仕事量</div>
+                                <div style={{ fontSize: 11, color: C.sub, fontWeight: 600, marginBottom: 2 }}>仕事量</div>
                                 <div style={{ fontSize: 13, fontWeight: 700, color: sc(ev.workAmount), fontFamily: mono, lineHeight: 1 }}>{ev.workAmount !== 0 ? sp(ev.workAmount, 0) : "—"}</div>
                             </div>
                             <div className="stat-mini">
-                                <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>初当</div>
+                                <div style={{ fontSize: 11, color: C.sub, fontWeight: 600, marginBottom: 2 }}>初当</div>
                                 <div style={{ fontSize: 13, fontWeight: 700, color: C.orange, fontFamily: mono, lineHeight: 1 }}>{ev.jpCount || 0}</div>
                             </div>
                         </div>
@@ -959,7 +959,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     {/* Table Header - コンパクト */}
                     <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 48px 52px", background: "linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(139, 92, 246, 0.08))", padding: "8px 4px", margin: "4px 12px 4px", borderRadius: 8, flexShrink: 0, border: `1px solid rgba(59, 130, 246, 0.15)` }}>
                         {["種別", "総回転", "今回", "平均", "投資", "持ち玉"].map((h) => (
-                            <div key={h} style={{ textAlign: "center", fontSize: 9, fontWeight: 600, color: C.subHi, fontFamily: font, letterSpacing: 0.3 }}>{h}</div>
+                            <div key={h} style={{ textAlign: "center", fontSize: 11, fontWeight: 600, color: C.subHi, fontFamily: font, letterSpacing: 0.3 }}>{h}</div>
                         ))}
                     </div>
 
@@ -1048,10 +1048,10 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             return r.slice(0, -1);
                         });
                         setInputError("");
-                    }} style={{ background: "rgba(239, 68, 68, 0.12)", border: `1px solid rgba(239, 68, 68, 0.3)`, borderRadius: 8, color: C.red, fontSize: 10, padding: "10px 10px", fontFamily: font, fontWeight: 700 }}>削除</button>
+                    }} style={{ background: "rgba(239, 68, 68, 0.12)", border: `1px solid rgba(239, 68, 68, 0.3)`, borderRadius: 8, color: C.red, fontSize: 12, padding: "14px 12px", fontFamily: font, fontWeight: 700 }}>削除</button>
                 </div>
                 {inputError && (
-                    <div className="error-msg" style={{ marginBottom: 8, fontSize: 10 }}>{inputError}</div>
+                    <div className="error-msg" style={{ marginBottom: 8 }}>{inputError}</div>
                 )}
 
                 {/* メインボタン 2つ - 大きめ */}
@@ -1067,8 +1067,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
                 {/* 下段ボタン: 台移動 & 大当たり後スタート */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <button className="b" onClick={() => setShowMoveModal(true)} style={{ background: "rgba(139, 92, 246, 0.15)", border: `1px solid rgba(139, 92, 246, 0.3)`, borderRadius: 10, color: C.purple, fontSize: 12, fontWeight: 700, padding: "12px 8px", fontFamily: font }}>台移動</button>
-                    <button className="b" onClick={handlePostJackpotStart} style={{ background: "rgba(16, 185, 129, 0.15)", border: `1px solid rgba(16, 185, 129, 0.3)`, borderRadius: 10, color: C.green, fontSize: 12, fontWeight: 700, padding: "12px 8px", fontFamily: font }}>大当たり後スタート</button>
+                    <button className="b" onClick={() => setShowMoveModal(true)} style={{ background: "rgba(139, 92, 246, 0.15)", border: `1px solid rgba(139, 92, 246, 0.3)`, borderRadius: 10, color: C.purple, fontSize: 13, fontWeight: 700, padding: "14px 8px", fontFamily: font }}>台移動</button>
+                    <button className="b" onClick={handlePostJackpotStart} style={{ background: "rgba(16, 185, 129, 0.15)", border: `1px solid rgba(16, 185, 129, 0.3)`, borderRadius: 10, color: C.green, fontSize: 13, fontWeight: 700, padding: "14px 8px", fontFamily: font }}>大当たり後スタート</button>
                 </div>
             </div>
                 </>

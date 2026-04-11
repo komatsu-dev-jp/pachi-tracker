@@ -98,7 +98,8 @@ export function Btn({ label, onClick, bg = C.surfaceHi, fg = C.text, bd = C.bord
                 color: primary ? "#fff" : fg,
                 fontSize: small ? 12 : fs,
                 fontWeight: 700,
-                padding: small ? "10px 0" : "16px 0",
+                padding: small ? "14px 0" : "16px 0",
+                minHeight: 44,
                 width: "100%",
                 fontFamily: font,
                 boxShadow: primary ? "0 4px 12px rgba(59, 130, 246, 0.3)" : "none",
@@ -121,7 +122,7 @@ export function MiniStat({ label, val, col }) {
                 border: `1px solid ${C.border}`,
             }}
         >
-            <div style={{ fontSize: 9, color: C.sub, letterSpacing: 1, marginBottom: 4, fontFamily: font }}>{label}</div>
+            <div style={{ fontSize: 11, color: C.sub, letterSpacing: 1, marginBottom: 4, fontFamily: font }}>{label}</div>
             <div style={{ fontSize: 15, fontWeight: 700, color: col || C.text, fontFamily: mono, lineHeight: 1 }}>{val}</div>
         </div>
     );
@@ -132,7 +133,7 @@ export function InputGrid({ fields }) {
         <div style={{ display: "grid", gridTemplateColumns: `repeat(${fields.length}, 1fr)`, gap: 8, padding: "12px" }}>
             {fields.map(([lbl, v, s]) => (
                 <div key={lbl}>
-                    <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, textAlign: "center", fontFamily: font }}>{lbl}</div>
+                    <div style={{ fontSize: 11, color: C.sub, marginBottom: 4, textAlign: "center", fontFamily: font }}>{lbl}</div>
                     <NI v={v} set={s} w="100%" center />
                 </div>
             ))}
@@ -166,7 +167,8 @@ export function ModeToggle({ mode, setMode, showChodama = false, compact = false
                             color: isActive ? color : C.sub,
                             fontSize: compact ? 11 : 12,
                             fontWeight: isActive ? 700 : 500,
-                            padding: compact ? "5px 10px" : "6px 16px",
+                            padding: compact ? "10px 12px" : "10px 16px",
+                            minHeight: 44,
                             fontFamily: font,
                             boxShadow: isActive ? "0 2px 8px rgba(0,0,0,0.2)" : "none",
                         }}
