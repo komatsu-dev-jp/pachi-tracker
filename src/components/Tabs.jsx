@@ -549,8 +549,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     };
 
     // セッション内サブタブのスワイプ処理
-    const sessionSubTabs = ["rot", "history", "data", "settings"];
-    const sessionSubTabLabels = { rot: "回転入力", history: "大当たり", data: "データ", settings: "機種設定" };
+    const sessionSubTabs = ["data", "rot", "history", "settings"];
+    const sessionSubTabLabels = { data: "データ", rot: "回転入力", history: "大当たり", settings: "機種設定" };
     const headerTouchStartX = useRef(null);
     const headerTouchStartY = useRef(null);
     const [headerSwipeOffset, setHeaderSwipeOffset] = useState(0);
