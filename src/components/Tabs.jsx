@@ -852,7 +852,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     flexShrink: 0,
                     borderBottom: `1px solid ${C.border}`,
                     background: "rgba(15,15,20,0.98)",
-                    touchAction: "pan-y"
+                    touchAction: "pan-x pan-y"
                 }}
                 onTouchStart={handleHeaderTouchStart}
                 onTouchMove={handleHeaderTouchMove}
