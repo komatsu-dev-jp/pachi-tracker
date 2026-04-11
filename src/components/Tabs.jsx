@@ -551,96 +551,112 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     // セッション内サブタブのスワイプ処理
     const sessionSubTabs = ["data", "rot", "history", "settings"];
     const sessionSubTabLabels = { data: "データ", rot: "回転入力", history: "大当たり", settings: "機種設定" };
-    const headerTouchStartX = useRef(null);
-    const headerTouchStartY = useRef(null);
+    const swipeAreaRef = useRef(null);
+    const swipeState = useRef({ startX: null, startY: null, dir: null, offset: 0 });
     const [headerSwipeOffset, setHeaderSwipeOffset] = useState(0);
     const [headerIsAnimating, setHeaderIsAnimating] = useState(false);
-    const [headerSwipeDir, setHeaderSwipeDir] = useState(null);
 
-    const handleHeaderTouchStart = (e) => {
-        if (headerIsAnimating) return;
-        e.stopPropagation();
-        headerTouchStartX.current = e.touches[0].clientX;
-        headerTouchStartY.current = e.touches[0].clientY;
-        setHeaderSwipeDir(null);
-    };
+    // useEffectでタッチイベントを{ passive: false }で登録
+    useEffect(() => {
+        const el = swipeAreaRef.current;
+        if (!el) return;
 
-    const handleHeaderTouchMove = (e) => {
-        if (headerTouchStartX.current === null || headerIsAnimating) return;
-        const currentX = e.touches[0].clientX;
-        const currentY = e.touches[0].clientY;
-        const diffX = currentX - headerTouchStartX.current;
-        const diffY = currentY - headerTouchStartY.current;
+        const handleTouchStart = (e) => {
+            if (headerIsAnimating) return;
+            swipeState.current = {
+                startX: e.touches[0].clientX,
+                startY: e.touches[0].clientY,
+                dir: null,
+                offset: 0
+            };
+        };
 
-        // 方向が未確定の場合、10px以上動いたら判定
-        if (headerSwipeDir === null && (Math.abs(diffX) > 10 || Math.abs(diffY) > 10)) {
-            if (Math.abs(diffY) > Math.abs(diffX)) {
-                setHeaderSwipeDir("vertical");
-                return;
-            } else {
-                setHeaderSwipeDir("horizontal");
+        const handleTouchMove = (e) => {
+            const state = swipeState.current;
+            if (state.startX === null || headerIsAnimating) return;
+
+            const currentX = e.touches[0].clientX;
+            const currentY = e.touches[0].clientY;
+            const diffX = currentX - state.startX;
+            const diffY = currentY - state.startY;
+
+            // 方向が未確定の場合、10px以上動いたら判定
+            if (state.dir === null && (Math.abs(diffX) > 10 || Math.abs(diffY) > 10)) {
+                if (Math.abs(diffY) > Math.abs(diffX)) {
+                    state.dir = "vertical";
+                    return;
+                } else {
+                    state.dir = "horizontal";
+                }
             }
-        }
 
-        if (headerSwipeDir !== "horizontal") return;
+            if (state.dir !== "horizontal") return;
 
-        // 水平スワイプ時はブラウザのデフォルト動作を防止し、親への伝播も停止
-        e.preventDefault();
-        e.stopPropagation();
+            // 水平スワイプ時はブラウザのデフォルト動作を防止
+            e.preventDefault();
+            e.stopPropagation();
 
-        const currentIndex = sessionSubTabs.indexOf(S.sessionSubTab);
-        const isAtStart = currentIndex === 0 && diffX > 0;
-        const isAtEnd = currentIndex === sessionSubTabs.length - 1 && diffX < 0;
-        const resistance = (isAtStart || isAtEnd) ? 0.15 : 0.4;
-        setHeaderSwipeOffset(diffX * resistance);
-    };
+            const currentIndex = sessionSubTabs.indexOf(S.sessionSubTab);
+            const isAtStart = currentIndex === 0 && diffX > 0;
+            const isAtEnd = currentIndex === sessionSubTabs.length - 1 && diffX < 0;
+            const resistance = (isAtStart || isAtEnd) ? 0.15 : 0.4;
+            state.offset = diffX * resistance;
+            setHeaderSwipeOffset(state.offset);
+        };
 
-    const handleHeaderTouchEnd = (e) => {
-        e.stopPropagation();
-        if (headerTouchStartX.current === null || headerIsAnimating || headerSwipeDir !== "horizontal") {
-            headerTouchStartX.current = null;
-            headerTouchStartY.current = null;
-            setHeaderSwipeOffset(0);
-            setHeaderSwipeDir(null);
-            return;
-        }
+        const handleTouchEnd = () => {
+            const state = swipeState.current;
+            if (state.startX === null || headerIsAnimating || state.dir !== "horizontal") {
+                swipeState.current = { startX: null, startY: null, dir: null, offset: 0 };
+                setHeaderSwipeOffset(0);
+                return;
+            }
 
-        const diff = headerSwipeOffset / 0.4;
-        const threshold = 60;
-        const currentIndex = sessionSubTabs.indexOf(S.sessionSubTab);
+            const diff = state.offset / 0.4;
+            const threshold = 60;
+            const currentIndex = sessionSubTabs.indexOf(S.sessionSubTab);
 
-        if (Math.abs(diff) > threshold) {
-            if (diff > 0 && currentIndex > 0) {
-                setHeaderIsAnimating(true);
-                setHeaderSwipeOffset(window.innerWidth * 0.3);
-                setTimeout(() => {
-                    S.setSessionSubTab(sessionSubTabs[currentIndex - 1]);
+            if (Math.abs(diff) > threshold) {
+                if (diff > 0 && currentIndex > 0) {
+                    setHeaderIsAnimating(true);
+                    setHeaderSwipeOffset(window.innerWidth * 0.3);
+                    setTimeout(() => {
+                        S.setSessionSubTab(sessionSubTabs[currentIndex - 1]);
+                        setHeaderSwipeOffset(0);
+                        setHeaderIsAnimating(false);
+                    }, 250);
+                } else if (diff < 0 && currentIndex < sessionSubTabs.length - 1) {
+                    setHeaderIsAnimating(true);
+                    setHeaderSwipeOffset(-window.innerWidth * 0.3);
+                    setTimeout(() => {
+                        S.setSessionSubTab(sessionSubTabs[currentIndex + 1]);
+                        setHeaderSwipeOffset(0);
+                        setHeaderIsAnimating(false);
+                    }, 250);
+                } else {
+                    setHeaderIsAnimating(true);
                     setHeaderSwipeOffset(0);
-                    setHeaderIsAnimating(false);
-                }, 250);
-            } else if (diff < 0 && currentIndex < sessionSubTabs.length - 1) {
-                setHeaderIsAnimating(true);
-                setHeaderSwipeOffset(-window.innerWidth * 0.3);
-                setTimeout(() => {
-                    S.setSessionSubTab(sessionSubTabs[currentIndex + 1]);
-                    setHeaderSwipeOffset(0);
-                    setHeaderIsAnimating(false);
-                }, 250);
+                    setTimeout(() => setHeaderIsAnimating(false), 200);
+                }
             } else {
                 setHeaderIsAnimating(true);
                 setHeaderSwipeOffset(0);
                 setTimeout(() => setHeaderIsAnimating(false), 200);
             }
-        } else {
-            setHeaderIsAnimating(true);
-            setHeaderSwipeOffset(0);
-            setTimeout(() => setHeaderIsAnimating(false), 200);
-        }
 
-        headerTouchStartX.current = null;
-        headerTouchStartY.current = null;
-        setHeaderSwipeDir(null);
-    };
+            swipeState.current = { startX: null, startY: null, dir: null, offset: 0 };
+        };
+
+        el.addEventListener("touchstart", handleTouchStart, { passive: true });
+        el.addEventListener("touchmove", handleTouchMove, { passive: false });
+        el.addEventListener("touchend", handleTouchEnd, { passive: true });
+
+        return () => {
+            el.removeEventListener("touchstart", handleTouchStart);
+            el.removeEventListener("touchmove", handleTouchMove);
+            el.removeEventListener("touchend", handleTouchEnd);
+        };
+    }, [headerIsAnimating, S.sessionSubTab]);
 
     // セッション未開始：新規稼働ボタンを中央に表示
     if (!sessionActive) {
@@ -848,15 +864,13 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
             {/* セッションヘッダー：スワイプ可能なタブ */}
             <div
+                ref={swipeAreaRef}
                 style={{
                     flexShrink: 0,
                     borderBottom: `1px solid ${C.border}`,
                     background: "rgba(15,15,20,0.98)",
-                    touchAction: "pan-x pan-y"
+                    touchAction: "none"
                 }}
-                onTouchStart={handleHeaderTouchStart}
-                onTouchMove={handleHeaderTouchMove}
-                onTouchEnd={handleHeaderTouchEnd}
             >
                 {/* 機種・店舗情報 */}
                 <div style={{ padding: "8px 12px 6px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
