@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import { useLS, calcPreciseEV } from "./logic";
-import { C, f, font, mono, sc, sp } from "./constants";
+import { C, font } from "./constants";
 import { DataTab, RotTab, HistoryTab, SettingsTab, CalendarTab } from "./components/Tabs";
 
 export default function App() {
@@ -13,102 +13,6 @@ export default function App() {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
 
-  // Navigation order for swipe
-  const navOrder = ["data", "rot", "history", "calendar", "settings"];
-
-  // Swipe navigation state
-  const touchStartX = useRef(null);
-  const touchStartY = useRef(null);
-  const touchEndX = useRef(null);
-  const containerRef = useRef(null);
-  const isHorizontalSwipe = useRef(null); // Track if swipe direction is determined
-  const [swipeOffset, setSwipeOffset] = useState(0);
-  const [isAnimating, setIsAnimating] = useState(false);
-
-  const handleTouchStart = useCallback((e) => {
-    if (isAnimating) return;
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
-    touchEndX.current = e.touches[0].clientX;
-    isHorizontalSwipe.current = null; // Reset direction
-  }, [isAnimating]);
-
-  const handleTouchMove = useCallback((e) => {
-    if (touchStartX.current === null || isAnimating) return;
-
-    const currentX = e.touches[0].clientX;
-    const currentY = e.touches[0].clientY;
-    const diffX = currentX - touchStartX.current;
-    const diffY = currentY - touchStartY.current;
-
-    // Determine swipe direction once threshold is met
-    if (isHorizontalSwipe.current === null && (Math.abs(diffX) > 10 || Math.abs(diffY) > 10)) {
-      isHorizontalSwipe.current = Math.abs(diffX) > Math.abs(diffY);
-    }
-
-    // If vertical scroll, let it happen
-    if (isHorizontalSwipe.current === false) return;
-
-    // If horizontal swipe, prevent vertical scrolling
-    if (isHorizontalSwipe.current === true) {
-      e.preventDefault();
-    }
-
-    touchEndX.current = currentX;
-
-    // Apply resistance at edges
-    const currentIndex = navOrder.indexOf(tab);
-    const isAtStart = currentIndex === 0 && diffX > 0;
-    const isAtEnd = currentIndex === navOrder.length - 1 && diffX < 0;
-    const resistance = (isAtStart || isAtEnd) ? 0.2 : 0.5;
-
-    setSwipeOffset(diffX * resistance);
-  }, [tab, navOrder, isAnimating]);
-
-  const handleTouchEnd = useCallback(() => {
-    if (touchStartX.current === null || isAnimating) return;
-
-    const diff = touchEndX.current - touchStartX.current;
-    const threshold = 80;
-    const currentIndex = navOrder.indexOf(tab);
-
-    if (Math.abs(diff) > threshold) {
-      if (diff > 0 && currentIndex > 0) {
-        // Swipe right -> previous page
-        setIsAnimating(true);
-        setSwipeOffset(window.innerWidth);
-        setTimeout(() => {
-          setTab(navOrder[currentIndex - 1]);
-          setSwipeOffset(0);
-          setIsAnimating(false);
-        }, 350);
-      } else if (diff < 0 && currentIndex < navOrder.length - 1) {
-        // Swipe left -> next page
-        setIsAnimating(true);
-        setSwipeOffset(-window.innerWidth);
-        setTimeout(() => {
-          setTab(navOrder[currentIndex + 1]);
-          setSwipeOffset(0);
-          setIsAnimating(false);
-        }, 350);
-      } else {
-        // Bounce back
-        setIsAnimating(true);
-        setSwipeOffset(0);
-        setTimeout(() => setIsAnimating(false), 350);
-      }
-    } else {
-      // Not enough distance, bounce back
-      setIsAnimating(true);
-      setSwipeOffset(0);
-      setTimeout(() => setIsAnimating(false), 350);
-    }
-
-    touchStartX.current = null;
-    touchStartY.current = null;
-    touchEndX.current = null;
-    isHorizontalSwipe.current = null;
-  }, [tab, navOrder, isAnimating]);
 
   // Settings
   const [rentBalls, setRentBalls] = useLS("pt_rentBalls", 250);
@@ -354,10 +258,7 @@ export default function App() {
   ];
 
   // Dynamic styles based on theme
-  const headerBg = theme === "light" ? "var(--header-bg)" : "rgba(17, 17, 22, 0.8)";
   const navBg = theme === "light" ? "var(--nav-bg)" : "rgba(17, 17, 22, 0.95)";
-  const headerTextColor = theme === "light" ? C.text : "#fff";
-  const statBg = theme === "light" ? "rgba(0,0,0,0.03)" : "rgba(255,255,255,0.03)";
 
   return (
     <div style={{ background: C.bg, height: "100dvh", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column", color: C.text, position: "relative", overflow: "hidden" }}>
@@ -365,12 +266,8 @@ export default function App() {
       {/* Minimal safe-area spacing */}
       <div style={{ height: "env(safe-area-inset-top)", flexShrink: 0 }} />
 
-      {/* Main Content with Swipe */}
+      {/* Main Content */}
       <main
-        ref={containerRef}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
         style={{
           flex: 1,
           display: "flex",
@@ -378,10 +275,6 @@ export default function App() {
           overflow: "auto",
           overflowX: "hidden",
           paddingBottom: "calc(70px + env(safe-area-inset-bottom))",
-          transform: `translateX(${swipeOffset}px)`,
-          transition: isAnimating ? "transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94)" : "none",
-          willChange: "transform",
-          touchAction: "pan-y pinch-zoom",
         }}
       >
         {tab === "data" && <DataTab ev={ev} jpLog={jpLog} S={S} />}
@@ -394,7 +287,7 @@ export default function App() {
       {/* Navigation */}
       <nav style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: navBg, backdropFilter: "blur(20px)", borderTop: `1px solid ${C.border}`, display: "flex", paddingBottom: "env(safe-area-inset-bottom)", zIndex: 100 }}>
         {nav.map(({ id, label, icon }) => (
-          <button key={id} className="b" onClick={() => { if (!isAnimating) setTab(id); }} style={{
+          <button key={id} className="b" onClick={() => setTab(id)} style={{
             flex: 1, background: "transparent", border: "none",
             borderTop: tab === id ? `3px solid ${C.blue}` : "3px solid transparent",
             padding: "12px 0 10px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, transition: "all 0.2s ease"
