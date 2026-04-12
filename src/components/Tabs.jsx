@@ -1112,52 +1112,110 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 </div>
             )}
 
-            {/* データタブ - セッション統計 */}
+            {/* データタブ - セッション統計（DataTabと同じスタイル） */}
             {S.sessionSubTab === "data" && (
-                <div style={{ flex: 1, overflowY: "auto", padding: "12px", paddingBottom: "calc(80px + env(safe-area-inset-bottom))" }}>
-                    <Card>
+                <div style={{ flex: 1, overflowY: "auto", padding: "0 14px", paddingBottom: "calc(80px + env(safe-area-inset-bottom))" }}>
+                    {/* 回転率・ボーダー */}
+                    <Card style={{ marginTop: 12 }}>
                         <SecLabel label="回転率・ボーダー" />
-                        <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
-                            <span style={{ fontSize: 13, color: C.sub }}>1Kスタート</span>
-                            <span style={{ fontSize: 16, fontWeight: 700, color: sc(ev.bDiff), fontFamily: mono }}>{ev.start1K > 0 ? f(ev.start1K, 1) : "—"} <span style={{ fontSize: 10, color: C.sub }}>回/K</span></span>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
+                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>1Kスタート</span>
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                                <span style={{ fontSize: 18, fontWeight: 800, color: sc(ev.bDiff), fontFamily: mono }}>{ev.start1K > 0 ? f(ev.start1K, 1) : "—"}</span>
+                                <span style={{ fontSize: 10, color: C.sub }}>回/K</span>
+                            </div>
                         </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
-                            <span style={{ fontSize: 13, color: C.sub }}>理論ボーダー</span>
-                            <span style={{ fontSize: 16, fontWeight: 700, color: C.subHi, fontFamily: mono }}>{ev.theoreticalBorder > 0 ? f(ev.theoreticalBorder, 1) : "—"} <span style={{ fontSize: 10, color: C.sub }}>回/K</span></span>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
+                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>理論ボーダー</span>
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                                <span style={{ fontSize: 18, fontWeight: 800, color: C.subHi, fontFamily: mono }}>{ev.theoreticalBorder > 0 ? f(ev.theoreticalBorder, 1) : "—"}</span>
+                                <span style={{ fontSize: 10, color: C.sub }}>回/K</span>
+                            </div>
                         </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0" }}>
-                            <span style={{ fontSize: 13, color: C.sub }}>ボーダー差</span>
-                            <span style={{ fontSize: 16, fontWeight: 700, color: sc(ev.bDiff), fontFamily: mono }}>{ev.bDiff !== 0 ? sp(ev.bDiff, 1) : "—"} <span style={{ fontSize: 10, color: C.sub }}>回/K</span></span>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px" }}>
+                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>ボーダー差</span>
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                                <span style={{ fontSize: 18, fontWeight: 800, color: sc(ev.bDiff), fontFamily: mono }}>{ev.bDiff !== 0 ? sp(ev.bDiff, 1) : "—"}</span>
+                                <span style={{ fontSize: 10, color: C.sub }}>回/K</span>
+                            </div>
                         </div>
                     </Card>
+
+                    {/* 期待値・収支 */}
                     <Card>
                         <SecLabel label="期待値・収支" />
-                        <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
-                            <span style={{ fontSize: 13, color: C.sub }}>期待値/K</span>
-                            <span style={{ fontSize: 16, fontWeight: 700, color: sc(ev.ev1K), fontFamily: mono }}>{ev.ev1K !== 0 ? sp(ev.ev1K, 0) : "—"} <span style={{ fontSize: 10, color: C.sub }}>円</span></span>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
+                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>期待値/K</span>
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                                <span style={{ fontSize: 18, fontWeight: 800, color: sc(ev.ev1K), fontFamily: mono }}>{ev.ev1K !== 0 ? sp(ev.ev1K, 0) : "—"}</span>
+                                <span style={{ fontSize: 10, color: C.sub }}>円</span>
+                            </div>
                         </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
-                            <span style={{ fontSize: 13, color: C.sub }}>仕事量</span>
-                            <span style={{ fontSize: 16, fontWeight: 700, color: sc(ev.workAmount), fontFamily: mono }}>{ev.workAmount !== 0 ? sp(ev.workAmount, 0) : "—"} <span style={{ fontSize: 10, color: C.sub }}>円</span></span>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
+                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>単価</span>
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                                <span style={{ fontSize: 18, fontWeight: 800, color: sc(ev.evPerRot), fontFamily: mono }}>{ev.evPerRot !== 0 ? sp(ev.evPerRot, 2) : "—"}</span>
+                                <span style={{ fontSize: 10, color: C.sub }}>円/回</span>
+                            </div>
                         </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0" }}>
-                            <span style={{ fontSize: 13, color: C.sub }}>時給</span>
-                            <span style={{ fontSize: 16, fontWeight: 700, color: sc(ev.wage), fontFamily: mono }}>{ev.wage !== 0 ? sp(ev.wage, 0) : "—"} <span style={{ fontSize: 10, color: C.sub }}>円/h</span></span>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
+                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>仕事量</span>
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                                <span style={{ fontSize: 18, fontWeight: 800, color: sc(ev.workAmount), fontFamily: mono }}>{ev.workAmount !== 0 ? sp(ev.workAmount, 0) : "—"}</span>
+                                <span style={{ fontSize: 10, color: C.sub }}>円</span>
+                            </div>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px" }}>
+                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>時給</span>
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                                <span style={{ fontSize: 18, fontWeight: 800, color: sc(ev.wage), fontFamily: mono }}>{ev.wage !== 0 ? sp(ev.wage, 0) : "—"}</span>
+                                <span style={{ fontSize: 10, color: C.sub }}>円/h</span>
+                            </div>
                         </div>
                     </Card>
+
+                    {/* 出玉データ */}
+                    <Card>
+                        <SecLabel label="出玉データ" />
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
+                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>平均1R出玉</span>
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                                <span style={{ fontSize: 18, fontWeight: 800, color: C.teal, fontFamily: mono }}>{ev.avg1R > 0 ? f(ev.avg1R, 1) : "—"}</span>
+                                <span style={{ fontSize: 10, color: C.sub }}>玉</span>
+                            </div>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px" }}>
+                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>平均R数/初当たり</span>
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                                <span style={{ fontSize: 18, fontWeight: 800, color: C.blue, fontFamily: mono }}>{ev.avgRpJ > 0 ? f(ev.avgRpJ, 1) : "—"}</span>
+                                <span style={{ fontSize: 10, color: C.sub }}>R</span>
+                            </div>
+                        </div>
+                    </Card>
+
+                    {/* 稼働データ */}
                     <Card>
                         <SecLabel label="稼働データ" />
-                        <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
-                            <span style={{ fontSize: 13, color: C.sub }}>初当たり回数</span>
-                            <span style={{ fontSize: 16, fontWeight: 700, color: C.orange, fontFamily: mono }}>{S.jpLog.length} <span style={{ fontSize: 10, color: C.sub }}>回</span></span>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
+                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>初当たり回数</span>
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                                <span style={{ fontSize: 18, fontWeight: 800, color: C.green, fontFamily: mono }}>{S.jpLog.length > 0 ? S.jpLog.length.toString() : "0"}</span>
+                                <span style={{ fontSize: 10, color: C.sub }}>回</span>
+                            </div>
                         </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
-                            <span style={{ fontSize: 13, color: C.sub }}>総回転数</span>
-                            <span style={{ fontSize: 16, fontWeight: 700, color: C.subHi, fontFamily: mono }}>{ev.netRot > 0 ? f(ev.netRot) : "—"} <span style={{ fontSize: 10, color: C.sub }}>回</span></span>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
+                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>総回転数</span>
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                                <span style={{ fontSize: 18, fontWeight: 800, color: C.subHi, fontFamily: mono }}>{ev.netRot > 0 ? f(ev.netRot) : "—"}</span>
+                                <span style={{ fontSize: 10, color: C.sub }}>回</span>
+                            </div>
                         </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0" }}>
-                            <span style={{ fontSize: 13, color: C.sub }}>総投資額</span>
-                            <span style={{ fontSize: 16, fontWeight: 700, color: C.red, fontFamily: mono }}>{ev.rawInvest > 0 ? f(ev.rawInvest) : "—"} <span style={{ fontSize: 10, color: C.sub }}>円</span></span>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px" }}>
+                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>総投資額</span>
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                                <span style={{ fontSize: 18, fontWeight: 800, color: C.red, fontFamily: mono }}>{ev.rawInvest > 0 ? f(ev.rawInvest) : "—"}</span>
+                                <span style={{ fontSize: 10, color: C.sub }}>円</span>
+                            </div>
                         </div>
                     </Card>
                 </div>
