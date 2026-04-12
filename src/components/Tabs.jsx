@@ -599,7 +599,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             const currentIndex = sessionSubTabs.indexOf(S.sessionSubTab);
             const isAtStart = currentIndex === 0 && diffX > 0;
             const isAtEnd = currentIndex === sessionSubTabs.length - 1 && diffX < 0;
-            const resistance = (isAtStart || isAtEnd) ? 0.15 : 0.4;
+            // 1:1追従。端では抵抗をかける
+            const resistance = (isAtStart || isAtEnd) ? 0.3 : 1.0;
             state.offset = diffX * resistance;
             setHeaderSwipeOffset(state.offset);
         };
@@ -612,36 +613,29 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 return;
             }
 
-            const diff = state.offset / 0.4;
-            const threshold = 60;
+            const threshold = 50; // 50px以上スワイプで切り替え
             const currentIndex = sessionSubTabs.indexOf(S.sessionSubTab);
 
-            if (Math.abs(diff) > threshold) {
-                if (diff > 0 && currentIndex > 0) {
+            if (Math.abs(state.offset) > threshold) {
+                if (state.offset > 0 && currentIndex > 0) {
                     setHeaderIsAnimating(true);
-                    setHeaderSwipeOffset(window.innerWidth * 0.3);
-                    setTimeout(() => {
-                        S.setSessionSubTab(sessionSubTabs[currentIndex - 1]);
-                        setHeaderSwipeOffset(0);
-                        setHeaderIsAnimating(false);
-                    }, 250);
-                } else if (diff < 0 && currentIndex < sessionSubTabs.length - 1) {
+                    S.setSessionSubTab(sessionSubTabs[currentIndex - 1]);
+                    setHeaderSwipeOffset(0);
+                    setTimeout(() => setHeaderIsAnimating(false), 180);
+                } else if (state.offset < 0 && currentIndex < sessionSubTabs.length - 1) {
                     setHeaderIsAnimating(true);
-                    setHeaderSwipeOffset(-window.innerWidth * 0.3);
-                    setTimeout(() => {
-                        S.setSessionSubTab(sessionSubTabs[currentIndex + 1]);
-                        setHeaderSwipeOffset(0);
-                        setHeaderIsAnimating(false);
-                    }, 250);
+                    S.setSessionSubTab(sessionSubTabs[currentIndex + 1]);
+                    setHeaderSwipeOffset(0);
+                    setTimeout(() => setHeaderIsAnimating(false), 180);
                 } else {
                     setHeaderIsAnimating(true);
                     setHeaderSwipeOffset(0);
-                    setTimeout(() => setHeaderIsAnimating(false), 200);
+                    setTimeout(() => setHeaderIsAnimating(false), 150);
                 }
             } else {
                 setHeaderIsAnimating(true);
                 setHeaderSwipeOffset(0);
-                setTimeout(() => setHeaderIsAnimating(false), 200);
+                setTimeout(() => setHeaderIsAnimating(false), 150);
             }
 
             swipeState.current = { startX: null, startY: null, dir: null, offset: 0 };
@@ -923,7 +917,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         display: "flex",
                         overflow: "hidden",
                         transform: `translateX(${headerSwipeOffset}px)`,
-                        transition: headerIsAnimating ? "transform 0.25s ease-out" : "none"
+                        transition: headerIsAnimating ? "transform 0.15s cubic-bezier(0.25, 0.1, 0.25, 1)" : "none"
                     }}
                 >
                     {sessionSubTabs.map((tabId) => {
