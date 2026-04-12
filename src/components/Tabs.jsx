@@ -911,11 +911,13 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     </div>
                 )}
 
-                {/* タブバー（固定） */}
+                {/* スワイプ可能タブバー */}
                 <div
                     style={{
                         display: "flex",
-                        overflow: "hidden"
+                        overflow: "hidden",
+                        transform: `translateX(${headerSwipeOffset}px)`,
+                        transition: headerIsAnimating ? "transform 0.15s cubic-bezier(0.25, 0.1, 0.25, 1)" : "none"
                     }}
                 >
                     {sessionSubTabs.map((tabId) => {
@@ -945,17 +947,6 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 </div>
             </div>
 
-            {/* コンテンツエリア（スワイプで動く） */}
-            <div
-                style={{
-                    flex: 1,
-                    display: "flex",
-                    flexDirection: "column",
-                    overflow: "hidden",
-                    transform: `translateX(${headerSwipeOffset}px)`,
-                    transition: headerIsAnimating ? "transform 0.15s cubic-bezier(0.25, 0.1, 0.25, 1)" : "none"
-                }}
-            >
             {/* 回転入力タブ */}
             {S.sessionSubTab === "rot" && (
                 <>
@@ -1220,7 +1211,6 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     </Card>
                 </div>
             )}
-            </div>{/* コンテンツエリア終了 */}
 
             {/* Move Modal */}
             {showMoveModal && (
