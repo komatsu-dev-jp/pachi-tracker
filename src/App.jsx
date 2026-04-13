@@ -3,16 +3,64 @@ import { useLS, calcPreciseEV } from "./logic";
 import { C, font } from "./constants";
 import { RotTab, SettingsTab, CalendarTab } from "./components/Tabs";
 
+export const COLOR_THEMES = [
+  { id: "purple",   gradient: "linear-gradient(135deg,#667eea,#764ba2)", primary: "#667eea" },
+  { id: "teal",     gradient: "linear-gradient(135deg,#0093E9,#80D0C7)", primary: "#0093E9" },
+  { id: "green",    gradient: "linear-gradient(135deg,#11998e,#38ef7d)", primary: "#11998e" },
+  { id: "orange",   gradient: "linear-gradient(135deg,#f7971e,#ffd200)", primary: "#f7971e" },
+  { id: "red",      gradient: "linear-gradient(135deg,#cb2d3e,#ef473a)", primary: "#ef473a" },
+  { id: "pink",     gradient: "linear-gradient(135deg,#ee0979,#ff6a00)", primary: "#ee0979" },
+  { id: "lavender", gradient: "linear-gradient(135deg,#a18cd1,#fbc2eb)", primary: "#a18cd1" },
+  { id: "emerald",  gradient: "linear-gradient(135deg,#0cebeb,#20e3b2)", primary: "#20e3b2" },
+  { id: "cyan",     gradient: "linear-gradient(135deg,#43cea2,#185a9d)", primary: "#43cea2" },
+  { id: "yellow",   gradient: "linear-gradient(135deg,#f6d365,#fda085)", primary: "#f6d365" },
+];
+
 export default function App() {
   const [tab, setTab] = useState("rot");
 
   // Theme management
   const [theme, setTheme] = useLS("pt_theme", "dark");
 
+  // Appearance
+  const [accentColor, setAccentColor] = useLS("pt_accentColor", "purple");
+  const [highContrast, setHighContrast] = useLS("pt_highContrast", false);
+  const [colorBlind, setColorBlind] = useLS("pt_colorBlind", false);
+
+  // Security
+  const [appLock, setAppLock] = useLS("pt_appLock", false);
+  const [appPin, setAppPin] = useLS("pt_appPin", "");
+  const [isLocked, setIsLocked] = useState(() => appLock);
+  const [pinInput, setPinInput] = useState("");
+  const [pinError, setPinError] = useState(false);
+
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
+    if (theme === "system") {
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
+      const apply = (e) => document.documentElement.setAttribute("data-theme", e.matches ? "dark" : "light");
+      apply(mq);
+      mq.addEventListener("change", apply);
+      return () => mq.removeEventListener("change", apply);
+    } else {
+      document.documentElement.setAttribute("data-theme", theme);
+    }
   }, [theme]);
 
+  useEffect(() => {
+    const preset = COLOR_THEMES.find(t => t.id === accentColor);
+    if (preset) {
+      document.documentElement.style.setProperty("--blue", preset.primary);
+      document.documentElement.style.setProperty("--accent-grad", preset.gradient);
+    }
+  }, [accentColor]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("high-contrast", !!highContrast);
+  }, [highContrast]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("color-blind", !!colorBlind);
+  }, [colorBlind]);
 
   // Settings
   const [rentBalls, setRentBalls] = useLS("pt_rentBalls", 250);
@@ -20,7 +68,7 @@ export default function App() {
   const [synthDenom, setSynthDenom] = useLS("pt_synthDenom", 319.6);
   const [rotPerHour, setRotPerHour] = useLS("pt_rotPerHour", 250);
   const [border, setBorder] = useLS("pt_border", 20);
-  const [investPace, setInvestPace] = useLS("pt_investPace", 1000); // 投資金額ペース: 500, 1000円
+  const [investPace, setInvestPace] = useLS("pt_investPace", 1000);
   const [ballVal, setBallVal] = useLS("pt_ballVal", 4);
   // 機種スペック（P tools互換）
   const [spec1R, setSpec1R] = useLS("pt_spec1R", 140);
@@ -28,7 +76,7 @@ export default function App() {
   const [specSapo, setSpecSapo] = useLS("pt_specSapo", 0);
 
   // Logs
-  const [jpLog, setJpLog] = useLS("pt_jpLog3", []);    // v3: chain-based structure
+  const [jpLog, setJpLog] = useLS("pt_jpLog3", []);
   const [sesLog, setSesLog] = useLS("pt_sesLog", []);
   const [rotRows, setRotRows] = useLS("pt_rotRows", []);
   const [startRot, setStartRot] = useLS("pt_startRot", 0);
@@ -55,10 +103,10 @@ export default function App() {
   // 時短/大当たり終了後のスタート入力プロンプト表示フラグ
   const [showStartPrompt, setShowStartPrompt] = useState(false);
 
-  // セッション内サブタブ（稼働中のヘッダーナビゲーション用）
+  // セッション内サブタブ
   const [sessionSubTab, setSessionSubTab] = useState("rot");
 
-  // Session info (店舗・台番号・投資・回収・機種名)
+  // Session info
   const [storeName, setStoreName] = useLS("pt_storeName", "");
   const [machineNum, setMachineNum] = useLS("pt_machineNum", "");
   const [machineName, setMachineName] = useLS("pt_machineName", "");
@@ -73,19 +121,6 @@ export default function App() {
 
   // Archives
   const [archives, setArchives] = useLS("pt_archives", []);
-
-  // 一時的なデータクリーンアップ: 3/23のデータのみ残す
-  useEffect(() => {
-    const cleaned = localStorage.getItem("pt_archives_cleaned_0323");
-    if (!cleaned && archives.length > 0) {
-      const filtered = archives.filter(a => a.date === "2026-03-23");
-      if (filtered.length !== archives.length) {
-        setArchives(filtered);
-        localStorage.setItem("pt_archives_cleaned_0323", "true");
-        console.log(`Archives cleaned: ${archives.length} -> ${filtered.length} (kept only 3/23)`);
-      }
-    }
-  }, []);
 
   // 日付変更時に貯玉使用量をリセット
   useEffect(() => {
@@ -120,7 +155,6 @@ export default function App() {
     setMachineName("");
     setInvestYen(0);
     setRecoveryYen(0);
-    // セッション関連リセット
     setSessionStarted(false);
     setStartGameCount(0);
     setInitialMochiBalls(0);
@@ -132,7 +166,6 @@ export default function App() {
 
   // 台移動: 現在のデータを自動保存して新台へ
   const handleMoveTable = () => {
-    // データがある場合のみ保存
     if (rotRows.length > 0 || jpLog.length > 0) {
       const now = new Date();
       const safeStats = ev ? Object.fromEntries(
@@ -180,6 +213,12 @@ export default function App() {
     archives, setArchives,
     ev, handleMoveTable,
     theme, setTheme,
+    // 外観
+    accentColor, setAccentColor, colorThemes: COLOR_THEMES,
+    highContrast, setHighContrast,
+    colorBlind, setColorBlind,
+    // セキュリ
+    appLock, setAppLock, appPin, setAppPin, setIsLocked,
     // 貯玉関連
     includeChodamaInBalance, setIncludeChodamaInBalance,
     chodamaReplayLimit, setChodamaReplayLimit,
@@ -199,7 +238,7 @@ export default function App() {
     sessionSubTab, setSessionSubTab,
   };
 
-  // カスタムアイコン: 黄色の＋（空白の○の中）
+  // カスタムアイコン: 黄色の＋
   const PlusCircleIcon = ({ active }) => (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{ filter: active ? "none" : "grayscale(1) opacity(0.5)" }}>
       <circle cx="12" cy="12" r="10" stroke="#facc15" strokeWidth="2" fill="none" />
@@ -208,13 +247,74 @@ export default function App() {
   );
 
   const nav = [
-    { id: "rot", label: "新規稼働", icon: "plus" },
     { id: "calendar", label: "記録", icon: "📅" },
+    { id: "rot",      label: "新規稼働", icon: "plus" },
     { id: "settings", label: "設定", icon: "⚙️" },
   ];
 
-  // Dynamic styles based on theme
   const navBg = theme === "light" ? "var(--nav-bg)" : "rgba(17, 17, 22, 0.95)";
+
+  // PINロック画面
+  if (isLocked && appLock && appPin) {
+    const handlePinKey = (key) => {
+      if (key === "del") {
+        setPinInput(p => p.slice(0, -1));
+        setPinError(false);
+        return;
+      }
+      const next = pinInput + key;
+      if (next.length > 4) return;
+      setPinInput(next);
+      if (next.length === 4) {
+        if (next === appPin) {
+          setIsLocked(false);
+          setPinInput("");
+          setPinError(false);
+        } else {
+          setPinError(true);
+          setTimeout(() => { setPinInput(""); setPinError(false); }, 700);
+        }
+      }
+    };
+
+    return (
+      <div style={{ background: "var(--accent-grad, linear-gradient(135deg,#667eea,#764ba2))", height: "100dvh", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 32px" }}>
+        <div style={{ fontSize: 32, marginBottom: 8 }}>🔒</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "#fff", marginBottom: 4, fontFamily: font }}>パチトラッカー</div>
+        <div style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", marginBottom: 32, fontFamily: font }}>PINを入力してください</div>
+
+        {/* ドット表示 */}
+        <div style={{ display: "flex", gap: 16, marginBottom: 8 }}>
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} style={{
+              width: 16, height: 16, borderRadius: "50%",
+              background: i < pinInput.length ? "#fff" : "rgba(255,255,255,0.3)",
+              transition: "background 0.15s ease",
+              boxShadow: pinError ? "0 0 0 3px rgba(239,68,68,0.6)" : "none",
+            }} />
+          ))}
+        </div>
+        {pinError && <div style={{ fontSize: 12, color: "#fca5a5", marginBottom: 8, fontFamily: font }}>PINが違います</div>}
+        <div style={{ marginBottom: 32, height: 16 }} />
+
+        {/* テンキー */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 72px)", gap: 12 }}>
+          {["1","2","3","4","5","6","7","8","9","","0","del"].map((k, i) => (
+            k === "" ? <div key={i} /> :
+            <button key={i} className="b" onClick={() => handlePinKey(k)} style={{
+              height: 72, borderRadius: 36,
+              background: k === "del" ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.2)",
+              border: "1px solid rgba(255,255,255,0.3)",
+              color: "#fff", fontSize: k === "del" ? 18 : 24, fontWeight: 700,
+              fontFamily: font, cursor: "pointer",
+            }}>
+              {k === "del" ? "⌫" : k}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ background: C.bg, height: "100dvh", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column", color: C.text, position: "relative", overflow: "hidden" }}>
