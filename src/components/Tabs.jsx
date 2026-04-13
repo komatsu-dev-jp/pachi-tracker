@@ -4435,8 +4435,12 @@ export function SettingsTab({ s, onReset }) {
     const [editingStore, setEditingStore] = useState(null);
     const [showStoreForm, setShowStoreForm] = useState(false);
 
-    // 設定内タブ
-    const [settingsTab, setSettingsTab] = useState("appearance");
+    // サブ画面ナビゲーション
+    const [showAppearanceView, setShowAppearanceView] = useState(false);
+    const [showGameSettingsView, setShowGameSettingsView] = useState(false);
+    const [showMachineSpecView, setShowMachineSpecView] = useState(false);
+    const [showChodamaView, setShowChodamaView] = useState(false);
+    const [showBackupView, setShowBackupView] = useState(false);
 
     // 削除確認
     const [confirmingDeleteMachine, setConfirmingDeleteMachine] = useState(null);
@@ -5467,357 +5471,170 @@ export function SettingsTab({ s, onReset }) {
         );
     }
 
-    // 設定タブのヘッダー
-    const SETTINGS_TABS = [
-        { id: "appearance", label: "外観" },
-        { id: "security",   label: "セキュリ" },
-        { id: "data",       label: "データ" },
-        { id: "other",      label: "その他" },
-    ];
+    // ── サブ画面共通ヘッダー ──
+    const SubHeader = ({ title, onBack }) => (
+        <div style={{
+            background: "var(--accent-grad, linear-gradient(135deg,#667eea,#764ba2))",
+            padding: "14px 16px 14px",
+            display: "flex", alignItems: "center", gap: 12, flexShrink: 0,
+        }}>
+            <button className="b" onClick={onBack} style={{
+                background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 8,
+                color: "#fff", fontSize: 18, width: 34, height: 34,
+                display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+            }}>‹</button>
+            <div style={{ fontSize: 17, fontWeight: 700, color: "#fff", fontFamily: font }}>{title}</div>
+        </div>
+    );
 
-    // トグルスイッチ共通コンポーネント
+    // ── 共通UIヘルパー ──
     const Toggle = ({ value, onChange, color }) => (
         <button className="b" onClick={() => onChange(!value)} style={{
-            width: 52, height: 28, borderRadius: 14, border: "none", flexShrink: 0,
+            width: 48, height: 26, borderRadius: 13, border: "none", flexShrink: 0,
             background: value ? (color || C.blue) : "rgba(128,128,128,0.25)",
             position: "relative", transition: "background 0.2s ease", cursor: "pointer",
         }}>
             <div style={{
-                width: 22, height: 22, borderRadius: 11, background: "#fff",
+                width: 20, height: 20, borderRadius: 10, background: "#fff",
                 position: "absolute", top: 3,
-                left: value ? 27 : 3, transition: "left 0.2s ease",
+                left: value ? 25 : 3, transition: "left 0.2s ease",
                 boxShadow: "0 2px 4px rgba(0,0,0,0.25)",
             }} />
         </button>
     );
 
-    // リスト行（その他タブ用）
-    const ListRow = ({ icon, label, sub, onClick, rightText }) => (
-        <button className="b" onClick={onClick} style={{
+    // 汎用リスト行（タップ → ナビゲーション or 表示のみ）
+    const Row = ({ icon, label, sub, right, onPress, danger }) => (
+        <button className="b" onClick={onPress} disabled={!onPress} style={{
             width: "100%", background: "transparent", border: "none",
-            borderBottom: `1px solid ${C.border}`, padding: "14px 16px",
-            display: "flex", alignItems: "center", gap: 12, cursor: "pointer", textAlign: "left",
+            borderBottom: `1px solid ${C.border}`, padding: "13px 16px",
+            display: "flex", alignItems: "center", gap: 12,
+            cursor: onPress ? "pointer" : "default", textAlign: "left",
         }}>
-            <span style={{ fontSize: 18, width: 24, textAlign: "center" }}>{icon}</span>
-            <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{label}</div>
-                {sub && <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>{sub}</div>}
+            {icon && <span style={{ fontSize: 19, width: 26, textAlign: "center", flexShrink: 0 }}>{icon}</span>}
+            <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, color: danger ? C.red : C.text, fontWeight: 500 }}>{label}</div>
+                {sub && <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>{sub}</div>}
             </div>
-            {rightText ? (
-                <span style={{ fontSize: 12, color: C.sub, fontFamily: mono }}>{rightText}</span>
-            ) : (
-                <span style={{ fontSize: 16, color: C.sub }}>›</span>
-            )}
+            {right !== undefined ? right : (onPress ? <span style={{ fontSize: 18, color: C.sub, flexShrink: 0 }}>›</span> : null)}
         </button>
     );
 
-    // Normal settings view
-    return (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            {/* ── グラデーションヘッダー ── */}
-            <div style={{
-                background: "var(--accent-grad, linear-gradient(135deg,#667eea,#764ba2))",
-                padding: "env(safe-area-inset-top, 0px) 0 0",
-                flexShrink: 0,
-            }}>
-                <div style={{ padding: "16px 16px 0" }}>
-                    <div style={{ fontSize: 22, fontWeight: 800, color: "#fff", marginBottom: 12, fontFamily: font }}>設定</div>
+    // セクションラベル
+    const SectionLabel = ({ label }) => (
+        <div style={{
+            padding: "18px 16px 6px",
+            fontSize: 11, fontWeight: 700, color: C.sub,
+            letterSpacing: 1, textTransform: "uppercase",
+        }}>{label}</div>
+    );
+
+    // セクションカード（角丸まとめ）
+    const Section = ({ children }) => (
+        <div style={{
+            background: C.surface, borderRadius: 14,
+            border: `1px solid ${C.border}`,
+            overflow: "hidden", marginBottom: 0,
+        }}>{children}</div>
+    );
+
+    // ── 外観サブビュー ──
+    if (showAppearanceView) {
+        return (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <SubHeader title="外観" onBack={() => setShowAppearanceView(false)} />
+                <div style={{ flex: 1, overflowY: "auto", padding: "4px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                    <SectionLabel label="テーマモード" />
+                    <Section>
+                        <div style={{ padding: "14px 16px" }}>
+                            <div style={{ display: "flex", gap: 8 }}>
+                                {[
+                                    { id: "system", label: "システム", icon: "📱" },
+                                    { id: "light",  label: "ライト",   icon: "☀️" },
+                                    { id: "dark",   label: "ダーク",   icon: "🌙" },
+                                ].map(({ id, label, icon }) => {
+                                    const active = s.theme === id;
+                                    return (
+                                        <button key={id} className="b" onClick={() => s.setTheme(id)} style={{
+                                            flex: 1, padding: "12px 6px", borderRadius: 12,
+                                            border: active ? `2px solid ${C.blue}` : `1px solid ${C.border}`,
+                                            background: active ? `${C.blue}22` : C.surfaceHi,
+                                            cursor: "pointer", transition: "all 0.2s ease",
+                                        }}>
+                                            <div style={{ fontSize: 20, marginBottom: 4 }}>{icon}</div>
+                                            <div style={{ fontSize: 11, fontWeight: active ? 700 : 500, color: active ? C.blue : C.text }}>{label}</div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </Section>
+
+                    <SectionLabel label="カラーテーマ" />
+                    <Section>
+                        <div style={{ padding: "14px 16px" }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
+                                {(s.colorThemes || []).map(ct => {
+                                    const active = s.accentColor === ct.id;
+                                    return (
+                                        <button key={ct.id} className="b" onClick={() => s.setAccentColor(ct.id)} style={{
+                                            aspectRatio: "1", borderRadius: 14,
+                                            background: ct.gradient,
+                                            border: active ? "3px solid #fff" : "3px solid transparent",
+                                            boxShadow: active ? `0 0 0 2px ${ct.primary}, 0 4px 12px rgba(0,0,0,0.3)` : "0 2px 6px rgba(0,0,0,0.2)",
+                                            display: "flex", alignItems: "center", justifyContent: "center",
+                                            cursor: "pointer", transition: "all 0.2s ease",
+                                        }}>
+                                            {active && <span style={{ fontSize: 16, color: "#fff" }}>✓</span>}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </Section>
+
+                    <SectionLabel label="アクセシビリティ" />
+                    <Section>
+                        <Row icon="◑" label="ハイコントラストモード" sub="視認性を向上させます"
+                            right={<Toggle value={s.highContrast} onChange={s.setHighContrast} />} />
+                        <Row icon="👁" label="色覚サポート" sub="色の識別をサポート"
+                            right={<Toggle value={s.colorBlind} onChange={s.setColorBlind} />} />
+                    </Section>
                 </div>
-                {/* 4タブ */}
-                <div style={{ display: "flex", padding: "0 4px" }}>
-                    {SETTINGS_TABS.map(t => (
-                        <button key={t.id} className="b" onClick={() => setSettingsTab(t.id)} style={{
-                            flex: 1, background: "transparent", border: "none",
-                            borderBottom: settingsTab === t.id ? "3px solid #fff" : "3px solid transparent",
-                            color: settingsTab === t.id ? "#fff" : "rgba(255,255,255,0.6)",
-                            padding: "8px 4px 10px", fontSize: 13,
-                            fontWeight: settingsTab === t.id ? 700 : 500,
-                            fontFamily: font, cursor: "pointer",
-                            transition: "all 0.2s ease", letterSpacing: 0.2,
-                        }}>
-                            {t.label}
-                        </button>
-                    ))}
-                </div>
+                <ToastPortal />
             </div>
+        );
+    }
 
-            {/* ── スクロールコンテンツ ── */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
-
-                {/* ════════════════ 外観タブ ════════════════ */}
-                {settingsTab === "appearance" && (<>
-                    {/* テーマ設定 */}
-                    <Card style={{ padding: 16, marginBottom: 12 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-                            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(128,128,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🎨</div>
-                            <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>テーマ設定</div>
-                        </div>
-                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>テーマモード</div>
-                        <div style={{ display: "flex", gap: 8 }}>
-                            {[
-                                { id: "system", label: "システム", icon: "📱" },
-                                { id: "light",  label: "ライト",   icon: "☀️" },
-                                { id: "dark",   label: "ダーク",   icon: "🌙" },
-                            ].map(({ id, label, icon }) => {
-                                const active = s.theme === id;
-                                return (
-                                    <button key={id} className="b" onClick={() => s.setTheme(id)} style={{
-                                        flex: 1, padding: "12px 6px", borderRadius: 12,
-                                        border: active ? `2px solid ${C.blue}` : `1px solid ${C.border}`,
-                                        background: active ? `${C.blue}22` : C.surface,
-                                        cursor: "pointer", transition: "all 0.2s ease",
-                                    }}>
-                                        <div style={{ fontSize: 20, marginBottom: 4 }}>{icon}</div>
-                                        <div style={{ fontSize: 11, fontWeight: active ? 700 : 500, color: active ? C.blue : C.text }}>{label}</div>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </Card>
-
-                    {/* カラーテーマ */}
-                    <Card style={{ padding: 16, marginBottom: 12 }}>
-                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>カラーテーマ</div>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginTop: 10 }}>
-                            {(s.colorThemes || []).map(ct => {
-                                const active = s.accentColor === ct.id;
-                                return (
-                                    <button key={ct.id} className="b" onClick={() => s.setAccentColor(ct.id)} style={{
-                                        aspectRatio: "1", borderRadius: 14,
-                                        background: ct.gradient,
-                                        border: active ? "3px solid #fff" : "3px solid transparent",
-                                        boxShadow: active ? `0 0 0 2px ${ct.primary}, 0 4px 12px rgba(0,0,0,0.3)` : "0 2px 6px rgba(0,0,0,0.2)",
-                                        display: "flex", alignItems: "center", justifyContent: "center",
-                                        cursor: "pointer", transition: "all 0.2s ease",
-                                    }}>
-                                        {active && <span style={{ fontSize: 16, color: "#fff" }}>✓</span>}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </Card>
-
-                    {/* アクセシビリティ */}
-                    <Card style={{ padding: 0, overflow: "hidden" }}>
-                        <div style={{ padding: "14px 16px 10px", display: "flex", alignItems: "center", gap: 10 }}>
-                            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(128,128,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>♿</div>
-                            <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>アクセシビリティ</div>
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderTop: `1px solid ${C.border}` }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                <span style={{ fontSize: 18 }}>◑</span>
-                                <div>
-                                    <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>ハイコントラストモード</div>
-                                    <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>視認性を向上させます</div>
-                                </div>
-                            </div>
-                            <Toggle value={s.highContrast} onChange={s.setHighContrast} />
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderTop: `1px solid ${C.border}` }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                <span style={{ fontSize: 18 }}>👁</span>
-                                <div>
-                                    <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>色覚サポート</div>
-                                    <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>色の識別をサポート</div>
-                                </div>
-                            </div>
-                            <Toggle value={s.colorBlind} onChange={s.setColorBlind} />
-                        </div>
-                    </Card>
-                </>)}
-
-                {/* ════════════════ セキュリタブ ════════════════ */}
-                {settingsTab === "security" && (<>
-                    <Card style={{ padding: 0, overflow: "hidden" }}>
-                        <div style={{ padding: "14px 16px 10px", display: "flex", alignItems: "center", gap: 10 }}>
-                            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(239,68,68,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🔒</div>
-                            <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>アプリロック</div>
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderTop: `1px solid ${C.border}` }}>
+    // ── 基本設定サブビュー ──
+    if (showGameSettingsView) {
+        return (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <SubHeader title="基本設定" onBack={() => setShowGameSettingsView(false)} />
+                <div style={{ flex: 1, overflowY: "auto", padding: "4px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                    <SectionLabel label="貸玉・交換率" />
+                    <Section>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
                             <div>
-                                <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>アプリロック</div>
-                                <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>起動時にPINを要求します</div>
-                            </div>
-                            <Toggle value={s.appLock} onChange={(v) => {
-                                if (!v) { s.setAppLock(false); s.setAppPin(""); setPinSetStep("idle"); }
-                                else if (!s.appPin) { s.setAppLock(true); setPinSetStep("enter"); setPinDraft(""); }
-                                else s.setAppLock(true);
-                            }} color={C.red} />
-                        </div>
-
-                        {/* PINが設定済みの場合 */}
-                        {s.appLock && s.appPin && pinSetStep === "idle" && (
-                            <div style={{ padding: "12px 16px", borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                                <div>
-                                    <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>現在のPIN</div>
-                                    <div style={{ fontSize: 16, letterSpacing: 6, color: C.sub, marginTop: 4, fontFamily: mono }}>{"●".repeat(s.appPin.length)}</div>
-                                </div>
-                                <button className="b" onClick={() => { setPinSetStep("enter"); setPinDraft(""); setPinSetError(false); }} style={{
-                                    background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
-                                    color: C.text, fontSize: 11, padding: "8px 14px", fontFamily: font, fontWeight: 600, cursor: "pointer",
-                                }}>PINを変更</button>
-                            </div>
-                        )}
-
-                        {/* PIN入力ステップ */}
-                        {pinSetStep !== "idle" && (
-                            <div style={{ padding: "16px", borderTop: `1px solid ${C.border}` }}>
-                                <div style={{ fontSize: 12, color: C.sub, marginBottom: 8 }}>
-                                    {pinSetStep === "enter" ? "新しいPINを入力（4桁）" : "もう一度入力して確認"}
-                                </div>
-                                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                                    <input
-                                        type="number"
-                                        maxLength={4}
-                                        value={pinSetStep === "enter" ? pinDraft : pinConfirm}
-                                        onChange={e => {
-                                            const v = e.target.value.slice(0, 4);
-                                            if (pinSetStep === "enter") setPinDraft(v);
-                                            else setPinConfirm(v);
-                                            setPinSetError(false);
-                                        }}
-                                        placeholder="0000"
-                                        style={{
-                                            flex: 1, background: C.bg, border: `1px solid ${pinSetError ? C.red : C.borderHi}`,
-                                            borderRadius: 8, padding: "10px 12px", fontSize: 20, color: C.text,
-                                            fontFamily: mono, outline: "none", letterSpacing: 8, textAlign: "center",
-                                        }}
-                                    />
-                                    <button className="b" onClick={() => {
-                                        const val = pinSetStep === "enter" ? pinDraft : pinConfirm;
-                                        if (val.length !== 4 || !/^\d{4}$/.test(val)) { setPinSetError(true); return; }
-                                        if (pinSetStep === "enter") {
-                                            setPinSetStep("confirm");
-                                            setPinConfirm("");
-                                            setPinSetError(false);
-                                        } else {
-                                            if (pinConfirm !== pinDraft) { setPinSetError(true); return; }
-                                            s.setAppPin(pinConfirm);
-                                            s.setAppLock(true);
-                                            s.setIsLocked(false);
-                                            setPinSetStep("idle");
-                                            setPinDraft(""); setPinConfirm("");
-                                            showToast("PINを設定しました");
-                                        }
-                                    }} style={{
-                                        background: C.blue, border: "none", borderRadius: 8,
-                                        color: "#fff", fontSize: 12, padding: "10px 16px",
-                                        fontFamily: font, fontWeight: 700, cursor: "pointer",
-                                    }}>
-                                        {pinSetStep === "enter" ? "次へ" : "確定"}
-                                    </button>
-                                    <button className="b" onClick={() => { setPinSetStep("idle"); setPinDraft(""); setPinConfirm(""); setPinSetError(false); if (!s.appPin) s.setAppLock(false); }} style={{
-                                        background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
-                                        color: C.text, fontSize: 12, padding: "10px 14px",
-                                        fontFamily: font, fontWeight: 600, cursor: "pointer",
-                                    }}>キャンセル</button>
-                                </div>
-                                {pinSetError && <div style={{ fontSize: 11, color: C.red, marginTop: 6 }}>
-                                    {pinSetStep === "enter" ? "4桁の数字を入力してください" : "PINが一致しません"}
-                                </div>}
-                            </div>
-                        )}
-                    </Card>
-
-                    <div style={{ padding: "16px 4px 0", fontSize: 11, color: C.sub, lineHeight: 1.7 }}>
-                        PINを忘れた場合はデータリセットが必要になります。必ずメモを取ってください。
-                    </div>
-                </>)}
-
-                {/* ════════════════ データタブ ════════════════ */}
-                {settingsTab === "data" && (<>
-                    {/* バックアップ */}
-                    <Card style={{ padding: 16, marginBottom: 12 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-                            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(34,197,94,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>💾</div>
-                            <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>バックアップ</div>
-                        </div>
-                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 12, lineHeight: 1.6 }}>
-                            全データ（記録・設定・機種・店舗）をJSON形式で保存します。機種変更時に使用してください。
-                        </div>
-                        <div style={{ display: "flex", gap: 10 }}>
-                            <Btn label="全データをバックアップ" onClick={backupAllData} bg={C.green} fg="#fff" bd="none" small />
-                            <label style={{
-                                flex: 1, background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 10,
-                                color: C.text, fontSize: 12, padding: "10px 12px", fontFamily: font, fontWeight: 600,
-                                textAlign: "center", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                            }}>
-                                バックアップから復元
-                                <input type="file" accept=".json" onChange={restoreAllData} style={{ display: "none" }} />
-                            </label>
-                        </div>
-                    </Card>
-
-                    {/* 機種検索・登録 */}
-                    <Card style={{ padding: 16, marginBottom: 12 }}>
-                        <SecLabel label="機種検索・登録" />
-                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 12, lineHeight: 1.6, padding: "0 4px" }}>
-                            機種を検索して確率・スペックを自動設定、またはオリジナル機種を登録できます。
-                        </div>
-                        <div style={{ display: "flex", gap: 10 }}>
-                            <Btn label="機種を検索" onClick={() => setShowMachineSearch(true)} primary small />
-                            <Btn label="+ 機種を登録" onClick={() => openMachineForm()} bg={C.teal} fg="#fff" bd="none" small />
-                        </div>
-                    </Card>
-
-                    {/* 店舗登録 */}
-                    <Card style={{ padding: 16, marginBottom: 12 }}>
-                        <SecLabel label="店舗検索・登録" />
-                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 12, lineHeight: 1.6, padding: "0 4px" }}>
-                            よく行く店舗を登録すると、記録時に選択でき、貸し玉・交換率・貯玉も自動設定できます。
-                        </div>
-                        <div style={{ display: "flex", gap: 10 }}>
-                            <Btn label="店舗を検索" onClick={() => setShowStoreSearch(true)} primary small />
-                            <Btn label="+ 店舗を登録" onClick={() => openStoreForm()} bg={C.teal} fg="#fff" bd="none" small />
-                        </div>
-                    </Card>
-
-                    {/* 貯玉設定 */}
-                    <Card style={{ padding: 16, marginBottom: 12 }}>
-                        <SecLabel label="貯玉設定" color={C.purple} />
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
-                            <div>
-                                <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>貯玉を収支に含める</div>
-                                <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>OFFの場合、貯玉使用分は投資額0円として計算</div>
-                            </div>
-                            <Toggle value={s.includeChodamaInBalance} onChange={s.setIncludeChodamaInBalance} color={C.purple} />
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0" }}>
-                            <div>
-                                <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>1日の再プレイ上限</div>
-                                <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>上限到達時に警告を表示します</div>
-                            </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                <NI v={s.chodamaReplayLimit} set={s.setChodamaReplayLimit} w={80} center />
-                                <span style={{ fontSize: 10, color: C.sub, minWidth: 20 }}>玉</span>
-                            </div>
-                        </div>
-                    </Card>
-
-                    {/* 基本設定 */}
-                    <Card style={{ marginBottom: 12 }}>
-                        <SecLabel label="基本設定" />
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px", borderBottom: `1px solid ${C.border}` }}>
-                            <div>
-                                <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>貸玉100円</div>
-                                <div style={{ fontSize: 10, color: C.sub }}>{(100 / ((s.rentBalls || 250) / 10)).toFixed(2)}円/玉</div>
+                                <div style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>貸玉100円</div>
+                                <div style={{ fontSize: 11, color: C.sub }}>{(100 / ((s.rentBalls || 250) / 10)).toFixed(2)}円/玉</div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                 <NI v={Math.round((s.rentBalls || 250) / 10)} set={(v) => s.setRentBalls(v * 10)} w={80} center />
-                                <span style={{ fontSize: 10, color: C.sub, minWidth: 40 }}>玉/100円</span>
+                                <span style={{ fontSize: 11, color: C.sub, minWidth: 40 }}>玉/100円</span>
                             </div>
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px", borderBottom: `1px solid ${C.border}` }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
                             <div>
-                                <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>交換100円</div>
-                                <div style={{ fontSize: 10, color: C.sub }}>{(100 / ((s.exRate || 250) / 10)).toFixed(2)}円/玉</div>
+                                <div style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>交換100円</div>
+                                <div style={{ fontSize: 11, color: C.sub }}>{(100 / ((s.exRate || 250) / 10)).toFixed(2)}円/玉</div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                 <NI v={Math.round((s.exRate || 250) / 10)} set={(v) => s.setExRate(v * 10)} w={80} center />
-                                <span style={{ fontSize: 10, color: C.sub, minWidth: 40 }}>玉/100円</span>
+                                <span style={{ fontSize: 11, color: C.sub, minWidth: 40 }}>玉/100円</span>
                             </div>
                         </div>
-                        <div style={{ display: "flex", gap: 6, padding: "12px 16px", borderBottom: `1px solid ${C.border}`, flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", gap: 6, padding: "12px 16px", flexWrap: "wrap" }}>
                             {[
                                 { label: "等価", balls: 25, yen: "4.00" },
                                 { label: "3.57円", balls: 28, yen: "3.57" },
@@ -5835,89 +5652,278 @@ export function SettingsTab({ s, onReset }) {
                                 );
                             })}
                         </div>
+                    </Section>
+
+                    <SectionLabel label="その他" />
+                    <Section>
                         {[
                             { lbl: "合成確率分母", v: s.synthDenom, set: s.setSynthDenom, unit: "1/x" },
                             { lbl: "1h消化回転数", v: s.rotPerHour, set: s.setRotPerHour, unit: "回/h" },
-                        ].map(({ lbl, v, set, unit }) => (
-                            <div key={lbl} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px", borderBottom: `1px solid ${C.border}` }}>
-                                <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{lbl}</div>
+                        ].map(({ lbl, v, set, unit }, i, arr) => (
+                            <div key={lbl} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: i < arr.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                                <div style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>{lbl}</div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                     <NI v={v} set={set} w={80} center />
-                                    <span style={{ fontSize: 10, color: C.sub, minWidth: 40 }}>{unit}</span>
+                                    <span style={{ fontSize: 11, color: C.sub, minWidth: 40 }}>{unit}</span>
                                 </div>
                             </div>
                         ))}
-                    </Card>
+                    </Section>
+                </div>
+                <ToastPortal />
+            </div>
+        );
+    }
 
-                    {/* 機種スペック設定 */}
-                    <Card style={{ marginBottom: 12 }}>
-                        <SecLabel label="機種スペック（期待値算出用）" />
+    // ── 機種スペックサブビュー ──
+    if (showMachineSpecView) {
+        return (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <SubHeader title="機種スペック設定" onBack={() => setShowMachineSpecView(false)} />
+                <div style={{ flex: 1, overflowY: "auto", padding: "4px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                    <SectionLabel label="期待値算出用スペック" />
+                    <Section>
                         {[
                             { lbl: "1R出玉（実出玉）", v: s.spec1R, set: s.setSpec1R, unit: "玉/R" },
                             { lbl: "平均総R/初当たり", v: s.specAvgRounds, set: s.setSpecAvgRounds, unit: "R" },
                             { lbl: "サポ増減/初当たり", v: s.specSapo, set: s.setSpecSapo, unit: "玉" },
                         ].map(({ lbl, v, set, unit }) => (
-                            <div key={lbl} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px", borderBottom: `1px solid ${C.border}` }}>
-                                <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{lbl}</div>
+                            <div key={lbl} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
+                                <div style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>{lbl}</div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                     <NI v={v} set={set} w={80} center />
-                                    <span style={{ fontSize: 10, color: C.sub, minWidth: 40 }}>{unit}</span>
+                                    <span style={{ fontSize: 11, color: C.sub, minWidth: 40 }}>{unit}</span>
                                 </div>
                             </div>
                         ))}
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px", background: "rgba(0,0,0,0.15)", borderRadius: "0 0 12px 12px" }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "rgba(0,0,0,0.1)" }}>
                             <div>
-                                <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>理論ボーダー</div>
-                                <div style={{ fontSize: 10, color: C.teal }}>{exRateLabel}</div>
+                                <div style={{ fontSize: 14, color: C.text, fontWeight: 600 }}>理論ボーダー</div>
+                                <div style={{ fontSize: 11, color: C.teal }}>{exRateLabel}</div>
                             </div>
                             <div style={{ fontSize: 18, fontWeight: 800, color: C.green, fontFamily: mono }}>
                                 {calcBorder > 0 ? f(calcBorder, 1) : "—"}<span style={{ fontSize: 10, color: C.sub, marginLeft: 4 }}>回/K</span>
                             </div>
                         </div>
-                    </Card>
+                    </Section>
+                </div>
+                <ToastPortal />
+            </div>
+        );
+    }
 
-                    {/* データリセット */}
-                    <div style={{ padding: "0 4px" }}>
-                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 12, lineHeight: 1.6 }}>
-                            以下のボタンを押すと、現在のセッションデータ（回転数、獲得出玉、履歴など）がすべて消去されます。設定値は保持されます。
-                        </div>
-                        {!confirming ? (
-                            <Btn label="データをリセット" onClick={() => setConfirming(true)} bg="linear-gradient(135deg, #180808, #2d1010)" fg={C.red} bd={C.red + "40"} />
-                        ) : (
-                            <div style={{ display: "flex", gap: 10 }}>
-                                <Btn label="本当にリセットしますか？" onClick={() => { onReset(); setConfirming(false); }} bg={C.red} fg="#fff" bd="none" />
-                                <Btn label="キャンセル" onClick={() => setConfirming(false)} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
+    // ── 貯玉設定サブビュー ──
+    if (showChodamaView) {
+        return (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <SubHeader title="貯玉設定" onBack={() => setShowChodamaView(false)} />
+                <div style={{ flex: 1, overflowY: "auto", padding: "4px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                    <SectionLabel label="貯玉オプション" />
+                    <Section>
+                        <Row icon="💰" label="貯玉を収支に含める" sub="OFFの場合、貯玉使用分は投資額0円として計算"
+                            right={<Toggle value={s.includeChodamaInBalance} onChange={s.setIncludeChodamaInBalance} color={C.purple} />} />
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px" }}>
+                            <div>
+                                <div style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>1日の再プレイ上限</div>
+                                <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>上限到達時に警告を表示します</div>
                             </div>
-                        )}
-                    </div>
-                </>)}
-
-                {/* ════════════════ その他タブ ════════════════ */}
-                {settingsTab === "other" && (<>
-                    <Card style={{ padding: 0, overflow: "hidden", marginBottom: 12 }}>
-                        <div style={{ padding: "14px 16px 10px", display: "flex", alignItems: "center", gap: 10 }}>
-                            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(128,128,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>❓</div>
-                            <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>サポート</div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <NI v={s.chodamaReplayLimit} set={s.setChodamaReplayLimit} w={80} center />
+                                <span style={{ fontSize: 11, color: C.sub, minWidth: 20 }}>玉</span>
+                            </div>
                         </div>
-                        <ListRow icon="💬" label="お問い合わせ" sub="サポートへの連絡" onClick={() => showToast("サポートページは準備中です", "warn")} />
-                        <ListRow icon="⭐" label="アプリを評価" sub="ストアでレビューを書く" onClick={() => showToast("ストアページは準備中です", "warn")} />
-                    </Card>
+                    </Section>
+                </div>
+                <ToastPortal />
+            </div>
+        );
+    }
 
-                    <Card style={{ padding: 0, overflow: "hidden" }}>
-                        <div style={{ padding: "14px 16px 10px", display: "flex", alignItems: "center", gap: 10 }}>
-                            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(128,128,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>ℹ️</div>
-                            <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>アプリ情報</div>
+    // ── バックアップサブビュー ──
+    if (showBackupView) {
+        return (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <SubHeader title="バックアップ・復元" onBack={() => setShowBackupView(false)} />
+                <div style={{ flex: 1, overflowY: "auto", padding: "4px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                    <SectionLabel label="全データバックアップ" />
+                    <Section>
+                        <div style={{ padding: "14px 16px" }}>
+                            <div style={{ fontSize: 12, color: C.sub, marginBottom: 14, lineHeight: 1.6 }}>
+                                全データ（記録・設定・機種・店舗）をJSON形式で保存します。機種変更時に使用してください。
+                            </div>
+                            <Btn label="全データをバックアップ" onClick={backupAllData} bg={C.green} fg="#fff" bd="none" />
                         </div>
-                        <ListRow icon="🔄" label="バージョン" rightText="1.0.0" />
-                        <ListRow icon="🔧" label="ビルド番号" rightText="2025.7.1" />
-                        <ListRow icon="📄" label="利用規約" sub="アプリの利用規約" onClick={() => showToast("利用規約ページは準備中です", "warn")} />
-                        <ListRow icon="🛡" label="プライバシーポリシー" sub="個人情報の取り扱い" onClick={() => showToast("プライバシーポリシーは準備中です", "warn")} />
-                        <ListRow icon="📋" label="ライセンス情報" sub="オープンソースライセンス" onClick={() => showToast("ライセンス情報は準備中です", "warn")} />
-                    </Card>
-                </>)}
+                    </Section>
+
+                    <SectionLabel label="バックアップから復元" />
+                    <Section>
+                        <div style={{ padding: "14px 16px" }}>
+                            <div style={{ fontSize: 12, color: C.sub, marginBottom: 14, lineHeight: 1.6 }}>
+                                バックアップファイル（.json）を読み込んで全データを復元します。現在のデータは上書きされます。
+                            </div>
+                            <label style={{
+                                display: "block", width: "100%", boxSizing: "border-box",
+                                background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 10,
+                                color: C.text, fontSize: 14, padding: "12px 16px", fontFamily: font, fontWeight: 600,
+                                textAlign: "center", cursor: "pointer",
+                            }}>
+                                バックアップから復元
+                                <input type="file" accept=".json" onChange={restoreAllData} style={{ display: "none" }} />
+                            </label>
+                        </div>
+                    </Section>
+                </div>
+                <ToastPortal />
+            </div>
+        );
+    }
+
+    // ── メイン設定（フラットリスト）──
+    return (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            {/* グラデーションヘッダー */}
+            <div style={{
+                background: "var(--accent-grad, linear-gradient(135deg,#667eea,#764ba2))",
+                padding: "env(safe-area-inset-top, 0px) 16px 16px",
+                flexShrink: 0,
+            }}>
+                <div style={{ fontSize: 24, fontWeight: 800, color: "#fff", fontFamily: font }}>設定</div>
             </div>
 
-            {/* トースト通知 */}
+            {/* ── スクロールコンテンツ ── */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "4px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+
+                {/* 外観 */}
+                <SectionLabel label="外観" />
+                <Section>
+                    <Row icon="🎨" label="外観" sub="テーマ・カラー・アクセシビリティ" onPress={() => setShowAppearanceView(true)} />
+                </Section>
+
+                {/* ゲーム設定 */}
+                <SectionLabel label="ゲーム設定" />
+                <Section>
+                    <Row icon="⚙️" label="基本設定" sub={`貸玉 ${Math.round((s.rentBalls || 250) / 10)}玉 / 交換 ${Math.round((s.exRate || 250) / 10)}玉`} onPress={() => setShowGameSettingsView(true)} />
+                    <Row icon="🎯" label="機種スペック" sub={`確率分母: ${s.synthDenom || 319.6} / ボーダー: ${calcBorder > 0 ? f(calcBorder, 1) : "—"}回/K`} onPress={() => setShowMachineSpecView(true)} />
+                    <Row icon="💎" label="貯玉設定" sub={s.includeChodamaInBalance ? "収支に含める" : "収支に含めない"} onPress={() => setShowChodamaView(true)} />
+                    <Row icon="🔍" label="機種検索・登録" sub={`カスタム機種: ${(s.customMachines || []).length}件`} onPress={() => setShowMachineSearch(true)} />
+                    <Row icon="🏪" label="店舗検索・登録" sub={`登録店舗: ${(s.stores || []).length}件`} onPress={() => setShowStoreSearch(true)} />
+                </Section>
+
+                {/* セキュリティ */}
+                <SectionLabel label="セキュリティ" />
+                <Section>
+                    <Row icon="🔒" label="アプリロック" sub={s.appLock ? (s.appPin ? "PIN設定済み" : "PIN未設定") : "オフ"}
+                        right={<Toggle value={s.appLock} onChange={(v) => {
+                            if (!v) { s.setAppLock(false); s.setAppPin(""); setPinSetStep("idle"); }
+                            else if (!s.appPin) { s.setAppLock(true); setPinSetStep("enter"); setPinDraft(""); }
+                            else s.setAppLock(true);
+                        }} color={C.red} />} />
+                    {s.appLock && s.appPin && pinSetStep === "idle" && (
+                        <Row icon="🔑" label="PINを変更" onPress={() => { setPinSetStep("enter"); setPinDraft(""); setPinSetError(false); }} />
+                    )}
+                    {pinSetStep !== "idle" && (
+                        <div style={{ padding: "14px 16px", borderTop: `1px solid ${C.border}` }}>
+                            <div style={{ fontSize: 12, color: C.sub, marginBottom: 8 }}>
+                                {pinSetStep === "enter" ? "新しいPINを入力（4桁）" : "もう一度入力して確認"}
+                            </div>
+                            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                <input
+                                    type="number"
+                                    maxLength={4}
+                                    value={pinSetStep === "enter" ? pinDraft : pinConfirm}
+                                    onChange={e => {
+                                        const v = e.target.value.slice(0, 4);
+                                        if (pinSetStep === "enter") setPinDraft(v);
+                                        else setPinConfirm(v);
+                                        setPinSetError(false);
+                                    }}
+                                    placeholder="0000"
+                                    style={{
+                                        flex: 1, background: C.bg, border: `1px solid ${pinSetError ? C.red : C.borderHi}`,
+                                        borderRadius: 8, padding: "10px 12px", fontSize: 20, color: C.text,
+                                        fontFamily: mono, outline: "none", letterSpacing: 8, textAlign: "center",
+                                    }}
+                                />
+                                <button className="b" onClick={() => {
+                                    const val = pinSetStep === "enter" ? pinDraft : pinConfirm;
+                                    if (val.length !== 4 || !/^\d{4}$/.test(val)) { setPinSetError(true); return; }
+                                    if (pinSetStep === "enter") {
+                                        setPinSetStep("confirm");
+                                        setPinConfirm("");
+                                        setPinSetError(false);
+                                    } else {
+                                        if (pinConfirm !== pinDraft) { setPinSetError(true); return; }
+                                        s.setAppPin(pinConfirm);
+                                        s.setAppLock(true);
+                                        s.setIsLocked(false);
+                                        setPinSetStep("idle");
+                                        setPinDraft(""); setPinConfirm("");
+                                        showToast("PINを設定しました");
+                                    }
+                                }} style={{
+                                    background: C.blue, border: "none", borderRadius: 8,
+                                    color: "#fff", fontSize: 12, padding: "10px 16px",
+                                    fontFamily: font, fontWeight: 700, cursor: "pointer",
+                                }}>
+                                    {pinSetStep === "enter" ? "次へ" : "確定"}
+                                </button>
+                                <button className="b" onClick={() => {
+                                    setPinSetStep("idle"); setPinDraft(""); setPinConfirm(""); setPinSetError(false);
+                                    if (!s.appPin) s.setAppLock(false);
+                                }} style={{
+                                    background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                                    color: C.text, fontSize: 12, padding: "10px 14px",
+                                    fontFamily: font, fontWeight: 600, cursor: "pointer",
+                                }}>キャンセル</button>
+                            </div>
+                            {pinSetError && <div style={{ fontSize: 11, color: C.red, marginTop: 6 }}>
+                                {pinSetStep === "enter" ? "4桁の数字を入力してください" : "PINが一致しません"}
+                            </div>}
+                        </div>
+                    )}
+                </Section>
+                {s.appLock && (
+                    <div style={{ padding: "6px 16px 0", fontSize: 11, color: C.sub, lineHeight: 1.7 }}>
+                        PINを忘れた場合はデータリセットが必要になります。
+                    </div>
+                )}
+
+                {/* データ */}
+                <SectionLabel label="データ" />
+                <Section>
+                    <Row icon="💾" label="バックアップ・復元" sub="全データのエクスポート・インポート" onPress={() => setShowBackupView(true)} />
+                </Section>
+
+                {/* データリセット */}
+                <SectionLabel label="危険な操作" />
+                <Section>
+                    {!confirming ? (
+                        <Row icon="🗑" label="データをリセット" sub="セッションデータ・履歴を消去します" danger onPress={() => setConfirming(true)} />
+                    ) : (
+                        <div style={{ padding: "14px 16px" }}>
+                            <div style={{ fontSize: 12, color: C.sub, marginBottom: 12 }}>現在のセッションデータ（回転数・獲得出玉・履歴など）がすべて消去されます。設定値は保持されます。</div>
+                            <div style={{ display: "flex", gap: 10 }}>
+                                <Btn label="本当にリセット" onClick={() => { onReset(); setConfirming(false); }} bg={C.red} fg="#fff" bd="none" />
+                                <Btn label="キャンセル" onClick={() => setConfirming(false)} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
+                            </div>
+                        </div>
+                    )}
+                </Section>
+
+                {/* アプリ情報 */}
+                <SectionLabel label="アプリ情報" />
+                <Section>
+                    <Row icon="💬" label="お問い合わせ" onPress={() => showToast("サポートページは準備中です", "warn")} />
+                    <Row icon="⭐" label="アプリを評価" onPress={() => showToast("ストアページは準備中です", "warn")} />
+                    <Row icon="📄" label="利用規約" onPress={() => showToast("利用規約ページは準備中です", "warn")} />
+                    <Row icon="🛡" label="プライバシーポリシー" onPress={() => showToast("プライバシーポリシーは準備中です", "warn")} />
+                    <Row icon="ℹ️" label="バージョン" right={<span style={{ fontSize: 13, color: C.sub }}>1.0.0</span>} />
+                    <Row icon="🔧" label="ビルド番号" right={<span style={{ fontSize: 13, color: C.sub }}>2025.7.1</span>} />
+                </Section>
+
+                <div style={{ height: 20 }} />
+            </div>
+
             <ToastPortal />
         </div>
     );
