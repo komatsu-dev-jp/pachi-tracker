@@ -8,7 +8,7 @@
   --surface-hi: #18181f;
   --border: #1e1e2a;
   --border-hi: #2c2c3e;
-  --blue: #3b82f6;
+  --blue: #667eea;
   --green: #22c55e;
   --red: #ef4444;
   --yellow: #f59e0b;
@@ -24,6 +24,7 @@
   --header-bg: rgba(17, 17, 22, 0.8);
   --nav-bg: rgba(17, 17, 22, 0.95);
   --card-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  --accent-grad: linear-gradient(135deg, #667eea, #764ba2);
 }
 
 /* White/Light Theme */
@@ -33,7 +34,7 @@
   --surface-hi: #f0f2f5;
   --border: #e2e8f0;
   --border-hi: #cbd5e1;
-  --blue: #2563eb;
+  --blue: #667eea;
   --green: #16a34a;
   --red: #dc2626;
   --yellow: #d97706;
@@ -49,6 +50,7 @@
   --header-bg: rgba(255, 255, 255, 0.85);
   --nav-bg: rgba(255, 255, 255, 0.95);
   --card-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  --accent-grad: linear-gradient(135deg, #667eea, #764ba2);
 }
 
 * {
@@ -347,4 +349,56 @@ input, select, textarea {
   opacity: 1;
   background: var(--blue);
   transform: scale(1.2);
+}
+
+/* High contrast mode */
+.high-contrast {
+  --border: #555570;
+  --border-hi: #7777a0;
+  --sub: #9aa8c0;
+  --sub-hi: #c0cce0;
+}
+
+.high-contrast [data-theme="light"] {
+  --border: #9090b0;
+  --border-hi: #606080;
+  --sub: #404060;
+  --sub-hi: #202040;
+}
+
+/* Color-blind support: replace green/red with blue-safe palette */
+.color-blind {
+  --green: #0077bb;
+  --red: #ee7733;
+}
+
+/* Toast notifications */
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(-12px) translateX(-50%); }
+  to   { opacity: 1; transform: translateY(0)     translateX(-50%); }
+}
+
+.toast-container {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 380px;
+  width: 90%;
+  pointer-events: none;
+}
+
+.toast-item {
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  animation: toastIn 0.2s ease forwards;
+  pointer-events: auto;
 }
