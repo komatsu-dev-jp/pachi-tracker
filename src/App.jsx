@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useLS, calcPreciseEV } from "./logic";
 import { C, font } from "./constants";
-import { RotTab, HistoryTab, SettingsTab, CalendarTab } from "./components/Tabs";
+import { RotTab, SettingsTab, CalendarTab } from "./components/Tabs";
 
 export default function App() {
   const [tab, setTab] = useState("rot");
@@ -97,49 +97,7 @@ export default function App() {
   }, [chodamaLastDate]);
 
   const pushJP = (j) => setJpLog((p) => [...p, j]);
-  const delJPLast = () => {
-    setJpLog((p) => {
-      if (p.length === 0) return p;
-      const lastChain = p[p.length - 1];
-      // 削除するチェーンが完了している場合、持ち玉と上皿玉を減算
-      if (lastChain.completed) {
-        const trayToRemove = lastChain.trayBalls || 0;
-        setTotalTrayBalls((prev) => Math.max(0, prev - trayToRemove));
-
-        // rotRowsから対応するhit行と後続のすべての行を削除
-        setRotRows((rows) => {
-          // 最後のhit行のインデックスを探す
-          let lastHitIndex = -1;
-          for (let i = rows.length - 1; i >= 0; i--) {
-            if (rows[i].type === "hit") {
-              lastHitIndex = i;
-              break;
-            }
-          }
-          if (lastHitIndex === -1) return rows;
-
-          // hit行の時点の持ち玉に戻す（大当たり開始時点）
-          const hitRow = rows[lastHitIndex];
-          setCurrentMochiBalls(hitRow.mochiBalls || 0);
-
-          // 最初のstart行のcumRotをstartRotに復元
-          const firstStartRow = rows.find(r => r.type === "start");
-          if (firstStartRow) {
-            setStartRot(firstStartRow.cumRot || 0);
-          }
-
-          // hit行とそれ以降のすべての行を削除
-          return rows.slice(0, lastHitIndex);
-        });
-
-        // プレイモードを現金に戻す
-        setPlayMode("cash");
-      }
-      return p.slice(0, -1);
-    });
-  };
   const pushLog = (e) => setSesLog((p) => [...p, e]);
-  const delSesLast = () => setSesLog((p) => p.slice(0, -1));
 
   // ── 高精度期待値エンジン ──
   const ev = calcPreciseEV({
@@ -251,7 +209,6 @@ export default function App() {
 
   const nav = [
     { id: "rot", label: "新規稼働", icon: "plus" },
-    { id: "history", label: "大当たり", icon: "📋" },
     { id: "calendar", label: "記録", icon: "📅" },
     { id: "settings", label: "設定", icon: "⚙️" },
   ];
@@ -277,7 +234,6 @@ export default function App() {
         }}
       >
         {tab === "rot" && <RotTab border={border} rows={rotRows} setRows={setRotRows} S={S} ev={ev} />}
-        {tab === "history" && <HistoryTab jpLog={jpLog} sesLog={sesLog} pushJP={pushJP} delJPLast={delJPLast} delSesLast={delSesLast} S={S} ev={ev} />}
         {tab === "calendar" && <CalendarTab S={S} onReset={resetAll} />}
         {tab === "settings" && <SettingsTab s={S} onReset={resetAll} />}
       </main>
