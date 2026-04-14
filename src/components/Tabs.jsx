@@ -691,14 +691,15 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         if (setupMachineNum) S.setMachineNum(setupMachineNum);
         if (setupMachineName) S.setMachineName(setupMachineName);
         // 新規稼働開始時は貯玉を設定（未入力なら0でリセット）
-        S.setCurrentChodama(Number(setupInitialBalls) || 0);
+        const initialChodama = Number(setupInitialBalls) || 0;
+        S.setCurrentChodama(initialChodama);
+        S.setInitialChodama(initialChodama);
         // 持ち玉は0にリセット（移動時に設定する）
         S.setCurrentMochiBalls(0);
 
         // セッション開始
         S.setStartRot(val);
         S.setSessionStarted(true);
-        const initialChodama = Number(setupInitialBalls) || 0;
         setRows((r) => [...r, { type: "start", cumRot: val, mode: S.playMode, mochiBalls: 0, chodamaBalls: initialChodama }]);
         S.pushLog({ type: "スタート", time: tsNow(), rot: val });
 
@@ -1017,6 +1018,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                                             if (st.rentBalls) S.setRentBalls(st.rentBalls);
                                                             if (st.exRate) S.setExRate(st.exRate);
                                                             if (st.chodama) S.setCurrentChodama(st.chodama);
+                                                            // 貯玉入力欄を店舗の残高で自動セット
+                                                            if (st.chodama) setSetupInitialBalls(String(st.chodama));
                                                             S.setSelectedStoreId(st.id);
                                                         }
                                                         setShowStoreDD(false);
@@ -3670,6 +3673,10 @@ export function CalendarTab({ S, onReset }) {
             investYen: Number(S.investYen) || autoInvest || 0,
             recoveryYen: Number(S.recoveryYen) || 0,
             machineName: String(S.machineName || `1/${S.synthDenom}`),
+            initialChodama: S.initialChodama || 0,
+            finalChodama: S.currentChodama || 0,
+            chodamaNetBalls: (S.currentChodama || 0) - (S.initialChodama || 0),
+            chodamaYen: Math.round((S.ev?.chodamaKCount || 0) * 1000 * (S.exRate || 250) / (S.rentBalls || 250)),
         };
     };
 
@@ -3726,6 +3733,9 @@ export function CalendarTab({ S, onReset }) {
                             {hours && <span style={{ fontSize: 11, color: C.sub }}>時間: <span style={{ fontFamily: mono, color: C.subHi }}>{hours}h</span></span>}
                             {hourlyWage != null && (
                                 <span style={{ fontSize: 11, color: C.sub }}>時給: <span style={{ fontFamily: mono, color: sc(hourlyWage) }}>{f(hourlyWage)}/h</span></span>
+                            )}
+                            {(a.chodamaYen || 0) > 0 && (
+                                <span style={{ fontSize: 11, color: C.purple }}>💎 貯玉 ¥{f(a.chodamaYen)}</span>
                             )}
                         </div>
                     </div>
@@ -3846,6 +3856,31 @@ export function CalendarTab({ S, onReset }) {
                                 </div>
                             ))}
                         </div>
+                        {/* 貯玉換算表示 */}
+                        {(a.chodamaYen || 0) > 0 && (
+                            <div style={{ marginTop: 10, padding: "10px 12px", background: "rgba(168,85,247,0.1)", borderRadius: 10, border: `1px solid rgba(168,85,247,0.25)` }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                        <span style={{ fontSize: 13 }}>💎</span>
+                                        <span style={{ fontSize: 12, color: C.purple, fontWeight: 600 }}>貯玉換算</span>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                                        <span style={{ fontSize: 11, color: C.sub }}>
+                                            {a.chodamaNetBalls < 0
+                                                ? `${f(Math.abs(a.chodamaNetBalls))}玉消費`
+                                                : `${f(a.chodamaNetBalls || 0)}玉増加`}
+                                        </span>
+                                        <span style={{ fontSize: 14, fontWeight: 700, color: C.purple, fontFamily: mono }}>¥{f(a.chodamaYen)}</span>
+                                    </div>
+                                </div>
+                                <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", fontSize: 11, color: C.sub }}>
+                                    <span>開始: {f(a.initialChodama || 0)}玉</span>
+                                    <span>→</span>
+                                    <span>終了: {f(a.finalChodama || 0)}玉</span>
+                                    <span>合計投資: ¥{f((a.investYen || 0) + (a.chodamaYen || 0))}</span>
+                                </div>
+                            </div>
+                        )}
                     </Card>
 
                     {/* Edit form */}
