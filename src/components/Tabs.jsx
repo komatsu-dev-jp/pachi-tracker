@@ -822,7 +822,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
         // 確変の場合: HistoryTabで連チャン記録継続
         if (hitType === "確変") {
-            S.setTab("history");
+            S.setSessionSubTab("history");
         } else {
             // 単発の場合: 持ち玉モードに切替 & 出玉を持ち玉に加算 & 回転タブへ
             const addBalls = finalBalls > 0 ? finalBalls : (tray + disp);
