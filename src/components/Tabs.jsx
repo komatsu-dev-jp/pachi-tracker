@@ -4803,8 +4803,11 @@ export function SettingsTab({ s, onReset }) {
     const importMachinesCSV = (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
+        const inputEl = e.target;
         const reader = new FileReader();
+        reader.onerror = () => { inputEl.value = ""; showToast("ファイルの読み込みに失敗しました", "error"); };
         reader.onload = (ev) => {
+            inputEl.value = "";
             const data = parseCSV((ev.target.result || "").replace(/^\uFEFF/, ""));
             if (data.length === 0) {
                 showToast("インポートできるデータがありません", "error");
@@ -4879,36 +4882,46 @@ export function SettingsTab({ s, onReset }) {
                 showToast("インポートできる機種が見つかりませんでした", "error");
             }
         };
-        reader.readAsText(file);
-        e.target.value = "";
+        reader.readAsText(file, "UTF-8");
     };
 
     // 店舗CSVインポート
     const importStoresCSV = (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
+        // iOSバグ対策: e.target.value="" はonload完了後に行う（先に実行するとファイル参照が無効になる）
+        const inputEl = e.target;
         const reader = new FileReader();
         reader.onload = (ev) => {
-            // BOM除去してからパース
-            const text = (ev.target.result || "").replace(/^\uFEFF/, "");
-            const data = parseCSV(text);
-            const newStores = data.filter(d => d.name).map(d => ({
-                id: Date.now() + Math.random(),
-                name: d.name || "",
-                address: d.address || "",
-                rentBalls: parseInt(d.rentBalls) || 250,
-                exRate: parseInt(d.exRate) || 250,
-                memo: d.memo || "",
-            }));
-            if (newStores.length > 0) {
-                s.setStores(prev => [...prev.filter(st => typeof st === "object"), ...newStores]);
-                showToast(`${newStores.length}件の店舗をインポートしました`);
-            } else {
-                showToast("インポートできる店舗が見つかりませんでした", "error");
+            inputEl.value = "";
+            try {
+                // BOM除去してからパース
+                const text = (ev.target.result || "").replace(/^\uFEFF/, "");
+                const data = parseCSV(text);
+                const newStores = data.filter(d => d.name).map(d => ({
+                    id: Date.now() + Math.random(),
+                    name: d.name || "",
+                    address: d.address || "",
+                    rentBalls: parseInt(d.rentBalls) || 250,
+                    exRate: parseInt(d.exRate) || 250,
+                    memo: d.memo || "",
+                    chodama: parseInt(d.chodama) || 0,
+                }));
+                if (newStores.length > 0) {
+                    s.setStores(prev => [...prev.filter(st => typeof st === "object"), ...newStores]);
+                    showToast(`${newStores.length}件の店舗をインポートしました`);
+                } else {
+                    showToast("インポートできる店舗が見つかりませんでした", "error");
+                }
+            } catch {
+                showToast("ファイルの読み込みに失敗しました", "error");
             }
         };
+        reader.onerror = () => {
+            inputEl.value = "";
+            showToast("ファイルの読み込みに失敗しました", "error");
+        };
         reader.readAsText(file, "UTF-8");
-        e.target.value = "";
     };
 
     const applyMachine = (m) => {
@@ -5161,7 +5174,7 @@ export function SettingsTab({ s, onReset }) {
                         textAlign: "center", cursor: "pointer"
                     }}>
                         CSVインポート
-                        <input type="file" accept=".csv" onChange={importStoresCSV} style={{ display: "none" }} />
+                        <input type="file" accept=".csv,.txt,text/csv,text/plain" onChange={importStoresCSV} style={{ display: "none" }} />
                     </label>
                 </div>
 
@@ -5478,7 +5491,7 @@ export function SettingsTab({ s, onReset }) {
                         textAlign: "center", cursor: "pointer"
                     }}>
                         CSVインポート
-                        <input type="file" accept=".csv" onChange={importMachinesCSV} style={{ display: "none" }} />
+                        <input type="file" accept=".csv,.txt,text/csv,text/plain" onChange={importMachinesCSV} style={{ display: "none" }} />
                     </label>
                 </div>
 
