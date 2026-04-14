@@ -4800,15 +4800,27 @@ export function SettingsTab({ s, onReset }) {
     };
 
     // 機種CSVインポート（スプレッドシート形式対応）
-    const importMachinesCSV = (e) => {
+    const importMachinesCSV = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
         const inputEl = e.target;
-        const reader = new FileReader();
-        reader.onerror = () => { inputEl.value = ""; showToast("ファイルの読み込みに失敗しました", "error"); };
-        reader.onload = (ev) => {
+        let text = "";
+        try {
+            const url = URL.createObjectURL(file);
+            try {
+                const resp = await fetch(url);
+                text = await resp.text();
+            } finally {
+                URL.revokeObjectURL(url);
+            }
+        } catch {
             inputEl.value = "";
-            const data = parseCSV((ev.target.result || "").replace(/^\uFEFF/, ""));
+            showToast("ファイルの読み込みに失敗しました", "error");
+            return;
+        }
+        inputEl.value = "";
+        try {
+            const data = parseCSV(text.replace(/^\uFEFF/, ""));
             if (data.length === 0) {
                 showToast("インポートできるデータがありません", "error");
                 return;
@@ -4881,47 +4893,51 @@ export function SettingsTab({ s, onReset }) {
             } else {
                 showToast("インポートできる機種が見つかりませんでした", "error");
             }
-        };
-        reader.readAsText(file, "UTF-8");
+        } catch {
+            showToast("ファイルの読み込みに失敗しました", "error");
+        }
     };
 
     // 店舗CSVインポート
-    const importStoresCSV = (e) => {
+    const importStoresCSV = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        // iOSバグ対策: e.target.value="" はonload完了後に行う（先に実行するとファイル参照が無効になる）
         const inputEl = e.target;
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-            inputEl.value = "";
+        let text = "";
+        try {
+            const url = URL.createObjectURL(file);
             try {
-                // BOM除去してからパース
-                const text = (ev.target.result || "").replace(/^\uFEFF/, "");
-                const data = parseCSV(text);
-                const newStores = data.filter(d => d.name).map(d => ({
-                    id: Date.now() + Math.random(),
-                    name: d.name || "",
-                    address: d.address || "",
-                    rentBalls: parseInt(d.rentBalls) || 250,
-                    exRate: parseInt(d.exRate) || 250,
-                    memo: d.memo || "",
-                    chodama: parseInt(d.chodama) || 0,
-                }));
-                if (newStores.length > 0) {
-                    s.setStores(prev => [...prev.filter(st => typeof st === "object"), ...newStores]);
-                    showToast(`${newStores.length}件の店舗をインポートしました`);
-                } else {
-                    showToast("インポートできる店舗が見つかりませんでした", "error");
-                }
-            } catch {
-                showToast("ファイルの読み込みに失敗しました", "error");
+                const resp = await fetch(url);
+                text = await resp.text();
+            } finally {
+                URL.revokeObjectURL(url);
             }
-        };
-        reader.onerror = () => {
+        } catch {
             inputEl.value = "";
             showToast("ファイルの読み込みに失敗しました", "error");
-        };
-        reader.readAsText(file, "UTF-8");
+            return;
+        }
+        inputEl.value = "";
+        try {
+            const data = parseCSV(text.replace(/^\uFEFF/, ""));
+            const newStores = data.filter(d => d.name).map(d => ({
+                id: Date.now() + Math.random(),
+                name: d.name || "",
+                address: d.address || "",
+                rentBalls: parseInt(d.rentBalls) || 250,
+                exRate: parseInt(d.exRate) || 250,
+                memo: d.memo || "",
+                chodama: parseInt(d.chodama) || 0,
+            }));
+            if (newStores.length > 0) {
+                s.setStores(prev => [...prev.filter(st => typeof st === "object"), ...newStores]);
+                showToast(`${newStores.length}件の店舗をインポートしました`);
+            } else {
+                showToast("インポートできる店舗が見つかりませんでした", "error");
+            }
+        } catch {
+            showToast("ファイルの読み込みに失敗しました", "error");
+        }
     };
 
     const applyMachine = (m) => {
