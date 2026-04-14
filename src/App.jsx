@@ -144,6 +144,14 @@ export default function App() {
   });
 
   const resetAll = () => {
+    // セッション終了前に選択中の店舗の貯玉残高を自動更新
+    if (selectedStoreId) {
+      setStores(prev => prev.map(st =>
+        typeof st === "object" && st.id === selectedStoreId
+          ? { ...st, chodama: currentChodama }
+          : st
+      ));
+    }
     setJpLog([]);
     setSesLog([]);
     setRotRows([]);
@@ -187,6 +195,10 @@ export default function App() {
         investYen: Number(investYen) || 0,
         recoveryYen: Number(recoveryYen) || 0,
         machineName: String(machineName || `1/${synthDenom}`),
+        initialChodama: initialChodama || 0,
+        finalChodama: currentChodama || 0,
+        chodamaNetBalls: (currentChodama || 0) - (initialChodama || 0),
+        chodamaYen: Math.round((ev?.chodamaKCount || 0) * 1000 * (exRate || 250) / (rentBalls || 250)),
         isMoveArchive: true,
       };
       setArchives((prev) => [...prev, archive]);
