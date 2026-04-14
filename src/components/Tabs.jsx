@@ -4998,28 +4998,39 @@ export function SettingsTab({ s, onReset }) {
         showToast("バックアップファイルをダウンロードしました");
     };
 
-    const restoreAllData = (e) => {
+    const restoreAllData = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-            try {
-                const data = JSON.parse(ev.target.result);
-                if (typeof data !== "object" || !data["pt_archives"] === undefined) {
-                    showToast("バックアップファイルの形式が正しくありません", "error");
-                    return;
-                }
-                Object.entries(data).forEach(([k, v]) => {
-                    if (k.startsWith("pt_")) localStorage.setItem(k, v);
-                });
-                showToast("データを復元しました。ページを再読み込みします");
-                setTimeout(() => window.location.reload(), 1500);
-            } catch {
-                showToast("バックアップファイルの読み込みに失敗しました", "error");
+        const inputEl = e.target;
+        let text = "";
+        try {
+            const url = URL.createObjectURL(file);
+            try { const resp = await fetch(url); text = await resp.text(); }
+            finally { URL.revokeObjectURL(url); }
+        } catch {
+            inputEl.value = "";
+            showToast("ファイルの読み込みに失敗しました", "error");
+            return;
+        }
+        inputEl.value = "";
+        try {
+            const data = JSON.parse(text);
+            // 正しいバリデーション: !の位置が間違っていたバグを修正
+            if (typeof data !== "object" || data === null || data["pt_archives"] === undefined) {
+                showToast("バックアップファイルの形式が正しくありません", "error");
+                return;
             }
-        };
-        reader.readAsText(file);
-        e.target.value = "";
+            Object.entries(data).forEach(([k, v]) => {
+                if (k.startsWith("pt_")) {
+                    // オブジェクト/配列はJSON.stringify必須（直接setItemするとデータ破損）
+                    localStorage.setItem(k, typeof v === "string" ? v : JSON.stringify(v));
+                }
+            });
+            showToast("データを復元しました。ページを再読み込みします");
+            setTimeout(() => window.location.reload(), 1500);
+        } catch {
+            showToast("バックアップファイルの読み込みに失敗しました", "error");
+        }
     };
 
     // 理論ボーダーのリアルタイム計算
@@ -5572,66 +5583,79 @@ export function SettingsTab({ s, onReset }) {
     const SubHeader = ({ title, onBack }) => (
         <div style={{
             background: "var(--accent-grad, linear-gradient(135deg,#667eea,#764ba2))",
-            padding: "14px 16px 14px",
+            padding: "14px 16px 16px",
             display: "flex", alignItems: "center", gap: 12, flexShrink: 0,
+            boxShadow: "0 2px 12px rgba(0,0,0,0.18)",
         }}>
             <button className="b" onClick={onBack} style={{
-                background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 8,
-                color: "#fff", fontSize: 18, width: 34, height: 34,
-                display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+                background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.25)",
+                borderRadius: 10, color: "#fff", fontSize: 17, width: 36, height: 36,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                cursor: "pointer", flexShrink: 0,
+                backdropFilter: "blur(8px)",
             }}>‹</button>
-            <div style={{ fontSize: 17, fontWeight: 700, color: "#fff", fontFamily: font }}>{title}</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: "#fff", fontFamily: font, letterSpacing: -0.3 }}>{title}</div>
         </div>
     );
 
     // ── 共通UIヘルパー ──
     const Toggle = ({ value, onChange, color }) => (
         <button className="b" onClick={() => onChange(!value)} style={{
-            width: 48, height: 26, borderRadius: 13, border: "none", flexShrink: 0,
-            background: value ? (color || C.blue) : "rgba(128,128,128,0.25)",
-            position: "relative", transition: "background 0.2s ease", cursor: "pointer",
+            width: 51, height: 31, borderRadius: 16, border: "none", flexShrink: 0,
+            background: value ? (color || C.blue) : "rgba(120,120,128,0.32)",
+            position: "relative", transition: "background 0.25s ease", cursor: "pointer",
+            WebkitTapHighlightColor: "transparent",
         }}>
             <div style={{
-                width: 20, height: 20, borderRadius: 10, background: "#fff",
-                position: "absolute", top: 3,
-                left: value ? 25 : 3, transition: "left 0.2s ease",
-                boxShadow: "0 2px 4px rgba(0,0,0,0.25)",
+                width: 27, height: 27, borderRadius: 14, background: "#fff",
+                position: "absolute", top: 2,
+                left: value ? 22 : 2, transition: "left 0.25s ease",
+                boxShadow: "0 2px 6px rgba(0,0,0,0.28)",
             }} />
         </button>
     );
 
-    // 汎用リスト行（タップ → ナビゲーション or 表示のみ）
+    // 汎用リスト行
     const Row = ({ icon, label, sub, right, onPress, danger }) => (
-        <button className="b" onClick={onPress} disabled={!onPress} style={{
+        <button className="b settings-row" onClick={onPress} disabled={!onPress} style={{
             width: "100%", background: "transparent", border: "none",
-            borderBottom: `1px solid ${C.border}`, padding: "13px 16px",
+            borderBottom: `1px solid ${C.border}`, padding: "14px 16px",
             display: "flex", alignItems: "center", gap: 12,
             cursor: onPress ? "pointer" : "default", textAlign: "left",
+            WebkitTapHighlightColor: "transparent",
         }}>
-            {icon && <span style={{ fontSize: 19, width: 26, textAlign: "center", flexShrink: 0 }}>{icon}</span>}
+            {icon && (
+                <div style={{
+                    width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                    background: danger ? "rgba(255,59,48,0.12)" : "rgba(128,128,128,0.1)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 17,
+                }}>{icon}</div>
+            )}
             <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, color: danger ? C.red : C.text, fontWeight: 500 }}>{label}</div>
-                {sub && <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>{sub}</div>}
+                <div style={{ fontSize: 15, color: danger ? C.red : C.text, fontWeight: 500, lineHeight: 1.3 }}>{label}</div>
+                {sub && <div style={{ fontSize: 12, color: C.sub, marginTop: 2, lineHeight: 1.4 }}>{sub}</div>}
             </div>
-            {right !== undefined ? right : (onPress ? <span style={{ fontSize: 18, color: C.sub, flexShrink: 0 }}>›</span> : null)}
+            {right !== undefined ? right : (onPress ? <span style={{ fontSize: 16, color: "rgba(128,128,128,0.5)", flexShrink: 0, fontWeight: 600 }}>›</span> : null)}
         </button>
     );
 
     // セクションラベル
     const SectionLabel = ({ label }) => (
         <div style={{
-            padding: "18px 16px 6px",
+            padding: "20px 4px 6px",
             fontSize: 11, fontWeight: 700, color: C.sub,
-            letterSpacing: 1, textTransform: "uppercase",
+            letterSpacing: 0.8, textTransform: "uppercase",
         }}>{label}</div>
     );
 
-    // セクションカード（角丸まとめ）
-    const Section = ({ children }) => (
+    // セクションカード（角丸まとめ）— last-childのborderBottomはCSS側で除去
+    const Section = ({ children, danger }) => (
         <div style={{
-            background: C.surface, borderRadius: 14,
-            border: `1px solid ${C.border}`,
-            overflow: "hidden", marginBottom: 0,
+            background: danger ? `rgba(255,59,48,0.06)` : C.surface,
+            borderRadius: 14,
+            border: `1px solid ${danger ? "rgba(255,59,48,0.25)" : C.border}`,
+            overflow: "hidden",
         }}>{children}</div>
     );
 
@@ -5639,8 +5663,9 @@ export function SettingsTab({ s, onReset }) {
     if (showAppearanceView) {
         return (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <style>{`.settings-row:last-child{border-bottom:none!important}`}</style>
                 <SubHeader title="外観" onBack={() => setShowAppearanceView(false)} />
-                <div style={{ flex: 1, overflowY: "auto", padding: "4px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(84px + env(safe-area-inset-bottom))" }}>
                     <SectionLabel label="テーマモード" />
                     <Section>
                         <div style={{ padding: "14px 16px" }}>
@@ -5707,8 +5732,9 @@ export function SettingsTab({ s, onReset }) {
     if (showGameSettingsView) {
         return (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <style>{`.settings-row:last-child{border-bottom:none!important}`}</style>
                 <SubHeader title="基本設定" onBack={() => setShowGameSettingsView(false)} />
-                <div style={{ flex: 1, overflowY: "auto", padding: "4px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(84px + env(safe-area-inset-bottom))" }}>
                     <SectionLabel label="貸玉・交換率" />
                     <Section>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
@@ -5776,8 +5802,9 @@ export function SettingsTab({ s, onReset }) {
     if (showMachineSpecView) {
         return (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <style>{`.settings-row:last-child{border-bottom:none!important}`}</style>
                 <SubHeader title="機種スペック設定" onBack={() => setShowMachineSpecView(false)} />
-                <div style={{ flex: 1, overflowY: "auto", padding: "4px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(84px + env(safe-area-inset-bottom))" }}>
                     <SectionLabel label="期待値算出用スペック" />
                     <Section>
                         {[
@@ -5813,8 +5840,9 @@ export function SettingsTab({ s, onReset }) {
     if (showChodamaView) {
         return (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <style>{`.settings-row:last-child{border-bottom:none!important}`}</style>
                 <SubHeader title="貯玉設定" onBack={() => setShowChodamaView(false)} />
-                <div style={{ flex: 1, overflowY: "auto", padding: "4px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(84px + env(safe-area-inset-bottom))" }}>
                     <SectionLabel label="貯玉オプション" />
                     <Section>
                         <Row icon="💰" label="貯玉を収支に含める" sub="OFFの場合、貯玉使用分は投資額0円として計算"
@@ -5840,8 +5868,9 @@ export function SettingsTab({ s, onReset }) {
     if (showBackupView) {
         return (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <style>{`.settings-row:last-child{border-bottom:none!important}`}</style>
                 <SubHeader title="バックアップ・復元" onBack={() => setShowBackupView(false)} />
-                <div style={{ flex: 1, overflowY: "auto", padding: "4px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(84px + env(safe-area-inset-bottom))" }}>
                     <SectionLabel label="全データバックアップ" />
                     <Section>
                         <div style={{ padding: "14px 16px" }}>
@@ -5878,17 +5907,24 @@ export function SettingsTab({ s, onReset }) {
     // ── メイン設定（フラットリスト）──
     return (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            {/* CSS: Sectionの最終行ボーダーを除去 */}
+            <style>{`.settings-row:last-child{border-bottom:none!important}`}</style>
+
             {/* グラデーションヘッダー */}
             <div style={{
                 background: "var(--accent-grad, linear-gradient(135deg,#667eea,#764ba2))",
-                padding: "env(safe-area-inset-top, 0px) 16px 16px",
+                padding: "calc(env(safe-area-inset-top, 0px) + 14px) 16px 18px",
                 flexShrink: 0,
+                boxShadow: "0 2px 16px rgba(0,0,0,0.18)",
             }}>
-                <div style={{ fontSize: 24, fontWeight: 800, color: "#fff", fontFamily: font }}>設定</div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: "#fff", fontFamily: font, letterSpacing: -0.5 }}>設定</div>
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", marginTop: 2, fontFamily: font }}>
+                    貸玉 {Math.round((s.rentBalls || 250) / 10)}玉 / 交換 {Math.round((s.exRate || 250) / 10)}玉 / ボーダー {calcBorder > 0 ? f(calcBorder, 1) : "—"}回/K
+                </div>
             </div>
 
             {/* ── スクロールコンテンツ ── */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "4px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+            <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(84px + env(safe-area-inset-bottom))" }}>
 
                 {/* 外観 */}
                 <SectionLabel label="外観" />
@@ -5919,26 +5955,43 @@ export function SettingsTab({ s, onReset }) {
                         <Row icon="🔑" label="PINを変更" onPress={() => { setPinSetStep("enter"); setPinDraft(""); setPinSetError(false); }} />
                     )}
                     {pinSetStep !== "idle" && (
-                        <div style={{ padding: "14px 16px", borderTop: `1px solid ${C.border}` }}>
-                            <div style={{ fontSize: 12, color: C.sub, marginBottom: 8 }}>
-                                {pinSetStep === "enter" ? "新しいPINを入力（4桁）" : "もう一度入力して確認"}
+                        <div style={{ padding: "16px 16px 14px", borderTop: `1px solid ${C.border}` }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 6 }}>
+                                {pinSetStep === "enter" ? "新しいPINを入力（4桁）" : "PINを再入力して確認"}
+                            </div>
+                            {/* PINドットインジケーター */}
+                            <div style={{ display: "flex", gap: 10, justifyContent: "center", marginBottom: 14 }}>
+                                {[0,1,2,3].map(i => {
+                                    const val = pinSetStep === "enter" ? pinDraft : pinConfirm;
+                                    return (
+                                        <div key={i} style={{
+                                            width: 14, height: 14, borderRadius: 7,
+                                            background: val.length > i ? (pinSetError ? C.red : C.blue) : "rgba(128,128,128,0.3)",
+                                            transition: "background 0.15s ease",
+                                        }} />
+                                    );
+                                })}
                             </div>
                             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                                 <input
-                                    type="number"
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
                                     maxLength={4}
                                     value={pinSetStep === "enter" ? pinDraft : pinConfirm}
                                     onChange={e => {
-                                        const v = e.target.value.slice(0, 4);
+                                        const v = e.target.value.replace(/\D/g, "").slice(0, 4);
                                         if (pinSetStep === "enter") setPinDraft(v);
                                         else setPinConfirm(v);
                                         setPinSetError(false);
                                     }}
-                                    placeholder="0000"
+                                    placeholder="••••"
                                     style={{
-                                        flex: 1, background: C.bg, border: `1px solid ${pinSetError ? C.red : C.borderHi}`,
-                                        borderRadius: 8, padding: "10px 12px", fontSize: 20, color: C.text,
-                                        fontFamily: mono, outline: "none", letterSpacing: 8, textAlign: "center",
+                                        flex: 1, background: C.bg,
+                                        border: `1.5px solid ${pinSetError ? C.red : C.borderHi}`,
+                                        borderRadius: 10, padding: "11px 12px", fontSize: 22, color: C.text,
+                                        fontFamily: mono, outline: "none", letterSpacing: 10, textAlign: "center",
+                                        transition: "border-color 0.2s",
                                     }}
                                 />
                                 <button className="b" onClick={() => {
@@ -5958,9 +6011,9 @@ export function SettingsTab({ s, onReset }) {
                                         showToast("PINを設定しました");
                                     }
                                 }} style={{
-                                    background: C.blue, border: "none", borderRadius: 8,
-                                    color: "#fff", fontSize: 12, padding: "10px 16px",
-                                    fontFamily: font, fontWeight: 700, cursor: "pointer",
+                                    background: C.blue, border: "none", borderRadius: 10,
+                                    color: "#fff", fontSize: 13, padding: "11px 18px",
+                                    fontFamily: font, fontWeight: 700, cursor: "pointer", flexShrink: 0,
                                 }}>
                                     {pinSetStep === "enter" ? "次へ" : "確定"}
                                 </button>
@@ -5968,19 +6021,21 @@ export function SettingsTab({ s, onReset }) {
                                     setPinSetStep("idle"); setPinDraft(""); setPinConfirm(""); setPinSetError(false);
                                     if (!s.appPin) s.setAppLock(false);
                                 }} style={{
-                                    background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
-                                    color: C.text, fontSize: 12, padding: "10px 14px",
-                                    fontFamily: font, fontWeight: 600, cursor: "pointer",
+                                    background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 10,
+                                    color: C.text, fontSize: 13, padding: "11px 14px",
+                                    fontFamily: font, fontWeight: 600, cursor: "pointer", flexShrink: 0,
                                 }}>キャンセル</button>
                             </div>
-                            {pinSetError && <div style={{ fontSize: 11, color: C.red, marginTop: 6 }}>
-                                {pinSetStep === "enter" ? "4桁の数字を入力してください" : "PINが一致しません"}
-                            </div>}
+                            {pinSetError && (
+                                <div style={{ fontSize: 12, color: C.red, marginTop: 8, textAlign: "center" }}>
+                                    {pinSetStep === "enter" ? "4桁の数字を入力してください" : "PINが一致しません。もう一度入力してください"}
+                                </div>
+                            )}
                         </div>
                     )}
                 </Section>
                 {s.appLock && (
-                    <div style={{ padding: "6px 16px 0", fontSize: 11, color: C.sub, lineHeight: 1.7 }}>
+                    <div style={{ padding: "6px 4px 0", fontSize: 12, color: C.sub, lineHeight: 1.7 }}>
                         PINを忘れた場合はデータリセットが必要になります。
                     </div>
                 )}
@@ -5991,14 +6046,17 @@ export function SettingsTab({ s, onReset }) {
                     <Row icon="💾" label="バックアップ・復元" sub="全データのエクスポート・インポート" onPress={() => setShowBackupView(true)} />
                 </Section>
 
-                {/* データリセット */}
+                {/* 危険な操作 */}
                 <SectionLabel label="危険な操作" />
-                <Section>
+                <Section danger>
                     {!confirming ? (
-                        <Row icon="🗑" label="データをリセット" sub="セッションデータ・履歴を消去します" danger onPress={() => setConfirming(true)} />
+                        <Row icon="🗑️" label="データをリセット" sub="セッションデータ・履歴を消去します" danger onPress={() => setConfirming(true)} />
                     ) : (
-                        <div style={{ padding: "14px 16px" }}>
-                            <div style={{ fontSize: 12, color: C.sub, marginBottom: 12 }}>現在のセッションデータ（回転数・獲得出玉・履歴など）がすべて消去されます。設定値は保持されます。</div>
+                        <div style={{ padding: "16px" }}>
+                            <div style={{ fontSize: 13, color: C.text, fontWeight: 600, marginBottom: 6 }}>本当にリセットしますか？</div>
+                            <div style={{ fontSize: 12, color: C.sub, marginBottom: 14, lineHeight: 1.6 }}>
+                                回転数・獲得出玉・履歴などのセッションデータがすべて消去されます。設定値は保持されます。この操作は元に戻せません。
+                            </div>
                             <div style={{ display: "flex", gap: 10 }}>
                                 <Btn label="本当にリセット" onClick={() => { onReset(); setConfirming(false); }} bg={C.red} fg="#fff" bd="none" />
                                 <Btn label="キャンセル" onClick={() => setConfirming(false)} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
@@ -6009,16 +6067,29 @@ export function SettingsTab({ s, onReset }) {
 
                 {/* アプリ情報 */}
                 <SectionLabel label="アプリ情報" />
+                {/* アプリアイコン風ヘッダー */}
+                <div style={{
+                    display: "flex", flexDirection: "column", alignItems: "center",
+                    padding: "20px 16px 16px", marginBottom: 8,
+                }}>
+                    <div style={{
+                        width: 64, height: 64, borderRadius: 16,
+                        background: "var(--accent-grad, linear-gradient(135deg,#667eea,#764ba2))",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 32, marginBottom: 10,
+                        boxShadow: "0 4px 16px rgba(102,126,234,0.4)",
+                    }}>🎰</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: C.text, fontFamily: font }}>パチトラッカー</div>
+                    <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>バージョン 1.0.0 (2025.7.1)</div>
+                </div>
                 <Section>
                     <Row icon="💬" label="お問い合わせ" onPress={() => showToast("サポートページは準備中です", "warn")} />
                     <Row icon="⭐" label="アプリを評価" onPress={() => showToast("ストアページは準備中です", "warn")} />
                     <Row icon="📄" label="利用規約" onPress={() => showToast("利用規約ページは準備中です", "warn")} />
-                    <Row icon="🛡" label="プライバシーポリシー" onPress={() => showToast("プライバシーポリシーは準備中です", "warn")} />
-                    <Row icon="ℹ️" label="バージョン" right={<span style={{ fontSize: 13, color: C.sub }}>1.0.0</span>} />
-                    <Row icon="🔧" label="ビルド番号" right={<span style={{ fontSize: 13, color: C.sub }}>2025.7.1</span>} />
+                    <Row icon="🛡️" label="プライバシーポリシー" onPress={() => showToast("プライバシーポリシーは準備中です", "warn")} />
                 </Section>
 
-                <div style={{ height: 20 }} />
+                <div style={{ height: 24 }} />
             </div>
 
             <ToastPortal />
