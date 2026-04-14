@@ -4697,11 +4697,16 @@ export function SettingsTab({ s, onReset }) {
             showToast("エクスポートする店舗がありません", "warn");
             return;
         }
-        const headers = ["name", "address", "rentBalls", "exRate", "memo"];
-        const csvContent = [
-            headers.join(","),
-            ...normalizedStores.map(st => headers.map(h => `"${String(st[h] || "").replace(/"/g, '""')}"`).join(","))
-        ].join("\n");
+        // 日本語ヘッダー・表示値（貸玉/交換は100円あたり玉数の面値）でエクスポート
+        const rows = normalizedStores.map(st => [
+            `"${String(st.name || "").replace(/"/g, '""')}"`,
+            `"${String(st.address || "").replace(/"/g, '""')}"`,
+            Math.round((st.rentBalls || 250) / 10),
+            Math.round((st.exRate || 250) / 10),
+            `"${String(st.memo || "").replace(/"/g, '""')}"`,
+            st.chodama || 0,
+        ].join(","));
+        const csvContent = ["店舗名,住所,貸玉,交換,メモ,貯玉", ...rows].join("\n");
         downloadCSV(csvContent, "stores.csv");
     };
 
@@ -4898,7 +4903,7 @@ export function SettingsTab({ s, onReset }) {
         }
     };
 
-    // 店舗CSVインポート
+    // 店舗CSVインポート（日本語・英語ヘッダー両対応）
     const importStoresCSV = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -4920,14 +4925,27 @@ export function SettingsTab({ s, onReset }) {
         inputEl.value = "";
         try {
             const data = parseCSV(text.replace(/^\uFEFF/, ""));
-            const newStores = data.filter(d => d.name).map(d => ({
+            if (data.length === 0) {
+                showToast("インポートできる店舗が見つかりませんでした", "error");
+                return;
+            }
+            // 日本語ヘッダー（店舗名, 住所, 貸玉, 交換）と英語ヘッダー（name, address, rentBalls, exRate）の両方に対応
+            const firstRow = data[0];
+            const isJp = "店舗名" in firstRow;
+            const getName = d => isJp ? d["店舗名"] : d["name"];
+            // 日本語形式: 貸玉/交換は表示値（25玉）→ 内部値（250）に変換
+            // 英語形式: 既に内部値（250）のまま
+            const getRentBalls = d => isJp ? (parseInt(d["貸玉"]) || 25) * 10 : (parseInt(d["rentBalls"]) || 250);
+            const getExRate   = d => isJp ? (parseInt(d["交換"])  || 25) * 10 : (parseInt(d["exRate"])    || 250);
+            const getChodama  = d => isJp ? (parseInt(d["貯玉"]) || 0) : (parseInt(d["chodama"]) || 0);
+            const newStores = data.filter(d => getName(d)).map(d => ({
                 id: Date.now() + Math.random(),
-                name: d.name || "",
-                address: d.address || "",
-                rentBalls: parseInt(d.rentBalls) || 250,
-                exRate: parseInt(d.exRate) || 250,
-                memo: d.memo || "",
-                chodama: parseInt(d.chodama) || 0,
+                name: getName(d) || "",
+                address: (isJp ? d["住所"] : d["address"]) || "",
+                rentBalls: getRentBalls(d),
+                exRate: getExRate(d),
+                memo: (isJp ? d["メモ"] : d["memo"]) || "",
+                chodama: getChodama(d),
             }));
             if (newStores.length > 0) {
                 s.setStores(prev => [...prev.filter(st => typeof st === "object"), ...newStores]);
