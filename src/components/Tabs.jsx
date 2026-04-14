@@ -621,40 +621,39 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             newInvest = prevInvest + investPace;
         }
 
-        // 平均回転数計算 - セッション全体の累積平均（上皿補正込み）
-        // 総通常回転数 = 全データ行のthisRotの合計
+        // 平均回転数計算 - セッション全体の累積平均（データページの1Kスタートと整合）
+        // deriveFromRows と同じ集計方式: 現金K=投資差分、持ち玉/貯玉K=消費玉数/貸玉
         const allDataRows = rows.filter(r => r.type === "data");
-        let totalThisRot = 0;
+        let totalThisRot = thisRot; // 今回の回転数
+        let cashK = 0, mochiK = 0, chodamaK = 0;
+        let prevInv = 0;
         allDataRows.forEach(r => {
             totalThisRot += r.thisRot || 0;
-        });
-        totalThisRot += thisRot; // 今回の回転数も追加
-
-        // 上皿補正: jpLogから全チェーンのtrayBallsを円換算
-        const totalTrayBalls = (S.jpLog || []).reduce((sum, chain) => sum + (chain.trayBalls || 0), 0);
-        const trayYenCorrection = totalTrayBalls * (1000 / rentBalls); // 上皿玉の円換算
-
-        // 実質現金投資 = 現金投資 - 上皿補正（0未満にはしない）
-        const correctedCashInvest = Math.max(newInvest - trayYenCorrection, 0);
-
-        // 総投資K数 = 実質現金K + 持ち玉K + 貯玉K
-        let totalKUsed = correctedCashInvest / 1000;
-        allDataRows.forEach(r => {
-            // 持ち玉/貯玉モードの行は、消費玉数を投資K数に換算して追加
-            // ballsConsumedが未定義の場合（古いデータ）はinvestPace相当の玉数を使用
-            if (r.mode === "mochi" || r.mode === "chodama") {
+            const invDiff = (r.invest || 0) - prevInv;
+            prevInv = r.invest || 0;
+            if (r.mode === "mochi") {
                 const consumed = r.ballsConsumed !== undefined && r.ballsConsumed !== null
                     ? r.ballsConsumed
                     : rentBalls * ((S.investPace || 1000) / 1000);
-                if (consumed > 0) {
-                    totalKUsed += consumed / rentBalls;
-                }
+                mochiK += consumed / rentBalls;
+            } else if (r.mode === "chodama") {
+                const consumed = r.ballsConsumed !== undefined && r.ballsConsumed !== null
+                    ? r.ballsConsumed
+                    : rentBalls * ((S.investPace || 1000) / 1000);
+                chodamaK += consumed / rentBalls;
+            } else {
+                cashK += invDiff / 1000;
             }
         });
-        // 今回の持ち玉/貯玉消費も追加
-        if (S.playMode === "mochi" || S.playMode === "chodama") {
-            totalKUsed += ballsConsumed / rentBalls;
+        // 今回の行を追加
+        if (S.playMode === "mochi") {
+            mochiK += ballsConsumed / rentBalls;
+        } else if (S.playMode === "chodama") {
+            chodamaK += ballsConsumed / rentBalls;
+        } else {
+            cashK += (newInvest - prevInv) / 1000;
         }
+        const totalKUsed = cashK + mochiK + chodamaK;
 
         const newAvg = totalKUsed > 0
             ? parseFloat((totalThisRot / totalKUsed).toFixed(1))
