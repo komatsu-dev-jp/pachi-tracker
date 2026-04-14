@@ -4516,8 +4516,8 @@ export function SettingsTab({ s, onReset }) {
     };
     const [formData, setFormData] = useState(emptyMachine);
 
-    // 店舗フォームの初期値
-    const emptyStore = { name: "", address: "", rentBalls: 250, exRate: 250, memo: "", chodama: 0 };
+    // 店舗フォームの初期値（rentBalls/exRateはフォーム内では面値=玉/100円で扱う）
+    const emptyStore = { name: "", address: "", rentBalls: 25, exRate: 25, memo: "", chodama: 0 };
     const [storeFormData, setStoreFormData] = useState(emptyStore);
 
     // 店舗データの正規化（旧形式の文字列配列を新形式のオブジェクト配列に変換）+ chodamaフィールドの追加
@@ -4582,7 +4582,12 @@ export function SettingsTab({ s, onReset }) {
     const openStoreForm = (store = null) => {
         if (store) {
             setEditingStore(store);
-            setStoreFormData({ ...emptyStore, ...store });
+            // 内部値（×10）をフォーム用の面値（÷10）に変換してセット
+            setStoreFormData({
+                ...emptyStore, ...store,
+                rentBalls: Math.round((store.rentBalls || 250) / 10),
+                exRate: Math.round((store.exRate || 250) / 10),
+            });
         } else {
             setEditingStore(null);
             setStoreFormData(emptyStore);
@@ -4590,14 +4595,14 @@ export function SettingsTab({ s, onReset }) {
         setShowStoreForm(true);
     };
 
-    // 店舗を保存
+    // 店舗を保存（フォームの面値を内部値×10に変換）
     const saveStore = () => {
         if (!storeFormData.name.trim()) return;
         const storeData = {
             ...storeFormData,
             id: editingStore?.id || Date.now(),
-            rentBalls: parseInt(storeFormData.rentBalls) || 250,
-            exRate: parseInt(storeFormData.exRate) || 250,
+            rentBalls: (parseInt(storeFormData.rentBalls) || 25) * 10,
+            exRate: (parseInt(storeFormData.exRate) || 25) * 10,
             chodama: parseInt(storeFormData.chodama) || 0,
         };
         if (editingStore) {
@@ -5126,10 +5131,13 @@ export function SettingsTab({ s, onReset }) {
                     <div style={{ marginBottom: 12 }}>
                         <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貸玉（玉/100円）</div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <input type="number" value={Math.round((storeFormData.rentBalls || 250) / 10)} onChange={e => setStoreFormData({ ...storeFormData, rentBalls: (parseInt(e.target.value) || 25) * 10 })}
+                            <input type="text" inputMode="numeric" pattern="[0-9]*"
+                                value={storeFormData.rentBalls}
+                                onChange={e => setStoreFormData({ ...storeFormData, rentBalls: e.target.value })}
+                                onBlur={e => setStoreFormData(p => ({ ...p, rentBalls: parseInt(p.rentBalls) || 25 }))}
                                 placeholder="25"
                                 style={{ flex: 1, boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
-                            <span style={{ fontSize: 10, color: C.sub, whiteSpace: "nowrap" }}>{(100 / ((storeFormData.rentBalls || 250) / 10)).toFixed(2)}円/玉</span>
+                            <span style={{ fontSize: 10, color: C.sub, whiteSpace: "nowrap" }}>{(100 / (parseInt(storeFormData.rentBalls) || 25)).toFixed(2)}円/玉</span>
                         </div>
                     </div>
 
@@ -5137,10 +5145,13 @@ export function SettingsTab({ s, onReset }) {
                     <div style={{ marginBottom: 12 }}>
                         <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>交換（玉/100円）</div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <input type="number" value={Math.round((storeFormData.exRate || 250) / 10)} onChange={e => setStoreFormData({ ...storeFormData, exRate: (parseInt(e.target.value) || 25) * 10 })}
+                            <input type="text" inputMode="numeric" pattern="[0-9]*"
+                                value={storeFormData.exRate}
+                                onChange={e => setStoreFormData({ ...storeFormData, exRate: e.target.value })}
+                                onBlur={e => setStoreFormData(p => ({ ...p, exRate: parseInt(p.exRate) || 25 }))}
                                 placeholder="25"
                                 style={{ flex: 1, boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
-                            <span style={{ fontSize: 10, color: C.sub, whiteSpace: "nowrap" }}>{(100 / ((storeFormData.exRate || 250) / 10)).toFixed(2)}円/玉</span>
+                            <span style={{ fontSize: 10, color: C.sub, whiteSpace: "nowrap" }}>{(100 / (parseInt(storeFormData.exRate) || 25)).toFixed(2)}円/玉</span>
                         </div>
                     </div>
 
