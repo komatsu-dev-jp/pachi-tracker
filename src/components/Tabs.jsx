@@ -4805,7 +4805,7 @@ export function SettingsTab({ s, onReset }) {
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (ev) => {
-            const data = parseCSV(ev.target.result);
+            const data = parseCSV((ev.target.result || "").replace(/^\uFEFF/, ""));
             if (data.length === 0) {
                 showToast("インポートできるデータがありません", "error");
                 return;
@@ -4889,7 +4889,9 @@ export function SettingsTab({ s, onReset }) {
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (ev) => {
-            const data = parseCSV(ev.target.result);
+            // BOM除去してからパース
+            const text = (ev.target.result || "").replace(/^\uFEFF/, "");
+            const data = parseCSV(text);
             const newStores = data.filter(d => d.name).map(d => ({
                 id: Date.now() + Math.random(),
                 name: d.name || "",
@@ -4901,9 +4903,11 @@ export function SettingsTab({ s, onReset }) {
             if (newStores.length > 0) {
                 s.setStores(prev => [...prev.filter(st => typeof st === "object"), ...newStores]);
                 showToast(`${newStores.length}件の店舗をインポートしました`);
+            } else {
+                showToast("インポートできる店舗が見つかりませんでした", "error");
             }
         };
-        reader.readAsText(file);
+        reader.readAsText(file, "UTF-8");
         e.target.value = "";
     };
 
