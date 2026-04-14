@@ -4601,8 +4601,8 @@ export function SettingsTab({ s, onReset }) {
         const storeData = {
             ...storeFormData,
             id: editingStore?.id || Date.now(),
-            rentBalls: (parseInt(storeFormData.rentBalls) || 25) * 10,
-            exRate: (parseInt(storeFormData.exRate) || 25) * 10,
+            rentBalls: Math.round((parseFloat(storeFormData.rentBalls) || 25) * 10),
+            exRate: Math.round((parseFloat(storeFormData.exRate) || 25) * 10),
             chodama: parseInt(storeFormData.chodama) || 0,
         };
         if (editingStore) {
@@ -5139,37 +5139,54 @@ export function SettingsTab({ s, onReset }) {
                     </div>
 
                     {/* 貸玉100円 */}
-                    <div style={{ marginBottom: 12 }}>
+                    <div style={{ marginBottom: 8 }}>
                         <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貸玉（玉/100円）</div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <input type="text" inputMode="numeric" pattern="[0-9]*"
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                            <input type="text" inputMode="decimal"
                                 value={storeFormData.rentBalls}
                                 onChange={e => setStoreFormData({ ...storeFormData, rentBalls: e.target.value })}
-                                onBlur={e => setStoreFormData(p => ({ ...p, rentBalls: parseInt(p.rentBalls) || 25 }))}
+                                onBlur={() => setStoreFormData(p => ({ ...p, rentBalls: parseFloat(p.rentBalls) || 25 }))}
                                 placeholder="25"
                                 style={{ flex: 1, boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
-                            <span style={{ fontSize: 10, color: C.sub, whiteSpace: "nowrap" }}>{(100 / (parseInt(storeFormData.rentBalls) || 25)).toFixed(2)}円/玉</span>
+                            <span style={{ fontSize: 10, color: C.sub, whiteSpace: "nowrap" }}>{(100 / (parseFloat(storeFormData.rentBalls) || 25)).toFixed(2)}円/玉</span>
+                        </div>
+                        {/* プリセット */}
+                        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                            {[{l:"等価",v:25},{l:"28玉",v:28},{l:"30玉",v:30},{l:"33玉",v:33}].map(({l,v}) => {
+                                const active = String(storeFormData.rentBalls) === String(v);
+                                return <button key={v} className="b" onClick={() => setStoreFormData(p => ({...p, rentBalls: v}))} style={{ fontSize: 10, padding: "5px 10px", borderRadius: 6, border: `1px solid ${active ? C.blue : C.borderHi}`, background: active ? `${C.blue}22` : C.surfaceHi, color: active ? C.blue : C.sub, fontFamily: font, fontWeight: active ? 700 : 500, cursor: "pointer" }}>{l}</button>;
+                            })}
                         </div>
                     </div>
 
                     {/* 交換100円 */}
                     <div style={{ marginBottom: 12 }}>
                         <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>交換（玉/100円）</div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <input type="text" inputMode="numeric" pattern="[0-9]*"
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                            <input type="text" inputMode="decimal"
                                 value={storeFormData.exRate}
                                 onChange={e => setStoreFormData({ ...storeFormData, exRate: e.target.value })}
-                                onBlur={e => setStoreFormData(p => ({ ...p, exRate: parseInt(p.exRate) || 25 }))}
+                                onBlur={() => setStoreFormData(p => ({ ...p, exRate: parseFloat(p.exRate) || 25 }))}
                                 placeholder="25"
                                 style={{ flex: 1, boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
-                            <span style={{ fontSize: 10, color: C.sub, whiteSpace: "nowrap" }}>{(100 / (parseInt(storeFormData.exRate) || 25)).toFixed(2)}円/玉</span>
+                            <span style={{ fontSize: 10, color: C.sub, whiteSpace: "nowrap" }}>{(100 / (parseFloat(storeFormData.exRate) || 25)).toFixed(2)}円/玉</span>
+                        </div>
+                        {/* プリセット */}
+                        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                            {[{l:"等価",v:25},{l:"28玉",v:28},{l:"30玉",v:30},{l:"33玉",v:33}].map(({l,v}) => {
+                                const active = String(storeFormData.exRate) === String(v);
+                                return <button key={v} className="b" onClick={() => setStoreFormData(p => ({...p, exRate: v}))} style={{ fontSize: 10, padding: "5px 10px", borderRadius: 6, border: `1px solid ${active ? C.blue : C.borderHi}`, background: active ? `${C.blue}22` : C.surfaceHi, color: active ? C.blue : C.sub, fontFamily: font, fontWeight: active ? 700 : 500, cursor: "pointer" }}>{l}</button>;
+                            })}
                         </div>
                     </div>
 
                     {/* 貯玉残高 */}
                     <div style={{ marginBottom: 12 }}>
                         <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貯玉残高（玉）</div>
-                        <input type="number" value={storeFormData.chodama || 0} onChange={e => setStoreFormData({ ...storeFormData, chodama: parseInt(e.target.value) || 0 })}
+                        <input type="text" inputMode="numeric" pattern="[0-9]*"
+                            value={storeFormData.chodama === "" ? "" : String(storeFormData.chodama || 0)}
+                            onChange={e => setStoreFormData({ ...storeFormData, chodama: e.target.value })}
+                            onBlur={() => setStoreFormData(p => ({ ...p, chodama: parseInt(p.chodama) || 0 }))}
                             placeholder="0"
                             style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
                     </div>
@@ -5249,8 +5266,8 @@ export function SettingsTab({ s, onReset }) {
                                 {st.address && <div style={{ fontSize: 10, color: C.sub }}>{st.address}</div>}
                             </div>
                             <div style={{ textAlign: "right" }}>
-                                <div style={{ fontSize: 12, fontWeight: 600, color: C.yellow, fontFamily: mono }}>{st.rentBalls || 250}玉</div>
-                                <div style={{ fontSize: 9, color: C.sub }}>{st.exRate || 250}玉交換</div>
+                                <div style={{ fontSize: 12, fontWeight: 600, color: C.yellow, fontFamily: mono }}>{Math.round(st.rentBalls || 250) / 10}玉</div>
+                                <div style={{ fontSize: 9, color: C.sub }}>交換 {Math.round(st.exRate || 250) / 10}玉{(st.chodama || 0) > 0 ? ` 💎${f(st.chodama)}` : ""}</div>
                             </div>
                         </button>
                     ))
@@ -5455,7 +5472,7 @@ export function SettingsTab({ s, onReset }) {
                     {/* 確率分母 */}
                     <div style={{ marginBottom: 12 }}>
                         <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>合成確率分母</div>
-                        <input type="number" value={formData.synthProb} onChange={e => setFormData({ ...formData, synthProb: e.target.value })}
+                        <input type="text" inputMode="decimal" value={formData.synthProb} onChange={e => setFormData({ ...formData, synthProb: e.target.value })}
                             placeholder="319.6"
                             style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
                     </div>
@@ -5463,7 +5480,7 @@ export function SettingsTab({ s, onReset }) {
                     {/* 1R出玉 */}
                     <div style={{ marginBottom: 12 }}>
                         <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>1R出玉（実出玉）</div>
-                        <input type="number" value={formData.spec1R} onChange={e => setFormData({ ...formData, spec1R: e.target.value })}
+                        <input type="text" inputMode="numeric" pattern="[0-9]*" value={formData.spec1R} onChange={e => setFormData({ ...formData, spec1R: e.target.value })}
                             placeholder="140"
                             style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
                     </div>
@@ -5471,7 +5488,7 @@ export function SettingsTab({ s, onReset }) {
                     {/* 平均総R */}
                     <div style={{ marginBottom: 12 }}>
                         <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>平均総R/初当たり</div>
-                        <input type="number" value={formData.specAvgTotalRounds} onChange={e => setFormData({ ...formData, specAvgTotalRounds: e.target.value })}
+                        <input type="text" inputMode="decimal" value={formData.specAvgTotalRounds} onChange={e => setFormData({ ...formData, specAvgTotalRounds: e.target.value })}
                             placeholder="30"
                             style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
                     </div>
@@ -5479,7 +5496,7 @@ export function SettingsTab({ s, onReset }) {
                     {/* サポ増減 */}
                     <div style={{ marginBottom: 12 }}>
                         <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>サポ増減/初当たり</div>
-                        <input type="number" value={formData.specSapo} onChange={e => setFormData({ ...formData, specSapo: e.target.value })}
+                        <input type="text" inputMode="numeric" pattern="[0-9-]*" value={formData.specSapo} onChange={e => setFormData({ ...formData, specSapo: e.target.value })}
                             placeholder="0"
                             style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
                     </div>
@@ -5615,30 +5632,33 @@ export function SettingsTab({ s, onReset }) {
         </button>
     );
 
-    // 汎用リスト行
-    const Row = ({ icon, label, sub, right, onPress, danger }) => (
-        <button className="b settings-row" onClick={onPress} disabled={!onPress} style={{
-            width: "100%", background: "transparent", border: "none",
-            borderBottom: `1px solid ${C.border}`, padding: "14px 16px",
-            display: "flex", alignItems: "center", gap: 12,
-            cursor: onPress ? "pointer" : "default", textAlign: "left",
-            WebkitTapHighlightColor: "transparent",
-        }}>
-            {icon && (
-                <div style={{
-                    width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-                    background: danger ? "rgba(255,59,48,0.12)" : "rgba(128,128,128,0.1)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 17,
-                }}>{icon}</div>
-            )}
-            <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 15, color: danger ? C.red : C.text, fontWeight: 500, lineHeight: 1.3 }}>{label}</div>
-                {sub && <div style={{ fontSize: 12, color: C.sub, marginTop: 2, lineHeight: 1.4 }}>{sub}</div>}
-            </div>
-            {right !== undefined ? right : (onPress ? <span style={{ fontSize: 16, color: "rgba(128,128,128,0.5)", flexShrink: 0, fontWeight: 600 }}>›</span> : null)}
-        </button>
-    );
+    // 汎用リスト行（onPressなしはdivでレンダリング → Toggle等の子要素がiOSでも押せる）
+    const Row = ({ icon, label, sub, right, onPress, danger }) => {
+        const Tag = onPress ? "button" : "div";
+        return (
+            <Tag className="b settings-row" onClick={onPress || undefined} style={{
+                width: "100%", background: "transparent", border: "none",
+                borderBottom: `1px solid ${C.border}`, padding: "14px 16px",
+                display: "flex", alignItems: "center", gap: 12,
+                cursor: onPress ? "pointer" : "default", textAlign: "left",
+                WebkitTapHighlightColor: "transparent",
+            }}>
+                {icon && (
+                    <div style={{
+                        width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                        background: danger ? "rgba(255,59,48,0.12)" : "rgba(128,128,128,0.1)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 17,
+                    }}>{icon}</div>
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 15, color: danger ? C.red : C.text, fontWeight: 500, lineHeight: 1.3 }}>{label}</div>
+                    {sub && <div style={{ fontSize: 12, color: C.sub, marginTop: 2, lineHeight: 1.4 }}>{sub}</div>}
+                </div>
+                {right !== undefined ? right : (onPress ? <span style={{ fontSize: 16, color: "rgba(128,128,128,0.5)", flexShrink: 0, fontWeight: 600 }}>›</span> : null)}
+            </Tag>
+        );
+    };
 
     // セクションラベル
     const SectionLabel = ({ label }) => (
@@ -5743,7 +5763,7 @@ export function SettingsTab({ s, onReset }) {
                                 <div style={{ fontSize: 11, color: C.sub }}>{(100 / ((s.rentBalls || 250) / 10)).toFixed(2)}円/玉</div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                <NI v={Math.round((s.rentBalls || 250) / 10)} set={(v) => s.setRentBalls(v * 10)} w={80} center />
+                                <NI v={Math.round(s.rentBalls || 250) / 10} set={(v) => s.setRentBalls(Math.round(parseFloat(v) * 10))} w={80} center />
                                 <span style={{ fontSize: 11, color: C.sub, minWidth: 40 }}>玉/100円</span>
                             </div>
                         </div>
@@ -5753,7 +5773,7 @@ export function SettingsTab({ s, onReset }) {
                                 <div style={{ fontSize: 11, color: C.sub }}>{(100 / ((s.exRate || 250) / 10)).toFixed(2)}円/玉</div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                <NI v={Math.round((s.exRate || 250) / 10)} set={(v) => s.setExRate(v * 10)} w={80} center />
+                                <NI v={Math.round(s.exRate || 250) / 10} set={(v) => s.setExRate(Math.round(parseFloat(v) * 10))} w={80} center />
                                 <span style={{ fontSize: 11, color: C.sub, minWidth: 40 }}>玉/100円</span>
                             </div>
                         </div>
@@ -5812,7 +5832,7 @@ export function SettingsTab({ s, onReset }) {
                             { lbl: "平均総R/初当たり", v: s.specAvgRounds, set: s.setSpecAvgRounds, unit: "R" },
                             { lbl: "サポ増減/初当たり", v: s.specSapo, set: s.setSpecSapo, unit: "玉" },
                         ].map(({ lbl, v, set, unit }) => (
-                            <div key={lbl} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
+                            <div key={lbl} className="settings-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
                                 <div style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>{lbl}</div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                     <NI v={v} set={set} w={80} center />
