@@ -3565,6 +3565,22 @@ export function CalendarTab({ S, onReset }) {
 
     const archives = S.archives || [];
 
+    // Compact number formatter for narrow calendar cells.
+    // < 10k  : full digits with thousand separator (e.g. -3,500)
+    // < 1M   : k notation with up to 1 decimal (e.g. -35k, +12.5k)
+    // >= 1M  : M notation with 1 decimal (e.g. +1.2M)
+    const fmtCompact = (v) => {
+        const n = Math.round(v);
+        const av = Math.abs(n);
+        if (av < 10000) return f(n);
+        if (av < 1000000) {
+            const k = n / 1000;
+            const s = (Math.abs(k) < 100 ? k.toFixed(1) : k.toFixed(0)).replace(/\.0$/, "");
+            return s + "k";
+        }
+        return (n / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+    };
+
     // Group archives by date
     const byDate = useMemo(() => {
         const map = {};
@@ -4058,21 +4074,21 @@ export function CalendarTab({ S, onReset }) {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                 <button className="b" onClick={prevMonth} style={{ background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8, color: C.text, fontSize: 14, padding: "4px 10px", fontWeight: 700 }}>‹</button>
                 <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{viewMonth.year}年 {viewMonth.month + 1}月</div>
-                    <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 1 }}>
-                        {monthTotal.hasActual && (
-                            <div style={{ fontSize: 13, fontWeight: 700, color: sc(monthTotal.actual), fontFamily: font }}>
-                                実{f(Math.round(monthTotal.actual))}円
+                    <div style={{ fontSize: 12, fontWeight: 600, color: C.sub }}>{viewMonth.year}年 {viewMonth.month + 1}月</div>
+                    {(monthTotal.hasActual || monthTotal.ev !== 0) ? (
+                        <>
+                            <div style={{ fontSize: 24, fontWeight: 900, color: sc(monthTotal.hasActual ? monthTotal.actual : monthTotal.ev), fontFamily: font, fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}>
+                                {monthTotal.hasActual ? `${f(Math.round(monthTotal.actual))}円` : "—"}
                             </div>
-                        )}
-                        {monthTotal.ev !== 0 ? (
-                            <div style={{ fontSize: 13, fontWeight: 700, color: sc(monthTotal.ev), opacity: 0.7, fontFamily: font }}>
-                                期{f(Math.round(monthTotal.ev))}円
-                            </div>
-                        ) : (!monthTotal.hasActual && (
-                            <div style={{ fontSize: 13, fontWeight: 700, color: C.sub, fontFamily: font }}>—</div>
-                        ))}
-                    </div>
+                            {monthTotal.ev !== 0 && (
+                                <div style={{ fontSize: 12, fontWeight: 700, color: sc(monthTotal.ev), opacity: 0.65, fontFamily: font, fontVariantNumeric: "tabular-nums", marginTop: 1 }}>
+                                    期{f(Math.round(monthTotal.ev))}円
+                                </div>
+                            )}
+                        </>
+                    ) : (
+                        <div style={{ fontSize: 18, fontWeight: 700, color: C.sub, lineHeight: 1.1 }}>—</div>
+                    )}
                 </div>
                 <button className="b" onClick={nextMonth} style={{ background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8, color: C.text, fontSize: 14, padding: "4px 10px", fontWeight: 700 }}>›</button>
             </div>
@@ -4098,20 +4114,20 @@ export function CalendarTab({ S, onReset }) {
                     return (
                         <button key={day} className="b" onClick={() => setSelectedDate(isSel ? null : ds)} style={{
                             background: todayBg, border: isToday(day) ? `1px solid ${C.blue}40` : isSel ? `1px solid ${C.blue}30` : `1px solid transparent`,
-                            borderRadius: 6, padding: "4px 1px", textAlign: "center", minHeight: 52,
+                            borderRadius: 6, padding: "3px 1px", textAlign: "center", minHeight: 62,
                             cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start",
                         }}>
-                            <div style={{ fontSize: 18, fontWeight: isToday(day) ? 800 : 600, color: dow === 0 ? C.red : dow === 6 ? C.blue : C.text, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{day}</div>
+                            <div style={{ fontSize: 14, fontWeight: isToday(day) ? 800 : 600, color: dow === 0 ? C.red : dow === 6 ? C.blue : C.text, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{day}</div>
                             {hasData && (
-                                <div style={{ marginTop: 2, display: "flex", flexDirection: "column", alignItems: "center", gap: 1, lineHeight: 1 }}>
+                                <div style={{ marginTop: 3, display: "flex", flexDirection: "column", alignItems: "center", gap: 1, lineHeight: 1 }}>
                                     {total.hasActual && (
-                                        <div style={{ fontSize: 9, fontWeight: 700, color: sc(total.actual), fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
-                                            {f(Math.round(total.actual))}
+                                        <div style={{ fontSize: 13, fontWeight: 800, color: sc(total.actual), fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
+                                            {fmtCompact(total.actual)}
                                         </div>
                                     )}
                                     {total.ev !== 0 && (
-                                        <div style={{ fontSize: 8, fontWeight: 600, color: sc(total.ev), opacity: 0.6, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
-                                            期{f(Math.round(total.ev))}
+                                        <div style={{ fontSize: 9, fontWeight: 600, color: sc(total.ev), opacity: 0.55, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
+                                            期{fmtCompact(total.ev)}
                                         </div>
                                     )}
                                 </div>
@@ -4210,24 +4226,6 @@ export function CalendarTab({ S, onReset }) {
                             </div>
                         )}
                     </div>
-                );
-            })()}
-
-            {/* Cumulative EV graph */}
-            {(() => {
-                const monthArchives = archives.filter(a => a.date && a.date.startsWith(monthKey));
-                if (monthArchives.length < 2) return null;
-                const graphData = [];
-                let cum = 0;
-                monthArchives.sort((a, b) => a.date.localeCompare(b.date)).forEach(a => {
-                    cum += (a.stats?.workAmount || 0);
-                    graphData.push({ label: a.date.slice(8), value: Math.round(cum) });
-                });
-                return (
-                    <Card style={{ padding: "12px 8px", marginTop: 12 }}>
-                        <SecLabel label={`${viewMonth.month + 1}月 累計仕事量推移`} />
-                        <LineChart data={graphData} color="#3b82f6" />
-                    </Card>
                 );
             })()}
 
