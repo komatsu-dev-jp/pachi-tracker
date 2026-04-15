@@ -3576,19 +3576,21 @@ export function CalendarTab({ S, onReset }) {
         return map;
     }, [archives]);
 
-    // Calculate daily totals
+    // Calculate daily totals — 実収支 (actual) と 期待値 (ev) を独立に集計
     const dailyTotals = useMemo(() => {
         const totals = {};
         Object.entries(byDate).forEach(([date, items]) => {
-            let total = 0;
+            let actual = 0;
+            let ev = 0;
+            let hasActual = false;
             items.forEach(a => {
                 if (a.investYen != null && a.recoveryYen != null && (a.investYen > 0 || a.recoveryYen > 0)) {
-                    total += (a.recoveryYen || 0) - (a.investYen || 0);
-                } else {
-                    total += (a.stats?.workAmount || 0);
+                    actual += (a.recoveryYen || 0) - (a.investYen || 0);
+                    hasActual = true;
                 }
+                ev += (a.stats?.workAmount || 0);
             });
-            totals[date] = total;
+            totals[date] = { actual, ev, hasActual };
         });
         return totals;
     }, [byDate]);
@@ -3612,11 +3614,16 @@ export function CalendarTab({ S, onReset }) {
     // Monthly total
     const monthKey = `${viewMonth.year}-${String(viewMonth.month + 1).padStart(2, "0")}`;
     const monthTotal = useMemo(() => {
-        let total = 0;
-        Object.entries(dailyTotals).forEach(([date, val]) => {
-            if (date.startsWith(monthKey)) total += val;
+        let actual = 0, ev = 0;
+        let hasActual = false;
+        Object.entries(dailyTotals).forEach(([date, v]) => {
+            if (date.startsWith(monthKey)) {
+                actual += v.actual || 0;
+                ev += v.ev || 0;
+                if (v.hasActual) hasActual = true;
+            }
         });
-        return total;
+        return { actual, ev, hasActual };
     }, [dailyTotals, monthKey]);
 
     // Calendar grid
@@ -3802,6 +3809,10 @@ export function CalendarTab({ S, onReset }) {
                 recoveryYen: Number(editRecovery) || 0,
             }));
             if (doReset) onReset();
+            // 保存後は詳細ビューを閉じてカレンダー一覧に戻す（視覚的フィードバック）
+            setSelectedArchiveId(null);
+            setExpandedRot(null);
+            setDelConfirm(null);
         };
 
         return (
@@ -4048,8 +4059,19 @@ export function CalendarTab({ S, onReset }) {
                 <button className="b" onClick={prevMonth} style={{ background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8, color: C.text, fontSize: 14, padding: "4px 10px", fontWeight: 700 }}>‹</button>
                 <div style={{ textAlign: "center" }}>
                     <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{viewMonth.year}年 {viewMonth.month + 1}月</div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: sc(monthTotal), fontFamily: font, marginTop: 1 }}>
-                        {monthTotal !== 0 ? f(Math.round(monthTotal)) + "円" : "—"}
+                    <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 1 }}>
+                        {monthTotal.hasActual && (
+                            <div style={{ fontSize: 13, fontWeight: 700, color: sc(monthTotal.actual), fontFamily: font }}>
+                                実{f(Math.round(monthTotal.actual))}円
+                            </div>
+                        )}
+                        {monthTotal.ev !== 0 ? (
+                            <div style={{ fontSize: 13, fontWeight: 700, color: sc(monthTotal.ev), opacity: 0.7, fontFamily: font }}>
+                                期{f(Math.round(monthTotal.ev))}円
+                            </div>
+                        ) : (!monthTotal.hasActual && (
+                            <div style={{ fontSize: 13, fontWeight: 700, color: C.sub, fontFamily: font }}>—</div>
+                        ))}
                     </div>
                 </div>
                 <button className="b" onClick={nextMonth} style={{ background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8, color: C.text, fontSize: 14, padding: "4px 10px", fontWeight: 700 }}>›</button>
@@ -4068,7 +4090,7 @@ export function CalendarTab({ S, onReset }) {
                     if (day === null) return <div key={`e-${idx}`} />;
                     const ds = dateStr(day);
                     const total = dailyTotals[ds];
-                    const hasData = total != null;
+                    const hasData = total != null && (total.hasActual || total.ev !== 0);
                     const isSel = selectedDate === ds;
                     const todayBg = isToday(day) ? "rgba(59, 130, 246, 0.15)" : isSel ? "rgba(59,130,246,0.1)" : "transparent";
                     const dow = idx % 7;
@@ -4076,13 +4098,22 @@ export function CalendarTab({ S, onReset }) {
                     return (
                         <button key={day} className="b" onClick={() => setSelectedDate(isSel ? null : ds)} style={{
                             background: todayBg, border: isToday(day) ? `1px solid ${C.blue}40` : isSel ? `1px solid ${C.blue}30` : `1px solid transparent`,
-                            borderRadius: 6, padding: "5px 1px", textAlign: "center", minHeight: 42,
+                            borderRadius: 6, padding: "4px 1px", textAlign: "center", minHeight: 52,
                             cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start",
                         }}>
-                            <div style={{ fontSize: 19, fontWeight: isToday(day) ? 800 : 600, color: dow === 0 ? C.red : dow === 6 ? C.blue : C.text, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{day}</div>
+                            <div style={{ fontSize: 18, fontWeight: isToday(day) ? 800 : 600, color: dow === 0 ? C.red : dow === 6 ? C.blue : C.text, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{day}</div>
                             {hasData && (
-                                <div style={{ fontSize: 9, fontWeight: 700, color: sc(total), fontFamily: font, fontVariantNumeric: "tabular-nums", marginTop: 3, lineHeight: 1 }}>
-                                    {f(Math.round(total))}
+                                <div style={{ marginTop: 2, display: "flex", flexDirection: "column", alignItems: "center", gap: 1, lineHeight: 1 }}>
+                                    {total.hasActual && (
+                                        <div style={{ fontSize: 9, fontWeight: 700, color: sc(total.actual), fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
+                                            {f(Math.round(total.actual))}
+                                        </div>
+                                    )}
+                                    {total.ev !== 0 && (
+                                        <div style={{ fontSize: 8, fontWeight: 600, color: sc(total.ev), opacity: 0.6, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
+                                            期{f(Math.round(total.ev))}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </button>
@@ -4100,9 +4131,18 @@ export function CalendarTab({ S, onReset }) {
                         {/* Selected date header */}
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, padding: "0 2px" }}>
                             <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{selectedDate}</div>
-                            {dayTotal != null && (
-                                <div style={{ fontSize: 14, fontWeight: 700, color: sc(dayTotal), fontFamily: font }}>
-                                    {f(Math.round(dayTotal))}円
+                            {dayTotal != null && (dayTotal.hasActual || dayTotal.ev !== 0) && (
+                                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                    {dayTotal.hasActual && (
+                                        <div style={{ fontSize: 14, fontWeight: 700, color: sc(dayTotal.actual), fontFamily: font }}>
+                                            実{f(Math.round(dayTotal.actual))}円
+                                        </div>
+                                    )}
+                                    {dayTotal.ev !== 0 && (
+                                        <div style={{ fontSize: 13, fontWeight: 700, color: sc(dayTotal.ev), opacity: 0.7, fontFamily: font }}>
+                                            期{f(Math.round(dayTotal.ev))}円
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
