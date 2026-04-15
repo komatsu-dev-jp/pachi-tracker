@@ -3565,22 +3565,6 @@ export function CalendarTab({ S, onReset }) {
 
     const archives = S.archives || [];
 
-    // Compact number formatter for narrow calendar cells.
-    // < 10k  : full digits with thousand separator (e.g. -3,500)
-    // < 1M   : k notation with up to 1 decimal (e.g. -35k, +12.5k)
-    // >= 1M  : M notation with 1 decimal (e.g. +1.2M)
-    const fmtCompact = (v) => {
-        const n = Math.round(v);
-        const av = Math.abs(n);
-        if (av < 10000) return f(n);
-        if (av < 1000000) {
-            const k = n / 1000;
-            const s = (Math.abs(k) < 100 ? k.toFixed(1) : k.toFixed(0)).replace(/\.0$/, "");
-            return s + "k";
-        }
-        return (n / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
-    };
-
     // Group archives by date
     const byDate = useMemo(() => {
         const map = {};
@@ -4070,25 +4054,24 @@ export function CalendarTab({ S, onReset }) {
     // ── Calendar View ──
     return (
         <div style={{ flex: 1, overflowY: "auto", padding: "8px 14px calc(80px + env(safe-area-inset-bottom))" }}>
-            {/* Month header — compact */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            {/* Month header — 2-box horizontal layout matching reference design */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <button className="b" onClick={prevMonth} style={{ background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8, color: C.text, fontSize: 14, padding: "4px 10px", fontWeight: 700 }}>‹</button>
-                <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: C.sub }}>{viewMonth.year}年 {viewMonth.month + 1}月</div>
-                    {(monthTotal.hasActual || monthTotal.ev !== 0) ? (
-                        <>
-                            <div style={{ fontSize: 24, fontWeight: 900, color: sc(monthTotal.hasActual ? monthTotal.actual : monthTotal.ev), fontFamily: font, fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}>
-                                {monthTotal.hasActual ? `${f(Math.round(monthTotal.actual))}円` : "—"}
-                            </div>
-                            {monthTotal.ev !== 0 && (
-                                <div style={{ fontSize: 12, fontWeight: 700, color: sc(monthTotal.ev), opacity: 0.65, fontFamily: font, fontVariantNumeric: "tabular-nums", marginTop: 1 }}>
-                                    期{f(Math.round(monthTotal.ev))}円
-                                </div>
-                            )}
-                        </>
-                    ) : (
-                        <div style={{ fontSize: 18, fontWeight: 700, color: C.sub, lineHeight: 1.1 }}>—</div>
-                    )}
+                <div style={{ textAlign: "center", flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 4 }}>{viewMonth.year}年{viewMonth.month + 1}月</div>
+                    <div style={{
+                        display: "inline-flex", alignItems: "center",
+                        border: `1px solid ${C.borderHi}`, borderRadius: 10,
+                        background: C.surfaceHi, padding: "6px 12px", gap: 12,
+                    }}>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: monthTotal.hasActual ? sc(monthTotal.actual) : C.sub, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
+                            実{monthTotal.hasActual ? `${f(Math.round(monthTotal.actual))}円` : "—"}
+                        </div>
+                        <div style={{ width: 1, height: 16, background: C.borderHi }} />
+                        <div style={{ fontSize: 14, fontWeight: 800, color: monthTotal.ev !== 0 ? sc(monthTotal.ev) : C.sub, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
+                            期{monthTotal.ev !== 0 ? `${f(Math.round(monthTotal.ev))}円` : "—"}
+                        </div>
+                    </div>
                 </div>
                 <button className="b" onClick={nextMonth} style={{ background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8, color: C.text, fontSize: 14, padding: "4px 10px", fontWeight: 700 }}>›</button>
             </div>
@@ -4114,20 +4097,20 @@ export function CalendarTab({ S, onReset }) {
                     return (
                         <button key={day} className="b" onClick={() => setSelectedDate(isSel ? null : ds)} style={{
                             background: todayBg, border: isToday(day) ? `1px solid ${C.blue}40` : isSel ? `1px solid ${C.blue}30` : `1px solid transparent`,
-                            borderRadius: 6, padding: "3px 1px", textAlign: "center", minHeight: 62,
+                            borderRadius: 6, padding: "2px 1px", textAlign: "center", minHeight: 60,
                             cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start",
                         }}>
-                            <div style={{ fontSize: 14, fontWeight: isToday(day) ? 800 : 600, color: dow === 0 ? C.red : dow === 6 ? C.blue : C.text, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{day}</div>
+                            <div style={{ fontSize: 13, fontWeight: isToday(day) ? 800 : 700, color: dow === 0 ? C.red : dow === 6 ? C.blue : C.text, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{day}</div>
                             {hasData && (
-                                <div style={{ marginTop: 3, display: "flex", flexDirection: "column", alignItems: "center", gap: 1, lineHeight: 1 }}>
+                                <div style={{ marginTop: 2, display: "flex", flexDirection: "column", alignItems: "center", gap: 1, lineHeight: 1.05 }}>
                                     {total.hasActual && (
-                                        <div style={{ fontSize: 13, fontWeight: 800, color: sc(total.actual), fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
-                                            {fmtCompact(total.actual)}
+                                        <div style={{ fontSize: 10, fontWeight: 800, color: sc(total.actual), fontFamily: font, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.3px", whiteSpace: "nowrap" }}>
+                                            {f(Math.round(total.actual))}円
                                         </div>
                                     )}
                                     {total.ev !== 0 && (
-                                        <div style={{ fontSize: 9, fontWeight: 600, color: sc(total.ev), opacity: 0.55, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
-                                            期{fmtCompact(total.ev)}
+                                        <div style={{ fontSize: 8, fontWeight: 700, color: sc(total.ev), opacity: 0.75, fontFamily: font, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.3px", whiteSpace: "nowrap" }}>
+                                            期{f(Math.round(total.ev))}円
                                         </div>
                                     )}
                                 </div>
