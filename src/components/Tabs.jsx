@@ -3716,58 +3716,148 @@ export function CalendarTab({ S, onReset }) {
 
         return (
             <button className="b" onClick={onClick} style={{
-                width: "100%", background: "rgba(255,255,255,0.03)", border: `1px solid ${C.border}`,
-                borderRadius: 12, padding: "14px 14px", marginBottom: 8, cursor: "pointer",
-                textAlign: "left", display: "block",
+                width: "100%",
+                background: "linear-gradient(145deg, rgba(30, 32, 48, 0.6), rgba(22, 23, 34, 0.85))",
+                border: "1px solid rgba(255, 255, 255, 0.05)",
+                borderRadius: 14,
+                padding: "14px 14px 12px",
+                marginBottom: 10,
+                cursor: "pointer",
+                textAlign: "left",
+                display: "block",
+                position: "relative",
+                boxShadow: "0 2px 12px rgba(0,0,0,0.25)",
             }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                    {/* Left side */}
+                {/* Store name — tiny top label */}
+                {a.storeName && (
+                    <div style={{ fontSize: 10, color: C.sub, marginBottom: 6, fontWeight: 600, letterSpacing: "0.8px", opacity: 0.7, textTransform: "uppercase" }}>
+                        {a.storeName}
+                    </div>
+                )}
+
+                {/* Row 1: Machine spec (left) + Total P&L (right) */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                        {a.storeName && (
-                            <div style={{ fontSize: 12, color: C.sub, marginBottom: 2, fontWeight: 500 }}>{a.storeName}</div>
-                        )}
-                        <div style={{ fontSize: 16, fontWeight: 900, color: C.text, marginBottom: 2, lineHeight: 1.2 }}>
+                        <div style={{ fontSize: 17, fontWeight: 900, color: C.text, lineHeight: 1.2, letterSpacing: "-0.3px" }}>
                             {displayName}
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, marginBottom: 8, flexWrap: "wrap" }}>
                             {a.machineNum && (
-                                <span style={{ fontSize: 12, color: C.sub }}>{a.machineNum}番台</span>
+                                <>
+                                    <span style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>{a.machineNum}番台</span>
+                                    <span style={{ fontSize: 10, color: C.sub, opacity: 0.4 }}>·</span>
+                                </>
                             )}
-                            <span style={{ fontSize: 11, color: C.sub }}>4パチ</span>
+                            <span style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>4パチ</span>
+                            {hours && (
+                                <>
+                                    <span style={{ fontSize: 10, color: C.sub, opacity: 0.4 }}>·</span>
+                                    <span style={{ fontSize: 11, color: C.sub, fontWeight: 600, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
+                                        {hours}<span className="unit">h</span>
+                                    </span>
+                                </>
+                            )}
                         </div>
-                        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                            {hours && <span style={{ fontSize: 11, color: C.sub }}>時間: <span style={{ fontFamily: mono, color: C.subHi }}>{hours}h</span></span>}
+                        {/* Badges row: hourly wage + chodama */}
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                             {hourlyWage != null && (
-                                <span style={{ fontSize: 11, color: C.sub }}>時給: <span style={{ fontFamily: mono, color: sc(hourlyWage) }}>{f(hourlyWage)}/h</span></span>
+                                <span style={{
+                                    display: "inline-flex", alignItems: "center", gap: 4,
+                                    padding: "3px 10px",
+                                    fontSize: 11, fontWeight: 700,
+                                    borderRadius: 999,
+                                    background: hourlyWage > 0
+                                        ? "rgba(52, 211, 153, 0.14)"
+                                        : hourlyWage < 0
+                                            ? "rgba(251, 113, 133, 0.14)"
+                                            : "rgba(255, 255, 255, 0.06)",
+                                    color: sc(hourlyWage),
+                                    border: `1px solid ${hourlyWage > 0
+                                        ? "rgba(52,211,153,0.3)"
+                                        : hourlyWage < 0
+                                            ? "rgba(251,113,133,0.3)"
+                                            : "rgba(255,255,255,0.08)"}`,
+                                    fontFamily: font,
+                                    fontVariantNumeric: "tabular-nums",
+                                    letterSpacing: "-0.2px",
+                                }}>
+                                    時給 {f(hourlyWage)}<span className="unit" style={{ marginLeft: 1, opacity: 0.75 }}>/h</span>
+                                </span>
                             )}
                             {(a.chodamaYen || 0) > 0 && (
-                                <span style={{ fontSize: 11, color: C.purple }}>💎 貯玉 ¥{f(a.chodamaYen)}</span>
+                                <span style={{
+                                    display: "inline-flex", alignItems: "center", gap: 3,
+                                    padding: "3px 8px",
+                                    fontSize: 10, fontWeight: 700,
+                                    borderRadius: 999,
+                                    background: "rgba(192, 132, 252, 0.12)",
+                                    color: C.purple,
+                                    border: "1px solid rgba(192, 132, 252, 0.25)",
+                                }}>
+                                    💎 貯玉 ¥{f(a.chodamaYen)}
+                                </span>
                             )}
                         </div>
                     </div>
 
-                    {/* Right side — P&L large + detail stats */}
+                    {/* Right — labeled big P&L */}
                     <div style={{ textAlign: "right", marginLeft: 10, flexShrink: 0 }}>
-                        <div style={{ fontSize: 24, fontWeight: 900, color: sc(displayPL), fontFamily: mono, lineHeight: 1.1, marginBottom: 6 }}>
-                            {f(displayPL)}
+                        <div style={{ fontSize: 9, color: C.sub, fontWeight: 600, letterSpacing: "1.5px", marginBottom: 3, opacity: 0.7, textTransform: "uppercase" }}>収支</div>
+                        <div className={displayPL !== 0 ? "num-premium" : ""} style={{
+                            fontSize: 26, fontWeight: 900,
+                            color: sc(displayPL), fontFamily: font,
+                            fontVariantNumeric: "tabular-nums",
+                            lineHeight: 1, letterSpacing: "-0.5px",
+                        }}>
+                            {sp(displayPL)}<span className="unit">円</span>
                         </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "auto auto", gap: "1px 8px", justifyContent: "end" }}>
-                            <span style={{ fontSize: 11, color: C.sub, textAlign: "right" }}>投資:</span>
-                            <span style={{ fontSize: 12, fontWeight: 600, color: C.subHi, fontFamily: mono, textAlign: "right" }}>{f(invest)}</span>
-                            <span style={{ fontSize: 11, color: C.sub, textAlign: "right" }}>回収:</span>
-                            <span style={{ fontSize: 12, fontWeight: 600, color: C.subHi, fontFamily: mono, textAlign: "right" }}>{f(recovery)}</span>
-                            <span style={{ fontSize: 11, color: C.sub, textAlign: "right" }}>収支:</span>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: sc(pl != null ? pl : displayPL), fontFamily: mono, textAlign: "right" }}>
-                                {pl != null ? f(pl) : f(displayPL)}
-                            </span>
-                            <span style={{ fontSize: 11, color: C.sub, textAlign: "right" }}>期待値:</span>
-                            <span style={{ fontSize: 12, fontWeight: 600, color: C.blue, fontFamily: mono, textAlign: "right" }}>
-                                {st.workAmount != null && st.workAmount !== 0 ? f(Math.round(st.workAmount)) : "—"}
-                            </span>
-                        </div>
-                        <div style={{ fontSize: 11, color: C.sub, marginTop: 4 }}>▶</div>
                     </div>
                 </div>
+
+                {/* Soft horizontal divider */}
+                <div style={{
+                    height: 1,
+                    background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent)",
+                    margin: "12px 0 10px",
+                }} />
+
+                {/* Row 2: 3-column detail grid with directional icons */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr" }}>
+                    <div style={{ textAlign: "center", padding: "0 4px" }}>
+                        <div style={{ fontSize: 9, color: C.sub, fontWeight: 600, letterSpacing: "1.2px", marginBottom: 3, textTransform: "uppercase", display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
+                            <span style={{ color: C.red, fontSize: 11, opacity: 0.75, lineHeight: 1 }}>↓</span>
+                            <span>投資</span>
+                        </div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: C.subHi, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
+                            {f(invest)}<span className="unit">円</span>
+                        </div>
+                    </div>
+                    <div style={{ textAlign: "center", padding: "0 4px", borderLeft: "1px solid rgba(255,255,255,0.06)" }}>
+                        <div style={{ fontSize: 9, color: C.sub, fontWeight: 600, letterSpacing: "1.2px", marginBottom: 3, textTransform: "uppercase", display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
+                            <span style={{ color: C.green, fontSize: 11, opacity: 0.75, lineHeight: 1 }}>↑</span>
+                            <span>回収</span>
+                        </div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: C.subHi, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
+                            {f(recovery)}<span className="unit">円</span>
+                        </div>
+                    </div>
+                    <div style={{ textAlign: "center", padding: "0 4px", borderLeft: "1px solid rgba(255,255,255,0.06)" }}>
+                        <div style={{ fontSize: 9, color: C.sub, fontWeight: 600, letterSpacing: "1.2px", marginBottom: 3, textTransform: "uppercase" }}>
+                            期待値
+                        </div>
+                        <div style={{
+                            fontSize: 14, fontWeight: 700,
+                            color: st.workAmount != null && st.workAmount !== 0 ? sc(st.workAmount) : C.sub,
+                            fontFamily: font, fontVariantNumeric: "tabular-nums",
+                            opacity: st.workAmount != null && st.workAmount !== 0 ? 0.92 : 0.5,
+                        }}>
+                            {st.workAmount != null && st.workAmount !== 0 ? sp(Math.round(st.workAmount)) : "—"}<span className="unit">円</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Subtle tap indicator — bottom right */}
+                <div style={{ position: "absolute", right: 12, bottom: 6, fontSize: 10, color: C.sub, opacity: 0.35 }}>▶</div>
             </button>
         );
     };
