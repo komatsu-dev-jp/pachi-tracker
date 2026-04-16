@@ -4077,15 +4077,15 @@ export function CalendarTab({ S, onReset }) {
                 </div>
             </div>
 
-            {/* Day of week header — compact */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 2 }}>
-                {["日", "月", "火", "水", "木", "金", "土"].map((d, i) => (
-                    <div key={d} style={{ textAlign: "center", fontSize: 10, fontWeight: 700, color: i === 0 ? C.red : i === 6 ? C.blue : C.sub, padding: "4px 0" }}>{d}</div>
+            {/* Day of week header — muted slate-500 style to let dates be the hero */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 6, padding: "0 2px" }}>
+                {["日", "月", "火", "水", "木", "金", "土"].map((d) => (
+                    <div key={d} style={{ textAlign: "center", fontSize: 9, fontWeight: 500, color: C.sub, padding: "6px 0 8px", letterSpacing: "1.5px", opacity: 0.55 }}>{d}</div>
                 ))}
             </div>
 
-            {/* Calendar grid — day number + 実収支 with result-tinted background */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3 }}>
+            {/* Calendar grid — Apple-style spacious cells with breathing room */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8 }}>
                 {calendarDays.map((day, idx) => {
                     if (day === null) return <div key={`e-${idx}`} />;
                     const ds = dateStr(day);
@@ -4095,42 +4095,54 @@ export function CalendarTab({ S, onReset }) {
                     const isTdy = isToday(day);
                     const dow = idx % 7;
 
-                    // Result-based background tint using premium palette
-                    // Priority: today > selected > result
+                    // Selected day gets a glow card. Today is expressed via the day number circle, NOT the cell bg.
+                    // Priority: selected > result tint
                     let bg = "transparent";
                     let bd = "1px solid transparent";
-                    if (isTdy) {
-                        bg = "linear-gradient(145deg, rgba(129, 140, 248, 0.22), rgba(129, 140, 248, 0.08))";
+                    let glow;
+                    if (isSel) {
+                        bg = "linear-gradient(145deg, rgba(129, 140, 248, 0.18), rgba(129, 140, 248, 0.06))";
                         bd = "1px solid rgba(129, 140, 248, 0.45)";
-                    } else if (isSel) {
-                        bg = "linear-gradient(145deg, rgba(129, 140, 248, 0.14), rgba(129, 140, 248, 0.04))";
-                        bd = "1px solid rgba(129, 140, 248, 0.28)";
+                        glow = "0 0 24px rgba(129, 140, 248, 0.28), 0 0 0 1px rgba(129, 140, 248, 0.15)";
                     } else if (hasActualData) {
                         if (total.actual > 0) {
-                            bg = "linear-gradient(145deg, rgba(52, 211, 153, 0.12), rgba(52, 211, 153, 0.03))";
-                            bd = "1px solid rgba(52, 211, 153, 0.22)";
+                            bg = "linear-gradient(145deg, rgba(52, 211, 153, 0.10), rgba(52, 211, 153, 0.02))";
+                            bd = "1px solid rgba(52, 211, 153, 0.18)";
                         } else if (total.actual < 0) {
-                            bg = "linear-gradient(145deg, rgba(251, 113, 133, 0.12), rgba(251, 113, 133, 0.03))";
-                            bd = "1px solid rgba(251, 113, 133, 0.22)";
+                            bg = "linear-gradient(145deg, rgba(251, 113, 133, 0.10), rgba(251, 113, 133, 0.02))";
+                            bd = "1px solid rgba(251, 113, 133, 0.18)";
                         }
                     }
 
                     return (
                         <button key={day} className="b" onClick={() => setSelectedDate(isSel ? null : ds)} style={{
-                            background: bg, border: bd, borderRadius: 10, padding: "4px 2px",
-                            textAlign: "center", minHeight: 56, cursor: "pointer",
+                            background: bg, border: bd, borderRadius: 14, padding: "6px 2px 8px",
+                            textAlign: "center", minHeight: 64, cursor: "pointer",
                             display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start",
-                            transition: "background 0.15s ease",
+                            transition: "background 0.2s ease, box-shadow 0.2s ease",
+                            boxShadow: glow,
                         }}>
-                            <div style={{
-                                fontSize: 11, fontWeight: isTdy ? 800 : 600,
-                                color: dow === 0 ? C.red : dow === 6 ? C.blue : C.sub,
-                                lineHeight: 1, fontVariantNumeric: "tabular-nums",
-                                opacity: isTdy ? 1 : 0.85,
-                            }}>{day}</div>
+                            {isTdy ? (
+                                <div style={{
+                                    width: 22, height: 22, borderRadius: "50%",
+                                    background: C.blue, color: "#fff",
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    fontSize: 11, fontWeight: 700,
+                                    boxShadow: "0 0 12px rgba(129, 140, 248, 0.5)",
+                                    fontVariantNumeric: "tabular-nums",
+                                }}>{day}</div>
+                            ) : (
+                                <div style={{
+                                    fontSize: 12, fontWeight: 500,
+                                    color: dow === 0 ? C.red : dow === 6 ? C.blue : C.text,
+                                    lineHeight: 1, fontVariantNumeric: "tabular-nums",
+                                    opacity: dow === 0 || dow === 6 ? 0.85 : 0.92,
+                                    height: 22, display: "flex", alignItems: "center",
+                                }}>{day}</div>
+                            )}
                             {hasActualData && (
                                 <div className="num-premium" style={{
-                                    marginTop: 6, fontSize: 12, fontWeight: 800,
+                                    marginTop: 4, fontSize: 12, fontWeight: 800,
                                     color: sc(total.actual), fontFamily: font,
                                     fontVariantNumeric: "tabular-nums",
                                     letterSpacing: "-0.2px", whiteSpace: "nowrap", lineHeight: 1,
