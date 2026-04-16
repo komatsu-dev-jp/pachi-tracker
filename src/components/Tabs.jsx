@@ -4054,26 +4054,27 @@ export function CalendarTab({ S, onReset }) {
     // ── Calendar View ──
     return (
         <div style={{ flex: 1, overflowY: "auto", padding: "8px 14px calc(80px + env(safe-area-inset-bottom))" }}>
-            {/* Month header — 2-box horizontal layout matching reference design */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <button className="b" onClick={prevMonth} style={{ background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8, color: C.text, fontSize: 14, padding: "4px 10px", fontWeight: 700 }}>‹</button>
-                <div style={{ textAlign: "center", flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 4 }}>{viewMonth.year}年{viewMonth.month + 1}月</div>
-                    <div style={{
-                        display: "inline-flex", alignItems: "center",
-                        border: `1px solid ${C.borderHi}`, borderRadius: 10,
-                        background: C.surfaceHi, padding: "6px 12px", gap: 12,
-                    }}>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: monthTotal.hasActual ? sc(monthTotal.actual) : C.sub, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
-                            実{monthTotal.hasActual ? `${f(Math.round(monthTotal.actual))}円` : "—"}
+            {/* Month header — hero card with labeled 2-column summary */}
+            <div style={{ padding: "10px 12px 12px", background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 12, marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <button className="b" onClick={prevMonth} style={{ background: "transparent", border: "none", color: C.sub, fontSize: 18, padding: "2px 10px", fontWeight: 700, cursor: "pointer" }}>‹</button>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: C.text, letterSpacing: "0.5px" }}>{viewMonth.year}年{viewMonth.month + 1}月</div>
+                    <button className="b" onClick={nextMonth} style={{ background: "transparent", border: "none", color: C.sub, fontSize: 18, padding: "2px 10px", fontWeight: 700, cursor: "pointer" }}>›</button>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <div style={{ textAlign: "center", padding: "0 4px" }}>
+                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 3, letterSpacing: "0.5px" }}>今月の実収支</div>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: monthTotal.hasActual ? sc(monthTotal.actual) : C.sub, fontFamily: font, fontVariantNumeric: "tabular-nums", lineHeight: 1.1, letterSpacing: "-0.5px" }}>
+                            {monthTotal.hasActual ? `${sp(Math.round(monthTotal.actual))}円` : "—"}
                         </div>
-                        <div style={{ width: 1, height: 16, background: C.borderHi }} />
-                        <div style={{ fontSize: 14, fontWeight: 800, color: monthTotal.ev !== 0 ? sc(monthTotal.ev) : C.sub, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
-                            期{monthTotal.ev !== 0 ? `${f(Math.round(monthTotal.ev))}円` : "—"}
+                    </div>
+                    <div style={{ textAlign: "center", padding: "0 4px", borderLeft: `1px solid ${C.border}` }}>
+                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 3, letterSpacing: "0.5px" }}>期待値</div>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: monthTotal.ev !== 0 ? sc(monthTotal.ev) : C.sub, fontFamily: font, fontVariantNumeric: "tabular-nums", lineHeight: 1.1, opacity: monthTotal.ev !== 0 ? 0.9 : 0.5, marginTop: 4 }}>
+                            {monthTotal.ev !== 0 ? `${sp(Math.round(monthTotal.ev))}円` : "—"}
                         </div>
                     </div>
                 </div>
-                <button className="b" onClick={nextMonth} style={{ background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8, color: C.text, fontSize: 14, padding: "4px 10px", fontWeight: 700 }}>›</button>
             </div>
 
             {/* Day of week header — compact */}
@@ -4083,36 +4084,57 @@ export function CalendarTab({ S, onReset }) {
                 ))}
             </div>
 
-            {/* Calendar grid — compact */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 1 }}>
+            {/* Calendar grid — day number + 実収支 with result-tinted background */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3 }}>
                 {calendarDays.map((day, idx) => {
                     if (day === null) return <div key={`e-${idx}`} />;
                     const ds = dateStr(day);
                     const total = dailyTotals[ds];
-                    const hasData = total != null && (total.hasActual || total.ev !== 0);
+                    const hasActualData = total != null && total.hasActual;
                     const isSel = selectedDate === ds;
-                    const todayBg = isToday(day) ? "rgba(59, 130, 246, 0.15)" : isSel ? "rgba(59,130,246,0.1)" : "transparent";
+                    const isTdy = isToday(day);
                     const dow = idx % 7;
+
+                    // Result-based background tint (priority: today > selected > result)
+                    let bg = "transparent";
+                    let bd = "1px solid transparent";
+                    if (isTdy) {
+                        bg = "rgba(59, 130, 246, 0.18)";
+                        bd = `1px solid ${C.blue}60`;
+                    } else if (isSel) {
+                        bg = "rgba(59, 130, 246, 0.1)";
+                        bd = `1px solid ${C.blue}40`;
+                    } else if (hasActualData) {
+                        if (total.actual > 0) {
+                            bg = "rgba(34, 197, 94, 0.09)";
+                            bd = "1px solid rgba(34, 197, 94, 0.28)";
+                        } else if (total.actual < 0) {
+                            bg = "rgba(239, 68, 68, 0.09)";
+                            bd = "1px solid rgba(239, 68, 68, 0.25)";
+                        }
+                    }
 
                     return (
                         <button key={day} className="b" onClick={() => setSelectedDate(isSel ? null : ds)} style={{
-                            background: todayBg, border: isToday(day) ? `1px solid ${C.blue}40` : isSel ? `1px solid ${C.blue}30` : `1px solid transparent`,
-                            borderRadius: 6, padding: "2px 1px", textAlign: "center", minHeight: 60,
-                            cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start",
+                            background: bg, border: bd, borderRadius: 8, padding: "4px 2px",
+                            textAlign: "center", minHeight: 56, cursor: "pointer",
+                            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start",
+                            transition: "background 0.15s ease",
                         }}>
-                            <div style={{ fontSize: 13, fontWeight: isToday(day) ? 800 : 700, color: dow === 0 ? C.red : dow === 6 ? C.blue : C.text, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{day}</div>
-                            {hasData && (
-                                <div style={{ marginTop: 2, display: "flex", flexDirection: "column", alignItems: "center", gap: 1, lineHeight: 1.05 }}>
-                                    {total.hasActual && (
-                                        <div style={{ fontSize: 10, fontWeight: 800, color: sc(total.actual), fontFamily: font, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.3px", whiteSpace: "nowrap" }}>
-                                            {f(Math.round(total.actual))}円
-                                        </div>
-                                    )}
-                                    {total.ev !== 0 && (
-                                        <div style={{ fontSize: 8, fontWeight: 700, color: sc(total.ev), opacity: 0.75, fontFamily: font, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.3px", whiteSpace: "nowrap" }}>
-                                            期{f(Math.round(total.ev))}円
-                                        </div>
-                                    )}
+                            <div style={{
+                                fontSize: 11, fontWeight: isTdy ? 800 : 600,
+                                color: dow === 0 ? C.red : dow === 6 ? C.blue : C.sub,
+                                lineHeight: 1, fontVariantNumeric: "tabular-nums",
+                                opacity: isTdy ? 1 : 0.85,
+                            }}>{day}</div>
+                            {hasActualData && (
+                                <div style={{
+                                    marginTop: 6, fontSize: 12, fontWeight: 800,
+                                    color: sc(total.actual), fontFamily: font,
+                                    fontVariantNumeric: "tabular-nums",
+                                    letterSpacing: "-0.2px", whiteSpace: "nowrap", lineHeight: 1,
+                                }}>
+                                    {sp(Math.round(total.actual))}
                                 </div>
                             )}
                         </button>
