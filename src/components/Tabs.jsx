@@ -4054,24 +4054,24 @@ export function CalendarTab({ S, onReset }) {
     // ── Calendar View ──
     return (
         <div style={{ flex: 1, overflowY: "auto", padding: "8px 14px calc(80px + env(safe-area-inset-bottom))" }}>
-            {/* Month header — hero card with labeled 2-column summary */}
-            <div style={{ padding: "10px 12px 12px", background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 12, marginBottom: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                    <button className="b" onClick={prevMonth} style={{ background: "transparent", border: "none", color: C.sub, fontSize: 18, padding: "2px 10px", fontWeight: 700, cursor: "pointer" }}>‹</button>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: C.text, letterSpacing: "0.5px" }}>{viewMonth.year}年{viewMonth.month + 1}月</div>
-                    <button className="b" onClick={nextMonth} style={{ background: "transparent", border: "none", color: C.sub, fontSize: 18, padding: "2px 10px", fontWeight: 700, cursor: "pointer" }}>›</button>
+            {/* Month header — premium hero card with labeled 2-column summary */}
+            <div className="glass" style={{ padding: "12px 14px 14px", borderRadius: 16, marginBottom: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <button className="b" onClick={prevMonth} style={{ background: "transparent", border: "none", color: C.sub, fontSize: 20, padding: "2px 12px", fontWeight: 500, cursor: "pointer" }}>‹</button>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: C.text, letterSpacing: "1px" }}>{viewMonth.year}年{viewMonth.month + 1}月</div>
+                    <button className="b" onClick={nextMonth} style={{ background: "transparent", border: "none", color: C.sub, fontSize: 20, padding: "2px 12px", fontWeight: 500, cursor: "pointer" }}>›</button>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     <div style={{ textAlign: "center", padding: "0 4px" }}>
-                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 3, letterSpacing: "0.5px" }}>今月の実収支</div>
-                        <div style={{ fontSize: 22, fontWeight: 900, color: monthTotal.hasActual ? sc(monthTotal.actual) : C.sub, fontFamily: font, fontVariantNumeric: "tabular-nums", lineHeight: 1.1, letterSpacing: "-0.5px" }}>
-                            {monthTotal.hasActual ? `${sp(Math.round(monthTotal.actual))}円` : "—"}
+                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4, letterSpacing: "1px", textTransform: "uppercase" }}>今月の実収支</div>
+                        <div className={monthTotal.hasActual ? "num-premium" : ""} style={{ fontSize: 24, fontWeight: 900, color: monthTotal.hasActual ? sc(monthTotal.actual) : C.sub, fontFamily: font, fontVariantNumeric: "tabular-nums", lineHeight: 1.1, letterSpacing: "-0.5px" }}>
+                            {monthTotal.hasActual ? <>{sp(Math.round(monthTotal.actual))}<span className="unit">円</span></> : "—"}
                         </div>
                     </div>
-                    <div style={{ textAlign: "center", padding: "0 4px", borderLeft: `1px solid ${C.border}` }}>
-                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 3, letterSpacing: "0.5px" }}>期待値</div>
-                        <div style={{ fontSize: 16, fontWeight: 800, color: monthTotal.ev !== 0 ? sc(monthTotal.ev) : C.sub, fontFamily: font, fontVariantNumeric: "tabular-nums", lineHeight: 1.1, opacity: monthTotal.ev !== 0 ? 0.9 : 0.5, marginTop: 4 }}>
-                            {monthTotal.ev !== 0 ? `${sp(Math.round(monthTotal.ev))}円` : "—"}
+                    <div style={{ textAlign: "center", padding: "0 4px", borderLeft: `1px solid rgba(255,255,255,0.06)` }}>
+                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4, letterSpacing: "1px", textTransform: "uppercase" }}>期待値</div>
+                        <div className={monthTotal.ev !== 0 ? "num-premium" : ""} style={{ fontSize: 17, fontWeight: 800, color: monthTotal.ev !== 0 ? sc(monthTotal.ev) : C.sub, fontFamily: font, fontVariantNumeric: "tabular-nums", lineHeight: 1.1, opacity: monthTotal.ev !== 0 ? 0.92 : 0.5, marginTop: 6 }}>
+                            {monthTotal.ev !== 0 ? <>{sp(Math.round(monthTotal.ev))}<span className="unit">円</span></> : "—"}
                         </div>
                     </div>
                 </div>
@@ -4095,28 +4095,29 @@ export function CalendarTab({ S, onReset }) {
                     const isTdy = isToday(day);
                     const dow = idx % 7;
 
-                    // Result-based background tint (priority: today > selected > result)
+                    // Result-based background tint using premium palette
+                    // Priority: today > selected > result
                     let bg = "transparent";
                     let bd = "1px solid transparent";
                     if (isTdy) {
-                        bg = "rgba(59, 130, 246, 0.18)";
-                        bd = `1px solid ${C.blue}60`;
+                        bg = "linear-gradient(145deg, rgba(129, 140, 248, 0.22), rgba(129, 140, 248, 0.08))";
+                        bd = "1px solid rgba(129, 140, 248, 0.45)";
                     } else if (isSel) {
-                        bg = "rgba(59, 130, 246, 0.1)";
-                        bd = `1px solid ${C.blue}40`;
+                        bg = "linear-gradient(145deg, rgba(129, 140, 248, 0.14), rgba(129, 140, 248, 0.04))";
+                        bd = "1px solid rgba(129, 140, 248, 0.28)";
                     } else if (hasActualData) {
                         if (total.actual > 0) {
-                            bg = "rgba(34, 197, 94, 0.09)";
-                            bd = "1px solid rgba(34, 197, 94, 0.28)";
+                            bg = "linear-gradient(145deg, rgba(52, 211, 153, 0.12), rgba(52, 211, 153, 0.03))";
+                            bd = "1px solid rgba(52, 211, 153, 0.22)";
                         } else if (total.actual < 0) {
-                            bg = "rgba(239, 68, 68, 0.09)";
-                            bd = "1px solid rgba(239, 68, 68, 0.25)";
+                            bg = "linear-gradient(145deg, rgba(251, 113, 133, 0.12), rgba(251, 113, 133, 0.03))";
+                            bd = "1px solid rgba(251, 113, 133, 0.22)";
                         }
                     }
 
                     return (
                         <button key={day} className="b" onClick={() => setSelectedDate(isSel ? null : ds)} style={{
-                            background: bg, border: bd, borderRadius: 8, padding: "4px 2px",
+                            background: bg, border: bd, borderRadius: 10, padding: "4px 2px",
                             textAlign: "center", minHeight: 56, cursor: "pointer",
                             display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start",
                             transition: "background 0.15s ease",
@@ -4128,7 +4129,7 @@ export function CalendarTab({ S, onReset }) {
                                 opacity: isTdy ? 1 : 0.85,
                             }}>{day}</div>
                             {hasActualData && (
-                                <div style={{
+                                <div className="num-premium" style={{
                                     marginTop: 6, fontSize: 12, fontWeight: 800,
                                     color: sc(total.actual), fontFamily: font,
                                     fontVariantNumeric: "tabular-nums",
@@ -4153,15 +4154,17 @@ export function CalendarTab({ S, onReset }) {
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, padding: "0 2px" }}>
                             <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{selectedDate}</div>
                             {dayTotal != null && (dayTotal.hasActual || dayTotal.ev !== 0) && (
-                                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                                     {dayTotal.hasActual && (
-                                        <div style={{ fontSize: 14, fontWeight: 700, color: sc(dayTotal.actual), fontFamily: font }}>
-                                            実{f(Math.round(dayTotal.actual))}円
+                                        <div className="num-premium" style={{ fontSize: 14, fontWeight: 800, color: sc(dayTotal.actual), fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
+                                            <span style={{ fontSize: 11, color: C.sub, fontWeight: 600, marginRight: 3, textShadow: "none" }}>実</span>
+                                            {f(Math.round(dayTotal.actual))}<span className="unit">円</span>
                                         </div>
                                     )}
                                     {dayTotal.ev !== 0 && (
-                                        <div style={{ fontSize: 13, fontWeight: 700, color: sc(dayTotal.ev), opacity: 0.7, fontFamily: font }}>
-                                            期{f(Math.round(dayTotal.ev))}円
+                                        <div className="num-premium" style={{ fontSize: 13, fontWeight: 700, color: sc(dayTotal.ev), opacity: 0.85, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
+                                            <span style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginRight: 3, textShadow: "none" }}>期</span>
+                                            {f(Math.round(dayTotal.ev))}<span className="unit">円</span>
                                         </div>
                                     )}
                                 </div>
