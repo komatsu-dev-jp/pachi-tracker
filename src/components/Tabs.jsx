@@ -5817,21 +5817,40 @@ export function SettingsTab({ s, onReset }) {
         );
     }
 
+    // ── 細線 SVG アイコン群（SF Symbols 風） ──
+    const svgProps = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round" };
+    const IconPaint = () => (<svg {...svgProps}><circle cx="13.5" cy="6.5" r="1.3"/><circle cx="17.5" cy="10.5" r="1.3"/><circle cx="8.5" cy="7.5" r="1.3"/><circle cx="6.5" cy="12.5" r="1.3"/><path d="M12 22a10 10 0 1 1 10-10c0 2-2 3-4 3h-2a2 2 0 0 0-1 3.7 2 2 0 0 1-3 3.3z"/></svg>);
+    const IconGear = () => (<svg {...svgProps}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>);
+    const IconTarget = () => (<svg {...svgProps}><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></svg>);
+    const IconDiamond = () => (<svg {...svgProps}><path d="M6 3h12l4 6-10 12L2 9z"/><path d="M11 3 8 9h8l-3-6"/><path d="M2 9h20"/></svg>);
+    const IconMagnifier = () => (<svg {...svgProps}><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>);
+    const IconStore = () => (<svg {...svgProps}><path d="M3 9 4.5 4h15L21 9"/><path d="M3 9v11h18V9"/><path d="M3 9c0 2 1.5 3 3 3s3-1 3-3c0 2 1.5 3 3 3s3-1 3-3c0 2 1.5 3 3 3s3-1 3-3"/><path d="M9 20v-6h6v6"/></svg>);
+    const IconLock = () => (<svg {...svgProps}><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>);
+    const IconKey = () => (<svg {...svgProps}><circle cx="7.5" cy="15.5" r="3.5"/><path d="m10 13 10-10"/><path d="m17 6 3 3"/><path d="m14 9 3 3"/></svg>);
+    const IconCloud = () => (<svg {...svgProps}><path d="M17.5 19a4.5 4.5 0 1 0-1.2-8.84A6 6 0 0 0 5.1 13.5 4 4 0 0 0 6 19z"/><path d="M12 12v6"/><path d="m9 15 3-3 3 3"/></svg>);
+    const IconTrash = () => (<svg {...svgProps}><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>);
+    const IconChat = () => (<svg {...svgProps}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>);
+    const IconStar = () => (<svg {...svgProps}><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8l-6.2 3.2L7 14.2 2 9.3l6.9-1z"/></svg>);
+    const IconDoc = () => (<svg {...svgProps}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h6"/></svg>);
+    const IconShield = () => (<svg {...svgProps}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>);
+    const IconContrast = () => (<svg {...svgProps}><circle cx="12" cy="12" r="9"/><path d="M12 3v18" fill="currentColor"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/></svg>);
+    const IconEye = () => (<svg {...svgProps}><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>);
+
     // ── サブ画面共通ヘッダー ──
     const SubHeader = ({ title, onBack }) => (
         <div style={{
             background: C.surface,
-            padding: "14px 16px 16px",
-            display: "flex", alignItems: "center", gap: 12, flexShrink: 0,
+            padding: "14px 12px 16px",
+            display: "flex", alignItems: "center", gap: 6, flexShrink: 0,
             borderBottom: `1px solid ${C.border}`,
         }}>
             <button className="b" onClick={onBack} style={{
-                background: C.surfaceHi, border: `1px solid ${C.border}`,
-                borderRadius: 10, color: C.subHi, fontSize: 17, width: 36, height: 36,
+                background: "transparent", border: "none",
+                color: C.blue, fontSize: 26, width: 36, height: 36,
                 display: "flex", alignItems: "center", justifyContent: "center",
-                cursor: "pointer", flexShrink: 0,
+                cursor: "pointer", flexShrink: 0, fontWeight: 400, lineHeight: 1,
             }}>‹</button>
-            <div style={{ fontSize: 17, fontWeight: 700, color: C.text, fontFamily: font, letterSpacing: -0.3 }}>{title}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: C.text, fontFamily: font, letterSpacing: -0.4 }}>{title}</div>
         </div>
     );
 
@@ -5839,7 +5858,7 @@ export function SettingsTab({ s, onReset }) {
     const Toggle = ({ value, onChange, color }) => (
         <button className="b" onClick={() => onChange(!value)} style={{
             width: 51, height: 31, borderRadius: 16, border: "none", flexShrink: 0,
-            background: value ? (color || C.blue) : "rgba(120,120,128,0.32)",
+            background: value ? (color || C.blue) : "rgba(120,120,128,0.16)",
             position: "relative", transition: "background 0.25s ease", cursor: "pointer",
             WebkitTapHighlightColor: "transparent",
         }}>
@@ -5847,35 +5866,38 @@ export function SettingsTab({ s, onReset }) {
                 width: 27, height: 27, borderRadius: 14, background: "#fff",
                 position: "absolute", top: 2,
                 left: value ? 22 : 2, transition: "left 0.25s ease",
-                boxShadow: "0 2px 6px rgba(0,0,0,0.28)",
+                boxShadow: "0 1px 1px rgba(0,0,0,0.04), 0 3px 8px rgba(0,0,0,0.12)",
             }} />
         </button>
     );
 
     // 汎用リスト行（onPressなしはdivでレンダリング → Toggle等の子要素がiOSでも押せる）
-    const Row = ({ icon, label, sub, right, onPress, danger }) => {
+    const Row = ({ icon, IconComp, iconColor, label, sub, right, onPress, danger }) => {
         const Tag = onPress ? "button" : "div";
+        const clr = iconColor || (danger ? C.red : C.subHi);
         return (
-            <Tag className="b settings-row" onClick={onPress || undefined} style={{
+            <Tag className="b settings-row settings-list-row" onClick={onPress || undefined} style={{
                 width: "100%", background: "transparent", border: "none",
-                borderBottom: `1px solid ${C.border}`, padding: "14px 16px",
+                borderBottom: `1px solid ${C.border}`, padding: "12px 16px",
                 display: "flex", alignItems: "center", gap: 12,
                 cursor: onPress ? "pointer" : "default", textAlign: "left",
                 WebkitTapHighlightColor: "transparent",
             }}>
-                {icon && (
+                {(IconComp || icon) && (
                     <div style={{
-                        width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-                        background: danger ? "rgba(255,59,48,0.12)" : "rgba(128,128,128,0.1)",
+                        width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                        background: IconComp
+                            ? `color-mix(in srgb, ${clr} 14%, transparent)`
+                            : (danger ? "rgba(255,59,48,0.12)" : "rgba(128,128,128,0.1)"),
                         display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 17,
-                    }}>{icon}</div>
+                        fontSize: 15, color: clr,
+                    }}>{IconComp ? <IconComp /> : icon}</div>
                 )}
                 <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 15, color: danger ? C.red : C.text, fontWeight: 500, lineHeight: 1.3 }}>{label}</div>
                     {sub && <div style={{ fontSize: 12, color: C.sub, marginTop: 2, lineHeight: 1.4 }}>{sub}</div>}
                 </div>
-                {right !== undefined ? right : (onPress ? <span style={{ fontSize: 16, color: "rgba(128,128,128,0.5)", flexShrink: 0, fontWeight: 600 }}>›</span> : null)}
+                {right !== undefined ? right : (onPress ? <span style={{ fontSize: 15, color: C.sub, flexShrink: 0, fontWeight: 500 }}>›</span> : null)}
             </Tag>
         );
     };
@@ -5883,18 +5905,18 @@ export function SettingsTab({ s, onReset }) {
     // セクションラベル
     const SectionLabel = ({ label }) => (
         <div style={{
-            padding: "20px 4px 6px",
-            fontSize: 11, fontWeight: 700, color: C.sub,
-            letterSpacing: 0.8, textTransform: "uppercase",
+            padding: "24px 16px 8px",
+            fontSize: 13, fontWeight: 500, color: C.sub,
+            letterSpacing: 0, textTransform: "none",
         }}>{label}</div>
     );
 
     // セクションカード（角丸まとめ）— last-childのborderBottomはCSS側で除去
     const Section = ({ children, danger }) => (
         <div style={{
-            background: danger ? `rgba(255,59,48,0.06)` : C.surface,
-            borderRadius: 14,
-            border: `1px solid ${danger ? "rgba(255,59,48,0.25)" : C.border}`,
+            background: danger ? "color-mix(in srgb, var(--red) 4%, transparent)" : C.surface,
+            borderRadius: 12,
+            border: `1px solid ${danger ? "color-mix(in srgb, var(--red) 18%, transparent)" : C.border}`,
             overflow: "hidden",
         }}>{children}</div>
     );
@@ -5941,9 +5963,9 @@ export function SettingsTab({ s, onReset }) {
                                     return (
                                         <button key={ct.id} className="b" onClick={() => s.setAccentColor(ct.id)} style={{
                                             aspectRatio: "1", borderRadius: 14,
-                                            background: ct.gradient,
+                                            background: ct.primary,
                                             border: active ? "3px solid #fff" : "3px solid transparent",
-                                            boxShadow: active ? `0 0 0 2px ${ct.primary}, 0 4px 12px rgba(0,0,0,0.3)` : "0 2px 6px rgba(0,0,0,0.2)",
+                                            boxShadow: active ? `0 0 0 2px ${ct.primary}` : "none",
                                             display: "flex", alignItems: "center", justifyContent: "center",
                                             cursor: "pointer", transition: "all 0.2s ease",
                                         }}>
@@ -5957,9 +5979,9 @@ export function SettingsTab({ s, onReset }) {
 
                     <SectionLabel label="アクセシビリティ" />
                     <Section>
-                        <Row icon="◑" label="ハイコントラストモード" sub="視認性を向上させます"
+                        <Row IconComp={IconContrast} iconColor={C.subHi} label="ハイコントラストモード" sub="視認性を向上させます"
                             right={<Toggle value={s.highContrast} onChange={s.setHighContrast} />} />
-                        <Row icon="👁" label="色覚サポート" sub="色の識別をサポート"
+                        <Row IconComp={IconEye} iconColor={C.subHi} label="色覚サポート" sub="色の識別をサポート"
                             right={<Toggle value={s.colorBlind} onChange={s.setColorBlind} />} />
                     </Section>
                 </div>
@@ -6008,9 +6030,9 @@ export function SettingsTab({ s, onReset }) {
                                 return (
                                     <button key={yen} className="b" onClick={() => s.setExRate(balls * 10)} style={{
                                         background: isActive ? C.blue : C.surfaceHi,
-                                        border: `1px solid ${isActive ? C.blue : C.borderHi}`,
-                                        borderRadius: 8, color: isActive ? "#fff" : C.text,
-                                        fontSize: 11, padding: "8px 12px", fontFamily: font, fontWeight: isActive ? 700 : 500,
+                                        border: isActive ? "none" : `1px solid ${C.border}`,
+                                        borderRadius: 999, color: isActive ? "#fff" : C.subHi,
+                                        fontSize: 13, padding: "8px 14px", fontFamily: font, fontWeight: 600,
                                     }}>{label}</button>
                                 );
                             })}
@@ -6085,7 +6107,7 @@ export function SettingsTab({ s, onReset }) {
                 <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(84px + env(safe-area-inset-bottom))" }}>
                     <SectionLabel label="貯玉オプション" />
                     <Section>
-                        <Row icon="💰" label="貯玉を収支に含める" sub="OFFの場合、貯玉使用分は投資額0円として計算"
+                        <Row IconComp={IconDiamond} iconColor={C.teal} label="貯玉を収支に含める" sub="OFFの場合、貯玉使用分は投資額0円として計算"
                             right={<Toggle value={s.includeChodamaInBalance} onChange={s.setIncludeChodamaInBalance} color={C.purple} />} />
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px" }}>
                             <div>
@@ -6169,30 +6191,30 @@ export function SettingsTab({ s, onReset }) {
                 {/* 外観 */}
                 <SectionLabel label="外観" />
                 <Section>
-                    <Row icon="🎨" label="外観" sub="テーマ・カラー・アクセシビリティ" onPress={() => setShowAppearanceView(true)} />
+                    <Row IconComp={IconPaint} iconColor={C.purple} label="外観" sub="テーマ・カラー・アクセシビリティ" onPress={() => setShowAppearanceView(true)} />
                 </Section>
 
                 {/* ゲーム設定 */}
                 <SectionLabel label="ゲーム設定" />
                 <Section>
-                    <Row icon="⚙️" label="基本設定" sub={`貸玉 ${Math.round((s.rentBalls || 250) / 10)}玉 / 交換 ${Math.round((s.exRate || 250) / 10)}玉`} onPress={() => setShowGameSettingsView(true)} />
-                    <Row icon="🎯" label="機種スペック" sub={`確率分母: ${s.synthDenom || 319.6} / ボーダー: ${calcBorder > 0 ? f(calcBorder, 1) : "—"}回/K`} onPress={() => setShowMachineSpecView(true)} />
-                    <Row icon="💎" label="貯玉設定" sub={s.includeChodamaInBalance ? "収支に含める" : "収支に含めない"} onPress={() => setShowChodamaView(true)} />
-                    <Row icon="🔍" label="機種検索・登録" sub={`カスタム機種: ${(s.customMachines || []).length}件`} onPress={() => setShowMachineSearch(true)} />
-                    <Row icon="🏪" label="店舗検索・登録" sub={`登録店舗: ${(s.stores || []).length}件`} onPress={() => setShowStoreSearch(true)} />
+                    <Row IconComp={IconGear} iconColor={C.blue} label="基本設定" sub={`貸玉 ${Math.round((s.rentBalls || 250) / 10)}玉 / 交換 ${Math.round((s.exRate || 250) / 10)}玉`} onPress={() => setShowGameSettingsView(true)} />
+                    <Row IconComp={IconTarget} iconColor={C.red} label="機種スペック" sub={`確率分母: ${s.synthDenom || 319.6} / ボーダー: ${calcBorder > 0 ? f(calcBorder, 1) : "—"}回/K`} onPress={() => setShowMachineSpecView(true)} />
+                    <Row IconComp={IconDiamond} iconColor={C.teal} label="貯玉設定" sub={s.includeChodamaInBalance ? "収支に含める" : "収支に含めない"} onPress={() => setShowChodamaView(true)} />
+                    <Row IconComp={IconMagnifier} iconColor={C.subHi} label="機種検索・登録" sub={`カスタム機種: ${(s.customMachines || []).length}件`} onPress={() => setShowMachineSearch(true)} />
+                    <Row IconComp={IconStore} iconColor={C.green} label="店舗検索・登録" sub={`登録店舗: ${(s.stores || []).length}件`} onPress={() => setShowStoreSearch(true)} />
                 </Section>
 
                 {/* セキュリティ */}
                 <SectionLabel label="セキュリティ" />
                 <Section>
-                    <Row icon="🔒" label="アプリロック" sub={s.appLock ? (s.appPin ? "PIN設定済み" : "PIN未設定") : "オフ"}
+                    <Row IconComp={IconLock} iconColor={C.subHi} label="アプリロック" sub={s.appLock ? (s.appPin ? "PIN設定済み" : "PIN未設定") : "オフ"}
                         right={<Toggle value={s.appLock} onChange={(v) => {
                             if (!v) { s.setAppLock(false); s.setAppPin(""); setPinSetStep("idle"); }
                             else if (!s.appPin) { s.setAppLock(true); setPinSetStep("enter"); setPinDraft(""); }
                             else s.setAppLock(true);
                         }} color={C.red} />} />
                     {s.appLock && s.appPin && pinSetStep === "idle" && (
-                        <Row icon="🔑" label="PINを変更" onPress={() => { setPinSetStep("enter"); setPinDraft(""); setPinSetError(false); }} />
+                        <Row IconComp={IconKey} iconColor={C.orange} label="PINを変更" onPress={() => { setPinSetStep("enter"); setPinDraft(""); setPinSetError(false); }} />
                     )}
                     {pinSetStep !== "idle" && (
                         <div style={{ padding: "16px 16px 14px", borderTop: `1px solid ${C.border}` }}>
@@ -6283,14 +6305,14 @@ export function SettingsTab({ s, onReset }) {
                 {/* データ */}
                 <SectionLabel label="データ" />
                 <Section>
-                    <Row icon="💾" label="バックアップ・復元" sub="全データのエクスポート・インポート" onPress={() => setShowBackupView(true)} />
+                    <Row IconComp={IconCloud} iconColor={C.blue} label="バックアップ・復元" sub="全データのエクスポート・インポート" onPress={() => setShowBackupView(true)} />
                 </Section>
 
                 {/* 危険な操作 */}
                 <SectionLabel label="危険な操作" />
                 <Section danger>
                     {!confirming ? (
-                        <Row icon="🗑️" label="データをリセット" sub="セッションデータ・履歴を消去します" danger onPress={() => setConfirming(true)} />
+                        <Row IconComp={IconTrash} iconColor={C.red} label="データをリセット" sub="セッションデータ・履歴を消去します" danger onPress={() => setConfirming(true)} />
                     ) : (
                         <div style={{ padding: "16px" }}>
                             <div style={{ fontSize: 13, color: C.text, fontWeight: 600, marginBottom: 6 }}>本当にリセットしますか？</div>
@@ -6317,16 +6339,15 @@ export function SettingsTab({ s, onReset }) {
                         background: C.blue,
                         display: "flex", alignItems: "center", justifyContent: "center",
                         fontSize: 32, marginBottom: 10,
-                        boxShadow: "0 4px 16px rgba(47,111,237,0.18)",
                     }}>🎰</div>
                     <div style={{ fontSize: 16, fontWeight: 700, color: C.text, fontFamily: font }}>パチトラッカー</div>
                     <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>バージョン 1.0.0 (2025.7.1)</div>
                 </div>
                 <Section>
-                    <Row icon="💬" label="お問い合わせ" onPress={() => showToast("サポートページは準備中です", "warn")} />
-                    <Row icon="⭐" label="アプリを評価" onPress={() => showToast("ストアページは準備中です", "warn")} />
-                    <Row icon="📄" label="利用規約" onPress={() => showToast("利用規約ページは準備中です", "warn")} />
-                    <Row icon="🛡️" label="プライバシーポリシー" onPress={() => showToast("プライバシーポリシーは準備中です", "warn")} />
+                    <Row IconComp={IconChat} iconColor={C.sub} label="お問い合わせ" onPress={() => showToast("サポートページは準備中です", "warn")} />
+                    <Row IconComp={IconStar} iconColor={C.sub} label="アプリを評価" onPress={() => showToast("ストアページは準備中です", "warn")} />
+                    <Row IconComp={IconDoc} iconColor={C.sub} label="利用規約" onPress={() => showToast("利用規約ページは準備中です", "warn")} />
+                    <Row IconComp={IconShield} iconColor={C.sub} label="プライバシーポリシー" onPress={() => showToast("プライバシーポリシーは準備中です", "warn")} />
                 </Section>
 
                 <div style={{ height: 24 }} />

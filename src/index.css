@@ -443,3 +443,8 @@ input, select, textarea {
   animation: toastIn 0.2s ease forwards;
   pointer-events: auto;
 }
+
+/* Settings list row tap highlight */
+.settings-list-row:active {
+  background: var(--surface-hi) !important;
+}
