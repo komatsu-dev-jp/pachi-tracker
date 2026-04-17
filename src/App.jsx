@@ -20,7 +20,7 @@ export default function App() {
   const [tab, setTab] = useState("rot");
 
   // Theme management
-  const [theme, setTheme] = useLS("pt_theme", "dark");
+  const [theme, setTheme] = useLS("pt_theme", "light");
 
   // Appearance
   const [accentColor, setAccentColor] = useLS("pt_accentColor", "purple");
@@ -250,21 +250,45 @@ export default function App() {
     sessionSubTab, setSessionSubTab,
   };
 
-  // カスタムアイコン: 黄色の＋
-  const PlusCircleIcon = ({ active }) => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ filter: active ? "none" : "grayscale(1) opacity(0.5)" }}>
-      <circle cx="12" cy="12" r="10" stroke="#facc15" strokeWidth="2" fill="none" />
-      <path d="M12 7v10M7 12h10" stroke="#facc15" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
+  // iOS風 細線アイコン
+  const CalendarIcon = ({ active }) => {
+    const col = active ? C.blue : C.sub;
+    return (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3.5" y="5" width="17" height="15" rx="2.5" />
+        <path d="M3.5 9.5h17" />
+        <path d="M8 3v4M16 3v4" />
+      </svg>
+    );
+  };
+
+  const PlusCircleIcon = ({ active }) => {
+    const col = active ? C.blue : C.sub;
+    return (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="9.2" />
+        <path d="M12 7.5v9M7.5 12h9" />
+      </svg>
+    );
+  };
+
+  const GearIcon = ({ active }) => {
+    const col = active ? C.blue : C.sub;
+    return (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      </svg>
+    );
+  };
 
   const nav = [
-    { id: "calendar", label: "記録", icon: "📅" },
-    { id: "rot",      label: "新規稼働", icon: "plus" },
-    { id: "settings", label: "設定", icon: "⚙️" },
+    { id: "calendar", label: "記録",     IconC: CalendarIcon },
+    { id: "rot",      label: "新規稼働", IconC: PlusCircleIcon },
+    { id: "settings", label: "設定",     IconC: GearIcon },
   ];
 
-  const navBg = theme === "light" ? "var(--nav-bg)" : "rgba(17, 17, 22, 0.95)";
+  const navBg = "var(--nav-bg)";
 
   // PINロック画面
   if (isLocked && appLock && appPin) {
@@ -290,23 +314,23 @@ export default function App() {
     };
 
     return (
-      <div style={{ background: "var(--accent-grad, linear-gradient(135deg,#667eea,#764ba2))", height: "100dvh", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 32px" }}>
-        <div style={{ fontSize: 32, marginBottom: 8 }}>🔒</div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: "#fff", marginBottom: 4, fontFamily: font }}>パチトラッカー</div>
-        <div style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", marginBottom: 32, fontFamily: font }}>PINを入力してください</div>
+      <div style={{ background: C.bg, height: "100dvh", maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 32px" }}>
+        <div style={{ fontSize: 28, marginBottom: 12 }}>🔒</div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: C.text, marginBottom: 4, fontFamily: font }}>パチトラッカー</div>
+        <div style={{ fontSize: 13, color: C.sub, marginBottom: 32, fontFamily: font }}>PINを入力してください</div>
 
         {/* ドット表示 */}
         <div style={{ display: "flex", gap: 16, marginBottom: 8 }}>
           {[0, 1, 2, 3].map(i => (
             <div key={i} style={{
-              width: 16, height: 16, borderRadius: "50%",
-              background: i < pinInput.length ? "#fff" : "rgba(255,255,255,0.3)",
-              transition: "background 0.15s ease",
-              boxShadow: pinError ? "0 0 0 3px rgba(239,68,68,0.6)" : "none",
+              width: 14, height: 14, borderRadius: "50%",
+              background: i < pinInput.length ? C.blue : "transparent",
+              border: `1.5px solid ${pinError ? C.red : (i < pinInput.length ? C.blue : C.borderHi)}`,
+              transition: "background 0.15s ease, border-color 0.15s ease",
             }} />
           ))}
         </div>
-        {pinError && <div style={{ fontSize: 12, color: "#fca5a5", marginBottom: 8, fontFamily: font }}>PINが違います</div>}
+        {pinError && <div style={{ fontSize: 12, color: C.red, marginBottom: 8, fontFamily: font }}>PINが違います</div>}
         <div style={{ marginBottom: 32, height: 16 }} />
 
         {/* テンキー */}
@@ -315,10 +339,11 @@ export default function App() {
             k === "" ? <div key={i} /> :
             <button key={i} className="b" onClick={() => handlePinKey(k)} style={{
               height: 72, borderRadius: 36,
-              background: k === "del" ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.2)",
-              border: "1px solid rgba(255,255,255,0.3)",
-              color: "#fff", fontSize: k === "del" ? 18 : 24, fontWeight: 700,
+              background: C.surface,
+              border: `1px solid ${C.border}`,
+              color: C.text, fontSize: k === "del" ? 18 : 24, fontWeight: 600,
               fontFamily: font, cursor: "pointer",
+              boxShadow: "var(--card-shadow)",
             }}>
               {k === "del" ? "⌫" : k}
             </button>
@@ -351,21 +376,19 @@ export default function App() {
       </main>
 
       {/* Navigation */}
-      <nav style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: navBg, backdropFilter: "blur(20px)", borderTop: `1px solid ${C.border}`, display: "flex", paddingBottom: "env(safe-area-inset-bottom)", zIndex: 100 }}>
-        {nav.map(({ id, label, icon }) => (
-          <button key={id} className="b" onClick={() => setTab(id)} style={{
-            flex: 1, background: "transparent", border: "none",
-            borderTop: tab === id ? `2px solid ${C.blue}` : "2px solid transparent",
-            padding: "6px 0 5px", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, transition: "all 0.2s ease"
-          }}>
-            {icon === "plus" ? (
-              <PlusCircleIcon active={tab === id} />
-            ) : (
-              <span style={{ fontSize: 18, filter: tab === id ? "none" : "grayscale(1) opacity(0.5)" }}>{icon}</span>
-            )}
-            <span style={{ fontSize: 9, fontWeight: tab === id ? 800 : 500, color: tab === id ? C.blue : C.sub, fontFamily: font, letterSpacing: 0.3 }}>{label}</span>
-          </button>
-        ))}
+      <nav style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: navBg, backdropFilter: "saturate(180%) blur(20px)", borderTop: `1px solid ${C.border}`, display: "flex", paddingBottom: "env(safe-area-inset-bottom)", zIndex: 100 }}>
+        {nav.map((item) => {
+          const Icon = item.IconC;
+          return (
+            <button key={item.id} className="b" onClick={() => setTab(item.id)} style={{
+              flex: 1, background: "transparent", border: "none",
+              padding: "10px 0 8px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, transition: "all 0.2s ease"
+            }}>
+              <Icon active={tab === item.id} />
+              <span style={{ fontSize: 10, fontWeight: tab === item.id ? 700 : 500, color: tab === item.id ? C.blue : C.sub, fontFamily: font, letterSpacing: 0.2 }}>{item.label}</span>
+            </button>
+          );
+        })}
       </nav>
     </div>
   );

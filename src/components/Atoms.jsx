@@ -11,9 +11,9 @@ export function NI({ v, set, w = 80, ph = "0", center = false, big = false, onEn
             onChange={(e) => set(e.target.value === "" ? "" : Number(e.target.value))}
             style={{
                 width: w,
-                background: C.bg,
+                background: C.surface,
                 border: `1px solid ${C.borderHi}`,
-                borderRadius: 8,
+                borderRadius: 10,
                 color: C.text,
                 fontFamily: mono,
                 fontSize: big ? 22 : 16,
@@ -36,15 +36,15 @@ export function KV({ label, val, unit, col, dim }) {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                padding: "12px 16px",
+                padding: "14px 16px",
                 borderBottom: `1px solid ${C.border}`,
-                background: dim ? "rgba(12, 12, 16, 0.5)" : "transparent",
+                background: dim ? C.surfaceHi : "transparent",
             }}
         >
-            <span style={{ fontSize: 12, color: dim ? C.sub + "99" : C.sub, fontFamily: font }}>{label}</span>
+            <span style={{ fontSize: 13, color: dim ? C.sub : C.subHi, fontFamily: font, fontWeight: 500 }}>{label}</span>
             <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
-                <span style={{ fontSize: 18, fontWeight: 700, color: col || C.text, fontFamily: mono }}>{val}</span>
-                {unit && <span style={{ fontSize: 10, color: C.sub, fontFamily: font }}>{unit}</span>}
+                <span style={{ fontSize: 17, fontWeight: 700, color: col || C.text, fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{val}</span>
+                {unit && <span style={{ fontSize: 11, color: C.sub, fontFamily: font }}>{unit}</span>}
             </div>
         </div>
     );
@@ -53,12 +53,13 @@ export function KV({ label, val, unit, col, dim }) {
 export function Card({ children, style = {} }) {
     return (
         <div
-            className="glass"
             style={{
+                background: C.surface,
+                border: `1px solid ${C.border}`,
                 borderRadius: 16,
                 overflow: "hidden",
                 marginBottom: 12,
-                boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+                boxShadow: "var(--card-shadow)",
                 ...style,
             }}
         >
@@ -71,14 +72,12 @@ export function SecLabel({ label, color }) {
     return (
         <div
             style={{
-                padding: "12px 16px 8px",
-                fontSize: 10,
-                letterSpacing: 2,
-                textTransform: "uppercase",
+                padding: "14px 16px 8px",
+                fontSize: 11,
+                letterSpacing: 0.5,
                 color: color || C.sub,
                 fontFamily: font,
-                fontWeight: 700,
-                opacity: 0.8,
+                fontWeight: 600,
             }}
         >
             {label}
@@ -86,22 +85,22 @@ export function SecLabel({ label, color }) {
     );
 }
 
-export function Btn({ label, onClick, bg = C.surfaceHi, fg = C.text, bd = C.borderHi, fs = 14, primary = false, small = false }) {
+export function Btn({ label, onClick, bg, fg = C.text, bd = C.border, fs = 14, primary = false, small = false }) {
     return (
         <button
             className="b"
             onClick={onClick}
             style={{
-                background: primary ? "linear-gradient(135deg, #3b82f6, #2563eb)" : bg,
+                background: primary ? C.blue : (bg || C.surfaceHi),
                 border: primary ? "none" : `1px solid ${bd}`,
                 borderRadius: small ? 10 : 12,
                 color: primary ? "#fff" : fg,
                 fontSize: small ? 12 : fs,
                 fontWeight: 700,
-                padding: small ? "10px 0" : "16px 0",
+                padding: small ? "10px 0" : "14px 0",
                 width: "100%",
                 fontFamily: font,
-                boxShadow: primary ? "0 4px 12px rgba(59, 130, 246, 0.3)" : "none",
+                boxShadow: "none",
             }}
         >
             {label}
@@ -115,14 +114,14 @@ export function MiniStat({ label, val, col }) {
             style={{
                 flex: 1,
                 textAlign: "center",
-                background: "rgba(255,255,255,0.03)",
-                borderRadius: 10,
+                background: C.surface,
+                borderRadius: 12,
                 padding: "10px 4px",
                 border: `1px solid ${C.border}`,
             }}
         >
-            <div style={{ fontSize: 9, color: C.sub, letterSpacing: 1, marginBottom: 4, fontFamily: font }}>{label}</div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: col || C.text, fontFamily: mono, lineHeight: 1 }}>{val}</div>
+            <div style={{ fontSize: 10, color: C.sub, letterSpacing: 0.5, marginBottom: 4, fontFamily: font, fontWeight: 600 }}>{label}</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: col || C.text, fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{val}</div>
         </div>
     );
 }
@@ -132,7 +131,7 @@ export function InputGrid({ fields }) {
         <div style={{ display: "grid", gridTemplateColumns: `repeat(${fields.length}, 1fr)`, gap: 8, padding: "12px" }}>
             {fields.map(([lbl, v, s]) => (
                 <div key={lbl}>
-                    <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, textAlign: "center", fontFamily: font }}>{lbl}</div>
+                    <div style={{ fontSize: 10, color: C.sub, marginBottom: 4, textAlign: "center", fontFamily: font, fontWeight: 600 }}>{lbl}</div>
                     <NI v={v} set={s} w="100%" center />
                 </div>
             ))}
@@ -150,7 +149,7 @@ const modeMap = {
 export function ModeToggle({ mode, setMode, showChodama = false, compact = false }) {
     const modes = showChodama ? ["cash", "mochi", "chodama"] : ["cash", "mochi"];
     return (
-        <div style={{ display: "flex", background: "rgba(0,0,0,0.3)", borderRadius: 24, padding: 3, gap: 4 }}>
+        <div style={{ display: "flex", background: C.surfaceHi, borderRadius: 999, padding: 3, gap: 2, border: `1px solid ${C.border}` }}>
             {modes.map((m) => {
                 const isActive = mode === m;
                 const { label, fullLabel, color } = modeMap[m];
@@ -160,15 +159,15 @@ export function ModeToggle({ mode, setMode, showChodama = false, compact = false
                         className="b"
                         onClick={() => setMode(m)}
                         style={{
-                            background: isActive ? (color + "30") : "transparent",
-                            border: isActive ? `1px solid ${color}50` : "1px solid transparent",
-                            borderRadius: 20,
+                            background: isActive ? C.surface : "transparent",
+                            border: "none",
+                            borderRadius: 999,
                             color: isActive ? color : C.sub,
                             fontSize: compact ? 11 : 12,
                             fontWeight: isActive ? 700 : 500,
                             padding: compact ? "5px 10px" : "6px 16px",
                             fontFamily: font,
-                            boxShadow: isActive ? "0 2px 8px rgba(0,0,0,0.2)" : "none",
+                            boxShadow: isActive ? "0 1px 2px rgba(17,24,39,0.08)" : "none",
                         }}
                     >
                         {compact ? label : fullLabel}
@@ -187,10 +186,10 @@ export function ModeBadge({ mode }) {
             fontSize: 10,
             fontWeight: 700,
             color: color,
-            background: color + "20",
+            background: `color-mix(in srgb, ${color} 12%, transparent)`,
             borderRadius: 6,
             padding: "3px 7px",
-            border: `1px solid ${color}40`,
+            border: `1px solid color-mix(in srgb, ${color} 24%, transparent)`,
         }}>
             {label}
         </span>

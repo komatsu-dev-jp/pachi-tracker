@@ -567,7 +567,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
     // 行背景色（ボーダー超えでも帯は表示しない）
     const rowBg = (v, isEven) => {
-        return isEven ? "transparent" : "rgba(255,255,255,0.015)";
+        return isEven ? "transparent" : "transparent";
     };
 
     // バリデーション付き記録関数
@@ -949,9 +949,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         width: 140,
                         height: 140,
                         borderRadius: "50%",
-                        background: "linear-gradient(145deg, #f97316, #ea580c)",
-                        border: "3px solid rgba(255,255,255,0.1)",
-                        boxShadow: "0 12px 40px rgba(249, 115, 22, 0.45), inset 0 2px 0 rgba(255,255,255,0.2)",
+                        background: C.blue,
+                        border: "none",
+                        boxShadow: "0 6px 18px rgba(47,111,237,0.22)",
                         display: "flex",
                         flexDirection: "column",
                         alignItems: "center",
@@ -961,8 +961,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         transition: "transform 0.25s ease, box-shadow 0.25s ease",
                     }}
                 >
-                    <span style={{ fontSize: 56, color: "#fff", fontWeight: 200, lineHeight: 1, textShadow: "0 2px 8px rgba(0,0,0,0.2)" }}>+</span>
-                    <span style={{ fontSize: 12, color: "#fff", fontWeight: 800, letterSpacing: 2, textTransform: "uppercase" }}>新規稼働</span>
+                    <span style={{ fontSize: 56, color: "#fff", fontWeight: 300, lineHeight: 1 }}>+</span>
+                    <span style={{ fontSize: 12, color: "#fff", fontWeight: 700, letterSpacing: 0.5 }}>新規稼働</span>
                 </button>
 
                 <p style={{ marginTop: 28, fontSize: 14, color: C.sub, textAlign: "center", lineHeight: 1.7 }}>
@@ -979,7 +979,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
                 {/* セットアップモーダル - プレミアムデザイン */}
                 {showSetupModal && (
-                    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", backdropFilter: "blur(12px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+                    <div style={{ position: "fixed", inset: 0, background: "rgba(17,24,39,0.5)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
                         <div className="card-premium" style={{ width: "100%", maxWidth: 360, maxHeight: "85vh", overflowY: "auto" }}>
                             <div style={{ padding: "20px 18px 14px", borderBottom: `1px solid ${C.border}` }}>
                                 <h2 style={{ fontSize: 20, fontWeight: 900, color: C.text, marginBottom: 6 }}>稼働開始</h2>
@@ -1001,7 +1001,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                         {(S.stores || []).length > 0 && (
                                             <button className="b" onClick={() => setShowStoreDD(!showStoreDD)} style={{
                                                 position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
-                                                background: "rgba(255,255,255,0.05)", border: "none", color: C.sub, fontSize: 12, padding: "6px 8px", borderRadius: 6
+                                                background: "var(--surface-hi)", border: "none", color: C.sub, fontSize: 12, padding: "6px 8px", borderRadius: 6
                                             }}>▼</button>
                                         )}
                                     </div>
@@ -1058,7 +1058,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                                     setShowMachineDD(false);
                                                     setMachineQuery("");
                                                 }} style={{
-                                                    width: "100%", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)", border: "none", borderBottom: `1px solid ${C.border}`,
+                                                    width: "100%", background: i % 2 === 0 ? "transparent" : "transparent", border: "none", borderBottom: `1px solid ${C.border}`,
                                                     padding: "12px 14px", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center"
                                                 }}>
                                                     <div>
@@ -1114,7 +1114,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 {/* ボタン - プレミアムデザイン */}
                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                                     <button className="b" onClick={() => setShowSetupModal(false)} style={{
-                                        background: "rgba(255,255,255,0.05)", border: `1px solid ${C.borderHi}`, borderRadius: 14, color: C.text, fontSize: 15, fontWeight: 700, padding: "16px 0", fontFamily: font
+                                        background: "var(--surface-hi)", border: `1px solid ${C.borderHi}`, borderRadius: 14, color: C.text, fontSize: 15, fontWeight: 700, padding: "16px 0", fontFamily: font
                                     }}>キャンセル</button>
                                     <button className="b btn-premium btn-secondary" onClick={handleStartSession}>
                                         稼働開始
@@ -1166,7 +1166,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         <span style={{ fontSize: 8, color: C.sub }}>{summaryCollapsed ? "▼" : "▲"}</span>
                     </button>
                     <button className="b" onClick={() => setShowInvestSettings(true)} style={{
-                        background: "rgba(255,255,255,0.05)", border: `1px solid ${C.border}`, borderRadius: 6,
+                        background: "var(--surface-hi)", border: `1px solid ${C.border}`, borderRadius: 6,
                         padding: "5px 8px", display: "flex", alignItems: "center", gap: 4
                     }}>
                         <span style={{ fontSize: 11 }}>⚙️</span>
@@ -1238,7 +1238,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             {S.sessionSubTab === "rot" && (
                 <>
                     {/* Table Header - コンパクト */}
-                    <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 48px 52px", background: "linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(139, 92, 246, 0.08))", padding: "8px 4px", margin: "4px 12px 4px", borderRadius: 8, flexShrink: 0, border: `1px solid rgba(59, 130, 246, 0.15)` }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 48px 52px", background: C.surfaceHi, padding: "8px 4px", margin: "4px 12px 4px", borderRadius: 8, flexShrink: 0, border: `1px solid ${C.border}` }}>
                         {["種別", "総回転", "今回", "平均", "投資", "持ち玉"].map((h) => (
                             <div key={h} style={{ textAlign: "center", fontSize: 9, fontWeight: 600, color: C.subHi, fontFamily: font, letterSpacing: 0.3 }}>{h}</div>
                         ))}
@@ -1264,7 +1264,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     );
                     if (row.type === "hit") return (
                         <div key={i} className="fin row-hit" style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 48px 52px", padding: "10px 4px", marginBottom: 3, borderRadius: 8, alignItems: "center" }}>
-                            <div style={{ textAlign: "center" }}><span style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: "linear-gradient(135deg, #f97316, #ea580c)", borderRadius: 5, padding: "3px 6px", boxShadow: "0 2px 6px rgba(249, 115, 22, 0.25)" }}>当</span></div>
+                            <div style={{ textAlign: "center" }}><span style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: "#ea580c", borderRadius: 5, padding: "3px 6px", boxShadow: "none" }}>当</span></div>
                             <div style={{ textAlign: "center", fontSize: 14, color: C.orange, fontFamily: mono, fontWeight: 700 }}>{f(row.cumRot)}</div>
                             <div style={{ textAlign: "center", fontSize: 18, fontWeight: 800, color: C.orange, fontFamily: mono }}>{row.thisRot}</div>
                             <div style={{ textAlign: "center", fontSize: 9, fontWeight: 600, color: C.orange, background: "rgba(249, 115, 22, 0.12)", padding: "3px 5px", borderRadius: 5 }}>当G数</div>
@@ -1294,8 +1294,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 left: 0,
                 right: 0,
                 bottom: "calc(65px + env(safe-area-inset-bottom))",
-                background: "linear-gradient(180deg, rgba(15,15,20,0.95) 0%, rgba(15,15,20,0.98) 100%)",
-                backdropFilter: "blur(12px)",
+                background: C.surface,
+                backdropFilter: "saturate(180%) blur(6px)",
                 borderTop: `1px solid ${C.border}`,
                 padding: "10px 12px 12px",
                 zIndex: 100
@@ -1389,20 +1389,20 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
                                         <button className="b" onClick={openChainWizard} style={{
                                             padding: "16px 0", borderRadius: 14, fontWeight: 800, fontSize: 14,
-                                            background: "linear-gradient(135deg, #10b981, #059669)", border: "none", color: "#fff",
-                                            boxShadow: "0 4px 16px rgba(16,185,129,0.4)"
+                                            background: "#16a34a", border: "none", color: "#fff",
+                                            boxShadow: "none"
                                         }}>連チャン追加</button>
                                         <button className="b" onClick={openDirectSingleEnd} disabled={lastChain.hits.length === 0} style={{
                                             padding: "16px 0", borderRadius: 14, fontWeight: 800, fontSize: 14,
-                                            background: lastChain.hits.length === 0 ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg, #6366f1, #4f46e5)",
+                                            background: lastChain.hits.length === 0 ? "rgba(99,102,241,0.3)" : "#4f46e5",
                                             border: "none", color: "#fff",
                                             boxShadow: lastChain.hits.length === 0 ? "none" : "0 4px 16px rgba(99,102,241,0.4)",
                                             opacity: lastChain.hits.length === 0 ? 0.5 : 1
                                         }}>単発終了</button>
                                         <button className="b" onClick={handleChainEnd} style={{
                                             padding: "16px 0", borderRadius: 14, fontWeight: 800, fontSize: 14,
-                                            background: "linear-gradient(135deg, #f97316, #ea580c)", border: "none", color: "#fff",
-                                            boxShadow: "0 4px 16px rgba(249,115,22,0.4)"
+                                            background: "#ea580c", border: "none", color: "#fff",
+                                            boxShadow: "none"
                                         }}>大当り終了</button>
                                     </div>
                                 ) : (
@@ -1440,7 +1440,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                             key={chain.chainId || ci}
                                             style={{
                                                 padding: "12px 16px", marginBottom: 12,
-                                                background: !chain.completed ? "rgba(249, 115, 22, 0.05)" : "rgba(255,255,255,0.02)"
+                                                background: !chain.completed ? "rgba(249, 115, 22, 0.05)" : "transparent"
                                             }}
                                             onTouchStart={() => handleLongPressStart(chain.chainId)}
                                             onTouchEnd={handleLongPressEnd}
@@ -1554,7 +1554,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
                     {/* 削除確認モーダル */}
                     {deleteConfirmOpen && (
-                        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
+                        <div style={{ position: "fixed", inset: 0, background: "rgba(17,24,39,0.45)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
                             <Card style={{ width: "100%", maxWidth: 320, padding: 20 }}>
                                 <SecLabel label="削除確認" />
                                 <div style={{ fontSize: 13, color: C.sub, marginBottom: 16, lineHeight: 1.6 }}>
@@ -1730,7 +1730,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
             {/* Move Modal */}
             {showMoveModal && (
-                <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
+                <div style={{ position: "fixed", inset: 0, background: "rgba(17,24,39,0.45)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
                     <Card style={{ width: "100%", maxWidth: 320, padding: 20 }}>
                         <SecLabel label="台移動" />
                         <div style={{ fontSize: 13, color: C.sub, marginBottom: 16, lineHeight: 1.6 }}>
@@ -1746,7 +1746,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
             {/* 投資ペース設定モーダル */}
             {showInvestSettings && (
-                <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
+                <div style={{ position: "fixed", inset: 0, background: "rgba(17,24,39,0.45)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
                     <Card style={{ width: "100%", maxWidth: 320, padding: 20 }}>
                         <SecLabel label="投資金額ペース" />
                         <div style={{ fontSize: 12, color: C.sub, marginBottom: 16, lineHeight: 1.6 }}>
@@ -1756,7 +1756,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             {[500, 1000, 2000].map(pace => (
                                 <button key={pace} className="b" onClick={() => { S.setInvestPace(pace); setShowInvestSettings(false); }} style={{
                                     padding: "14px 0", borderRadius: 10, fontWeight: 700, fontFamily: mono, fontSize: 15,
-                                    background: investPace === pace ? "linear-gradient(135deg, #3b82f6, #2563eb)" : "rgba(255,255,255,0.05)",
+                                    background: investPace === pace ? "#2f6fed" : "var(--surface-hi)",
                                     border: investPace === pace ? "none" : `1px solid ${C.border}`,
                                     color: investPace === pace ? "#fff" : C.text,
                                     boxShadow: investPace === pace ? "0 4px 12px rgba(59, 130, 246, 0.3)" : "none"
@@ -1766,7 +1766,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             ))}
                         </div>
                         <button className="b" onClick={() => setShowInvestSettings(false)} style={{
-                            width: "100%", padding: "12px", background: "rgba(255,255,255,0.05)", border: `1px solid ${C.border}`,
+                            width: "100%", padding: "12px", background: "var(--surface-hi)", border: `1px solid ${C.border}`,
                             borderRadius: 10, color: C.text, fontSize: 14, fontWeight: 600, fontFamily: font
                         }}>閉じる</button>
                     </Card>
@@ -1828,8 +1828,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                             onClick={() => { setHitWizardData(d => ({ ...d, rounds: r })); setHitWizardStep(2); }}
                                             style={{
                                                 width: 80, height: 80, borderRadius: 16, fontWeight: 800, fontFamily: mono, fontSize: 26,
-                                                background: "linear-gradient(135deg, #f97316, #ea580c)", border: "none", color: "#fff",
-                                                boxShadow: "0 4px 16px rgba(249,115,22,0.4)"
+                                                background: "#ea580c", border: "none", color: "#fff",
+                                                boxShadow: "none"
                                             }}
                                         >
                                             {r}R
@@ -1867,11 +1867,11 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 <div style={{ fontSize: 22, fontWeight: 700, color: C.text, marginBottom: 28 }}>当たり種別</div>
                                 <div style={{ display: "flex", gap: 16, justifyContent: "center" }}>
                                     <button className="b" onClick={() => { setHitWizardData(d => ({ ...d, hitType: "単発" })); setHitWizardStep(5); }}
-                                        style={{ width: 130, height: 90, borderRadius: 16, fontWeight: 800, fontSize: 22, background: "linear-gradient(135deg, #6366f1, #4f46e5)", border: "none", color: "#fff", boxShadow: "0 4px 16px rgba(99,102,241,0.4)" }}>
+                                        style={{ width: 130, height: 90, borderRadius: 16, fontWeight: 800, fontSize: 22, background: "#4f46e5", border: "none", color: "#fff", boxShadow: "none" }}>
                                         単発
                                     </button>
                                     <button className="b" onClick={() => handleWizardComplete("確変")}
-                                        style={{ width: 130, height: 90, borderRadius: 16, fontWeight: 800, fontSize: 22, background: "linear-gradient(135deg, #f97316, #ea580c)", border: "none", color: "#fff", boxShadow: "0 4px 16px rgba(249,115,22,0.4)" }}>
+                                        style={{ width: 130, height: 90, borderRadius: 16, fontWeight: 800, fontSize: 22, background: "#ea580c", border: "none", color: "#fff", boxShadow: "none" }}>
                                         確変
                                     </button>
                                 </div>
@@ -1916,15 +1916,15 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     else if (hitWizardStep === 2) setHitWizardStep(1);
                                     else if (hitWizardStep === 5) setHitWizardStep(4);
                                     else setHitWizardStep(s => s - 1);
-                                }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "rgba(255,255,255,0.08)", border: "none", color: C.text }}>
+                                }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "var(--surface-hi)", border: "none", color: C.text }}>
                                     {hitWizardStep === 0 ? "キャンセル" : "戻る"}
                                 </button>
                                 {hitWizardStep === 6 ? (
-                                    <button className="b" onClick={handleWizardComplete} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "linear-gradient(135deg, #10b981, #059669)", border: "none", color: "#fff" }}>
+                                    <button className="b" onClick={handleWizardComplete} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#16a34a", border: "none", color: "#fff" }}>
                                         記録完了
                                     </button>
                                 ) : (
-                                    <button className="b" onClick={() => setHitWizardStep(s => s + 1)} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "linear-gradient(135deg, #3b82f6, #2563eb)", border: "none", color: "#fff" }}>
+                                    <button className="b" onClick={() => setHitWizardStep(s => s + 1)} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#2f6fed", border: "none", color: "#fff" }}>
                                         次へ
                                     </button>
                                 )}
@@ -1940,7 +1940,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                             const newVal = current === "0" ? String(n) : current + n;
                                             return { ...d, [field]: newVal };
                                         });
-                                    }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>
+                                    }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "var(--surface-hi)", border: "none", color: C.text, minHeight: 56 }}>
                                         {n}
                                     </button>
                                 ))}
@@ -1958,13 +1958,13 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                         if (current === "") return d;
                                         return { ...d, [field]: current + "0" };
                                     });
-                                }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>
+                                }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "var(--surface-hi)", border: "none", color: C.text, minHeight: 56 }}>
                                     0
                                 </button>
                                 <button className="b" onClick={() => {
                                     const field = hitWizardStep === 0 ? "trayBalls" : hitWizardStep === 2 ? "displayBalls" : hitWizardStep === 3 ? "actualBalls" : hitWizardStep === 5 ? "jitanSpins" : "finalBallsAfterJitan";
                                     setHitWizardData(d => ({ ...d, [field]: (d[field] || "").slice(0, -1) }));
-                                }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 20, background: "rgba(255,255,255,0.1)", border: "none", color: C.sub, minHeight: 56 }}>
+                                }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 20, background: "var(--surface-hi)", border: "none", color: C.sub, minHeight: 56 }}>
                                     ←
                                 </button>
                             </div>
@@ -1982,7 +1982,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    background: "rgba(0,0,0,0.9)",
+                    background: "rgba(17,24,39,0.5)",
                     backdropFilter: "blur(8px)",
                     zIndex: 9998,
                     display: "flex",
@@ -2038,7 +2038,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 borderRadius: 12,
                                 fontWeight: 700,
                                 fontSize: 15,
-                                background: "rgba(255,255,255,0.08)",
+                                background: "var(--surface-hi)",
                                 border: "none",
                                 color: C.sub
                             }}>
@@ -2058,7 +2058,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 borderRadius: 12,
                                 fontWeight: 700,
                                 fontSize: 15,
-                                background: "linear-gradient(135deg, #f97316, #ea580c)",
+                                background: "#ea580c",
                                 border: "none",
                                 color: "#fff",
                                 boxShadow: "0 4px 12px rgba(249,115,22,0.3)"
@@ -2096,7 +2096,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 12 }}>
                                     {machineRushRounds.map(r => (
                                         <button key={r} className="b" onClick={() => { setChainWizardData(d => ({ ...d, rounds: r })); setChainWizardStep(1); setChainWizardFirstKey(true); }}
-                                            style={{ width: 80, height: 80, borderRadius: 16, fontWeight: 800, fontFamily: mono, fontSize: 26, background: "linear-gradient(135deg, #f97316, #ea580c)", border: "none", color: "#fff", boxShadow: "0 4px 16px rgba(249,115,22,0.4)" }}>
+                                            style={{ width: 80, height: 80, borderRadius: 16, fontWeight: 800, fontFamily: mono, fontSize: 26, background: "#ea580c", border: "none", color: "#fff", boxShadow: "none" }}>
                                             {r}R
                                         </button>
                                     ))}
@@ -2212,11 +2212,11 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 <div style={{ fontSize: 22, fontWeight: 700, color: C.text, marginBottom: 28 }}>この大当たりは？</div>
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center" }}>
                                     <button className="b" onClick={() => handleChainWizardComplete(false)}
-                                        style={{ width: 100, height: 80, borderRadius: 16, fontWeight: 800, fontSize: 16, background: "linear-gradient(135deg, #10b981, #059669)", border: "none", color: "#fff", boxShadow: "0 4px 16px rgba(16,185,129,0.4)" }}>連チャン継続</button>
+                                        style={{ width: 100, height: 80, borderRadius: 16, fontWeight: 800, fontSize: 16, background: "#16a34a", border: "none", color: "#fff", boxShadow: "none" }}>連チャン継続</button>
                                     <button className="b" onClick={() => { setChainWizardStep(6); setChainWizardFirstKey(true); }}
-                                        style={{ width: 100, height: 80, borderRadius: 16, fontWeight: 800, fontSize: 16, background: "linear-gradient(135deg, #6366f1, #4f46e5)", border: "none", color: "#fff", boxShadow: "0 4px 16px rgba(99,102,241,0.4)" }}>単発終了</button>
+                                        style={{ width: 100, height: 80, borderRadius: 16, fontWeight: 800, fontSize: 16, background: "#4f46e5", border: "none", color: "#fff", boxShadow: "none" }}>単発終了</button>
                                     <button className="b" onClick={() => handleChainWizardComplete(true)}
-                                        style={{ width: 100, height: 80, borderRadius: 16, fontWeight: 800, fontSize: 16, background: "linear-gradient(135deg, #f97316, #ea580c)", border: "none", color: "#fff", boxShadow: "0 4px 16px rgba(249,115,22,0.4)" }}>最終大当たり</button>
+                                        style={{ width: 100, height: 80, borderRadius: 16, fontWeight: 800, fontSize: 16, background: "#ea580c", border: "none", color: "#fff", boxShadow: "none" }}>最終大当たり</button>
                                 </div>
                                 <button className="b" onClick={() => { setChainWizardStep(4); setChainWizardFirstKey(true); }} style={{ marginTop: 28, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 32px", color: C.sub, fontSize: 14 }}>戻る</button>
                             </div>
@@ -2248,9 +2248,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         <div style={{ padding: "8px 12px", paddingBottom: "max(12px, env(safe-area-inset-bottom))", background: "rgba(20,20,25,1)", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
                                 <button className="b" onClick={() => { if (chainWizardStep === 1) setChainWizardStep(0); else if (chainWizardStep === 6) setChainWizardStep(5); else setChainWizardStep(s => s - 1); setChainWizardFirstKey(true); }}
-                                    style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "rgba(255,255,255,0.08)", border: "none", color: C.text }}>戻る</button>
+                                    style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "var(--surface-hi)", border: "none", color: C.text }}>戻る</button>
                                 {chainWizardStep === 7 ? (
-                                    <button className="b" onClick={handleChainWizardSingleEnd} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "linear-gradient(135deg, #10b981, #059669)", border: "none", color: "#fff" }}>記録完了</button>
+                                    <button className="b" onClick={handleChainWizardSingleEnd} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#16a34a", border: "none", color: "#fff" }}>記録完了</button>
                                 ) : (
                                     <button className="b" onClick={() => {
                                         if (chainWizardStep === 3 && !chainWizardData.nextTimingBalls) {
@@ -2259,7 +2259,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                             setChainWizardData(d => ({ ...d, nextTimingBalls: String(lastOut + disp) }));
                                         }
                                         setChainWizardStep(s => s + 1); setChainWizardFirstKey(true);
-                                    }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "linear-gradient(135deg, #3b82f6, #2563eb)", border: "none", color: "#fff" }}>次へ</button>
+                                    }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#2f6fed", border: "none", color: "#fff" }}>次へ</button>
                                 )}
                             </div>
                             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
@@ -2268,14 +2268,14 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                         const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
                                         setChainWizardData(d => chainWizardFirstKey ? { ...d, [field]: String(n) } : { ...d, [field]: (d[field] === "0" ? String(n) : (d[field] || "") + n) });
                                         setChainWizardFirstKey(false);
-                                    }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>{n}</button>
+                                    }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "var(--surface-hi)", border: "none", color: C.text, minHeight: 56 }}>{n}</button>
                                 ))}
                                 <button className="b" onClick={() => { const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan"; setChainWizardData(d => ({ ...d, [field]: "" })); setChainWizardFirstKey(false); }}
                                     style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 15, background: "rgba(239,68,68,0.25)", border: "none", color: C.red, minHeight: 56 }}>AC</button>
                                 <button className="b" onClick={() => { const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan"; setChainWizardData(d => chainWizardFirstKey ? { ...d, [field]: "0" } : (d[field] === "" ? d : { ...d, [field]: d[field] + "0" })); setChainWizardFirstKey(false); }}
-                                    style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>0</button>
+                                    style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "var(--surface-hi)", border: "none", color: C.text, minHeight: 56 }}>0</button>
                                 <button className="b" onClick={() => { const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan"; setChainWizardData(d => ({ ...d, [field]: (d[field] || "").slice(0, -1) })); setChainWizardFirstKey(false); }}
-                                    style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 20, background: "rgba(255,255,255,0.1)", border: "none", color: C.sub, minHeight: 56 }}>←</button>
+                                    style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 20, background: "var(--surface-hi)", border: "none", color: C.sub, minHeight: 56 }}>←</button>
                             </div>
                         </div>
                     )}
@@ -2312,24 +2312,24 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     <div style={{ padding: "8px 12px", paddingBottom: "max(12px, env(safe-area-inset-bottom))", background: "rgba(20,20,25,1)", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
                             <button className="b" onClick={() => { if (directSingleEndStep === 0) setDirectSingleEndOpen(false); else setDirectSingleEndStep(0); }}
-                                style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "rgba(255,255,255,0.08)", border: "none", color: C.text }}>{directSingleEndStep === 0 ? "キャンセル" : "戻る"}</button>
+                                style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "var(--surface-hi)", border: "none", color: C.text }}>{directSingleEndStep === 0 ? "キャンセル" : "戻る"}</button>
                             {directSingleEndStep === 1 ? (
-                                <button className="b" onClick={handleDirectSingleEndComplete} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "linear-gradient(135deg, #10b981, #059669)", border: "none", color: "#fff" }}>記録完了</button>
+                                <button className="b" onClick={handleDirectSingleEndComplete} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#16a34a", border: "none", color: "#fff" }}>記録完了</button>
                             ) : (
-                                <button className="b" onClick={() => setDirectSingleEndStep(1)} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "linear-gradient(135deg, #3b82f6, #2563eb)", border: "none", color: "#fff" }}>次へ</button>
+                                <button className="b" onClick={() => setDirectSingleEndStep(1)} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#2f6fed", border: "none", color: "#fff" }}>次へ</button>
                             )}
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
                             {[1,2,3,4,5,6,7,8,9].map(n => (
                                 <button key={n} className="b" onClick={() => { const field = directSingleEndStep === 0 ? "jitanSpins" : "finalBallsAfterJitan"; setDirectSingleEndData(d => ({ ...d, [field]: (d[field] === "0" ? String(n) : (d[field] || "") + n) })); }}
-                                    style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>{n}</button>
+                                    style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "var(--surface-hi)", border: "none", color: C.text, minHeight: 56 }}>{n}</button>
                             ))}
                             <button className="b" onClick={() => { const field = directSingleEndStep === 0 ? "jitanSpins" : "finalBallsAfterJitan"; setDirectSingleEndData(d => ({ ...d, [field]: "" })); }}
                                 style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 15, background: "rgba(239,68,68,0.25)", border: "none", color: C.red, minHeight: 56 }}>AC</button>
                             <button className="b" onClick={() => { const field = directSingleEndStep === 0 ? "jitanSpins" : "finalBallsAfterJitan"; setDirectSingleEndData(d => (d[field] === "" ? d : { ...d, [field]: d[field] + "0" })); }}
-                                style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>0</button>
+                                style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "var(--surface-hi)", border: "none", color: C.text, minHeight: 56 }}>0</button>
                             <button className="b" onClick={() => { const field = directSingleEndStep === 0 ? "jitanSpins" : "finalBallsAfterJitan"; setDirectSingleEndData(d => ({ ...d, [field]: (d[field] || "").slice(0, -1) })); }}
-                                style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 20, background: "rgba(255,255,255,0.1)", border: "none", color: C.sub, minHeight: 56 }}>←</button>
+                                style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 20, background: "var(--surface-hi)", border: "none", color: C.sub, minHeight: 56 }}>←</button>
                         </div>
                     </div>
                 </div>,
@@ -2878,14 +2878,14 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
                                 <button className="b" onClick={openChainWizard} style={{
                                     padding: "16px 0", borderRadius: 14, fontWeight: 800, fontSize: 14,
-                                    background: "linear-gradient(135deg, #10b981, #059669)", border: "none", color: "#fff",
-                                    boxShadow: "0 4px 16px rgba(16,185,129,0.4)"
+                                    background: "#16a34a", border: "none", color: "#fff",
+                                    boxShadow: "none"
                                 }}>
                                     連チャン追加
                                 </button>
                                 <button className="b" onClick={openDirectSingleEnd} disabled={lastChain.hits.length === 0} style={{
                                     padding: "16px 0", borderRadius: 14, fontWeight: 800, fontSize: 14,
-                                    background: lastChain.hits.length === 0 ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg, #6366f1, #4f46e5)",
+                                    background: lastChain.hits.length === 0 ? "rgba(99,102,241,0.3)" : "#4f46e5",
                                     border: "none", color: "#fff",
                                     boxShadow: lastChain.hits.length === 0 ? "none" : "0 4px 16px rgba(99,102,241,0.4)",
                                     opacity: lastChain.hits.length === 0 ? 0.5 : 1
@@ -2894,8 +2894,8 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                 </button>
                                 <button className="b" onClick={handleChainEnd} style={{
                                     padding: "16px 0", borderRadius: 14, fontWeight: 800, fontSize: 14,
-                                    background: "linear-gradient(135deg, #f97316, #ea580c)", border: "none", color: "#fff",
-                                    boxShadow: "0 4px 16px rgba(249,115,22,0.4)"
+                                    background: "#ea580c", border: "none", color: "#fff",
+                                    boxShadow: "none"
                                 }}>
                                     大当り終了
                                 </button>
@@ -2960,7 +2960,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                     )}
                                     <Card style={{
                                         padding: "12px 16px",
-                                        background: !chain.completed ? "rgba(249, 115, 22, 0.05)" : "rgba(255,255,255,0.02)",
+                                        background: !chain.completed ? "rgba(249, 115, 22, 0.05)" : "transparent",
                                         transform: swipingId === chain.chainId ? `translateX(-${swipeX}px)` : "translateX(0)",
                                         transition: swipingId === chain.chainId ? "none" : "transform 0.2s ease"
                                     }}>
@@ -3119,8 +3119,8 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                             onClick={() => { setChainWizardData(d => ({ ...d, rounds: r })); setChainWizardStep(1); setChainWizardFirstKey(true); }}
                                             style={{
                                                 width: 80, height: 80, borderRadius: 16, fontWeight: 800, fontFamily: mono, fontSize: 26,
-                                                background: "linear-gradient(135deg, #f97316, #ea580c)", border: "none", color: "#fff",
-                                                boxShadow: "0 4px 16px rgba(249,115,22,0.4)"
+                                                background: "#ea580c", border: "none", color: "#fff",
+                                                boxShadow: "none"
                                             }}
                                         >
                                             {r}R
@@ -3280,15 +3280,15 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                 <div style={{ fontSize: 22, fontWeight: 700, color: C.text, marginBottom: 28 }}>この大当たりは？</div>
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center" }}>
                                     <button className="b" onClick={() => handleChainWizardComplete(false)}
-                                        style={{ width: 100, height: 80, borderRadius: 16, fontWeight: 800, fontSize: 16, background: "linear-gradient(135deg, #10b981, #059669)", border: "none", color: "#fff", boxShadow: "0 4px 16px rgba(16,185,129,0.4)" }}>
+                                        style={{ width: 100, height: 80, borderRadius: 16, fontWeight: 800, fontSize: 16, background: "#16a34a", border: "none", color: "#fff", boxShadow: "none" }}>
                                         連チャン継続
                                     </button>
                                     <button className="b" onClick={() => { setChainWizardStep(6); setChainWizardFirstKey(true); }}
-                                        style={{ width: 100, height: 80, borderRadius: 16, fontWeight: 800, fontSize: 16, background: "linear-gradient(135deg, #6366f1, #4f46e5)", border: "none", color: "#fff", boxShadow: "0 4px 16px rgba(99,102,241,0.4)" }}>
+                                        style={{ width: 100, height: 80, borderRadius: 16, fontWeight: 800, fontSize: 16, background: "#4f46e5", border: "none", color: "#fff", boxShadow: "none" }}>
                                         単発終了
                                     </button>
                                     <button className="b" onClick={() => handleChainWizardComplete(true)}
-                                        style={{ width: 100, height: 80, borderRadius: 16, fontWeight: 800, fontSize: 16, background: "linear-gradient(135deg, #f97316, #ea580c)", border: "none", color: "#fff", boxShadow: "0 4px 16px rgba(249,115,22,0.4)" }}>
+                                        style={{ width: 100, height: 80, borderRadius: 16, fontWeight: 800, fontSize: 16, background: "#ea580c", border: "none", color: "#fff", boxShadow: "none" }}>
                                         最終大当たり
                                     </button>
                                 </div>
@@ -3333,11 +3333,11 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                     else if (chainWizardStep === 6) setChainWizardStep(5);
                                     else setChainWizardStep(s => s - 1);
                                     setChainWizardFirstKey(true);
-                                }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "rgba(255,255,255,0.08)", border: "none", color: C.text }}>
+                                }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "var(--surface-hi)", border: "none", color: C.text }}>
                                     戻る
                                 </button>
                                 {chainWizardStep === 7 ? (
-                                    <button className="b" onClick={handleChainWizardSingleEnd} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "linear-gradient(135deg, #10b981, #059669)", border: "none", color: "#fff" }}>
+                                    <button className="b" onClick={handleChainWizardSingleEnd} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#16a34a", border: "none", color: "#fff" }}>
                                         記録完了
                                     </button>
                                 ) : (
@@ -3354,7 +3354,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                         }
                                         setChainWizardStep(s => s + 1);
                                         setChainWizardFirstKey(true);
-                                    }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "linear-gradient(135deg, #3b82f6, #2563eb)", border: "none", color: "#fff" }}>
+                                    }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#2f6fed", border: "none", color: "#fff" }}>
                                         次へ
                                     </button>
                                 )}
@@ -3375,7 +3375,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                             return { ...d, [field]: newVal };
                                         });
                                         setChainWizardFirstKey(false);
-                                    }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>
+                                    }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "var(--surface-hi)", border: "none", color: C.text, minHeight: 56 }}>
                                         {n}
                                     </button>
                                 ))}
@@ -3399,14 +3399,14 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                         return { ...d, [field]: current + "0" };
                                     });
                                     setChainWizardFirstKey(false);
-                                }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>
+                                }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "var(--surface-hi)", border: "none", color: C.text, minHeight: 56 }}>
                                     0
                                 </button>
                                 <button className="b" onClick={() => {
                                     const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
                                     setChainWizardData(d => ({ ...d, [field]: (d[field] || "").slice(0, -1) }));
                                     setChainWizardFirstKey(false);
-                                }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 20, background: "rgba(255,255,255,0.1)", border: "none", color: C.sub, minHeight: 56 }}>
+                                }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 20, background: "var(--surface-hi)", border: "none", color: C.sub, minHeight: 56 }}>
                                     ←
                                 </button>
                             </div>
@@ -3481,15 +3481,15 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                             <button className="b" onClick={() => {
                                 if (directSingleEndStep === 0) setDirectSingleEndOpen(false);
                                 else setDirectSingleEndStep(0);
-                            }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "rgba(255,255,255,0.08)", border: "none", color: C.text }}>
+                            }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "var(--surface-hi)", border: "none", color: C.text }}>
                                 {directSingleEndStep === 0 ? "キャンセル" : "戻る"}
                             </button>
                             {directSingleEndStep === 1 ? (
-                                <button className="b" onClick={handleDirectSingleEndComplete} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "linear-gradient(135deg, #10b981, #059669)", border: "none", color: "#fff" }}>
+                                <button className="b" onClick={handleDirectSingleEndComplete} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#16a34a", border: "none", color: "#fff" }}>
                                     記録完了
                                 </button>
                             ) : (
-                                <button className="b" onClick={() => setDirectSingleEndStep(1)} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "linear-gradient(135deg, #3b82f6, #2563eb)", border: "none", color: "#fff" }}>
+                                <button className="b" onClick={() => setDirectSingleEndStep(1)} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#2f6fed", border: "none", color: "#fff" }}>
                                     次へ
                                 </button>
                             )}
@@ -3505,7 +3505,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                         const newVal = current === "0" ? String(n) : current + n;
                                         return { ...d, [field]: newVal };
                                     });
-                                }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>
+                                }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "var(--surface-hi)", border: "none", color: C.text, minHeight: 56 }}>
                                     {n}
                                 </button>
                             ))}
@@ -3523,13 +3523,13 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                     if (current === "") return d;
                                     return { ...d, [field]: current + "0" };
                                 });
-                            }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "rgba(255,255,255,0.1)", border: "none", color: C.text, minHeight: 56 }}>
+                            }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "var(--surface-hi)", border: "none", color: C.text, minHeight: 56 }}>
                                 0
                             </button>
                             <button className="b" onClick={() => {
                                 const field = directSingleEndStep === 0 ? "jitanSpins" : "finalBallsAfterJitan";
                                 setDirectSingleEndData(d => ({ ...d, [field]: (d[field] || "").slice(0, -1) }));
-                            }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 20, background: "rgba(255,255,255,0.1)", border: "none", color: C.sub, minHeight: 56 }}>
+                            }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 20, background: "var(--surface-hi)", border: "none", color: C.sub, minHeight: 56 }}>
                                 ←
                             </button>
                         </div>
@@ -3626,11 +3626,11 @@ export function CalendarTab({ S, onReset }) {
         return { actual, ev, hasActual };
     }, [dailyTotals, monthKey]);
 
-    // Calendar grid
+    // Calendar grid（月曜始まり）
     const calendarDays = useMemo(() => {
         const first = new Date(viewMonth.year, viewMonth.month, 1);
         const lastDay = new Date(viewMonth.year, viewMonth.month + 1, 0).getDate();
-        const startDow = first.getDay();
+        const startDow = (first.getDay() + 6) % 7; // Mon=0 .. Sun=6
         const days = [];
         for (let i = 0; i < startDow; i++) days.push(null);
         for (let d = 1; d <= lastDay; d++) days.push(d);
@@ -3717,8 +3717,8 @@ export function CalendarTab({ S, onReset }) {
         return (
             <button className="b" onClick={onClick} style={{
                 width: "100%",
-                background: "linear-gradient(145deg, rgba(30, 32, 48, 0.6), rgba(22, 23, 34, 0.85))",
-                border: "1px solid rgba(255, 255, 255, 0.05)",
+                background: C.surface,
+                border: `1px solid ${C.border}`,
                 borderRadius: 14,
                 padding: "14px 14px 12px",
                 marginBottom: 10,
@@ -3726,7 +3726,7 @@ export function CalendarTab({ S, onReset }) {
                 textAlign: "left",
                 display: "block",
                 position: "relative",
-                boxShadow: "0 2px 12px rgba(0,0,0,0.25)",
+                boxShadow: "var(--card-shadow)",
             }}>
                 {/* Store name — tiny top label */}
                 {a.storeName && (
@@ -3776,7 +3776,7 @@ export function CalendarTab({ S, onReset }) {
                                         ? "rgba(52,211,153,0.3)"
                                         : hourlyWage < 0
                                             ? "rgba(251,113,133,0.3)"
-                                            : "rgba(255,255,255,0.08)"}`,
+                                            : "var(--surface-hi)"}`,
                                     fontFamily: font,
                                     fontVariantNumeric: "tabular-nums",
                                     letterSpacing: "-0.2px",
@@ -3802,12 +3802,12 @@ export function CalendarTab({ S, onReset }) {
 
                     {/* Right — labeled big P&L */}
                     <div style={{ textAlign: "right", marginLeft: 10, flexShrink: 0 }}>
-                        <div style={{ fontSize: 9, color: C.sub, fontWeight: 600, letterSpacing: "1.5px", marginBottom: 3, opacity: 0.7, textTransform: "uppercase" }}>収支</div>
-                        <div className={displayPL !== 0 ? "num-premium" : ""} style={{
-                            fontSize: 26, fontWeight: 900,
+                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, letterSpacing: "0.4px", marginBottom: 3 }}>収支</div>
+                        <div style={{
+                            fontSize: 24, fontWeight: 800,
                             color: sc(displayPL), fontFamily: font,
                             fontVariantNumeric: "tabular-nums",
-                            lineHeight: 1, letterSpacing: "-0.5px",
+                            lineHeight: 1, letterSpacing: "-0.3px",
                         }}>
                             {sp(displayPL)}<span className="unit">円</span>
                         </div>
@@ -3817,32 +3817,32 @@ export function CalendarTab({ S, onReset }) {
                 {/* Soft horizontal divider */}
                 <div style={{
                     height: 1,
-                    background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent)",
+                    background: C.border,
                     margin: "12px 0 10px",
                 }} />
 
                 {/* Row 2: 3-column detail grid with directional icons */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr" }}>
                     <div style={{ textAlign: "center", padding: "0 4px" }}>
-                        <div style={{ fontSize: 9, color: C.sub, fontWeight: 600, letterSpacing: "1.2px", marginBottom: 3, textTransform: "uppercase", display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
-                            <span style={{ color: C.red, fontSize: 11, opacity: 0.75, lineHeight: 1 }}>↓</span>
+                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, letterSpacing: "0.3px", marginBottom: 3, display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
+                            <span style={{ color: C.red, fontSize: 11, opacity: 0.75, lineHeight: 1 }}>●</span>
                             <span>投資</span>
                         </div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: C.subHi, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: C.text, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
                             {f(invest)}<span className="unit">円</span>
                         </div>
                     </div>
-                    <div style={{ textAlign: "center", padding: "0 4px", borderLeft: "1px solid rgba(255,255,255,0.06)" }}>
-                        <div style={{ fontSize: 9, color: C.sub, fontWeight: 600, letterSpacing: "1.2px", marginBottom: 3, textTransform: "uppercase", display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
-                            <span style={{ color: C.green, fontSize: 11, opacity: 0.75, lineHeight: 1 }}>↑</span>
+                    <div style={{ textAlign: "center", padding: "0 4px", borderLeft: `1px solid ${C.border}` }}>
+                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, letterSpacing: "0.3px", marginBottom: 3, display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
+                            <span style={{ color: C.green, fontSize: 11, opacity: 0.75, lineHeight: 1 }}>●</span>
                             <span>回収</span>
                         </div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: C.subHi, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: C.text, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
                             {f(recovery)}<span className="unit">円</span>
                         </div>
                     </div>
-                    <div style={{ textAlign: "center", padding: "0 4px", borderLeft: "1px solid rgba(255,255,255,0.06)" }}>
-                        <div style={{ fontSize: 9, color: C.sub, fontWeight: 600, letterSpacing: "1.2px", marginBottom: 3, textTransform: "uppercase" }}>
+                    <div style={{ textAlign: "center", padding: "0 4px", borderLeft: `1px solid ${C.border}` }}>
+                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, letterSpacing: "0.3px", marginBottom: 3 }}>
                             期待値
                         </div>
                         <div style={{
@@ -4141,109 +4141,183 @@ export function CalendarTab({ S, onReset }) {
         );
     }
 
+    // Compact 万 formatting for calendar cell (-50000 -> -5万, +12000 -> +1.2万)
+    const compactYen = (n) => {
+        if (!isFinite(n) || n === 0) return "";
+        const sign = n < 0 ? "-" : "+";
+        const abs = Math.abs(n);
+        if (abs >= 10000) {
+            const man = abs / 10000;
+            const shown = man >= 10 ? Math.round(man).toString() : (Math.round(man * 10) / 10).toString();
+            return `${sign}${shown}万`;
+        }
+        if (abs >= 1000) return `${sign}${Math.round(abs / 1000)}k`;
+        return `${sign}${abs}`;
+    };
+
     // ── Calendar View ──
     return (
         <div style={{ flex: 1, overflowY: "auto", padding: "8px 14px calc(80px + env(safe-area-inset-bottom))" }}>
-            {/* Month header — premium hero card with labeled 2-column summary */}
-            <div className="glass" style={{ padding: "12px 14px 14px", borderRadius: 16, marginBottom: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                    <button className="b" onClick={prevMonth} style={{ background: "transparent", border: "none", color: C.sub, fontSize: 20, padding: "2px 12px", fontWeight: 500, cursor: "pointer" }}>‹</button>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: C.text, letterSpacing: "1px" }}>{viewMonth.year}年{viewMonth.month + 1}月</div>
-                    <button className="b" onClick={nextMonth} style={{ background: "transparent", border: "none", color: C.sub, fontSize: 20, padding: "2px 12px", fontWeight: 500, cursor: "pointer" }}>›</button>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <div style={{ textAlign: "center", padding: "0 4px" }}>
-                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4, letterSpacing: "1px", textTransform: "uppercase" }}>今月の実収支</div>
-                        <div className={monthTotal.hasActual ? "num-premium" : ""} style={{ fontSize: 24, fontWeight: 900, color: monthTotal.hasActual ? sc(monthTotal.actual) : C.sub, fontFamily: font, fontVariantNumeric: "tabular-nums", lineHeight: 1.1, letterSpacing: "-0.5px" }}>
-                            {monthTotal.hasActual ? <>{sp(Math.round(monthTotal.actual))}<span className="unit">円</span></> : "—"}
-                        </div>
-                    </div>
-                    <div style={{ textAlign: "center", padding: "0 4px", borderLeft: `1px solid rgba(255,255,255,0.06)` }}>
-                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4, letterSpacing: "1px", textTransform: "uppercase" }}>期待値</div>
-                        <div className={monthTotal.ev !== 0 ? "num-premium" : ""} style={{ fontSize: 17, fontWeight: 800, color: monthTotal.ev !== 0 ? sc(monthTotal.ev) : C.sub, fontFamily: font, fontVariantNumeric: "tabular-nums", lineHeight: 1.1, opacity: monthTotal.ev !== 0 ? 0.92 : 0.5, marginTop: 6 }}>
-                            {monthTotal.ev !== 0 ? <>{sp(Math.round(monthTotal.ev))}<span className="unit">円</span></> : "—"}
-                        </div>
-                    </div>
+            {/* Title row — 収支 + 期間セグメント */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 2px 10px" }}>
+                <div style={{ fontSize: 28, fontWeight: 800, color: C.text, letterSpacing: "-0.5px" }}>収支</div>
+                <div className="segmented">
+                    <button className="active">月別</button>
                 </div>
             </div>
 
-            {/* Day of week header — muted slate-500 style to let dates be the hero */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 6, padding: "0 2px" }}>
-                {["日", "月", "火", "水", "木", "金", "土"].map((d) => (
-                    <div key={d} style={{ textAlign: "center", fontSize: 9, fontWeight: 500, color: C.sub, padding: "6px 0 8px", letterSpacing: "1.5px", opacity: 0.55 }}>{d}</div>
-                ))}
+            {/* Month navigator */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 2px 14px" }}>
+                <button className="b" onClick={prevMonth} style={{
+                    width: 36, height: 36, borderRadius: "50%",
+                    background: C.surface, border: `1px solid ${C.border}`,
+                    color: C.subHi, fontSize: 18, fontWeight: 500, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    boxShadow: "var(--card-shadow)",
+                }}>‹</button>
+                <div style={{ fontSize: 18, fontWeight: 700, color: C.text }}>{viewMonth.year}年{viewMonth.month + 1}月</div>
+                <button className="b" onClick={nextMonth} style={{
+                    width: 36, height: 36, borderRadius: "50%",
+                    background: C.surface, border: `1px solid ${C.border}`,
+                    color: C.subHi, fontSize: 18, fontWeight: 500, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    boxShadow: "var(--card-shadow)",
+                }}>›</button>
             </div>
 
-            {/* Calendar grid — Apple-style spacious cells with breathing room */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8 }}>
-                {calendarDays.map((day, idx) => {
-                    if (day === null) return <div key={`e-${idx}`} />;
-                    const ds = dateStr(day);
-                    const total = dailyTotals[ds];
-                    const hasActualData = total != null && total.hasActual;
-                    const isSel = selectedDate === ds;
-                    const isTdy = isToday(day);
-                    const dow = idx % 7;
+            {/* Calendar card */}
+            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: "14px 12px 10px", marginBottom: 14, boxShadow: "var(--card-shadow)" }}>
+                {/* Month total header */}
+                <div style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "0 4px 10px" }}>
+                    <span style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>月計</span>
+                    <span style={{
+                        fontSize: 16, fontWeight: 800,
+                        color: monthTotal.hasActual ? sc(monthTotal.actual) : C.sub,
+                        fontFamily: font, fontVariantNumeric: "tabular-nums",
+                    }}>
+                        {monthTotal.hasActual ? <>{sp(Math.round(monthTotal.actual))} <span style={{ fontSize: 12, fontWeight: 600 }}>円</span></> : "—"}
+                    </span>
+                </div>
 
-                    // Selected day gets a glow card. Today is expressed via the day number circle, NOT the cell bg.
-                    // Priority: selected > result tint
-                    let bg = "transparent";
-                    let bd = "1px solid transparent";
-                    let glow;
-                    if (isSel) {
-                        bg = "linear-gradient(145deg, rgba(129, 140, 248, 0.18), rgba(129, 140, 248, 0.06))";
-                        bd = "1px solid rgba(129, 140, 248, 0.45)";
-                        glow = "0 0 24px rgba(129, 140, 248, 0.28), 0 0 0 1px rgba(129, 140, 248, 0.15)";
-                    } else if (hasActualData) {
-                        if (total.actual > 0) {
-                            bg = "linear-gradient(145deg, rgba(52, 211, 153, 0.10), rgba(52, 211, 153, 0.02))";
-                            bd = "1px solid rgba(52, 211, 153, 0.18)";
-                        } else if (total.actual < 0) {
-                            bg = "linear-gradient(145deg, rgba(251, 113, 133, 0.10), rgba(251, 113, 133, 0.02))";
-                            bd = "1px solid rgba(251, 113, 133, 0.18)";
-                        }
-                    }
+                {/* Day of week header */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", padding: "2px 0 4px" }}>
+                    {["月", "火", "水", "木", "金", "土", "日"].map((d, i) => (
+                        <div key={d} style={{
+                            textAlign: "center", fontSize: 11, fontWeight: 600,
+                            color: i === 5 ? C.blue : i === 6 ? C.red : C.sub,
+                            padding: "4px 0",
+                        }}>{d}</div>
+                    ))}
+                </div>
 
-                    return (
-                        <button key={day} className="b" onClick={() => setSelectedDate(isSel ? null : ds)} style={{
-                            background: bg, border: bd, borderRadius: 14, padding: "6px 2px 8px",
-                            textAlign: "center", minHeight: 64, cursor: "pointer",
-                            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start",
-                            transition: "background 0.2s ease, box-shadow 0.2s ease",
-                            boxShadow: glow,
-                        }}>
-                            {isTdy ? (
+                {/* Calendar grid — iOS風ミニマル */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", rowGap: 2 }}>
+                    {calendarDays.map((day, idx) => {
+                        if (day === null) return <div key={`e-${idx}`} style={{ minHeight: 52 }} />;
+                        const ds = dateStr(day);
+                        const total = dailyTotals[ds];
+                        const hasActualData = total != null && total.hasActual;
+                        const isSel = selectedDate === ds;
+                        const isTdy = isToday(day);
+                        const dow = idx % 7;
+                        const dayColor = dow === 5 ? C.blue : dow === 6 ? C.red : C.text;
+
+                        return (
+                            <button key={day} className="b" onClick={() => setSelectedDate(isSel ? null : ds)} style={{
+                                background: isSel ? `color-mix(in srgb, ${C.blue} 8%, transparent)` : "transparent",
+                                border: "none",
+                                borderRadius: 10,
+                                padding: "6px 0",
+                                textAlign: "center",
+                                minHeight: 52,
+                                cursor: "pointer",
+                                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", gap: 2,
+                            }}>
                                 <div style={{
-                                    width: 22, height: 22, borderRadius: "50%",
-                                    background: C.blue, color: "#fff",
-                                    display: "flex", alignItems: "center", justifyContent: "center",
-                                    fontSize: 11, fontWeight: 700,
-                                    boxShadow: "0 0 12px rgba(129, 140, 248, 0.5)",
+                                    fontSize: 15,
+                                    fontWeight: isTdy ? 700 : 500,
+                                    color: isTdy ? C.blue : dayColor,
+                                    lineHeight: 1,
                                     fontVariantNumeric: "tabular-nums",
+                                    marginTop: 2,
                                 }}>{day}</div>
-                            ) : (
-                                <div style={{
-                                    fontSize: 12, fontWeight: 500,
-                                    color: dow === 0 ? C.red : dow === 6 ? C.blue : C.text,
-                                    lineHeight: 1, fontVariantNumeric: "tabular-nums",
-                                    opacity: dow === 0 || dow === 6 ? 0.85 : 0.92,
-                                    height: 22, display: "flex", alignItems: "center",
-                                }}>{day}</div>
-                            )}
-                            {hasActualData && (
-                                <div className="num-premium" style={{
-                                    marginTop: 4, fontSize: 12, fontWeight: 800,
-                                    color: sc(total.actual), fontFamily: font,
-                                    fontVariantNumeric: "tabular-nums",
-                                    letterSpacing: "-0.2px", whiteSpace: "nowrap", lineHeight: 1,
-                                }}>
-                                    {sp(Math.round(total.actual))}
+                                {hasActualData ? (
+                                    <>
+                                        <div style={{
+                                            fontSize: 10, fontWeight: 700,
+                                            color: sc(total.actual),
+                                            fontFamily: font,
+                                            fontVariantNumeric: "tabular-nums",
+                                            lineHeight: 1,
+                                        }}>
+                                            {compactYen(Math.round(total.actual))}
+                                        </div>
+                                        <div style={{
+                                            width: 4, height: 4, borderRadius: "50%",
+                                            background: sc(total.actual),
+                                            marginTop: 1,
+                                        }} />
+                                    </>
+                                ) : (
+                                    <div style={{ height: 13 }} />
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {/* 月間収支サマリーカード */}
+            {(() => {
+                const monthArchives = Object.entries(byDate)
+                    .filter(([d]) => d.startsWith(monthKey))
+                    .flatMap(([, arr]) => arr);
+                const playCount = monthArchives.length;
+                const winCount = monthArchives.filter(a => ((a.recoveryYen || 0) - (a.investYen || 0)) > 0).length;
+                const winRate = playCount > 0 ? Math.round((winCount / playCount) * 100) : 0;
+                const totalInvest = monthArchives.reduce((s, a) => s + (a.investYen || 0), 0);
+                const totalRecovery = monthArchives.reduce((s, a) => s + (a.recoveryYen || 0), 0);
+                const totalPL = totalRecovery - totalInvest;
+                return (
+                    <>
+                        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: "14px 16px", marginBottom: 10, boxShadow: "var(--card-shadow)" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                                <div>
+                                    <div style={{ fontSize: 12, color: C.sub, fontWeight: 600, marginBottom: 6 }}>月間収支</div>
+                                    <div style={{ fontSize: 30, fontWeight: 800, color: totalPL !== 0 ? sc(totalPL) : C.sub, fontFamily: font, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.8px", lineHeight: 1 }}>
+                                        {totalPL !== 0 ? sp(totalPL) : "0"}<span style={{ fontSize: 16, fontWeight: 700, marginLeft: 2 }}>円</span>
+                                    </div>
                                 </div>
+                                <div style={{ textAlign: "right" }}>
+                                    <div style={{ fontSize: 13, color: C.text, fontWeight: 700 }}>{playCount}回プレイ</div>
+                                    <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>勝率 {winRate}% ({winCount}/{playCount})</div>
+                                </div>
+                            </div>
+                            {totalPL < 0 && (
+                                <div style={{ fontSize: 11, color: C.sub, marginTop: 8 }}>厳しい期間でも、データは着実に蓄積中</div>
                             )}
-                        </button>
-                    );
-                })}
-            </div>
+                        </div>
+
+                        {/* 投資/回収 2-column */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
+                            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "var(--card-shadow)" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.red, display: "inline-block" }} />
+                                    <span style={{ fontSize: 13, color: C.subHi, fontWeight: 600 }}>投資</span>
+                                </div>
+                                <span style={{ fontSize: 15, fontWeight: 700, color: C.text, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>{f(totalInvest)}<span style={{ fontSize: 11, fontWeight: 600, marginLeft: 2 }}>円</span></span>
+                            </div>
+                            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "var(--card-shadow)" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.green, display: "inline-block" }} />
+                                    <span style={{ fontSize: 13, color: C.subHi, fontWeight: 600 }}>回収</span>
+                                </div>
+                                <span style={{ fontSize: 15, fontWeight: 700, color: totalRecovery > 0 ? C.green : C.text, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>{f(totalRecovery)}<span style={{ fontSize: 11, fontWeight: 600, marginLeft: 2 }}>円</span></span>
+                            </div>
+                        </div>
+                    </>
+                );
+            })()}
 
             {/* ── Inline data strip when date is selected ── */}
             {selectedDate && (() => {
@@ -4254,18 +4328,18 @@ export function CalendarTab({ S, onReset }) {
                     <div style={{ marginTop: 10 }}>
                         {/* Selected date header */}
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, padding: "0 2px" }}>
-                            <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{selectedDate}</div>
+                            <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{selectedDate}</div>
                             {dayTotal != null && (dayTotal.hasActual || dayTotal.ev !== 0) && (
                                 <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                                     {dayTotal.hasActual && (
-                                        <div className="num-premium" style={{ fontSize: 14, fontWeight: 800, color: sc(dayTotal.actual), fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
-                                            <span style={{ fontSize: 11, color: C.sub, fontWeight: 600, marginRight: 3, textShadow: "none" }}>実</span>
+                                        <div style={{ fontSize: 14, fontWeight: 700, color: sc(dayTotal.actual), fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
+                                            <span style={{ fontSize: 11, color: C.sub, fontWeight: 600, marginRight: 3 }}>実</span>
                                             {f(Math.round(dayTotal.actual))}<span className="unit">円</span>
                                         </div>
                                     )}
                                     {dayTotal.ev !== 0 && (
-                                        <div className="num-premium" style={{ fontSize: 13, fontWeight: 700, color: sc(dayTotal.ev), opacity: 0.85, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
-                                            <span style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginRight: 3, textShadow: "none" }}>期</span>
+                                        <div style={{ fontSize: 13, fontWeight: 600, color: sc(dayTotal.ev), opacity: 0.85, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
+                                            <span style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginRight: 3 }}>期</span>
                                             {f(Math.round(dayTotal.ev))}<span className="unit">円</span>
                                         </div>
                                     )}
@@ -4275,7 +4349,7 @@ export function CalendarTab({ S, onReset }) {
 
                         {/* Save current session as new entry (compact) */}
                         {hasCurrentSession && (
-                            <div style={{ marginBottom: 10, padding: "10px 12px", background: "rgba(59,130,246,0.06)", border: `1px solid ${C.blue}30`, borderRadius: 10 }}>
+                            <div style={{ marginBottom: 10, padding: "10px 12px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, boxShadow: "var(--card-shadow)" }}>
                                 <div style={{ fontSize: 11, fontWeight: 700, color: C.blue, marginBottom: 6 }}>現在のセッションを保存</div>
                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
                                     <Btn label="保存" onClick={() => {
@@ -4389,7 +4463,7 @@ export function CalendarTab({ S, onReset }) {
                     }} fs={12} />
                     <label style={{
                         display: "flex", alignItems: "center", justifyContent: "center",
-                        background: "linear-gradient(135deg, #3b82f6, #2563eb)", border: "none", borderRadius: 12,
+                        background: "#2f6fed", border: "none", borderRadius: 12,
                         color: "#fff", fontSize: 12, fontWeight: 700, padding: "12px 16px", cursor: "pointer",
                         fontFamily: font, textAlign: "center"
                     }}>
@@ -4541,7 +4615,7 @@ export function CalendarTab({ S, onReset }) {
                                 }}
                                 style={{
                                     width: "100%",
-                                    background: "linear-gradient(135deg, #f59e0b, #d97706)",
+                                    background: "#d97706",
                                     border: "none",
                                     borderRadius: 12,
                                     color: "#fff",
@@ -4578,7 +4652,7 @@ export function CalendarTab({ S, onReset }) {
                             }}
                             style={{
                                 width: "100%",
-                                background: "linear-gradient(135deg, #ef4444, #dc2626)",
+                                background: "#dc2626",
                                 border: "none",
                                 borderRadius: 12,
                                 color: "#fff",
@@ -5403,7 +5477,7 @@ export function SettingsTab({ s, onReset }) {
                 ) : (
                     storeResults.map((st, i) => (
                         <button key={st.id || i} className="b" onClick={() => setSelectedStore(st)} style={{
-                            width: "100%", background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent",
+                            width: "100%", background: i % 2 === 0 ? "transparent" : "transparent",
                             border: "none", borderBottom: `1px solid ${C.border}`, padding: "14px 16px",
                             display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer",
                             textAlign: "left",
@@ -5720,7 +5794,7 @@ export function SettingsTab({ s, onReset }) {
                 ) : (
                     results.map((m, i) => (
                         <button key={m.isCustom ? `custom-${m.id}` : `db-${i}`} className="b" onClick={() => setSelected(m)} style={{
-                            width: "100%", background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent",
+                            width: "100%", background: i % 2 === 0 ? "transparent" : "transparent",
                             border: "none", borderBottom: `1px solid ${C.border}`, padding: "14px 16px",
                             display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer",
                             textAlign: "left",
@@ -5746,19 +5820,18 @@ export function SettingsTab({ s, onReset }) {
     // ── サブ画面共通ヘッダー ──
     const SubHeader = ({ title, onBack }) => (
         <div style={{
-            background: "var(--accent-grad, linear-gradient(135deg,#667eea,#764ba2))",
+            background: C.surface,
             padding: "14px 16px 16px",
             display: "flex", alignItems: "center", gap: 12, flexShrink: 0,
-            boxShadow: "0 2px 12px rgba(0,0,0,0.18)",
+            borderBottom: `1px solid ${C.border}`,
         }}>
             <button className="b" onClick={onBack} style={{
-                background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.25)",
-                borderRadius: 10, color: "#fff", fontSize: 17, width: 36, height: 36,
+                background: C.surfaceHi, border: `1px solid ${C.border}`,
+                borderRadius: 10, color: C.subHi, fontSize: 17, width: 36, height: 36,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 cursor: "pointer", flexShrink: 0,
-                backdropFilter: "blur(8px)",
             }}>‹</button>
-            <div style={{ fontSize: 17, fontWeight: 700, color: "#fff", fontFamily: font, letterSpacing: -0.3 }}>{title}</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: C.text, fontFamily: font, letterSpacing: -0.3 }}>{title}</div>
         </div>
     );
 
@@ -6077,15 +6150,15 @@ export function SettingsTab({ s, onReset }) {
             {/* CSS: Sectionの最終行ボーダーを除去 */}
             <style>{`.settings-row:last-child{border-bottom:none!important}`}</style>
 
-            {/* グラデーションヘッダー */}
+            {/* ヘッダー */}
             <div style={{
-                background: "var(--accent-grad, linear-gradient(135deg,#667eea,#764ba2))",
+                background: C.surface,
                 padding: "calc(env(safe-area-inset-top, 0px) + 14px) 16px 18px",
                 flexShrink: 0,
-                boxShadow: "0 2px 16px rgba(0,0,0,0.18)",
+                borderBottom: `1px solid ${C.border}`,
             }}>
-                <div style={{ fontSize: 26, fontWeight: 800, color: "#fff", fontFamily: font, letterSpacing: -0.5 }}>設定</div>
-                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", marginTop: 2, fontFamily: font }}>
+                <div style={{ fontSize: 26, fontWeight: 800, color: C.text, fontFamily: font, letterSpacing: -0.5 }}>設定</div>
+                <div style={{ fontSize: 12, color: C.sub, marginTop: 2, fontFamily: font }}>
                     貸玉 {Math.round((s.rentBalls || 250) / 10)}玉 / 交換 {Math.round((s.exRate || 250) / 10)}玉 / ボーダー {calcBorder > 0 ? f(calcBorder, 1) : "—"}回/K
                 </div>
             </div>
@@ -6241,10 +6314,10 @@ export function SettingsTab({ s, onReset }) {
                 }}>
                     <div style={{
                         width: 64, height: 64, borderRadius: 16,
-                        background: "var(--accent-grad, linear-gradient(135deg,#667eea,#764ba2))",
+                        background: C.blue,
                         display: "flex", alignItems: "center", justifyContent: "center",
                         fontSize: 32, marginBottom: 10,
-                        boxShadow: "0 4px 16px rgba(102,126,234,0.4)",
+                        boxShadow: "0 4px 16px rgba(47,111,237,0.18)",
                     }}>🎰</div>
                     <div style={{ fontSize: 16, fontWeight: 700, color: C.text, fontFamily: font }}>パチトラッカー</div>
                     <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>バージョン 1.0.0 (2025.7.1)</div>
