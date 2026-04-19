@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import ReactDOM from "react-dom";
 import { C, f, sc, sp, tsNow, font, mono } from "../constants";
 import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./Atoms";
-import { searchMachines } from "../machineDB";
+import { machineDB, searchMachines } from "../machineDB";
 
 /* ================================================================
    Simple SVG Line Chart component
@@ -5254,12 +5254,6 @@ export function SettingsTab({ s, onReset }) {
         }
     };
 
-    // 理論ボーダーのリアルタイム計算
-    const exchP = 1000 / (s.exRate || 1);
-    const avgNetGainSpec = (s.spec1R || 0) * (s.specAvgRounds || 0) + (s.specSapo || 0);
-    const specNetGainYen = avgNetGainSpec * exchP;
-    const calcBorder = specNetGainYen > 0 ? ((s.synthDenom || 1) * 1000) / specNetGainYen : 0;
-
     // 交換レート（円/玉）を計算
     const yenPerBall = 100 / ((s.exRate || 250) / 10);
     // 交換レートキーを特定（4.00, 3.57, 3.33, 3.03に近い値）
@@ -5272,6 +5266,21 @@ export function SettingsTab({ s, onReset }) {
     };
     const exRateKey = getExRateKey();
     const exRateLabel = exRateKey ? `${exRateKey}円交換` : `${yenPerBall.toFixed(2)}円交換`;
+
+    // 理論ボーダーのリアルタイム計算
+    const exchP = 1000 / (s.exRate || 1);
+    const avgNetGainSpec = (s.spec1R || 0) * (s.specAvgRounds || 0) + (s.specSapo || 0);
+    const specNetGainYen = avgNetGainSpec * exchP;
+    const formulaBorder = specNetGainYen > 0 ? ((s.synthDenom || 1) * 1000) / specNetGainYen : 0;
+
+    // 機種DB（標準＋カスタム）から現在設定中の機種を引き当て、DB実戦値ボーダーを優先
+    const allMachinesForBorder = [...(s.customMachines || []), ...machineDB];
+    const matchedMachine = s.machineName
+        ? allMachinesForBorder.find(m => m.name === s.machineName)
+        : null;
+    const dbBorderForKey = matchedMachine && exRateKey && matchedMachine.border?.[exRateKey];
+    const calcBorder = dbBorderForKey != null ? Number(dbBorderForKey) : formulaBorder;
+    const borderSource = dbBorderForKey != null ? "db" : "formula";
 
     // Store detail view
     if (selectedStore) {
@@ -6097,7 +6106,7 @@ export function SettingsTab({ s, onReset }) {
                         ))}
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "rgba(0,0,0,0.1)" }}>
                             <div>
-                                <div style={{ fontSize: 14, color: C.text, fontWeight: 600 }}>理論ボーダー</div>
+                                <div style={{ fontSize: 14, color: C.text, fontWeight: 600 }}>{borderSource === "db" ? "DB標準ボーダー" : "理論ボーダー"}</div>
                                 <div style={{ fontSize: 11, color: C.teal }}>{exRateLabel}</div>
                             </div>
                             <div style={{ fontSize: 18, fontWeight: 800, color: C.green, fontFamily: mono }}>
