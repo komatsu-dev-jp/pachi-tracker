@@ -215,13 +215,22 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     // 機種から確変中のラウンド情報を取得（連チャン用 - rushDist使用、なければroundDistにフォールバック）
     const getMachineRushRounds = () => {
         const machine = searchMachines(S.machineName, S.customMachines)[0];
-        if (!machine) return [3, 4, 5, 6, 7, 8, 9, 10];
-        // rushDistがあればそれを使用、なければroundDistにフォールバック
+        const defaultOpts = [3,4,5,6,7,8,9,10].map(r => ({ rounds: r, mult: 1 }));
+        if (!machine) return defaultOpts;
         const dist = machine.rushDist || machine.roundDist;
-        if (!dist) return [3, 4, 5, 6, 7, 8, 9, 10];
-        const matches = dist.match(/(\d+)R/g);
-        if (!matches) return [3, 4, 5, 6, 7, 8, 9, 10];
-        return [...new Set(matches.map(m => parseInt(m)))].sort((a, b) => a - b);
+        if (!dist) return defaultOpts;
+        const re = /(\d+)R(?:×(\d+))?/g;
+        const found = [];
+        const seen = new Set();
+        let m;
+        while ((m = re.exec(dist)) !== null) {
+            const rounds = parseInt(m[1]);
+            const mult = m[2] ? parseInt(m[2]) : 1;
+            const key = `${rounds}-${mult}`;
+            if (!seen.has(key)) { seen.add(key); found.push({ rounds, mult }); }
+        }
+        if (found.length === 0) return defaultOpts;
+        return found.sort((a, b) => a.rounds - b.rounds || a.mult - b.mult);
     };
     const machineRushRounds = useMemo(getMachineRushRounds, [S.machineName, S.customMachines]);
 
@@ -238,7 +247,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [chainWizardStep, setChainWizardStep] = useState(0);
     const [chainWizardFirstKey, setChainWizardFirstKey] = useState(true);
     const [chainWizardData, setChainWizardData] = useState({
-        rounds: 0, displayBalls: "", lastOutBalls: "", nextTimingBalls: "", elecSapoRot: "",
+        rounds: 0, mult: 1, displayBalls: "", lastOutBalls: "", nextTimingBalls: "", elecSapoRot: "",
         hitType: "", jitanSpins: "", finalBallsAfterJitan: ""
     });
 
@@ -261,7 +270,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     };
 
     const clearChainWizard = () => {
-        setChainWizardData({ rounds: 0, displayBalls: "", lastOutBalls: "", nextTimingBalls: "", elecSapoRot: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
+        setChainWizardData({ rounds: 0, mult: 1, displayBalls: "", lastOutBalls: "", nextTimingBalls: "", elecSapoRot: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
         setChainWizardStep(0);
         setChainWizardFirstKey(true);
     };
@@ -278,9 +287,32 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         setChainWizardOpen(true);
     };
 
+    // mult (×N) 分の hits を分割生成（1連分入力 → N 個の均等割 hits）
+    const buildSplitHits = (startHitNumber, { rnd, mult, disp, lastOut, nextTiming, elecRot }) => {
+        const n = Math.max(1, Number(mult) || 1);
+        const ballDelta = (nextTiming - lastOut) / n;
+        const perRotBase = Math.floor(elecRot / n);
+        const perRotRem = elecRot - perRotBase * n;
+        const hits = [];
+        for (let i = 0; i < n; i++) {
+            const isLast = i === n - 1;
+            const hitLastOut = Math.round(lastOut + i * ballDelta);
+            const hitNextTiming = isLast ? nextTiming : Math.round(lastOut + (i + 1) * ballDelta);
+            const hitElecRot = perRotBase + (isLast ? perRotRem : 0);
+            const hitSapoChange = hitNextTiming - hitLastOut - disp;
+            const hitSapoPerRot = hitElecRot > 0 ? hitSapoChange / hitElecRot : 0;
+            hits.push({
+                hitNumber: startHitNumber + i, lastOutBalls: hitLastOut, nextTimingBalls: hitNextTiming,
+                elecSapoRot: hitElecRot, sapoChange: hitSapoChange, sapoPerRot: hitSapoPerRot,
+                rounds: rnd, displayBalls: disp, actualBalls: 0, time: tsNow(),
+            });
+        }
+        return hits;
+    };
+
     // 連チャン追加ウィザード完了（継続 or 最終）
     const handleChainWizardComplete = (isFinal = false) => {
-        const { rounds, displayBalls, lastOutBalls, nextTimingBalls, elecSapoRot } = chainWizardData;
+        const { rounds, mult, displayBalls, lastOutBalls, nextTimingBalls, elecSapoRot } = chainWizardData;
         const rnd = Number(rounds) || 0;
         if (rnd <= 0) { setChainWizardOpen(false); return; }
 
@@ -288,17 +320,14 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         const nextTiming = Number(nextTimingBalls) || 0;
         const elecRot = Number(elecSapoRot) || 0;
         const disp = Number(displayBalls) || 0;
-        const sapoChange = nextTiming - lastOut - disp;
-        const sapoPerRot = elecRot > 0 ? sapoChange / elecRot : 0;
+        const multN = Math.max(1, Number(mult) || 1);
 
         if (isFinal) {
             S.setJpLog((prev) => {
                 const updated = [...prev];
                 const chain = { ...updated[updated.length - 1] };
-                chain.hits = [...chain.hits, {
-                    hitNumber: chain.hits.length + 1, lastOutBalls: lastOut, nextTimingBalls: nextTiming,
-                    elecSapoRot: elecRot, sapoChange, sapoPerRot, rounds: rnd, displayBalls: disp, actualBalls: 0, time: tsNow(),
-                }];
+                const newHits = buildSplitHits(chain.hits.length + 1, { rnd, mult: multN, disp, lastOut, nextTiming, elecRot });
+                chain.hits = [...chain.hits, ...newHits];
                 const totalRounds = chain.hits.reduce((s, h) => s + h.rounds, 0);
                 const totalDisplayBalls = chain.hits.reduce((s, h) => s + h.displayBalls, 0);
                 const totalSapoRot = chain.hits.reduce((s, h) => s + (h.elecSapoRot || 0), 0);
@@ -318,7 +347,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             const lastChainCopy = jpLog[jpLog.length - 1];
             const existingTotal = (lastChainCopy.trayBalls || 0) +
                 lastChainCopy.hits.reduce((s, h) => s + (h.displayBalls || 0) + (h.sapoChange || 0), 0);
-            const finalBallsToAdd = existingTotal + disp + sapoChange;
+            const finalBallsToAdd = existingTotal + disp * multN + (nextTiming - lastOut - disp * multN);
             S.setCurrentMochiBalls((prev) => prev + finalBallsToAdd);
             S.pushLog({ type: "連チャン終了", time: tsNow() });
             S.setPlayMode("mochi");
@@ -328,10 +357,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             S.setJpLog((prev) => {
                 const updated = [...prev];
                 const chain = { ...updated[updated.length - 1] };
-                chain.hits = [...chain.hits, {
-                    hitNumber: chain.hits.length + 1, lastOutBalls: lastOut, nextTimingBalls: nextTiming,
-                    elecSapoRot: elecRot, sapoChange, sapoPerRot, rounds: rnd, displayBalls: disp, actualBalls: 0, time: tsNow(),
-                }];
+                const newHits = buildSplitHits(chain.hits.length + 1, { rnd, mult: multN, disp, lastOut, nextTiming, elecRot });
+                chain.hits = [...chain.hits, ...newHits];
                 updated[updated.length - 1] = chain;
                 return updated;
             });
@@ -343,7 +370,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
     // 単発終了ウィザード完了
     const handleChainWizardSingleEnd = () => {
-        const { rounds, displayBalls, lastOutBalls, nextTimingBalls, elecSapoRot, jitanSpins, finalBallsAfterJitan } = chainWizardData;
+        const { rounds, mult, displayBalls, lastOutBalls, nextTimingBalls, elecSapoRot, jitanSpins, finalBallsAfterJitan } = chainWizardData;
         const rnd = Number(rounds) || 0;
         if (rnd <= 0) { setChainWizardOpen(false); return; }
 
@@ -351,18 +378,16 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         const nextTiming = Number(nextTimingBalls) || 0;
         const elecRot = Number(elecSapoRot) || 0;
         const disp = Number(displayBalls) || 0;
-        const sapoChange = nextTiming - lastOut - disp;
-        const sapoPerRot = elecRot > 0 ? sapoChange / elecRot : 0;
+        const multN = Math.max(1, Number(mult) || 1);
+        const sapoChange = nextTiming - lastOut - disp * multN;
         const jitan = Number(jitanSpins) || 0;
         const finalBalls = Number(finalBallsAfterJitan) || 0;
 
         S.setJpLog((prev) => {
             const updated = [...prev];
             const chain = { ...updated[updated.length - 1] };
-            chain.hits = [...chain.hits, {
-                hitNumber: chain.hits.length + 1, lastOutBalls: lastOut, nextTimingBalls: nextTiming,
-                elecSapoRot: elecRot, sapoChange, sapoPerRot, rounds: rnd, displayBalls: disp, actualBalls: 0, time: tsNow(),
-            }];
+            const newHits = buildSplitHits(chain.hits.length + 1, { rnd, mult: multN, disp, lastOut, nextTiming, elecRot });
+            chain.hits = [...chain.hits, ...newHits];
             chain.hitType = "単発";
             chain.jitanSpins = jitan;
             chain.finalBallsAfterJitan = finalBalls;
@@ -385,7 +410,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         const currentChain = jpLog[jpLog.length - 1];
         const existingTotal = (currentChain?.trayBalls || 0) +
             (currentChain?.hits || []).reduce((s, h) => s + (h.displayBalls || 0) + (h.sapoChange || 0), 0);
-        const addBalls = finalBalls > 0 ? finalBalls : existingTotal + disp + sapoChange;
+        const addBalls = finalBalls > 0 ? finalBalls : existingTotal + disp * multN + sapoChange;
         S.setCurrentMochiBalls((prev) => prev + addBalls);
         S.pushLog({ type: "単発終了", time: tsNow(), rounds: rnd });
         S.setPlayMode("mochi");
@@ -2094,10 +2119,10 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             <div style={{ textAlign: "center" }}>
                                 <div style={{ fontSize: 22, fontWeight: 700, color: C.orange, marginBottom: 24 }}>ラウンド数</div>
                                 <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 12 }}>
-                                    {machineRushRounds.map(r => (
-                                        <button key={r} className="b" onClick={() => { setChainWizardData(d => ({ ...d, rounds: r })); setChainWizardStep(1); setChainWizardFirstKey(true); }}
-                                            style={{ width: 80, height: 80, borderRadius: 16, fontWeight: 800, fontFamily: mono, fontSize: 26, background: "#ea580c", border: "none", color: "#fff", boxShadow: "none" }}>
-                                            {r}R
+                                    {machineRushRounds.map(({ rounds, mult }) => (
+                                        <button key={`${rounds}-${mult}`} className="b" onClick={() => { setChainWizardData(d => ({ ...d, rounds, mult })); setChainWizardStep(1); setChainWizardFirstKey(true); }}
+                                            style={{ minWidth: 80, height: 80, padding: mult > 1 ? "0 12px" : 0, borderRadius: 16, fontWeight: 800, fontFamily: mono, fontSize: mult > 1 ? 20 : 26, background: "#ea580c", border: "none", color: "#fff", boxShadow: "none" }}>
+                                            {mult > 1 ? `${rounds}R×${mult}` : `${rounds}R`}
                                         </button>
                                     ))}
                                 </div>
@@ -2107,8 +2132,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         {/* Step 1: 液晶表示玉数 */}
                         {chainWizardStep === 1 && (
                             <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>液晶表示玉数</div>
-                                <div style={{ fontSize: 12, color: C.sub, marginBottom: 12 }}>{chainWizardData.rounds}R選択中</div>
+                                <div style={{ fontSize: 22, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>液晶表示玉数{chainWizardData.mult > 1 ? "（1連分）" : ""}</div>
+                                <div style={{ fontSize: 12, color: C.sub, marginBottom: 12 }}>{chainWizardData.rounds}R{chainWizardData.mult > 1 ? `×${chainWizardData.mult}` : ""}選択中</div>
                                 <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
                                     {chainWizardData.displayBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
                                 </div>
@@ -2416,7 +2441,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     const [chainWizardStep, setChainWizardStep] = useState(0);
     const [chainWizardFirstKey, setChainWizardFirstKey] = useState(true); // 各ステップの最初のキー入力を追跡
     const [chainWizardData, setChainWizardData] = useState({
-        rounds: 0, displayBalls: "", lastOutBalls: "", nextTimingBalls: "", elecSapoRot: "",
+        rounds: 0, mult: 1, displayBalls: "", lastOutBalls: "", nextTimingBalls: "", elecSapoRot: "",
         hitType: "", // "継続" or "最終" or "単発"
         jitanSpins: "", // 時短回数（単発終了用）
         finalBallsAfterJitan: "" // 時短終了後出玉（単発終了用）
@@ -2437,15 +2462,25 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     };
     const machineRounds = useMemo(getMachineRounds, [S.machineName, S.customMachines]);
 
-    // 確変中のラウンド情報を取得（連チャン用 - rushDistを優先）
+    // 確変中のラウンド情報を取得（連チャン用 - rushDistを優先、×N表記対応）
     const getMachineRushRounds = () => {
         const machine = searchMachines(S.machineName, S.customMachines)[0];
-        if (!machine) return [3, 4, 5, 6, 7, 8, 9, 10];
+        const defaultOpts = [3,4,5,6,7,8,9,10].map(r => ({ rounds: r, mult: 1 }));
+        if (!machine) return defaultOpts;
         const dist = machine.rushDist || machine.roundDist;
-        if (!dist) return [3, 4, 5, 6, 7, 8, 9, 10];
-        const matches = dist.match(/(\d+)R/g);
-        if (!matches) return [3, 4, 5, 6, 7, 8, 9, 10];
-        return [...new Set(matches.map(m => parseInt(m)))].sort((a, b) => a - b);
+        if (!dist) return defaultOpts;
+        const re = /(\d+)R(?:×(\d+))?/g;
+        const found = [];
+        const seen = new Set();
+        let m;
+        while ((m = re.exec(dist)) !== null) {
+            const rounds = parseInt(m[1]);
+            const mult = m[2] ? parseInt(m[2]) : 1;
+            const key = `${rounds}-${mult}`;
+            if (!seen.has(key)) { seen.add(key); found.push({ rounds, mult }); }
+        }
+        if (found.length === 0) return defaultOpts;
+        return found.sort((a, b) => a.rounds - b.rounds || a.mult - b.mult);
     };
     const machineRushRounds = useMemo(getMachineRushRounds, [S.machineName, S.customMachines]);
 
@@ -2464,7 +2499,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     };
 
     const clearChainWizard = () => {
-        setChainWizardData({ rounds: 0, displayBalls: "", lastOutBalls: "", nextTimingBalls: "", elecSapoRot: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
+        setChainWizardData({ rounds: 0, mult: 1, displayBalls: "", lastOutBalls: "", nextTimingBalls: "", elecSapoRot: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
         setChainWizardStep(0);
         setChainWizardFirstKey(true);
     };
@@ -2537,8 +2572,38 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     };
 
     // 連チャン追加ウィザード完了（継続 or 最終）
+    // mult (×N) 分の hits を分割生成（1連分入力 → N 個の均等割 hits）
+    const buildSplitHits = (startHitNumber, { rnd, mult, disp, lastOut, nextTiming, elecRot }) => {
+        const n = Math.max(1, Number(mult) || 1);
+        const ballDelta = (nextTiming - lastOut) / n;
+        const perRotBase = Math.floor(elecRot / n);
+        const perRotRem = elecRot - perRotBase * n;
+        const hits = [];
+        for (let i = 0; i < n; i++) {
+            const isLast = i === n - 1;
+            const hitLastOut = Math.round(lastOut + i * ballDelta);
+            const hitNextTiming = isLast ? nextTiming : Math.round(lastOut + (i + 1) * ballDelta);
+            const hitElecRot = perRotBase + (isLast ? perRotRem : 0);
+            const hitSapoChange = hitNextTiming - hitLastOut - disp;
+            const hitSapoPerRot = hitElecRot > 0 ? hitSapoChange / hitElecRot : 0;
+            hits.push({
+                hitNumber: startHitNumber + i,
+                lastOutBalls: hitLastOut,
+                nextTimingBalls: hitNextTiming,
+                elecSapoRot: hitElecRot,
+                sapoChange: hitSapoChange,
+                sapoPerRot: hitSapoPerRot,
+                rounds: rnd,
+                displayBalls: disp,
+                actualBalls: 0,
+                time: tsNow(),
+            });
+        }
+        return hits;
+    };
+
     const handleChainWizardComplete = (isFinal = false) => {
-        const { rounds, displayBalls, lastOutBalls, nextTimingBalls, elecSapoRot } = chainWizardData;
+        const { rounds, mult, displayBalls, lastOutBalls, nextTimingBalls, elecSapoRot } = chainWizardData;
         const rnd = Number(rounds) || 0;
         if (rnd <= 0) {
             setChainWizardOpen(false);
@@ -2549,27 +2614,15 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         const nextTiming = Number(nextTimingBalls) || 0;
         const elecRot = Number(elecSapoRot) || 0;
         const disp = Number(displayBalls) || 0;
-        // サポ増減 = ラウンド終了時の玉 - 大当り直前の玉 - 出玉（出玉を除いた純粋な電サポ中の増減）
-        const sapoChange = nextTiming - lastOut - disp;
-        const sapoPerRot = elecRot > 0 ? sapoChange / elecRot : 0;
+        const multN = Math.max(1, Number(mult) || 1);
 
         if (isFinal) {
             // 最終大当たり - チェーンを完了させる
             S.setJpLog((prev) => {
                 const updated = [...prev];
                 const chain = { ...updated[updated.length - 1] };
-                chain.hits = [...chain.hits, {
-                    hitNumber: chain.hits.length + 1,
-                    lastOutBalls: lastOut,
-                    nextTimingBalls: nextTiming,
-                    elecSapoRot: elecRot,
-                    sapoChange,
-                    sapoPerRot,
-                    rounds: rnd,
-                    displayBalls: disp,
-                    actualBalls: 0,
-                    time: tsNow(),
-                }];
+                const newHits = buildSplitHits(chain.hits.length + 1, { rnd, mult: multN, disp, lastOut, nextTiming, elecRot });
+                chain.hits = [...chain.hits, ...newHits];
                 // サマリー計算
                 const totalRounds = chain.hits.reduce((s, h) => s + h.rounds, 0);
                 const totalDisplayBalls = chain.hits.reduce((s, h) => s + h.displayBalls, 0);
@@ -2594,7 +2647,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
             const lastChainCopy = jpLog[jpLog.length - 1];
             const existingTotal = (lastChainCopy.trayBalls || 0) +
                 lastChainCopy.hits.reduce((s, h) => s + (h.displayBalls || 0) + (h.sapoChange || 0), 0);
-            const finalBallsToAdd = existingTotal + disp + sapoChange;
+            const finalBallsToAdd = existingTotal + disp * multN + (nextTiming - lastOut - disp * multN);
             S.setCurrentMochiBalls((prev) => prev + finalBallsToAdd);
             S.pushLog({ type: "連チャン終了", time: tsNow() });
             S.setPlayMode("mochi");
@@ -2605,18 +2658,8 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
             S.setJpLog((prev) => {
                 const updated = [...prev];
                 const chain = { ...updated[updated.length - 1] };
-                chain.hits = [...chain.hits, {
-                    hitNumber: chain.hits.length + 1,
-                    lastOutBalls: lastOut,
-                    nextTimingBalls: nextTiming,
-                    elecSapoRot: elecRot,
-                    sapoChange,
-                    sapoPerRot,
-                    rounds: rnd,
-                    displayBalls: disp,
-                    actualBalls: 0,
-                    time: tsNow(),
-                }];
+                const newHits = buildSplitHits(chain.hits.length + 1, { rnd, mult: multN, disp, lastOut, nextTiming, elecRot });
+                chain.hits = [...chain.hits, ...newHits];
                 updated[updated.length - 1] = chain;
                 return updated;
             });
@@ -2629,7 +2672,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
 
     // 単発終了ウィザード完了（時短データ含む）
     const handleChainWizardSingleEnd = () => {
-        const { rounds, displayBalls, lastOutBalls, nextTimingBalls, elecSapoRot, jitanSpins, finalBallsAfterJitan } = chainWizardData;
+        const { rounds, mult, displayBalls, lastOutBalls, nextTimingBalls, elecSapoRot, jitanSpins, finalBallsAfterJitan } = chainWizardData;
         const rnd = Number(rounds) || 0;
         if (rnd <= 0) {
             setChainWizardOpen(false);
@@ -2640,27 +2683,17 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         const nextTiming = Number(nextTimingBalls) || 0;
         const elecRot = Number(elecSapoRot) || 0;
         const disp = Number(displayBalls) || 0;
-        // サポ増減 = ラウンド終了時の玉 - 大当り直前の玉 - 出玉（出玉を除いた純粋な電サポ中の増減）
-        const sapoChange = nextTiming - lastOut - disp;
-        const sapoPerRot = elecRot > 0 ? sapoChange / elecRot : 0;
+        const multN = Math.max(1, Number(mult) || 1);
+        // 最終1hitだけ使うサポ増減（持ち玉加算に必要）
+        const sapoChange = nextTiming - lastOut - disp * multN;
         const jitan = Number(jitanSpins) || 0;
         const finalBalls = Number(finalBallsAfterJitan) || 0;
 
         S.setJpLog((prev) => {
             const updated = [...prev];
             const chain = { ...updated[updated.length - 1] };
-            chain.hits = [...chain.hits, {
-                hitNumber: chain.hits.length + 1,
-                lastOutBalls: lastOut,
-                nextTimingBalls: nextTiming,
-                elecSapoRot: elecRot,
-                sapoChange,
-                sapoPerRot,
-                rounds: rnd,
-                displayBalls: disp,
-                actualBalls: 0,
-                time: tsNow(),
-            }];
+            const newHits = buildSplitHits(chain.hits.length + 1, { rnd, mult: multN, disp, lastOut, nextTiming, elecRot });
+            chain.hits = [...chain.hits, ...newHits];
             // 単発終了として完了
             chain.hitType = "単発";
             chain.jitanSpins = jitan;
@@ -2690,7 +2723,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         const currentChain = jpLog[jpLog.length - 1];
         const existingTotal = (currentChain?.trayBalls || 0) +
             (currentChain?.hits || []).reduce((s, h) => s + (h.displayBalls || 0) + (h.sapoChange || 0), 0);
-        const addBalls = finalBalls > 0 ? finalBalls : existingTotal + disp + sapoChange;
+        const addBalls = finalBalls > 0 ? finalBalls : existingTotal + disp * multN + sapoChange;
         S.setCurrentMochiBalls((prev) => prev + addBalls);
         S.pushLog({ type: "単発終了", time: tsNow(), rounds: rnd });
         S.setPlayMode("mochi");
@@ -3112,18 +3145,18 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                             <div style={{ textAlign: "center" }}>
                                 <div style={{ fontSize: 22, fontWeight: 700, color: C.orange, marginBottom: 24 }}>ラウンド数</div>
                                 <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 12 }}>
-                                    {machineRushRounds.map(r => (
+                                    {machineRushRounds.map(({ rounds, mult }) => (
                                         <button
-                                            key={r}
+                                            key={`${rounds}-${mult}`}
                                             className="b"
-                                            onClick={() => { setChainWizardData(d => ({ ...d, rounds: r })); setChainWizardStep(1); setChainWizardFirstKey(true); }}
+                                            onClick={() => { setChainWizardData(d => ({ ...d, rounds, mult })); setChainWizardStep(1); setChainWizardFirstKey(true); }}
                                             style={{
-                                                width: 80, height: 80, borderRadius: 16, fontWeight: 800, fontFamily: mono, fontSize: 26,
+                                                minWidth: 80, height: 80, padding: mult > 1 ? "0 12px" : 0, borderRadius: 16, fontWeight: 800, fontFamily: mono, fontSize: mult > 1 ? 20 : 26,
                                                 background: "#ea580c", border: "none", color: "#fff",
                                                 boxShadow: "none"
                                             }}
                                         >
-                                            {r}R
+                                            {mult > 1 ? `${rounds}R×${mult}` : `${rounds}R`}
                                         </button>
                                     ))}
                                 </div>
@@ -3133,8 +3166,8 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                         {/* Step 1: 液晶表示玉数 */}
                         {chainWizardStep === 1 && (
                             <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>液晶表示玉数</div>
-                                <div style={{ fontSize: 12, color: C.sub, marginBottom: 12 }}>{chainWizardData.rounds}R選択中</div>
+                                <div style={{ fontSize: 22, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>液晶表示玉数{chainWizardData.mult > 1 ? "（1連分）" : ""}</div>
+                                <div style={{ fontSize: 12, color: C.sub, marginBottom: 12 }}>{chainWizardData.rounds}R{chainWizardData.mult > 1 ? `×${chainWizardData.mult}` : ""}選択中</div>
                                 <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
                                     {chainWizardData.displayBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
                                 </div>
