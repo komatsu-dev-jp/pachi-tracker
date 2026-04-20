@@ -242,6 +242,11 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [deleteTargetId, setDeleteTargetId] = useState(null);
 
+    // 大当たり履歴 編集モーダル用state（古いデータの修正用）
+    const [editChainOpen, setEditChainOpen] = useState(false);
+    const [editChainId, setEditChainId] = useState(null);
+    const [editChainHits, setEditChainHits] = useState([]);
+
     // 連チャン追加ウィザード state
     const [chainWizardOpen, setChainWizardOpen] = useState(false);
     const [chainWizardStep, setChainWizardStep] = useState(0);
@@ -529,9 +534,87 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 }
                 return prev.filter(c => c.chainId !== deleteTargetId);
             });
+            // 回転入力ページ側の hit 行も同期削除（双方向カスケード）
+            S.setRotRows((prev) => prev.filter(r => !(r.type === "hit" && r.chainId === deleteTargetId)));
         }
         setDeleteConfirmOpen(false);
         setDeleteTargetId(null);
+    };
+
+    // 編集モーダルを開く（指定chainIdのhitsをコピーして編集state化）
+    const handleEditChainOpen = (chainId) => {
+        const target = (S.jpLog || []).find(c => c.chainId === chainId);
+        if (!target || !target.hits) return;
+        // 各 hit を編集可能な形式に変換（数値は string に）
+        const editable = target.hits.map(h => ({
+            hitNumber: h.hitNumber,
+            time: h.time,
+            rounds: String(h.rounds ?? 0),
+            displayBalls: String(h.displayBalls ?? 0),
+            elecSapoRot: String(h.elecSapoRot ?? h.sapoRot ?? 0),
+            lastOutBalls: String(h.lastOutBalls ?? 0),
+            nextTimingBalls: String(h.nextTimingBalls ?? 0),
+        }));
+        setEditChainId(chainId);
+        setEditChainHits(editable);
+        setEditChainOpen(true);
+    };
+
+    const handleEditChainSave = () => {
+        if (!editChainId) { setEditChainOpen(false); return; }
+        let oldFinalBalls = 0;
+        let newFinalBalls = 0;
+        S.setJpLog((prev) => {
+            const updated = [...prev];
+            const idx = updated.findIndex(c => c.chainId === editChainId);
+            if (idx < 0) return prev;
+            const chain = { ...updated[idx] };
+            oldFinalBalls = chain.finalBalls || 0;
+            // 各 hit を再計算（サポ増減 = 次タイミング玉 - 前回終了玉 - 液晶出玉）
+            const newHits = editChainHits.map(e => {
+                const rounds = Math.max(0, Number(e.rounds) || 0);
+                const displayBalls = Math.max(0, Number(e.displayBalls) || 0);
+                const elecSapoRot = Math.max(0, Number(e.elecSapoRot) || 0);
+                const lastOutBalls = Number(e.lastOutBalls) || 0;
+                const nextTimingBalls = Number(e.nextTimingBalls) || 0;
+                const sapoChange = nextTimingBalls - lastOutBalls - displayBalls;
+                const sapoPerRot = elecSapoRot > 0 ? sapoChange / elecSapoRot : 0;
+                return {
+                    hitNumber: e.hitNumber,
+                    time: e.time,
+                    rounds, displayBalls, elecSapoRot,
+                    lastOutBalls, nextTimingBalls,
+                    sapoChange, sapoPerRot,
+                };
+            });
+            chain.hits = newHits;
+            const totalRounds = newHits.reduce((s, h) => s + h.rounds, 0);
+            const totalDisplayBalls = newHits.reduce((s, h) => s + h.displayBalls, 0);
+            const totalSapoRot = newHits.reduce((s, h) => s + h.elecSapoRot, 0);
+            const totalSapoChange = newHits.reduce((s, h) => s + h.sapoChange, 0);
+            chain.summary = {
+                totalRounds, totalDisplayBalls, totalSapoRot, totalSapoChange,
+                avg1R: totalRounds > 0 ? totalDisplayBalls / totalRounds : 0,
+                sapoDelta: totalSapoChange,
+                sapoPerRot: totalSapoRot > 0 ? totalSapoChange / totalSapoRot : 0,
+                netGain: totalDisplayBalls + totalSapoChange,
+            };
+            chain.finalBalls = (chain.trayBalls || 0) + totalDisplayBalls + totalSapoChange;
+            newFinalBalls = chain.finalBalls;
+            updated[idx] = chain;
+            return updated;
+        });
+        // 完了済みチェーンの場合、持ち玉の差分を調整
+        const target = (S.jpLog || []).find(c => c.chainId === editChainId);
+        if (target && target.completed) {
+            const diff = newFinalBalls - oldFinalBalls;
+            if (diff !== 0) {
+                S.setCurrentMochiBalls((p) => Math.max(0, p + diff));
+            }
+        }
+        setEditChainOpen(false);
+        setEditChainId(null);
+        setEditChainHits([]);
     };
     // ========== 大当たり履歴タブ用state ここまで ==========
 
@@ -742,14 +825,15 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         const prevCumRot = last ? last.cumRot : S.startRot;
         const hitRot = val > 0 ? val : (prevCumRot || 0);
         const hitThisRot = val > 0 ? val - prevCumRot : 0;
+        const chainId = Date.now();
 
-        // 回転数テーブルに初当たりマーカー行を追加
+        // 回転数テーブルに初当たりマーカー行を追加（chainIdで大当たり履歴と紐付け）
         if (val > 0) {
-            setRows(r => [...r, { type: "hit", cumRot: val, thisRot: hitThisRot, invest: last ? last.invest : 0, mode: S.playMode, mochiBalls: S.currentMochiBalls, chodamaBalls: S.currentChodama }]);
+            setRows(r => [...r, { type: "hit", chainId, cumRot: val, thisRot: hitThisRot, invest: last ? last.invest : 0, mode: S.playMode, mochiBalls: S.currentMochiBalls, chodamaBalls: S.currentChodama }]);
         }
 
         S.pushJP({
-            chainId: Date.now(),
+            chainId,
             trayBalls: 0,
             hits: [],
             hitRot,
@@ -1351,6 +1435,17 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     S.setCurrentChodama((prev) => prev + ballsConsumed);
                                 }
                             }
+                            // hit 行を削除する場合、対応する大当たりチェーンも同期削除（双方向カスケード）
+                            if (lastRow.type === "hit" && lastRow.chainId) {
+                                S.setJpLog((prev) => {
+                                    const chain = prev.find((c) => c.chainId === lastRow.chainId);
+                                    if (chain && chain.completed) {
+                                        S.setCurrentMochiBalls((p) => Math.max(0, p - (chain.finalBalls || 0)));
+                                        S.setTotalTrayBalls((p) => Math.max(0, p - (chain.trayBalls || 0)));
+                                    }
+                                    return prev.filter((c) => c.chainId !== lastRow.chainId);
+                                });
+                            }
                             return r.slice(0, -1);
                         });
                         setInputError("");
@@ -1476,7 +1571,16 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                                 <span style={{ fontSize: 11, fontWeight: 800, color: !chain.completed ? C.orange : C.blue }}>
                                                     {!chain.completed ? "連チャン中" : `${jpLog.length - ci}回目データ ${chain.hits.length <= 1 ? "単発" : chain.hits.length + "連チャン"}`}
                                                 </span>
-                                                <span style={{ fontSize: 10, color: C.sub, fontFamily: mono }}>{chain.time}</span>
+                                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                                    <span style={{ fontSize: 10, color: C.sub, fontFamily: mono }}>{chain.time}</span>
+                                                    {chain.completed && chain.hits.length > 0 && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleEditChainOpen(chain.chainId); }}
+                                                            onTouchStart={(e) => e.stopPropagation()}
+                                                            style={{ background: "rgba(59,130,246,0.12)", border: `1px solid rgba(59,130,246,0.3)`, borderRadius: 6, color: C.blue, fontSize: 10, padding: "4px 8px", fontFamily: font, fontWeight: 700, cursor: "pointer" }}
+                                                        >編集</button>
+                                                    )}
+                                                </div>
                                             </div>
                                             {/* 初当たり回転数 */}
                                             {chain.hitRot > 0 && (
@@ -1550,7 +1654,17 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                         </Card>
                                     ))
                                 )}
-                                <Btn label="最新履歴を削除" onClick={() => { S.setJpLog((p) => p.slice(0, -1)); }} bg="rgba(239, 68, 68, 0.1)" fg={C.red} bd={C.red + "30"} />
+                                <Btn label="最新履歴を削除" onClick={() => {
+                                    S.setJpLog((p) => {
+                                        if (p.length === 0) return p;
+                                        const lastChain = p[p.length - 1];
+                                        // 回転入力ページ側の hit 行も同期削除（双方向カスケード）
+                                        if (lastChain.chainId) {
+                                            S.setRotRows((pr) => pr.filter(r => !(r.type === "hit" && r.chainId === lastChain.chainId)));
+                                        }
+                                        return p.slice(0, -1);
+                                    });
+                                }} bg="rgba(239, 68, 68, 0.1)" fg={C.red} bd={C.red + "30"} />
                             </div>
                         ) : (
                             <div>
@@ -1588,6 +1702,81 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                                     <Btn label="キャンセル" onClick={() => { setDeleteConfirmOpen(false); setDeleteTargetId(null); }} />
                                     <Btn label="削除" onClick={handleDeleteConfirm} bg={C.red} fg="#fff" bd="none" />
+                                </div>
+                            </Card>
+                        </div>
+                    )}
+
+                    {/* 大当たり履歴 編集モーダル（古いデータの修正用） */}
+                    {editChainOpen && (
+                        <div style={{ position: "fixed", inset: 0, background: "rgba(17,24,39,0.45)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+                            <Card style={{ width: "100%", maxWidth: 380, maxHeight: "90vh", padding: 16, display: "flex", flexDirection: "column" }}>
+                                <SecLabel label="大当たりデータを編集" />
+                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 12, lineHeight: 1.5 }}>
+                                    誤入力したデータを修正できます。保存すると集計と持ち玉が再計算されます。
+                                </div>
+                                <div style={{ flex: 1, overflowY: "auto", marginBottom: 12 }}>
+                                    {editChainHits.map((h, hi) => (
+                                        <div key={hi} style={{ padding: "10px 0", borderTop: hi > 0 ? `1px solid ${C.border}` : "none" }}>
+                                            <div style={{ fontSize: 11, fontWeight: 700, color: C.yellow, marginBottom: 6 }}>{h.hitNumber}連目</div>
+                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                                <label style={{ fontSize: 10, color: C.sub }}>
+                                                    ラウンド数
+                                                    <input
+                                                        type="tel" inputMode="numeric"
+                                                        value={h.rounds}
+                                                        onChange={e => setEditChainHits(p => p.map((x, i) => i === hi ? { ...x, rounds: e.target.value } : x))}
+                                                        className="input-premium"
+                                                        style={{ width: "100%", boxSizing: "border-box", fontFamily: mono, padding: "8px 10px", fontSize: 14, marginTop: 4 }}
+                                                    />
+                                                </label>
+                                                <label style={{ fontSize: 10, color: C.sub }}>
+                                                    液晶出玉
+                                                    <input
+                                                        type="tel" inputMode="numeric"
+                                                        value={h.displayBalls}
+                                                        onChange={e => setEditChainHits(p => p.map((x, i) => i === hi ? { ...x, displayBalls: e.target.value } : x))}
+                                                        className="input-premium"
+                                                        style={{ width: "100%", boxSizing: "border-box", fontFamily: mono, padding: "8px 10px", fontSize: 14, marginTop: 4 }}
+                                                    />
+                                                </label>
+                                                <label style={{ fontSize: 10, color: C.sub }}>
+                                                    電サポ回転数
+                                                    <input
+                                                        type="tel" inputMode="numeric"
+                                                        value={h.elecSapoRot}
+                                                        onChange={e => setEditChainHits(p => p.map((x, i) => i === hi ? { ...x, elecSapoRot: e.target.value } : x))}
+                                                        className="input-premium"
+                                                        style={{ width: "100%", boxSizing: "border-box", fontFamily: mono, padding: "8px 10px", fontSize: 14, marginTop: 4 }}
+                                                    />
+                                                </label>
+                                                <label style={{ fontSize: 10, color: C.sub }}>
+                                                    前回終了玉
+                                                    <input
+                                                        type="tel" inputMode="numeric"
+                                                        value={h.lastOutBalls}
+                                                        onChange={e => setEditChainHits(p => p.map((x, i) => i === hi ? { ...x, lastOutBalls: e.target.value } : x))}
+                                                        className="input-premium"
+                                                        style={{ width: "100%", boxSizing: "border-box", fontFamily: mono, padding: "8px 10px", fontSize: 14, marginTop: 4 }}
+                                                    />
+                                                </label>
+                                                <label style={{ fontSize: 10, color: C.sub, gridColumn: "1 / span 2" }}>
+                                                    次タイミング玉
+                                                    <input
+                                                        type="tel" inputMode="numeric"
+                                                        value={h.nextTimingBalls}
+                                                        onChange={e => setEditChainHits(p => p.map((x, i) => i === hi ? { ...x, nextTimingBalls: e.target.value } : x))}
+                                                        className="input-premium"
+                                                        style={{ width: "100%", boxSizing: "border-box", fontFamily: mono, padding: "8px 10px", fontSize: 14, marginTop: 4 }}
+                                                    />
+                                                </label>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                                    <Btn label="キャンセル" onClick={() => { setEditChainOpen(false); setEditChainId(null); setEditChainHits([]); }} />
+                                    <Btn label="保存" onClick={handleEditChainSave} bg={C.blue} fg="#fff" bd="none" />
                                 </div>
                             </Card>
                         </div>
@@ -2420,6 +2609,8 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                     }
                     return prev.filter(c => c.chainId !== chainId);
                 });
+                // 回転入力ページ側の hit 行も同期削除（双方向カスケード）
+                S.setRotRows((prev) => prev.filter(r => !(r.type === "hit" && r.chainId === chainId)));
             }
         }
         setSwipeX(0);
