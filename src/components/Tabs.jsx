@@ -268,10 +268,18 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const isChainActive = lastChain && !lastChain.completed;
 
     // 前回のラウンド終了時の総持ち玉を取得
+    // 直前 hit に nextTimingBalls が記録されていればそれを採用、
+    // 未記録 (0) の場合は 上皿玉 + 累積 (出玉 + サポ増減) で算出
     const getPrevEndBalls = () => {
-        if (!lastChain || lastChain.hits.length === 0) return 0;
+        if (!lastChain) return 0;
         const lastHit = lastChain.hits[lastChain.hits.length - 1];
-        return lastHit.nextTimingBalls || 0;
+        if (lastHit && lastHit.nextTimingBalls > 0) return lastHit.nextTimingBalls;
+        const tray = Number(lastChain.trayBalls) || 0;
+        const accum = (lastChain.hits || []).reduce(
+            (s, h) => s + (Number(h.displayBalls) || 0) + (Number(h.sapoChange) || 0),
+            0
+        );
+        return tray + accum;
     };
 
     const clearChainWizard = () => {
@@ -292,27 +300,28 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         setChainWizardOpen(true);
     };
 
-    // mult (×N) 分の hits を分割生成（1連分入力 → N 個の均等割 hits）
-    const buildSplitHits = (startHitNumber, { rnd, mult, disp, lastOut, nextTiming, elecRot }) => {
-        const n = Math.max(1, Number(mult) || 1);
-        const ballDelta = (nextTiming - lastOut) / n;
-        const perRotBase = Math.floor(elecRot / n);
-        const perRotRem = elecRot - perRotBase * n;
-        const hits = [];
-        for (let i = 0; i < n; i++) {
-            const isLast = i === n - 1;
-            const hitLastOut = Math.round(lastOut + i * ballDelta);
-            const hitNextTiming = isLast ? nextTiming : Math.round(lastOut + (i + 1) * ballDelta);
-            const hitElecRot = perRotBase + (isLast ? perRotRem : 0);
-            const hitSapoChange = hitNextTiming - hitLastOut - disp;
-            const hitSapoPerRot = hitElecRot > 0 ? hitSapoChange / hitElecRot : 0;
-            hits.push({
-                hitNumber: startHitNumber + i, lastOutBalls: hitLastOut, nextTimingBalls: hitNextTiming,
-                elecSapoRot: hitElecRot, sapoChange: hitSapoChange, sapoPerRot: hitSapoPerRot,
-                rounds: rnd, displayBalls: disp, actualBalls: 0, time: tsNow(),
-            });
-        }
-        return hits;
+    // mult (×N) 対応: 1エントリーを 1 hit として保存（液晶演出上1連 = データ上も1 hit）
+    // rounds / displayBalls は全連合算、mult / rawRounds は表示用
+    const buildSingleHit = (hitNumber, { rnd, mult, disp, lastOut, nextTiming, elecRot }) => {
+        const multN = Math.max(1, Number(mult) || 1);
+        const totalRounds = rnd * multN;
+        const totalDisp = disp * multN;
+        const sapoChange = nextTiming - lastOut - totalDisp;
+        const sapoPerRot = elecRot > 0 ? sapoChange / elecRot : 0;
+        return {
+            hitNumber,
+            mult: multN,
+            rawRounds: rnd,
+            rounds: totalRounds,
+            displayBalls: totalDisp,
+            lastOutBalls: lastOut,
+            nextTimingBalls: nextTiming,
+            elecSapoRot: elecRot,
+            sapoChange,
+            sapoPerRot,
+            actualBalls: 0,
+            time: tsNow(),
+        };
     };
 
     // 連チャン追加ウィザード完了（継続 or 最終）
@@ -331,8 +340,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             S.setJpLog((prev) => {
                 const updated = [...prev];
                 const chain = { ...updated[updated.length - 1] };
-                const newHits = buildSplitHits(chain.hits.length + 1, { rnd, mult: multN, disp, lastOut, nextTiming, elecRot });
-                chain.hits = [...chain.hits, ...newHits];
+                const newHit = buildSingleHit(chain.hits.length + 1, { rnd, mult: multN, disp, lastOut, nextTiming, elecRot });
+                chain.hits = [...chain.hits, newHit];
                 const totalRounds = chain.hits.reduce((s, h) => s + h.rounds, 0);
                 const totalDisplayBalls = chain.hits.reduce((s, h) => s + h.displayBalls, 0);
                 const totalSapoRot = chain.hits.reduce((s, h) => s + (h.elecSapoRot || 0), 0);
@@ -362,8 +371,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             S.setJpLog((prev) => {
                 const updated = [...prev];
                 const chain = { ...updated[updated.length - 1] };
-                const newHits = buildSplitHits(chain.hits.length + 1, { rnd, mult: multN, disp, lastOut, nextTiming, elecRot });
-                chain.hits = [...chain.hits, ...newHits];
+                const newHit = buildSingleHit(chain.hits.length + 1, { rnd, mult: multN, disp, lastOut, nextTiming, elecRot });
+                chain.hits = [...chain.hits, newHit];
                 updated[updated.length - 1] = chain;
                 return updated;
             });
@@ -391,8 +400,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         S.setJpLog((prev) => {
             const updated = [...prev];
             const chain = { ...updated[updated.length - 1] };
-            const newHits = buildSplitHits(chain.hits.length + 1, { rnd, mult: multN, disp, lastOut, nextTiming, elecRot });
-            chain.hits = [...chain.hits, ...newHits];
+            const newHit = buildSingleHit(chain.hits.length + 1, { rnd, mult: multN, disp, lastOut, nextTiming, elecRot });
+            chain.hits = [...chain.hits, newHit];
             chain.hitType = "単発";
             chain.jitanSpins = jitan;
             chain.finalBallsAfterJitan = finalBalls;
@@ -554,6 +563,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             elecSapoRot: String(h.elecSapoRot ?? h.sapoRot ?? 0),
             lastOutBalls: String(h.lastOutBalls ?? 0),
             nextTimingBalls: String(h.nextTimingBalls ?? 0),
+            mult: h.mult ?? 1,
+            rawRounds: h.rawRounds ?? h.rounds ?? 0,
         }));
         setEditChainId(chainId);
         setEditChainHits(editable);
@@ -571,6 +582,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             const chain = { ...updated[idx] };
             oldFinalBalls = chain.finalBalls || 0;
             // 各 hit を再計算（サポ増減 = 次タイミング玉 - 前回終了玉 - 液晶出玉）
+            // displayBalls は既に全連合算済み（buildSingleHit 由来）なので mult を再乗算しない
             const newHits = editChainHits.map(e => {
                 const rounds = Math.max(0, Number(e.rounds) || 0);
                 const displayBalls = Math.max(0, Number(e.displayBalls) || 0);
@@ -579,12 +591,15 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 const nextTimingBalls = Number(e.nextTimingBalls) || 0;
                 const sapoChange = nextTimingBalls - lastOutBalls - displayBalls;
                 const sapoPerRot = elecSapoRot > 0 ? sapoChange / elecSapoRot : 0;
+                const mult = Math.max(1, Number(e.mult) || 1);
+                const rawRounds = Math.max(0, Number(e.rawRounds) || 0) || rounds;
                 return {
                     hitNumber: e.hitNumber,
                     time: e.time,
                     rounds, displayBalls, elecSapoRot,
                     lastOutBalls, nextTimingBalls,
                     sapoChange, sapoPerRot,
+                    mult, rawRounds,
                 };
             });
             chain.hits = newHits;
@@ -1596,7 +1611,10 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                                 return (
                                                     <div key={hi} style={{ padding: "6px 0", borderTop: hi > 0 ? `1px solid ${C.border}` : "none" }}>
                                                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                                                            <span style={{ fontSize: 10, fontWeight: 700, color: C.yellow }}>{hit.hitNumber}連目</span>
+                                                            <span style={{ fontSize: 10, fontWeight: 700, color: C.yellow }}>
+                                                                {hit.hitNumber}連目
+                                                                {hit.mult > 1 ? ` (${hit.rawRounds}R×${hit.mult})` : ""}
+                                                            </span>
                                                             <span style={{ fontSize: 9, color: C.sub, fontFamily: mono }}>{hit.time}</span>
                                                         </div>
                                                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
@@ -2402,7 +2420,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                             </button>
                                         ))}
                                     </div>
-                                    {(prevBalls > 0 || currentBalls > 0) && (
+                                    {currentBalls > 0 && (
                                         <div style={{ marginTop: 16, padding: "12px 16px", background: "rgba(0,0,0,0.3)", borderRadius: 12 }}>
                                             <div style={{ display: "flex", gap: 24, justifyContent: "center", alignItems: "center" }}>
                                                 <div>
@@ -2698,10 +2716,18 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     };
 
     // 前回のラウンド終了時の総持ち玉を取得
+    // 直前 hit に nextTimingBalls が記録されていればそれを採用、
+    // 未記録 (0) の場合は 上皿玉 + 累積 (出玉 + サポ増減) で算出
     const getPrevEndBalls = () => {
-        if (!lastChain || lastChain.hits.length === 0) return 0;
+        if (!lastChain) return 0;
         const lastHit = lastChain.hits[lastChain.hits.length - 1];
-        return lastHit.nextTimingBalls || 0;
+        if (lastHit && lastHit.nextTimingBalls > 0) return lastHit.nextTimingBalls;
+        const tray = Number(lastChain.trayBalls) || 0;
+        const accum = (lastChain.hits || []).reduce(
+            (s, h) => s + (Number(h.displayBalls) || 0) + (Number(h.sapoChange) || 0),
+            0
+        );
+        return tray + accum;
     };
 
     // 連チャン追加ウィザードを開始
@@ -3473,7 +3499,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                         ))}
                                     </div>
                                     {/* 計算結果表示 */}
-                                    {(prevBalls > 0 || currentBalls > 0) && (
+                                    {currentBalls > 0 && (
                                         <div style={{ marginTop: 16, padding: "12px 16px", background: "rgba(0,0,0,0.3)", borderRadius: 12 }}>
                                             <div style={{ display: "flex", gap: 24, justifyContent: "center", alignItems: "center" }}>
                                                 <div>
