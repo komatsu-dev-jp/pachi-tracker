@@ -2345,10 +2345,11 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             const prevEndBalls = getPrevEndBalls();
                             const current = Number(chainWizardData.lastOutBalls) || 0;
                             const diff = current - prevEndBalls;
+                            const multN = Math.max(1, Number(chainWizardData.mult) || 1);
                             return (
                                 <div style={{ textAlign: "center" }}>
-                                    <div style={{ fontSize: 18, fontWeight: 700, color: C.teal, marginBottom: 8 }}>大当たり直前</div>
-                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>現在の総持ち玉（上皿＋カード内）</div>
+                                    <div style={{ fontSize: 18, fontWeight: 700, color: C.teal, marginBottom: 8 }}>大当たり直前{multN > 1 ? `（×${multN} 全連開始前）` : ""}</div>
+                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>{multN > 1 ? `×${multN} 全連が始まる直前の総持ち玉` : "現在の総持ち玉（上皿＋カード内）"}</div>
                                     {prevEndBalls > 0 && <div style={{ fontSize: 11, color: C.yellow, marginBottom: 12 }}>前回終了時: {f(prevEndBalls)}玉</div>}
                                     <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
                                         {chainWizardData.lastOutBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
@@ -2381,13 +2382,14 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             const prevBalls = Number(chainWizardData.lastOutBalls) || 0;
                             const currentBalls = Number(chainWizardData.nextTimingBalls) || 0;
                             const dispBalls = Number(chainWizardData.displayBalls) || 0;
-                            const sapoChange = currentBalls - prevBalls - dispBalls;
+                            const multN = Math.max(1, Number(chainWizardData.mult) || 1);
+                            const sapoChange = currentBalls - prevBalls - dispBalls * multN;
                             const rot = Number(chainWizardData.elecSapoRot) || 0;
                             const perRot = rot > 0 ? sapoChange / rot : 0;
                             return (
                                 <div style={{ textAlign: "center" }}>
-                                    <div style={{ fontSize: 18, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>ラウンド終了</div>
-                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>現在の総持ち玉（上皿＋カード内）</div>
+                                    <div style={{ fontSize: 18, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>ラウンド終了{multN > 1 ? `（×${multN} 全連終了後）` : ""}</div>
+                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>{multN > 1 ? `×${multN} 全連が終わった時点の総持ち玉` : "現在の総持ち玉（上皿＋カード内）"}</div>
                                     {prevBalls > 0 && <div style={{ fontSize: 11, color: C.teal, marginBottom: 12 }}>大当たり直前: {f(prevBalls)}玉</div>}
                                     <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
                                         {chainWizardData.nextTimingBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
