@@ -2122,14 +2122,27 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         )}
 
                         {/* Step 6: 時短終了後最終出玉 */}
-                        {hitWizardStep === 6 && (
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginBottom: 16 }}>時短終了後の出玉</div>
-                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                    {hitWizardData.finalBallsAfterJitan || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
+                        {hitWizardStep === 6 && (() => {
+                            const estimated = (Number(hitWizardData.trayBalls) || 0) + (Number(hitWizardData.displayBalls) || 0);
+                            return (
+                                <div style={{ textAlign: "center" }}>
+                                    <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginBottom: 8 }}>時短終了後の出玉</div>
+                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>実際の持ち玉（カード＋上皿）</div>
+                                    {estimated > 0 && <div style={{ fontSize: 11, color: C.yellow, marginBottom: 12 }}>推定: {f(estimated)}玉（自動プリセット済み）</div>}
+                                    <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
+                                        {hitWizardData.finalBallsAfterJitan || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
+                                        {[-50, -10, +10, +50].map(delta => (
+                                            <button key={delta} className="b" onClick={() => { const cur = Number(hitWizardData.finalBallsAfterJitan) || 0; setHitWizardData(d => ({ ...d, finalBallsAfterJitan: String(Math.max(0, cur + delta)) })); }}
+                                                style={{ padding: "8px 14px", borderRadius: 8, fontWeight: 600, fontSize: 13, background: delta > 0 ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)", border: `1px solid ${delta > 0 ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.4)"}`, color: delta > 0 ? C.green : C.red, fontFamily: mono }}>
+                                                {delta > 0 ? "+" : ""}{delta}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })()}
                     </div>
 
                     {/* テンキー（Step 1と4以外で表示） */}
@@ -2156,7 +2169,16 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                         記録完了
                                     </button>
                                 ) : (
-                                    <button className="b" onClick={() => setHitWizardStep(s => s + 1)} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#2f6fed", border: "none", color: "#fff" }}>
+                                    <button className="b" onClick={() => {
+                                        // Step 5 → 6 に進む時に時短終了後出玉を自動プリセット（上皿玉 + 液晶表示玉）
+                                        if (hitWizardStep === 5 && !hitWizardData.finalBallsAfterJitan) {
+                                            const estimated = (Number(hitWizardData.trayBalls) || 0) + (Number(hitWizardData.displayBalls) || 0);
+                                            if (estimated > 0) {
+                                                setHitWizardData(d => ({ ...d, finalBallsAfterJitan: String(estimated) }));
+                                            }
+                                        }
+                                        setHitWizardStep(s => s + 1);
+                                    }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#2f6fed", border: "none", color: "#fff" }}>
                                         次へ
                                     </button>
                                 )}
@@ -2363,12 +2385,11 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             const prevEndBalls = getPrevEndBalls();
                             const current = Number(chainWizardData.lastOutBalls) || 0;
                             const diff = current - prevEndBalls;
-                            const multN = Math.max(1, Number(chainWizardData.mult) || 1);
                             return (
                                 <div style={{ textAlign: "center" }}>
-                                    <div style={{ fontSize: 18, fontWeight: 700, color: C.teal, marginBottom: 8 }}>大当たり直前{multN > 1 ? `（×${multN} 全連開始前）` : ""}</div>
-                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>{multN > 1 ? `×${multN} 全連が始まる直前の総持ち玉` : "現在の総持ち玉（上皿＋カード内）"}</div>
-                                    {prevEndBalls > 0 && <div style={{ fontSize: 11, color: C.yellow, marginBottom: 12 }}>前回終了時: {f(prevEndBalls)}玉</div>}
+                                    <div style={{ fontSize: 18, fontWeight: 700, color: C.teal, marginBottom: 8 }}>大当たり直前</div>
+                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>現在の総持ち玉（上皿＋カード内）</div>
+                                    {prevEndBalls > 0 && <div style={{ fontSize: 11, color: C.yellow, marginBottom: 12 }}>前回終了時: {f(prevEndBalls)}玉（自動プリセット済み）</div>}
                                     <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
                                         {chainWizardData.lastOutBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
                                     </div>
@@ -2380,12 +2401,6 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                             </button>
                                         ))}
                                     </div>
-                                    {prevEndBalls > 0 && (
-                                        <button className="b" onClick={() => setChainWizardData(d => ({ ...d, lastOutBalls: String(prevEndBalls) }))}
-                                            style={{ marginTop: 12, padding: "10px 24px", borderRadius: 10, fontWeight: 700, fontSize: 14, background: "rgba(59,130,246,0.2)", border: `1px solid ${C.blue}`, color: C.blue }}>
-                                            変更なし（前回値を採用）
-                                        </button>
-                                    )}
                                     {prevEndBalls > 0 && current > 0 && (
                                         <div style={{ marginTop: 12 }}>
                                             <span style={{ fontSize: 12, color: C.sub }}>電サポ中の増減: <span style={{ fontWeight: 700, color: sc(diff), fontFamily: mono }}>{diff >= 0 ? "+" : ""}{diff}</span></span>
@@ -2406,8 +2421,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             const perRot = rot > 0 ? sapoChange / rot : 0;
                             return (
                                 <div style={{ textAlign: "center" }}>
-                                    <div style={{ fontSize: 18, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>ラウンド終了{multN > 1 ? `（×${multN} 全連終了後）` : ""}</div>
-                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>{multN > 1 ? `×${multN} 全連が終わった時点の総持ち玉` : "現在の総持ち玉（上皿＋カード内）"}</div>
+                                    <div style={{ fontSize: 18, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>ラウンド終了</div>
+                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>現在の総持ち玉（上皿＋カード内）</div>
                                     {prevBalls > 0 && <div style={{ fontSize: 11, color: C.teal, marginBottom: 12 }}>大当たり直前: {f(prevBalls)}玉</div>}
                                     <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
                                         {chainWizardData.nextTimingBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
@@ -2467,14 +2482,27 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         )}
 
                         {/* Step 7: 時短終了後出玉 */}
-                        {chainWizardStep === 7 && (
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginBottom: 16 }}>時短終了後の出玉</div>
-                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                    {chainWizardData.finalBallsAfterJitan || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
+                        {chainWizardStep === 7 && (() => {
+                            const estimated = Number(chainWizardData.nextTimingBalls) || 0;
+                            return (
+                                <div style={{ textAlign: "center" }}>
+                                    <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginBottom: 8 }}>時短終了後の出玉</div>
+                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>実際の持ち玉（カード＋上皿）</div>
+                                    {estimated > 0 && <div style={{ fontSize: 11, color: C.yellow, marginBottom: 12 }}>ラウンド終了時: {f(estimated)}玉（自動プリセット済み）</div>}
+                                    <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
+                                        {chainWizardData.finalBallsAfterJitan || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
+                                        {[-50, -10, +10, +50].map(delta => (
+                                            <button key={delta} className="b" onClick={() => { const cur = Number(chainWizardData.finalBallsAfterJitan) || 0; setChainWizardData(d => ({ ...d, finalBallsAfterJitan: String(Math.max(0, cur + delta)) })); }}
+                                                style={{ padding: "8px 14px", borderRadius: 8, fontWeight: 600, fontSize: 13, background: delta > 0 ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)", border: `1px solid ${delta > 0 ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.4)"}`, color: delta > 0 ? C.green : C.red, fontFamily: mono }}>
+                                                {delta > 0 ? "+" : ""}{delta}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })()}
                     </div>
 
                     {/* テンキー */}
@@ -2491,6 +2519,13 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                             const lastOut = Number(chainWizardData.lastOutBalls) || 0;
                                             const disp = Number(chainWizardData.displayBalls) || 0;
                                             setChainWizardData(d => ({ ...d, nextTimingBalls: String(lastOut + disp) }));
+                                        }
+                                        // Step 6 → 7 に進む時に時短終了後出玉を自動プリセット（ラウンド終了時の持ち玉）
+                                        if (chainWizardStep === 6 && !chainWizardData.finalBallsAfterJitan) {
+                                            const estimated = Number(chainWizardData.nextTimingBalls) || 0;
+                                            if (estimated > 0) {
+                                                setChainWizardData(d => ({ ...d, finalBallsAfterJitan: String(estimated) }));
+                                            }
                                         }
                                         setChainWizardStep(s => s + 1); setChainWizardFirstKey(true);
                                     }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#2f6fed", border: "none", color: "#fff" }}>次へ</button>
@@ -2534,14 +2569,28 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 </div>
                             </div>
                         )}
-                        {directSingleEndStep === 1 && (
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginBottom: 16 }}>時短終了後の出玉</div>
-                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                    {directSingleEndData.finalBallsAfterJitan || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
+                        {directSingleEndStep === 1 && (() => {
+                            const lastHit = lastChain && lastChain.hits.length > 0 ? lastChain.hits[lastChain.hits.length - 1] : null;
+                            const estimated = lastHit ? (Number(lastHit.nextTimingBalls) || 0) : 0;
+                            return (
+                                <div style={{ textAlign: "center" }}>
+                                    <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginBottom: 8 }}>時短終了後の出玉</div>
+                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>実際の持ち玉（カード＋上皿）</div>
+                                    {estimated > 0 && <div style={{ fontSize: 11, color: C.yellow, marginBottom: 12 }}>前回ラウンド終了時: {f(estimated)}玉（自動プリセット済み）</div>}
+                                    <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
+                                        {directSingleEndData.finalBallsAfterJitan || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
+                                        {[-50, -10, +10, +50].map(delta => (
+                                            <button key={delta} className="b" onClick={() => { const cur = Number(directSingleEndData.finalBallsAfterJitan) || 0; setDirectSingleEndData(d => ({ ...d, finalBallsAfterJitan: String(Math.max(0, cur + delta)) })); }}
+                                                style={{ padding: "8px 14px", borderRadius: 8, fontWeight: 600, fontSize: 13, background: delta > 0 ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)", border: `1px solid ${delta > 0 ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.4)"}`, color: delta > 0 ? C.green : C.red, fontFamily: mono }}>
+                                                {delta > 0 ? "+" : ""}{delta}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })()}
                     </div>
                     <div style={{ padding: "8px 12px", paddingBottom: "max(12px, env(safe-area-inset-bottom))", background: "rgba(20,20,25,1)", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
@@ -2550,7 +2599,17 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             {directSingleEndStep === 1 ? (
                                 <button className="b" onClick={handleDirectSingleEndComplete} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#16a34a", border: "none", color: "#fff" }}>記録完了</button>
                             ) : (
-                                <button className="b" onClick={() => setDirectSingleEndStep(1)} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#2f6fed", border: "none", color: "#fff" }}>次へ</button>
+                                <button className="b" onClick={() => {
+                                    // Step 0 → 1 に進む時に時短終了後出玉を自動プリセット（前ヒットのラウンド終了時持ち玉）
+                                    if (!directSingleEndData.finalBallsAfterJitan) {
+                                        const lastHit = lastChain && lastChain.hits.length > 0 ? lastChain.hits[lastChain.hits.length - 1] : null;
+                                        const estimated = lastHit ? (Number(lastHit.nextTimingBalls) || 0) : 0;
+                                        if (estimated > 0) {
+                                            setDirectSingleEndData(d => ({ ...d, finalBallsAfterJitan: String(estimated) }));
+                                        }
+                                    }
+                                    setDirectSingleEndStep(1);
+                                }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#2f6fed", border: "none", color: "#fff" }}>次へ</button>
                             )}
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
@@ -3415,7 +3474,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                     <div style={{ fontSize: 18, fontWeight: 700, color: C.teal, marginBottom: 8 }}>大当たり直前</div>
                                     <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>現在の総持ち玉（上皿＋カード内）</div>
                                     {prevEndBalls > 0 && (
-                                        <div style={{ fontSize: 11, color: C.yellow, marginBottom: 12 }}>前回終了時: {f(prevEndBalls)}玉</div>
+                                        <div style={{ fontSize: 11, color: C.yellow, marginBottom: 12 }}>前回終了時: {f(prevEndBalls)}玉（自動プリセット済み）</div>
                                     )}
                                     <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
                                         {chainWizardData.lastOutBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
@@ -3436,17 +3495,6 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                             </button>
                                         ))}
                                     </div>
-                                    {/* 変更なしボタン */}
-                                    {prevEndBalls > 0 && (
-                                        <button className="b" onClick={() => {
-                                            setChainWizardData(d => ({ ...d, lastOutBalls: String(prevEndBalls) }));
-                                        }} style={{
-                                            marginTop: 12, padding: "10px 24px", borderRadius: 10, fontWeight: 700, fontSize: 14,
-                                            background: "rgba(59,130,246,0.2)", border: `1px solid ${C.blue}`, color: C.blue
-                                        }}>
-                                            変更なし（前回値を採用）
-                                        </button>
-                                    )}
                                     {/* 差分表示・警告 */}
                                     {prevEndBalls > 0 && current > 0 && (
                                         <div style={{ marginTop: 12 }}>
@@ -3559,14 +3607,27 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                         )}
 
                         {/* Step 7: 時短終了後最終出玉（単発終了用） */}
-                        {chainWizardStep === 7 && (
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginBottom: 16 }}>時短終了後の出玉</div>
-                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                    {chainWizardData.finalBallsAfterJitan || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
+                        {chainWizardStep === 7 && (() => {
+                            const estimated = Number(chainWizardData.nextTimingBalls) || 0;
+                            return (
+                                <div style={{ textAlign: "center" }}>
+                                    <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginBottom: 8 }}>時短終了後の出玉</div>
+                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>実際の持ち玉（カード＋上皿）</div>
+                                    {estimated > 0 && <div style={{ fontSize: 11, color: C.yellow, marginBottom: 12 }}>ラウンド終了時: {f(estimated)}玉（自動プリセット済み）</div>}
+                                    <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
+                                        {chainWizardData.finalBallsAfterJitan || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
+                                        {[-50, -10, +10, +50].map(delta => (
+                                            <button key={delta} className="b" onClick={() => { const cur = Number(chainWizardData.finalBallsAfterJitan) || 0; setChainWizardData(d => ({ ...d, finalBallsAfterJitan: String(Math.max(0, cur + delta)) })); }}
+                                                style={{ padding: "8px 14px", borderRadius: 8, fontWeight: 600, fontSize: 13, background: delta > 0 ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)", border: `1px solid ${delta > 0 ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.4)"}`, color: delta > 0 ? C.green : C.red, fontFamily: mono }}>
+                                                {delta > 0 ? "+" : ""}{delta}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })()}
                     </div>
 
                     {/* テンキー（Step 0と5以外で表示） */}
@@ -3602,6 +3663,13 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                             // nextTimingBallsが未入力の場合のみ自動設定
                                             if (!chainWizardData.nextTimingBalls) {
                                                 setChainWizardData(d => ({ ...d, nextTimingBalls: String(suggested) }));
+                                            }
+                                        }
+                                        // Step 6 → 7 に進む時に時短終了後出玉を自動プリセット（ラウンド終了時の持ち玉）
+                                        if (chainWizardStep === 6 && !chainWizardData.finalBallsAfterJitan) {
+                                            const estimated = Number(chainWizardData.nextTimingBalls) || 0;
+                                            if (estimated > 0) {
+                                                setChainWizardData(d => ({ ...d, finalBallsAfterJitan: String(estimated) }));
                                             }
                                         }
                                         setChainWizardStep(s => s + 1);
@@ -3710,14 +3778,28 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                         )}
 
                         {/* Step 1: 時短終了後出玉 */}
-                        {directSingleEndStep === 1 && (
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginBottom: 16 }}>時短終了後の出玉</div>
-                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                    {directSingleEndData.finalBallsAfterJitan || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
+                        {directSingleEndStep === 1 && (() => {
+                            const lastHit = lastChain && lastChain.hits.length > 0 ? lastChain.hits[lastChain.hits.length - 1] : null;
+                            const estimated = lastHit ? (Number(lastHit.nextTimingBalls) || 0) : 0;
+                            return (
+                                <div style={{ textAlign: "center" }}>
+                                    <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginBottom: 8 }}>時短終了後の出玉</div>
+                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>実際の持ち玉（カード＋上皿）</div>
+                                    {estimated > 0 && <div style={{ fontSize: 11, color: C.yellow, marginBottom: 12 }}>前回ラウンド終了時: {f(estimated)}玉（自動プリセット済み）</div>}
+                                    <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
+                                        {directSingleEndData.finalBallsAfterJitan || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
+                                        {[-50, -10, +10, +50].map(delta => (
+                                            <button key={delta} className="b" onClick={() => { const cur = Number(directSingleEndData.finalBallsAfterJitan) || 0; setDirectSingleEndData(d => ({ ...d, finalBallsAfterJitan: String(Math.max(0, cur + delta)) })); }}
+                                                style={{ padding: "8px 14px", borderRadius: 8, fontWeight: 600, fontSize: 13, background: delta > 0 ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)", border: `1px solid ${delta > 0 ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.4)"}`, color: delta > 0 ? C.green : C.red, fontFamily: mono }}>
+                                                {delta > 0 ? "+" : ""}{delta}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })()}
                     </div>
 
                     {/* テンキー */}
@@ -3741,7 +3823,17 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                     記録完了
                                 </button>
                             ) : (
-                                <button className="b" onClick={() => setDirectSingleEndStep(1)} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#2f6fed", border: "none", color: "#fff" }}>
+                                <button className="b" onClick={() => {
+                                    // Step 0 → 1 に進む時に時短終了後出玉を自動プリセット（前ヒットのラウンド終了時持ち玉）
+                                    if (!directSingleEndData.finalBallsAfterJitan) {
+                                        const lastHit = lastChain && lastChain.hits.length > 0 ? lastChain.hits[lastChain.hits.length - 1] : null;
+                                        const estimated = lastHit ? (Number(lastHit.nextTimingBalls) || 0) : 0;
+                                        if (estimated > 0) {
+                                            setDirectSingleEndData(d => ({ ...d, finalBallsAfterJitan: String(estimated) }));
+                                        }
+                                    }
+                                    setDirectSingleEndStep(1);
+                                }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#2f6fed", border: "none", color: "#fff" }}>
                                     次へ
                                 </button>
                             )}
