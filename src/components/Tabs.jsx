@@ -261,6 +261,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [directSingleEndStep, setDirectSingleEndStep] = useState(0);
     const [directSingleEndData, setDirectSingleEndData] = useState({ jitanSpins: "", finalBallsAfterJitan: "" });
 
+    // データサブタブ - グラフモーダル state
+    const [showGraphModal, setShowGraphModal] = useState(false);
+
     // 最新の未完了チェーン
     const jpLog = S.jpLog || [];
     const sesLog = S.sesLog || [];
@@ -1802,114 +1805,210 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 </div>
             )}
 
-            {/* データタブ - セッション統計（DataTabと同じスタイル） */}
-            {S.sessionSubTab === "data" && (
+            {/* データタブ - セッション統計（モック刷新版） */}
+            {S.sessionSubTab === "data" && (() => {
+                const hasData = ev.start1K > 0;
+                const bDiff = Number(ev.bDiff) || 0;
+                const barClamp = Math.max(-5, Math.min(5, bDiff));
+                const barPct = ((barClamp + 5) / 10) * 100;
+                const emoji = !hasData ? "🙂" : bDiff > 0 ? "😊" : bDiff < 0 ? "😟" : "😐";
+                const barColor = bDiff > 0 ? C.green : bDiff < 0 ? C.red : C.subHi;
+                const borderMsg = !hasData
+                    ? "データ入力待ち"
+                    : bDiff > 0
+                        ? <>ボーダーを <span style={{ color: C.green, fontWeight: 700 }}>{sp(bDiff, 1)}回</span> 上回っています</>
+                        : bDiff < 0
+                            ? <>ボーダーを <span style={{ color: C.red, fontWeight: 700 }}>{sp(bDiff, 1)}回</span> 下回っています</>
+                            : "ボーダーぴったりで推移しています";
+
+                const evRows = [
+                    { key: "ev1K", label: "期待値/K", icon: "🎯", bg: C.blue, val: ev.ev1K, unit: "円", fmt: (n) => sp(n, 0) },
+                    { key: "evPerRot", label: "単価", icon: "¥", bg: C.teal, val: ev.evPerRot, unit: "円/回", fmt: (n) => sp(n, 2) },
+                    { key: "workAmount", label: "仕事量", icon: "📅", bg: C.purple, val: ev.workAmount, unit: "円", fmt: (n) => sp(n, 0) },
+                    { key: "wage", label: "時給", icon: "🕒", bg: C.orange, val: ev.wage, unit: "円/h", fmt: (n) => sp(n, 0) },
+                ];
+
+                const onePointText = (() => {
+                    if (!hasData) return "回転数を入力すると分析が始まります。";
+                    const evPlus = ev.ev1K > 0;
+                    const borderPlus = bDiff > 0;
+                    if (borderPlus && evPlus) return "ボーダーを上回っており、期待値もプラスです。この調子で続けていきましょう！";
+                    if (borderPlus && !evPlus) return "ボーダーは上回っていますが期待値はマイナスです。打ち方やサポ区間を見直しましょう。";
+                    if (!borderPlus && evPlus) return "ボーダーは下回っていますが、大当たり状況により期待値はプラスです。";
+                    return "ボーダーも期待値もマイナスです。撤退を検討してください。";
+                })();
+
+                return (
                 <div style={{ flex: 1, overflowY: "auto", padding: "0 14px", paddingBottom: "calc(80px + env(safe-area-inset-bottom))" }}>
                     {/* 回転率・ボーダー */}
                     <Card style={{ marginTop: 12 }}>
-                        <SecLabel label="回転率・ボーダー" />
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
-                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>1Kスタート</span>
-                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                <span style={{ fontSize: 18, fontWeight: 800, color: sc(ev.bDiff), fontFamily: mono }}>{ev.start1K > 0 ? f(ev.start1K, 1) : "—"}</span>
-                                <span style={{ fontSize: 10, color: C.sub }}>回/K</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px 10px" }}>
+                            <span style={{
+                                width: 22, height: 22, borderRadius: "50%",
+                                background: `color-mix(in srgb, ${C.blue} 18%, transparent)`,
+                                color: C.blue, fontSize: 14, fontWeight: 800,
+                                display: "inline-flex", alignItems: "center", justifyContent: "center", lineHeight: 1
+                            }}>+</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: C.subHi, fontFamily: font }}>回転率・ボーダー</span>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", padding: "4px 8px 16px" }}>
+                            <div style={{ textAlign: "center", padding: "6px 4px" }}>
+                                <div style={{ fontSize: 11, color: C.sub, fontWeight: 600, marginBottom: 6 }}>1Kスタート</div>
+                                <div style={{ fontSize: 30, fontWeight: 800, color: sc(ev.bDiff), fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                                    {hasData ? f(ev.start1K, 1) : "—"}
+                                </div>
+                                <div style={{ fontSize: 10, color: C.sub, marginTop: 4 }}>回/K</div>
+                            </div>
+                            <div style={{ textAlign: "center", padding: "6px 4px", borderLeft: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>
+                                <div style={{ fontSize: 11, color: C.sub, fontWeight: 600, marginBottom: 6 }}>理論ボーダー</div>
+                                <div style={{ fontSize: 30, fontWeight: 800, color: C.subHi, fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                                    {ev.theoreticalBorder > 0 ? f(ev.theoreticalBorder, 1) : "—"}
+                                </div>
+                                <div style={{ fontSize: 10, color: C.sub, marginTop: 4 }}>回/K</div>
+                            </div>
+                            <div style={{ textAlign: "center", padding: "6px 4px" }}>
+                                <div style={{ fontSize: 11, color: C.sub, fontWeight: 600, marginBottom: 6 }}>ボーダー差</div>
+                                <div style={{ fontSize: 30, fontWeight: 800, color: sc(ev.bDiff), fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                                    {hasData ? sp(ev.bDiff, 1) : "—"}
+                                </div>
+                                <div style={{ fontSize: 10, color: C.sub, marginTop: 4 }}>回/K</div>
                             </div>
                         </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
-                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>理論ボーダー</span>
-                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                <span style={{ fontSize: 18, fontWeight: 800, color: C.subHi, fontFamily: mono }}>{ev.theoreticalBorder > 0 ? f(ev.theoreticalBorder, 1) : "—"}</span>
-                                <span style={{ fontSize: 10, color: C.sub }}>回/K</span>
-                            </div>
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px" }}>
-                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>ボーダー差</span>
-                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                <span style={{ fontSize: 18, fontWeight: 800, color: sc(ev.bDiff), fontFamily: mono }}>{ev.bDiff !== 0 ? sp(ev.bDiff, 1) : "—"}</span>
-                                <span style={{ fontSize: 10, color: C.sub }}>回/K</span>
+                        {/* 進捗バー */}
+                        <div style={{
+                            display: "flex", alignItems: "center", gap: 10,
+                            padding: "12px 14px",
+                            margin: "0 12px 14px",
+                            background: C.surfaceHi,
+                            border: `1px solid ${C.border}`,
+                            borderRadius: 12,
+                        }}>
+                            <span style={{ fontSize: 18, lineHeight: 1 }}>{emoji}</span>
+                            <span style={{ flex: 1, fontSize: 12, color: C.subHi, fontFamily: font, fontWeight: 500 }}>{borderMsg}</span>
+                            <div style={{ width: 88, display: "flex", alignItems: "center", gap: 6 }}>
+                                <div style={{ flex: 1, height: 6, background: C.border, borderRadius: 999, position: "relative", overflow: "hidden" }}>
+                                    <div style={{
+                                        position: "absolute", left: "50%", top: 0, bottom: 0,
+                                        width: `${Math.abs(barPct - 50)}%`,
+                                        transform: bDiff >= 0 ? "none" : "translateX(-100%)",
+                                        background: barColor,
+                                        borderRadius: 999,
+                                        transition: "width 0.2s ease"
+                                    }} />
+                                    <div style={{ position: "absolute", left: "50%", top: -2, bottom: -2, width: 1, background: C.subHi, opacity: 0.4 }} />
+                                </div>
+                                <span style={{ fontSize: 10, fontWeight: 700, color: barColor, fontFamily: mono, minWidth: 28, textAlign: "right" }}>
+                                    {hasData ? sp(bDiff, 1) : "—"}
+                                </span>
                             </div>
                         </div>
                     </Card>
 
                     {/* 期待値・収支 */}
                     <Card>
-                        <SecLabel label="期待値・収支" />
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
-                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>期待値/K</span>
-                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                <span style={{ fontSize: 18, fontWeight: 800, color: sc(ev.ev1K), fontFamily: mono }}>{ev.ev1K !== 0 ? sp(ev.ev1K, 0) : "—"}</span>
-                                <span style={{ fontSize: 10, color: C.sub }}>円</span>
-                            </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px 8px" }}>
+                            <span style={{ fontSize: 16, lineHeight: 1 }}>💰</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: C.subHi, fontFamily: font }}>期待値・収支</span>
                         </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
-                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>単価</span>
-                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                <span style={{ fontSize: 18, fontWeight: 800, color: sc(ev.evPerRot), fontFamily: mono }}>{ev.evPerRot !== 0 ? sp(ev.evPerRot, 2) : "—"}</span>
-                                <span style={{ fontSize: 10, color: C.sub }}>円/回</span>
+                        {evRows.map((r, i) => (
+                            <div key={r.key} style={{
+                                display: "flex", alignItems: "center", justifyContent: "space-between",
+                                padding: "12px 16px",
+                                borderTop: i === 0 ? "none" : `1px solid ${C.border}`,
+                            }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                                    <span style={{
+                                        width: 30, height: 30, borderRadius: "50%",
+                                        background: `color-mix(in srgb, ${r.bg} 16%, transparent)`,
+                                        color: r.bg,
+                                        display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                        fontSize: 15, fontWeight: 700, lineHeight: 1,
+                                    }}>{r.icon}</span>
+                                    <span style={{ fontSize: 14, color: C.text, fontFamily: font, fontWeight: 500 }}>{r.label}</span>
+                                </div>
+                                <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                                    <span style={{ fontSize: 18, fontWeight: 800, color: sc(r.val), fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
+                                        {r.val !== 0 ? r.fmt(r.val) : "—"}
+                                    </span>
+                                    <span style={{ fontSize: 10, color: C.sub }}>{r.unit}</span>
+                                    <span style={{ fontSize: 16, color: C.sub, marginLeft: 4, lineHeight: 1, pointerEvents: "none" }}>›</span>
+                                </div>
                             </div>
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
-                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>仕事量</span>
-                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                <span style={{ fontSize: 18, fontWeight: 800, color: sc(ev.workAmount), fontFamily: mono }}>{ev.workAmount !== 0 ? sp(ev.workAmount, 0) : "—"}</span>
-                                <span style={{ fontSize: 10, color: C.sub }}>円</span>
-                            </div>
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px" }}>
-                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>時給</span>
-                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                <span style={{ fontSize: 18, fontWeight: 800, color: sc(ev.wage), fontFamily: mono }}>{ev.wage !== 0 ? sp(ev.wage, 0) : "—"}</span>
-                                <span style={{ fontSize: 10, color: C.sub }}>円/h</span>
-                            </div>
-                        </div>
+                        ))}
                     </Card>
 
                     {/* 出玉データ */}
                     <Card>
-                        <SecLabel label="出玉データ" />
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
-                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>平均1R出玉</span>
-                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                <span style={{ fontSize: 18, fontWeight: 800, color: C.teal, fontFamily: mono }}>{ev.avg1R > 0 ? f(ev.avg1R, 1) : "—"}</span>
-                                <span style={{ fontSize: 10, color: C.sub }}>玉</span>
-                            </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px 8px" }}>
+                            <span style={{ fontSize: 16, lineHeight: 1, color: C.teal }}>🌙</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: C.subHi, fontFamily: font }}>出玉データ</span>
                         </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px" }}>
-                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>平均R数/初当たり</span>
-                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                <span style={{ fontSize: 18, fontWeight: 800, color: C.blue, fontFamily: mono }}>{ev.avgRpJ > 0 ? f(ev.avgRpJ, 1) : "—"}</span>
-                                <span style={{ fontSize: 10, color: C.sub }}>R</span>
+                        <div style={{ display: "flex", alignItems: "center", padding: "4px 16px 12px" }}>
+                            <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 12, color: C.sub, fontWeight: 600, marginBottom: 4 }}>平均1R出玉</div>
+                                <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                                    <span style={{ fontSize: 36, fontWeight: 800, color: C.teal, fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                                        {ev.avg1R > 0 ? f(ev.avg1R, 1) : "—"}
+                                    </span>
+                                    <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>玉</span>
+                                </div>
+                            </div>
+                            <div style={{ fontSize: 44, lineHeight: 1, opacity: 0.85 }}>🪣</div>
+                        </div>
+                        {/* ミニ併記：稼働データ */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, padding: "0 12px 12px" }}>
+                            <MiniStat label="初当たり" val={`${S.jpLog.length || 0}回`} col={C.green} />
+                            <MiniStat label="総回転" val={ev.netRot > 0 ? f(ev.netRot) : "—"} col={C.subHi} />
+                            <MiniStat label="総投資" val={ev.rawInvest > 0 ? f(ev.rawInvest) : "—"} col={C.red} />
+                        </div>
+                    </Card>
+
+                    {/* ワンポイント */}
+                    <Card style={{
+                        background: `color-mix(in srgb, ${C.yellow} 8%, ${C.surface})`,
+                        borderColor: `color-mix(in srgb, ${C.yellow} 35%, ${C.border})`,
+                    }}>
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px" }}>
+                            <span style={{ fontSize: 18, lineHeight: 1.1 }}>💡</span>
+                            <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: C.yellow, marginBottom: 4, fontFamily: font }}>ワンポイント</div>
+                                <div style={{ fontSize: 13, color: C.text, lineHeight: 1.5, fontFamily: font }}>{onePointText}</div>
                             </div>
                         </div>
                     </Card>
 
-                    {/* 稼働データ */}
-                    <Card>
-                        <SecLabel label="稼働データ" />
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
-                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>初当たり回数</span>
-                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                <span style={{ fontSize: 18, fontWeight: 800, color: C.green, fontFamily: mono }}>{S.jpLog.length > 0 ? S.jpLog.length.toString() : "0"}</span>
-                                <span style={{ fontSize: 10, color: C.sub }}>回</span>
-                            </div>
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
-                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>総回転数</span>
-                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                <span style={{ fontSize: 18, fontWeight: 800, color: C.subHi, fontFamily: mono }}>{ev.netRot > 0 ? f(ev.netRot) : "—"}</span>
-                                <span style={{ fontSize: 10, color: C.sub }}>回</span>
-                            </div>
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px" }}>
-                            <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>総投資額</span>
-                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                <span style={{ fontSize: 18, fontWeight: 800, color: C.red, fontFamily: mono }}>{ev.rawInvest > 0 ? f(ev.rawInvest) : "—"}</span>
-                                <span style={{ fontSize: 10, color: C.sub }}>円</span>
-                            </div>
-                        </div>
-                    </Card>
+                    {/* 下部3ボタン */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 4, marginBottom: 12 }}>
+                        {[
+                            { label: "グラフで確認", icon: "📈", col: C.purple, onClick: () => setShowGraphModal(true), disabled: false },
+                            { label: "データ履歴", icon: "📊", col: C.teal, onClick: () => S.setTab("calendar"), disabled: false },
+                            { label: "メモを追加", icon: "📝", col: C.blue, onClick: null, disabled: true },
+                        ].map((b) => (
+                            <button
+                                key={b.label}
+                                className="b"
+                                onClick={b.disabled ? undefined : b.onClick}
+                                style={{
+                                    background: `color-mix(in srgb, ${b.col} 12%, transparent)`,
+                                    border: `1px solid color-mix(in srgb, ${b.col} 32%, transparent)`,
+                                    borderRadius: 12,
+                                    color: b.col,
+                                    padding: "12px 4px",
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    fontFamily: font,
+                                    display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                                    cursor: b.disabled ? "default" : "pointer",
+                                }}
+                            >
+                                <span style={{ fontSize: 16, lineHeight: 1 }}>{b.icon}</span>
+                                <span>{b.label}</span>
+                            </button>
+                        ))}
+                    </div>
                 </div>
-            )}
+                );
+            })()}
 
             {/* 機種設定タブ */}
             {S.sessionSubTab === "settings" && (
@@ -2004,6 +2103,46 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     </Card>
                 </div>
             )}
+
+            {/* 累計仕事量グラフモーダル */}
+            {showGraphModal && (() => {
+                const archives = S.archives || [];
+                const points = [];
+                let cum = 0;
+                archives.forEach((a) => {
+                    const w = a.stats?.workAmount || 0;
+                    cum += w;
+                    points.push({ label: a.date?.slice(5) || "", value: Math.round(cum) });
+                });
+                if (ev.workAmount !== 0) {
+                    cum += ev.workAmount;
+                    points.push({ label: "今日", value: Math.round(cum) });
+                }
+                return (
+                    <div
+                        onClick={() => setShowGraphModal(false)}
+                        style={{ position: "fixed", inset: 0, background: "rgba(17,24,39,0.55)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}
+                    >
+                        <Card onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 360, padding: 16 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                                <span style={{ fontSize: 16 }}>📈</span>
+                                <span style={{ fontSize: 13, fontWeight: 700, color: C.subHi, fontFamily: font }}>累計仕事量の推移</span>
+                            </div>
+                            {points.length >= 2 ? (
+                                <LineChart data={points} color="#a855f7" />
+                            ) : (
+                                <div style={{ padding: "28px 8px", textAlign: "center", color: C.sub, fontSize: 13, lineHeight: 1.6 }}>
+                                    グラフ表示にはデータが2日分以上必要です。<br />セッションを保存すると履歴が蓄積されます。
+                                </div>
+                            )}
+                            <button className="b" onClick={() => setShowGraphModal(false)} style={{
+                                width: "100%", marginTop: 12, padding: "12px", background: "var(--surface-hi)",
+                                border: `1px solid ${C.border}`, borderRadius: 10, color: C.text, fontSize: 14, fontWeight: 600, fontFamily: font
+                            }}>閉じる</button>
+                        </Card>
+                    </div>
+                );
+            })()}
 
             {/* 初当たりウィザードモーダル - フルスクリーン */}
             {hitWizardOpen && ReactDOM.createPortal(
