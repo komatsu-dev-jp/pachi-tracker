@@ -1336,6 +1336,21 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 >
                     {sessionSubTabs.map((tabId) => {
                         const isActive = S.sessionSubTab === tabId;
+                        const col = isActive ? C.blue : C.sub;
+                        const tabIcon = {
+                            data: (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round"><path d="M4 20h16" /><rect x="6" y="11" width="3" height="9" rx="0.5" /><rect x="11" y="7" width="3" height="13" rx="0.5" /><rect x="16" y="13" width="3" height="7" rx="0.5" /></svg>
+                            ),
+                            rot: (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4L18 10l-4-4L4 16z" /><path d="M14 6l4 4" /></svg>
+                            ),
+                            history: (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.9L12 17l-5.2 2.7 1-5.9-4.3-4.1 5.9-.9z" /></svg>
+                            ),
+                            settings: (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>
+                            ),
+                        }[tabId];
                         return (
                             <button
                                 key={tabId}
@@ -1349,11 +1364,13 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     padding: "10px 4px 8px",
                                     fontSize: 12,
                                     fontWeight: isActive ? 700 : 500,
-                                    color: isActive ? C.blue : C.sub,
+                                    color: col,
                                     fontFamily: font,
-                                    transition: "all 0.2s"
+                                    transition: "all 0.2s",
+                                    display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
                                 }}
                             >
+                                {tabIcon}
                                 {sessionSubTabLabels[tabId]}
                             </button>
                         );
@@ -1811,8 +1828,28 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 const bDiff = Number(ev.bDiff) || 0;
                 const barClamp = Math.max(-5, Math.min(5, bDiff));
                 const barPct = ((barClamp + 5) / 10) * 100;
-                const emoji = !hasData ? "🙂" : bDiff > 0 ? "😊" : bDiff < 0 ? "😟" : "😐";
                 const barColor = bDiff > 0 ? C.green : bDiff < 0 ? C.red : C.subHi;
+
+                // シンプルSVGアイコン（アプリ共通スタイル: ストローク1.7）
+                const sw = 1.7;
+                const IcPlus = ({ c, s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2.2" strokeLinecap="round"><path d="M12 6v12M6 12h12" /></svg>);
+                const IcTarget = ({ c, s = 16 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={sw} strokeLinecap="round"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="4" /><circle cx="12" cy="12" r="1.2" fill={c} stroke="none" /></svg>);
+                const IcYen = ({ c, s = 16 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8.5" /><path d="M8.5 8l3.5 5 3.5-5" /><path d="M8.5 13h7M8.5 15.5h7" /><path d="M12 13v5" /></svg>);
+                const IcCalendar = ({ c, s = 16 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2.5" /><path d="M3.5 10h17" /><path d="M8 3v4M16 3v4" /></svg>);
+                const IcClock = ({ c, s = 16 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5v5l3.5 2" /></svg>);
+                const IcMoneyBag = ({ c, s = 18 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l-1.5 2c-2.5 3-3 8 1 10.5 2 1.2 5 1.2 7 0 4-2.5 3.5-7.5 1-10.5L15 6" /><path d="M9 6h6" /><path d="M12 11v5M10.2 13h3.6M10.2 15h3.6" /></svg>);
+                const IcMoon = ({ c, s = 18 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"><path d="M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a6.5 6.5 0 0 0 11 11z" /></svg>);
+                const IcBulb = ({ c, s = 18 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6M10 21h4" /><path d="M12 3a6 6 0 0 0-4 10.5c1 .8 1.5 1.8 1.5 3V17h5v-.5c0-1.2.5-2.2 1.5-3A6 6 0 0 0 12 3z" /></svg>);
+                const IcLineChart = ({ c, s = 20 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"><path d="M4 19h16" /><path d="M4 15l5-5 4 3 6-7" /></svg>);
+                const IcBarChart = ({ c, s = 20 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={sw} strokeLinecap="round"><path d="M4 20h16" /><rect x="6" y="11" width="3" height="9" rx="0.5" /><rect x="11" y="7" width="3" height="13" rx="0.5" /><rect x="16" y="13" width="3" height="7" rx="0.5" /></svg>);
+                const IcPencil = ({ c, s = 20 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4L18 10l-4-4L4 16z" /><path d="M14 6l4 4" /></svg>);
+                const IcSmile = ({ c, s = 18 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8.5" /><path d="M9 14c.8 1 2 1.5 3 1.5s2.2-.5 3-1.5" /><circle cx="9" cy="10" r="0.9" fill={c} stroke="none" /><circle cx="15" cy="10" r="0.9" fill={c} stroke="none" /></svg>);
+                const IcFrown = ({ c, s = 18 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8.5" /><path d="M9 15.5c.8-1 2-1.5 3-1.5s2.2.5 3 1.5" /><circle cx="9" cy="10" r="0.9" fill={c} stroke="none" /><circle cx="15" cy="10" r="0.9" fill={c} stroke="none" /></svg>);
+                const IcMeh = ({ c, s = 18 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8.5" /><path d="M9 14.5h6" /><circle cx="9" cy="10" r="0.9" fill={c} stroke="none" /><circle cx="15" cy="10" r="0.9" fill={c} stroke="none" /></svg>);
+                const IcBallsTray = ({ c, s = 48 }) => (<svg width={s} height={s} viewBox="0 0 48 48" fill="none" stroke={c} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M7 30h34l-2 9H9z" /><circle cx="17" cy="24" r="3" /><circle cx="24" cy="22" r="3" /><circle cx="31" cy="24" r="3" /><circle cx="20" cy="28" r="3" /><circle cx="28" cy="28" r="3" /></svg>);
+
+                const FaceIcon = !hasData ? IcMeh : bDiff > 0 ? IcSmile : bDiff < 0 ? IcFrown : IcMeh;
+
                 const borderMsg = !hasData
                     ? "データ入力待ち"
                     : bDiff > 0
@@ -1822,10 +1859,10 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             : "ボーダーぴったりで推移しています";
 
                 const evRows = [
-                    { key: "ev1K", label: "期待値/K", icon: "🎯", bg: C.blue, val: ev.ev1K, unit: "円", fmt: (n) => sp(n, 0) },
-                    { key: "evPerRot", label: "単価", icon: "¥", bg: C.teal, val: ev.evPerRot, unit: "円/回", fmt: (n) => sp(n, 2) },
-                    { key: "workAmount", label: "仕事量", icon: "📅", bg: C.purple, val: ev.workAmount, unit: "円", fmt: (n) => sp(n, 0) },
-                    { key: "wage", label: "時給", icon: "🕒", bg: C.orange, val: ev.wage, unit: "円/h", fmt: (n) => sp(n, 0) },
+                    { key: "ev1K", label: "期待値/K", Icon: IcTarget, val: ev.ev1K, unit: "円", fmt: (n) => sp(n, 0) },
+                    { key: "evPerRot", label: "単価", Icon: IcYen, val: ev.evPerRot, unit: "円/回", fmt: (n) => sp(n, 2) },
+                    { key: "workAmount", label: "仕事量", Icon: IcCalendar, val: ev.workAmount, unit: "円", fmt: (n) => sp(n, 0) },
+                    { key: "wage", label: "時給", Icon: IcClock, val: ev.wage, unit: "円/h", fmt: (n) => sp(n, 0) },
                 ];
 
                 const onePointText = (() => {
@@ -1842,62 +1879,60 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 <div style={{ flex: 1, overflowY: "auto", padding: "0 14px", paddingBottom: "calc(80px + env(safe-area-inset-bottom))" }}>
                     {/* 回転率・ボーダー */}
                     <Card style={{ marginTop: 12 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px 10px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px 10px" }}>
                             <span style={{
-                                width: 22, height: 22, borderRadius: "50%",
-                                background: `color-mix(in srgb, ${C.blue} 18%, transparent)`,
-                                color: C.blue, fontSize: 14, fontWeight: 800,
-                                display: "inline-flex", alignItems: "center", justifyContent: "center", lineHeight: 1
-                            }}>+</span>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: C.subHi, fontFamily: font }}>回転率・ボーダー</span>
+                                width: 26, height: 26, borderRadius: "50%",
+                                background: `color-mix(in srgb, ${C.blue} 14%, transparent)`,
+                                border: `1.2px solid ${C.blue}`,
+                                display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                            }}><IcPlus c={C.blue} s={14} /></span>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: C.text, fontFamily: font }}>回転率・ボーダー</span>
                         </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", padding: "4px 8px 16px" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", padding: "4px 4px 14px" }}>
                             <div style={{ textAlign: "center", padding: "6px 4px" }}>
-                                <div style={{ fontSize: 11, color: C.sub, fontWeight: 600, marginBottom: 6 }}>1Kスタート</div>
-                                <div style={{ fontSize: 30, fontWeight: 800, color: sc(ev.bDiff), fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                                <div style={{ fontSize: 12, color: C.sub, fontWeight: 600, marginBottom: 6 }}>1Kスタート</div>
+                                <div style={{ fontSize: 32, fontWeight: 800, color: sc(ev.bDiff), fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
                                     {hasData ? f(ev.start1K, 1) : "—"}
                                 </div>
-                                <div style={{ fontSize: 10, color: C.sub, marginTop: 4 }}>回/K</div>
+                                <div style={{ fontSize: 10, color: C.sub, marginTop: 5 }}>回/K</div>
                             </div>
                             <div style={{ textAlign: "center", padding: "6px 4px", borderLeft: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>
-                                <div style={{ fontSize: 11, color: C.sub, fontWeight: 600, marginBottom: 6 }}>理論ボーダー</div>
-                                <div style={{ fontSize: 30, fontWeight: 800, color: C.subHi, fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                                <div style={{ fontSize: 12, color: C.sub, fontWeight: 600, marginBottom: 6 }}>理論ボーダー</div>
+                                <div style={{ fontSize: 32, fontWeight: 800, color: C.subHi, fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
                                     {ev.theoreticalBorder > 0 ? f(ev.theoreticalBorder, 1) : "—"}
                                 </div>
-                                <div style={{ fontSize: 10, color: C.sub, marginTop: 4 }}>回/K</div>
+                                <div style={{ fontSize: 10, color: C.sub, marginTop: 5 }}>回/K</div>
                             </div>
                             <div style={{ textAlign: "center", padding: "6px 4px" }}>
-                                <div style={{ fontSize: 11, color: C.sub, fontWeight: 600, marginBottom: 6 }}>ボーダー差</div>
-                                <div style={{ fontSize: 30, fontWeight: 800, color: sc(ev.bDiff), fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                                <div style={{ fontSize: 12, color: C.sub, fontWeight: 600, marginBottom: 6 }}>ボーダー差</div>
+                                <div style={{ fontSize: 32, fontWeight: 800, color: sc(ev.bDiff), fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
                                     {hasData ? sp(ev.bDiff, 1) : "—"}
                                 </div>
-                                <div style={{ fontSize: 10, color: C.sub, marginTop: 4 }}>回/K</div>
+                                <div style={{ fontSize: 10, color: C.sub, marginTop: 5 }}>回/K</div>
                             </div>
                         </div>
                         {/* 進捗バー */}
                         <div style={{
                             display: "flex", alignItems: "center", gap: 10,
-                            padding: "12px 14px",
+                            padding: "10px 12px",
                             margin: "0 12px 14px",
                             background: C.surfaceHi,
                             border: `1px solid ${C.border}`,
-                            borderRadius: 12,
+                            borderRadius: 10,
                         }}>
-                            <span style={{ fontSize: 18, lineHeight: 1 }}>{emoji}</span>
-                            <span style={{ flex: 1, fontSize: 12, color: C.subHi, fontFamily: font, fontWeight: 500 }}>{borderMsg}</span>
-                            <div style={{ width: 88, display: "flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ flexShrink: 0, display: "inline-flex" }}><FaceIcon c={barColor} s={20} /></span>
+                            <span style={{ flex: 1, fontSize: 12, color: C.subHi, fontFamily: font, fontWeight: 500, lineHeight: 1.4 }}>{borderMsg}</span>
+                            <div style={{ width: 80, display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
                                 <div style={{ flex: 1, height: 6, background: C.border, borderRadius: 999, position: "relative", overflow: "hidden" }}>
                                     <div style={{
-                                        position: "absolute", left: "50%", top: 0, bottom: 0,
-                                        width: `${Math.abs(barPct - 50)}%`,
-                                        transform: bDiff >= 0 ? "none" : "translateX(-100%)",
+                                        position: "absolute", left: 0, top: 0, bottom: 0,
+                                        width: `${barPct}%`,
                                         background: barColor,
                                         borderRadius: 999,
                                         transition: "width 0.2s ease"
                                     }} />
-                                    <div style={{ position: "absolute", left: "50%", top: -2, bottom: -2, width: 1, background: C.subHi, opacity: 0.4 }} />
                                 </div>
-                                <span style={{ fontSize: 10, fontWeight: 700, color: barColor, fontFamily: mono, minWidth: 28, textAlign: "right" }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: barColor, fontFamily: mono, minWidth: 28, textAlign: "right" }}>
                                     {hasData ? sp(bDiff, 1) : "—"}
                                 </span>
                             </div>
@@ -1906,32 +1941,30 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
                     {/* 期待値・収支 */}
                     <Card>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px 8px" }}>
-                            <span style={{ fontSize: 16, lineHeight: 1 }}>💰</span>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: C.subHi, fontFamily: font }}>期待値・収支</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px 6px" }}>
+                            <IcMoneyBag c={C.blue} s={18} />
+                            <span style={{ fontSize: 14, fontWeight: 700, color: C.text, fontFamily: font }}>期待値・収支</span>
                         </div>
                         {evRows.map((r, i) => (
                             <div key={r.key} style={{
                                 display: "flex", alignItems: "center", justifyContent: "space-between",
-                                padding: "12px 16px",
+                                padding: "11px 16px",
                                 borderTop: i === 0 ? "none" : `1px solid ${C.border}`,
                             }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                                     <span style={{
                                         width: 30, height: 30, borderRadius: "50%",
-                                        background: `color-mix(in srgb, ${r.bg} 16%, transparent)`,
-                                        color: r.bg,
-                                        display: "inline-flex", alignItems: "center", justifyContent: "center",
-                                        fontSize: 15, fontWeight: 700, lineHeight: 1,
-                                    }}>{r.icon}</span>
+                                        background: `color-mix(in srgb, ${C.blue} 12%, transparent)`,
+                                        display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                                    }}><r.Icon c={C.blue} s={16} /></span>
                                     <span style={{ fontSize: 14, color: C.text, fontFamily: font, fontWeight: 500 }}>{r.label}</span>
                                 </div>
                                 <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                    <span style={{ fontSize: 18, fontWeight: 800, color: sc(r.val), fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
+                                    <span style={{ fontSize: 20, fontWeight: 800, color: sc(r.val), fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
                                         {r.val !== 0 ? r.fmt(r.val) : "—"}
                                     </span>
-                                    <span style={{ fontSize: 10, color: C.sub }}>{r.unit}</span>
-                                    <span style={{ fontSize: 16, color: C.sub, marginLeft: 4, lineHeight: 1, pointerEvents: "none" }}>›</span>
+                                    <span style={{ fontSize: 11, color: C.sub }}>{r.unit}</span>
+                                    <span style={{ fontSize: 18, color: C.sub, marginLeft: 4, lineHeight: 1, pointerEvents: "none", fontWeight: 300 }}>›</span>
                                 </div>
                             </div>
                         ))}
@@ -1939,21 +1972,21 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
                     {/* 出玉データ */}
                     <Card>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px 8px" }}>
-                            <span style={{ fontSize: 16, lineHeight: 1, color: C.teal }}>🌙</span>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: C.subHi, fontFamily: font }}>出玉データ</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px 6px" }}>
+                            <IcMoon c={C.teal} s={18} />
+                            <span style={{ fontSize: 14, fontWeight: 700, color: C.text, fontFamily: font }}>出玉データ</span>
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", padding: "4px 16px 12px" }}>
+                        <div style={{ display: "flex", alignItems: "center", padding: "2px 16px 14px", gap: 12 }}>
                             <div style={{ flex: 1 }}>
-                                <div style={{ fontSize: 12, color: C.sub, fontWeight: 600, marginBottom: 4 }}>平均1R出玉</div>
-                                <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                    <span style={{ fontSize: 36, fontWeight: 800, color: C.teal, fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                                <div style={{ fontSize: 12, color: C.sub, fontWeight: 600, marginBottom: 6 }}>平均1R出玉</div>
+                                <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
+                                    <span style={{ fontSize: 38, fontWeight: 800, color: C.teal, fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
                                         {ev.avg1R > 0 ? f(ev.avg1R, 1) : "—"}
                                     </span>
-                                    <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>玉</span>
+                                    <span style={{ fontSize: 14, color: C.sub, fontWeight: 600 }}>玉</span>
                                 </div>
                             </div>
-                            <div style={{ fontSize: 44, lineHeight: 1, opacity: 0.85 }}>🪣</div>
+                            <IcBallsTray c={C.teal} s={52} />
                         </div>
                         {/* ミニ併記：稼働データ */}
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, padding: "0 12px 12px" }}>
@@ -1966,13 +1999,13 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     {/* ワンポイント */}
                     <Card style={{
                         background: `color-mix(in srgb, ${C.yellow} 8%, ${C.surface})`,
-                        borderColor: `color-mix(in srgb, ${C.yellow} 35%, ${C.border})`,
+                        borderColor: `color-mix(in srgb, ${C.yellow} 40%, ${C.border})`,
                     }}>
-                        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px" }}>
-                            <span style={{ fontSize: 18, lineHeight: 1.1 }}>💡</span>
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 14px" }}>
+                            <span style={{ flexShrink: 0, marginTop: 1 }}><IcBulb c={C.yellow} s={20} /></span>
                             <div style={{ flex: 1 }}>
-                                <div style={{ fontSize: 12, fontWeight: 700, color: C.yellow, marginBottom: 4, fontFamily: font }}>ワンポイント</div>
-                                <div style={{ fontSize: 13, color: C.text, lineHeight: 1.5, fontFamily: font }}>{onePointText}</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: C.yellow, marginBottom: 4, fontFamily: font }}>ワンポイント</div>
+                                <div style={{ fontSize: 13, color: C.text, lineHeight: 1.55, fontFamily: font }}>{onePointText}</div>
                             </div>
                         </div>
                     </Card>
@@ -1980,28 +2013,29 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     {/* 下部3ボタン */}
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 4, marginBottom: 12 }}>
                         {[
-                            { label: "グラフで確認", icon: "📈", col: C.purple, onClick: () => setShowGraphModal(true), disabled: false },
-                            { label: "データ履歴", icon: "📊", col: C.teal, onClick: () => S.setTab("calendar"), disabled: false },
-                            { label: "メモを追加", icon: "📝", col: C.blue, onClick: null, disabled: true },
+                            { label: "グラフで確認", Icon: IcLineChart, col: C.purple, onClick: () => setShowGraphModal(true), disabled: false },
+                            { label: "データ履歴", Icon: IcBarChart, col: C.teal, onClick: () => S.setTab("calendar"), disabled: false },
+                            { label: "メモを追加", Icon: IcPencil, col: C.blue, onClick: null, disabled: true },
                         ].map((b) => (
                             <button
                                 key={b.label}
                                 className="b"
                                 onClick={b.disabled ? undefined : b.onClick}
                                 style={{
-                                    background: `color-mix(in srgb, ${b.col} 12%, transparent)`,
-                                    border: `1px solid color-mix(in srgb, ${b.col} 32%, transparent)`,
+                                    background: `color-mix(in srgb, ${b.col} 10%, transparent)`,
+                                    border: `1px solid color-mix(in srgb, ${b.col} 28%, transparent)`,
                                     borderRadius: 12,
                                     color: b.col,
-                                    padding: "12px 4px",
+                                    padding: "14px 4px",
                                     fontSize: 12,
                                     fontWeight: 700,
                                     fontFamily: font,
-                                    display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                                    display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
                                     cursor: b.disabled ? "default" : "pointer",
+                                    opacity: b.disabled ? 0.75 : 1,
                                 }}
                             >
-                                <span style={{ fontSize: 16, lineHeight: 1 }}>{b.icon}</span>
+                                <b.Icon c={b.col} s={22} />
                                 <span>{b.label}</span>
                             </button>
                         ))}
