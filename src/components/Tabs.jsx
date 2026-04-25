@@ -1941,33 +1941,37 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
                     {/* 期待値・収支 */}
                     <Card>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px 6px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px 8px" }}>
                             <IcMoneyBag c={C.blue} s={18} />
                             <span style={{ fontSize: 14, fontWeight: 700, color: C.text, fontFamily: font }}>期待値・収支</span>
                         </div>
-                        {evRows.map((r, i) => (
-                            <div key={r.key} style={{
-                                display: "flex", alignItems: "center", justifyContent: "space-between",
-                                padding: "11px 16px",
-                                borderTop: i === 0 ? "none" : `1px solid ${C.border}`,
-                            }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                                    <span style={{
-                                        width: 30, height: 30, borderRadius: "50%",
-                                        background: `color-mix(in srgb, ${C.blue} 12%, transparent)`,
-                                        display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                                    }}><r.Icon c={C.blue} s={16} /></span>
-                                    <span style={{ fontSize: 14, color: C.text, fontFamily: font, fontWeight: 500 }}>{r.label}</span>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "0 12px 12px" }}>
+                            {evRows.map((r) => (
+                                <div key={r.key} style={{
+                                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                                    padding: "10px 14px",
+                                    background: C.surfaceHi,
+                                    border: `1px solid ${C.border}`,
+                                    borderRadius: 10,
+                                }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                                        <span style={{
+                                            width: 30, height: 30, borderRadius: "50%",
+                                            background: `color-mix(in srgb, ${C.blue} 12%, transparent)`,
+                                            display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                                        }}><r.Icon c={C.blue} s={16} /></span>
+                                        <span style={{ fontSize: 14, color: C.text, fontFamily: font, fontWeight: 500 }}>{r.label}</span>
+                                    </div>
+                                    <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                                        <span style={{ fontSize: 20, fontWeight: 800, color: sc(r.val), fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
+                                            {r.val !== 0 ? r.fmt(r.val) : "—"}
+                                        </span>
+                                        <span style={{ fontSize: 11, color: C.sub }}>{r.unit}</span>
+                                        <span style={{ fontSize: 18, color: C.sub, marginLeft: 4, lineHeight: 1, pointerEvents: "none", fontWeight: 300 }}>›</span>
+                                    </div>
                                 </div>
-                                <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                    <span style={{ fontSize: 20, fontWeight: 800, color: sc(r.val), fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
-                                        {r.val !== 0 ? r.fmt(r.val) : "—"}
-                                    </span>
-                                    <span style={{ fontSize: 11, color: C.sub }}>{r.unit}</span>
-                                    <span style={{ fontSize: 18, color: C.sub, marginLeft: 4, lineHeight: 1, pointerEvents: "none", fontWeight: 300 }}>›</span>
-                                </div>
-                            </div>
-                        ))}
+                            ))}
+                        </div>
                     </Card>
 
                     {/* 出玉データ */}
