@@ -74,6 +74,120 @@ function LineChart({ data, width = 320, height = 140, color = "#3b82f6", showZer
 }
 
 /* ================================================================
+   機種設定タブ用の小さなインラインSVGアイコン群
+================================================================ */
+function InfoIcon({ size = 14, color }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+            <circle cx="12" cy="12" r="10" stroke={color || C.blue} strokeWidth="2" fill={color ? `color-mix(in srgb, ${color} 18%, transparent)` : `color-mix(in srgb, ${C.blue} 18%, transparent)`} />
+            <line x1="12" y1="11" x2="12" y2="17" stroke={color || C.blue} strokeWidth="2.2" strokeLinecap="round" />
+            <circle cx="12" cy="7.5" r="1.3" fill={color || C.blue} />
+        </svg>
+    );
+}
+function PencilIcon({ size = 16, color = "currentColor" }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+            <path d="M14.06 4.94l4 4M3 21l4.5-1L19 8.5l-3.5-3.5L4 16.5 3 21z" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    );
+}
+function LightbulbIcon({ size = 20, color = C.yellow }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+            <path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.8 1 1.5 1 2.5h6c0-1 .3-1.7 1-2.5A6 6 0 0 0 12 3z" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill={`color-mix(in srgb, ${color} 14%, transparent)`} />
+        </svg>
+    );
+}
+function CoinIcon({ size = 18, color = "#fff" }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+            <circle cx="12" cy="12" r="8.5" stroke={color} strokeWidth="2" />
+            <circle cx="12" cy="12" r="4.5" stroke={color} strokeWidth="1.6" opacity="0.7" />
+        </svg>
+    );
+}
+function SwapIcon({ size = 18, color = "#fff" }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+            <path d="M4 8h13l-3-3M20 16H7l3 3" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    );
+}
+function StoreIcon({ size = 18, color = "#fff" }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+            <path d="M4 9l1-4h14l1 4M5 9v10h14V9M9 14h6v5H9z" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    );
+}
+function HashIcon({ size = 18, color = "#fff" }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+            <path d="M5 9h14M5 15h14M10 4l-2 16M16 4l-2 16" stroke={color} strokeWidth="2" strokeLinecap="round" />
+        </svg>
+    );
+}
+
+/* ヒーローセクションのプレースホルダ機種アイコン (グラデーション + P) */
+function MachinePlaceholder({ active }) {
+    const grad = active
+        ? `linear-gradient(135deg, ${C.blue} 0%, ${C.purple} 100%)`
+        : "linear-gradient(135deg, #3a3f4a 0%, #22262e 100%)";
+    return (
+        <div style={{
+            width: 80, height: 80, borderRadius: 16, background: grad,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            flexShrink: 0,
+            boxShadow: active ? "0 6px 18px rgba(47, 111, 237, 0.35)" : "none",
+        }}>
+            <span style={{ fontSize: 36, fontWeight: 900, color: "#fff", fontFamily: font, letterSpacing: 1 }}>P</span>
+        </div>
+    );
+}
+
+/* セクションヘッダー (ラベル + ⓘ) */
+function SectionHeader({ label }) {
+    return (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "14px 16px 8px" }}>
+            <span style={{ fontSize: 11, letterSpacing: 0.5, color: C.sub, fontFamily: font, fontWeight: 600 }}>{label}</span>
+            <InfoIcon size={14} />
+        </div>
+    );
+}
+
+/* ピル型サブカード (グラデーション円アイコン + ラベル + 値) */
+function SettingPill({ gradient, icon, label, value, mono: useMono }) {
+    return (
+        <div style={{
+            background: "var(--surface-hi)",
+            border: `1px solid ${C.border}`,
+            borderRadius: 14,
+            padding: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            minHeight: 64,
+        }}>
+            <div style={{
+                width: 36, height: 36, borderRadius: "50%", background: gradient,
+                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}>
+                {icon}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
+                <span style={{ fontSize: 10, fontWeight: 600, color: C.sub, marginBottom: 2 }}>{label}</span>
+                <span style={{
+                    fontSize: 15, fontWeight: 700, color: C.text,
+                    fontFamily: useMono ? mono : font,
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}>{value}</span>
+            </div>
+        </div>
+    );
+}
+
+/* ================================================================
    DataTab — 全データ一覧表示 + グラフ
 ================================================================ */
 export function DataTab({ ev, jpLog, S }) {
@@ -189,6 +303,21 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [summaryCollapsed, setSummaryCollapsed] = useState(true);
     const [showInvestSettings, setShowInvestSettings] = useState(false);
     const tableRef = useRef(null);
+
+    // 機種設定 編集モーダル用state
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editStore, setEditStore] = useState("");
+    const [editMachineNum, setEditMachineNum] = useState("");
+    const [editMachineName, setEditMachineName] = useState("");
+    const [editSynthDenom, setEditSynthDenom] = useState("");
+    const [editSpec1R, setEditSpec1R] = useState("");
+    const [editRentBalls, setEditRentBalls] = useState("");
+    const [editExRate, setEditExRate] = useState("");
+    const [editStoreDD, setEditStoreDD] = useState(false);
+    const [editMachineDD, setEditMachineDD] = useState(false);
+    const [editMachineQuery, setEditMachineQuery] = useState("");
+    const [editError, setEditError] = useState("");
+    const editPickedMachineRef = useRef(null);
 
     // 初当たりウィザード用state
     const [hitWizardOpen, setHitWizardOpen] = useState(false);
@@ -648,6 +777,20 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         if (!machineQuery.trim()) return [];
         return searchMachines(machineQuery, S.customMachines).slice(0, 8);
     }, [machineQuery, S.customMachines]);
+
+    // 機種設定 編集モーダル用の検索結果
+    const editMachineResults = useMemo(() => {
+        if (!editMachineQuery.trim()) return [];
+        return searchMachines(editMachineQuery, S.customMachines).slice(0, 8);
+    }, [editMachineQuery, S.customMachines]);
+
+    // 現在の機種からタイプ(ミドル/甘デジ等)を解決
+    const currentMachineType = useMemo(() => {
+        if (!S.machineName) return "";
+        const all = [...machineDB, ...(S.customMachines || [])];
+        const hit = all.find(m => m && m.name === S.machineName);
+        return hit?.type || "パチンコ";
+    }, [S.machineName, S.customMachines]);
 
     // 店舗の貯玉残高を取得
     const currentStoreData = useMemo(() => {
@@ -2051,49 +2194,332 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             {/* 機種設定タブ */}
             {S.sessionSubTab === "settings" && (
                 <div style={{ flex: 1, overflowY: "auto", padding: "12px", paddingBottom: "calc(80px + env(safe-area-inset-bottom))" }}>
+                    {/* 機種情報カード */}
                     <Card>
-                        <SecLabel label="機種情報" />
-                        <div style={{ padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
-                            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>機種名</div>
-                            <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>{S.machineName || "未設定"}</div>
+                        <SectionHeader label="機種情報" />
+                        <div style={{ display: "flex", gap: 14, padding: "0 16px 14px", alignItems: "center" }}>
+                            <MachinePlaceholder active={!!S.machineName} />
+                            <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1, gap: 6 }}>
+                                <div style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>機種名</div>
+                                <div style={{ fontSize: 17, fontWeight: 800, color: C.text, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis" }}>
+                                    {S.machineName || "未設定"}
+                                </div>
+                                {S.machineName && (
+                                    <span style={{
+                                        display: "inline-block", alignSelf: "flex-start",
+                                        fontSize: 11, fontWeight: 700, fontFamily: font,
+                                        padding: "4px 10px", borderRadius: 999,
+                                        background: `color-mix(in srgb, ${C.purple} 14%, transparent)`,
+                                        color: C.purple,
+                                        border: `1px solid color-mix(in srgb, ${C.purple} 28%, transparent)`,
+                                    }}>
+                                        {currentMachineType || "パチンコ"}
+                                    </span>
+                                )}
+                            </div>
                         </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, padding: "12px 0" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, padding: "12px 16px 14px", borderTop: `1px solid ${C.border}` }}>
                             <div>
-                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>合成確率</div>
-                                <div style={{ fontSize: 16, fontWeight: 700, color: C.yellow, fontFamily: mono }}>1/{S.synthDenom}</div>
+                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                                    合成確率<InfoIcon size={12} color={C.sub} />
+                                </div>
+                                <div style={{ fontSize: 18, fontWeight: 800, color: C.yellow, fontFamily: mono }}>1/{S.synthDenom}</div>
                             </div>
                             <div>
-                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>1Rあたり出玉</div>
-                                <div style={{ fontSize: 16, fontWeight: 700, color: C.teal, fontFamily: mono }}>{S.spec1R}玉</div>
+                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                                    1Rあたり出玉<InfoIcon size={12} color={C.sub} />
+                                </div>
+                                <div style={{ fontSize: 18, fontWeight: 800, color: C.teal, fontFamily: mono }}>{S.spec1R}玉</div>
                             </div>
                         </div>
                     </Card>
+
+                    {/* 交換率・貸玉カード */}
                     <Card>
-                        <SecLabel label="交換率・貸玉" />
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, padding: "12px 0" }}>
-                            <div>
-                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貸玉数</div>
-                                <div style={{ fontSize: 16, fontWeight: 700, color: C.text, fontFamily: mono }}>{S.rentBalls}玉/K</div>
-                            </div>
-                            <div>
-                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>交換率</div>
-                                <div style={{ fontSize: 16, fontWeight: 700, color: C.text, fontFamily: mono }}>{S.exRate}玉/K</div>
+                        <SectionHeader label="交換率・貸玉" />
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, padding: "4px 12px 14px" }}>
+                            <SettingPill
+                                gradient={`linear-gradient(135deg, ${C.purple} 0%, #6c4ff5 100%)`}
+                                icon={<CoinIcon />}
+                                label="貸玉数"
+                                value={`${S.rentBalls}玉/K`}
+                                mono
+                            />
+                            <SettingPill
+                                gradient={`linear-gradient(135deg, ${C.teal} 0%, ${C.green} 100%)`}
+                                icon={<SwapIcon />}
+                                label="交換率"
+                                value={`${S.exRate}玉/K`}
+                                mono
+                            />
+                        </div>
+                    </Card>
+
+                    {/* 店舗・台番号カード */}
+                    <Card>
+                        <SectionHeader label="店舗・台番号" />
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, padding: "4px 12px 14px" }}>
+                            <SettingPill
+                                gradient={`linear-gradient(135deg, ${C.blue} 0%, #1d4fd0 100%)`}
+                                icon={<StoreIcon />}
+                                label="店舗"
+                                value={S.storeName || "未設定"}
+                            />
+                            <SettingPill
+                                gradient={`linear-gradient(135deg, ${C.blue} 0%, #1d4fd0 100%)`}
+                                icon={<HashIcon />}
+                                label="台番号"
+                                value={S.machineNum || "未設定"}
+                            />
+                        </div>
+                    </Card>
+
+                    {/* 編集ボタン */}
+                    <button
+                        className="b"
+                        onClick={() => {
+                            setEditStore(S.storeName || "");
+                            setEditMachineNum(S.machineNum || "");
+                            setEditMachineName(S.machineName || "");
+                            setEditSynthDenom(S.synthDenom != null ? String(S.synthDenom) : "");
+                            setEditSpec1R(S.spec1R != null ? String(S.spec1R) : "");
+                            setEditRentBalls(S.rentBalls != null ? String(S.rentBalls) : "");
+                            setEditExRate(S.exRate != null ? String(S.exRate) : "");
+                            setEditMachineQuery("");
+                            setEditError("");
+                            editPickedMachineRef.current = null;
+                            setShowEditModal(true);
+                        }}
+                        style={{
+                            width: "100%", padding: "16px", borderRadius: 14,
+                            background: "transparent", border: `1px solid ${C.blue}`,
+                            color: C.blue, fontSize: 14, fontWeight: 700, fontFamily: font,
+                            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                            minHeight: 48, marginBottom: 12,
+                        }}
+                    >
+                        <PencilIcon size={16} color={C.blue} />
+                        <span>機種設定を編集する</span>
+                    </button>
+
+                    {/* 設定のポイント注釈カード */}
+                    <Card style={{
+                        background: `color-mix(in srgb, ${C.yellow} 8%, transparent)`,
+                        border: `1px solid color-mix(in srgb, ${C.yellow} 22%, transparent)`,
+                        padding: 14,
+                        marginBottom: 0,
+                    }}>
+                        <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                            <LightbulbIcon size={20} color={C.yellow} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: C.yellow, marginBottom: 4 }}>設定のポイント</div>
+                                <div style={{ fontSize: 12, color: C.sub, lineHeight: 1.6 }}>
+                                    機種設定を正しく行うことで、回転率や期待値の精度が向上します。不明な項目は後から変更できます。
+                                </div>
                             </div>
                         </div>
                     </Card>
-                    <Card>
-                        <SecLabel label="店舗・台番号" />
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, padding: "12px 0" }}>
-                            <div>
-                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>店舗</div>
-                                <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{S.storeName || "未設定"}</div>
+                </div>
+            )}
+
+            {/* 機種設定 編集モーダル */}
+            {showEditModal && (
+                <div style={{ position: "fixed", inset: 0, background: "rgba(17,24,39,0.5)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+                    <div className="card-premium" style={{ width: "100%", maxWidth: 360, maxHeight: "85vh", overflowY: "auto" }}>
+                        <div style={{ padding: "20px 18px 14px", borderBottom: `1px solid ${C.border}` }}>
+                            <h2 style={{ fontSize: 20, fontWeight: 900, color: C.text, marginBottom: 6 }}>機種設定を編集</h2>
+                            <p style={{ fontSize: 12, color: C.sub, lineHeight: 1.5 }}>項目を更新して保存してください</p>
+                        </div>
+
+                        <div style={{ padding: 18 }}>
+                            {/* 店舗 */}
+                            <div style={{ marginBottom: 14, position: "relative" }}>
+                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>店舗</div>
+                                <div style={{ position: "relative" }}>
+                                    <input
+                                        type="text"
+                                        value={editStore}
+                                        onChange={e => setEditStore(e.target.value)}
+                                        placeholder="店舗名を入力"
+                                        style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "14px 40px 14px 14px", fontSize: 16, color: C.text, fontFamily: font, outline: "none" }}
+                                    />
+                                    {(S.stores || []).length > 0 && (
+                                        <button className="b" onClick={() => setEditStoreDD(!editStoreDD)} style={{
+                                            position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
+                                            background: "var(--surface-hi)", border: "none", color: C.sub, fontSize: 12, padding: "6px 8px", borderRadius: 6
+                                        }}>▼</button>
+                                    )}
+                                </div>
+                                {editStoreDD && (S.stores || []).length > 0 && (
+                                    <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 10, zIndex: 20, maxHeight: 150, overflowY: "auto", marginTop: 4, boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+                                        {(S.stores || []).map((st, i) => {
+                                            const name = typeof st === "object" ? st.name : st;
+                                            return (
+                                                <button key={(st && st.id) || i} className="b" onClick={() => {
+                                                    setEditStore(name);
+                                                    if (typeof st === "object") {
+                                                        if (st.rentBalls) setEditRentBalls(String(st.rentBalls));
+                                                        if (st.exRate) setEditExRate(String(st.exRate));
+                                                    }
+                                                    setEditStoreDD(false);
+                                                }} style={{
+                                                    width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${C.border}`,
+                                                    color: C.text, fontSize: 14, padding: "12px 14px", textAlign: "left", fontFamily: font
+                                                }}>
+                                                    {name}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
-                            <div>
-                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>台番号</div>
-                                <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{S.machineNum || "—"}</div>
+
+                            {/* 機種 */}
+                            <div style={{ marginBottom: 12, position: "relative" }}>
+                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>機種</div>
+                                <input
+                                    type="text"
+                                    value={editMachineName}
+                                    onChange={e => { setEditMachineName(e.target.value); setEditMachineQuery(e.target.value); setEditMachineDD(true); }}
+                                    onFocus={() => setEditMachineDD(true)}
+                                    placeholder="機種名を検索 / 入力"
+                                    style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "14px", fontSize: 16, color: C.text, fontFamily: font, outline: "none" }}
+                                />
+                                {editMachineDD && editMachineResults.length > 0 && (
+                                    <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 10, zIndex: 20, maxHeight: 200, overflowY: "auto", marginTop: 4, boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+                                        {editMachineResults.map((m, i) => (
+                                            <button key={m.id || i} className="b" onClick={() => {
+                                                setEditMachineName(m.name);
+                                                if (m.synthProb != null) setEditSynthDenom(String(m.synthProb));
+                                                if (m.spec1R != null) setEditSpec1R(String(m.spec1R));
+                                                editPickedMachineRef.current = {
+                                                    specAvgRounds: m.specAvgTotalRounds,
+                                                    specSapo: m.specSapo,
+                                                };
+                                                setEditMachineDD(false);
+                                                setEditMachineQuery("");
+                                            }} style={{
+                                                width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${C.border}`,
+                                                padding: "12px 14px", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center"
+                                            }}>
+                                                <div>
+                                                    <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{m.name}</div>
+                                                    <div style={{ fontSize: 10, color: C.sub }}>{m.maker || ""} {m.type ? `| ${m.type}` : ""}</div>
+                                                </div>
+                                                <div style={{ fontSize: 14, fontWeight: 700, color: C.yellow, fontFamily: mono }}>{m.prob || `1/${m.synthProb}`}</div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* 台番号・合成確率 */}
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                                <div>
+                                    <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>台番号</div>
+                                    <input
+                                        type="tel"
+                                        inputMode="numeric"
+                                        value={editMachineNum}
+                                        onChange={e => setEditMachineNum(e.target.value)}
+                                        placeholder="例: 123"
+                                        style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "14px", fontSize: 18, color: C.text, fontFamily: mono, outline: "none", textAlign: "center" }}
+                                    />
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>合成確率 (1/?)</div>
+                                    <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={editSynthDenom}
+                                        onChange={e => setEditSynthDenom(e.target.value)}
+                                        placeholder="319.6"
+                                        style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "14px", fontSize: 18, color: C.yellow, fontFamily: mono, outline: "none", textAlign: "center" }}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* 1Rあたり出玉 */}
+                            <div style={{ marginBottom: 12 }}>
+                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>1Rあたり出玉 (玉)</div>
+                                <input
+                                    type="tel"
+                                    inputMode="numeric"
+                                    value={editSpec1R}
+                                    onChange={e => setEditSpec1R(e.target.value)}
+                                    placeholder="140"
+                                    style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "14px", fontSize: 18, color: C.teal, fontFamily: mono, outline: "none", textAlign: "center" }}
+                                />
+                            </div>
+
+                            {/* 貸玉数・交換率 */}
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+                                <div>
+                                    <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>貸玉数 (玉/K)</div>
+                                    <input
+                                        type="tel"
+                                        inputMode="numeric"
+                                        value={editRentBalls}
+                                        onChange={e => setEditRentBalls(e.target.value)}
+                                        placeholder="250"
+                                        style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "14px", fontSize: 18, color: C.text, fontFamily: mono, outline: "none", textAlign: "center" }}
+                                    />
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>交換率 (玉/K)</div>
+                                    <input
+                                        type="tel"
+                                        inputMode="numeric"
+                                        value={editExRate}
+                                        onChange={e => setEditExRate(e.target.value)}
+                                        placeholder="250"
+                                        style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "14px", fontSize: 18, color: C.text, fontFamily: mono, outline: "none", textAlign: "center" }}
+                                    />
+                                </div>
+                            </div>
+
+                            {editError && (
+                                <div className="error-msg" style={{ marginBottom: 12 }}>{editError}</div>
+                            )}
+
+                            {/* ボタン */}
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                                <button className="b" onClick={() => setShowEditModal(false)} style={{
+                                    background: "var(--surface-hi)", border: `1px solid ${C.borderHi}`, borderRadius: 14, color: C.text, fontSize: 15, fontWeight: 700, padding: "16px 0", fontFamily: font
+                                }}>キャンセル</button>
+                                <button className="b btn-premium btn-secondary" onClick={() => {
+                                    const parseNum = v => Number(String(v).replace(",", ".").trim());
+                                    const synth = parseNum(editSynthDenom);
+                                    const r1 = parseNum(editSpec1R);
+                                    const rb = parseNum(editRentBalls);
+                                    const ex = parseNum(editExRate);
+                                    if (!Number.isFinite(synth) || synth <= 0 ||
+                                        !Number.isFinite(r1) || r1 <= 0 ||
+                                        !Number.isFinite(rb) || rb <= 0 ||
+                                        !Number.isFinite(ex) || ex <= 0) {
+                                        setEditError("合成確率・1R出玉・貸玉数・交換率を正しく入力してください");
+                                        return;
+                                    }
+                                    S.setStoreName((editStore || "").trim());
+                                    S.setMachineNum((editMachineNum || "").trim());
+                                    S.setMachineName((editMachineName || "").trim());
+                                    S.setSynthDenom(synth);
+                                    S.setSpec1R(r1);
+                                    S.setRentBalls(rb);
+                                    S.setExRate(ex);
+                                    const picked = editPickedMachineRef.current;
+                                    if (picked) {
+                                        if (picked.specAvgRounds != null) S.setSpecAvgRounds(picked.specAvgRounds);
+                                        if (picked.specSapo != null) S.setSpecSapo(picked.specSapo);
+                                    }
+                                    setEditError("");
+                                    setShowEditModal(false);
+                                }}>
+                                    保存
+                                </button>
                             </div>
                         </div>
-                    </Card>
+                    </div>
                 </div>
             )}
 
