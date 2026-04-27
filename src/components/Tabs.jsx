@@ -303,6 +303,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [machineQuery, setMachineQuery] = useState("");
     const [summaryCollapsed, setSummaryCollapsed] = useState(true);
     const [showInvestSettings, setShowInvestSettings] = useState(false);
+    const [showMoreOps, setShowMoreOps] = useState(false);
     const tableRef = useRef(null);
 
     // 機種設定 編集モーダル用state
@@ -1567,7 +1568,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     </div>
 
                     {/* Data Rows */}
-                    <div ref={tableRef} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "0 12px", paddingBottom: 440, overscrollBehavior: "contain" }}>
+                    <div ref={tableRef} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "0 12px", paddingBottom: showMoreOps ? 380 : 260, overscrollBehavior: "contain" }}>
                         {rows.map((row, i) => {
                             const investDisplay = (row.mode === "mochi" || row.mode === "chodama")
                                 ? (row.ballsConsumed ? f(row.ballsConsumed * (1000 / rentBalls)) : "—")
@@ -1792,32 +1793,52 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             この内容を記録する
                         </button>
 
-                        {/* モード切替 */}
-                        <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
-                            <ModeToggle mode={S.playMode} setMode={S.setPlayMode} showChodama={true} compact={false} />
-                        </div>
+                        {/* もっと見るトグル */}
+                        <button
+                            className="b"
+                            type="button"
+                            aria-expanded={showMoreOps}
+                            onClick={() => setShowMoreOps(v => !v)}
+                            style={{ width: "100%", minHeight: 36, background: `color-mix(in srgb, ${C.surfaceHi} 50%, transparent)`, border: `1px solid ${C.border}`, borderRadius: 10, color: C.sub, fontSize: 11, fontWeight: 600, fontFamily: font, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+                        >
+                            {showMoreOps ? (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 15l-6-6-6 6" /></svg>
+                            ) : (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+                            )}
+                            {showMoreOps ? "閉じる" : "もっと見る（モード切替・クイック操作）"}
+                        </button>
 
-                        {/* クイック操作: 台移動 / 大当たり後スタート / メモを追加 */}
-                        <div style={{ fontSize: 10, fontWeight: 700, color: C.sub, fontFamily: font, marginBottom: 4 }}>クイック操作</div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-                            <button className="b" onClick={() => setShowMoveModal(true)} style={{ background: `color-mix(in srgb, ${C.purple} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${C.purple} 32%, transparent)`, borderRadius: 10, color: C.purple, fontSize: 11, fontWeight: 700, padding: "12px 4px", fontFamily: font, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minHeight: 48 }}>
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 8l-3 3 3 3" /><path d="M4 11h13" /><path d="M17 16l3-3-3-3" /><path d="M20 13H7" /></svg>
-                                台移動
-                            </button>
-                            <button className="b" onClick={handlePostJackpotStart} style={{ background: `color-mix(in srgb, ${C.green} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${C.green} 32%, transparent)`, borderRadius: 10, color: C.green, fontSize: 11, fontWeight: 700, padding: "12px 4px", fontFamily: font, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minHeight: 48 }}>
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l2.5 5.5L20 9.3l-4 4 1 5.7L12 16l-5 3 1-5.7-4-4 5.5-.8z" /></svg>
-                                <span style={{ lineHeight: 1.15, textAlign: "center" }}>大当たり後<br />スタート</span>
-                            </button>
-                            <button className="b" onClick={() => {
-                                const text = window.prompt("メモを入力");
-                                if (text && text.trim()) {
-                                    S.pushLog({ type: "メモ", time: tsNow(), text: text.trim() });
-                                }
-                            }} style={{ background: `color-mix(in srgb, ${C.blue} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${C.blue} 32%, transparent)`, borderRadius: 10, color: C.blue, fontSize: 11, fontWeight: 700, padding: "12px 4px", fontFamily: font, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minHeight: 48 }}>
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4L18 10l-4-4L4 16z" /><path d="M14 6l4 4" /></svg>
-                                メモを追加
-                            </button>
-                        </div>
+                        {showMoreOps && (
+                            <>
+                                {/* モード切替 */}
+                                <div style={{ display: "flex", justifyContent: "center", marginTop: 8, marginBottom: 8 }}>
+                                    <ModeToggle mode={S.playMode} setMode={S.setPlayMode} showChodama={true} compact={false} />
+                                </div>
+
+                                {/* クイック操作: 台移動 / 大当たり後スタート / メモを追加 */}
+                                <div style={{ fontSize: 10, fontWeight: 700, color: C.sub, fontFamily: font, marginBottom: 4 }}>クイック操作</div>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                                    <button className="b" onClick={() => setShowMoveModal(true)} style={{ background: `color-mix(in srgb, ${C.purple} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${C.purple} 32%, transparent)`, borderRadius: 10, color: C.purple, fontSize: 11, fontWeight: 700, padding: "12px 4px", fontFamily: font, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minHeight: 48 }}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 8l-3 3 3 3" /><path d="M4 11h13" /><path d="M17 16l3-3-3-3" /><path d="M20 13H7" /></svg>
+                                        台移動
+                                    </button>
+                                    <button className="b" onClick={handlePostJackpotStart} style={{ background: `color-mix(in srgb, ${C.green} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${C.green} 32%, transparent)`, borderRadius: 10, color: C.green, fontSize: 11, fontWeight: 700, padding: "12px 4px", fontFamily: font, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minHeight: 48 }}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l2.5 5.5L20 9.3l-4 4 1 5.7L12 16l-5 3 1-5.7-4-4 5.5-.8z" /></svg>
+                                        <span style={{ lineHeight: 1.15, textAlign: "center" }}>大当たり後<br />スタート</span>
+                                    </button>
+                                    <button className="b" onClick={() => {
+                                        const text = window.prompt("メモを入力");
+                                        if (text && text.trim()) {
+                                            S.pushLog({ type: "メモ", time: tsNow(), text: text.trim() });
+                                        }
+                                    }} style={{ background: `color-mix(in srgb, ${C.blue} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${C.blue} 32%, transparent)`, borderRadius: 10, color: C.blue, fontSize: 11, fontWeight: 700, padding: "12px 4px", fontFamily: font, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minHeight: 48 }}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4L18 10l-4-4L4 16z" /><path d="M14 6l4 4" /></svg>
+                                        メモを追加
+                                    </button>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </>
             )}
