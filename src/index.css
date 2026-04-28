@@ -457,23 +457,30 @@ input, select, textarea {
 .neon-card {
   background: color-mix(in srgb, var(--neon, var(--blue)) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--neon, var(--blue)) 28%, transparent);
-  border-radius: 16px;
+  border-radius: 14px;
   box-shadow:
-    0 0 14px color-mix(in srgb, var(--neon, var(--blue)) 18%, transparent),
+    0 0 12px color-mix(in srgb, var(--neon, var(--blue)) 16%, transparent),
     inset 0 0 0 1px color-mix(in srgb, var(--neon, var(--blue)) 6%, transparent);
-  padding: 10px 12px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  min-height: 64px;
+  gap: 3px;
+  min-height: 52px;
 }
 
 .neon-card__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 10px;
   font-weight: 700;
   color: var(--neon, var(--blue));
   letter-spacing: 0.3px;
   font-family: var(--font-main);
+}
+
+.neon-card__label svg {
+  flex: 0 0 auto;
 }
 
 .neon-card__row {
@@ -484,7 +491,7 @@ input, select, textarea {
 
 .neon-card__num {
   font-family: var(--font-mono);
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 800;
   color: var(--text);
   line-height: 1;
@@ -497,7 +504,9 @@ input, select, textarea {
 }
 
 .auto-badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: 9px;
   font-weight: 700;
   padding: 2px 6px;
@@ -508,15 +517,15 @@ input, select, textarea {
   align-self: flex-start;
 }
 
-/* テンキー / 削除 / クリア共通ボタン（最低タップ領域 56px） */
+/* テンキー / 削除 / クリア共通ボタン（最低タップ領域 44px / Apple HIG最小） */
 .key-btn {
-  min-height: 56px;
-  border-radius: 12px;
+  min-height: 44px;
+  border-radius: 10px;
   background: var(--surface-hi);
   border: 1px solid var(--border);
   color: var(--text);
   font-family: var(--font-mono);
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 700;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -530,8 +539,8 @@ input, select, textarea {
 
 /* クイック追加ボタン（青アウトライン） */
 .quick-add-btn {
-  min-height: 44px;
-  border-radius: 10px;
+  min-height: 36px;
+  border-radius: 9px;
   background: color-mix(in srgb, var(--blue) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--blue) 32%, transparent);
   color: var(--blue);
