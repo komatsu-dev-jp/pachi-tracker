@@ -295,7 +295,6 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const border = ev.useBorder > 0 ? ev.useBorder : displayBorder;
     const [input, setInput] = useState("");
     const [inputError, setInputError] = useState("");
-    const [hitToggle, setHitToggle] = useState(false);
     const [showMoveModal, setShowMoveModal] = useState(false);
     const [showSetupModal, setShowSetupModal] = useState(false);
     const [showStoreDD, setShowStoreDD] = useState(false);
@@ -303,7 +302,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [machineQuery, setMachineQuery] = useState("");
     const [summaryCollapsed, setSummaryCollapsed] = useState(true);
     const [showInvestSettings, setShowInvestSettings] = useState(false);
-    const [showMoreOps, setShowMoreOps] = useState(false);
+    const [showHistory, setShowHistory] = useState(false);
     const tableRef = useRef(null);
 
     // 機種設定 編集モーダル用state
@@ -1014,18 +1013,6 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         setHitWizardOpen(true);
     };
 
-    // 大当たり後スタート: 現在の入力値を新しいスタート回転数として設定し、テーブルに行を追加
-    const handlePostJackpotStart = () => {
-        const val = Number(input);
-        if (val > 0) {
-            S.setStartRot(val);
-            // テーブルにスタート行を追加（投資額も記録して平均回転数計算の基準にする）
-            setRows((r) => [...r, { type: "start", cumRot: val, mode: S.playMode, mochiBalls: S.currentMochiBalls, chodamaBalls: S.currentChodama, isPostJackpotStart: true, invest: S.investYen }]);
-            S.pushLog({ type: "大当たり後スタート", time: tsNow(), rot: val });
-            setInput("");
-        }
-    };
-
     // ウィザード完了時の処理
     // ウィザード完了: 単発の場合はチェーン完了、確変の場合はHistoryTabへ
     // overrideHitType: 確変ボタンから直接呼ばれる場合に使用（setStateが非同期のため）
@@ -1412,6 +1399,20 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         return Math.floor(balls / (1000 / ballValue / S.rentBalls)) * 1000;
     };
 
+    // テンキー用ハンドラ（input文字列を編集するだけ。decide/handleStartChainは現行のまま使う）
+    const MAX_INPUT_LEN = 6;
+    const pressDigit = (d) => {
+        setInputError("");
+        setInput(prev => {
+            if (prev === "0") return d;
+            if (prev.length >= MAX_INPUT_LEN) return prev;
+            return prev + d;
+        });
+    };
+    const pressBackspace = () => { setInputError(""); setInput(p => p.slice(0, -1)); };
+    const pressClear = () => { setInputError(""); setInput(""); };
+    const pressQuickAdd = (n) => { setInputError(""); setInput(String((Number(input) || 0) + n)); };
+
     // セッション開始後：データ表示とコントロール
     return (
         <div
@@ -1523,325 +1524,273 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 </div>
             </div>
 
-            {/* 回転入力タブ */}
-            {S.sessionSubTab === "rot" && (
-                <>
-                    {/* サマリーカード 4枚（総回転数 / 大当たり / 総投資 / 持ち玉） */}
-                    {(() => {
-                        const totalRot = ev.netRot > 0 ? f(ev.netRot) : "0";
-                        const jpCount = (S.jpLog || []).length;
-                        const totalInv = ev.rawInvest > 0 ? f(ev.rawInvest) : "0";
-                        const ballsNow = S.playMode === "chodama" ? (S.currentChodama || 0) : (S.currentMochiBalls || 0);
-                        const summaryCards = [
-                            { label: "総回転数", val: totalRot, unit: "回", col: C.blue },
-                            { label: "大当たり", val: jpCount.toString(), unit: "回", col: C.orange },
-                            { label: "総投資", val: totalInv, unit: "円", col: C.green },
-                            { label: S.playMode === "chodama" ? "貯玉" : "持ち玉", val: f(ballsNow), unit: "玉", col: C.purple },
-                        ];
-                        return (
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, padding: "8px 12px 4px", flexShrink: 0 }}>
-                                {summaryCards.map((c) => (
-                                    <div key={c.label} style={{
-                                        background: `color-mix(in srgb, ${c.col} 10%, transparent)`,
-                                        border: `1px solid color-mix(in srgb, ${c.col} 28%, transparent)`,
-                                        borderRadius: 10,
-                                        padding: "8px 6px",
-                                        display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2,
-                                        minHeight: 56,
-                                    }}>
-                                        <div style={{ fontSize: 10, fontWeight: 700, color: c.col, fontFamily: font, letterSpacing: 0.2 }}>{c.label}</div>
-                                        <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
-                                            <span style={{ fontSize: 19, fontWeight: 800, color: C.text, fontFamily: mono, lineHeight: 1 }}>{c.val}</span>
-                                            <span style={{ fontSize: 9, color: C.sub, fontFamily: font }}>{c.unit}</span>
-                                        </div>
+            {/* 回転入力タブ — 刷新版 */}
+            {S.sessionSubTab === "rot" && (() => {
+                const currentRot = Number(input) || (rows.length > 0 ? rows[rows.length - 1].cumRot : 0);
+                const totalRotVal = ev.netRot > 0 ? f(ev.netRot) : "0";
+                const jpCountVal = (S.jpLog || []).length;
+                const totalInvVal = ev.rawInvest > 0 ? f(ev.rawInvest) : "0";
+                const summaryCards = [
+                    { label: "現在の回転数", val: f(currentRot), unit: "回", col: C.blue },
+                    { label: "総回転数", val: totalRotVal, unit: "回", col: C.blue },
+                    { label: "大当たり", val: jpCountVal.toString(), unit: "回", col: C.orange },
+                    { label: "総投資", val: totalInvVal, unit: "円", col: C.green },
+                ];
+                const ballsLabel = S.playMode === "chodama" ? "貯玉" : "持ち玉";
+                const ballsVal = S.playMode === "chodama" ? (S.currentChodama || 0) : (S.currentMochiBalls || 0);
+                const measuredDenom = (ev.jpCount > 0 && ev.netRot > 0)
+                    ? "1/" + (ev.netRot / ev.jpCount).toFixed(1)
+                    : "—";
+
+                return (
+                    <div style={{
+                        flex: 1, overflowY: "auto", overscrollBehavior: "contain",
+                        padding: "10px 12px",
+                        paddingBottom: "calc(80px + env(safe-area-inset-bottom))",
+                        display: "flex", flexDirection: "column", gap: 12,
+                    }}>
+                        {/* A. 上段4カード */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
+                            {summaryCards.map((c) => (
+                                <div key={c.label} className="neon-card" style={{ "--neon": c.col }}>
+                                    <div className="neon-card__label">{c.label}</div>
+                                    <div className="neon-card__row">
+                                        <span className="neon-card__num">{c.val}</span>
+                                        <span className="neon-card__unit">{c.unit}</span>
                                     </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* B. 回転数を入力 + テンキー + 右側アクション */}
+                        <div style={{
+                            background: C.surface, border: `1px solid ${C.border}`,
+                            borderRadius: 16, padding: 12, display: "flex", flexDirection: "column", gap: 10,
+                            boxShadow: "var(--card-shadow)",
+                        }}>
+                            {/* ヘッダー：回転数を入力 + ModeToggle */}
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: C.text, fontFamily: font }}>
+                                    <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: C.blue, boxShadow: `0 0 0 3px color-mix(in srgb, ${C.blue} 25%, transparent)` }} />
+                                    回転数を入力
+                                </div>
+                                <ModeToggle mode={S.playMode} setMode={S.setPlayMode} showChodama={true} compact={true} />
+                            </div>
+
+                            {/* 入力エリア（左：表示+テンキー / 右：アクション縦並び） */}
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 96px", gap: 8 }}>
+                                {/* 左カラム */}
+                                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                    {/* 入力値ディスプレイ（タップでクリア） */}
+                                    <button
+                                        className="b"
+                                        type="button"
+                                        onClick={pressClear}
+                                        aria-label="入力をクリア"
+                                        style={{
+                                            width: "100%", minHeight: 64, borderRadius: 14,
+                                            background: `color-mix(in srgb, ${C.blue} 6%, transparent)`,
+                                            border: `1px solid color-mix(in srgb, ${C.blue} 30%, transparent)`,
+                                            color: input ? C.text : C.sub,
+                                            fontFamily: mono, fontSize: 36, fontWeight: 800, lineHeight: 1,
+                                            textAlign: "right", padding: "8px 16px",
+                                        }}>
+                                        {input || "0"}
+                                    </button>
+                                    {inputError && (
+                                        <div className="error-msg" style={{ fontSize: 11, marginTop: 0 }}>{inputError}</div>
+                                    )}
+                                    {/* 3列テンキー */}
+                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                                        {["7", "8", "9", "4", "5", "6", "1", "2", "3"].map((d) => (
+                                            <button key={d} className="b key-btn" type="button" onClick={() => pressDigit(d)}>{d}</button>
+                                        ))}
+                                        <button className="b key-btn" type="button" style={{ gridColumn: "1 / span 3" }} onClick={() => pressDigit("0")}>0</button>
+                                    </div>
+                                </div>
+
+                                {/* 右カラム：削除 / クリア / 記録する / 初当たり */}
+                                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                    <button className="b key-btn" type="button" aria-label="一文字削除" onClick={pressBackspace} style={{ fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                                        <span style={{ fontSize: 18 }}>⌫</span>
+                                        <span style={{ fontSize: 11 }}>削除</span>
+                                    </button>
+                                    <button className="b key-btn" type="button" onClick={pressClear} style={{ fontSize: 13, fontWeight: 700 }}>クリア</button>
+                                    <button
+                                        className="b btn-premium btn-primary"
+                                        type="button"
+                                        onClick={decide}
+                                        style={{ minHeight: 64, fontSize: 13, fontWeight: 800, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, padding: "8px 4px" }}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4L18 10l-4-4L4 16z" /><path d="M14 6l4 4" /></svg>
+                                        記録する
+                                    </button>
+                                    <button
+                                        className="b"
+                                        type="button"
+                                        onClick={handleStartChain}
+                                        style={{
+                                            minHeight: 64, borderRadius: 12,
+                                            background: `color-mix(in srgb, ${C.orange} 18%, transparent)`,
+                                            border: `1px solid color-mix(in srgb, ${C.orange} 50%, transparent)`,
+                                            color: C.orange, fontSize: 13, fontWeight: 800,
+                                            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, padding: "8px 4px",
+                                        }}>
+                                        <span style={{ fontSize: 16, lineHeight: 1 }}>★</span>
+                                        初当たり
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* C. クイック追加 */}
+                        <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: C.sub, fontFamily: font, marginBottom: 6, letterSpacing: 0.3 }}>クイック追加</div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6 }}>
+                                {[1, 5, 10, 25].map((n) => (
+                                    <button key={n} className="b quick-add-btn" type="button" onClick={() => pressQuickAdd(n)}>+{n}回転</button>
                                 ))}
                             </div>
-                        );
-                    })()}
+                        </div>
 
-                    {/* Table Header */}
-                    <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 56px 56px", background: C.surfaceHi, padding: "8px 4px", margin: "4px 12px 4px", borderRadius: 8, flexShrink: 0, border: `1px solid ${C.border}` }}>
-                        {["種別", "総回転", "今回", "当たり", "投資", "持ち玉"].map((h) => (
-                            <div key={h} style={{ textAlign: "center", fontSize: 9, fontWeight: 600, color: C.subHi, fontFamily: font, letterSpacing: 0.3 }}>{h}</div>
-                        ))}
-                    </div>
-
-                    {/* Data Rows */}
-                    <div ref={tableRef} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "0 12px", paddingBottom: showMoreOps ? 380 : 260, overscrollBehavior: "contain" }}>
-                        {rows.map((row, i) => {
-                            const investDisplay = (row.mode === "mochi" || row.mode === "chodama")
-                                ? (row.ballsConsumed ? f(row.ballsConsumed * (1000 / rentBalls)) : "—")
-                                : f(row.invest || 0);
-                            const ballsDisplay = f(row.mode === "chodama" ? (row.chodamaBalls || 0) : (row.mochiBalls || 0));
-
-                            if (row.type === "start") return (
-                                <div key={i} className="fin row-start" style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 56px 56px", padding: "10px 4px", marginBottom: 3, borderRadius: 8, alignItems: "center" }}>
-                                    <div style={{ textAlign: "center" }}><ModeBadge mode={row.mode || "cash"} /></div>
-                                    <div style={{ textAlign: "center", fontSize: 14, color: C.blue, fontFamily: mono, fontWeight: 600 }}>{f(row.cumRot)}</div>
-                                    <div style={{ textAlign: "center", fontSize: 11, color: C.sub }}>—</div>
-                                    <div style={{ display: "flex", justifyContent: "center" }}>
-                                        <span style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: C.blue, padding: "5px 10px", borderRadius: 6, letterSpacing: 0.5 }}>START</span>
-                                    </div>
-                                    <div style={{ textAlign: "center", fontSize: 10, color: C.sub, fontFamily: mono }}>{row.invest ? f(row.invest) : "—"}</div>
-                                    <div style={{ textAlign: "center", fontSize: 10, color: row.mode === "chodama" ? C.purple : C.orange, fontFamily: mono }}>{ballsDisplay}</div>
+                        {/* D. 情報カード3枚 */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                            <div className="neon-card" style={{ "--neon": C.green }}>
+                                <div className="neon-card__label">💰 現金</div>
+                                <div className="neon-card__row">
+                                    <span className="neon-card__num">{f(S.investYen || 0)}</span>
+                                    <span className="neon-card__unit">円</span>
                                 </div>
-                            );
-                            if (row.type === "hit") return (
-                                <div key={i} className="fin row-hit" style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 56px 56px", padding: "10px 4px", marginBottom: 3, borderRadius: 8, alignItems: "center" }}>
-                                    <div style={{ textAlign: "center" }}><span style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: C.orange, borderRadius: 5, padding: "3px 6px" }}>当</span></div>
-                                    <div style={{ textAlign: "center", fontSize: 14, color: C.orange, fontFamily: mono, fontWeight: 700 }}>{f(row.cumRot)}</div>
-                                    <div style={{ textAlign: "center", fontSize: 18, fontWeight: 800, color: C.orange, fontFamily: mono }}>{row.thisRot}</div>
-                                    <div style={{ display: "flex", justifyContent: "center" }}>
-                                        <span style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: C.orange, padding: "5px 8px", borderRadius: 6 }}>当G数</span>
-                                    </div>
-                                    <div style={{ textAlign: "center", fontSize: 10, color: C.sub, fontFamily: mono }}>{investDisplay}</div>
-                                    <div style={{ textAlign: "center", fontSize: 10, color: row.mode === "chodama" ? C.purple : C.orange, fontFamily: mono }}>{ballsDisplay}</div>
-                                </div>
-                            );
-                            const isAboveBorder = row.avgRot >= border;
-                            const pillCol = rotCol(row.thisRot);
-                            return (
-                                <div key={i} className={`fin ${i % 2 === 0 ? "" : "row-data"}`} style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 56px 56px", padding: "10px 4px", marginBottom: 2, borderRadius: 6, alignItems: "center", background: rowBg(row.avgRot, i % 2 === 0) }}>
-                                    <div style={{ textAlign: "center" }}><ModeBadge mode={row.mode || "cash"} /></div>
-                                    <div style={{ textAlign: "center", fontSize: 13, color: isAboveBorder ? C.green : C.subHi, fontFamily: mono, fontWeight: 500 }}>{f(row.cumRot)}</div>
-                                    <div style={{ textAlign: "center", fontSize: 20, fontWeight: 800, color: pillCol, fontFamily: mono }}>{row.thisRot}</div>
-                                    <div style={{ display: "flex", justifyContent: "center" }}>
-                                        <span style={{
-                                            fontSize: 12, fontWeight: 800, color: "#fff",
-                                            background: pillCol,
-                                            padding: "5px 10px", borderRadius: 6,
-                                            fontFamily: mono, minWidth: 36, textAlign: "center"
-                                        }}>{row.thisRot}</span>
-                                    </div>
-                                    <div style={{ textAlign: "center", fontSize: 10, color: isAboveBorder ? C.green : C.sub, fontFamily: mono }}>{investDisplay}</div>
-                                    <div style={{ textAlign: "center", fontSize: 10, color: row.mode === "chodama" ? C.purple : (isAboveBorder ? C.green : C.orange), fontFamily: mono }}>{ballsDisplay}</div>
-                                </div>
-                            );
-                        })}
-                    </div>
-
-                    {/* Bottom Control Panel - 刷新版 */}
-                    <div style={{
-                        position: "fixed",
-                        left: 0,
-                        right: 0,
-                        bottom: "calc(65px + env(safe-area-inset-bottom))",
-                        background: C.surface,
-                        backdropFilter: "saturate(180%) blur(6px)",
-                        borderTop: `1px solid ${C.border}`,
-                        padding: "10px 12px 12px",
-                        zIndex: 100,
-                    }}>
-                        {/* セクションヘッダー: 回転を入力する + リセット */}
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: C.text, fontFamily: font }}>
-                                <span style={{ display: "inline-block", width: 14, height: 14, borderRadius: "50%", background: C.blue, boxShadow: `0 0 0 3px color-mix(in srgb, ${C.blue} 25%, transparent)` }} />
-                                回転を入力する
+                                <span className="auto-badge">★ 自動更新中</span>
                             </div>
-                            <button className="b" onClick={() => {
-                                setRows((r) => {
-                                    if (r.length === 0) return r;
-                                    const lastRow = r[r.length - 1];
-                                    if (lastRow.type === "data") {
-                                        const ballsConsumed = lastRow.ballsConsumed || (rentBalls * (investPace / 1000));
-                                        if (lastRow.mode === "mochi") {
-                                            S.setCurrentMochiBalls((prev) => prev + ballsConsumed);
-                                        } else if (lastRow.mode === "chodama") {
-                                            S.setCurrentChodama((prev) => prev + ballsConsumed);
-                                        }
-                                    }
-                                    if (lastRow.type === "hit" && lastRow.chainId) {
-                                        S.setJpLog((prev) => {
-                                            const chain = prev.find((c) => c.chainId === lastRow.chainId);
-                                            if (chain && chain.completed) {
-                                                S.setCurrentMochiBalls((p) => Math.max(0, p - (chain.finalBalls || 0)));
-                                                S.setTotalTrayBalls((p) => Math.max(0, p - (chain.trayBalls || 0)));
-                                            }
-                                            return prev.filter((c) => c.chainId !== lastRow.chainId);
-                                        });
-                                    }
-                                    return r.slice(0, -1);
-                                });
-                                setInputError("");
-                            }} style={{ background: C.surfaceHi, border: `1px solid ${C.border}`, borderRadius: 8, color: C.sub, fontSize: 10, padding: "6px 10px", fontFamily: font, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
-                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" /></svg>
-                                リセット
+                            <div className="neon-card" style={{ "--neon": C.purple }}>
+                                <div className="neon-card__label">🪙 {ballsLabel}</div>
+                                <div className="neon-card__row">
+                                    <span className="neon-card__num">{f(ballsVal)}</span>
+                                    <span className="neon-card__unit">玉</span>
+                                </div>
+                                <span className="auto-badge">★ 自動更新中</span>
+                            </div>
+                            <div className="neon-card" style={{ "--neon": C.teal }}>
+                                <div className="neon-card__label">📈 期待値（1Kあたり）</div>
+                                <div className="neon-card__row">
+                                    <span className="neon-card__num" style={{ color: sc(ev.ev1K) }}>{ev.ev1K !== 0 ? sp(ev.ev1K, 0) : "—"}</span>
+                                    <span className="neon-card__unit">円/K</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* E. サブ情報バー */}
+                        <div style={{
+                            display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 8,
+                            background: C.surfaceHi, border: `1px solid ${C.border}`,
+                            borderRadius: 12, padding: "10px 12px", alignItems: "center",
+                        }}>
+                            <div>
+                                <div className="subinfo-label">回転率</div>
+                                <div className="subinfo-val">{ev.start1K > 0 ? f(ev.start1K, 1) : "—"} <span style={{ fontSize: 9, color: C.sub, fontWeight: 500 }}>回/K</span></div>
+                            </div>
+                            <div>
+                                <div className="subinfo-label">ボーダー差</div>
+                                <div className="subinfo-val" style={{ color: sc(ev.bDiff) }}>{ev.start1K > 0 ? sp(ev.bDiff, 1) : "—"} <span style={{ fontSize: 9, color: C.sub, fontWeight: 500 }}>回/K</span></div>
+                            </div>
+                            <div>
+                                <div className="subinfo-label">合成確率（予測）</div>
+                                <div className="subinfo-val">{measuredDenom}</div>
+                            </div>
+                            <button className="b" type="button" onClick={() => S.setSessionSubTab("data")}
+                                style={{ background: "transparent", border: "none", color: C.blue, fontSize: 11, fontWeight: 700, padding: "6px 6px", textAlign: "right", lineHeight: 1.2 }}>
+                                詳細を<br />見る ›
                             </button>
                         </div>
 
-                        {/* 4 入力カード（回転数 / 大当たり / 投資 / 持ち玉） */}
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, marginBottom: 8 }}>
-                            {/* 回転数 - 編集可 + ステッパー */}
-                            <div style={{
-                                background: `color-mix(in srgb, ${C.blue} 8%, transparent)`,
-                                border: `1px solid color-mix(in srgb, ${C.blue} 30%, transparent)`,
-                                borderRadius: 10, padding: "6px 6px 4px",
-                                display: "flex", flexDirection: "column", gap: 4,
-                            }}>
-                                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 2 }}>
-                                    <span style={{ fontSize: 10, fontWeight: 700, color: C.blue, fontFamily: font }}>回転数</span>
-                                    <span style={{ fontSize: 9, color: C.sub }}>回</span>
-                                </div>
-                                <input
-                                    type="tel"
-                                    inputMode="numeric"
-                                    value={input}
-                                    onChange={e => { setInput(e.target.value); setInputError(""); }}
-                                    onKeyDown={e => { if (e.key === "Enter") { hitToggle ? handleStartChain() : decide(); setHitToggle(false); } }}
-                                    placeholder="0"
-                                    aria-label="回転数"
-                                    className={`input-premium ${inputError ? "error" : ""}`}
-                                    style={{ width: "100%", boxSizing: "border-box", textAlign: "center", fontFamily: mono, padding: "4px 4px", fontSize: 18, fontWeight: 800, background: "transparent", border: "none", color: C.text }}
-                                />
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-                                    <button className="b" aria-label="回転数を1減らす" onClick={() => {
-                                        const n = Math.max(0, (Number(input) || 0) - 1);
-                                        setInput(String(n)); setInputError("");
-                                    }} style={{ background: C.surfaceHi, border: `1px solid ${C.border}`, borderRadius: 6, color: C.text, fontSize: 16, fontWeight: 800, padding: "6px 0", minHeight: 36 }}>−</button>
-                                    <button className="b" aria-label="回転数を1増やす" onClick={() => {
-                                        const n = (Number(input) || 0) + 1;
-                                        setInput(String(n)); setInputError("");
-                                    }} style={{ background: C.surfaceHi, border: `1px solid ${C.border}`, borderRadius: 6, color: C.text, fontSize: 16, fontWeight: 800, padding: "6px 0", minHeight: 36 }}>+</button>
-                                </div>
-                            </div>
+                        {/* F. 履歴アコーディオン */}
+                        <div>
+                            <button
+                                className="b"
+                                type="button"
+                                aria-expanded={showHistory}
+                                onClick={() => setShowHistory((v) => !v)}
+                                style={{
+                                    width: "100%", minHeight: 48, borderRadius: 12,
+                                    background: C.surfaceHi, border: `1px solid ${C.border}`,
+                                    color: C.text, fontSize: 13, fontWeight: 700, fontFamily: font,
+                                    display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px",
+                                }}>
+                                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+                                    履歴 <span style={{ fontSize: 10, color: C.sub, fontWeight: 500 }}>（直近の記録を表示）</span>
+                                </span>
+                                <span style={{ fontSize: 10, color: C.sub }}>{showHistory ? "▲" : "▼"}</span>
+                            </button>
+                            <div className={`history-acc${showHistory ? " open" : ""}`}>
+                                <div style={{ paddingTop: 8 }}>
+                                    {/* テーブルヘッダー */}
+                                    <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 56px 56px", background: C.surfaceHi, padding: "8px 4px", borderRadius: 8, border: `1px solid ${C.border}`, marginBottom: 4 }}>
+                                        {["種別", "総回転", "今回", "当たり", "投資", "持ち玉"].map((h) => (
+                                            <div key={h} style={{ textAlign: "center", fontSize: 9, fontWeight: 600, color: C.subHi, fontFamily: font, letterSpacing: 0.3 }}>{h}</div>
+                                        ))}
+                                    </div>
+                                    {/* データ行（旧コードを逐語コピー：計算ドリフト防止） */}
+                                    <div ref={tableRef} style={{ maxHeight: 320, overflowY: "auto", overscrollBehavior: "contain" }}>
+                                        {rows.length === 0 ? (
+                                            <div style={{ textAlign: "center", padding: "20px 0", fontSize: 11, color: C.sub, fontFamily: font }}>記録はまだありません</div>
+                                        ) : rows.map((row, i) => {
+                                            const investDisplay = (row.mode === "mochi" || row.mode === "chodama")
+                                                ? (row.ballsConsumed ? f(row.ballsConsumed * (1000 / rentBalls)) : "—")
+                                                : f(row.invest || 0);
+                                            const ballsDisplay = f(row.mode === "chodama" ? (row.chodamaBalls || 0) : (row.mochiBalls || 0));
 
-                            {/* 大当たりトグル */}
-                            <div style={{
-                                background: `color-mix(in srgb, ${C.orange} ${hitToggle ? 18 : 8}%, transparent)`,
-                                border: `1px solid color-mix(in srgb, ${C.orange} ${hitToggle ? 50 : 30}%, transparent)`,
-                                borderRadius: 10, padding: "6px 6px 4px",
-                                display: "flex", flexDirection: "column", gap: 4,
-                                position: "relative",
-                            }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                                    <span style={{ fontSize: 10, fontWeight: 700, color: C.orange, fontFamily: font }}>★</span>
-                                    <span style={{ fontSize: 10, fontWeight: 700, color: C.orange, fontFamily: font }}>大当たり</span>
+                                            if (row.type === "start") return (
+                                                <div key={i} className="fin row-start" style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 56px 56px", padding: "10px 4px", marginBottom: 3, borderRadius: 8, alignItems: "center" }}>
+                                                    <div style={{ textAlign: "center" }}><ModeBadge mode={row.mode || "cash"} /></div>
+                                                    <div style={{ textAlign: "center", fontSize: 14, color: C.blue, fontFamily: mono, fontWeight: 600 }}>{f(row.cumRot)}</div>
+                                                    <div style={{ textAlign: "center", fontSize: 11, color: C.sub }}>—</div>
+                                                    <div style={{ display: "flex", justifyContent: "center" }}>
+                                                        <span style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: C.blue, padding: "5px 10px", borderRadius: 6, letterSpacing: 0.5 }}>START</span>
+                                                    </div>
+                                                    <div style={{ textAlign: "center", fontSize: 10, color: C.sub, fontFamily: mono }}>{row.invest ? f(row.invest) : "—"}</div>
+                                                    <div style={{ textAlign: "center", fontSize: 10, color: row.mode === "chodama" ? C.purple : C.orange, fontFamily: mono }}>{ballsDisplay}</div>
+                                                </div>
+                                            );
+                                            if (row.type === "hit") return (
+                                                <div key={i} className="fin row-hit" style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 56px 56px", padding: "10px 4px", marginBottom: 3, borderRadius: 8, alignItems: "center" }}>
+                                                    <div style={{ textAlign: "center" }}><span style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: C.orange, borderRadius: 5, padding: "3px 6px" }}>当</span></div>
+                                                    <div style={{ textAlign: "center", fontSize: 14, color: C.orange, fontFamily: mono, fontWeight: 700 }}>{f(row.cumRot)}</div>
+                                                    <div style={{ textAlign: "center", fontSize: 18, fontWeight: 800, color: C.orange, fontFamily: mono }}>{row.thisRot}</div>
+                                                    <div style={{ display: "flex", justifyContent: "center" }}>
+                                                        <span style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: C.orange, padding: "5px 8px", borderRadius: 6 }}>当G数</span>
+                                                    </div>
+                                                    <div style={{ textAlign: "center", fontSize: 10, color: C.sub, fontFamily: mono }}>{investDisplay}</div>
+                                                    <div style={{ textAlign: "center", fontSize: 10, color: row.mode === "chodama" ? C.purple : C.orange, fontFamily: mono }}>{ballsDisplay}</div>
+                                                </div>
+                                            );
+                                            const isAboveBorder = row.avgRot >= border;
+                                            const pillCol = rotCol(row.thisRot);
+                                            return (
+                                                <div key={i} className={`fin ${i % 2 === 0 ? "" : "row-data"}`} style={{ display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 56px 56px", padding: "10px 4px", marginBottom: 2, borderRadius: 6, alignItems: "center", background: rowBg(row.avgRot, i % 2 === 0) }}>
+                                                    <div style={{ textAlign: "center" }}><ModeBadge mode={row.mode || "cash"} /></div>
+                                                    <div style={{ textAlign: "center", fontSize: 13, color: isAboveBorder ? C.green : C.subHi, fontFamily: mono, fontWeight: 500 }}>{f(row.cumRot)}</div>
+                                                    <div style={{ textAlign: "center", fontSize: 20, fontWeight: 800, color: pillCol, fontFamily: mono }}>{row.thisRot}</div>
+                                                    <div style={{ display: "flex", justifyContent: "center" }}>
+                                                        <span style={{
+                                                            fontSize: 12, fontWeight: 800, color: "#fff",
+                                                            background: pillCol,
+                                                            padding: "5px 10px", borderRadius: 6,
+                                                            fontFamily: mono, minWidth: 36, textAlign: "center"
+                                                        }}>{row.thisRot}</span>
+                                                    </div>
+                                                    <div style={{ textAlign: "center", fontSize: 10, color: isAboveBorder ? C.green : C.sub, fontFamily: mono }}>{investDisplay}</div>
+                                                    <div style={{ textAlign: "center", fontSize: 10, color: row.mode === "chodama" ? C.purple : (isAboveBorder ? C.green : C.orange), fontFamily: mono }}>{ballsDisplay}</div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
-                                <button
-                                    className="b"
-                                    aria-pressed={hitToggle}
-                                    aria-label="大当たりトグル"
-                                    onClick={() => setHitToggle((v) => !v)}
-                                    style={{
-                                        background: hitToggle ? C.orange : C.surfaceHi,
-                                        border: hitToggle ? "none" : `1px solid ${C.border}`,
-                                        borderRadius: 8,
-                                        color: hitToggle ? "#fff" : C.sub,
-                                        fontSize: 13, fontWeight: 800,
-                                        padding: "12px 0", minHeight: 56,
-                                        fontFamily: font, letterSpacing: 0.3,
-                                        flex: 1, marginTop: 2,
-                                    }}
-                                >
-                                    {hitToggle ? "当G数" : "なし"}
-                                </button>
-                            </div>
-
-                            {/* 投資（読み取り専用） */}
-                            <div style={{
-                                background: `color-mix(in srgb, ${C.green} 8%, transparent)`,
-                                border: `1px solid color-mix(in srgb, ${C.green} 30%, transparent)`,
-                                borderRadius: 10, padding: "6px 6px",
-                                display: "flex", flexDirection: "column", gap: 2,
-                                justifyContent: "space-between", minHeight: 92,
-                            }}>
-                                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 2 }}>
-                                    <span style={{ fontSize: 10, fontWeight: 700, color: C.green, fontFamily: font }}>投資</span>
-                                    <span style={{ fontSize: 9, color: C.sub }}>円</span>
-                                </div>
-                                <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                    <span style={{ fontSize: 22, fontWeight: 800, color: C.text, fontFamily: mono, lineHeight: 1 }}>
-                                        {f(S.investYen || 0)}
-                                    </span>
-                                </div>
-                                <div style={{ fontSize: 9, color: C.sub, textAlign: "center", fontFamily: font }}>自動算出</div>
-                            </div>
-
-                            {/* 持ち玉（読み取り専用） */}
-                            <div style={{
-                                background: `color-mix(in srgb, ${C.purple} 8%, transparent)`,
-                                border: `1px solid color-mix(in srgb, ${C.purple} 30%, transparent)`,
-                                borderRadius: 10, padding: "6px 6px",
-                                display: "flex", flexDirection: "column", gap: 2,
-                                justifyContent: "space-between", minHeight: 92,
-                            }}>
-                                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 2 }}>
-                                    <span style={{ fontSize: 10, fontWeight: 700, color: C.purple, fontFamily: font }}>{S.playMode === "chodama" ? "貯玉" : "持ち玉"}</span>
-                                    <span style={{ fontSize: 9, color: C.sub }}>玉</span>
-                                </div>
-                                <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                    <span style={{ fontSize: 22, fontWeight: 800, color: C.text, fontFamily: mono, lineHeight: 1 }}>
-                                        {f(S.playMode === "chodama" ? (S.currentChodama || 0) : (S.currentMochiBalls || 0))}
-                                    </span>
-                                </div>
-                                <div style={{ fontSize: 9, color: C.sub, textAlign: "center", fontFamily: font }}>自動算出</div>
                             </div>
                         </div>
-
-                        {inputError && (
-                            <div className="error-msg" style={{ marginBottom: 8, fontSize: 10 }}>{inputError}</div>
-                        )}
-
-                        {/* メインボタン: この内容を記録する */}
-                        <button
-                            className="b btn-premium btn-primary"
-                            onClick={() => { hitToggle ? handleStartChain() : decide(); setHitToggle(false); }}
-                            style={{ width: "100%", padding: "16px 8px", fontSize: 15, fontWeight: 800, marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
-                        >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4L18 10l-4-4L4 16z" /><path d="M14 6l4 4" /></svg>
-                            この内容を記録する
-                        </button>
-
-                        {/* もっと見るトグル */}
-                        <button
-                            className="b"
-                            type="button"
-                            aria-expanded={showMoreOps}
-                            onClick={() => setShowMoreOps(v => !v)}
-                            style={{ width: "100%", minHeight: 36, background: `color-mix(in srgb, ${C.surfaceHi} 50%, transparent)`, border: `1px solid ${C.border}`, borderRadius: 10, color: C.sub, fontSize: 11, fontWeight: 600, fontFamily: font, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
-                        >
-                            {showMoreOps ? (
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 15l-6-6-6 6" /></svg>
-                            ) : (
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
-                            )}
-                            {showMoreOps ? "閉じる" : "もっと見る（モード切替・クイック操作）"}
-                        </button>
-
-                        {showMoreOps && (
-                            <>
-                                {/* モード切替 */}
-                                <div style={{ display: "flex", justifyContent: "center", marginTop: 8, marginBottom: 8 }}>
-                                    <ModeToggle mode={S.playMode} setMode={S.setPlayMode} showChodama={true} compact={false} />
-                                </div>
-
-                                {/* クイック操作: 台移動 / 大当たり後スタート / メモを追加 */}
-                                <div style={{ fontSize: 10, fontWeight: 700, color: C.sub, fontFamily: font, marginBottom: 4 }}>クイック操作</div>
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-                                    <button className="b" onClick={() => setShowMoveModal(true)} style={{ background: `color-mix(in srgb, ${C.purple} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${C.purple} 32%, transparent)`, borderRadius: 10, color: C.purple, fontSize: 11, fontWeight: 700, padding: "12px 4px", fontFamily: font, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minHeight: 48 }}>
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 8l-3 3 3 3" /><path d="M4 11h13" /><path d="M17 16l3-3-3-3" /><path d="M20 13H7" /></svg>
-                                        台移動
-                                    </button>
-                                    <button className="b" onClick={handlePostJackpotStart} style={{ background: `color-mix(in srgb, ${C.green} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${C.green} 32%, transparent)`, borderRadius: 10, color: C.green, fontSize: 11, fontWeight: 700, padding: "12px 4px", fontFamily: font, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minHeight: 48 }}>
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l2.5 5.5L20 9.3l-4 4 1 5.7L12 16l-5 3 1-5.7-4-4 5.5-.8z" /></svg>
-                                        <span style={{ lineHeight: 1.15, textAlign: "center" }}>大当たり後<br />スタート</span>
-                                    </button>
-                                    <button className="b" onClick={() => {
-                                        const text = window.prompt("メモを入力");
-                                        if (text && text.trim()) {
-                                            S.pushLog({ type: "メモ", time: tsNow(), text: text.trim() });
-                                        }
-                                    }} style={{ background: `color-mix(in srgb, ${C.blue} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${C.blue} 32%, transparent)`, borderRadius: 10, color: C.blue, fontSize: 11, fontWeight: 700, padding: "12px 4px", fontFamily: font, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minHeight: 48 }}>
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4L18 10l-4-4L4 16z" /><path d="M14 6l4 4" /></svg>
-                                        メモを追加
-                                    </button>
-                                </div>
-                            </>
-                        )}
                     </div>
-                </>
-            )}
+                );
+            })()}
 
             {/* 大当たりタブ - HistoryTabから完全移植 */}
             {S.sessionSubTab === "history" && (
