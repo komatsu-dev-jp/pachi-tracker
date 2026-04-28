@@ -448,3 +448,130 @@ input, select, textarea {
 .settings-list-row:active {
   background: var(--surface-hi) !important;
 }
+
+/* ==========================================================================
+   RotTab 回転入力ページ 再デザイン用クラス（追加のみ）
+   ========================================================================== */
+
+/* ネオン調サマリーカード - --neon CSS変数で発光色を切替 */
+.neon-card {
+  background: color-mix(in srgb, var(--neon, var(--blue)) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--neon, var(--blue)) 28%, transparent);
+  border-radius: 16px;
+  box-shadow:
+    0 0 14px color-mix(in srgb, var(--neon, var(--blue)) 18%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--neon, var(--blue)) 6%, transparent);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 64px;
+}
+
+.neon-card__label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--neon, var(--blue));
+  letter-spacing: 0.3px;
+  font-family: var(--font-main);
+}
+
+.neon-card__row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.neon-card__num {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1;
+}
+
+.neon-card__unit {
+  font-size: 10px;
+  color: var(--sub);
+  font-family: var(--font-main);
+}
+
+.auto-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--neon, var(--blue)) 16%, transparent);
+  color: var(--neon, var(--blue));
+  margin-top: 2px;
+  align-self: flex-start;
+}
+
+/* テンキー / 削除 / クリア共通ボタン（最低タップ領域 56px） */
+.key-btn {
+  min-height: 56px;
+  border-radius: 12px;
+  background: var(--surface-hi);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.key-btn:active {
+  background: color-mix(in srgb, var(--blue) 18%, var(--surface-hi));
+  transform: scale(0.97);
+}
+
+/* クイック追加ボタン（青アウトライン） */
+.quick-add-btn {
+  min-height: 44px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--blue) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--blue) 32%, transparent);
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-main);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.quick-add-btn:active {
+  background: color-mix(in srgb, var(--blue) 18%, transparent);
+  transform: scale(0.97);
+}
+
+/* サブ情報バー - ラベル/値 */
+.subinfo-label {
+  font-size: 10px;
+  color: var(--sub);
+  font-weight: 600;
+  font-family: var(--font-main);
+}
+
+.subinfo-val {
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text);
+  margin-top: 2px;
+}
+
+/* 履歴アコーディオン（max-height + opacity トランジション） */
+.history-acc {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 280ms ease, opacity 200ms ease;
+}
+
+.history-acc.open {
+  max-height: 480px;
+  opacity: 1;
+}
