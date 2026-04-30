@@ -372,6 +372,10 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [deleteTargetId, setDeleteTargetId] = useState(null);
 
+    // 連打ロック（同フレームの二度押し抑止）
+    const endLockRef = useRef(false);
+    const submitLockRef = useRef(false);
+
     // 大当たり履歴 編集モーダル用state（古いデータの修正用）
     const [editChainOpen, setEditChainOpen] = useState(false);
     const [editChainId, setEditChainId] = useState(null);
@@ -459,6 +463,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
     // 連チャン追加ウィザード完了（継続 or 最終）
     const handleChainWizardComplete = (isFinal = false) => {
+        if (isFinal && endLockRef.current) return;
         const { rounds, mult, displayBalls, lastOutBalls, nextTimingBalls, elecSapoRot } = chainWizardData;
         const rnd = Number(rounds) || 0;
         if (rnd <= 0) { setChainWizardOpen(false); return; }
@@ -470,6 +475,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         const multN = Math.max(1, Number(mult) || 1);
 
         if (isFinal) {
+            endLockRef.current = true;
             S.setJpLog((prev) => {
                 const updated = [...prev];
                 const chain = { ...updated[updated.length - 1] };
@@ -500,6 +506,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             S.setPlayMode("mochi");
             S.setSessionSubTab("rot");
             S.setShowStartPrompt(true);
+            setTimeout(() => { endLockRef.current = false; }, 0);
         } else {
             S.setJpLog((prev) => {
                 const updated = [...prev];
@@ -517,9 +524,15 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
     // 単発終了ウィザード完了
     const handleChainWizardSingleEnd = () => {
+        if (endLockRef.current) return;
+        endLockRef.current = true;
         const { rounds, mult, displayBalls, lastOutBalls, nextTimingBalls, elecSapoRot, jitanSpins, finalBallsAfterJitan } = chainWizardData;
         const rnd = Number(rounds) || 0;
-        if (rnd <= 0) { setChainWizardOpen(false); return; }
+        if (rnd <= 0) {
+            setChainWizardOpen(false);
+            endLockRef.current = false;
+            return;
+        }
 
         const lastOut = Number(lastOutBalls) || 0;
         const nextTiming = Number(nextTimingBalls) || 0;
@@ -565,6 +578,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         S.setShowStartPrompt(true);
         setChainWizardOpen(false);
         clearChainWizard();
+        setTimeout(() => { endLockRef.current = false; }, 0);
     };
 
     // 直接単発終了を開く
@@ -577,7 +591,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
     // 直接単発終了完了
     const handleDirectSingleEndComplete = () => {
+        if (endLockRef.current) return;
         if (!isChainActive) return;
+        endLockRef.current = true;
         const jitan = Number(directSingleEndData.jitanSpins) || 0;
         const finalBalls = Number(directSingleEndData.finalBallsAfterJitan) || 0;
 
@@ -613,13 +629,16 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         S.setShowStartPrompt(true);
         setDirectSingleEndOpen(false);
         setDirectSingleEndData({ jitanSpins: "", finalBallsAfterJitan: "" });
+        setTimeout(() => { endLockRef.current = false; }, 0);
     };
 
     // 大当り終了
     const handleChainEnd = () => {
+        if (endLockRef.current) return;
         if (!isChainActive) return;
         const currentHitsCount = lastChain.hits.length;
         if (currentHitsCount === 0) return; // ヒットがない場合は終了できない
+        endLockRef.current = true;
 
         S.setJpLog((prev) => {
             const updated = [...prev];
@@ -647,6 +666,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         S.setPlayMode("mochi");
         S.setSessionSubTab("rot");
         S.setShowStartPrompt(true);
+        setTimeout(() => { endLockRef.current = false; }, 0);
     };
 
     // 長押し削除ハンドラー
@@ -666,16 +686,21 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
     const handleDeleteConfirm = () => {
         if (deleteTargetId) {
-            S.setJpLog((prev) => {
-                const chainToDelete = prev.find(c => c.chainId === deleteTargetId);
-                if (chainToDelete && chainToDelete.completed) {
-                    const ballsToRemove = chainToDelete.finalBalls || 0;
-                    const trayToRemove = chainToDelete.trayBalls || 0;
-                    S.setCurrentMochiBalls((p) => Math.max(0, p - ballsToRemove));
-                    S.setTotalTrayBalls((p) => Math.max(0, p - trayToRemove));
-                }
-                return prev.filter(c => c.chainId !== deleteTargetId);
-            });
+            // updater 外で対象 chain を取得（StrictMode の updater 二度実行による副作用重複を防ぐ）
+            const chainToDelete = (S.jpLog || []).find(c => c.chainId === deleteTargetId);
+
+            // 持ち玉差し戻しは completed 限定（finalBalls は完了時にしか確定しない）
+            if (chainToDelete && chainToDelete.completed) {
+                const ballsToRemove = chainToDelete.finalBalls || 0;
+                S.setCurrentMochiBalls((p) => Math.max(0, p - ballsToRemove));
+            }
+            // 上皿補正は completed 無関係に常時逆算（未完了でも 1 連目入力時に加算済みのため）
+            if (chainToDelete && (chainToDelete.trayBalls || 0) > 0) {
+                const trayToRemove = chainToDelete.trayBalls || 0;
+                S.setTotalTrayBalls((p) => Math.max(0, p - trayToRemove));
+            }
+
+            S.setJpLog((prev) => prev.filter(c => c.chainId !== deleteTargetId));
             // 回転入力ページ側の hit 行も同期削除（双方向カスケード）
             S.setRotRows((prev) => prev.filter(r => !(r.type === "hit" && r.chainId === deleteTargetId)));
         }
@@ -864,13 +889,31 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const rentBalls = S.rentBalls || 250; // 貸玉数（デフォルト250玉/1K）
 
     const decide = () => {
+        if (submitLockRef.current) return;
         const val = validateInput();
         if (val === null) return;
 
         // 前回の累計回転数: 全ての行（data, start, hit）で最後の行を見る
         const lastRow = rows[rows.length - 1];
         const prevCumRot = lastRow ? lastRow.cumRot : S.startRot;
-        const thisRot = val - prevCumRot;
+
+        // 逆行ガード: 前回累計以下の値は誤入力か台リセットの可能性が高い
+        let resetInsert = false;
+        if (val <= prevCumRot) {
+            const ok = window.confirm(
+                `前回累計回転(${prevCumRot})以下の値です。\n台がリセットされましたか？\n\nOK: リセット記録を作成して回転を記録\nキャンセル: 入力をやり直す`
+            );
+            if (!ok) {
+                setInputError(`前回(${prevCumRot})以下の値です。リセット時はOKを押してください`);
+                return;
+            }
+            resetInsert = true;
+        }
+
+        submitLockRef.current = true;
+
+        // リセット時は thisRot=val（cumRot 起点 0 から val 回転）、通常時は val-prevCumRot
+        const thisRot = resetInsert ? val : val - prevCumRot;
         const prevInvest = last ? last.invest : 0;
 
         let newInvest = prevInvest;
@@ -884,11 +927,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             ballsConsumed = rentBalls * (investPace / 1000); // 1Kあたりの玉数
             S.setCurrentMochiBalls((prev) => Math.max(0, prev - ballsConsumed));
         } else if (S.playMode === "chodama") {
-            // 貯玉モード：貯玉を消費し、等価換算で投資に反映（4円=250玉/1K）
+            // 貯玉モード：貯玉を消費（現金投資には反映しない）
             ballsConsumed = rentBalls * (investPace / 1000);
             S.setCurrentChodama((prev) => Math.max(0, prev - ballsConsumed));
-            // 貯玉使用を投資に反映
-            newInvest = prevInvest + investPace;
         }
 
         // 平均回転数計算 - セッション全体の累積平均（データページの1Kスタートと整合）
@@ -929,17 +970,36 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             ? parseFloat((totalThisRot / totalKUsed).toFixed(1))
             : (totalThisRot > 0 ? totalThisRot : 0); // 投資0でも回転数があれば回転数を表示
 
-        setRows((r) => [...r, {
-            type: "data",
-            thisRot,
-            cumRot: val,
-            avgRot: newAvg,
-            invest: S.playMode === "mochi" ? prevInvest : newInvest, // 持ち玉モードは投資額変わらない
-            mode: S.playMode,
-            ballsConsumed, // 消費玉数を記録
-            mochiBalls: S.playMode === "mochi" ? Math.max(0, S.currentMochiBalls - ballsConsumed) : S.currentMochiBalls,
-            chodamaBalls: S.playMode === "chodama" ? Math.max(0, S.currentChodama - ballsConsumed) : S.currentChodama
-        }]);
+        // setRows updater 内で最新 r から prevCumRot/prevInvest を再計算する（連打耐性）
+        setRows((r) => {
+            const lastR = r[r.length - 1];
+            const livePrevCumRot = lastR ? lastR.cumRot : S.startRot;
+            const liveLast = [...r].reverse().find(x => x.type === "data");
+            const livePrevInvest = liveLast ? liveLast.invest : 0;
+
+            // リセット時のみ追加 start 行を挿入（連打時も冪等）
+            const baseRows = resetInsert
+                ? [...r, { type: "start", cumRot: 0, mode: S.playMode, mochiBalls: S.currentMochiBalls, chodamaBalls: S.currentChodama, isPostJackpotStart: true }]
+                : r;
+
+            // 逆行ガード後・最新 r ベースで thisRot を再計算
+            const liveThisRot = resetInsert ? val : Math.max(0, val - livePrevCumRot);
+
+            // 投資額: 現金=増、貯玉/持ち玉=据え置き（A-4）
+            const liveNewInvest = (S.playMode === "cash") ? livePrevInvest + investPace : livePrevInvest;
+
+            return [...baseRows, {
+                type: "data",
+                thisRot: liveThisRot,
+                cumRot: val,
+                avgRot: newAvg,
+                invest: liveNewInvest,
+                mode: S.playMode,
+                ballsConsumed,
+                mochiBalls: S.playMode === "mochi" ? Math.max(0, S.currentMochiBalls - ballsConsumed) : S.currentMochiBalls,
+                chodamaBalls: S.playMode === "chodama" ? Math.max(0, S.currentChodama - ballsConsumed) : S.currentChodama
+            }];
+        });
 
         const logType = S.playMode === "mochi"
             ? `持ち玉${ballsConsumed}玉消費`
@@ -949,6 +1009,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         S.pushLog({ type: logType, time: tsNow(), rot: thisRot, cash: S.playMode === "mochi" ? 0 : investPace, mode: S.playMode });
         setInput("");
         setInputError("");
+        setTimeout(() => { submitLockRef.current = false; }, 0);
     };
 
     // 新規稼働開始
@@ -1017,6 +1078,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     // ウィザード完了: 単発の場合はチェーン完了、確変の場合はHistoryTabへ
     // overrideHitType: 確変ボタンから直接呼ばれる場合に使用（setStateが非同期のため）
     const handleWizardComplete = (overrideHitType) => {
+        if (endLockRef.current) return;
         const { trayBalls, rounds, displayBalls, actualBalls, hitType: stateHitType, jitanSpins, finalBallsAfterJitan } = hitWizardData;
         const hitType = overrideHitType || stateHitType;
         const rnd = Number(rounds) || 0;
@@ -1030,6 +1092,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             setHitWizardOpen(false);
             return;
         }
+        endLockRef.current = true;
 
         S.setJpLog((prev) => {
             const updated = [...prev];
@@ -1090,6 +1153,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             // 時短終了後のスタート入力プロンプトを表示
             S.setShowStartPrompt(true);
         }
+        setTimeout(() => { endLockRef.current = false; }, 0);
     };
 
     // セッション内サブタブのスワイプ処理
@@ -3400,6 +3464,9 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     const swipeStartX = useRef(0);
     const swipeStartY = useRef(0);
 
+    // 連打ロック（同フレームの二度押し抑止）
+    const endLockRef = useRef(false);
+
     const handleSwipeStart = (e, chainId) => {
         swipeStartX.current = e.touches[0].clientX;
         swipeStartY.current = e.touches[0].clientY;
@@ -3432,17 +3499,21 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     const handleSwipeEnd = (chainId) => {
         if (swipeDirection === "horizontal" && swipeX > 50) {
             if (confirm("このデータを削除しますか？")) {
-                S.setJpLog((prev) => {
-                    const chainToDelete = prev.find(c => c.chainId === chainId);
-                    // 削除するチェーンが完了している場合、持ち玉と上皿玉を減算
-                    if (chainToDelete && chainToDelete.completed) {
-                        const ballsToRemove = chainToDelete.finalBalls || 0;
-                        const trayToRemove = chainToDelete.trayBalls || 0;
-                        S.setCurrentMochiBalls((p) => Math.max(0, p - ballsToRemove));
-                        S.setTotalTrayBalls((p) => Math.max(0, p - trayToRemove));
-                    }
-                    return prev.filter(c => c.chainId !== chainId);
-                });
+                // updater 外で対象 chain を取得（StrictMode の updater 二度実行による副作用重複を防ぐ）
+                const chainToDelete = (S.jpLog || []).find(c => c.chainId === chainId);
+
+                // 持ち玉差し戻しは completed 限定（finalBalls は完了時にしか確定しない）
+                if (chainToDelete && chainToDelete.completed) {
+                    const ballsToRemove = chainToDelete.finalBalls || 0;
+                    S.setCurrentMochiBalls((p) => Math.max(0, p - ballsToRemove));
+                }
+                // 上皿補正は completed 無関係に常時逆算（未完了でも 1 連目入力時に加算済みのため）
+                if (chainToDelete && (chainToDelete.trayBalls || 0) > 0) {
+                    const trayToRemove = chainToDelete.trayBalls || 0;
+                    S.setTotalTrayBalls((p) => Math.max(0, p - trayToRemove));
+                }
+
+                S.setJpLog((prev) => prev.filter(c => c.chainId !== chainId));
                 // 回転入力ページ側の hit 行も同期削除（双方向カスケード）
                 S.setRotRows((prev) => prev.filter(r => !(r.type === "hit" && r.chainId === chainId)));
             }
@@ -3636,6 +3707,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     };
 
     const handleChainWizardComplete = (isFinal = false) => {
+        if (isFinal && endLockRef.current) return;
         const { rounds, mult, displayBalls, lastOutBalls, nextTimingBalls, elecSapoRot } = chainWizardData;
         const rnd = Number(rounds) || 0;
         if (rnd <= 0) {
@@ -3650,6 +3722,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         const multN = Math.max(1, Number(mult) || 1);
 
         if (isFinal) {
+            endLockRef.current = true;
             // 最終大当たり - チェーンを完了させる
             S.setJpLog((prev) => {
                 const updated = [...prev];
@@ -3686,6 +3759,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
             S.setPlayMode("mochi");
             S.setTab("rot");
             S.setShowStartPrompt(true);
+            setTimeout(() => { endLockRef.current = false; }, 0);
         } else {
             // 連チャン継続
             S.setJpLog((prev) => {
@@ -3705,10 +3779,13 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
 
     // 単発終了ウィザード完了（時短データ含む）
     const handleChainWizardSingleEnd = () => {
+        if (endLockRef.current) return;
+        endLockRef.current = true;
         const { rounds, mult, displayBalls, lastOutBalls, nextTimingBalls, elecSapoRot, jitanSpins, finalBallsAfterJitan } = chainWizardData;
         const rnd = Number(rounds) || 0;
         if (rnd <= 0) {
             setChainWizardOpen(false);
+            endLockRef.current = false;
             return;
         }
 
@@ -3766,6 +3843,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
 
         setChainWizardOpen(false);
         clearChainWizard();
+        setTimeout(() => { endLockRef.current = false; }, 0);
     };
 
     // 直接単発終了を開く（ヒットが既にある場合のみ）
@@ -3778,7 +3856,9 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
 
     // 直接単発終了完了
     const handleDirectSingleEndComplete = () => {
+        if (endLockRef.current) return;
         if (!isChainActive) return;
+        endLockRef.current = true;
         const jitan = Number(directSingleEndData.jitanSpins) || 0;
         const finalBalls = Number(directSingleEndData.finalBallsAfterJitan) || 0;
 
@@ -3821,10 +3901,12 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
 
         setDirectSingleEndOpen(false);
         setDirectSingleEndData({ jitanSpins: "", finalBallsAfterJitan: "" });
+        setTimeout(() => { endLockRef.current = false; }, 0);
     };
 
     // 最終大当たり終了: 最後のヒットを追加してチェーン完了
     const handleChainEnd = () => {
+        if (endLockRef.current) return;
         if (!isChainActive) return;
 
         const rounds = Number(iRounds) || 0;
@@ -3832,6 +3914,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
 
         // ヒットが0かつ新規入力もない場合は終了できない
         if (currentHitsCount === 0 && rounds <= 0) return;
+        endLockRef.current = true;
 
         const lastOut = Number(iLastOutBalls) || 0;
         const nextTiming = Number(iNextTimingBalls) || 0;
@@ -3909,6 +3992,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         S.setTab("rot");
         // 大当たり終了後のスタート入力プロンプトを表示
         S.setShowStartPrompt(true);
+        setTimeout(() => { endLockRef.current = false; }, 0);
     };
 
     return (
