@@ -305,6 +305,14 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [showHistory, setShowHistory] = useState(false);
     const tableRef = useRef(null);
 
+    // 異常値検知の警告表示（暗所配慮: 上部に細い帯、タップで却下）
+    const [anomalyWarning, setAnomalyWarning] = useState(null);
+    useEffect(() => {
+        if (!anomalyWarning) return;
+        const timer = setTimeout(() => setAnomalyWarning(null), 8000);
+        return () => clearTimeout(timer);
+    }, [anomalyWarning]);
+
     // 機種設定 編集モーダル用state
     const [showEditModal, setShowEditModal] = useState(false);
     const [editStore, setEditStore] = useState("");
@@ -1007,6 +1015,17 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             ? `貯玉${ballsConsumed}玉消費`
             : `${investPace >= 1000 ? investPace/1000 + "K" : investPace + "円"}決定`;
         S.pushLog({ type: logType, time: tsNow(), rot: thisRot, cash: S.playMode === "mochi" ? 0 : investPace, mode: S.playMode });
+
+        // 異常値検知: 1Kあたり回転が極端に多い（>100回転/K）→ 入力ミスの可能性
+        if (S.playMode === "cash" && thisRot > 0 && investPace > 0) {
+            const rotPerK = thisRot / (investPace / 1000);
+            if (rotPerK > 100) {
+                const msg = `1Kあたり${Math.round(rotPerK)}回転：入力ミスの可能性`;
+                setAnomalyWarning(msg);
+                S.pushLog({ type: "警告", time: tsNow(), msg });
+            }
+        }
+
         setInput("");
         setInputError("");
         setTimeout(() => { submitLockRef.current = false; }, 0);
@@ -1592,7 +1611,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             {S.sessionSubTab === "rot" && (() => {
                 const currentRot = Number(input) || (rows.length > 0 ? rows[rows.length - 1].cumRot : 0);
                 const totalRotVal = ev.netRot > 0 ? f(ev.netRot) : "0";
-                const totalInvVal = ev.rawInvest > 0 ? f(ev.rawInvest) : "0";
+                // 総投資は correctedInvestYen を使用（貯玉/持ち玉混合と上皿補正・includeChodamaInBalance 設定に追従）
+                const totalInvVal = ev.correctedInvestYen > 0 ? f(Math.round(ev.correctedInvestYen)) : "0";
                 const summaryCards = [
                     { label: "現在の回転数", val: f(currentRot), unit: "回", col: C.blue },
                     { label: "総回転数", val: totalRotVal, unit: "回", col: C.blue },
@@ -1611,6 +1631,29 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         paddingBottom: "calc(80px + env(safe-area-inset-bottom))",
                         display: "flex", flexDirection: "column", gap: 12,
                     }}>
+                        {/* 異常値検知 警告バー（暗所配慮: 黄色背景・48px高・タップで却下） */}
+                        {anomalyWarning && (
+                            <button
+                                className="b"
+                                onClick={() => setAnomalyWarning(null)}
+                                style={{
+                                    minHeight: 48,
+                                    background: "#F6C700",
+                                    color: "#000",
+                                    border: "none",
+                                    borderRadius: 8,
+                                    padding: "8px 14px",
+                                    fontSize: 16,
+                                    fontWeight: 700,
+                                    fontFamily: font,
+                                    textAlign: "left",
+                                    cursor: "pointer",
+                                    boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+                                }}
+                            >
+                                ⚠ {anomalyWarning}（タップで閉じる）
+                            </button>
+                        )}
                         {/* A. 上段サマリーカード（3列） */}
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
                             {summaryCards.map((c) => (
@@ -2355,7 +2398,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, padding: "0 12px 12px" }}>
                             <MiniStat label="初当たり" val={`${S.jpLog.length || 0}回`} col={C.green} />
                             <MiniStat label="総回転" val={ev.netRot > 0 ? f(ev.netRot) : "—"} col={C.subHi} />
-                            <MiniStat label="総投資" val={ev.rawInvest > 0 ? f(ev.rawInvest) : "—"} col={C.red} />
+                            <MiniStat label="総投資" val={ev.correctedInvestYen > 0 ? f(Math.round(ev.correctedInvestYen)) : "—"} col={C.red} />
                         </div>
                     </Card>
 

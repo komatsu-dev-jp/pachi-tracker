@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { flushSync } from "react-dom";
 import { useLS, calcPreciseEV } from "./logic";
 import { C, font } from "./constants";
 import { RotTab, SettingsTab, CalendarTab } from "./components/Tabs";
@@ -106,6 +107,41 @@ export default function App() {
   // セッション内サブタブ
   const [sessionSubTab, setSessionSubTab] = useState("rot");
 
+  // 起動時セッション整合性チェック（電池切れ・強制終了で片肺になった LS を検出）
+  // 自動修復はせず、ユーザーに確認を求めるだけ
+  const [integrityIssues, setIntegrityIssues] = useState(null);
+  const integrityCheckedRef = useRef(false);
+  useEffect(() => {
+    if (integrityCheckedRef.current) return;
+    if (isLocked) return; // 解錠後にチェック
+    integrityCheckedRef.current = true;
+    const issues = [];
+    // (1) 未完了チェーンが jpLog 末尾にあるのに rotRows 側に対応 hit が 0 件
+    const lastChain = jpLog && jpLog.length > 0 ? jpLog[jpLog.length - 1] : null;
+    if (lastChain && lastChain.completed === false && lastChain.chainId) {
+      const hasHits = (rotRows || []).some(r => r.type === "hit" && r.chainId === lastChain.chainId);
+      if (!hasHits && (lastChain.hits || []).length > 0) {
+        issues.push({
+          key: "chain-rotrow-mismatch",
+          msg: "未完了の連チャンと回転データの整合が取れていません",
+        });
+      }
+    }
+    // (2) 選択中店舗の貯玉と currentChodama の乖離（差分 > 1 玉）
+    if (selectedStoreId) {
+      const st = (stores || []).find(s => typeof s === "object" && s.id === selectedStoreId);
+      if (st && Math.abs((st.chodama || 0) - (currentChodama || 0)) > 1) {
+        issues.push({
+          key: "chodama-mismatch",
+          msg: `店舗貯玉(${st.chodama || 0})とセッション貯玉(${currentChodama || 0})が一致しません`,
+        });
+      }
+    }
+    if (issues.length > 0) setIntegrityIssues(issues);
+    // 依存は意図的に空。マウント＋解錠遷移後に 1 回だけ実行
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLocked]);
+
   // Session info
   const [storeName, setStoreName] = useLS("pt_storeName", "");
   const [machineNum, setMachineNum] = useLS("pt_machineNum", "");
@@ -173,6 +209,9 @@ export default function App() {
   };
 
   // 台移動: 現在のデータを自動保存して新台へ
+  // archive 書き込みを flushSync で確定させてから reset に進み、
+  // pt_archives と reset 系の間に唯一の atomic 境界を作る（途中クラッシュで
+  // 「reset だけ走って archive が無い」事故を防ぐ）。
   const handleMoveTable = () => {
     if (rotRows.length > 0 || jpLog.length > 0) {
       const now = new Date();
@@ -201,7 +240,10 @@ export default function App() {
         chodamaYen: Math.round((ev?.chodamaKCount || 0) * 1000 * (exRate || 250) / (rentBalls || 250)),
         isMoveArchive: true,
       };
-      setArchives((prev) => [...prev, archive]);
+      // archive 書き込みを同期 flush（useLS 内の localStorage.setItem まで完走）
+      flushSync(() => {
+        setArchives((prev) => [...prev, archive]);
+      });
     }
     resetAll();
     setTab("rot");
@@ -358,6 +400,38 @@ export default function App() {
 
       {/* Minimal safe-area spacing */}
       <div style={{ height: "env(safe-area-inset-top)", flexShrink: 0 }} />
+
+      {/* 起動時整合性チェック: 電池切れ・強制終了で片肺になった可能性を通知 */}
+      {integrityIssues && integrityIssues.length > 0 && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(0,0,0,0.6)", zIndex: 9999,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: 16,
+        }}>
+          <div style={{
+            background: C.surface, color: C.text, borderRadius: 16,
+            maxWidth: 420, width: "100%", padding: 20,
+            boxShadow: "0 12px 32px rgba(0,0,0,0.5)",
+            fontFamily: font,
+          }}>
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>セッション整合性の警告</div>
+            <div style={{ fontSize: 13, color: C.sub, marginBottom: 16, lineHeight: 1.5 }}>
+              強制終了などで保存が片肺になった可能性があります。データを確認してください（自動修復はしません）。
+            </div>
+            <ul style={{ margin: "0 0 16px 0", paddingLeft: 20, fontSize: 13, color: C.text, lineHeight: 1.6 }}>
+              {integrityIssues.map(iss => <li key={iss.key}>{iss.msg}</li>)}
+            </ul>
+            <button className="b" onClick={() => setIntegrityIssues(null)} style={{
+              width: "100%", padding: "12px 0", borderRadius: 12,
+              background: C.blue, border: "none", color: "#fff",
+              fontSize: 15, fontWeight: 700, fontFamily: font,
+            }}>
+              確認しました
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <main
