@@ -188,7 +188,7 @@ function SettingPill({ gradient, icon, label, value, mono: useMono }) {
 }
 
 /* ================================================================
-   共通ヘルパ（C-4 表示）
+   共通ヘルパ（C-4 表示／C-2 Undo）
 ================================================================ */
 // rotRows に "data" 行が 1 件以上あるか
 const hasRotDataRows = (rotRows) => (rotRows || []).some((r) => r.type === "data");
@@ -198,6 +198,63 @@ function EmptySub({ msg }) {
     return (
         <div style={{ fontSize: 11, color: C.sub, padding: "8px 16px 0", lineHeight: 1.4 }}>
             {msg}
+        </div>
+    );
+}
+
+// Undo / Redo の丸ボタン群（長押し0.4秒で発火、即タップ無効）
+function UndoControls({ S }) {
+    const longPressRef = useRef(null);
+    const firedRef = useRef(false);
+
+    const startLongPress = (action) => {
+        firedRef.current = false;
+        longPressRef.current = setTimeout(() => {
+            firedRef.current = true;
+            longPressRef.current = null;
+            action();
+            if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(40);
+        }, 400);
+    };
+    const cancelLongPress = () => {
+        if (longPressRef.current) {
+            clearTimeout(longPressRef.current);
+            longPressRef.current = null;
+        }
+    };
+
+    const btn = (label, onAction, enabled, key) => (
+        <button
+            key={key}
+            onPointerDown={() => enabled && startLongPress(onAction)}
+            onPointerUp={cancelLongPress}
+            onPointerLeave={cancelLongPress}
+            onPointerCancel={cancelLongPress}
+            onClick={(e) => {
+                if (!firedRef.current) e.preventDefault();
+            }}
+            disabled={!enabled}
+            style={{
+                width: 44, height: 44, borderRadius: 22,
+                border: "none",
+                background: enabled ? C.surfaceHi : "transparent",
+                color: enabled ? C.text : C.sub,
+                fontSize: 20,
+                fontWeight: 700,
+                margin: "0 2px",
+                touchAction: "manipulation",
+                cursor: enabled ? "pointer" : "default",
+                opacity: enabled ? 1 : 0.35,
+                fontFamily: font,
+            }}
+            aria-label={label === "↶" ? "元に戻す（長押し）" : "やり直し（長押し）"}
+        >{label}</button>
+    );
+
+    return (
+        <div style={{ display: "flex" }}>
+            {btn("↶", S.undo, S.canUndo, "undo")}
+            {btn("↷", S.redo, S.canRedo, "redo")}
         </div>
     );
 }
@@ -259,7 +316,10 @@ export function DataTab({ ev, jpLog, S }) {
         <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(80px + env(safe-area-inset-bottom))" }}>
             {/* 回転率・ボーダー */}
             <Card style={{ marginTop: 12 }}>
-                <SecLabel label="回転率・ボーダー" />
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingRight: 8 }}>
+                    <SecLabel label="回転率・ボーダー" />
+                    <UndoControls S={S} />
+                </div>
                 {!hasRot && <EmptySub msg="回転データなし（入力するとここに表示されます）" />}
                 {stat("1Kスタート", hasRot ? f(ev.start1K, 1) : "—", "回/K", sc(ev.bDiff))}
                 {stat("理論ボーダー", ev.theoreticalBorder > 0 ? f(ev.theoreticalBorder, 1) : "—", "回/K", C.subHi)}
@@ -489,6 +549,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         const { rounds, mult, displayBalls, lastOutBalls, nextTimingBalls, elecSapoRot } = chainWizardData;
         const rnd = Number(rounds) || 0;
         if (rnd <= 0) { setChainWizardOpen(false); return; }
+        S.pushSnapshot();
 
         const lastOut = Number(lastOutBalls) || 0;
         const nextTiming = Number(nextTimingBalls) || 0;
@@ -547,14 +608,14 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     // 単発終了ウィザード完了
     const handleChainWizardSingleEnd = () => {
         if (endLockRef.current) return;
-        endLockRef.current = true;
         const { rounds, mult, displayBalls, lastOutBalls, nextTimingBalls, elecSapoRot, jitanSpins, finalBallsAfterJitan } = chainWizardData;
         const rnd = Number(rounds) || 0;
         if (rnd <= 0) {
             setChainWizardOpen(false);
-            endLockRef.current = false;
             return;
         }
+        S.pushSnapshot();
+        endLockRef.current = true;
 
         const lastOut = Number(lastOutBalls) || 0;
         const nextTiming = Number(nextTimingBalls) || 0;
@@ -615,6 +676,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const handleDirectSingleEndComplete = () => {
         if (endLockRef.current) return;
         if (!isChainActive) return;
+        S.pushSnapshot();
         endLockRef.current = true;
         const jitan = Number(directSingleEndData.jitanSpins) || 0;
         const finalBalls = Number(directSingleEndData.finalBallsAfterJitan) || 0;
@@ -660,6 +722,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         if (!isChainActive) return;
         const currentHitsCount = lastChain.hits.length;
         if (currentHitsCount === 0) return; // ヒットがない場合は終了できない
+        S.pushSnapshot();
         endLockRef.current = true;
 
         S.setJpLog((prev) => {
@@ -708,6 +771,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
     const handleDeleteConfirm = () => {
         if (deleteTargetId) {
+            S.pushSnapshot();
             // updater 外で対象 chain を取得（StrictMode の updater 二度実行による副作用重複を防ぐ）
             const chainToDelete = (S.jpLog || []).find(c => c.chainId === deleteTargetId);
 
@@ -932,6 +996,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             resetInsert = true;
         }
 
+        S.pushSnapshot();
         submitLockRef.current = true;
 
         // リセット時は thisRot=val（cumRot 起点 0 から val 回転）、通常時は val-prevCumRot
@@ -1114,6 +1179,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             setHitWizardOpen(false);
             return;
         }
+        S.pushSnapshot();
         endLockRef.current = true;
 
         S.setJpLog((prev) => {
@@ -1652,7 +1718,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: C.blue, boxShadow: `0 0 0 3px color-mix(in srgb, ${C.blue} 25%, transparent)` }} />
                                     回転数を入力
                                 </div>
-                                <ModeToggle mode={S.playMode} setMode={S.setPlayMode} showChodama={true} compact={true} />
+                                <ModeToggle mode={S.playMode} setMode={(m) => { if (m !== S.playMode) S.pushSnapshot(); S.setPlayMode(m); }} showChodama={true} compact={true} />
                             </div>
 
                             {/* 入力エリア（左：表示+テンキー / 右：アクション縦並び） */}
@@ -2254,14 +2320,17 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 <div style={{ flex: 1, overflowY: "auto", padding: "0 14px", paddingBottom: "calc(80px + env(safe-area-inset-bottom))" }}>
                     {/* 回転率・ボーダー */}
                     <Card style={{ marginTop: 12 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px 10px" }}>
-                            <span style={{
-                                width: 26, height: 26, borderRadius: "50%",
-                                background: `color-mix(in srgb, ${C.blue} 14%, transparent)`,
-                                border: `1.2px solid ${C.blue}`,
-                                display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                            }}><IcPlus c={C.blue} s={14} /></span>
-                            <span style={{ fontSize: 14, fontWeight: 700, color: C.text, fontFamily: font }}>回転率・ボーダー</span>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 8px 6px 16px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                <span style={{
+                                    width: 26, height: 26, borderRadius: "50%",
+                                    background: `color-mix(in srgb, ${C.blue} 14%, transparent)`,
+                                    border: `1.2px solid ${C.blue}`,
+                                    display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                                }}><IcPlus c={C.blue} s={14} /></span>
+                                <span style={{ fontSize: 14, fontWeight: 700, color: C.text, fontFamily: font }}>回転率・ボーダー</span>
+                            </div>
+                            <UndoControls S={S} />
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", padding: "4px 4px 14px" }}>
                             <div style={{ textAlign: "center", padding: "6px 4px" }}>
@@ -3515,6 +3584,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     const handleSwipeEnd = (chainId) => {
         if (swipeDirection === "horizontal" && swipeX > 50) {
             if (confirm("このデータを削除しますか？")) {
+                S.pushSnapshot();
                 // updater 外で対象 chain を取得（StrictMode の updater 二度実行による副作用重複を防ぐ）
                 const chainToDelete = (S.jpLog || []).find(c => c.chainId === chainId);
 
@@ -3653,6 +3723,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     const addHitToChain = () => {
         const rounds = Number(iRounds) || 0;
         if (rounds <= 0) return;
+        S.pushSnapshot();
 
         const lastOut = Number(iLastOutBalls) || 0;
         const nextTiming = Number(iNextTimingBalls) || 0;
@@ -3730,6 +3801,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
             setChainWizardOpen(false);
             return;
         }
+        S.pushSnapshot();
 
         const lastOut = Number(lastOutBalls) || 0;
         const nextTiming = Number(nextTimingBalls) || 0;
@@ -3796,14 +3868,14 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     // 単発終了ウィザード完了（時短データ含む）
     const handleChainWizardSingleEnd = () => {
         if (endLockRef.current) return;
-        endLockRef.current = true;
         const { rounds, mult, displayBalls, lastOutBalls, nextTimingBalls, elecSapoRot, jitanSpins, finalBallsAfterJitan } = chainWizardData;
         const rnd = Number(rounds) || 0;
         if (rnd <= 0) {
             setChainWizardOpen(false);
-            endLockRef.current = false;
             return;
         }
+        S.pushSnapshot();
+        endLockRef.current = true;
 
         const lastOut = Number(lastOutBalls) || 0;
         const nextTiming = Number(nextTimingBalls) || 0;
@@ -3874,6 +3946,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     const handleDirectSingleEndComplete = () => {
         if (endLockRef.current) return;
         if (!isChainActive) return;
+        S.pushSnapshot();
         endLockRef.current = true;
         const jitan = Number(directSingleEndData.jitanSpins) || 0;
         const finalBalls = Number(directSingleEndData.finalBallsAfterJitan) || 0;
@@ -3930,6 +4003,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
 
         // ヒットが0かつ新規入力もない場合は終了できない
         if (currentHitsCount === 0 && rounds <= 0) return;
+        S.pushSnapshot();
         endLockRef.current = true;
 
         const lastOut = Number(iLastOutBalls) || 0;
