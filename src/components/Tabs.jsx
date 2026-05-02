@@ -188,6 +188,21 @@ function SettingPill({ gradient, icon, label, value, mono: useMono }) {
 }
 
 /* ================================================================
+   共通ヘルパ（C-4 表示）
+================================================================ */
+// rotRows に "data" 行が 1 件以上あるか
+const hasRotDataRows = (rotRows) => (rotRows || []).some((r) => r.type === "data");
+
+// カード冒頭に出すデータ未入力サブテキスト
+function EmptySub({ msg }) {
+    return (
+        <div style={{ fontSize: 11, color: C.sub, padding: "8px 16px 0", lineHeight: 1.4 }}>
+            {msg}
+        </div>
+    );
+}
+
+/* ================================================================
    DataTab — 全データ一覧表示 + グラフ
 ================================================================ */
 export function DataTab({ ev, jpLog, S }) {
@@ -237,23 +252,28 @@ export function DataTab({ ev, jpLog, S }) {
         return points;
     }, [archives, ev.workAmount]);
 
+    const hasRot = hasRotDataRows(S.rotRows);
+    const hasJp = (jpLog || []).length > 0;
+
     return (
         <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(80px + env(safe-area-inset-bottom))" }}>
             {/* 回転率・ボーダー */}
             <Card style={{ marginTop: 12 }}>
                 <SecLabel label="回転率・ボーダー" />
-                {stat("1Kスタート", ev.start1K > 0 ? f(ev.start1K, 1) : "—", "回/K", sc(ev.bDiff))}
+                {!hasRot && <EmptySub msg="回転データなし（入力するとここに表示されます）" />}
+                {stat("1Kスタート", hasRot ? f(ev.start1K, 1) : "—", "回/K", sc(ev.bDiff))}
                 {stat("理論ボーダー", ev.theoreticalBorder > 0 ? f(ev.theoreticalBorder, 1) : "—", "回/K", C.subHi)}
-                {stat("ボーダー差", ev.bDiff !== 0 ? sp(ev.bDiff, 1) : "—", "回/K", sc(ev.bDiff))}
+                {stat("ボーダー差", hasRot ? sp(ev.bDiff, 1) : "—", "回/K", sc(ev.bDiff))}
             </Card>
 
             {/* 期待値・収支 */}
             <Card>
                 <SecLabel label={ev.evSource === "spec" ? "期待値・収支（スペック基準）" : ev.evSource === "measured" ? "期待値・収支（実測）" : "期待値・収支"} />
-                {stat("期待値/K", ev.ev1K !== 0 ? sp(ev.ev1K, 0) : "—", "円", sc(ev.ev1K))}
-                {stat("単価", ev.evPerRot !== 0 ? sp(ev.evPerRot, 2) : "—", "円/回", sc(ev.evPerRot))}
-                {stat("仕事量", ev.workAmount !== 0 ? sp(ev.workAmount, 0) : "—", "円", sc(ev.workAmount))}
-                {stat("時給", ev.wage !== 0 ? sp(ev.wage, 0) : "—", "円/h", sc(ev.wage))}
+                {!hasRot && <EmptySub msg="回転データなし" />}
+                {stat("期待値/K", hasRot ? sp(ev.ev1K, 0) : "—", "円", sc(ev.ev1K))}
+                {stat("単価", hasRot ? sp(ev.evPerRot, 2) : "—", "円/回", sc(ev.evPerRot))}
+                {stat("仕事量", hasRot ? sp(ev.workAmount, 0) : "—", "円", sc(ev.workAmount))}
+                {stat("時給", hasRot ? sp(ev.wage, 0) : "—", "円/h", sc(ev.wage))}
             </Card>
 
             {/* 期待値グラフ */}
@@ -267,6 +287,7 @@ export function DataTab({ ev, jpLog, S }) {
             {/* 出玉データ */}
             <Card>
                 <SecLabel label="出玉データ" />
+                {!hasJp && <EmptySub msg="大当たり履歴なし" />}
                 {stat("平均1R出玉", ev.avg1R > 0 ? f(ev.avg1R, 1) : "—", "玉", C.teal)}
                 {stat("平均R数/初当たり", ev.avgRpJ > 0 ? f(ev.avgRpJ, 1) : "—", "R", C.blue)}
                 {stat("サポ増減/回転", ev.totalSapoRot > 0 ? sp(ev.sapoPerRot, 2) : "—", "玉/回転", sc(ev.sapoPerRot))}
@@ -276,9 +297,10 @@ export function DataTab({ ev, jpLog, S }) {
             {/* 稼働データ */}
             <Card>
                 <SecLabel label="稼働データ" />
+                {!hasRot && <EmptySub msg="投資・回転データなし" />}
                 {stat("初当たり回数", jpLog.length > 0 ? jpLog.length.toString() : "0", "回", C.green)}
-                {stat("総回転数", ev.netRot > 0 ? f(ev.netRot) : "—", "回", C.subHi)}
-                {stat("総投資額", ev.rawInvest > 0 ? f(ev.rawInvest) : "—", "円", C.red)}
+                {stat("総回転数", hasRot ? f(ev.netRot) : "—", "回", C.subHi)}
+                {stat("総投資額", hasRot ? f(ev.rawInvest) : "—", "円", C.red)}
                 {ev.trayBallsYen > 0 && stat("上皿補正", "-" + f(ev.trayBallsYen), "円", C.teal)}
                 {ev.correctedInvestYen > 0 && ev.trayBallsYen > 0 && stat("実質投資", f(Math.round(ev.correctedInvestYen)), "円", C.yellow)}
                 {stat("持ち玉比率", ev.mochiRatio > 0 ? Math.round(ev.mochiRatio * 100).toString() : "0", "%", C.orange)}
@@ -1450,12 +1472,6 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             </div>
         );
     }
-
-    // 現在のモードでの投資表示を計算
-    const getInvestDisplay = (invest) => {
-        if (S.playMode === "mochi") return "—";
-        return f(invest);
-    };
 
     // 貯玉使用時の投資額計算（等価4円: 250玉 = 1000円）
     const getChodamaInvestYen = (balls) => {
