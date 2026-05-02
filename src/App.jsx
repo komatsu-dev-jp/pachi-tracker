@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useLS, calcPreciseEV } from "./logic";
+import { useUndoStack } from "./history";
 import { C, font } from "./constants";
 import { RotTab, SettingsTab, CalendarTab } from "./components/Tabs";
 
@@ -143,6 +144,43 @@ export default function App() {
     chodamaSettings: { includeChodamaInBalance },
   });
 
+  // ── Undo/Redo（直近10操作分のセッション中スナップショット） ──
+  const getUndoSnapshot = useCallback(() => ({
+    rotRows, jpLog, sesLog,
+    currentMochiBalls, totalTrayBalls, currentChodama,
+    playMode,
+    investYen, recoveryYen,
+    startGameCount, startRot,
+    initialMochiBalls, initialChodama,
+  }), [
+    rotRows, jpLog, sesLog,
+    currentMochiBalls, totalTrayBalls, currentChodama,
+    playMode, investYen, recoveryYen,
+    startGameCount, startRot, initialMochiBalls, initialChodama,
+  ]);
+
+  const applyUndoSnapshot = useCallback((s) => {
+    setRotRows(s.rotRows);
+    setJpLog(s.jpLog);
+    setSesLog(s.sesLog);
+    setCurrentMochiBalls(s.currentMochiBalls);
+    setTotalTrayBalls(s.totalTrayBalls);
+    setCurrentChodama(s.currentChodama);
+    setPlayMode(s.playMode);
+    setInvestYen(s.investYen);
+    setRecoveryYen(s.recoveryYen);
+    setStartGameCount(s.startGameCount);
+    setStartRot(s.startRot);
+    setInitialMochiBalls(s.initialMochiBalls);
+    setInitialChodama(s.initialChodama);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const { pushSnapshot, undo, redo, canUndo, canRedo } = useUndoStack(
+    getUndoSnapshot,
+    applyUndoSnapshot
+  );
+
   const resetAll = () => {
     // セッション終了前に選択中の店舗の貯玉残高を自動更新
     if (selectedStoreId) {
@@ -248,6 +286,8 @@ export default function App() {
     showStartPrompt, setShowStartPrompt,
     // セッション内サブタブ
     sessionSubTab, setSessionSubTab,
+    // Undo/Redo
+    pushSnapshot, undo, redo, canUndo, canRedo,
   };
 
   // iOS風 細線アイコン
