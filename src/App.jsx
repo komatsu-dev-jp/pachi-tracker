@@ -3,6 +3,7 @@ import { useLS, calcPreciseEV } from "./logic";
 import { useUndoStack } from "./history";
 import { C, font } from "./constants";
 import { RotTab, SettingsTab, CalendarTab } from "./components/Tabs";
+import { takeSnapshot, takeSnapshotImmediate, getLatest as getLatestSnapshot } from "./snapshot";
 
 export const COLOR_THEMES = [
   { id: "purple",   gradient: "linear-gradient(135deg,#667eea,#764ba2)", primary: "#667eea" },
@@ -176,12 +177,72 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const { pushSnapshot, undo, redo, canUndo, canRedo } = useUndoStack(
+  const { pushSnapshot: pushUndoSnapshot, undo, redo, canUndo, canRedo } = useUndoStack(
     getUndoSnapshot,
     applyUndoSnapshot
   );
 
+  // ── Phase C-3: cold snapshot（IDB に操作単位で永続化） ──
+  // pushSnapshot を呼ぶ全 7 箇所（decide/addHitToChain/連チャン終了系/単発/削除）を
+  // 1 ラッパで網羅する設計。Undo 用メモリ stack と cold snapshot を同時に取得。
+  const pushSnapshot = useCallback(() => {
+    pushUndoSnapshot();
+    try {
+      takeSnapshot("op", getUndoSnapshot());
+    } catch (e) {
+      console.error("[snapshot] takeSnapshot error:", e);
+    }
+  }, [pushUndoSnapshot, getUndoSnapshot]);
+
+  // 起動時の整合性チェック → 不整合なら復旧シートを提示
+  const [recoveryCandidate, setRecoveryCandidate] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const latest = await getLatestSnapshot();
+      if (cancelled || !latest) return;
+      const hot = getUndoSnapshot();
+      const m = latest.meta || {};
+      const hotJpLen = (hot.jpLog || []).length;
+      const hotRotLen = (hot.rotRows || []).length;
+      const hotJpTailTs = hotJpLen > 0 ? hot.jpLog[hotJpLen - 1].time || null : null;
+      // 不整合の代表的パターン:
+      // 1) hot の rotRows がスナップショットより少ない（消失）
+      // 2) hot の jpLog tail timestamp が一致せずかつ件数も少ない（巻き戻り）
+      const mismatch =
+        hotRotLen < (m.rotRowsLen || 0) ||
+        (m.jpLogTailTs && hotJpTailTs !== m.jpLogTailTs && hotJpLen < (m.jpLogLen || 0));
+      if (mismatch) setRecoveryCandidate(latest);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ライフサイクル: バックグラウンド送り / 終了直前に最新状態を atomic 保存
+  useEffect(() => {
+    const onHide = () => {
+      try { takeSnapshotImmediate("lifecycle:hide", getUndoSnapshot()); } catch { /* ignore */ }
+    };
+    const onVis = () => { if (document.hidden) onHide(); };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pagehide", onHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pagehide", onHide);
+    };
+  }, [getUndoSnapshot]);
+
+  // セッション開始時に 1 回保存
+  useEffect(() => {
+    if (sessionStarted) {
+      try { takeSnapshot("session:start", getUndoSnapshot()); } catch { /* ignore */ }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionStarted]);
+
   const resetAll = () => {
+    // セッション終了直前の atomic スナップショット（reset 前に確保）
+    try { takeSnapshotImmediate("session:end", getUndoSnapshot()); } catch { /* ignore */ }
     // セッション終了前に選択中の店舗の貯玉残高を自動更新
     if (selectedStoreId) {
       setStores(prev => prev.map(st =>
@@ -430,6 +491,65 @@ export default function App() {
           );
         })}
       </nav>
+
+      {recoveryCandidate && (
+        <RecoverySheet
+          snapshot={recoveryCandidate}
+          onRestore={() => {
+            applyUndoSnapshot(recoveryCandidate.payload);
+            setRecoveryCandidate(null);
+          }}
+          onKeep={() => setRecoveryCandidate(null)}
+          onDiscard={() => {
+            resetAll();
+            setRecoveryCandidate(null);
+          }}
+        />
+      )}
     </div>
   );
+}
+
+function RecoverySheet({ snapshot, onRestore, onKeep, onDiscard }) {
+  const ts = snapshot?.ts ? new Date(snapshot.ts) : null;
+  const tsLabel = ts ? `${ts.toLocaleDateString("ja-JP")} ${ts.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}` : "";
+  const m = snapshot?.meta || {};
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 200,
+      background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)",
+      display: "flex", flexDirection: "column", justifyContent: "flex-end",
+    }}>
+      <div style={{
+        background: C.surface, color: C.text, fontFamily: font,
+        borderTop: `1px solid ${C.border}`,
+        borderTopLeftRadius: 16, borderTopRightRadius: 16,
+        padding: "20px 20px calc(20px + env(safe-area-inset-bottom))",
+        maxWidth: 480, margin: "0 auto", width: "100%",
+      }}>
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>セッション復旧</div>
+        <div style={{ fontSize: 13, color: C.sub, lineHeight: 1.6, marginBottom: 16 }}>
+          前回保存されたデータと現在の状態が一致しません。
+          {tsLabel && <><br />スナップショット: <b>{tsLabel}</b></>}
+          {(m.rotRowsLen != null || m.jpLogLen != null) && (
+            <><br />回転 {m.rotRowsLen ?? 0} 件 / 大当たり {m.jpLogLen ?? 0} 件</>
+          )}
+        </div>
+        <button onClick={onRestore} style={recoveryBtnStyle("primary")}>直前のスナップショットに戻す</button>
+        <button onClick={onKeep} style={recoveryBtnStyle("ghost")}>現状のまま続ける</button>
+        <button onClick={onDiscard} style={recoveryBtnStyle("danger")}>セッションを破棄する</button>
+      </div>
+    </div>
+  );
+}
+
+function recoveryBtnStyle(kind) {
+  const base = {
+    width: "100%", height: 64, marginTop: 8, borderRadius: 12,
+    fontSize: 15, fontWeight: 700, fontFamily: font, cursor: "pointer",
+    border: `1px solid ${C.border}`,
+  };
+  if (kind === "primary") return { ...base, background: C.blue, color: "#fff", border: "none" };
+  if (kind === "danger") return { ...base, background: "transparent", color: C.red || "#ef4444" };
+  return { ...base, background: C.surface, color: C.text };
 }
