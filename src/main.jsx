@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import './index.css'
 import { registerSW } from 'virtual:pwa-register'
+import { awaitReady, flushAll, clearAll } from './persistence'
 
 // Service Workerを登録し、新しいバージョンがあれば自動更新
 const updateSW = registerSW({
@@ -50,7 +51,7 @@ class ErrorBoundary extends React.Component {
         <div style={{ background: '#09090c', color: '#e2e8f0', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: 'sans-serif' }}>
           <h2 style={{ color: '#ef4444', marginBottom: 12 }}>エラーが発生しました</h2>
           <p style={{ color: '#94a3b8', fontSize: 13, marginBottom: 20, textAlign: 'center' }}>{String(this.state.error)}</p>
-          <button onClick={() => { localStorage.clear(); window.location.reload(); }} style={{
+          <button onClick={async () => { try { await clearAll(); } finally { window.location.reload(); } }} style={{
             background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10,
             padding: '12px 24px', fontSize: 14, fontWeight: 700, cursor: 'pointer', marginBottom: 10
           }}>データをリセットして再起動</button>
@@ -65,10 +66,21 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
-  </React.StrictMode>,
-)
+// 永続化レイヤーのブートを待ってからアプリをマウント。
+// useLS の同期初期値取得契約を満たすため、IDB → memCache のロードを完了させる必要がある。
+awaitReady().then(() => {
+  // ライフサイクル: バックグラウンド送り / 終了直前に保留中の書き込みを確実に flush
+  const flushSafely = () => { flushAll().catch(() => {}); };
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) flushSafely();
+  });
+  window.addEventListener('pagehide', flushSafely);
+
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    <React.StrictMode>
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    </React.StrictMode>,
+  )
+})
