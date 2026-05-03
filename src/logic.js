@@ -1,25 +1,24 @@
 import { useState } from "react";
+import { getSync, set as persistSet } from "./persistence.js";
 
+// useLS: 同期 setter / 同期初期値取得という外部契約を維持したまま、
+// 内部で IndexedDB(Dexie) バックの memCache に書き込む。
+// CLAUDE.md 規定: API シグネチャ不変 = `[val, set] = useLS(key, init)`。
 export function useLS(key, init) {
     const [val, setVal] = useState(() => {
-        try {
-            const i = window.localStorage.getItem(key);
-            return i ? JSON.parse(i) : init;
-        } catch {
-            return init;
-        }
+        const cached = getSync(key);
+        return cached !== undefined ? cached : init;
     });
 
     const set = (v) => {
         setVal(prev => {
+            const s = v instanceof Function ? v(prev) : v;
             try {
-                const s = v instanceof Function ? v(prev) : v;
-                window.localStorage.setItem(key, JSON.stringify(s));
-                return s;
+                persistSet(key, s);
             } catch (e) {
-                console.error("LocalStorage error:", e);
-                return prev;
+                console.error("Persistence error:", e);
             }
+            return s;
         });
     };
 

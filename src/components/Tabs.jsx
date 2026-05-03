@@ -3,6 +3,7 @@ import ReactDOM from "react-dom";
 import { C, f, sc, sp, tsNow, font, mono } from "../constants";
 import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./Atoms";
 import { machineDB, searchMachines } from "../machineDB";
+import { getSync, set as persistSet, flushAll } from "../persistence";
 
 /* ================================================================
    Simple SVG Line Chart component
@@ -6468,7 +6469,9 @@ export function SettingsTab({ s, onReset }) {
     };
 
     // === 全データバックアップ/リストア ===
-    const backupAllData = () => {
+    // 永続化層は IDB(Dexie) バックの memCache に統一されており、getSync で同期参照可能。
+    // 旧形式（値が JSON 文字列の二重エンコード）のバックアップファイルとも後方互換。
+    const backupAllData = async () => {
         const keys = ["pt_rentBalls","pt_exRate","pt_synthDenom","pt_rotPerHour","pt_border","pt_investPace","pt_ballVal",
             "pt_spec1R","pt_specAvgRounds","pt_specSapo","pt_jpLog3","pt_sesLog","pt_rotRows","pt_startRot",
             "pt_totalTrayBalls","pt_playMode","pt_includeChodamaInBalance","pt_chodamaReplayLimit",
@@ -6477,10 +6480,11 @@ export function SettingsTab({ s, onReset }) {
             "pt_selectedStoreId","pt_storeName","pt_machineNum","pt_machineName","pt_investYen","pt_recoveryYen",
             "pt_stores","pt_customMachines","pt_archives","pt_theme","pt_accentColor","pt_highContrast",
             "pt_colorBlind","pt_appLock","pt_appPin"];
+        try { await flushAll(); } catch { /* 続行 */ }
         const data = {};
         keys.forEach(k => {
-            const v = localStorage.getItem(k);
-            if (v !== null) data[k] = v;
+            const v = getSync(k);
+            if (v !== undefined) data[k] = v;
         });
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
         const url = URL.createObjectURL(blob);
@@ -6509,17 +6513,20 @@ export function SettingsTab({ s, onReset }) {
         inputEl.value = "";
         try {
             const data = JSON.parse(text);
-            // 正しいバリデーション: !の位置が間違っていたバグを修正
             if (typeof data !== "object" || data === null || data["pt_archives"] === undefined) {
                 showToast("バックアップファイルの形式が正しくありません", "error");
                 return;
             }
+            // 旧形式（v が JSON 文字列）と新形式（v が JS 値）の両方を吸収
             Object.entries(data).forEach(([k, v]) => {
-                if (k.startsWith("pt_")) {
-                    // オブジェクト/配列はJSON.stringify必須（直接setItemするとデータ破損）
-                    localStorage.setItem(k, typeof v === "string" ? v : JSON.stringify(v));
+                if (!k.startsWith("pt_")) return;
+                let parsed = v;
+                if (typeof v === "string") {
+                    try { parsed = JSON.parse(v); } catch { /* 文字列のまま */ }
                 }
+                persistSet(k, parsed);
             });
+            try { await flushAll(); } catch { /* リロードでも IDB は読み戻る */ }
             showToast("データを復元しました。ページを再読み込みします");
             setTimeout(() => window.location.reload(), 1500);
         } catch {
