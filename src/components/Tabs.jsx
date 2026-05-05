@@ -1560,6 +1560,16 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const pressClear = () => { setInputError(""); setInput(""); };
     const pressQuickAdd = (n) => { setInputError(""); setInput(String((Number(input) || 0) + n)); };
 
+    // 直前の data 行を 1 件削除（誤入力即時取消）。Undo スナップショットに積むので S.undo() で復旧可能。
+    const handleDeleteLastData = () => {
+        const lastDataIdx = rows.findLastIndex(r => r.type === "data");
+        if (lastDataIdx < 0) return;
+        S.pushSnapshot();
+        setRows(r => r.filter((_, i) => i !== lastDataIdx));
+        setInputError("");
+    };
+    const hasDataRow = rows.some(r => r.type === "data");
+
     // セッション開始後：データ表示とコントロール
     return (
         <div
@@ -1786,6 +1796,17 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 </div>
                             </div>
                         </div>
+
+                        {/* B-2. 直前の記録を削除（誤入力対策） */}
+                        {hasDataRow && (
+                            <Btn
+                                label="直前の記録を削除"
+                                onClick={handleDeleteLastData}
+                                bg="rgba(239, 68, 68, 0.1)"
+                                fg={C.red}
+                                bd={C.red + "30"}
+                            />
+                        )}
 
                         {/* C. クイック追加 */}
                         <div>
