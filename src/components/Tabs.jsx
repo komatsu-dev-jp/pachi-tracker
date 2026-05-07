@@ -4,6 +4,7 @@ import { C, f, sc, sp, tsNow, font, mono } from "../constants";
 import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./Atoms";
 import { machineDB, searchMachines } from "../machineDB";
 import { getSync, set as persistSet, flushAll } from "../persistence";
+import { DecisionTab } from "./decision/DecisionTab";
 
 /* ================================================================
    Simple SVG Line Chart component
@@ -1246,8 +1247,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     };
 
     // セッション内サブタブのスワイプ処理
-    const sessionSubTabs = ["data", "rot", "history", "settings"];
-    const sessionSubTabLabels = { data: "データ", rot: "回転入力", history: "大当たり", settings: "機種設定" };
+    const sessionSubTabs = ["data", "rot", "decision", "history", "settings"];
+    const sessionSubTabLabels = { data: "データ", rot: "回転入力", decision: "判断", history: "大当たり", settings: "機種設定" };
     const swipeAreaRef = useRef(null);
     const swipeState = useRef({ startX: null, startY: null, dir: null, offset: 0 });
     const [headerSwipeOffset, setHeaderSwipeOffset] = useState(0);
@@ -1653,6 +1654,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             settings: (
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>
                             ),
+                            decision: (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="2" width="8" height="20" rx="2" /><circle cx="12" cy="7" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="17" r="1.5" /></svg>
+                            ),
                         }[tabId];
                         return (
                             <button
@@ -1680,6 +1684,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     })}
                 </div>
             </div>
+
+            {S.sessionSubTab === "decision" && <DecisionTab S={S} ev={ev} />}
 
             {/* 回転入力タブ — 刷新版 */}
             {S.sessionSubTab === "rot" && (() => {

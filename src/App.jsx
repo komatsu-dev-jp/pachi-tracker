@@ -3,6 +3,7 @@ import { useLS, calcPreciseEV } from "./logic";
 import { useUndoStack } from "./history";
 import { C, font } from "./constants";
 import { RotTab, SettingsTab, CalendarTab } from "./components/Tabs";
+import { DecisionTab } from "./components/decision/DecisionTab";
 import { takeSnapshot, takeSnapshotImmediate, getLatest as getLatestSnapshot } from "./snapshot";
 
 export const COLOR_THEMES = [
