@@ -4,6 +4,7 @@ import { C, f, sc, sp, tsNow, font, mono } from "../constants";
 import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./Atoms";
 import { machineDB, searchMachines } from "../machineDB";
 import { getSync, set as persistSet, flushAll } from "../persistence";
+import { DecisionTab } from "./decision/DecisionTab";
 
 /* ================================================================
    Simple SVG Line Chart component
@@ -1246,8 +1247,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     };
 
     // セッション内サブタブのスワイプ処理
-    const sessionSubTabs = ["data", "rot", "history", "settings"];
-    const sessionSubTabLabels = { data: "データ", rot: "回転入力", history: "大当たり", settings: "機種設定" };
+    const sessionSubTabs = ["data", "rot", "decision", "history", "settings"];
+    const sessionSubTabLabels = { data: "データ", rot: "回転入力", decision: "判断", history: "大当たり", settings: "機種設定" };
     const swipeAreaRef = useRef(null);
     const swipeState = useRef({ startX: null, startY: null, dir: null, offset: 0 });
     const [headerSwipeOffset, setHeaderSwipeOffset] = useState(0);
@@ -1647,6 +1648,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             rot: (
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4L18 10l-4-4L4 16z" /><path d="M14 6l4 4" /></svg>
                             ),
+                            decision: (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M8 12.5l3 3 5-6" /></svg>
+                            ),
                             history: (
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.9L12 17l-5.2 2.7 1-5.9-4.3-4.1 5.9-.9z" /></svg>
                             ),
@@ -1680,6 +1684,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     })}
                 </div>
             </div>
+
+            {/* 判断タブ */}
+            {S.sessionSubTab === "decision" && <DecisionTab S={S} ev={ev} />}
 
             {/* 回転入力タブ — 刷新版 */}
             {S.sessionSubTab === "rot" && (() => {
