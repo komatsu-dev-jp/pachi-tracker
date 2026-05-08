@@ -3291,37 +3291,14 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             </div>
                         )}
 
-                        {/* Step 1: 液晶表示玉数 */}
-                        {chainWizardStep === 1 && (
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>液晶表示玉数{chainWizardData.mult > 1 ? "（1連分）" : ""}</div>
-                                <div style={{ fontSize: 12, color: C.sub, marginBottom: 12 }}>{chainWizardData.rounds}R{chainWizardData.mult > 1 ? `×${chainWizardData.mult}` : ""}選択中</div>
-                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                    {chainWizardData.displayBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Step 2: 電サポ回転数 */}
-                        {chainWizardStep === 2 && (
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 18, fontWeight: 700, color: C.teal, marginBottom: 8 }}>サポ増減 ①</div>
-                                <div style={{ fontSize: 14, color: C.sub, marginBottom: 16 }}>電サポ回転数</div>
-                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                    {chainWizardData.elecSapoRot || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>回転</span>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Step 3: 大当たり直前 */}
-                        {chainWizardStep === 3 && (() => {
+                        {/* Step 1: 大当り直前の出玉 */}
+                        {chainWizardStep === 1 && (() => {
                             const prevEndBalls = getPrevEndBalls();
                             const current = Number(chainWizardData.lastOutBalls) || 0;
                             const diff = current - prevEndBalls;
                             return (
                                 <div style={{ textAlign: "center" }}>
-                                    <div style={{ fontSize: 18, fontWeight: 700, color: C.teal, marginBottom: 8 }}>大当たり直前</div>
-                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>現在の総持ち玉（上皿＋カード内）</div>
+                                    <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginBottom: 8 }}>大当り直前の出玉</div>
                                     {prevEndBalls > 0 && <div style={{ fontSize: 11, color: C.yellow, marginBottom: 12 }}>前回終了時: {f(prevEndBalls)}玉（自動プリセット済み）</div>}
                                     <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
                                         {chainWizardData.lastOutBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
@@ -3343,7 +3320,28 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             );
                         })()}
 
-                        {/* Step 4: ラウンド終了 */}
+                        {/* Step 2: 電サポ回転数 */}
+                        {chainWizardStep === 2 && (
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginBottom: 16 }}>電サポ回転数</div>
+                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
+                                    {chainWizardData.elecSapoRot || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>回転</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 3: 液晶出玉数 */}
+                        {chainWizardStep === 3 && (
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 22, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>液晶出玉数{chainWizardData.mult > 1 ? "（1連分）" : ""}</div>
+                                <div style={{ fontSize: 12, color: C.sub, marginBottom: 12 }}>{chainWizardData.rounds}R{chainWizardData.mult > 1 ? `×${chainWizardData.mult}` : ""}選択中</div>
+                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
+                                    {chainWizardData.displayBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 4: ラウンド終了時の出玉 */}
                         {chainWizardStep === 4 && (() => {
                             const prevBalls = Number(chainWizardData.lastOutBalls) || 0;
                             const currentBalls = Number(chainWizardData.nextTimingBalls) || 0;
@@ -3354,9 +3352,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             const perRot = rot > 0 ? sapoChange / rot : 0;
                             return (
                                 <div style={{ textAlign: "center" }}>
-                                    <div style={{ fontSize: 18, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>ラウンド終了</div>
-                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>現在の総持ち玉（上皿＋カード内）</div>
-                                    {prevBalls > 0 && <div style={{ fontSize: 11, color: C.teal, marginBottom: 12 }}>大当たり直前: {f(prevBalls)}玉</div>}
+                                    <div style={{ fontSize: 22, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>ラウンド終了時の出玉</div>
+                                    {prevBalls > 0 && <div style={{ fontSize: 11, color: C.teal, marginBottom: 12 }}>大当り直前: {f(prevBalls)}玉</div>}
                                     <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
                                         {chainWizardData.nextTimingBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
                                     </div>
@@ -3467,16 +3464,16 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
                                 {[1,2,3,4,5,6,7,8,9].map(n => (
                                     <button key={n} className="b" onClick={() => {
-                                        const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
+                                        const field = chainWizardStep === 1 ? "lastOutBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "displayBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
                                         setChainWizardData(d => chainWizardFirstKey ? { ...d, [field]: String(n) } : { ...d, [field]: (d[field] === "0" ? String(n) : (d[field] || "") + n) });
                                         setChainWizardFirstKey(false);
                                     }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "var(--surface-hi)", border: "none", color: C.text, minHeight: 56 }}>{n}</button>
                                 ))}
-                                <button className="b" onClick={() => { const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan"; setChainWizardData(d => ({ ...d, [field]: "" })); setChainWizardFirstKey(false); }}
+                                <button className="b" onClick={() => { const field = chainWizardStep === 1 ? "lastOutBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "displayBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan"; setChainWizardData(d => ({ ...d, [field]: "" })); setChainWizardFirstKey(false); }}
                                     style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 15, background: "rgba(239,68,68,0.25)", border: "none", color: C.red, minHeight: 56 }}>AC</button>
-                                <button className="b" onClick={() => { const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan"; setChainWizardData(d => chainWizardFirstKey ? { ...d, [field]: "0" } : (d[field] === "" ? d : { ...d, [field]: d[field] + "0" })); setChainWizardFirstKey(false); }}
+                                <button className="b" onClick={() => { const field = chainWizardStep === 1 ? "lastOutBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "displayBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan"; setChainWizardData(d => chainWizardFirstKey ? { ...d, [field]: "0" } : (d[field] === "" ? d : { ...d, [field]: d[field] + "0" })); setChainWizardFirstKey(false); }}
                                     style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "var(--surface-hi)", border: "none", color: C.text, minHeight: 56 }}>0</button>
-                                <button className="b" onClick={() => { const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan"; setChainWizardData(d => ({ ...d, [field]: (d[field] || "").slice(0, -1) })); setChainWizardFirstKey(false); }}
+                                <button className="b" onClick={() => { const field = chainWizardStep === 1 ? "lastOutBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "displayBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan"; setChainWizardData(d => ({ ...d, [field]: (d[field] || "").slice(0, -1) })); setChainWizardFirstKey(false); }}
                                     style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 20, background: "var(--surface-hi)", border: "none", color: C.sub, minHeight: 56 }}>←</button>
                             </div>
                         </div>
@@ -4399,38 +4396,15 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                             </div>
                         )}
 
-                        {/* Step 1: 液晶表示玉数 */}
-                        {chainWizardStep === 1 && (
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>液晶表示玉数{chainWizardData.mult > 1 ? "（1連分）" : ""}</div>
-                                <div style={{ fontSize: 12, color: C.sub, marginBottom: 12 }}>{chainWizardData.rounds}R{chainWizardData.mult > 1 ? `×${chainWizardData.mult}` : ""}選択中</div>
-                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                    {chainWizardData.displayBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Step 2: サポ増減 - 電サポ回転数 */}
-                        {chainWizardStep === 2 && (
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 18, fontWeight: 700, color: C.teal, marginBottom: 8 }}>サポ増減 ①</div>
-                                <div style={{ fontSize: 14, color: C.sub, marginBottom: 16 }}>電サポ回転数</div>
-                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                    {chainWizardData.elecSapoRot || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>回転</span>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Step 3: 大当たり直前の総持ち玉 */}
-                        {chainWizardStep === 3 && (() => {
+                        {/* Step 1: 大当り直前の出玉 */}
+                        {chainWizardStep === 1 && (() => {
                             const prevEndBalls = getPrevEndBalls();
                             const current = Number(chainWizardData.lastOutBalls) || 0;
                             const diff = current - prevEndBalls;
                             const isWarning = prevEndBalls > 0 && Math.abs(diff) > 500;
                             return (
                                 <div style={{ textAlign: "center" }}>
-                                    <div style={{ fontSize: 18, fontWeight: 700, color: C.teal, marginBottom: 8 }}>大当たり直前</div>
-                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>現在の総持ち玉（上皿＋カード内）</div>
+                                    <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginBottom: 8 }}>大当り直前の出玉</div>
                                     {prevEndBalls > 0 && (
                                         <div style={{ fontSize: 11, color: C.yellow, marginBottom: 12 }}>前回終了時: {f(prevEndBalls)}玉（自動プリセット済み）</div>
                                     )}
@@ -4468,7 +4442,28 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                             );
                         })()}
 
-                        {/* Step 4: ラウンド終了時の総持ち玉 */}
+                        {/* Step 2: 電サポ回転数 */}
+                        {chainWizardStep === 2 && (
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginBottom: 16 }}>電サポ回転数</div>
+                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
+                                    {chainWizardData.elecSapoRot || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>回転</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 3: 液晶出玉数 */}
+                        {chainWizardStep === 3 && (
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 22, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>液晶出玉数{chainWizardData.mult > 1 ? "（1連分）" : ""}</div>
+                                <div style={{ fontSize: 12, color: C.sub, marginBottom: 12 }}>{chainWizardData.rounds}R{chainWizardData.mult > 1 ? `×${chainWizardData.mult}` : ""}選択中</div>
+                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
+                                    {chainWizardData.displayBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 4: ラウンド終了時の出玉 */}
                         {chainWizardStep === 4 && (() => {
                             const prevBalls = Number(chainWizardData.lastOutBalls) || 0;
                             const currentBalls = Number(chainWizardData.nextTimingBalls) || 0;
@@ -4480,10 +4475,9 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                             const isWarning = Math.abs(perRot) > 3; // 1回転あたり±3を超えたら警告
                             return (
                                 <div style={{ textAlign: "center" }}>
-                                    <div style={{ fontSize: 18, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>ラウンド終了</div>
-                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>現在の総持ち玉（上皿＋カード内）</div>
+                                    <div style={{ fontSize: 22, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>ラウンド終了時の出玉</div>
                                     {prevBalls > 0 && (
-                                        <div style={{ fontSize: 11, color: C.teal, marginBottom: 12 }}>大当たり直前: {f(prevBalls)}玉</div>
+                                        <div style={{ fontSize: 11, color: C.teal, marginBottom: 12 }}>大当り直前: {f(prevBalls)}玉</div>
                                     )}
                                     <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
                                         {chainWizardData.nextTimingBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
@@ -4641,7 +4635,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
                                 {[1,2,3,4,5,6,7,8,9].map(n => (
                                     <button key={n} className="b" onClick={() => {
-                                        const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
+                                        const field = chainWizardStep === 1 ? "lastOutBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "displayBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
                                         setChainWizardData(d => {
                                             // 最初のキー入力なら既存値をクリアして新しい値を設定
                                             if (chainWizardFirstKey) {
@@ -4658,14 +4652,14 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                     </button>
                                 ))}
                                 <button className="b" onClick={() => {
-                                    const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
+                                    const field = chainWizardStep === 1 ? "lastOutBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "displayBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
                                     setChainWizardData(d => ({ ...d, [field]: "" }));
                                     setChainWizardFirstKey(false);
                                 }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 15, background: "rgba(239,68,68,0.25)", border: "none", color: C.red, minHeight: 56 }}>
                                     AC
                                 </button>
                                 <button className="b" onClick={() => {
-                                    const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
+                                    const field = chainWizardStep === 1 ? "lastOutBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "displayBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
                                     setChainWizardData(d => {
                                         // 最初のキー入力なら既存値をクリアして0を設定
                                         if (chainWizardFirstKey) {
@@ -4681,7 +4675,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                     0
                                 </button>
                                 <button className="b" onClick={() => {
-                                    const field = chainWizardStep === 1 ? "displayBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "lastOutBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
+                                    const field = chainWizardStep === 1 ? "lastOutBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "displayBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
                                     setChainWizardData(d => ({ ...d, [field]: (d[field] || "").slice(0, -1) }));
                                     setChainWizardFirstKey(false);
                                 }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 20, background: "var(--surface-hi)", border: "none", color: C.sub, minHeight: 56 }}>
