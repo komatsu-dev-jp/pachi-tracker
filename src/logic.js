@@ -141,6 +141,11 @@ export function calcPreciseEV({
     const totalKCount = cashKCount + mochiKCount + chodamaKCount;
     const start1K = totalKCount > 0 ? netRot / totalKCount : 0;
 
+    // 上皿玉を考慮した「実消費 K 数」と「補正後の 1K スタート」
+    // 上皿に残っている玉は次回転に未消化なので、消費 K 数から差し引く
+    const correctedKCount = correctedInvestYen / 1000;
+    const start1KCorrected = correctedKCount > 0 ? netRot / correctedKCount : 0;
+
     // ── 実測ボーダー（JP実績がある場合） ──
     const exchP = 1000 / (exRate || 250);  // 1玉あたりの円（デフォルト4円）
     const netGainYenPerJP = avgNetGainPerJP * exchP;
@@ -209,6 +214,8 @@ export function calcPreciseEV({
 
         // 回転率・ボーダー
         start1K,
+        correctedKCount,
+        start1KCorrected,
         measuredBorder,
         theoreticalBorder,
         useBorder,
