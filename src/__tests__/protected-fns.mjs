@@ -2,7 +2,33 @@
 // 移行前後で `node src/__tests__/protected-fns.mjs` の出力が完全一致することを確認する。
 // CLAUDE.md の保護関数規定への準拠検証用。
 
-import { deriveFromRows, calcCash, calcMochi, calcPreciseEV } from "../logic.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+
+function loadProtectedFns() {
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const logicPath = resolve(__dirname, "../logic.js");
+  const logicSource = readFileSync(logicPath, "utf8");
+  const sharedLabel = "SHARED CALC HELPERS";
+  const sharedLabelIndex = logicSource.indexOf(sharedLabel);
+  const sharedStart = sharedLabelIndex === -1
+    ? -1
+    : logicSource.lastIndexOf("/*", sharedLabelIndex);
+
+  if (sharedStart === -1) {
+    throw new Error("logic.js の純粋計算関数ブロックが見つかりません");
+  }
+
+  const pureSource = logicSource
+    .slice(sharedStart)
+    .replaceAll("export function ", "function ");
+
+  return Function(`${pureSource}
+return { deriveFromRows, calcCash, calcMochi, calcPreciseEV };`)();
+}
+
+const { deriveFromRows, calcCash, calcMochi, calcPreciseEV } = loadProtectedFns();
 
 const cases = {
   empty: {
