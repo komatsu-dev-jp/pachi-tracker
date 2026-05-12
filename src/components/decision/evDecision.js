@@ -28,8 +28,10 @@ function calcConfidence(ev) {
 export function evDecision(ev) {
   const safeEv = ev || {};
   const conf = calcConfidence(safeEv);
-  const evAdj = safeEv.ev1K ?? 0;
-  const bDiff = safeEv.bDiff ?? 0;
+  // 上皿補正後の値を判断に使用（Step 2b）
+  // 生の値（ev1K / bDiff）は UI 表示用に保持される
+  const evAdj = safeEv.ev1KCorrected ?? safeEv.ev1K ?? 0;
+  const bDiff = safeEv.bDiffCorrected ?? safeEv.bDiff ?? 0;
   const netRot = safeEv.netRot ?? 0;
   const jpCount = safeEv.jpCount ?? 0;
 
