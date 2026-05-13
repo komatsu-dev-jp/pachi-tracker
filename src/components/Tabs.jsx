@@ -2163,15 +2163,19 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     ))
                                 )}
                                 <Btn label="最新履歴を削除" onClick={() => {
-                                    S.setJpLog((p) => {
-                                        if (p.length === 0) return p;
-                                        const lastChain = p[p.length - 1];
-                                        // 回転入力ページ側の hit 行も同期削除（双方向カスケード）
-                                        if (lastChain.chainId) {
-                                            S.setRotRows((pr) => pr.filter(r => !(r.type === "hit" && r.chainId === lastChain.chainId)));
-                                        }
-                                        return p.slice(0, -1);
-                                    });
+                                    const lastChain = (S.jpLog || []).length > 0 ? (S.jpLog || [])[S.jpLog.length - 1] : null;
+                                    if (!lastChain) return;
+                                    S.pushSnapshot();
+                                    if (lastChain.completed) {
+                                        S.setCurrentMochiBalls((p) => Math.max(0, p - (lastChain.finalBalls || 0)));
+                                    }
+                                    if ((lastChain.trayBalls || 0) > 0) {
+                                        S.setTotalTrayBalls((p) => Math.max(0, p - lastChain.trayBalls));
+                                    }
+                                    S.setJpLog((prev) => prev.slice(0, -1));
+                                    if (lastChain.chainId) {
+                                        S.setRotRows((prev) => prev.filter(r => !(r.type === "hit" && r.chainId === lastChain.chainId)));
+                                    }
                                 }} bg="rgba(239, 68, 68, 0.1)" fg={C.red} bd={C.red + "30"} />
                             </div>
                         ) : (
