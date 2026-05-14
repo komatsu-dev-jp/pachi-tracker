@@ -1,6 +1,6 @@
 # HANDOVER.md — Pachi Tracker 引き継ぎドキュメント
 
-最終更新: 2026-05-08
+最終更新: 2026-05-14
 
 ---
 
@@ -64,7 +64,7 @@ docs/
 - 連チャンウィザードの Step 順序を入れ替え・ラベルを変更（PR #147）
 - 対応コミット: `595c606`
 
-### 2-4. 計算精度問題②：上皿補正（実装途中）
+### 2-4. 計算精度問題②：上皿補正（✅ 全ステップ完了）
 
 上皿玉（大当たり後に手元に残った玉）を投資玉数から差し引き、  
 「真の消費 K 数」を算出する 3 ステップの実装。
@@ -77,16 +77,72 @@ docs/
 - 既存プロパティ（`start1K`, `ev1K` 等）は**未変更**
 - 対応コミット: `83ec37c`
 
-#### Step 2: 未着手（**次のタスク**）
+#### Step 2a: ✅ 実装済み・マージ済み（PR #152）
 
-- **場所**: `src/components/decision/evDecision.js`
-- **内容**: 判断ロジックで `start1K` の代わりに `start1KCorrected` を使う
-- **注意**: UI 表示用には `ev.start1K` も引き続き利用される（両方保持）
-- 詳細は次回プロンプトで指示
+- `logic.js` の `calcPreciseEV` に補正後 EV/K とボーダー差を追加
+- 対応コミット: `c4d5d1e`
 
-#### Step 3: 未着手
+#### Step 2b: ✅ 実装済み・マージ済み（PR #153）
 
-- **内容**: UI で「補正後 EV/K」と「生 EV/K」を両方表示する
+- `src/components/decision/evDecision.js` の判断ロジックを補正後の値に切り替え
+- 対応コミット: `a555cff`
+
+#### Step 3: ✅ 実装済み・マージ済み（PR #154）
+
+- 判断タブで「補正後 EV/K」と「生 EV/K」を両方表示
+- 対応コミット: `69c8635`
+
+### 2-5. 大当たり後フロー再設計（進行中）
+
+#### 概要
+
+実機での使用感から、毎当たりの実測入力をやめ、  
+**チェーン単位の実測 + サポ回転だけ個別記録する方針**へ移行中。
+
+Codex 案を採用。
+
+#### 設計方針
+
+| タイミング | 入力内容 |
+|-----------|---------|
+| 1連目 | 上皿玉のみ実測入力（既存通り） |
+| 各当たり | ラウンド数・液晶出玉・サポ回転のみ入力 |
+| ラッシュ終了時 | 最終実測持ち玉を1回だけ入力（**新規**） |
+
+機種別補正率（液晶→実測）でデータ精度を向上。
+
+#### 3層管理
+
+| 層 | 役割 |
+|----|------|
+| 液晶出玉 | 参考値・演出記録用 |
+| 最終実測持ち玉 | 収支・実態評価用 |
+| サポ回転数 | 効率確認用 |
+
+#### サブステップ進行状況
+
+| # | 状態 | 内容 |
+|---|------|------|
+| 1 | ✅ 完了 | `machineDB.js` に `displayToReal: null` を全19機種に追加<br>ブランチ: `claude/jackpot-flow-substep1-KYCUw`（PR #156 マージ済み） |
+| 2 | ⏳ 未着手 | chain オブジェクトに `finalRealBalls: undefined` を追加 |
+| 3 | ⏳ 未着手 | ラッシュ終了ウィザードに「最終実測持ち玉」入力 Step を追加 |
+| 4 | ⏳ 未着手 | `calcPreciseEV` の `totalNetGain` 集計に分岐追加（実測 vs 液晶） |
+| 5 | ⏳ 未着手 | `baseline.json` 再生成 |
+| 6〜8 | ⏳ 未着手 | 詳細は調査レポート参照 |
+
+#### 関連ドキュメント
+
+- 調査レポート: ブランチ `claude/investigate-jackpot-flow-IXTu2` 内
+- 影響ファイル一覧: 調査レポート末尾「参照ファイル・行番号サマリー」を参照
+
+---
+
+### 2-6. 履歴削除バグ修正（✅ 完了済み）
+
+- **問題**: 大当たり履歴の「最新履歴を削除」ボタンが持ち玉・上皿玉を巻き戻していなかった
+- **修正**: 長押し削除と同等の処理に統一
+- **ブランチ**: `claude/fix-history-delete-balls-Xp0et`（PR #155 マージ済み）
+- **コミット**: `ea3a122`
 
 ---
 
@@ -158,17 +214,40 @@ if (evAdj < -50 || bDiff < -1.0)                      → "stop"
 - ✅ 上皿補正 Step 1（`correctedKCount` / `start1KCorrected` 追加）（PR #148）
 - ✅ protected-fns.mjs を Node.js 単体実行可能に修正（PR #149）
 - ✅ baseline.json 再生成（PR #150）
-
-### 次のタスク：上皿補正 Step 2
-
-- **場所**: `src/components/decision/evDecision.js`
-- **内容**: 判断ロジックで `start1K` の代わりに `start1KCorrected` を使う
-- **ただし** UI 表示用に `ev.start1K` も引き続き利用される
-- **詳細**: 次回プロンプトで指示
+- ✅ 上皿補正 Step 2a（補正後 EV/K 追加）（PR #152）
+- ✅ 上皿補正 Step 2b（evDecision 判断切り替え）（PR #153）
+- ✅ 上皿補正 Step 3（UI で両方表示）（PR #154）
+- ✅ 履歴削除バグ修正（PR #155）
+- ✅ 大当たり後フロー サブステップ1（machineDB displayToReal 追加）（PR #156）
 
 ---
 
-## 6. テスト基盤
+### 次のタスク: 大当たり後フロー サブステップ2
+
+#### 内容
+
+chain オブジェクトに `finalRealBalls: undefined` を追加する。
+
+#### 場所
+
+- `src/components/Tabs.jsx` の `handleStartChain`（L1135 付近）
+- 必要なら他の chain 初期化箇所も確認
+
+#### 制約
+
+- 既存の chain プロパティは一切変更しない
+- 計算ロジックには触らない（サブステップ4で対応）
+- UI 表示には出さない（サブステップ3で対応）
+
+#### 完了条件
+
+- `chain.finalRealBalls === undefined` が初期値
+- 既存のテスト全件 pass
+- `baseline.json` と完全一致
+
+---
+
+## 6. テスト基盤と保護対象（厳守）
 
 ### protected-fns.mjs（保護関数ハーネス）
 
@@ -207,13 +286,40 @@ node src/components/decision/__tests__/evDecision.test.mjs
 - **CI では実行されていない（手動実行のみ）**
 - 変更前後に手動で実行して確認すること
 
+### Codex / Claude Code 作業時の禁止事項
+
+`logic.js` は保護対象。以下を絶対に守ること：
+
+- `"SHARED CALC HELPERS"` コメントマーカーを削除・変更しない
+- 純粋関数はマーカー以降に配置（マーカー前は React 依存コード）
+- export 形式は `export function 名前()` を維持
+- アロー関数（`export const foo = () => {}`）は `protected-fns.mjs` で抽出されないため不可
+
+`baseline.json` は完全一致テスト：
+
+- 既存値が **1 つでも変わると即 fail**
+- 新プロパティ追加のみは OK
+- 計算ロジック変更時は必ず再生成 + diff 確認
+
 ---
 
 ## 7. ブランチ運用
 
-### 直近 20 コミット（2026-05-08 時点）
+### 直近 25 コミット（2026-05-14 時点）
 
 ```
+374e722 Merge pull request #156 from komatsu-dev-jp/claude/jackpot-flow-substep1-KYCUw
+0f32101 feat(machineDB): displayToReal フィールドを全機種に追加 (サブステップ1)
+8d95c63 Merge pull request #155 from komatsu-dev-jp/claude/fix-history-delete-balls-Xp0et
+ea3a122 fix(history): 最新履歴削除で持ち玉と上皿玉を巻き戻す
+dd13f5f Merge pull request #154 from komatsu-dev-jp/claude/upper-tray-step3-TJW9O
+69c8635 feat(ui): 判断タブで補正後と生の値を両方表示 (Step 3)
+696f35f Merge pull request #153 from komatsu-dev-jp/claude/upper-tray-step2b-AarQL
+a555cff feat(decision): 判断ロジックを補正後の値に切り替え (Step 2b)
+c111bb6 Merge pull request #152 from komatsu-dev-jp/claude/upper-tray-step2a-h1kOF
+c4d5d1e feat(logic): 補正後の EV/K とボーダー差を追加 (Step 2a)
+3950690 Merge pull request #151 from komatsu-dev-jp/claude/update-handover-docs-qJ2T8
+ae324b7 docs: HANDOVER.md を新規作成（上皿補正Step1完了・テスト基盤・直近コミット反映）
 97c53a4 Merge pull request #150 from komatsu-dev-jp/claude/regenerate-baseline-b8IDS
 dc24860 test: baseline.json を再生成 (段階2)
 b7b8b4e Merge pull request #149 from komatsu-dev-jp/codex/fix-protected-tests-a7Kp9
@@ -227,13 +333,6 @@ c9783a8 feat: 判断ファーストUI Step 3 — ConfidenceBar / KeyMetrics / Re
 f33c77d Merge pull request #145 from komatsu-dev-jp/claude/implement-verdict-badge-yUHga
 59ca690 feat: 判断ファーストUI Step 2/3 — VerdictBadge と DecisionTab を実装
 180dba4 Merge pull request #144 from komatsu-dev-jp/claude/design-decision-ui-9bFzU
-81d741a feat: 判断ファーストUI Step1 — evDecision.js 純粋関数を実装
-dd8c985 docs: 判断ファーストUIの設計書を追加
-8483c2d Merge pull request #143 from komatsuyuto1008-create/claude/fix-rotation-input-clear-lIN19
-befd45b feat: 回転入力ページに「直前の記録を削除」ボタンを追加
-887fdf0 Merge pull request #142 from komatsuyuto1008-create/claude/indexeddb-persistence-recovery-VXvlu
-8c8cc20 feat(snapshot): セッション復元保証を実装（C-3）
-88b4d9e feat(persistence): useLS を IndexedDB(Dexie) バックに刷新（C-1）
 ```
 
 ### ブランチ命名規則
@@ -284,3 +383,44 @@ npm run build
 ```
 
 ファイルを変更したら必ず両方がエラーゼロで通ることを確認してからコミット。
+
+---
+
+## 9. Codex への引き継ぎ事項
+
+### 必読ドキュメント
+
+1. `CLAUDE.md` — プロジェクト全体ルール（ルート直下）
+2. `docs/HANDOVER.md` — 本ドキュメント
+3. 大当たり後フロー調査レポート — ブランチ `claude/investigate-jackpot-flow-IXTu2` 内
+
+### 作業前の確認コマンド
+
+```bash
+git fetch origin
+git log --oneline -10
+grep -n "displayToReal" src/machineDB.js        # サブステップ1の存在確認（全機種に追加済みのはず）
+grep -n "finalRealBalls" src/components/Tabs.jsx  # サブステップ2の進捗確認（未着手なら何も出ない）
+```
+
+### 直近の状態サマリー
+
+- main ブランチ最新コミット: `374e722`（PR #156 マージ、サブステップ1完了）
+- 上皿補正: Step 1〜3 すべて完了・マージ済み
+- 履歴削除バグ: 修正済み・マージ済み（PR #155 / `ea3a122`）
+- 大当たり後フロー: サブステップ1完了、**サブステップ2が次のタスク**
+
+### 次にやること（サブステップ2）
+
+`src/components/Tabs.jsx` の `handleStartChain`（L1135 付近）で、  
+chain 初期化オブジェクトに `finalRealBalls: undefined` を1行追加するだけ。
+
+```js
+// 既存の chain プロパティは変更しない。これだけ追加：
+finalRealBalls: undefined,
+```
+
+完了条件:
+1. `node src/__tests__/protected-fns.mjs` の出力が `baseline.json` と完全一致
+2. `npm run lint && npm run build` がエラーゼロ
+3. UI に変化なし（表示には出さない）
