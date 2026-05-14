@@ -1154,6 +1154,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             summary: null,
             completed: false,
             time: tsNow(),
+            finalRealBalls: undefined, // ラッシュ終了時の最終実測持ち玉（サブステップ3で入力UI追加予定）
         });
         S.pushLog({ type: "初当たり", time: tsNow(), rot: hitRot });
         setInput("");
