@@ -1840,7 +1840,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     現金
                                 </div>
                                 <div className="neon-card__row">
-                                    <span className="neon-card__num">{f(S.investYen || 0)}</span>
+                                    <span className="neon-card__num">{f(ev.rawInvest || 0)}</span>
                                     <span className="neon-card__unit">円</span>
                                 </div>
                                 <span className="auto-badge">
