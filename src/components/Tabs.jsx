@@ -261,6 +261,94 @@ function UndoControls({ S }) {
     );
 }
 
+const jackpotTone = {
+    blue: { main: "#38bdf8", soft: "rgba(56,189,248,0.16)", glow: "rgba(56,189,248,0.34)" },
+    green: { main: "#34d399", soft: "rgba(52,211,153,0.16)", glow: "rgba(52,211,153,0.34)" },
+    yellow: { main: "#fbbf24", soft: "rgba(251,191,36,0.16)", glow: "rgba(251,191,36,0.32)" },
+    teal: { main: "#2dd4bf", soft: "rgba(45,212,191,0.16)", glow: "rgba(45,212,191,0.32)" },
+    orange: { main: "#fb923c", soft: "rgba(251,146,60,0.16)", glow: "rgba(251,146,60,0.32)" },
+    red: { main: "#f87171", soft: "rgba(248,113,113,0.15)", glow: "rgba(248,113,113,0.30)" },
+    purple: { main: "#c084fc", soft: "rgba(192,132,252,0.16)", glow: "rgba(192,132,252,0.32)" },
+};
+
+function FlowStatusCard({ title, subtitle, tone = "green", badge = "現在のチェーン", metrics = [] }) {
+    const t = jackpotTone[tone] || jackpotTone.green;
+    return (
+        <div className="jp-flow-status" style={{ "--jp-main": t.main, "--jp-soft": t.soft, "--jp-glow": t.glow }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+                <div>
+                    <div className="jp-flow-badge">{badge}</div>
+                    <div className="jp-flow-title">{title}</div>
+                    <div className="jp-flow-subtitle">{subtitle}</div>
+                </div>
+                <div className="jp-flow-orb">{title.slice(0, 1)}</div>
+            </div>
+            {metrics.length > 0 && (
+                <div className="jp-flow-metrics">
+                    {metrics.map((m) => (
+                        <div className="jp-flow-metric" key={m.label}>
+                            <div>{m.label}</div>
+                            <strong style={{ color: m.color || t.main }}>{m.value}</strong>
+                            {m.unit && <span>{m.unit}</span>}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function FlowValueCard({ label, value, unit, tone = "blue", hint }) {
+    const t = jackpotTone[tone] || jackpotTone.blue;
+    return (
+        <div className="jp-value-card" style={{ "--jp-main": t.main, "--jp-soft": t.soft, "--jp-glow": t.glow }}>
+            <div className="jp-value-label">{label}</div>
+            {hint && <div className="jp-value-hint">{hint}</div>}
+            <div className="jp-value-number">
+                {value}<span>{unit}</span>
+            </div>
+        </div>
+    );
+}
+
+function FlowChoiceButton({ children, tone = "blue", style = {}, ...props }) {
+    const t = jackpotTone[tone] || jackpotTone.blue;
+    return (
+        <button
+            className="b jp-choice-button"
+            style={{ "--jp-main": t.main, "--jp-soft": t.soft, "--jp-glow": t.glow, ...style }}
+            {...props}
+        >
+            {children}
+        </button>
+    );
+}
+
+function chainPrototypeVerdict(chain) {
+    // 将来P-EVIDENCE連携予定: 既存のチェーン集計値だけで安全に仮表示する。
+    if (!chain) return { label: "実測待ち", tone: "blue", sub: "初当たり後にチェーンを開始" };
+    if (!chain.completed) {
+        return chain.hits.length > 0
+            ? { label: "ラッシュ中", tone: "green", sub: "入力しながら答え合わせ中" }
+            : { label: "基準値固定中", tone: "blue", sub: "開始上皿玉を基準として保存" };
+    }
+    if (!chain.summary || chain.summary.totalSapoRot <= 0) return { label: "データ不足", tone: "yellow", sub: "サポ回転の記録が不足" };
+    if ((chain.summary.sapoPerRot || 0) > 0.5) return { label: "良好", tone: "green", sub: "実測値はプラス方向" };
+    if ((chain.summary.sapoPerRot || 0) < -0.8) return { label: "下振れ注意", tone: "red", sub: "サポ中の減りを確認" };
+    return { label: "要確認", tone: "orange", sub: "終了後に判定を確認" };
+}
+
+function effectiveEv(ev = {}) {
+    return {
+        start1K: ev.effectiveStart1K ?? ev.start1KCorrected ?? ev.start1K ?? 0,
+        bDiff: ev.effectiveBDiff ?? ev.bDiffCorrected ?? ev.bDiff ?? 0,
+        ev1K: ev.effectiveEV1K ?? ev.ev1KCorrected ?? ev.ev1K ?? 0,
+        evPerRot: ev.effectiveEvPerRot ?? ev.evPerRot ?? 0,
+        workAmount: ev.effectiveWorkAmount ?? ev.workAmount ?? 0,
+        wage: ev.effectiveWage ?? ev.wage ?? 0,
+    };
+}
+
 /* ================================================================
    DataTab — 全データ一覧表示 + グラフ
 ================================================================ */
@@ -286,15 +374,16 @@ export function DataTab({ ev, jpLog, S }) {
             points.push({ label: a.date?.slice(5) || "", value: Math.round(cumEV) });
         });
         // Add current session
-        if (ev.workAmount !== 0) {
-            cumEV += ev.workAmount;
+        const currentWork = ev.effectiveWorkAmount ?? ev.workAmount;
+        if (currentWork !== 0) {
+            cumEV += currentWork;
             points.push({ label: "今日", value: Math.round(cumEV) });
         }
         return points;
-    }, [archives, ev.workAmount]);
+    }, [archives, ev.effectiveWorkAmount, ev.workAmount]);
 
     // Build cumulative profit/loss graph from archives (actual results based)
-    const plGraphData = useMemo(() => {
+    const _plGraphData = useMemo(() => {
         const points = [];
         let cumPL = 0;
         archives.forEach((a) => {
@@ -304,15 +393,17 @@ export function DataTab({ ev, jpLog, S }) {
             cumPL += daily;
             points.push({ label: a.date?.slice(5) || "", value: Math.round(cumPL) });
         });
-        if (ev.workAmount !== 0) {
-            cumPL += ev.workAmount;
+        const currentWork = ev.effectiveWorkAmount ?? ev.workAmount;
+        if (currentWork !== 0) {
+            cumPL += currentWork;
             points.push({ label: "今日", value: Math.round(cumPL) });
         }
         return points;
-    }, [archives, ev.workAmount]);
+    }, [archives, ev.effectiveWorkAmount, ev.workAmount]);
 
     const hasRot = hasRotDataRows(S.rotRows);
     const hasJp = (jpLog || []).length > 0;
+    const evEff = effectiveEv(ev);
 
     return (
         <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(80px + env(safe-area-inset-bottom))" }}>
@@ -323,19 +414,19 @@ export function DataTab({ ev, jpLog, S }) {
                     <UndoControls S={S} />
                 </div>
                 {!hasRot && <EmptySub msg="回転データなし（入力するとここに表示されます）" />}
-                {stat("1Kスタート", hasRot ? f(ev.start1K, 1) : "—", "回/K", sc(ev.bDiff))}
+                {stat("1Kスタート", hasRot ? f(evEff.start1K, 1) : "—", "回/K", sc(evEff.bDiff))}
                 {stat("理論ボーダー", ev.theoreticalBorder > 0 ? f(ev.theoreticalBorder, 1) : "—", "回/K", C.subHi)}
-                {stat("ボーダー差", hasRot ? sp(ev.bDiff, 1) : "—", "回/K", sc(ev.bDiff))}
+                {stat("ボーダー差", hasRot ? sp(evEff.bDiff, 1) : "—", "回/K", sc(evEff.bDiff))}
             </Card>
 
             {/* 期待値・収支 */}
             <Card>
                 <SecLabel label={ev.evSource === "spec" ? "期待値・収支（スペック基準）" : ev.evSource === "measured" ? "期待値・収支（実測）" : "期待値・収支"} />
                 {!hasRot && <EmptySub msg="回転データなし" />}
-                {stat("期待値/K", hasRot ? sp(ev.ev1K, 0) : "—", "円", sc(ev.ev1K))}
-                {stat("単価", hasRot ? sp(ev.evPerRot, 2) : "—", "円/回", sc(ev.evPerRot))}
-                {stat("仕事量", hasRot ? sp(ev.workAmount, 0) : "—", "円", sc(ev.workAmount))}
-                {stat("時給", hasRot ? sp(ev.wage, 0) : "—", "円/h", sc(ev.wage))}
+                {stat("期待値/K", hasRot ? sp(evEff.ev1K, 0) : "—", "円", sc(evEff.ev1K))}
+                {stat("単価", hasRot ? sp(evEff.evPerRot, 2) : "—", "円/回", sc(evEff.evPerRot))}
+                {stat("仕事量", hasRot ? sp(evEff.workAmount, 0) : "—", "円", sc(evEff.workAmount))}
+                {stat("時給", hasRot ? sp(evEff.wage, 0) : "—", "円/h", sc(evEff.wage))}
             </Card>
 
             {/* 期待値グラフ */}
@@ -388,6 +479,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [showInvestSettings, setShowInvestSettings] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
     const tableRef = useRef(null);
+    const evEff = effectiveEv(ev);
 
     // 機種設定 編集モーダル用state
     const [showEditModal, setShowEditModal] = useState(false);
@@ -414,8 +506,6 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         jitanSpins: "", // 時短回数
         finalBallsAfterJitan: "" // 時短終了後最終出玉
     });
-    const [activeKeypadField, setActiveKeypadField] = useState(null); // "trayBalls" | "displayBalls" | "actualBalls" | "jitanSpins" | "finalBalls"
-
     // 機種からラウンド情報を取得（初当たり用 - roundDist使用）
     const getMachineRounds = () => {
         const machine = searchMachines(S.machineName, S.customMachines)[0];
@@ -425,7 +515,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         if (!matches) return [3, 4, 5, 6, 7, 8, 9, 10];
         return [...new Set(matches.map(m => parseInt(m)))].sort((a, b) => a - b);
     };
-    const machineRounds = useMemo(getMachineRounds, [S.machineName, S.customMachines]);
+    const machineRounds = getMachineRounds();
 
     // 機種から確変中のラウンド情報を取得（連チャン用 - rushDist使用、なければroundDistにフォールバック）
     const getMachineRushRounds = () => {
@@ -447,7 +537,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         if (found.length === 0) return defaultOpts;
         return found.sort((a, b) => a.rounds - b.rounds || a.mult - b.mult);
     };
-    const machineRushRounds = useMemo(getMachineRushRounds, [S.machineName, S.customMachines]);
+    const machineRushRounds = getMachineRushRounds();
 
     // ========== 大当たり履歴タブ用state（HistoryTabから移植） ==========
     const [historySub, setHistorySub] = useState("jp"); // "jp" or "ses"
@@ -1593,7 +1683,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     }
 
     // 貯玉使用時の投資額計算（等価4円: 250玉 = 1000円）
-    const getChodamaInvestYen = (balls) => {
+    const _getChodamaInvestYen = (balls) => {
         const ballValue = 4; // 等価4円
         return Math.floor(balls / (1000 / ballValue / S.rentBalls)) * 1000;
     };
@@ -1662,15 +1752,15 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
                             <div className="stat-mini">
                                 <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>回転率</div>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(ev.bDiff), fontFamily: mono, lineHeight: 1 }}>{ev.start1K > 0 ? f(ev.start1K, 1) : "—"}</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(evEff.bDiff), fontFamily: mono, lineHeight: 1 }}>{evEff.start1K > 0 ? f(evEff.start1K, 1) : "—"}</div>
                             </div>
                             <div className="stat-mini">
                                 <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>EV/K</div>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(ev.ev1K), fontFamily: mono, lineHeight: 1 }}>{ev.ev1K !== 0 ? sp(ev.ev1K, 0) : "—"}</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(evEff.ev1K), fontFamily: mono, lineHeight: 1 }}>{evEff.ev1K !== 0 ? sp(evEff.ev1K, 0) : "—"}</div>
                             </div>
                             <div className="stat-mini">
                                 <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>仕事量</div>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(ev.workAmount), fontFamily: mono, lineHeight: 1 }}>{ev.workAmount !== 0 ? sp(ev.workAmount, 0) : "—"}</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(evEff.workAmount), fontFamily: mono, lineHeight: 1 }}>{evEff.workAmount !== 0 ? sp(evEff.workAmount, 0) : "—"}</div>
                             </div>
                             <div className="stat-mini">
                                 <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>初当</div>
@@ -1912,7 +2002,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     期待値（1Kあたり）
                                 </div>
                                 <div className="neon-card__row">
-                                    <span className="neon-card__num" style={{ color: sc(ev.ev1K) }}>{ev.ev1K !== 0 ? sp(ev.ev1K, 0) : "—"}</span>
+                                    <span className="neon-card__num" style={{ color: sc(evEff.ev1K) }}>{evEff.ev1K !== 0 ? sp(evEff.ev1K, 0) : "—"}</span>
                                     <span className="neon-card__unit">円/K</span>
                                 </div>
                             </div>
@@ -1926,11 +2016,11 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         }}>
                             <div>
                                 <div className="subinfo-label">回転率</div>
-                                <div className="subinfo-val">{ev.start1K > 0 ? f(ev.start1K, 1) : "—"} <span style={{ fontSize: 9, color: C.sub, fontWeight: 500 }}>回/K</span></div>
+                                <div className="subinfo-val">{evEff.start1K > 0 ? f(evEff.start1K, 1) : "—"} <span style={{ fontSize: 9, color: C.sub, fontWeight: 500 }}>回/K</span></div>
                             </div>
                             <div>
                                 <div className="subinfo-label">ボーダー差</div>
-                                <div className="subinfo-val" style={{ color: sc(ev.bDiff) }}>{ev.start1K > 0 ? sp(ev.bDiff, 1) : "—"} <span style={{ fontSize: 9, color: C.sub, fontWeight: 500 }}>回/K</span></div>
+                                <div className="subinfo-val" style={{ color: sc(evEff.bDiff) }}>{evEff.start1K > 0 ? sp(evEff.bDiff, 1) : "—"} <span style={{ fontSize: 9, color: C.sub, fontWeight: 500 }}>回/K</span></div>
                             </div>
                             <div>
                                 <div className="subinfo-label">合成確率（予測）</div>
@@ -2050,24 +2140,37 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             <div>
                                 {/* 連チャン中バナー */}
                                 {isChainActive && (
-                                    <div style={{ background: `linear-gradient(135deg, ${C.orange}20, ${C.red}10)`, border: `1px solid ${C.orange}40`, borderRadius: 12, padding: "12px 16px", marginBottom: 12 }}>
-                                        <div style={{ fontSize: 12, fontWeight: 800, color: C.orange, marginBottom: 4 }}>
-                                            {lastChain.hits.length === 0 ? "初当たり — 1連目を入力してください" : `連チャン中 — ${lastChain.hits.length}連目まで記録済み`}
-                                        </div>
-                                        <div style={{ fontSize: 10, color: C.sub }}>
-                                            {lastChain.hits.length > 0 && `上皿玉: ${f(lastChain.trayBalls)}玉 | `}{lastChain.time}
-                                        </div>
-                                    </div>
+                                    (() => {
+                                        const verdict = chainPrototypeVerdict(lastChain);
+                                        const totalRounds = (lastChain.hits || []).reduce((s, h) => s + (h.rounds || 0), 0);
+                                        const totalDisplayBalls = (lastChain.hits || []).reduce((s, h) => s + (h.displayBalls || 0), 0);
+                                        const totalSapoRot = (lastChain.hits || []).reduce((s, h) => s + (h.elecSapoRot || 0), 0);
+                                        return (
+                                            <div style={{ marginBottom: 12 }}>
+                                                <FlowStatusCard
+                                                    title={verdict.label}
+                                                    subtitle={lastChain.hits.length === 0 ? "開始上皿玉を基準として固定中" : verdict.sub}
+                                                    tone={verdict.tone}
+                                                    badge={lastChain.hits.length === 0 ? "基準値固定中" : "現在のチェーン"}
+                                                    metrics={[
+                                                        { label: "総R数", value: totalRounds || "0", unit: "R", color: C.orange },
+                                                        { label: "液晶出玉合計", value: f(totalDisplayBalls), unit: "玉", color: C.yellow },
+                                                        { label: "総サポ回転", value: f(totalSapoRot), unit: "回転", color: C.teal },
+                                                    ]}
+                                                />
+                                            </div>
+                                        );
+                                    })()
                                 )}
 
                                 {/* アクションボタン */}
                                 {isChainActive ? (
-                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
+                                    <div style={{ position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: "calc(64px + env(safe-area-inset-bottom))", zIndex: 80, width: "calc(100% - 28px)", maxWidth: 452, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, padding: 8, borderRadius: 18, background: "rgba(2,6,23,0.86)", border: "1px solid rgba(148,163,184,0.18)", backdropFilter: "blur(18px)", boxShadow: "0 -14px 36px rgba(0,0,0,0.32)" }}>
                                         <button className="b" onClick={openChainWizard} style={{
                                             padding: "16px 0", borderRadius: 14, fontWeight: 800, fontSize: 14,
-                                            background: "#16a34a", border: "none", color: "#fff",
-                                            boxShadow: "none"
-                                        }}>連チャン追加</button>
+                                            background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", color: "#fff",
+                                            boxShadow: "0 0 18px rgba(34,197,94,0.32)"
+                                        }}>当たりを追加</button>
                                         <button className="b" onClick={openDirectSingleEnd} disabled={lastChain.hits.length === 0} style={{
                                             padding: "16px 0", borderRadius: 14, fontWeight: 800, fontSize: 14,
                                             background: lastChain.hits.length === 0 ? "rgba(99,102,241,0.3)" : "#4f46e5",
@@ -2077,9 +2180,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                         }}>単発終了</button>
                                         <button className="b" onClick={handleChainEnd} style={{
                                             padding: "16px 0", borderRadius: 14, fontWeight: 800, fontSize: 14,
-                                            background: "#ea580c", border: "none", color: "#fff",
-                                            boxShadow: "none"
-                                        }}>大当り終了</button>
+                                            background: "linear-gradient(135deg, #ea580c, #f59e0b)", border: "none", color: "#fff",
+                                            boxShadow: "0 0 18px rgba(245,158,11,0.30)"
+                                        }}>ラッシュ終了へ</button>
                                     </div>
                                 ) : (
                                     <Card style={{ padding: 20, marginBottom: 16, textAlign: "center" }}>
@@ -2090,7 +2193,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 )}
 
                                 {/* 実測サマリー */}
-                                <div style={{ margin: "0 0 16px", background: "rgba(0,0,0,0.2)", border: `1px solid ${C.teal}30`, borderRadius: 12, overflow: "hidden" }}>
+                                <div style={{ margin: "0 0 16px", background: "linear-gradient(135deg, rgba(15,23,42,0.92), rgba(2,6,23,0.78))", border: `1px solid ${C.teal}44`, borderRadius: 18, overflow: "hidden", boxShadow: "0 0 22px rgba(45,212,191,0.16)" }}>
                                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
                                         {[
                                             { label: "平均1R出玉", val: ev.avg1R > 0 ? f(ev.avg1R, 1) : "—", unit: "玉", col: C.teal },
@@ -2098,9 +2201,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                             { label: "平均R数", val: ev.avgRpJ > 0 ? f(ev.avgRpJ, 1) : "—", unit: "R", col: C.blue },
                                             { label: "初当たり", val: jpLog.length > 0 ? jpLog.length.toString() : "0", unit: "回", col: C.green },
                                         ].map(({ label, val, unit, col }, idx) => (
-                                            <div key={label} style={{ textAlign: "center", padding: "10px 2px", borderRight: idx < 3 ? `1px solid ${C.border}` : "none" }}>
+                                            <div key={label} style={{ textAlign: "center", padding: "12px 2px", borderRight: idx < 3 ? `1px solid ${C.border}` : "none" }}>
                                                 <div style={{ fontSize: 8, color: C.sub, letterSpacing: 0.5, marginBottom: 4, fontWeight: 600 }}>{label}</div>
-                                                <div style={{ fontSize: 14, fontWeight: 800, color: col, fontFamily: mono, lineHeight: 1 }}>{val}</div>
+                                                <div style={{ fontSize: 17, fontWeight: 900, color: col, fontFamily: mono, lineHeight: 1 }}>{val}</div>
                                                 <div style={{ fontSize: 8, color: C.sub, marginTop: 2 }}>{unit}</div>
                                             </div>
                                         ))}
@@ -2115,8 +2218,11 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                         <Card
                                             key={chain.chainId || ci}
                                             style={{
-                                                padding: "12px 16px", marginBottom: 12,
-                                                background: !chain.completed ? "rgba(249, 115, 22, 0.05)" : "transparent"
+                                                padding: "14px 16px", marginBottom: 12,
+                                                background: !chain.completed ? "linear-gradient(135deg, rgba(34,197,94,0.14), rgba(15,23,42,0.78))" : "linear-gradient(135deg, rgba(59,130,246,0.10), rgba(15,23,42,0.70))",
+                                                border: !chain.completed ? "1px solid rgba(34,197,94,0.34)" : "1px solid rgba(96,165,250,0.22)",
+                                                borderRadius: 18,
+                                                boxShadow: !chain.completed ? "0 0 20px rgba(34,197,94,0.15)" : "0 0 18px rgba(59,130,246,0.10)"
                                             }}
                                             onTouchStart={() => handleLongPressStart(chain.chainId)}
                                             onTouchEnd={handleLongPressEnd}
@@ -2124,8 +2230,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                         >
                                             {/* Chain Header */}
                                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                                                <span style={{ fontSize: 11, fontWeight: 800, color: !chain.completed ? C.orange : C.blue }}>
-                                                    {!chain.completed ? "連チャン中" : `${jpLog.length - ci}回目データ ${chain.hits.length <= 1 ? "単発" : chain.hits.length + "連チャン"}`}
+                                                <span style={{ fontSize: 12, fontWeight: 900, color: !chain.completed ? C.green : C.blue }}>
+                                                    {!chain.completed ? "現在のチェーン" : `${jpLog.length - ci}回目データ ${chain.hits.length <= 1 ? "単発" : chain.hits.length + "連チャン"}`}
                                                 </span>
                                                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                                     <span style={{ fontSize: 10, color: C.sub, fontFamily: mono }}>{chain.time}</span>
@@ -2349,8 +2455,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
             {/* データタブ - セッション統計（モック刷新版） */}
             {S.sessionSubTab === "data" && (() => {
-                const hasData = ev.start1K > 0;
-                const bDiff = Number(ev.bDiff) || 0;
+                const evEff = effectiveEv(ev);
+                const hasData = evEff.start1K > 0;
+                const bDiff = Number(evEff.bDiff) || 0;
                 const barClamp = Math.max(-5, Math.min(5, bDiff));
                 const barPct = ((barClamp + 5) / 10) * 100;
                 const barColor = bDiff > 0 ? C.green : bDiff < 0 ? C.red : C.subHi;
@@ -2384,15 +2491,15 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             : "ボーダーぴったりで推移しています";
 
                 const evRows = [
-                    { key: "ev1K", label: "期待値/K", Icon: IcTarget, val: ev.ev1K, unit: "円", fmt: (n) => sp(n, 0) },
-                    { key: "evPerRot", label: "単価", Icon: IcYen, val: ev.evPerRot, unit: "円/回", fmt: (n) => sp(n, 2) },
-                    { key: "workAmount", label: "仕事量", Icon: IcCalendar, val: ev.workAmount, unit: "円", fmt: (n) => sp(n, 0) },
-                    { key: "wage", label: "時給", Icon: IcClock, val: ev.wage, unit: "円/h", fmt: (n) => sp(n, 0) },
+                    { key: "ev1K", label: "期待値/K", Icon: IcTarget, val: evEff.ev1K, unit: "円", fmt: (n) => sp(n, 0) },
+                    { key: "evPerRot", label: "単価", Icon: IcYen, val: evEff.evPerRot, unit: "円/回", fmt: (n) => sp(n, 2) },
+                    { key: "workAmount", label: "仕事量", Icon: IcCalendar, val: evEff.workAmount, unit: "円", fmt: (n) => sp(n, 0) },
+                    { key: "wage", label: "時給", Icon: IcClock, val: evEff.wage, unit: "円/h", fmt: (n) => sp(n, 0) },
                 ];
 
                 const onePointText = (() => {
                     if (!hasData) return "回転数を入力すると分析が始まります。";
-                    const evPlus = ev.ev1K > 0;
+                    const evPlus = evEff.ev1K > 0;
                     const borderPlus = bDiff > 0;
                     if (borderPlus && evPlus) return "ボーダーを上回っており、期待値もプラスです。この調子で続けていきましょう！";
                     if (borderPlus && !evPlus) return "ボーダーは上回っていますが期待値はマイナスです。打ち方やサポ区間を見直しましょう。";
@@ -2419,8 +2526,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", padding: "4px 4px 14px" }}>
                             <div style={{ textAlign: "center", padding: "6px 4px" }}>
                                 <div style={{ fontSize: 12, color: C.sub, fontWeight: 600, marginBottom: 6 }}>1Kスタート</div>
-                                <div style={{ fontSize: 32, fontWeight: 800, color: sc(ev.bDiff), fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
-                                    {hasData ? f(ev.start1K, 1) : "—"}
+                                <div style={{ fontSize: 32, fontWeight: 800, color: sc(evEff.bDiff), fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                                    {hasData ? f(evEff.start1K, 1) : "—"}
                                 </div>
                                 <div style={{ fontSize: 10, color: C.sub, marginTop: 5 }}>回/K</div>
                             </div>
@@ -2433,8 +2540,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             </div>
                             <div style={{ textAlign: "center", padding: "6px 4px" }}>
                                 <div style={{ fontSize: 12, color: C.sub, fontWeight: 600, marginBottom: 6 }}>ボーダー差</div>
-                                <div style={{ fontSize: 32, fontWeight: 800, color: sc(ev.bDiff), fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
-                                    {hasData ? sp(ev.bDiff, 1) : "—"}
+                                <div style={{ fontSize: 32, fontWeight: 800, color: sc(evEff.bDiff), fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                                    {hasData ? sp(evEff.bDiff, 1) : "—"}
                                 </div>
                                 <div style={{ fontSize: 10, color: C.sub, marginTop: 5 }}>回/K</div>
                             </div>
@@ -2963,8 +3070,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     cum += w;
                     points.push({ label: a.date?.slice(5) || "", value: Math.round(cum) });
                 });
-                if (ev.workAmount !== 0) {
-                    cum += ev.workAmount;
+                const currentWork = ev.effectiveWorkAmount ?? ev.workAmount;
+                if (currentWork !== 0) {
+                    cum += currentWork;
                     points.push({ label: "今日", value: Math.round(cum) });
                 }
                 return (
@@ -2995,13 +3103,12 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
             {/* 初当たりウィザードモーダル - フルスクリーン */}
             {hitWizardOpen && ReactDOM.createPortal(
-                <div style={{
+                <div className="jp-proto-screen" style={{
                     position: "fixed",
                     top: 0,
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    background: "#000",
                     zIndex: 9999,
                     display: "flex",
                     flexDirection: "column",
@@ -3009,7 +3116,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     width: "100vw"
                 }}>
                     {/* ヘッダー */}
-                    <div style={{
+                    <div className="jp-proto-header" style={{
                         padding: "12px 16px",
                         paddingTop: "max(12px, env(safe-area-inset-top))",
                         borderBottom: `1px solid ${C.border}`,
@@ -3017,15 +3124,32 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         justifyContent: "space-between",
                         alignItems: "center",
                         flexShrink: 0,
-                        background: "#000"
                     }}>
                         <button className="b" onClick={() => setHitWizardOpen(false)} style={{ background: "transparent", border: "none", color: C.red, fontSize: 14, fontWeight: 600, padding: 8 }}>キャンセル</button>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>大当たり記録</span>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>初当たり入力</span>
                         <div style={{ width: 70 }} />
                     </div>
 
                     {/* コンテンツエリア */}
-                    <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "16px 20px", background: "#000" }}>
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 14, justifyContent: "flex-start", padding: "16px 20px", overflowY: "auto" }}>
+                        {(() => {
+                            const steps = [
+                                { title: "基準値を固定", sub: "直近のプッシュ額を確認", tone: "yellow", badge: "初当たり入力" },
+                                { title: "開始上皿玉", sub: "チェーンの基準値を保存", tone: "blue", badge: "基準値固定" },
+                                { title: "ラウンド選択", sub: "大きなボタンで素早く選択", tone: "orange", badge: "各当たり入力" },
+                                { title: "液晶出玉", sub: "表示上の出玉を記録", tone: "yellow", badge: "各当たり入力" },
+                                { title: "実玉数", sub: "実測がある場合だけ入力", tone: "green", badge: "実測入力待ち" },
+                                { title: "終了後に判定", sub: "単発かラッシュ継続を選択", tone: "purple", badge: "判断カード" },
+                                { title: "時短回数", sub: "単発時の回転数を記録", tone: "purple", badge: "単発集計" },
+                                { title: "最終持ち玉", sub: "最後に1回だけ実測", tone: "green", badge: "チェーン集計" },
+                            ];
+                            const s = steps[hitWizardStep] || steps[0];
+                            return <FlowStatusCard title={s.title} subtitle={s.sub} tone={s.tone} badge={s.badge} metrics={[
+                                { label: "上皿", value: hitWizardData.trayBalls || "0", unit: "玉", color: C.blue },
+                                { label: "液晶出玉", value: hitWizardData.displayBalls || "0", unit: "玉", color: C.yellow },
+                                { label: "ラウンド", value: hitWizardData.rounds || "—", unit: "R", color: C.orange },
+                            ]} />;
+                        })()}
                         {/* Step 0: 直近のプッシュ額 */}
                         {hitWizardStep === 0 && (
                             <div style={{ textAlign: "center" }}>
@@ -3064,10 +3188,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         {/* Step 1: 上皿の残り玉数 */}
                         {hitWizardStep === 1 && (
                             <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.blue, marginBottom: 16 }}>上皿の残り玉数</div>
-                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                    {hitWizardData.trayBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
-                                </div>
+                                <FlowValueCard label="開始上皿玉" value={hitWizardData.trayBalls || "0"} unit="玉" tone="blue" hint="ここで実測の基準を取ります" />
                             </div>
                         )}
 
@@ -3077,18 +3198,16 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 <div style={{ fontSize: 22, fontWeight: 700, color: C.orange, marginBottom: 24 }}>ラウンド数</div>
                                 <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 12 }}>
                                     {machineRounds.map(r => (
-                                        <button
+                                        <FlowChoiceButton
                                             key={r}
-                                            className="b"
+                                            tone="orange"
                                             onClick={() => { setHitWizardData(d => ({ ...d, rounds: r })); setHitWizardStep(3); }}
                                             style={{
-                                                width: 80, height: 80, borderRadius: 16, fontWeight: 800, fontFamily: mono, fontSize: 26,
-                                                background: "#ea580c", border: "none", color: "#fff",
-                                                boxShadow: "none"
+                                                width: 80, height: 80, fontFamily: mono, fontSize: 26,
                                             }}
                                         >
                                             {r}R
-                                        </button>
+                                        </FlowChoiceButton>
                                     ))}
                                 </div>
                                 <button className="b" onClick={() => setHitWizardStep(1)} style={{ marginTop: 24, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 32px", color: C.sub, fontSize: 14 }}>戻る</button>
@@ -3098,21 +3217,14 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         {/* Step 3: 液晶表示玉数 */}
                         {hitWizardStep === 3 && (
                             <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>液晶表示玉数</div>
-                                <div style={{ fontSize: 12, color: C.sub, marginBottom: 12 }}>{hitWizardData.rounds}R選択中</div>
-                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                    {hitWizardData.displayBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
-                                </div>
+                                <FlowValueCard label="液晶出玉" value={hitWizardData.displayBalls || "0"} unit="玉" tone="yellow" hint={`${hitWizardData.rounds}R選択中`} />
                             </div>
                         )}
 
                         {/* Step 4: 実玉数 */}
                         {hitWizardStep === 4 && (
                             <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.green, marginBottom: 16 }}>実玉数</div>
-                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                    {hitWizardData.actualBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
-                                </div>
+                                <FlowValueCard label="実玉数" value={hitWizardData.actualBalls || "0"} unit="玉" tone="green" hint="実測できる場合だけ入力します" />
                             </div>
                         )}
 
@@ -3121,14 +3233,14 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             <div style={{ textAlign: "center" }}>
                                 <div style={{ fontSize: 22, fontWeight: 700, color: C.text, marginBottom: 28 }}>当たり種別</div>
                                 <div style={{ display: "flex", gap: 16, justifyContent: "center" }}>
-                                    <button className="b" onClick={() => { setHitWizardData(d => ({ ...d, hitType: "単発" })); setHitWizardStep(6); }}
-                                        style={{ width: 130, height: 90, borderRadius: 16, fontWeight: 800, fontSize: 22, background: "#4f46e5", border: "none", color: "#fff", boxShadow: "none" }}>
+                                    <FlowChoiceButton tone="purple" onClick={() => { setHitWizardData(d => ({ ...d, hitType: "単発" })); setHitWizardStep(6); }}
+                                        style={{ width: 130, height: 90, fontSize: 22 }}>
                                         単発
-                                    </button>
-                                    <button className="b" onClick={() => handleWizardComplete("確変")}
-                                        style={{ width: 130, height: 90, borderRadius: 16, fontWeight: 800, fontSize: 22, background: "#ea580c", border: "none", color: "#fff", boxShadow: "none" }}>
-                                        確変
-                                    </button>
+                                    </FlowChoiceButton>
+                                    <FlowChoiceButton tone="orange" onClick={() => handleWizardComplete("確変")}
+                                        style={{ width: 130, height: 90, fontSize: 22 }}>
+                                        ラッシュ
+                                    </FlowChoiceButton>
                                 </div>
                                 <button className="b" onClick={() => setHitWizardStep(4)} style={{ marginTop: 28, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 32px", color: C.sub, fontSize: 14 }}>戻る</button>
                             </div>
@@ -3137,10 +3249,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         {/* Step 6: 時短回数 */}
                         {hitWizardStep === 6 && (
                             <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.purple, marginBottom: 16 }}>時短回数</div>
-                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                    {hitWizardData.jitanSpins || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>回転</span>
-                                </div>
+                                <FlowValueCard label="時短回数" value={hitWizardData.jitanSpins || "0"} unit="回転" tone="purple" />
                             </div>
                         )}
 
@@ -3149,12 +3258,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             const estimated = (Number(hitWizardData.trayBalls) || 0) + (Number(hitWizardData.displayBalls) || 0);
                             return (
                                 <div style={{ textAlign: "center" }}>
-                                    <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginBottom: 8 }}>時短終了後の出玉</div>
-                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>実際の持ち玉（カード＋上皿）</div>
-                                    {estimated > 0 && <div style={{ fontSize: 11, color: C.yellow, marginBottom: 12 }}>推定: {f(estimated)}玉（自動プリセット済み）</div>}
-                                    <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                        {hitWizardData.finalBallsAfterJitan || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
-                                    </div>
+                                    <FlowValueCard label="最終持ち玉" value={hitWizardData.finalBallsAfterJitan || "0"} unit="玉" tone="green" hint={estimated > 0 ? `推定 ${f(estimated)}玉を自動プリセット` : "実際の持ち玉を入力"} />
                                     <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
                                         {[-50, -10, +10, +50].map(delta => (
                                             <button key={delta} className="b" onClick={() => { const cur = Number(hitWizardData.finalBallsAfterJitan) || 0; setHitWizardData(d => ({ ...d, finalBallsAfterJitan: String(Math.max(0, cur + delta)) })); }}
@@ -3170,7 +3274,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
                     {/* テンキー（Step 0・2・5以外で表示） */}
                     {hitWizardStep !== 0 && hitWizardStep !== 2 && hitWizardStep !== 5 && (
-                        <div style={{
+                        <div className="jp-keypad" style={{
                             padding: "8px 12px",
                             paddingBottom: "max(12px, env(safe-area-inset-bottom))",
                             background: "rgba(20,20,25,1)",
@@ -3224,7 +3328,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     const field = hitWizardStep === 1 ? "trayBalls" : hitWizardStep === 3 ? "displayBalls" : hitWizardStep === 4 ? "actualBalls" : hitWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
                                     setHitWizardData(d => ({ ...d, [field]: "" }));
                                 }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 15, background: "rgba(239,68,68,0.25)", border: "none", color: C.red, minHeight: 56 }}>
-                                    AC
+                                    消去
                                 </button>
                                 <button className="b" onClick={() => {
                                     const field = hitWizardStep === 1 ? "trayBalls" : hitWizardStep === 3 ? "displayBalls" : hitWizardStep === 4 ? "actualBalls" : hitWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
@@ -3349,32 +3453,40 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
             {/* 連チャン追加ウィザードモーダル */}
             {chainWizardOpen && ReactDOM.createPortal(
-                <div style={{
+                <div className="jp-proto-screen" style={{
                     position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-                    background: "#000", zIndex: 9999, display: "flex", flexDirection: "column", height: "100dvh", width: "100vw"
+                    zIndex: 9999, display: "flex", flexDirection: "column", height: "100dvh", width: "100vw"
                 }}>
                     {/* ヘッダー */}
-                    <div style={{
+                    <div className="jp-proto-header" style={{
                         padding: "12px 16px", paddingTop: "max(12px, env(safe-area-inset-top))",
-                        borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, background: "#000"
+                        borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0
                     }}>
                         <button className="b" onClick={() => setChainWizardOpen(false)} style={{ background: "transparent", border: "none", color: C.red, fontSize: 14, fontWeight: 600, padding: 8 }}>キャンセル</button>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{lastChain ? `${lastChain.hits.length + 1}連目` : "連チャン"} 入力</span>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>当たりを追加</span>
                         <div style={{ width: 70 }} />
                     </div>
 
                     {/* コンテンツエリア */}
-                    <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "16px 20px", background: "#000" }}>
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 14, justifyContent: "flex-start", padding: "16px 20px", overflowY: "auto" }}>
+                        {(() => {
+                            const verdict = chainPrototypeVerdict(lastChain);
+                            return <FlowStatusCard title={verdict.label} subtitle={verdict.sub} tone={verdict.tone} badge={lastChain ? `${lastChain.hits.length + 1}連目入力` : "チェーン入力"} metrics={[
+                                { label: "総R数", value: lastChain?.summary?.totalRounds || (lastChain?.hits || []).reduce((s, h) => s + (h.rounds || 0), 0), unit: "R", color: C.orange },
+                                { label: "液晶出玉合計", value: f((lastChain?.summary?.totalDisplayBalls) || (lastChain?.hits || []).reduce((s, h) => s + (h.displayBalls || 0), 0)), unit: "玉", color: C.yellow },
+                                { label: "総サポ回転", value: f((lastChain?.summary?.totalSapoRot) || (lastChain?.hits || []).reduce((s, h) => s + (h.elecSapoRot || 0), 0)), unit: "回転", color: C.teal },
+                            ]} />;
+                        })()}
                         {/* Step 0: ラウンド数選択 */}
                         {chainWizardStep === 0 && (
                             <div style={{ textAlign: "center" }}>
                                 <div style={{ fontSize: 22, fontWeight: 700, color: C.orange, marginBottom: 24 }}>ラウンド数</div>
                                 <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 12 }}>
                                     {machineRushRounds.map(({ rounds, mult }) => (
-                                        <button key={`${rounds}-${mult}`} className="b" onClick={() => { setChainWizardData(d => ({ ...d, rounds, mult })); setChainWizardStep(1); setChainWizardFirstKey(true); }}
-                                            style={{ minWidth: 80, height: 80, padding: mult > 1 ? "0 12px" : 0, borderRadius: 16, fontWeight: 800, fontFamily: mono, fontSize: mult > 1 ? 20 : 26, background: "#ea580c", border: "none", color: "#fff", boxShadow: "none" }}>
+                                        <FlowChoiceButton key={`${rounds}-${mult}`} tone="orange" onClick={() => { setChainWizardData(d => ({ ...d, rounds, mult })); setChainWizardStep(1); setChainWizardFirstKey(true); }}
+                                            style={{ minWidth: 80, height: 80, padding: mult > 1 ? "0 12px" : 0, fontFamily: mono, fontSize: mult > 1 ? 20 : 26 }}>
                                             {mult > 1 ? `${rounds}R×${mult}` : `${rounds}R`}
-                                        </button>
+                                        </FlowChoiceButton>
                                     ))}
                                 </div>
                             </div>
@@ -3387,11 +3499,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             const diff = current - prevEndBalls;
                             return (
                                 <div style={{ textAlign: "center" }}>
-                                    <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginBottom: 8 }}>大当り直前の出玉</div>
-                                    {prevEndBalls > 0 && <div style={{ fontSize: 11, color: C.yellow, marginBottom: 12 }}>前回終了時: {f(prevEndBalls)}玉（自動プリセット済み）</div>}
-                                    <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                        {chainWizardData.lastOutBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
-                                    </div>
+                                    <FlowValueCard label="大当たり直前の出玉" value={chainWizardData.lastOutBalls || "0"} unit="玉" tone="teal" hint={prevEndBalls > 0 ? `前回終了時 ${f(prevEndBalls)}玉を自動プリセット` : "直前の持ち玉を確認"} />
                                     <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
                                         {[-50, -10, +10, +50].map(delta => (
                                             <button key={delta} className="b" onClick={() => { const cur = Number(chainWizardData.lastOutBalls) || 0; setChainWizardData(d => ({ ...d, lastOutBalls: String(Math.max(0, cur + delta)) })); }}
@@ -3412,21 +3520,14 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         {/* Step 2: 電サポ回転数 */}
                         {chainWizardStep === 2 && (
                             <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginBottom: 16 }}>電サポ回転数</div>
-                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                    {chainWizardData.elecSapoRot || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>回転</span>
-                                </div>
+                                <FlowValueCard label="サポ回転" value={chainWizardData.elecSapoRot || "0"} unit="回転" tone="blue" hint="忙しい時はこの3項目だけ素早く入力" />
                             </div>
                         )}
 
                         {/* Step 3: 液晶出玉数 */}
                         {chainWizardStep === 3 && (
                             <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>液晶出玉数{chainWizardData.mult > 1 ? "（1連分）" : ""}</div>
-                                <div style={{ fontSize: 12, color: C.sub, marginBottom: 12 }}>{chainWizardData.rounds}R{chainWizardData.mult > 1 ? `×${chainWizardData.mult}` : ""}選択中</div>
-                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                    {chainWizardData.displayBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
-                                </div>
+                                <FlowValueCard label={`液晶出玉${chainWizardData.mult > 1 ? "（1連分）" : ""}`} value={chainWizardData.displayBalls || "0"} unit="玉" tone="yellow" hint={`${chainWizardData.rounds}R${chainWizardData.mult > 1 ? `×${chainWizardData.mult}` : ""}選択中`} />
                             </div>
                         )}
 
@@ -3441,11 +3542,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             const perRot = rot > 0 ? sapoChange / rot : 0;
                             return (
                                 <div style={{ textAlign: "center" }}>
-                                    <div style={{ fontSize: 22, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>ラウンド終了時の出玉</div>
-                                    {prevBalls > 0 && <div style={{ fontSize: 11, color: C.teal, marginBottom: 12 }}>大当り直前: {f(prevBalls)}玉</div>}
-                                    <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                        {chainWizardData.nextTimingBalls || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
-                                    </div>
+                                    <FlowValueCard label="ラウンド終了時の出玉" value={chainWizardData.nextTimingBalls || "0"} unit="玉" tone="yellow" hint={prevBalls > 0 ? `大当たり直前 ${f(prevBalls)}玉` : "終了時の持ち玉を確認"} />
                                     <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
                                         {[-50, -10, +10, +50].map(delta => (
                                             <button key={delta} className="b" onClick={() => { const cur = Number(chainWizardData.nextTimingBalls) || 0; setChainWizardData(d => ({ ...d, nextTimingBalls: String(Math.max(0, cur + delta)) })); }}
@@ -3479,11 +3576,11 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             <div style={{ textAlign: "center" }}>
                                 <div style={{ fontSize: 22, fontWeight: 700, color: C.text, marginBottom: 28 }}>この大当たりは？</div>
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center" }}>
-                                    <button className="b" onClick={() => handleChainWizardComplete(false)}
-                                        style={{ width: 100, height: 80, borderRadius: 16, fontWeight: 800, fontSize: 16, background: "#16a34a", border: "none", color: "#fff", boxShadow: "none" }}>連チャン継続</button>
-                                    <button className="b" onClick={() => { setChainWizardStep(6); setChainWizardFirstKey(true); }}
-                                        style={{ width: 100, height: 80, borderRadius: 16, fontWeight: 800, fontSize: 16, background: "#4f46e5", border: "none", color: "#fff", boxShadow: "none" }}>単発終了</button>
-                                    <button className="b" onClick={() => {
+                                    <FlowChoiceButton tone="green" onClick={() => handleChainWizardComplete(false)}
+                                        style={{ width: 100, height: 80, fontSize: 16 }}>継続</FlowChoiceButton>
+                                    <FlowChoiceButton tone="purple" onClick={() => { setChainWizardStep(6); setChainWizardFirstKey(true); }}
+                                        style={{ width: 100, height: 80, fontSize: 16 }}>単発終了</FlowChoiceButton>
+                                    <FlowChoiceButton tone="orange" onClick={() => {
                                         const lc = jpLog[jpLog.length - 1];
                                         const existingTotal = (lc ? lc.trayBalls || 0 : 0) +
                                             (lc ? lc.hits : []).reduce((s, h) => s + (h.displayBalls || 0) + (h.sapoChange || 0), 0);
@@ -3494,7 +3591,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                         setChainWizardData(d => ({ ...d, finalRealBalls: String(estimated) }));
                                         setChainWizardStep(8);
                                         setChainWizardFirstKey(true);
-                                    }} style={{ width: 100, height: 80, borderRadius: 16, fontWeight: 800, fontSize: 16, background: "#ea580c", border: "none", color: "#fff", boxShadow: "none" }}>最終大当たり</button>
+                                    }} style={{ width: 100, height: 80, fontSize: 16 }}>ラッシュ終了へ</FlowChoiceButton>
                                 </div>
                                 <button className="b" onClick={() => { setChainWizardStep(4); setChainWizardFirstKey(true); }} style={{ marginTop: 28, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 32px", color: C.sub, fontSize: 14 }}>戻る</button>
                             </div>
@@ -3503,10 +3600,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         {/* Step 6: 時短回数 */}
                         {chainWizardStep === 6 && (
                             <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.purple, marginBottom: 16 }}>時短回数</div>
-                                <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                    {chainWizardData.jitanSpins || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>回転</span>
-                                </div>
+                                <FlowValueCard label="時短回数" value={chainWizardData.jitanSpins || "0"} unit="回転" tone="purple" />
                             </div>
                         )}
 
@@ -3515,12 +3609,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             const estimated = Number(chainWizardData.nextTimingBalls) || 0;
                             return (
                                 <div style={{ textAlign: "center" }}>
-                                    <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginBottom: 8 }}>時短終了後の出玉</div>
-                                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 8 }}>実際の持ち玉（カード＋上皿）</div>
-                                    {estimated > 0 && <div style={{ fontSize: 11, color: C.yellow, marginBottom: 12 }}>ラウンド終了時: {f(estimated)}玉（自動プリセット済み）</div>}
-                                    <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                        {chainWizardData.finalBallsAfterJitan || "0"}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
-                                    </div>
+                                    <FlowValueCard label="最終持ち玉" value={chainWizardData.finalBallsAfterJitan || "0"} unit="玉" tone="green" hint={estimated > 0 ? `ラウンド終了時 ${f(estimated)}玉を自動プリセット` : "実際の持ち玉を入力"} />
                                     <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
                                         {[-50, -10, +10, +50].map(delta => (
                                             <button key={delta} className="b" onClick={() => { const cur = Number(chainWizardData.finalBallsAfterJitan) || 0; setChainWizardData(d => ({ ...d, finalBallsAfterJitan: String(Math.max(0, cur + delta)) })); }}
@@ -3538,14 +3627,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             const current = Number(chainWizardData.finalRealBalls) || 0;
                             return (
                                 <div style={{ textAlign: "center" }}>
-                                    <div style={{ fontSize: 22, fontWeight: 700, color: C.orange, marginBottom: 8 }}>最終持ち玉（実測）</div>
-                                    <div style={{ fontSize: 12, color: C.sub, marginBottom: 12 }}>実際の持ち玉（カード＋上皿）を計測してください</div>
-                                    {chainWizardInitialFinalBalls > 0 && (
-                                        <div style={{ fontSize: 11, color: C.yellow, marginBottom: 12 }}>計算値: {f(chainWizardInitialFinalBalls)}玉（自動プリセット済み）</div>
-                                    )}
-                                    <div style={{ fontSize: 52, fontWeight: 800, color: C.text, fontFamily: mono }}>
-                                        {f(current)}<span style={{ fontSize: 20, color: C.sub, marginLeft: 4 }}>玉</span>
-                                    </div>
+                                    <FlowValueCard label="最終持ち玉" value={f(current)} unit="玉" tone="green" hint={chainWizardInitialFinalBalls > 0 ? `計算値 ${f(chainWizardInitialFinalBalls)}玉を自動プリセット` : "最後に1回だけ実測"} />
                                     <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
                                         {[-50, -10, +10, +50].map(delta => (
                                             <button key={delta} className="b" onClick={() => { const cur = Number(chainWizardData.finalRealBalls) || 0; setChainWizardData(d => ({ ...d, finalRealBalls: String(Math.max(0, cur + delta)) })); }}
@@ -3561,11 +3643,11 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
                     {/* テンキー */}
                     {chainWizardStep !== 0 && chainWizardStep !== 5 && (
-                        <div style={{ padding: "8px 12px", paddingBottom: "max(12px, env(safe-area-inset-bottom))", background: "rgba(20,20,25,1)", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
+                        <div className="jp-keypad" style={{ padding: "8px 12px", paddingBottom: "max(12px, env(safe-area-inset-bottom))", background: "rgba(20,20,25,1)", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
                                 <button className="b" onClick={() => { if (chainWizardStep === 1) setChainWizardStep(0); else if (chainWizardStep === 6) setChainWizardStep(5); else if (chainWizardStep === 8) setChainWizardStep(5); else setChainWizardStep(s => s - 1); setChainWizardFirstKey(true); }}
                                     style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "var(--surface-hi)", border: "none", color: C.text }}>戻る</button>
-                                {(chainWizardStep === 7 || chainWizardStep === 8) ? (
+                                {chainWizardStep === 7 ? (
                                     <button className="b" onClick={handleChainWizardSingleEnd} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#16a34a", border: "none", color: "#fff" }}>記録完了</button>
                                 ) : chainWizardStep === 8 ? (
                                     <button className="b" onClick={() => {
@@ -3600,7 +3682,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "var(--surface-hi)", border: "none", color: C.text, minHeight: 56 }}>{n}</button>
                                 ))}
                                 <button className="b" onClick={() => { const field = chainWizardStep === 1 ? "lastOutBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "displayBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : chainWizardStep === 8 ? "finalRealBalls" : "finalBallsAfterJitan"; setChainWizardData(d => ({ ...d, [field]: "" })); setChainWizardFirstKey(false); }}
-                                    style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 15, background: "rgba(239,68,68,0.25)", border: "none", color: C.red, minHeight: 56 }}>AC</button>
+                                    style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 15, background: "rgba(239,68,68,0.25)", border: "none", color: C.red, minHeight: 56 }}>消去</button>
                                 <button className="b" onClick={() => { const field = chainWizardStep === 1 ? "lastOutBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "displayBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : chainWizardStep === 8 ? "finalRealBalls" : "finalBallsAfterJitan"; setChainWizardData(d => chainWizardFirstKey ? { ...d, [field]: "0" } : (d[field] === "" ? d : { ...d, [field]: d[field] + "0" })); setChainWizardFirstKey(false); }}
                                     style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "var(--surface-hi)", border: "none", color: C.text, minHeight: 56 }}>0</button>
                                 <button className="b" onClick={() => { const field = chainWizardStep === 1 ? "lastOutBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "displayBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan"; setChainWizardData(d => ({ ...d, [field]: (d[field] || "").slice(0, -1) })); setChainWizardFirstKey(false); }}
@@ -3678,7 +3760,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "var(--surface-hi)", border: "none", color: C.text, minHeight: 56 }}>{n}</button>
                             ))}
                             <button className="b" onClick={() => { const field = directSingleEndStep === 0 ? "jitanSpins" : "finalBallsAfterJitan"; setDirectSingleEndData(d => ({ ...d, [field]: "" })); }}
-                                style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 15, background: "rgba(239,68,68,0.25)", border: "none", color: C.red, minHeight: 56 }}>AC</button>
+                                style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 15, background: "rgba(239,68,68,0.25)", border: "none", color: C.red, minHeight: 56 }}>消去</button>
                             <button className="b" onClick={() => { const field = directSingleEndStep === 0 ? "jitanSpins" : "finalBallsAfterJitan"; setDirectSingleEndData(d => (d[field] === "" ? d : { ...d, [field]: d[field] + "0" })); }}
                                 style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "var(--surface-hi)", border: "none", color: C.text, minHeight: 56 }}>0</button>
                             <button className="b" onClick={() => { const field = directSingleEndStep === 0 ? "jitanSpins" : "finalBallsAfterJitan"; setDirectSingleEndData(d => ({ ...d, [field]: (d[field] || "").slice(0, -1) })); }}
@@ -3695,7 +3777,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 /* ================================================================
    HistoryTab — 大当たり履歴（チェーンベース連チャン記録）
 ================================================================ */
-export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev }) {
+export function HistoryTab({ jpLog, sesLog, delJPLast, delSesLast, S, ev }) {
     const [sub, setSub] = useState("jp");
 
     // スワイプ削除用state（横スワイプのみ反応）
@@ -3800,7 +3882,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         if (!matches) return [3, 4, 5, 6, 7, 8, 9, 10];
         return [...new Set(matches.map(m => parseInt(m)))].sort((a, b) => a - b);
     };
-    const machineRounds = useMemo(getMachineRounds, [S.machineName, S.customMachines]);
+    const _machineRounds = getMachineRounds();
 
     // 確変中のラウンド情報を取得（連チャン用 - rushDistを優先、×N表記対応）
     const getMachineRushRounds = () => {
@@ -3822,7 +3904,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
         if (found.length === 0) return defaultOpts;
         return found.sort((a, b) => a.rounds - b.rounds || a.mult - b.mult);
     };
-    const machineRushRounds = useMemo(getMachineRushRounds, [S.machineName, S.customMachines]);
+    const machineRushRounds = getMachineRushRounds();
 
     // 最新の未完了チェーンがあるか
     const lastChain = jpLog.length > 0 ? jpLog[jpLog.length - 1] : null;
@@ -3879,7 +3961,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
     };
 
     // 連チャン追加: チェーンにヒットを追加（旧版 - フォールバック用）
-    const addHitToChain = () => {
+    const _addHitToChain = () => {
         const rounds = Number(iRounds) || 0;
         if (rounds <= 0) return;
         S.pushSnapshot();
@@ -4837,7 +4919,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                     setChainWizardData(d => ({ ...d, [field]: "" }));
                                     setChainWizardFirstKey(false);
                                 }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 15, background: "rgba(239,68,68,0.25)", border: "none", color: C.red, minHeight: 56 }}>
-                                    AC
+                                    消去
                                 </button>
                                 <button className="b" onClick={() => {
                                     const field = chainWizardStep === 1 ? "lastOutBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "displayBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : chainWizardStep === 8 ? "finalRealBalls" : "finalBallsAfterJitan";
@@ -4990,7 +5072,7 @@ export function HistoryTab({ jpLog, sesLog, pushJP, delJPLast, delSesLast, S, ev
                                 const field = directSingleEndStep === 0 ? "jitanSpins" : "finalBallsAfterJitan";
                                 setDirectSingleEndData(d => ({ ...d, [field]: "" }));
                             }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 15, background: "rgba(239,68,68,0.25)", border: "none", color: C.red, minHeight: 56 }}>
-                                AC
+                                消去
                             </button>
                             <button className="b" onClick={() => {
                                 const field = directSingleEndStep === 0 ? "jitanSpins" : "finalBallsAfterJitan";
@@ -5029,7 +5111,7 @@ export function CalendarTab({ S, onReset }) {
         return { year: now.getFullYear(), month: now.getMonth() };
     });
     const [delConfirm, setDelConfirm] = useState(null);
-    const [expandedRot, setExpandedRot] = useState(null);
+    const [, setExpandedRot] = useState(null);
     // Edit form state (always declared — not conditional)
     const [editStore, setEditStore] = useState("");
     const [editMachineNum, setEditMachineNum] = useState("");
@@ -5170,9 +5252,6 @@ export function CalendarTab({ S, onReset }) {
     );
 
     const storeList = S.stores || [];
-    const [showStoreDropdown, setShowStoreDropdown] = useState(false);
-    const autoInvest = S.ev?.rawInvest || 0;
-
     // ── Inline summary card for an archive entry (reference app style) ──
     const SummaryCard = ({ a, onClick }) => {
         const st = a.stats || {};
@@ -5341,22 +5420,25 @@ export function CalendarTab({ S, onReset }) {
 
     // Initialize edit form when archive selection changes
     const prevSelectedRef = useRef(null);
-    if (selectedArchiveId && selectedArchiveId !== prevSelectedRef.current) {
-        const target = archives.find(ar => ar.id === selectedArchiveId);
-        if (target) {
-            prevSelectedRef.current = selectedArchiveId;
-            // Defer state updates to avoid render-during-render
-            setTimeout(() => {
-                setEditStore(String(target.storeName || ""));
-                setEditMachineNum(String(target.machineNum || ""));
-                setEditInvest(target.investYen || "");
-                setEditRecovery(target.recoveryYen || "");
-                setShowEditStoreDD(false);
-            }, 0);
+    useEffect(() => {
+        if (selectedArchiveId && selectedArchiveId !== prevSelectedRef.current) {
+            const target = archives.find(ar => ar.id === selectedArchiveId);
+            if (target) {
+                prevSelectedRef.current = selectedArchiveId;
+                const timer = setTimeout(() => {
+                    setEditStore(String(target.storeName || ""));
+                    setEditMachineNum(String(target.machineNum || ""));
+                    setEditInvest(target.investYen || "");
+                    setEditRecovery(target.recoveryYen || "");
+                    setShowEditStoreDD(false);
+                }, 0);
+                return () => clearTimeout(timer);
+            }
+        } else if (!selectedArchiveId && prevSelectedRef.current) {
+            prevSelectedRef.current = null;
         }
-    } else if (!selectedArchiveId && prevSelectedRef.current) {
-        prevSelectedRef.current = null;
-    }
+        return undefined;
+    }, [archives, selectedArchiveId]);
 
     // ── Detail View for a specific archive ──
     if (selectedArchiveId) {
@@ -5996,8 +6078,6 @@ export function CalendarTab({ S, onReset }) {
                                         const ev1K = parseFloat(getCol(cols, ["期待値/K"], "0")) || 0;
                                         const start1K = parseFloat(getCol(cols, ["1Kスタート"], "0")) || 0;
                                         const netRot = parseFloat(getCol(cols, ["総回転"], "0")) || 0;
-                                        const hours = parseFloat(getCol(cols, ["稼働時間"], "0")) || 0;
-                                        const hourlyWage = parseFloat(getCol(cols, ["時給"], "0")) || 0;
                                         newArchives.push({
                                             id: Date.now() + i + Math.random(),
                                             date,
@@ -6458,7 +6538,7 @@ export function SettingsTab({ s, onReset }) {
     };
 
     // 日本語ヘッダーから内部フィールド名へのマッピング
-    const jpHeaderToField = {
+    const _jpHeaderToField = {
         "機種名": "name",
         "大当り確率": "synthProb",
         "ボーダー(1k)": "border1K",
