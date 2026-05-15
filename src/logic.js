@@ -198,6 +198,11 @@ export function calcPreciseEV({
     // ── ボーダー差 = 実測回転率 - 理論ボーダー ──
     const bDiff = theoreticalBorder > 0 ? start1K - theoreticalBorder : (border > 0 ? start1K - border : 0);
 
+    // 上皿補正後の EV/K とボーダー差（Step 2a）
+    // 判断ロジック専用。表示は既存の ev1K を使う。
+    const ev1KCorrected = (start1KCorrected / synthDenom) * specNetGainYen - 1000;
+    const bDiffCorrected = start1KCorrected - useBorder;
+
     return {
         // 実測パラメータ
         avg1R,
@@ -220,9 +225,11 @@ export function calcPreciseEV({
         theoreticalBorder,
         useBorder,
         bDiff,
+        bDiffCorrected,
 
         // 期待値・仕事量・時給
         ev1K,
+        ev1KCorrected,
         workAmount,
         wage,
         evPerRot,

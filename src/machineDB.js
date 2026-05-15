@@ -30,6 +30,7 @@ export const machineDB = [
     rushEntryRate: 60,
     rushContinueRate: 75,
     hesoDist: [{ payout: 1500, rate: 60 }, { payout: 1500, rate: 40 }],
+    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
     name: "エヴァンゲリオン15",
@@ -43,6 +44,7 @@ export const machineDB = [
     roundDist: "4R:50%, 10R:50%",
     rushDist: "4R:30%, 10R:70%",
     border: { "4.00": 22.0, "3.57": 23.2, "3.33": 24.2, "3.03": 25.4 },
+    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
     name: "北斗の拳10",
@@ -55,6 +57,7 @@ export const machineDB = [
     specSapo: 0,
     roundDist: "3R:30%, 10R:70%",
     border: { "4.00": 18.5, "3.57": 19.5, "3.33": 20.4, "3.03": 21.4 },
+    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
     name: "真・花の慶次3",
@@ -67,6 +70,7 @@ export const machineDB = [
     specSapo: 0,
     roundDist: "4R:40%, 10R:60%",
     border: { "4.00": 20.5, "3.57": 21.6, "3.33": 22.6, "3.03": 23.7 },
+    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
     name: "ルパン三世 消されたルパン",
@@ -79,6 +83,7 @@ export const machineDB = [
     specSapo: 0,
     roundDist: "3R:25%, 10R:75%",
     border: { "4.00": 17.3, "3.57": 18.2, "3.33": 19.0, "3.03": 20.0 },
+    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
     name: "仮面ライダー轟音",
@@ -91,6 +96,7 @@ export const machineDB = [
     specSapo: 0,
     roundDist: "4R:50%, 10R:50%",
     border: { "4.00": 22.0, "3.57": 23.2, "3.33": 24.2, "3.03": 25.4 },
+    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   // ── ライトミドル ──
   {
@@ -104,6 +110,7 @@ export const machineDB = [
     specSapo: 0,
     roundDist: "5R:50%, 10R:50%",
     border: { "4.00": 17.5, "3.57": 18.4, "3.33": 19.2, "3.03": 20.2 },
+    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
     name: "ジューシーハニー3",
@@ -116,6 +123,7 @@ export const machineDB = [
     specSapo: 0,
     roundDist: "4R:60%, 10R:40%",
     border: { "4.00": 23.1, "3.57": 24.4, "3.33": 25.5, "3.03": 26.7 },
+    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   // ── 甘デジ ──
   {
@@ -129,6 +137,7 @@ export const machineDB = [
     specSapo: 0,
     roundDist: "3R:50%, 10R:50%",
     border: { "4.00": 18.1, "3.57": 19.1, "3.33": 20.0, "3.03": 20.9 },
+    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
     name: "大海物語5 甘デジ",
@@ -141,6 +150,7 @@ export const machineDB = [
     specSapo: 0,
     roundDist: "5R:70%, 10R:30%",
     border: { "4.00": 22.2, "3.57": 23.4, "3.33": 24.4, "3.03": 25.6 },
+    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
     name: "ガンダムSEED",
@@ -153,6 +163,7 @@ export const machineDB = [
     specSapo: 0,
     roundDist: "4R:50%, 10R:50%",
     border: { "4.00": 22.0, "3.57": 23.2, "3.33": 24.2, "3.03": 25.4 },
+    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
     name: "Re:ゼロから始める異世界生活",
@@ -165,6 +176,7 @@ export const machineDB = [
     specSapo: 0,
     roundDist: "3R:40%, 10R:60%",
     border: { "4.00": 19.7, "3.57": 20.8, "3.33": 21.7, "3.03": 22.8 },
+    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
     name: "源さん超韋駄天",
@@ -177,6 +189,7 @@ export const machineDB = [
     specSapo: 0,
     roundDist: "2R:50%, 10R:50%",
     border: { "4.00": 23.8, "3.57": 25.1, "3.33": 26.2, "3.03": 27.5 },
+    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
     name: "とある魔術の禁書目録",
@@ -189,6 +202,7 @@ export const machineDB = [
     specSapo: 0,
     roundDist: "4R:45%, 10R:55%",
     border: { "4.00": 20.5, "3.57": 21.6, "3.33": 22.6, "3.03": 23.7 },
+    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   // ── スマパチ / 新規追加機種 ──
   {
@@ -210,6 +224,7 @@ export const machineDB = [
     rushAvgPayout: 7500,
     rushEntryRate: 51,
     rushContinueRate: 75,
+    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
     name: "e新世紀エヴァンゲリオン ～はじまりの記憶～",
@@ -230,6 +245,7 @@ export const machineDB = [
     rushAvgPayout: 8000,
     rushEntryRate: 61.4,
     rushContinueRate: 80,
+    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
     name: "PAフィーバーからくりサーカス2YF",
@@ -249,6 +265,7 @@ export const machineDB = [
     rushAvgPayout: 3500,
     rushEntryRate: 29,
     rushContinueRate: 81,
+    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
     name: "P大海物語5スペシャル",
@@ -268,6 +285,7 @@ export const machineDB = [
     rushAvgPayout: 4500,
     rushEntryRate: 54,
     rushContinueRate: 71,
+    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
     name: "Pスーパー海物語IN沖縄6 LTP",
@@ -287,6 +305,7 @@ export const machineDB = [
     rushAvgPayout: 5000,
     rushEntryRate: 60,
     rushContinueRate: 71.5,
+    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
 ];
 
