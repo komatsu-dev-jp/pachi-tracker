@@ -1140,16 +1140,41 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
     // 初当たりボタン → ウィザード開始
     const handleStartChain = () => {
-        const val = Number(input);
-        const prevCumRot = last ? last.cumRot : S.startRot;
-        const hitRot = val > 0 ? val : (prevCumRot || 0);
-        const hitThisRot = val > 0 ? val - prevCumRot : 0;
-        const chainId = Date.now();
-
-        // 回転数テーブルに初当たりマーカー行を追加（chainIdで大当たり履歴と紐付け）
-        if (val > 0) {
-            setRows(r => [...r, { type: "hit", chainId, cumRot: val, thisRot: hitThisRot, invest: last ? last.invest : 0, mode: S.playMode, mochiBalls: S.currentMochiBalls, chodamaBalls: S.currentChodama }]);
+        // 1. 入力欄が空文字なら警告して処理を中断
+        const inputTrimmed = (input || "").toString().trim();
+        if (inputTrimmed === "") {
+            alert("総回転数を入力してください。");
+            return;
         }
+
+        const val = Number(inputTrimmed);
+
+        // 2. 数値変換できない or 0 以下なら警告
+        if (!Number.isFinite(val) || val <= 0) {
+            alert("総回転数を入力してください。");
+            return;
+        }
+
+        const prevCumRot = last ? last.cumRot : (S.startRot || 0);
+
+        // 3. 逆行チェック（直前の累計回転数以下は不正）
+        if (val <= prevCumRot) {
+            alert(`総回転数が直前の記録（${prevCumRot}回転）以下です。正しい値を入力してください。`);
+            return;
+        }
+
+        const hitRot = val;
+        const hitThisRot = val - prevCumRot;
+        const chainId = Date.now();
+        const lastInvest = last ? (last.invest || 0) : 0;
+
+        // 4. 回転数テーブルに data 行 + hit 行を追加
+        //    data 行で netRot を正しく反映、hit 行で chainId と大当たり履歴を紐付け
+        setRows(r => [
+            ...r,
+            { type: "data", mode: S.playMode, cumRot: val, thisRot: hitThisRot, invest: lastInvest, time: tsNow() },
+            { type: "hit", chainId, cumRot: val, thisRot: hitThisRot, invest: lastInvest, mode: S.playMode, mochiBalls: S.currentMochiBalls, chodamaBalls: S.currentChodama, time: tsNow() }
+        ]);
 
         S.pushJP({
             chainId,
