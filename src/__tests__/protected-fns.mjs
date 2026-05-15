@@ -159,6 +159,36 @@ const evCases = {
     spec1R: 140, specAvgRounds: 34.17, specSapo: 0,
     chodamaSettings: { includeChodamaInBalance: false },
   },
+  evUpperTrayCorrection: {
+    rotRows: [
+      { type: "data", thisRot: 20, invest: 1000, mode: "cash" },
+      { type: "data", thisRot: 20, invest: 2000, mode: "cash" },
+      { type: "data", thisRot: 5, invest: 2000, mode: "cash" },
+      { type: "hit", thisRot: 0, invest: 2000, mode: "cash" },
+      { type: "data", thisRot: 0, invest: 2500, mode: "cash" },
+    ],
+    startRot: 0,
+    jpLog: [],
+    rentBalls: 250, exRate: 250, synthDenom: 319.6, rotPerHour: 500,
+    totalTrayBalls: 100, border: 20,
+    spec1R: 140, specAvgRounds: 34.17, specSapo: 0,
+    chodamaSettings: { includeChodamaInBalance: true },
+  },
+  evUpperTrayFromJpLog: {
+    rotRows: [
+      { type: "data", thisRot: 20, invest: 1000, mode: "cash" },
+      { type: "data", thisRot: 20, invest: 2000, mode: "cash" },
+      { type: "data", thisRot: 5, invest: 2000, mode: "cash" },
+      { type: "hit", thisRot: 0, invest: 2000, mode: "cash" },
+      { type: "data", thisRot: 0, invest: 2500, mode: "cash" },
+    ],
+    startRot: 0,
+    jpLog: [{ completed: false, trayBalls: 100, hits: [] }],
+    rentBalls: 250, exRate: 250, synthDenom: 319.6, rotPerHour: 500,
+    totalTrayBalls: 0, border: 20,
+    spec1R: 140, specAvgRounds: 34.17, specSapo: 0,
+    chodamaSettings: { includeChodamaInBalance: true },
+  },
 };
 
 const cashCases = {

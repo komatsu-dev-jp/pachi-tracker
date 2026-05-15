@@ -28,7 +28,8 @@ export function useLS(key, init) {
 /* ================================================================
    SHARED CALC HELPERS
 ================================================================ */
-export function deriveFromRows(rotRows, startRot = 0, rentBalls = 250) {
+export function deriveFromRows(rotRows, _startRot = 0, rentBalls = 250) {
+    void _startRot;
     const dataRows = (rotRows || []).filter(r => r.type === "data");
     if (dataRows.length === 0) return { rot: 0, kCount: 0, invest: 0, cashKCount: 0, mochiKCount: 0, chodamaKCount: 0 };
 
@@ -126,7 +127,8 @@ export function calcPreciseEV({
     const avgNetGainPerJP = jpCount > 0 ? totalNetGain / jpCount : 0;
 
     // ── 投資玉数の補正（上皿玉を除外した真の消費玉） ──
-    const trayCorrection = totalTrayBalls || 0;
+    const jpTrayBalls = (jpLog || []).reduce((sum, chain) => sum + (Number(chain?.trayBalls) || 0), 0);
+    const trayCorrection = jpTrayBalls > 0 ? jpTrayBalls : (Number(totalTrayBalls) || 0);
     // 上皿玉の円換算（貸し玉レートで）
     const trayBallsYen = trayCorrection * (1000 / (rentBalls || 250));
     // 持ち玉混合コスト: 現金=1000円/K, 持ち玉=1000×(交換率/貸し玉)円/K
@@ -165,20 +167,29 @@ export function calcPreciseEV({
 
     // ── 期待値/K（P tools互換計算式） ──
     // EV/K = (回転率/synthDenom) × 純増出玉円 - 1000
-    let ev1K = 0;
     let useBorder = 0;  // 使用するボーダー
 
     // 機種スペックベースで計算（P tools準拠）
     if (start1K > 0 && theoreticalBorder > 0) {
-        // P tools準拠: EV/K = (1Kスタート / 大当たり確率) × 平均純増出玉 × 交換レート - 1000
-        ev1K = (start1K / synthDenom) * specNetGainYen - 1000;
         useBorder = theoreticalBorder;
     } else if (start1K > 0 && border > 0) {
-        // フォールバック: 手動ボーダーから計算
-        // EV/K = (1Kスタート - ボーダー) / ボーダー × 1000
-        ev1K = ((start1K - border) / border) * 1000;
         useBorder = border;
     }
+
+    const calcEv1KFromStart = (start) => {
+        if (start > 0 && theoreticalBorder > 0) {
+            // P tools準拠: EV/K = (1Kスタート / 大当たり確率) × 平均純増出玉 × 交換レート - 1000
+            return (start / synthDenom) * specNetGainYen - 1000;
+        }
+        if (start > 0 && border > 0) {
+            // フォールバック: 手動ボーダーから計算
+            // EV/K = (1Kスタート - ボーダー) / ボーダー × 1000
+            return ((start - border) / border) * 1000;
+        }
+        return 0;
+    };
+
+    const ev1K = calcEv1KFromStart(start1K);
 
     // EVソース
     const evSource = (theoreticalBorder > 0) ? "spec" : (border > 0 ? "border" : "none");
@@ -199,9 +210,20 @@ export function calcPreciseEV({
     const bDiff = theoreticalBorder > 0 ? start1K - theoreticalBorder : (border > 0 ? start1K - border : 0);
 
     // 上皿補正後の EV/K とボーダー差（Step 2a）
-    // 判断ロジック専用。表示は既存の ev1K を使う。
-    const ev1KCorrected = (start1KCorrected / synthDenom) * specNetGainYen - 1000;
-    const bDiffCorrected = start1KCorrected - useBorder;
+    // 補正後K数が0以下のときは有効な補正値として扱わず、表示・判断は生値へフォールバックする。
+    const hasCorrectedRate = correctedKCount > 0 && netRot > 0;
+    const ev1KCorrected = hasCorrectedRate ? calcEv1KFromStart(start1KCorrected) : null;
+    const bDiffCorrected = hasCorrectedRate && useBorder > 0 ? start1KCorrected - useBorder : null;
+
+    // 表示・判断で優先して使う有効値。既存の生値も比較用に保持する。
+    const effectiveStart1K = hasCorrectedRate ? start1KCorrected : start1K;
+    const effectiveEV1K = ev1KCorrected ?? ev1K;
+    const effectiveBDiff = bDiffCorrected ?? bDiff;
+    const effectiveEvPerRot = effectiveStart1K > 0 ? effectiveEV1K / effectiveStart1K : 0;
+    const effectiveWorkAmount = effectiveEvPerRot * netRot;
+    const effectiveWage = (rotPerHour > 0 && netRot > 0)
+        ? effectiveWorkAmount / (netRot / rotPerHour)
+        : 0;
 
     return {
         // 実測パラメータ
@@ -221,18 +243,24 @@ export function calcPreciseEV({
         start1K,
         correctedKCount,
         start1KCorrected,
+        effectiveStart1K,
         measuredBorder,
         theoreticalBorder,
         useBorder,
         bDiff,
         bDiffCorrected,
+        effectiveBDiff,
 
         // 期待値・仕事量・時給
         ev1K,
         ev1KCorrected,
+        effectiveEV1K,
         workAmount,
+        effectiveWorkAmount,
         wage,
+        effectiveWage,
         evPerRot,
+        effectiveEvPerRot,
         evSource,
 
         // 投資情報

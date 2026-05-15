@@ -5,7 +5,7 @@ import { C, font } from "./constants";
 import { RotTab, SettingsTab, CalendarTab } from "./components/Tabs";
 import { takeSnapshot, takeSnapshotImmediate, getLatest as getLatestSnapshot } from "./snapshot";
 
-export const COLOR_THEMES = [
+const COLOR_THEMES = [
   { id: "purple",   gradient: "linear-gradient(135deg,#667eea,#764ba2)", primary: "#667eea" },
   { id: "teal",     gradient: "linear-gradient(135deg,#0093E9,#80D0C7)", primary: "#0093E9" },
   { id: "green",    gradient: "linear-gradient(135deg,#11998e,#38ef7d)", primary: "#11998e" },

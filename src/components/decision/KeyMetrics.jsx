@@ -34,9 +34,10 @@ function DualStat({ label, primary, primaryCol, raw, rawIsSame }) {
 }
 
 export function KeyMetrics({ ev }) {
-  const ev1KC = ev.ev1KCorrected ?? ev.ev1K;
-  const bDiffC = ev.bDiffCorrected ?? ev.bDiff;
-  const start1KC = ev.start1KCorrected ?? ev.start1K;
+  const ev1KC = ev.effectiveEV1K ?? ev.ev1KCorrected ?? ev.ev1K;
+  const bDiffC = ev.effectiveBDiff ?? ev.bDiffCorrected ?? ev.bDiff;
+  const start1KC = ev.effectiveStart1K ?? ev.start1KCorrected ?? ev.start1K;
+  const work = ev.effectiveWorkAmount ?? ev.workAmount;
 
   const sameEV = Math.round(ev1KC) === Math.round(ev.ev1K);
   const sameBDiff = Math.abs(bDiffC - ev.bDiff) < 0.05;
@@ -65,7 +66,7 @@ export function KeyMetrics({ ev }) {
         raw={ev.start1K > 0 ? f(ev.start1K, 1) : "—"}
         rawIsSame={sameStart}
       />
-      <MiniStat label="仕事量" val={ev.workAmount !== 0 ? sp(ev.workAmount, 0) : "—"} col={sc(ev.workAmount)} />
+      <MiniStat label="仕事量" val={work !== 0 ? sp(work, 0) : "—"} col={sc(work)} />
     </div>
   );
 }
