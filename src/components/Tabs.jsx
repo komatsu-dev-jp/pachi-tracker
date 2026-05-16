@@ -473,8 +473,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [showMoveModal, setShowMoveModal] = useState(false);
     const [showSetupModal, setShowSetupModal] = useState(false);
     const [showStoreDD, setShowStoreDD] = useState(false);
-    const [showMachineDD, setShowMachineDD] = useState(false);
     const [machineQuery, setMachineQuery] = useState("");
+    const [showMachinePicker, setShowMachinePicker] = useState(false);
+    const [pickerFilter, setPickerFilter] = useState("all");
     const [summaryCollapsed, setSummaryCollapsed] = useState(true);
     const [showInvestSettings, setShowInvestSettings] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
@@ -983,11 +984,12 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [setupStartRot, setSetupStartRot] = useState("");
     const [setupInitialBalls, setSetupInitialBalls] = useState("");
 
-    // 機種検索結果
-    const machineResults = useMemo(() => {
-        if (!machineQuery.trim()) return [];
-        return searchMachines(machineQuery, S.customMachines).slice(0, 8);
-    }, [machineQuery, S.customMachines]);
+    // 機種ピッカー: 検索 ∩ タイプフィルター
+    const filteredMachines = useMemo(() => {
+        const all = searchMachines(machineQuery, S.customMachines);
+        if (pickerFilter === "all") return all;
+        return all.filter(m => m.type === pickerFilter);
+    }, [machineQuery, pickerFilter, S.customMachines]);
 
     // 機種設定 編集モーダル用の検索結果
     const editMachineResults = useMemo(() => {
@@ -1491,45 +1493,61 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         };
     }, [headerIsAnimating, S.sessionSubTab]);
 
-    // セッション未開始：新規稼働ボタンを中央に表示
+    // セッション未開始：空状態 + 下部ピル形ボタン
     if (!sessionActive) {
         return (
-            <div style={{ display: "flex", flexDirection: "column", height: "100%", justifyContent: "center", alignItems: "center", padding: 24 }}>
-                {/* 中央の新規稼働ボタン - プレミアムデザイン */}
+            <div style={{ display: "flex", flexDirection: "column", height: "100%", padding: "24px 20px 20px" }}>
+                {/* 空状態：中央 */}
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
+                    {/* 円形アイコン背景 */}
+                    <div style={{
+                        width: 96, height: 96, borderRadius: "50%",
+                        background: "var(--surface-hi)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={C.sub} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="9" />
+                            <path d="M12 7v5l3 2" />
+                        </svg>
+                    </div>
+                    <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>稼働はまだありません</div>
+                    <p style={{ fontSize: 13, color: C.sub, textAlign: "center", lineHeight: 1.7, margin: 0 }}>
+                        店舗・機種を選択して<br />
+                        新規稼働を開始しましょう
+                    </p>
+
+                    {/* 貯玉残高表示（既存ロジック維持） */}
+                    {currentStoreData?.chodama > 0 && (
+                        <div className="summary-card" style={{ marginTop: 12, padding: "14px 28px", textAlign: "center" }}>
+                            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4, fontWeight: 600 }}>{currentStoreData.name} 貯玉残高</div>
+                            <div style={{ fontSize: 24, fontWeight: 900, color: C.purple, fontFamily: mono }}>{f(currentStoreData.chodama)}</div>
+                        </div>
+                    )}
+                </div>
+
+                {/* 下部ピル形ボタン */}
                 <button
                     className="b"
                     onClick={() => setShowSetupModal(true)}
                     style={{
-                        width: 140,
-                        height: 140,
-                        borderRadius: "50%",
+                        width: "100%",
+                        height: 60,
+                        borderRadius: 30,
                         background: C.blue,
+                        color: "#fff",
+                        fontSize: 17,
+                        fontWeight: 700,
+                        fontFamily: font,
                         border: "none",
-                        boxShadow: "0 6px 18px rgba(47,111,237,0.22)",
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: 6,
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                        boxShadow: "0 8px 24px rgba(47,111,237,0.25)",
                         cursor: "pointer",
-                        transition: "transform 0.25s ease, box-shadow 0.25s ease",
+                        marginBottom: 8,
                     }}
                 >
-                    <span style={{ fontSize: 56, color: "#fff", fontWeight: 300, lineHeight: 1 }}>+</span>
-                    <span style={{ fontSize: 12, color: "#fff", fontWeight: 700, letterSpacing: 0.5 }}>新規稼働</span>
+                    <span style={{ fontSize: 22, fontWeight: 400, lineHeight: 1 }}>+</span>
+                    新規稼働
                 </button>
-
-                <p style={{ marginTop: 28, fontSize: 14, color: C.sub, textAlign: "center", lineHeight: 1.7 }}>
-                    タップして稼働を開始
-                </p>
-
-                {/* 貯玉残高表示 - カード化 */}
-                {currentStoreData?.chodama > 0 && (
-                    <div className="summary-card" style={{ marginTop: 24, padding: "16px 32px", textAlign: "center" }}>
-                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 600 }}>{currentStoreData.name} 貯玉残高</div>
-                        <div style={{ fontSize: 28, fontWeight: 900, color: C.purple, fontFamily: mono }}>{f(currentStoreData.chodama)}</div>
-                    </div>
-                )}
 
                 {/* セットアップモーダル - プレミアムデザイン */}
                 {showSetupModal && (
@@ -1590,40 +1608,24 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 </div>
 
                                 {/* 機種選択 */}
-                                <div style={{ marginBottom: 12, position: "relative" }}>
+                                <div style={{ marginBottom: 12 }}>
                                     <div style={{ fontSize: 10, color: C.sub, marginBottom: 4, fontWeight: 600 }}>機種</div>
-                                    <input
-                                        type="text"
-                                        value={setupMachineName}
-                                        onChange={e => { setSetupMachineName(e.target.value); setMachineQuery(e.target.value); setShowMachineDD(true); }}
-                                        onFocus={() => setShowMachineDD(true)}
-                                        placeholder="機種名を検索..."
-                                        style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 10, padding: "12px", fontSize: 16, color: C.text, fontFamily: font, outline: "none" }}
-                                    />
-                                    {showMachineDD && machineResults.length > 0 && (
-                                        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 10, zIndex: 20, maxHeight: 200, overflowY: "auto", marginTop: 4, boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
-                                            {machineResults.map((m, i) => (
-                                                <button key={m.id || i} className="b" onClick={() => {
-                                                    setSetupMachineName(m.name);
-                                                    S.setSynthDenom(m.synthProb);
-                                                    if (m.spec1R) S.setSpec1R(m.spec1R);
-                                                    if (m.specAvgTotalRounds) S.setSpecAvgRounds(m.specAvgTotalRounds);
-                                                    if (m.specSapo != null) S.setSpecSapo(m.specSapo);
-                                                    setShowMachineDD(false);
-                                                    setMachineQuery("");
-                                                }} style={{
-                                                    width: "100%", background: i % 2 === 0 ? "transparent" : "transparent", border: "none", borderBottom: `1px solid ${C.border}`,
-                                                    padding: "12px 14px", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center"
-                                                }}>
-                                                    <div>
-                                                        <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{m.name}</div>
-                                                        <div style={{ fontSize: 10, color: C.sub }}>{m.maker || ""}</div>
-                                                    </div>
-                                                    <div style={{ fontSize: 14, fontWeight: 700, color: C.yellow, fontFamily: mono }}>{m.prob || `1/${m.synthProb}`}</div>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
+                                    <button
+                                        className="b"
+                                        onClick={() => { setMachineQuery(""); setPickerFilter("all"); setShowMachinePicker(true); }}
+                                        style={{
+                                            width: "100%", boxSizing: "border-box",
+                                            background: C.bg, border: `1px solid ${C.borderHi}`,
+                                            borderRadius: 10, padding: "12px",
+                                            fontSize: 16, color: setupMachineName ? C.text : C.sub,
+                                            fontFamily: font, textAlign: "left",
+                                            display: "flex", justifyContent: "space-between", alignItems: "center",
+                                            cursor: "pointer",
+                                        }}
+                                    >
+                                        <span>{setupMachineName || "機種を選択..."}</span>
+                                        <span style={{ color: C.sub, fontSize: 14 }}>›</span>
+                                    </button>
                                 </div>
 
                                 {/* 台番号・開始回転数 */}
@@ -1673,6 +1675,180 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     <button className="b btn-premium btn-secondary" onClick={handleStartSession}>
                                         稼働開始
                                     </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* 機種選択ボトムシート */}
+                {showMachinePicker && (
+                    <div
+                        onClick={() => setShowMachinePicker(false)}
+                        style={{
+                            position: "fixed", inset: 0,
+                            background: "rgba(0,0,0,0.5)",
+                            backdropFilter: "blur(4px)",
+                            zIndex: 1100,
+                            display: "flex", flexDirection: "column", justifyContent: "flex-end",
+                        }}
+                    >
+                        <div
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                                background: C.surface,
+                                borderTopLeftRadius: 16, borderTopRightRadius: 16,
+                                maxHeight: "85vh",
+                                display: "flex", flexDirection: "column",
+                                animation: "fi 0.25s ease",
+                            }}
+                        >
+                            {/* ヘッダー: キャンセル | 機種を選択 | N機種 */}
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px 12px" }}>
+                                <button className="b" onClick={() => setShowMachinePicker(false)} style={{
+                                    background: "var(--surface-hi)", border: "none",
+                                    borderRadius: 999, padding: "8px 14px",
+                                    fontSize: 13, fontWeight: 600, color: C.text, fontFamily: font,
+                                    cursor: "pointer",
+                                }}>キャンセル</button>
+                                <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>機種を選択</div>
+                                <div style={{
+                                    fontSize: 11, fontWeight: 600, color: C.sub,
+                                    background: "var(--surface-hi)",
+                                    padding: "6px 12px", borderRadius: 999,
+                                    minWidth: 56, textAlign: "center",
+                                }}>{filteredMachines.length}機種</div>
+                            </div>
+
+                            {/* フィルターチップ (横スクロール) */}
+                            <div style={{
+                                display: "flex", gap: 8,
+                                overflowX: "auto",
+                                padding: "4px 16px 12px",
+                                scrollbarWidth: "none",
+                                WebkitOverflowScrolling: "touch",
+                            }}>
+                                {[
+                                    { id: "all", label: "全て" },
+                                    { id: "スマパチ", label: "スマパチ" },
+                                    { id: "ハイミドル", label: "ハイミドル" },
+                                    { id: "ミドル", label: "ミドル" },
+                                    { id: "ライトミドル", label: "ライトミドル" },
+                                    { id: "甘デジ", label: "甘デジ" },
+                                ].map(chip => {
+                                    const active = pickerFilter === chip.id;
+                                    return (
+                                        <button
+                                            key={chip.id}
+                                            className="b"
+                                            onClick={() => setPickerFilter(chip.id)}
+                                            style={{
+                                                flexShrink: 0,
+                                                background: active ? C.blue : "var(--surface-hi)",
+                                                color: active ? "#fff" : C.text,
+                                                border: "none",
+                                                borderRadius: 999,
+                                                padding: "8px 16px",
+                                                fontSize: 13, fontWeight: 600,
+                                                fontFamily: font,
+                                                cursor: "pointer",
+                                                transition: "background 0.15s",
+                                                whiteSpace: "nowrap",
+                                            }}
+                                        >
+                                            {chip.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {/* 機種リスト (スクロール) */}
+                            <div style={{ flex: 1, overflowY: "auto", paddingBottom: 12 }}>
+                                {filteredMachines.map((m, i) => {
+                                    const typeColors = {
+                                        "スマパチ": "#f7971e",
+                                        "ハイミドル": "#ef473a",
+                                        "ミドル": "#2f6fed",
+                                        "ライトミドル": "#20e3b2",
+                                        "甘デジ": "#16a34a",
+                                    };
+                                    const iconColor = typeColors[m.type] || C.sub;
+                                    const iconLabel = (m.type || "").slice(0, 2);
+                                    return (
+                                        <button
+                                            key={m.id || `${m.name}-${i}`}
+                                            className="b"
+                                            onClick={() => {
+                                                setSetupMachineName(m.name);
+                                                S.setSynthDenom(m.synthProb);
+                                                if (m.spec1R) S.setSpec1R(m.spec1R);
+                                                if (m.specAvgTotalRounds) S.setSpecAvgRounds(m.specAvgTotalRounds);
+                                                if (m.specSapo != null) S.setSpecSapo(m.specSapo);
+                                                setShowMachinePicker(false);
+                                                setMachineQuery("");
+                                            }}
+                                            style={{
+                                                width: "100%",
+                                                display: "flex", alignItems: "center", gap: 14,
+                                                padding: "14px 16px",
+                                                background: "transparent",
+                                                border: "none",
+                                                borderBottom: `1px solid ${C.border}`,
+                                                textAlign: "left",
+                                                cursor: "pointer",
+                                                fontFamily: font,
+                                            }}
+                                        >
+                                            <div style={{
+                                                width: 44, height: 44, flexShrink: 0,
+                                                borderRadius: 10,
+                                                background: iconColor,
+                                                display: "flex", alignItems: "center", justifyContent: "center",
+                                                color: "#fff", fontSize: 13, fontWeight: 800,
+                                                fontFamily: font,
+                                            }}>{iconLabel}</div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontSize: 15, fontWeight: 700, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.name}</div>
+                                                <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>
+                                                    {m.maker || ""}{m.maker && (m.prob || m.synthProb) ? "  " : ""}{m.prob || (m.synthProb ? `1/${m.synthProb}` : "")}
+                                                </div>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                                {filteredMachines.length === 0 && (
+                                    <div style={{ padding: "40px 20px", textAlign: "center", color: C.sub, fontSize: 13 }}>
+                                        該当する機種がありません
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* 検索バー (下部固定) */}
+                            <div style={{ padding: "12px 16px calc(12px + env(safe-area-inset-bottom))", borderTop: `1px solid ${C.border}`, background: C.surface }}>
+                                <div style={{ position: "relative" }}>
+                                    <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: C.sub, display: "flex" }}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <circle cx="11" cy="11" r="7" />
+                                            <path d="m21 21-4.3-4.3" />
+                                        </svg>
+                                    </span>
+                                    <input
+                                        type="text"
+                                        value={machineQuery}
+                                        onChange={e => setMachineQuery(e.target.value)}
+                                        placeholder="機種名・メーカーで検索"
+                                        style={{
+                                            width: "100%", boxSizing: "border-box",
+                                            background: "var(--surface-hi)",
+                                            border: "none",
+                                            borderRadius: 12,
+                                            padding: "12px 14px 12px 40px",
+                                            fontSize: 14,
+                                            color: C.text,
+                                            fontFamily: font,
+                                            outline: "none",
+                                        }}
+                                    />
                                 </div>
                             </div>
                         </div>
