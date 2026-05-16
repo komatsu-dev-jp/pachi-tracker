@@ -14,20 +14,81 @@ const showUpdateBanner = (onUpdate) => {
   if (document.getElementById('pwa-update-banner')) return
   updateBannerShown = true
 
+  // スライドアップ・フェードインアニメーションをheadに1回注入
+  if (!document.getElementById('pwa-update-style')) {
+    const style = document.createElement('style')
+    style.id = 'pwa-update-style'
+    style.textContent = `
+      @keyframes pwa-slide-up {
+        from { transform: translateY(100%); opacity: 0; }
+        to   { transform: translateY(0);    opacity: 1; }
+      }
+      @keyframes pwa-fade-in {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+      }
+    `
+    document.head.appendChild(style)
+  }
+
+  const dismiss = () => {
+    banner.remove()
+    updateBannerShown = false
+  }
+
   const banner = document.createElement('div')
   banner.id = 'pwa-update-banner'
-  // iOS standalone のステータスバー領域に被らないよう safe-area-inset-top を確保
   banner.innerHTML = `
-    <div style="position:fixed;top:0;left:0;right:0;background:linear-gradient(135deg,#3b82f6,#8b5cf6);color:#fff;padding:calc(12px + env(safe-area-inset-top)) 16px 12px;display:flex;justify-content:space-between;align-items:center;z-index:9999;font-family:sans-serif;box-shadow:0 4px 12px rgba(0,0,0,0.3);">
-      <span style="font-size:13px;font-weight:600;">新しいバージョンが利用可能です</span>
-      <button id="pwa-update-btn" style="background:#fff;color:#3b82f6;border:none;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;">更新</button>
+    <div id="pwa-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:198;animation:pwa-fade-in 0.3s ease;"></div>
+    <div id="pwa-update-sheet" style="
+      position:fixed;bottom:0;left:0;right:0;
+      max-width:480px;margin:0 auto;
+      background:var(--surface,#fff);
+      border-top:1px solid var(--border,#eceef2);
+      border-radius:16px 16px 0 0;
+      padding:8px 20px calc(24px + 52px + env(safe-area-inset-bottom));
+      z-index:199;
+      animation:pwa-slide-up 0.35s cubic-bezier(0.32,0.72,0,1);
+      font-family:var(--font-main,sans-serif);
+    ">
+      <div style="width:36px;height:4px;background:var(--border-hi,#d9dce2);border-radius:2px;margin:0 auto 20px;"></div>
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:4px;">
+        <div style="width:48px;height:48px;flex-shrink:0;border-radius:12px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 19V5M5 12l7-7 7 7"/>
+          </svg>
+        </div>
+        <div>
+          <div style="font-size:16px;font-weight:700;color:var(--text,#111827);">アップデート利用可能</div>
+          <div style="font-size:12px;color:var(--sub,#8b90a0);margin-top:2px;">新しいバージョンが見つかりました</div>
+        </div>
+      </div>
+      <button id="pwa-update-btn" style="
+        display:block;width:100%;height:52px;margin-top:20px;
+        background:var(--blue,#2f6fed);color:#fff;
+        border:none;border-radius:14px;
+        font-size:16px;font-weight:700;
+        font-family:var(--font-main,sans-serif);
+        cursor:pointer;
+      ">今すぐ更新</button>
+      <button id="pwa-dismiss-btn" style="
+        display:block;width:100%;height:44px;margin-top:8px;
+        background:transparent;color:var(--sub,#8b90a0);
+        border:none;border-radius:14px;
+        font-size:14px;font-weight:500;
+        font-family:var(--font-main,sans-serif);
+        cursor:pointer;
+      ">後で</button>
     </div>
   `
   document.body.appendChild(banner)
+
   document.getElementById('pwa-update-btn').onclick = () => {
     banner.remove()
     onUpdate()
   }
+  document.getElementById('pwa-dismiss-btn').onclick = dismiss
+  document.getElementById('pwa-overlay').onclick = dismiss
 }
 
 const updateSW = registerSW({
