@@ -9,8 +9,8 @@ export function DecisionTab({ ev }) {
   const d = evDecision(ev);
   return (
     <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14, fontFamily: font }}>
-      <VerdictBadge verdict={d.verdict} />
-      <ConfidenceBar value={d.confidence} subValues={d.confidenceParts} />
+      <VerdictBadge verdict={d.verdict} confidence={d.confidence} />
+      <ConfidenceBar subValues={d.confidenceParts} />
       <KeyMetrics ev={ev} />
       <ReasonList reasons={d.reasons} />
     </div>

@@ -1903,21 +1903,29 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 }}
             >
                 {/* 機種・店舗情報 */}
-                <div style={{ padding: "8px 12px 6px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ padding: "10px 12px 8px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                     <button className="b" onClick={() => setSummaryCollapsed(!summaryCollapsed)} style={{
-                        flex: 1, background: "transparent", border: "none", padding: 0, display: "flex", alignItems: "center", gap: 6
+                        flex: 1, background: "transparent", border: "none", padding: 0, display: "flex", alignItems: "center", gap: 8, minWidth: 0
                     }}>
-                        <div style={{ textAlign: "left" }}>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{S.machineName || "機種未設定"}</div>
-                            <div style={{ fontSize: 9, color: C.sub }}>{S.storeName} {S.machineNum && `#${S.machineNum}`}</div>
+                        <div style={{ textAlign: "left", minWidth: 0, flex: 1 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                <span style={{ fontSize: 14, fontWeight: 800, color: C.text, lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "60vw" }}>
+                                    {S.machineName || "機種未設定"}
+                                </span>
+                                {S.machineNum && (
+                                    <span style={{ fontSize: 12, fontWeight: 700, color: C.sub, fontFamily: mono }}>#{S.machineNum}</span>
+                                )}
+                                <span className="session-status-badge">実戦中</span>
+                            </div>
+                            <div style={{ fontSize: 10, color: C.sub, marginTop: 2, fontWeight: 500 }}>{S.storeName || "店舗未設定"}</div>
                         </div>
-                        <span style={{ fontSize: 8, color: C.sub }}>{summaryCollapsed ? "▼" : "▲"}</span>
+                        <span style={{ fontSize: 9, color: C.sub, flexShrink: 0 }}>{summaryCollapsed ? "▼" : "▲"}</span>
                     </button>
                     <button className="b" onClick={() => setShowInvestSettings(true)} style={{
-                        background: "var(--surface-hi)", border: `1px solid ${C.border}`, borderRadius: 6,
-                        padding: "5px 8px", display: "flex", alignItems: "center", gap: 4
+                        background: "var(--surface-hi)", border: `1px solid ${C.border}`, borderRadius: 8,
+                        padding: "6px 10px", display: "flex", alignItems: "center", gap: 4, minHeight: 30, flexShrink: 0
                     }}>
-                        <span style={{ fontSize: 11 }}>⚙️</span>
+                        <span style={{ fontSize: 12 }}>⚙</span>
                         <span style={{ fontSize: 10, color: C.subHi, fontWeight: 600 }}>{investPace >= 1000 ? `${investPace/1000}K` : `${investPace}円`}</span>
                     </button>
                 </div>
@@ -2134,10 +2142,10 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
                         {/* C. クイック追加 */}
                         <div>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: C.sub, fontFamily: font, marginBottom: 4, letterSpacing: 0.3 }}>クイック追加</div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 5 }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: C.sub, fontFamily: font, marginBottom: 6, letterSpacing: 0.3 }}>クイック入力（通常回転数）</div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6 }}>
                                 {[1, 5, 10, 25].map((n) => (
-                                    <button key={n} className="b quick-add-btn" type="button" onClick={() => pressQuickAdd(n)}>+{n}回転</button>
+                                    <button key={n} className="b quick-add-btn" type="button" aria-label={`+${n}回転`} onClick={() => pressQuickAdd(n)}>+{n}</button>
                                 ))}
                             </div>
                         </div>

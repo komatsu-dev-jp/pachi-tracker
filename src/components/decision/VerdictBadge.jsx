@@ -1,36 +1,75 @@
-import { C, font } from "../../constants";
+import { C, font, mono } from "../../constants";
 
 const VERDICT_CONFIG = {
-  continue_strong: { color: C.green,  main: "続行",   sub: "全ツッパ",            icon: "🔥" },
-  continue:        { color: C.green,  main: "続行",   sub: "打ち続ける",          icon: "▶" },
-  hold:            { color: C.yellow, main: "様子見", sub: "もう少し回して判断", icon: "⚠️" },
-  stop:            { color: C.red,    main: "ヤメ",   sub: "マイナス域です",      icon: "✕" },
+  continue_strong: {
+    color: C.green,
+    main: "続行",
+    sub: "期待値も十分にプラス",
+    icon: "▶",
+    cssVar: "--verdict-green",
+  },
+  continue: {
+    color: C.green,
+    main: "続行",
+    sub: "このまま打ち続けてOK",
+    icon: "▶",
+    cssVar: "--verdict-green",
+  },
+  hold: {
+    color: C.yellow,
+    main: "様子見",
+    sub: "このまま打ちつつ判定",
+    icon: "⚠",
+    cssVar: "--verdict-yellow",
+  },
+  stop: {
+    color: C.red,
+    main: "ヤメ",
+    sub: "期待値マイナス・ヤメ推奨",
+    icon: "✕",
+    cssVar: "--verdict-red",
+  },
 };
 
-export function VerdictBadge({ verdict }) {
+export function VerdictBadge({ verdict, confidence }) {
   const cfg = VERDICT_CONFIG[verdict] || VERDICT_CONFIG.hold;
+  const pct = Math.max(0, Math.min(100, Math.round((confidence || 0) * 100)));
+  const cls = `verdict-badge verdict-badge--${verdict || "hold"}`;
+
   return (
     <div
+      className={cls}
       role="status"
-      aria-label={`判断: ${cfg.main}（${cfg.sub}）`}
-      style={{
-        minHeight: 88,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 14,
-        padding: "16px 20px",
-        borderRadius: 16,
-        background: `color-mix(in srgb, ${cfg.color} 16%, transparent)`,
-        border: `2px solid color-mix(in srgb, ${cfg.color} 55%, transparent)`,
-        fontFamily: font,
-      }}
+      aria-label={`判断: ${cfg.main}（${cfg.sub}）試行充足率 ${pct}%`}
     >
-      <span style={{ fontSize: 36, lineHeight: 1 }} aria-hidden="true">{cfg.icon}</span>
-      <span style={{ fontSize: 34, fontWeight: 800, color: cfg.color, letterSpacing: 0.5, lineHeight: 1 }}>
-        {cfg.main}
-      </span>
-      <span style={{ fontSize: 13, fontWeight: 600, color: C.sub }}>{cfg.sub}</span>
+      <div className="verdict-badge__main">
+        <span className="verdict-badge__icon" aria-hidden="true">{cfg.icon}</span>
+        <div className="verdict-badge__text">
+          <div className="verdict-badge__title" style={{ color: cfg.color, fontFamily: font }}>
+            {cfg.main}
+          </div>
+          <div className="verdict-badge__sub" style={{ fontFamily: font }}>
+            {cfg.sub}
+          </div>
+        </div>
+        <div className="verdict-badge__pct" aria-hidden="true">
+          <div className="verdict-badge__pct-num" style={{ color: cfg.color, fontFamily: mono }}>
+            {pct}%
+          </div>
+          <div className="verdict-badge__pct-label" style={{ fontFamily: font }}>
+            試行充足率
+          </div>
+        </div>
+      </div>
+      <div
+        className="verdict-badge__bar"
+        style={{ background: `color-mix(in srgb, ${cfg.color} 18%, transparent)` }}
+      >
+        <div
+          className="verdict-badge__bar-fill"
+          style={{ width: `${pct}%`, background: cfg.color }}
+        />
+      </div>
     </div>
   );
 }
