@@ -605,6 +605,7 @@ input, select, textarea {
 .jp-flow-status {
   position: relative;
   overflow: hidden;
+  flex-shrink: 0;
   width: 100%;
   border-radius: 22px;
   padding: 16px;
