@@ -1911,7 +1911,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 style={{
                     flexShrink: 0,
                     borderBottom: `1px solid ${C.border}`,
-                    background: "rgba(15,15,20,0.98)"
+                    background: "var(--header-bg)"
                 }}
             >
                 {/* 機種・店舗情報 */}
@@ -1948,19 +1948,19 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
                             <div className="stat-mini">
                                 <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>回転率</div>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(evEff.bDiff), fontFamily: mono, lineHeight: 1 }}>{evEff.start1K > 0 ? f(evEff.start1K, 1) : "—"}</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(evEff.bDiff), fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{evEff.start1K > 0 ? f(evEff.start1K, 1) : "—"}</div>
                             </div>
                             <div className="stat-mini">
                                 <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>EV/K</div>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(evEff.ev1K), fontFamily: mono, lineHeight: 1 }}>{evEff.ev1K !== 0 ? sp(evEff.ev1K, 0) : "—"}</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(evEff.ev1K), fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{evEff.ev1K !== 0 ? sp(evEff.ev1K, 0) : "—"}</div>
                             </div>
                             <div className="stat-mini">
                                 <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>仕事量</div>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(evEff.workAmount), fontFamily: mono, lineHeight: 1 }}>{evEff.workAmount !== 0 ? sp(evEff.workAmount, 0) : "—"}</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(evEff.workAmount), fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{evEff.workAmount !== 0 ? sp(evEff.workAmount, 0) : "—"}</div>
                             </div>
                             <div className="stat-mini">
                                 <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>初当</div>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: C.orange, fontFamily: mono, lineHeight: 1 }}>{ev.jpCount || 0}</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: C.orange, fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{ev.jpCount || 0}</div>
                             </div>
                         </div>
                     </div>
