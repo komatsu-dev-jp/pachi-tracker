@@ -22,7 +22,7 @@ export default function App() {
   const [tab, setTab] = useState("rot");
 
   // Theme management
-  const [theme, setTheme] = useLS("pt_theme", "light");
+  const [theme, setTheme] = useLS("pt_theme", "dark");
 
   // Appearance
   const [accentColor, setAccentColor] = useLS("pt_accentColor", "purple");
