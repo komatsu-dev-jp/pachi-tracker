@@ -4,7 +4,10 @@ import { C, f, sc, sp, tsNow, font, mono } from "../constants";
 import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./Atoms";
 import { machineDB, searchMachines } from "../machineDB";
 import { getSync, set as persistSet, flushAll } from "../persistence";
-import { DecisionTab } from "./decision/DecisionTab";
+import { evDecision } from "./decision/evDecision";
+import { VerdictBadge } from "./decision/VerdictBadge";
+import { KeyMetrics } from "./decision/KeyMetrics";
+import { ReasonList } from "./decision/ReasonList";
 
 /* ================================================================
    Simple SVG Line Chart component
@@ -470,6 +473,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const border = ev.useBorder > 0 ? ev.useBorder : displayBorder;
     const [input, setInput] = useState("");
     const [inputError, setInputError] = useState("");
+    const [showInputSheet, setShowInputSheet] = useState(false);
     const [showMoveModal, setShowMoveModal] = useState(false);
     const [showSetupModal, setShowSetupModal] = useState(false);
     const [showStoreDD, setShowStoreDD] = useState(false);
@@ -1197,6 +1201,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         S.pushLog({ type: logType, time: tsNow(), rot: thisRot, cash: S.playMode === "mochi" ? 0 : investPace, mode: S.playMode });
         setInput("");
         setInputError("");
+        setShowInputSheet(false);
         setTimeout(() => { submitLockRef.current = false; }, 0);
     };
 
@@ -1390,8 +1395,16 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     };
 
     // セッション内サブタブのスワイプ処理
-    const sessionSubTabs = ["data", "rot", "decision", "history", "settings"];
-    const sessionSubTabLabels = { data: "データ", rot: "回転入力", decision: "判断", history: "大当たり", settings: "機種設定" };
+    const sessionSubTabs = useMemo(() => ["rot", "data", "history", "settings"], []);
+    const sessionSubTabLabels = { data: "詳細データ", rot: "実戦", history: "大当たり", settings: "機種設定" };
+    // 旧 "decision" タブ選択中だった場合は実戦タブにマイグレート
+    const setSessionSubTab = S.setSessionSubTab;
+    const currentSubTab = S.sessionSubTab;
+    useEffect(() => {
+        if (!sessionSubTabs.includes(currentSubTab)) {
+            setSessionSubTab("rot");
+        }
+    }, [currentSubTab, sessionSubTabs, setSessionSubTab]);
     const swipeAreaRef = useRef(null);
     const swipeState = useRef({ startX: null, startY: null, dir: null, offset: 0 });
     const [headerSwipeOffset, setHeaderSwipeOffset] = useState(0);
@@ -1876,7 +1889,6 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     };
     const pressBackspace = () => { setInputError(""); setInput(p => p.slice(0, -1)); };
     const pressClear = () => { setInputError(""); setInput(""); };
-    const pressQuickAdd = (n) => { setInputError(""); setInput(String((Number(input) || 0) + n)); };
 
     // 直前の data 行を 1 件削除（誤入力即時取消）。Undo スナップショットに積むので S.undo() で復旧可能。
     const handleDeleteLastData = () => {
@@ -1971,9 +1983,6 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round"><path d="M4 20h16" /><rect x="6" y="11" width="3" height="9" rx="0.5" /><rect x="11" y="7" width="3" height="13" rx="0.5" /><rect x="16" y="13" width="3" height="7" rx="0.5" /></svg>
                             ),
                             rot: (
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4L18 10l-4-4L4 16z" /><path d="M14 6l4 4" /></svg>
-                            ),
-                            decision: (
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M8 12.5l3 3 5-6" /></svg>
                             ),
                             history: (
@@ -2010,152 +2019,83 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 </div>
             </div>
 
-            {/* 判断タブ */}
-            {S.sessionSubTab === "decision" && <DecisionTab S={S} ev={ev} />}
-
-            {/* 回転入力タブ — 刷新版 */}
+            {/* 実戦タブ — 判定+入力統合版 */}
             {S.sessionSubTab === "rot" && (() => {
-                const currentRot = Number(input) || (rows.length > 0 ? rows[rows.length - 1].cumRot : 0);
-                const totalRotVal = ev.netRot > 0 ? f(ev.netRot) : "0";
-                const totalInvVal = ev.rawInvest > 0 ? f(ev.rawInvest) : "0";
-                const summaryCards = [
-                    { label: "現在の回転数", val: f(currentRot), unit: "回", col: C.blue },
-                    { label: "総回転数", val: totalRotVal, unit: "回", col: C.blue },
-                    { label: "総投資", val: totalInvVal, unit: "円", col: C.green },
-                ];
+                const decision = evDecision(ev);
                 const ballsLabel = S.playMode === "chodama" ? "貯玉" : "持ち玉";
                 const ballsVal = S.playMode === "chodama" ? (S.currentChodama || 0) : (S.currentMochiBalls || 0);
-                const measuredDenom = (ev.jpCount > 0 && ev.netRot > 0)
-                    ? "1/" + (ev.netRot / ev.jpCount).toFixed(1)
-                    : "—";
+                const investedYen = ev.correctedInvestYen != null ? ev.correctedInvestYen : (ev.rawInvest || 0);
 
                 return (
+                    <>
                     <div style={{
                         flex: 1, overflowY: "auto", overscrollBehavior: "contain",
                         padding: "10px 12px",
                         paddingBottom: "calc(80px + env(safe-area-inset-bottom))",
                         display: "flex", flexDirection: "column", gap: 12,
                     }}>
-                        {/* A. 上段サマリーカード（3列） */}
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                            {summaryCards.map((c) => (
-                                <div key={c.label} className="neon-card" style={{ "--neon": c.col }}>
-                                    <div className="neon-card__label">{c.label}</div>
-                                    <div className="neon-card__row">
-                                        <span className="neon-card__num">{c.val}</span>
-                                        <span className="neon-card__unit">{c.unit}</span>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
+                        {/* 1. 判定バッジ */}
+                        <VerdictBadge verdict={decision.verdict} confidence={decision.confidence} />
 
-                        {/* B. 回転数を入力 + テンキー + 右側アクション */}
+                        {/* 2. 6カード（3×2） */}
+                        <KeyMetrics ev={ev} />
+
+                        {/* 3. 入力アクション行：入力 / 初当たり / モードトグル */}
                         <div style={{
                             background: C.surface, border: `1px solid ${C.border}`,
                             borderRadius: 14, padding: 10, display: "flex", flexDirection: "column", gap: 8,
                             boxShadow: "var(--card-shadow)",
                         }}>
-                            {/* ヘッダー：回転数を入力 + ModeToggle */}
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: C.text, fontFamily: font }}>
                                     <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: C.blue, boxShadow: `0 0 0 3px color-mix(in srgb, ${C.blue} 25%, transparent)` }} />
-                                    回転数を入力
+                                    入力
                                 </div>
                                 <ModeToggle mode={S.playMode} setMode={(m) => { if (m !== S.playMode) S.pushSnapshot(); S.setPlayMode(m); }} showChodama={true} compact={true} />
                             </div>
 
-                            {/* 入力エリア（左：表示+テンキー / 右：アクション縦並び） */}
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 84px", gap: 6 }}>
-                                {/* 左カラム */}
-                                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                                    {/* 入力値ディスプレイ（タップでクリア） */}
-                                    <button
-                                        className="b"
-                                        type="button"
-                                        onClick={pressClear}
-                                        aria-label="入力をクリア"
-                                        style={{
-                                            width: "100%", minHeight: 48, borderRadius: 12,
-                                            background: `color-mix(in srgb, ${C.blue} 6%, transparent)`,
-                                            border: `1px solid color-mix(in srgb, ${C.blue} 30%, transparent)`,
-                                            color: input ? C.text : C.sub,
-                                            fontFamily: mono, fontSize: 28, fontWeight: 800, lineHeight: 1,
-                                            textAlign: "right", padding: "6px 14px",
-                                        }}>
-                                        {input || "0"}
-                                    </button>
-                                    {inputError && (
-                                        <div className="error-msg" style={{ fontSize: 11, marginTop: 0 }}>{inputError}</div>
-                                    )}
-                                    {/* 3列テンキー */}
-                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 5 }}>
-                                        {["7", "8", "9", "4", "5", "6", "1", "2", "3"].map((d) => (
-                                            <button key={d} className="b key-btn" type="button" onClick={() => pressDigit(d)}>{d}</button>
-                                        ))}
-                                        <button className="b key-btn" type="button" style={{ gridColumn: "1 / span 3" }} onClick={() => pressDigit("0")}>0</button>
-                                    </div>
-                                </div>
-
-                                {/* 右カラム：削除 / クリア / 記録する / 初当たり */}
-                                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                                    <button className="b key-btn" type="button" aria-label="一文字削除" onClick={pressBackspace} style={{ fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 5H8l-7 7 7 7h13a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z" /><line x1="18" y1="9" x2="12" y2="15" /><line x1="12" y1="9" x2="18" y2="15" /></svg>
-                                        <span style={{ fontSize: 11 }}>削除</span>
-                                    </button>
-                                    <button className="b key-btn" type="button" onClick={pressClear} style={{ fontSize: 12, fontWeight: 700 }}>クリア</button>
-                                    <button
-                                        className="b btn-premium btn-primary"
-                                        type="button"
-                                        onClick={decide}
-                                        style={{ minHeight: 52, fontSize: 12, fontWeight: 800, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, padding: "6px 4px" }}>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4L18 10l-4-4L4 16z" /><path d="M14 6l4 4" /></svg>
-                                        記録する
-                                    </button>
-                                    <button
-                                        className="b"
-                                        type="button"
-                                        onClick={handleStartChain}
-                                        style={{
-                                            minHeight: 52, borderRadius: 10,
-                                            background: `color-mix(in srgb, ${C.orange} 18%, transparent)`,
-                                            border: `1px solid color-mix(in srgb, ${C.orange} 50%, transparent)`,
-                                            color: C.orange, fontSize: 12, fontWeight: 800,
-                                            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, padding: "6px 4px",
-                                        }}>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
-                                        初当たり
-                                    </button>
-                                </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                <button
+                                    className="b btn-premium btn-primary input-trigger-btn"
+                                    type="button"
+                                    onClick={() => { setInputError(""); setShowInputSheet(true); }}
+                                    style={{ minHeight: 56, fontSize: 16, fontWeight: 800, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, padding: "6px 4px" }}>
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="6" width="18" height="14" rx="2" /><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10" /></svg>
+                                    入力
+                                </button>
+                                <button
+                                    className="b"
+                                    type="button"
+                                    onClick={handleStartChain}
+                                    style={{
+                                        minHeight: 56, borderRadius: 12,
+                                        background: `color-mix(in srgb, ${C.orange} 18%, transparent)`,
+                                        border: `1px solid color-mix(in srgb, ${C.orange} 50%, transparent)`,
+                                        color: C.orange, fontSize: 14, fontWeight: 800,
+                                        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, padding: "6px 4px",
+                                    }}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
+                                    初当たり
+                                </button>
                             </div>
+
+                            {hasDataRow && (
+                                <Btn
+                                    label="直前の記録を削除"
+                                    onClick={handleDeleteLastData}
+                                    bg="rgba(239, 68, 68, 0.1)"
+                                    fg={C.red}
+                                    bd={C.red + "30"}
+                                />
+                            )}
                         </div>
 
-                        {/* B-2. 直前の記録を削除（誤入力対策） */}
-                        {hasDataRow && (
-                            <Btn
-                                label="直前の記録を削除"
-                                onClick={handleDeleteLastData}
-                                bg="rgba(239, 68, 68, 0.1)"
-                                fg={C.red}
-                                bd={C.red + "30"}
-                            />
-                        )}
-
-                        {/* C. クイック追加 */}
-                        <div>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: C.sub, fontFamily: font, marginBottom: 6, letterSpacing: 0.3 }}>クイック入力（通常回転数）</div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6 }}>
-                                {[1, 5, 10, 25].map((n) => (
-                                    <button key={n} className="b quick-add-btn" type="button" aria-label={`+${n}回転`} onClick={() => pressQuickAdd(n)}>+{n}</button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* D. 情報カード3枚 */}
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                        {/* 4. 情報カード（現金 / 持ち玉or貯玉） */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
                             <div className="neon-card" style={{ "--neon": C.green }}>
                                 <div className="neon-card__label">
                                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="13" rx="2" /><path d="M2 10h20" /></svg>
-                                    現金
+                                    現金投資
                                 </div>
                                 <div className="neon-card__row">
                                     <span className="neon-card__num">{f(ev.rawInvest || 0)}</span>
@@ -2180,41 +2120,46 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     自動更新中
                                 </span>
                             </div>
-                            <div className="neon-card" style={{ "--neon": C.teal }}>
-                                <div className="neon-card__label">
-                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 17 9 11 13 15 21 7" /><polyline points="14 7 21 7 21 14" /></svg>
-                                    期待値（1Kあたり）
-                                </div>
-                                <div className="neon-card__row">
-                                    <span className="neon-card__num" style={{ color: sc(evEff.ev1K) }}>{evEff.ev1K !== 0 ? sp(evEff.ev1K, 0) : "—"}</span>
-                                    <span className="neon-card__unit">円/K</span>
-                                </div>
+                        </div>
+
+                        {/* 5. 統計サブカード（総回転 / 大当り回数 / 実質投資） */}
+                        <div style={{
+                            display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6,
+                            background: C.surfaceHi, border: `1px solid ${C.border}`,
+                            borderRadius: 10, padding: "8px 10px", alignItems: "center",
+                        }}>
+                            <div>
+                                <div className="subinfo-label">総回転数</div>
+                                <div className="subinfo-val">{f(ev.netRot || 0)} <span style={{ fontSize: 9, color: C.sub, fontWeight: 500 }}>回</span></div>
+                            </div>
+                            <div>
+                                <div className="subinfo-label">大当り回数</div>
+                                <div className="subinfo-val">{ev.jpCount || 0} <span style={{ fontSize: 9, color: C.sub, fontWeight: 500 }}>回</span></div>
+                            </div>
+                            <div>
+                                <div className="subinfo-label">実質投資</div>
+                                <div className="subinfo-val">{f(investedYen)} <span style={{ fontSize: 9, color: C.sub, fontWeight: 500 }}>円</span></div>
                             </div>
                         </div>
 
-                        {/* E. サブ情報バー */}
-                        <div style={{
-                            display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 6,
-                            background: C.surfaceHi, border: `1px solid ${C.border}`,
-                            borderRadius: 10, padding: "6px 10px", alignItems: "center",
-                        }}>
-                            <div>
-                                <div className="subinfo-label">回転率</div>
-                                <div className="subinfo-val">{evEff.start1K > 0 ? f(evEff.start1K, 1) : "—"} <span style={{ fontSize: 9, color: C.sub, fontWeight: 500 }}>回/K</span></div>
-                            </div>
-                            <div>
-                                <div className="subinfo-label">ボーダー差</div>
-                                <div className="subinfo-val" style={{ color: sc(evEff.bDiff) }}>{evEff.start1K > 0 ? sp(evEff.bDiff, 1) : "—"} <span style={{ fontSize: 9, color: C.sub, fontWeight: 500 }}>回/K</span></div>
-                            </div>
-                            <div>
-                                <div className="subinfo-label">合成確率（予測）</div>
-                                <div className="subinfo-val">{measuredDenom}</div>
-                            </div>
-                            <button className="b" type="button" onClick={() => S.setSessionSubTab("data")}
-                                style={{ background: "transparent", border: "none", color: C.blue, fontSize: 11, fontWeight: 700, padding: "6px 6px", textAlign: "right", lineHeight: 1.2 }}>
-                                詳細を<br />見る ›
-                            </button>
-                        </div>
+                        {/* 6. なぜこの判定？ */}
+                        <ReasonList reasons={decision.reasons} />
+
+                        {/* 7. 詳細データを見る */}
+                        <button
+                            className="b"
+                            type="button"
+                            onClick={() => S.setSessionSubTab("data")}
+                            style={{
+                                width: "100%", minHeight: 44, borderRadius: 10,
+                                background: `color-mix(in srgb, ${C.blue} 8%, transparent)`,
+                                border: `1px solid color-mix(in srgb, ${C.blue} 35%, transparent)`,
+                                color: C.blue, fontSize: 13, fontWeight: 700, fontFamily: font,
+                                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                            }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h16" /><rect x="6" y="11" width="3" height="9" rx="0.5" /><rect x="11" y="7" width="3" height="13" rx="0.5" /><rect x="16" y="13" width="3" height="7" rx="0.5" /></svg>
+                            詳細データを見る ›
+                        </button>
 
                         {/* F. 履歴アコーディオン */}
                         <div>
@@ -2302,6 +2247,80 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             </div>
                         </div>
                     </div>
+
+                    {/* 入力 Bottom Sheet — 「入力」ボタンで開閉 */}
+                    {showInputSheet && (
+                        <div
+                            className="input-sheet__backdrop"
+                            onClick={() => { setShowInputSheet(false); setInputError(""); }}
+                            role="presentation"
+                        >
+                            <div
+                                className="input-sheet__panel"
+                                onClick={(e) => e.stopPropagation()}
+                                role="dialog"
+                                aria-label="回転数の入力"
+                            >
+                                <div className="input-sheet__handle" />
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: C.text, fontFamily: font }}>回転数を入力</div>
+                                    <button
+                                        className="b"
+                                        type="button"
+                                        onClick={() => { setShowInputSheet(false); setInputError(""); }}
+                                        style={{ background: "transparent", border: "none", color: C.sub, fontSize: 18, fontWeight: 600, padding: "4px 8px", lineHeight: 1 }}
+                                        aria-label="閉じる"
+                                    >×</button>
+                                </div>
+                                <button
+                                    className="b"
+                                    type="button"
+                                    onClick={pressClear}
+                                    aria-label="入力をクリア"
+                                    style={{
+                                        width: "100%", minHeight: 64, borderRadius: 12,
+                                        background: `color-mix(in srgb, ${C.blue} 6%, transparent)`,
+                                        border: `1px solid color-mix(in srgb, ${C.blue} 30%, transparent)`,
+                                        color: input ? C.text : C.sub,
+                                        fontFamily: mono, fontSize: 36, fontWeight: 800, lineHeight: 1,
+                                        textAlign: "right", padding: "8px 16px", marginBottom: 6,
+                                    }}>
+                                    {input || "0"}
+                                </button>
+                                {inputError && (
+                                    <div className="error-msg" style={{ fontSize: 11, marginBottom: 6 }}>{inputError}</div>
+                                )}
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 84px", gap: 6 }}>
+                                    <div style={{ gridColumn: "1 / span 3", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                                        {["7", "8", "9", "4", "5", "6", "1", "2", "3"].map((d) => (
+                                            <button key={d} className="b key-btn" type="button" onClick={() => pressDigit(d)} style={{ minHeight: 52, fontSize: 22 }}>{d}</button>
+                                        ))}
+                                        <button className="b key-btn" type="button" style={{ gridColumn: "1 / span 3", minHeight: 52, fontSize: 22 }} onClick={() => pressDigit("0")}>0</button>
+                                    </div>
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                        <button className="b key-btn" type="button" aria-label="一文字削除" onClick={pressBackspace} style={{ minHeight: 52, fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 5H8l-7 7 7 7h13a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z" /><line x1="18" y1="9" x2="12" y2="15" /><line x1="12" y1="9" x2="18" y2="15" /></svg>
+                                        </button>
+                                        <button className="b key-btn" type="button" onClick={pressClear} style={{ minHeight: 52, fontSize: 12, fontWeight: 700 }}>クリア</button>
+                                        <button className="b key-btn" type="button" onClick={() => { pressDigit("0"); pressDigit("0"); }} aria-label="00" style={{ minHeight: 52, fontSize: 18, fontWeight: 800 }}>00</button>
+                                    </div>
+                                </div>
+                                <button
+                                    className="b btn-premium btn-primary"
+                                    type="button"
+                                    onClick={decide}
+                                    style={{
+                                        width: "100%", minHeight: 56, marginTop: 10,
+                                        fontSize: 16, fontWeight: 800, borderRadius: 12,
+                                        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                                    }}>
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                    決定
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                    </>
                 );
             })()}
 

@@ -537,25 +537,51 @@ input, select, textarea {
   transform: scale(0.97);
 }
 
-/* クイック追加ボタン（青ソリッド・モックアップ準拠） */
-.quick-add-btn {
-  min-height: 44px;
+/* 入力トリガーボタン（実戦タブの「入力」大型ボタン） */
+.input-trigger-btn {
   border-radius: 12px;
-  background: var(--blue);
-  border: 1px solid color-mix(in srgb, var(--blue) 60%, transparent);
-  color: #ffffff;
-  font-size: 15px;
-  font-weight: 800;
-  font-family: var(--font-main);
-  letter-spacing: 0.3px;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--blue) 30%, transparent);
 }
 
-.quick-add-btn:active {
-  background: color-mix(in srgb, var(--blue) 80%, #000);
-  transform: scale(0.97);
+/* 入力 Bottom Sheet（テンキー）— モーダル背景 + パネル */
+.input-sheet__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: input-sheet-fade 180ms ease-out;
+}
+
+.input-sheet__panel {
+  width: 100%;
+  max-width: 480px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  border-radius: 18px 18px 0 0;
+  padding: 12px 14px calc(18px + env(safe-area-inset-bottom));
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.35);
+  animation: input-sheet-slide 220ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.input-sheet__handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  margin: 0 auto 10px;
+}
+
+@keyframes input-sheet-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes input-sheet-slide {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
 }
 
 /* サブ情報バー - ラベル/値 */

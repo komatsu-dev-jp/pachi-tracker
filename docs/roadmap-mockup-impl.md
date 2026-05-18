@@ -167,6 +167,45 @@
 難易度：◯（既存コンポーネント拡張のみ）。
 注意：CSS 変更でも片手操作性（44px以上）を下げないこと。
 
+#### Phase 1.B: 回転入力タブと判断タブの統合（完了）
+
+**目的**: モックアップ画像2枚目 ① の「1画面で判定と入力が同時に見える」体験を実現する。`rot`（回転入力）と `decision`（判断）の2サブタブを統合し、実戦タブ1枚にまとめる。
+
+実装内容：
+- `sessionSubTabs` を `["data", "rot", "decision", "history", "settings"]` → `["rot", "data", "history", "settings"]` に変更（`rot` のラベルを「回転入力」→「実戦」に変更、`decision` を削除）
+- 実戦タブの上部に `<VerdictBadge>` / `<KeyMetrics>` / `<ReasonList>` を直接配置（`DecisionTab` 経由しない）
+- テンキーを **bottom sheet** 化（`.input-sheet__backdrop` / `.input-sheet__panel`）。「入力」ボタン押下で出現、「決定」で row 追加 & シート閉じる
+- 旧サマリーカード（現在の回転数・総回転数・総投資）を削除し、判定UIに置換
+- 既存「期待値（1Kあたり）」カードは KeyMetrics と重複するため削除
+- 統計サブカード行（総回転数 / 大当り回数 / 実質投資）を追加（モック準拠）
+- 「詳細データを見る」ボタンを大型化（旧「詳細を見る ›」リンクを置換）
+- 履歴アコーディオン（折りたたみ式）は維持
+- 旧サブタブ値 `"decision"` を保持しているユーザー向けに自動マイグレート（`useEffect` で `setSessionSubTab("rot")`）
+
+モックからの意図的逸脱：
+- **クイック入力 +1/+5/+10/+25 ボタンを廃止**。理由：大きい回転数の入力に向かない（ユーザー指示）。代替として「入力」ボタン → keypad bottom sheet で任意数値入力。
+
+影響ファイル：
+- `src/components/Tabs.jsx`（実戦タブの大規模再構成、sessionSubTabs 変更、`pressQuickAdd` 削除、`showInputSheet` state 追加、bottom sheet JSX 追加、`decide()` 末尾に `setShowInputSheet(false)`）
+- `src/index.css`（`.input-sheet__backdrop` / `.input-sheet__panel` / `.input-sheet__handle` / `.input-trigger-btn` 追加、旧 `.quick-add-btn` を削除）
+- `src/components/decision/DecisionTab.jsx`（**未変更**、将来再利用のため保持）
+- `src/components/decision/ConfidenceBar.jsx`（**未変更**、実戦タブでは未使用だが保持）
+
+不変：
+- `src/logic.js`（保護関数群）
+- `src/components/decision/evDecision.js`
+- `src/__tests__/baseline.json`
+- `VerdictBadge` / `KeyMetrics` / `ReasonList` の props インターフェース
+- `rotRows` SSoT
+
+検証：
+- `npm run lint` エラー0（警告7件は全て既存）
+- `npm run build` 成功
+- `protected-fns.mjs` baseline 不変
+- `evDecision.test.mjs` 5 passed
+
+操作ステップへの影響：判定確認のための `rot ↔ decision` スワイプが不要になり、片手操作で常に判定が視界に入る。一方、テンキーは1タップ多くなる（旧：直接タップ、新：「入力」ボタン → keypad）。クイック入力廃止により小さい刻みでの追加もテンキー経由になる。
+
 ### Phase 2: 履歴・分析画面の充実（モード：安全な本実装）
 
 **目的**: モックアップ画像2枚目 ② の履歴・分析画面を実現。
@@ -557,7 +596,7 @@ const evWithEvidence = { ...ev, evidence: runEvidence(ev, settings, machine) };
 
 ### 9-1. 主要画面（5タブ構成、完成時）
 
-- **実戦タブ**：モックアップ画像2枚目 ① と一致。判断バッジ・試行充足率バー・3カード×2段・クイック入力・「なぜこの判定？」・判定推移グラフ
+- **実戦タブ**：モックアップ画像2枚目 ① と一致。判断バッジ・試行充足率バー・3カード×2段・「入力」ボタン（keypad bottom sheet）・「なぜこの判定？」・判定推移グラフ。※ モックの **+1/+5/+10/+25 クイック入力ボタンは廃止**（ユーザー指示による意図的逸脱、Phase 1.B 完了時）
 - **良台判定タブ**：モックアップ画像1枚目 ① と一致。店舗ヘッダー＋良台候補TOP5＋「全台一覧を見る」
 - **ヒートマップタブ**：モックアップ画像1枚目 ③ と一致。フロア＋島配置＋色分け＋選択中パネル＋凡例
 - **履歴タブ**：モックアップ画像2枚目 ② と一致。収支推移グラフ・仕事量グラフ・サマリーカード・履歴リスト
@@ -568,7 +607,7 @@ const evWithEvidence = { ...ev, evidence: runEvidence(ev, settings, machine) };
 1. ユーザー、店舗到着前に「良台判定タブ」で TOP5 を確認
 2. 店内で「ヒートマップタブ」を開き、TOP5 の物理配置を把握
 3. 狙い台のタイルをタップ → 「実戦開始」ボタンで実戦タブに遷移
-4. 玉を打ちながらクイック入力（+1/+5/+10/+25）。入力ごとに判定がリアルタイム更新
+4. 玉を打ちながら「入力」ボタン → keypad bottom sheet で回転数入力。決定ごとに判定がリアルタイム更新
 5. 「なぜこの判定？」で根拠を確認、必要に応じてヤメ
 6. セッション終了 → 「履歴タブ」で振り返り、収支推移・仕事量推移を確認
 7. 蓄積データが翌日以降の良台判定精度を継続的に向上
