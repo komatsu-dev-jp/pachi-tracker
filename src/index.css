@@ -670,7 +670,7 @@ input, select, textarea {
 .verdict-badge__icon {
   flex: 0 0 auto;
   font-size: 22px;
-  line-height: 1;
+  line-height: 1.2;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -697,7 +697,7 @@ input, select, textarea {
 .verdict-badge__title {
   font-size: 20px;
   font-weight: 900;
-  line-height: 1.1;
+  line-height: 1.35;
   letter-spacing: 0.3px;
 }
 
@@ -720,7 +720,7 @@ input, select, textarea {
 .verdict-badge__pct-num {
   font-size: 18px;
   font-weight: 900;
-  line-height: 1;
+  line-height: 1.2;
   letter-spacing: 0.2px;
   font-variant-numeric: tabular-nums;
 }
