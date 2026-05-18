@@ -623,10 +623,13 @@ input, select, textarea {
 .verdict-badge {
   position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 14px 10px;
-  border-radius: 14px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 18px;
+  min-height: 112px;
+  border-radius: 18px;
   overflow: hidden;
   border: 1px solid var(--border);
   background: var(--surface);
@@ -637,31 +640,39 @@ input, select, textarea {
 .verdict-badge--continue_strong {
   background:
     linear-gradient(135deg,
-      color-mix(in srgb, var(--green) 22%, var(--surface)) 0%,
-      color-mix(in srgb, var(--green) 8%, var(--surface)) 60%,
+      color-mix(in srgb, var(--green) 38%, var(--surface)) 0%,
+      color-mix(in srgb, var(--green) 18%, var(--surface)) 70%,
       var(--surface) 100%);
-  border-color: color-mix(in srgb, var(--green) 45%, transparent);
+  border-color: color-mix(in srgb, var(--green) 60%, transparent);
 }
 
 .verdict-badge--hold {
   background:
     linear-gradient(135deg,
-      color-mix(in srgb, var(--yellow) 22%, var(--surface)) 0%,
-      color-mix(in srgb, var(--yellow) 8%, var(--surface)) 60%,
+      color-mix(in srgb, var(--yellow) 38%, var(--surface)) 0%,
+      color-mix(in srgb, var(--yellow) 18%, var(--surface)) 70%,
       var(--surface) 100%);
-  border-color: color-mix(in srgb, var(--yellow) 45%, transparent);
+  border-color: color-mix(in srgb, var(--yellow) 60%, transparent);
 }
 
 .verdict-badge--stop {
   background:
     linear-gradient(135deg,
-      color-mix(in srgb, var(--red) 22%, var(--surface)) 0%,
-      color-mix(in srgb, var(--red) 8%, var(--surface)) 60%,
+      color-mix(in srgb, var(--red) 38%, var(--surface)) 0%,
+      color-mix(in srgb, var(--red) 18%, var(--surface)) 70%,
       var(--surface) 100%);
-  border-color: color-mix(in srgb, var(--red) 45%, transparent);
+  border-color: color-mix(in srgb, var(--red) 60%, transparent);
 }
 
-.verdict-badge__main {
+.verdict-badge__left {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.verdict-badge__head {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -669,80 +680,90 @@ input, select, textarea {
 
 .verdict-badge__icon {
   flex: 0 0 auto;
-  font-size: 22px;
+  font-size: 26px;
   line-height: 1.2;
+  font-weight: 900;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--border);
-  color: inherit;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
 }
 
 [data-theme="dark"] .verdict-badge__icon {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.verdict-badge__text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .verdict-badge__title {
-  font-size: 20px;
+  font-size: 30px;
   font-weight: 900;
-  line-height: 1.35;
+  line-height: 1.25;
   letter-spacing: 0.3px;
 }
 
 .verdict-badge__sub {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--sub-hi);
-  line-height: 1.25;
+  line-height: 1.4;
 }
 
-.verdict-badge__pct {
+.verdict-badge__ring {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 1px;
-  min-width: 52px;
+  align-items: center;
+  gap: 6px;
+  min-width: 64px;
 }
 
-.verdict-badge__pct-num {
-  font-size: 18px;
+.verdict-badge__ring-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--sub);
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+
+.verdict-badge__ring-wrap {
+  position: relative;
+  width: 60px;
+  height: 60px;
+}
+
+.verdict-badge__ring-wrap svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.verdict-badge__ring-track {
+  fill: none;
+  stroke: color-mix(in srgb, currentColor 18%, transparent);
+  stroke-width: 5;
+}
+
+.verdict-badge__ring-fill {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.4s ease;
+}
+
+.verdict-badge__ring-num {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
   font-weight: 900;
-  line-height: 1.2;
+  line-height: 1;
   letter-spacing: 0.2px;
   font-variant-numeric: tabular-nums;
-}
-
-.verdict-badge__pct-label {
-  font-size: 9px;
-  font-weight: 600;
-  color: var(--sub);
-  letter-spacing: 0.3px;
-}
-
-.verdict-badge__bar {
-  height: 5px;
-  border-radius: 999px;
-  overflow: hidden;
-  width: 100%;
-}
-
-.verdict-badge__bar-fill {
-  height: 100%;
-  border-radius: 999px;
-  transition: width 0.4s ease;
 }
 
 /* ==========================================================================
