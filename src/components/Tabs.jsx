@@ -8,6 +8,7 @@ import { evDecision } from "./decision/evDecision";
 import { VerdictBadge } from "./decision/VerdictBadge";
 import { KeyMetrics } from "./decision/KeyMetrics";
 import { ReasonList } from "./decision/ReasonList";
+import { RecentEventList } from "./decision/RecentEventList";
 
 /* ================================================================
    Simple SVG Line Chart component
@@ -1933,12 +1934,70 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         </div>
                         <span style={{ fontSize: 9, color: C.sub, flexShrink: 0 }}>{summaryCollapsed ? "▼" : "▲"}</span>
                     </button>
+                    {/* 通知ベル：直近イベントセクションへスクロールするアンカーショートカット */}
+                    <button
+                        className="b"
+                        type="button"
+                        aria-label="直近イベントへ移動"
+                        onClick={() => {
+                            const el = document.getElementById("record-recent-events");
+                            if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                        }}
+                        style={{
+                            position: "relative",
+                            background: "var(--surface-hi)", border: `1px solid ${C.border}`, borderRadius: 8,
+                            padding: "6px 8px", display: "flex", alignItems: "center", justifyContent: "center",
+                            minHeight: 32, minWidth: 32, flexShrink: 0,
+                        }}
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.subHi} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+                        </svg>
+                        {(() => {
+                            const totalHits = (S.jpLog || []).reduce((s, c) => s + ((c.hits || []).length), 0);
+                            if (totalHits <= 0) return null;
+                            return (
+                                <span
+                                    aria-hidden="true"
+                                    style={{
+                                        position: "absolute",
+                                        top: 1, right: 1,
+                                        width: 8, height: 8,
+                                        borderRadius: "50%",
+                                        background: C.orange,
+                                        boxShadow: `0 0 0 2px var(--surface-hi)`,
+                                    }}
+                                />
+                            );
+                        })()}
+                    </button>
+                    {/* 歯車：設定モードへのショートカット */}
+                    <button
+                        className="b"
+                        type="button"
+                        aria-label="設定モードへ"
+                        onClick={() => { if (S.setTab) S.setTab("settings"); }}
+                        style={{
+                            background: "var(--surface-hi)", border: `1px solid ${C.border}`, borderRadius: 8,
+                            padding: "6px 8px", display: "flex", alignItems: "center", justifyContent: "center",
+                            minHeight: 32, minWidth: 32, flexShrink: 0,
+                        }}
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.subHi} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <circle cx="12" cy="12" r="3" />
+                            <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+                        </svg>
+                    </button>
                     <button className="b" onClick={() => setShowInvestSettings(true)} style={{
                         background: "var(--surface-hi)", border: `1px solid ${C.border}`, borderRadius: 8,
-                        padding: "6px 10px", display: "flex", alignItems: "center", gap: 4, minHeight: 30, flexShrink: 0
-                    }}>
-                        <span style={{ fontSize: 12 }}>⚙</span>
-                        <span style={{ fontSize: 10, color: C.subHi, fontWeight: 600 }}>{investPace >= 1000 ? `${investPace/1000}K` : `${investPace}円`}</span>
+                        padding: "6px 10px", display: "flex", alignItems: "center", gap: 4, minHeight: 32, flexShrink: 0
+                    }} aria-label="投資ペース設定">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.subHi} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <rect x="2" y="6" width="20" height="13" rx="2" />
+                            <path d="M2 10h20" />
+                        </svg>
+                        <span style={{ fontSize: 10, color: C.subHi, fontWeight: 600, fontFamily: mono }}>{investPace >= 1000 ? `${investPace/1000}K` : `${investPace}円`}</span>
                     </button>
                 </div>
 
@@ -2144,6 +2203,13 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
                         {/* 6. なぜこの判定？ */}
                         <ReasonList reasons={decision.reasons} />
+
+                        {/* 6.5 直近イベント表示（Phase 1.7: 業務端末感の時系列ログ） */}
+                        <RecentEventList
+                            jpLog={jpLog}
+                            sesLog={sesLog}
+                            anchorId="record-recent-events"
+                        />
 
                         {/* 7. 詳細データを見る */}
                         <button
