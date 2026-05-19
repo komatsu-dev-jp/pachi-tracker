@@ -3,7 +3,18 @@ import { useLS, calcPreciseEV } from "./logic";
 import { useUndoStack } from "./history";
 import { C, font } from "./constants";
 import { RotTab, SettingsTab, CalendarTab } from "./components/Tabs";
+import ModeTabBar from "./components/ModeTabBar";
+import ModePlaceholder from "./components/ModePlaceholder";
 import { takeSnapshot, takeSnapshotImmediate, getLatest as getLatestSnapshot } from "./snapshot";
+
+// 旧タブ名 → 新モード名 のマッピング
+// Tabs.jsx 内から S.setTab("rot" | "calendar" | "settings") が呼ばれるため、
+// 後方互換のためマッピングを保持する。
+const LEGACY_TAB_TO_MODE = {
+  rot: "record",
+  calendar: "analysis",
+  settings: "settings",
+};
 
 const COLOR_THEMES = [
   { id: "purple",   gradient: "linear-gradient(135deg,#667eea,#764ba2)", primary: "#667eea" },
@@ -19,7 +30,14 @@ const COLOR_THEMES = [
 ];
 
 export default function App() {
-  const [tab, setTab] = useState("rot");
+  // 現在のモード: "scout" | "select" | "record" | "analysis" | "settings"
+  // 既存ユーザーは初回起動時に "record" モードから始まる（既存体験を維持）
+  const [currentMode, setCurrentMode] = useLS("pt_currentMode", "record");
+
+  // 後方互換: Tabs.jsx 内の S.setTab("rot" | "calendar" | "settings") を新モードへ変換
+  const setTab = useCallback((legacy) => {
+    setCurrentMode(LEGACY_TAB_TO_MODE[legacy] ?? legacy);
+  }, [setCurrentMode]);
 
   // Theme management
   const [theme, setTheme] = useLS("pt_theme", "dark");
@@ -303,7 +321,7 @@ export default function App() {
       setArchives((prev) => [...prev, archive]);
     }
     resetAll();
-    setTab("rot");
+    setCurrentMode("record");
   };
 
   const S = {
@@ -350,46 +368,6 @@ export default function App() {
     // Undo/Redo
     pushSnapshot, undo, redo, canUndo, canRedo,
   };
-
-  // iOS風 細線アイコン
-  const CalendarIcon = ({ active }) => {
-    const col = active ? C.blue : C.sub;
-    return (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3.5" y="5" width="17" height="15" rx="2.5" />
-        <path d="M3.5 9.5h17" />
-        <path d="M8 3v4M16 3v4" />
-      </svg>
-    );
-  };
-
-  const PlusCircleIcon = ({ active }) => {
-    const col = active ? C.blue : C.sub;
-    return (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="9.2" />
-        <path d="M12 7.5v9M7.5 12h9" />
-      </svg>
-    );
-  };
-
-  const GearIcon = ({ active }) => {
-    const col = active ? C.blue : C.sub;
-    return (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="3" />
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-      </svg>
-    );
-  };
-
-  const nav = [
-    { id: "calendar", label: "記録",     IconC: CalendarIcon },
-    { id: "rot",      label: "新規稼働", IconC: PlusCircleIcon },
-    { id: "settings", label: "設定",     IconC: GearIcon },
-  ];
-
-  const navBg = "var(--nav-bg)";
 
   // PINロック画面
   if (isLocked && appLock && appPin) {
@@ -471,26 +449,15 @@ export default function App() {
           paddingBottom: "calc(52px + env(safe-area-inset-bottom))",
         }}
       >
-        {tab === "rot" && <RotTab border={border} rows={rotRows} setRows={setRotRows} S={S} ev={ev} />}
-        {tab === "calendar" && <CalendarTab S={S} onReset={resetAll} />}
-        {tab === "settings" && <SettingsTab s={S} onReset={resetAll} />}
+        {currentMode === "scout" && <ModePlaceholder mode="scout" />}
+        {currentMode === "select" && <ModePlaceholder mode="select" />}
+        {currentMode === "record" && <RotTab border={border} rows={rotRows} setRows={setRotRows} S={S} ev={ev} />}
+        {currentMode === "analysis" && <CalendarTab S={S} onReset={resetAll} />}
+        {currentMode === "settings" && <SettingsTab s={S} onReset={resetAll} />}
       </main>
 
-      {/* Navigation */}
-      <nav style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: navBg, backdropFilter: "saturate(180%) blur(20px)", borderTop: `1px solid ${C.border}`, display: "flex", paddingBottom: "env(safe-area-inset-bottom)", zIndex: 100 }}>
-        {nav.map((item) => {
-          const Icon = item.IconC;
-          return (
-            <button key={item.id} className="b" onClick={() => setTab(item.id)} style={{
-              flex: 1, background: "transparent", border: "none",
-              padding: "10px 0 8px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, transition: "all 0.2s ease"
-            }}>
-              <Icon active={tab === item.id} />
-              <span style={{ fontSize: 10, fontWeight: tab === item.id ? 700 : 500, color: tab === item.id ? C.blue : C.sub, fontFamily: font, letterSpacing: 0.2 }}>{item.label}</span>
-            </button>
-          );
-        })}
-      </nav>
+      {/* Mode Navigation (5 タブ) */}
+      <ModeTabBar currentMode={currentMode} onChange={setCurrentMode} />
 
       {recoveryCandidate && (
         <RecoverySheet
