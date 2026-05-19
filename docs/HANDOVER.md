@@ -34,7 +34,7 @@ src/
     Atoms.jsx                   # 共通UIパーツ
     Tabs.jsx                    # 記録モード内の主要UI（実戦タブ統合済み）
     ModeTabBar.jsx              # フッター5タブ（偵察/台選び/記録/分析/設定）
-    ModePlaceholder.jsx         # 旧プレースホルダー（未実装モード用）
+    ModePlaceholder.jsx         # 旧プレースホルダー（未実装モード用、現在 select では未使用）
     decision/
       evDecision.js             # 判断ロジック（純粋関数）
       DecisionTab.jsx           # 判断UI コンテナ（実戦タブ内に統合）
@@ -53,7 +53,7 @@ src/
     analysis/                   # 分析モード（Phase 2）
       AnalysisDashboard.jsx
       analysisSelectors.js
-    select/                     # 台選びモード（Phase 4、ダミー島ヒートマップ）
+    select/                     # 台選びモード（Phase 4、ホール図面風ヒートマップ）
       SelectDashboard.jsx
       selectSelectors.js
       __tests__/
@@ -156,7 +156,7 @@ docs/
 | 1.7 + 1.8 | ✅ 完了 | 記録モードに直近イベント表示（`RecentEventList`）と通知ベル/歯車ショートカット追加 | `702a932` / PR #180 |
 | 2 | ✅ 完了 | 分析モードを収支分析ダッシュボード（`AnalysisDashboard` + `analysisSelectors`）に刷新 | `5de0c86` / PR #181 |
 | 3 | ✅ 完了 | 偵察モードを店舗ランキング画面（`ScoutDashboard` + ダミーデータ）に刷新 | `b5dc141` / PR #182 |
-| 4 | ✅ 実装済み（ダミー） | 台選びモード（ヒートマップ＋良台TOP5）。`SelectDashboard` + `selectSelectors` + ダミー島データ | Codex作業 |
+| 4 | ✅ 完了（ダミー） | 台選びモード（ホール図面風ヒートマップ＋良台TOP5）。`SelectDashboard` + `selectSelectors` + ダミー島データ | PR #184・#185・#186 |
 | 5 | ⏸️ 未着手 | P-EVIDENCE 移植（GAS → JS）。**GAS 数式の共有が必須** | ー |
 | 6 | ⏸️ 未着手 | ハンターランク・通知 | ー |
 | 7 | ⏸️ 未着手 | モード連携・半自動切替・全体調整 | ー |
@@ -169,6 +169,8 @@ docs/
 - `src/components/scout/` — 偵察モード一式（`ScoutDashboard`, `StoreRankingCard`, `TodayHighlightList`, `scoutSelectors.js`）
 - `src/components/analysis/` — 分析モード一式（`AnalysisDashboard`, `analysisSelectors.js`）
 - `src/components/select/` — 台選びモード一式（`SelectDashboard`, `selectSelectors.js`, `selectSelectors.test.mjs`）
+  - `SelectDashboard.jsx` はホール図面風マップを表示（3島・両面台列・通路/壁線・本命台の星・選択台発光）
+  - `onStart` で選択台番号/機種名を反映し、未稼働状態ならセッション開始行とスタートログを作成して記録モードへ遷移
 - `src/dummyData.js` — `getDummyStoreRanking`, `getDummyHighlights`, `getDummyIslandMachines`, `todayKey`, `timeLabel`
 
 #### 配色変更（PR #177）
@@ -389,8 +391,11 @@ Phase 5 着手前に **サブステップ4・5 を独立 PR で先行消化**す
 
 `docs/roadmap-hunter-ux.md` 参照。次に着手すべきは以下のいずれか：
 
-- **Phase 4**: 台選びモード（ヒートマップ + 良台TOP5）
-  - ダミー島データによる UI は実装済み
+- **Phase 4**: 台選びモード（ホール図面風ヒートマップ + 良台TOP5）
+  - ダミー島データによる UI は実装済み（PR #184）
+  - 台選びから「この台で実戦開始」を押した時に、未稼働状態でも記録モードの実戦中画面へ入る修正済み（PR #185）
+  - 参照画像に合わせ、単純なタイル表からホール図面風マップへ刷新済み（PR #186）
+  - 2026-05-19 にユーザー確認済み。「いい感じ」とフィードバックあり
   - 良台スコアリングの定義式・「島平均」「前日実績」の集計定義は**未確定**（実データ化前に要ユーザー確認）
 - **Phase 5**: P-EVIDENCE 移植
   - GAS スプレッドシートの数式群を **ユーザーから共有してもらうことが必須**
@@ -611,9 +616,13 @@ ls src/components/decision/RecentEventList.jsx
 
 ### 直近の状態サマリー（2026-05-19 時点）
 
-- **main ブランチ最新コミット**: `2968730`（PR #182、偵察モード Phase 3 完了）
-- **今回追加**: Codex が Phase 4（台選びモード）をダミー島データで実装。`src/components/select/`, `src/dummyData.js`, `src/App.jsx`, `docs/HANDOVER.md` を変更
-- **狩猟型UX**: Phase 0・1・1.B・1.5・1.6・1.7・1.8・2・3 完了。Phase 4 はダミーデータ駆動で実装済み。**次は Phase 4 の実データ化/スコアリング定義確定、または Phase 5（P-EVIDENCE 移植）**
+- **main ブランチ最新コミット**: `bd70fcb`（PR #186、台選びヒートマップをホール図面風に刷新）
+- **今回追加**:
+  - PR #184: Phase 4 台選びモードを追加（ダミー島データ、良台候補TOP5、実戦開始導線）
+  - PR #185: 台選びから未稼働状態でも実戦開始できるよう修正
+  - PR #186: 参照画像を元にヒートマップをホール図面風へ刷新
+- **ユーザー確認**: 2026-05-19、ホール図面風ヒートマップについて「確認しました。いい感じです。」と確認済み
+- **狩猟型UX**: Phase 0・1・1.B・1.5・1.6・1.7・1.8・2・3・4 完了。**次は Phase 4 の実データ化/スコアリング定義確定、または Phase 5（P-EVIDENCE 移植）**
 - **配色**: モック2準拠のブルー寄りダークネイビーに刷新済み（PR #177）
 - **判定バッジ**: 大型化＋円形試行充足率リング、各種表示バグ修正済み（PR #174・#175・#176）
 - **実戦タブ**: 判断 + 回転入力を統合（Phase 1.B、PR #173）。クイック入力 +1/+5/+10/+25 は廃止、テンキーは bottom sheet 化
@@ -639,7 +648,7 @@ ls src/components/decision/RecentEventList.jsx
 
 #### 候補B：狩猟型UX Phase 4 の実データ化・スコアリング定義
 
-理由：UI はダミーデータで実装済み。ただし良台スコアリング定義と島データ構造は未確定。
+理由：UI はホール図面風マップとしてダミーデータで実装済み。ただし良台スコアリング定義と島データ構造は未確定。
 
 着手前確認：
 - 良台スコアリングの定義式（True Border 余裕 + 試行充足率 + データ蓄積量の合成式）
