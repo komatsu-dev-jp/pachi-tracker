@@ -491,6 +491,21 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const tableRef = useRef(null);
     const evEff = effectiveEv(ev);
 
+    // サマリーカード「現在ハマり」: 最後の "start" 行の cumRot から現在 cumRot までの差分
+    const currentHamari = useMemo(() => {
+        const rows = S.rotRows || [];
+        if (rows.length === 0) return 0;
+        let currentCumRot = 0;
+        for (let i = rows.length - 1; i >= 0; i--) {
+            if (rows[i].cumRot != null) { currentCumRot = rows[i].cumRot; break; }
+        }
+        let startCumRot = 0;
+        for (let i = rows.length - 1; i >= 0; i--) {
+            if (rows[i].type === "start") { startCumRot = rows[i].cumRot || 0; break; }
+        }
+        return Math.max(0, currentCumRot - startCumRot);
+    }, [S.rotRows]);
+
     // 機種設定 編集モーダル用state
     const [showEditModal, setShowEditModal] = useState(false);
     const [editStore, setEditStore] = useState("");
@@ -548,9 +563,6 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         return found.sort((a, b) => a.rounds - b.rounds || a.mult - b.mult);
     };
     const machineRushRounds = getMachineRushRounds();
-
-    // ========== 大当たり履歴タブ用state（HistoryTabから移植） ==========
-    const [historySub, setHistorySub] = useState("jp"); // "jp" or "ses"
 
     // 長押し削除用state
     const longPressTimerRef = useRef(null);
@@ -2024,21 +2036,21 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     </button>
                 </div>
 
-                {/* サマリーカード群（折りたたみ） */}
+                {/* サマリーカード群（折りたたみ） — 実績スナップショット */}
                 {!summaryCollapsed && (
                     <div className="summary-card" style={{ padding: 6, margin: "0 12px 6px", borderRadius: 8 }}>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
                             <div className="stat-mini">
-                                <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>回転率</div>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(evEff.bDiff), fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{evEff.start1K > 0 ? f(evEff.start1K, 1) : "—"}</div>
+                                <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>総回転</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: C.text, fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{ev.netRot > 0 ? f(ev.netRot) : "—"}</div>
                             </div>
                             <div className="stat-mini">
-                                <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>EV/K</div>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(evEff.ev1K), fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{evEff.ev1K !== 0 ? sp(evEff.ev1K, 0) : "—"}</div>
+                                <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>現在ハマり</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: C.orange, fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{currentHamari > 0 ? f(currentHamari) : "—"}</div>
                             </div>
                             <div className="stat-mini">
-                                <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>仕事量</div>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(evEff.workAmount), fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{evEff.workAmount !== 0 ? sp(evEff.workAmount, 0) : "—"}</div>
+                                <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>時給</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(evEff.wage), fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{evEff.wage !== 0 ? sp(evEff.wage, 0) : "—"}</div>
                             </div>
                             <div className="stat-mini">
                                 <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>初当</div>
@@ -2418,20 +2430,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             {/* 大当たりタブ - HistoryTabから完全移植 */}
             {S.sessionSubTab === "history" && (
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                    {/* Sub Tab */}
-                    <div style={{ display: "flex", background: "rgba(0,0,0,0.2)", padding: "4px", margin: "12px 14px", borderRadius: 12, flexShrink: 0 }}>
-                        {[["jp", "大当たり履歴"], ["ses", "稼働ログ"]].map(([id, lbl]) => (
-                            <button key={id} className="b" onClick={() => setHistorySub(id)} style={{
-                                flex: 1, background: historySub === id ? C.surfaceHi : "transparent", border: "none",
-                                borderRadius: 8, color: historySub === id ? C.text : C.sub, fontSize: 13, fontWeight: historySub === id ? 700 : 500,
-                                padding: "10px 0", fontFamily: font, boxShadow: historySub === id ? "0 2px 8px rgba(0,0,0,0.2)" : "none"
-                            }}>{lbl}</button>
-                        ))}
-                    </div>
-
-                    <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(80px + env(safe-area-inset-bottom))" }}>
-                        {historySub === "jp" ? (
-                            <div>
+                    <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                        <div>
                                 {/* 連チャン中バナー */}
                                 {isChainActive && (
                                     (() => {
@@ -2628,30 +2628,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                         S.setRotRows((prev) => prev.filter(r => !(r.type === "hit" && r.chainId === lastChain.chainId)));
                                     }
                                 }} bg="rgba(239, 68, 68, 0.1)" fg={C.red} bd={C.red + "30"} />
-                            </div>
-                        ) : (
-                            <div>
-                                {sesLog.length === 0 ? (
-                                    <div style={{ textAlign: "center", color: C.sub, padding: "40px 16px", fontSize: 12 }}>ログがありません</div>
-                                ) : (
-                                    sesLog.map((e, i) => (
-                                        <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
-                                            <div>
-                                                <div style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{e.type}</div>
-                                                <div style={{ fontSize: 10, color: C.sub, fontFamily: mono }}>{e.time}</div>
-                                            </div>
-                                            <div style={{ textAlign: "right" }}>
-                                                {e.rot != null && <div style={{ fontSize: 12, color: C.blue, fontFamily: mono }}>{f(e.rot)}回</div>}
-                                                {e.cash != null && <div style={{ fontSize: 12, color: C.red, fontFamily: mono }}>-{f(e.cash)}円</div>}
-                                                {e.tray != null && <div style={{ fontSize: 10, color: C.teal }}>上皿:{f(e.tray)}玉</div>}
-                                                {e.netGain != null && <div style={{ fontSize: 10, color: C.green }}>純増:{f(e.netGain)}玉</div>}
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
-                                <Btn label="最新ログを削除" onClick={() => { S.setSesLog((p) => p.slice(0, -1)); }} bg="rgba(239, 68, 68, 0.1)" fg={C.red} bd={C.red + "30"} />
-                            </div>
-                        )}
+                        </div>
                     </div>
 
                     {/* 削除確認モーダル */}
@@ -4071,8 +4048,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 /* ================================================================
    HistoryTab — 大当たり履歴（チェーンベース連チャン記録）
 ================================================================ */
-export function HistoryTab({ jpLog, sesLog, delJPLast, delSesLast, S, ev }) {
-    const [sub, setSub] = useState("jp");
+export function HistoryTab({ jpLog, delJPLast, S, ev }) {
 
     // スワイプ削除用state（横スワイプのみ反応）
     const [swipingId, setSwipingId] = useState(null);
@@ -4626,20 +4602,8 @@ export function HistoryTab({ jpLog, sesLog, delJPLast, delSesLast, S, ev }) {
 
     return (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            {/* Sub Tab */}
-            <div style={{ display: "flex", background: "rgba(0,0,0,0.2)", padding: "4px", margin: "12px 14px", borderRadius: 12, flexShrink: 0 }}>
-                {[["jp", "大当たり履歴"], ["ses", "稼働ログ"]].map(([id, lbl]) => (
-                    <button key={id} className="b" onClick={() => setSub(id)} style={{
-                        flex: 1, background: sub === id ? C.surfaceHi : "transparent", border: "none",
-                        borderRadius: 8, color: sub === id ? C.text : C.sub, fontSize: 13, fontWeight: sub === id ? 700 : 500,
-                        padding: "10px 0", fontFamily: font, boxShadow: sub === id ? "0 2px 8px rgba(0,0,0,0.2)" : "none"
-                    }}>{lbl}</button>
-                ))}
-            </div>
-
-            <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(80px + env(safe-area-inset-bottom))" }}>
-                {sub === "jp" ? (
-                    <div>
+            <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                <div>
                         {/* 連チャン中バナー */}
                         {isChainActive && (
                             <div style={{ background: `linear-gradient(135deg, ${C.orange}20, ${C.red}10)`, border: `1px solid ${C.orange}40`, borderRadius: 12, padding: "12px 16px", marginBottom: 12 }}>
@@ -4827,30 +4791,7 @@ export function HistoryTab({ jpLog, sesLog, delJPLast, delSesLast, S, ev }) {
                             ))
                         )}
                         <Btn label="最新履歴を削除" onClick={delJPLast} bg="rgba(239, 68, 68, 0.1)" fg={C.red} bd={C.red + "30"} />
-                    </div>
-                ) : (
-                    <div>
-                        {sesLog.length === 0 ? (
-                            <div style={{ textAlign: "center", color: C.sub, padding: "40px 16px", fontSize: 12 }}>ログがありません</div>
-                        ) : (
-                            sesLog.map((e, i) => (
-                                <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
-                                    <div>
-                                        <div style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{e.type}</div>
-                                        <div style={{ fontSize: 10, color: C.sub, fontFamily: mono }}>{e.time}</div>
-                                    </div>
-                                    <div style={{ textAlign: "right" }}>
-                                        {e.rot != null && <div style={{ fontSize: 12, color: C.blue, fontFamily: mono }}>{f(e.rot)}回</div>}
-                                        {e.cash != null && <div style={{ fontSize: 12, color: C.red, fontFamily: mono }}>-{f(e.cash)}円</div>}
-                                        {e.tray != null && <div style={{ fontSize: 10, color: C.teal }}>上皿:{f(e.tray)}玉</div>}
-                                        {e.netGain != null && <div style={{ fontSize: 10, color: C.green }}>純増:{f(e.netGain)}玉</div>}
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                        <Btn label="最新ログを削除" onClick={delSesLast} bg="rgba(239, 68, 68, 0.1)" fg={C.red} bd={C.red + "30"} />
-                    </div>
-                )}
+                </div>
             </div>
 
             {/* 連チャン追加ウィザードモーダル */}
