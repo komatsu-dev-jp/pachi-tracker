@@ -3,7 +3,6 @@ import { C, f, sp, font, mono } from "../../constants";
 import { Card } from "../Atoms";
 import { getDummyIslandMachines, todayKey, timeLabel } from "../../dummyData";
 import {
-  filterMachines,
   getGoodMachineCandidates,
   normalizeMachineRows,
   summarizeIsland,
@@ -116,69 +115,236 @@ function machineColor(machine) {
   };
 }
 
-function Heatmap({ machines, selectedId, onSelect }) {
-  if (machines.length === 0) {
-    return (
-      <Card style={{ padding: "28px 16px", textAlign: "center" }}>
-        <div style={{ fontSize: 13, color: C.sub, lineHeight: 1.6 }}>
-          この条件に合う台はありません。
-        </div>
-      </Card>
-    );
-  }
+function matchesFilter(machine, filter) {
+  if (filter === "candidates") return machine.verdict === "strong" || machine.verdict === "good";
+  if (filter === "playing") return machine.isPlaying;
+  return true;
+}
+
+function groupByIsland(machines) {
+  const groups = [[], [], []];
+  machines.forEach((machine, index) => {
+    groups[Math.min(2, Math.floor(index / 14))].push(machine);
+  });
+  return groups;
+}
+
+function HallMap({ machines, activeFilter, selectedId, onSelect }) {
+  const groups = groupByIsland(machines);
+  const hasMatch = machines.some((m) => matchesFilter(m, activeFilter));
 
   return (
-    <Card>
-      <div style={{ padding: "12px 14px 8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ fontSize: 12, color: C.sub, fontWeight: 800, letterSpacing: 0.4 }}>
-          島ヒートマップ
+    <Card style={{
+      background:
+        "linear-gradient(180deg, color-mix(in srgb, var(--blue) 8%, var(--surface)) 0%, var(--surface) 100%)",
+      borderColor: "color-mix(in srgb, var(--blue) 24%, var(--border))",
+    }}>
+      <div style={{ padding: "12px 14px 8px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+          <div>
+            <div style={{ fontSize: 13, color: C.text, fontWeight: 900, letterSpacing: 0.2 }}>
+              ホールマップ
+            </div>
+            <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>
+              店舗A 4F ・ P大海物語5 島
+            </div>
+          </div>
+          <div style={{ fontSize: 10, color: C.sub, flexShrink: 0 }}>
+            色で強さを把握
+          </div>
         </div>
-        <div style={{ fontSize: 10, color: C.sub }}>
-          淡い ← 信頼度 → 濃い
+        <Legend />
+        {!hasMatch && (
+          <div style={{
+            marginTop: 8,
+            padding: "8px 10px",
+            borderRadius: 10,
+            background: "rgba(248,113,113,0.10)",
+            border: "1px solid rgba(248,113,113,0.24)",
+            color: C.red,
+            fontSize: 11,
+            fontWeight: 700,
+          }}>
+            この条件に合う台はありません。全台表示で配置を確認できます。
+          </div>
+        )}
+      </div>
+
+      <div style={{
+        position: "relative",
+        margin: "0 12px 12px",
+        minHeight: 330,
+        borderRadius: 14,
+        overflow: "hidden",
+        background:
+          "linear-gradient(90deg, rgba(96,165,250,0.08) 1px, transparent 1px), linear-gradient(0deg, rgba(96,165,250,0.08) 1px, transparent 1px), radial-gradient(circle at 50% 12%, rgba(96,165,250,0.16), transparent 36%), #071224",
+        backgroundSize: "22px 22px, 22px 22px, auto, auto",
+        border: "1px solid rgba(148,178,255,0.18)",
+        boxShadow: "inset 0 0 28px rgba(15,23,42,0.72)",
+      }}>
+        <FloorLine top={14} left={16} width={94} />
+        <FloorLine top={14} right={16} width={94} />
+        <FloorLine bottom={14} left={28} width={72} />
+        <FloorLine bottom={14} right={28} width={72} />
+        <div style={{
+          position: "absolute",
+          inset: 12,
+          border: "1px solid rgba(148,178,255,0.18)",
+          borderRadius: 10,
+          pointerEvents: "none",
+        }} />
+        <div style={{
+          position: "absolute",
+          left: 17,
+          top: 54,
+          bottom: 50,
+          width: 2,
+          background: "linear-gradient(180deg, transparent, rgba(148,178,255,0.38), transparent)",
+        }} />
+        <div style={{
+          position: "absolute",
+          right: 17,
+          top: 54,
+          bottom: 50,
+          width: 2,
+          background: "linear-gradient(180deg, transparent, rgba(148,178,255,0.38), transparent)",
+        }} />
+
+        <div style={{
+          position: "relative",
+          zIndex: 1,
+          display: "grid",
+          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+          gap: 10,
+          padding: "30px 14px 24px",
+          minHeight: 330,
+        }}>
+          {groups.map((group, index) => (
+            <Island
+              key={index}
+              label={`${index + 1}島`}
+              machines={group}
+              activeFilter={activeFilter}
+              selectedId={selectedId}
+              onSelect={onSelect}
+            />
+          ))}
         </div>
+      </div>
+    </Card>
+  );
+}
+
+function FloorLine({ top, bottom, left, right, width }) {
+  return (
+    <div style={{
+      position: "absolute",
+      top,
+      bottom,
+      left,
+      right,
+      width,
+      height: 8,
+      borderTop: "1px solid rgba(148,178,255,0.35)",
+      borderBottom: "1px solid rgba(148,178,255,0.22)",
+      opacity: 0.8,
+    }} />
+  );
+}
+
+function Island({ label, machines, activeFilter, selectedId, onSelect }) {
+  return (
+    <div style={{
+      position: "relative",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: 6,
+      minWidth: 0,
+    }}>
+      <div style={{ fontSize: 10, color: C.sub, fontWeight: 800, letterSpacing: 0.3 }}>
+        {label}
       </div>
       <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-        gap: 6,
-        padding: "0 12px 12px",
+        position: "relative",
+        width: "100%",
+        maxWidth: 94,
+        padding: "8px 7px",
+        borderRadius: 11,
+        background: "rgba(15,23,42,0.76)",
+        border: "1px solid rgba(148,178,255,0.24)",
+        boxShadow: "0 10px 24px rgba(0,0,0,0.22), inset 0 0 0 1px rgba(255,255,255,0.03)",
       }}>
-        {machines.map((m) => {
-          const active = selectedId === m.id;
-          const col = machineColor(m);
-          return (
-            <button
-              key={m.id}
-              className="b"
-              onClick={() => onSelect(m.id)}
-              aria-label={`${m.machineNumber}番台 信頼度${m.confidence}%`}
-              style={{
-                minHeight: 46,
-                borderRadius: 8,
-                border: active ? `2px solid ${C.blue}` : `1px solid ${col.border}`,
-                background: col.bg,
-                color: C.text,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 2,
-                padding: "4px 2px",
-                boxShadow: active ? "0 0 0 2px color-mix(in srgb, var(--blue) 22%, transparent)" : "none",
-              }}
-            >
-              <span style={{ fontSize: 13, fontWeight: 900, fontFamily: mono, lineHeight: 1 }}>
-                {m.machineNumber}
-              </span>
-              <span style={{ fontSize: 9, fontWeight: 800, color: col.color, lineHeight: 1 }}>
-                {m.confidence}%
-              </span>
-            </button>
-          );
-        })}
+        <div style={{
+          position: "absolute",
+          top: 9,
+          bottom: 9,
+          left: "50%",
+          width: 2,
+          transform: "translateX(-50%)",
+          borderRadius: 2,
+          background: "rgba(148,178,255,0.22)",
+        }} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+          {machines.map((machine) => (
+            <MachineCabinet
+              key={machine.id}
+              machine={machine}
+              activeFilter={activeFilter}
+              selected={selectedId === machine.id}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
       </div>
-      <Legend />
-    </Card>
+    </div>
+  );
+}
+
+function MachineCabinet({ machine, activeFilter, selected, onSelect }) {
+  const col = machineColor(machine);
+  const visible = matchesFilter(machine, activeFilter);
+  const meta = VERDICT_META[machine.verdict] || VERDICT_META.unknown;
+  return (
+    <button
+      className="b"
+      onClick={() => onSelect(machine.id)}
+      aria-label={`${machine.machineNumber}番台 ${meta.label} 信頼度${machine.confidence}%`}
+      style={{
+        position: "relative",
+        minHeight: 30,
+        borderRadius: 6,
+        border: selected ? `2px solid ${C.blue}` : `1px solid ${col.border}`,
+        background: visible ? col.bg : "rgba(30,41,59,0.52)",
+        color: visible ? C.text : C.sub,
+        opacity: visible ? 1 : 0.38,
+        padding: "3px 2px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: 10,
+        fontWeight: 900,
+        fontFamily: mono,
+        boxShadow: selected
+          ? `0 0 0 2px color-mix(in srgb, ${C.blue} 26%, transparent), 0 0 16px color-mix(in srgb, ${col.color} 40%, transparent)`
+          : "inset 0 1px 0 rgba(255,255,255,0.08)",
+      }}
+    >
+      {machine.machineNumber}
+      {(machine.verdict === "strong" || selected) && (
+        <span style={{
+          position: "absolute",
+          right: -5,
+          top: -7,
+          color: machine.verdict === "strong" ? "#fcd34d" : C.blue,
+          fontSize: 13,
+          lineHeight: 1,
+          textShadow: "0 0 8px rgba(0,0,0,0.75)",
+        }}>
+          ★
+        </span>
+      )}
+    </button>
   );
 }
 
@@ -187,13 +353,13 @@ function Legend() {
     ["本命", C.green],
     ["候補", C.teal],
     ["様子見", C.yellow],
-    ["低優先", C.red],
+    ["回収", C.red],
   ];
   return (
-    <div style={{ display: "flex", gap: 8, padding: "0 12px 12px", flexWrap: "wrap" }}>
+    <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
       {items.map(([label, color]) => (
         <div key={label} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10, color: C.sub }}>
-          <span style={{ width: 10, height: 10, borderRadius: 3, background: color, display: "inline-block" }} />
+          <span style={{ width: 10, height: 10, borderRadius: 3, background: color, display: "inline-block", boxShadow: `0 0 8px ${color}` }} />
           {label}
         </div>
       ))}
@@ -364,7 +530,6 @@ export default function SelectDashboard({ S, onStart }) {
   const machines = useMemo(() => getDummyIslandMachines(todayKey()), []);
   const normalized = useMemo(() => normalizeMachineRows(machines), [machines]);
   const summary = useMemo(() => summarizeIsland(normalized), [normalized]);
-  const filtered = useMemo(() => filterMachines(normalized, activeFilter), [normalized, activeFilter]);
   const top = useMemo(() => getGoodMachineCandidates(normalized, 5), [normalized]);
   const [selectedId, setSelectedId] = useState(() => (summary.best?.id || normalized[0]?.id || null));
   const selected = normalized.find((m) => m.id === selectedId) || top[0] || normalized[0] || null;
@@ -382,8 +547,8 @@ export default function SelectDashboard({ S, onStart }) {
         padding: "0 14px calc(20px + env(safe-area-inset-bottom))",
       }}>
         <DummyBanner />
+        <HallMap machines={normalized} activeFilter={activeFilter} selectedId={selectedId} onSelect={setSelectedId} />
         <SelectedPanel machine={selected} onStart={onStart} />
-        <Heatmap machines={filtered} selectedId={selectedId} onSelect={setSelectedId} />
         <CandidateList rows={top} selectedId={selectedId} onSelect={setSelectedId} />
       </div>
     </div>
