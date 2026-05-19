@@ -1,6 +1,6 @@
 # HANDOVER.md — Pachi Tracker 引き継ぎドキュメント
 
-最終更新: 2026-05-19（大当たりタブから「稼働ログ」サブタブを削除＋ヘッダーのサマリーカードを実績軸「総回転 / 現在ハマり / 時給 / 初当」に刷新。KeyMetricsとの値重複を解消）
+最終更新: 2026-05-19（初当たり入力フロー改修の設計ドキュメント `docs/input-flow-design.md` を新規作成。コード変更なし）
 
 ---
 
@@ -423,6 +423,7 @@ if (evAdj < -50 || bDiff < -1.0)                      → "stop"
 - ✅ Phase 6 判定変化通知：`evDecision` の verdict 推移を `prevVerdictRef` で観測、5分以内の同 verdict 往復抑制、`NOTIF_VERDICT_CHANGE` 通知（本ブランチ `claude/hunting-system-continue-U0yhI`）
 - ✅ 大当たりタブの「稼働ログ」サブタブを UI のみ削除（`sesLog` データ自体は `RecentEventList` が継続利用するため保持）。`Tabs.jsx` のアクティブセッション側と `HistoryTab` 側の両方からサブタブバー＋ses表示ブロックを除去し、`historySub` / `sub` の useState、`HistoryTab` の `delSesLast` / `sesLog` propsも未参照になったため削除（本ブランチ `claude/fix-jackpot-page-layout-mkd6t`）
 - ✅ ヘッダーのサマリーカードを実績軸「総回転 / 現在ハマり / 時給 / 初当」に刷新。下の `KeyMetrics` と重複していた「回転率 / EV/K / 仕事量」を置換。`現在ハマり` は `rotRows` 末尾の `cumRot` − 最後の `type === "start"` 行の `cumRot`（rotRows 由来の派生のみで `logic.js` 不変）。`時給` は既存 `evEff.wage` を流用（本ブランチ `claude/fix-jackpot-page-layout-mkd6t`）
+- ✅ 初当たり入力フロー改修の設計ドキュメント `docs/input-flow-design.md` を新規作成（本ブランチ `claude/create-input-flow-design-vtV30`）。コード変更なし。新フロー（1画面5項目・開始上皿玉必須化・連チャン時の自動引き継ぎ・出玉プリセット）の画面構成・データモデル・実装ステップ案を整理。`logic.js`/`baseline.json`/`evDecision.js` 不変方針
 
 ---
 
@@ -643,7 +644,8 @@ npm run build
 3. `docs/roadmap-hunter-ux.md` — 狩猟型UX進化ロードマップ（Phase 0〜7、上位ガイド）
 4. `docs/roadmap-mockup-impl.md` — モックアップ完全再現ロードマップ（先行書）
 5. `docs/decision-ui-design.md` — 判断ファーストUI 設計書
-6. 大当たり後フロー調査レポート — ブランチ `claude/investigate-jackpot-flow-IXTu2` 内
+6. `docs/input-flow-design.md` — 初当たり/連チャン入力フロー改修の設計書（2026-05-19 新規）
+7. 大当たり後フロー調査レポート — ブランチ `claude/investigate-jackpot-flow-IXTu2` 内
 
 > ロードマップが2つあるが、矛盾時は `roadmap-hunter-ux.md` を優先。
 > 先行書のサブステップは新ロードマップの各 Phase に吸収して扱う。
