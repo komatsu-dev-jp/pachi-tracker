@@ -1,6 +1,6 @@
 # HANDOVER.md — Pachi Tracker 引き継ぎドキュメント
 
-最終更新: 2026-05-19
+最終更新: 2026-05-19（Phase 1.5 ハンターランク先行投入・サブステップ4・5 マージ反映）
 
 ---
 
@@ -58,6 +58,11 @@ src/
       selectSelectors.js
       __tests__/
         selectSelectors.test.mjs
+    hunter/                     # ハンターランク（Phase 1.5 先行投入版）
+      hunterRank.js             # 純関数（XP加算・レベル導出・マイグレーション）
+      HunterRankBadge.jsx       # 設定モードトップに表示するバッジ
+      __tests__/
+        hunterRank.test.mjs
   __tests__/
     protected-fns.mjs           # 保護関数境界値ハーネス
     baseline.json               # 完全一致テスト基準値
@@ -84,6 +89,11 @@ docs/
     - 取りうる値: `"scout" | "select" | "record" | "analysis" | "settings"`
     - `App.jsx:465-476` で `currentMode` ごとに対応コンポーネントを切替
     - 既存の `sessionSubTabs` は記録モード内の下位タブとして継続使用
+  - `hunterRank` — ハンターランク（Phase 1.5）。`useLS("pt_hunterRank", initialRank())`
+    - 構造: `{ level, currentXp, totalXp, unlockedBadges, lastActionAt }`
+    - 表示時は `deriveRankFromTotalXp(totalXp)` で `nextRequired` を再導出
+    - XP 加算は `handleMoveTable` 内のアーカイブ確定時のみ（Phase 1.5）
+    - `pt_hunterRankMigrated` フラグで初回のみ `archives.length × 50` を遡及加算
 
 ### 2-3. 計算精度問題①：ラベルとウィザード順序（✅ 解決済み）
 
@@ -132,8 +142,8 @@ docs/
 | 1 | ✅ 完了 | `machineDB.js` に `displayToReal: null` を全19機種に追加<br>ブランチ: `claude/jackpot-flow-substep1-KYCUw`（PR #156 マージ済み） |
 | 2 | ✅ 完了 | chain オブジェクトに `finalRealBalls: undefined` を追加<br>ブランチ: `claude/jackpot-flow-substep2-nd2XC`（PR #158 マージ済み） |
 | 3 | ✅ 完了 | ラッシュ終了ウィザードに「最終実測持ち玉」入力 Step を追加<br>`chain.finalRealBalls` と `chain.finalRealBallsEdited` に保存<br>計算値を初期値として表示、ユーザー編集可能<br>ブランチ: `claude/jackpot-flow-substep3-LPtw0`（PR #159 マージ済み） |
-| 4 | ✅ 完了 | `calcPreciseEV` の `totalNetGain` 集計に分岐追加。<br>`chain.finalRealBalls !== undefined` のとき実測ベース netGain（`finalRealBalls − trayBalls`）を採用、未設定なら液晶ベース（`summary.netGain`）にフォールバック。<br>新規プロパティ `totalNetGainDisplay` / `totalNetGainReal` / `realMeasuredChainCount` を `calcPreciseEV` の返り値に追加。<br>ブランチ: `claude/hunting-system-continuation-A6x6u` |
-| 5 | ✅ 完了 | `baseline.json` 再生成。既存値は不変、新ケース `evFinalRealBallsMixed` と新プロパティのみ追加。<br>`node src/__tests__/protected-fns.mjs` で出力決定的を確認。<br>ブランチ: `claude/hunting-system-continuation-A6x6u` |
+| 4 | ✅ 完了（PR #188 マージ済み） | `calcPreciseEV` の `totalNetGain` 集計に分岐追加。<br>`chain.finalRealBalls !== undefined` のとき実測ベース netGain（`finalRealBalls − trayBalls`）を採用、未設定なら液晶ベース（`summary.netGain`）にフォールバック。<br>新規プロパティ `totalNetGainDisplay` / `totalNetGainReal` / `realMeasuredChainCount` を `calcPreciseEV` の返り値に追加。<br>ブランチ: `claude/hunting-system-continuation-A6x6u`（マージコミット `f2df54a`） |
+| 5 | ✅ 完了（PR #188 マージ済み） | `baseline.json` 再生成。既存値は不変、新ケース `evFinalRealBallsMixed` と新プロパティのみ追加。<br>`node src/__tests__/protected-fns.mjs` で出力決定的を確認。<br>ブランチ: `claude/hunting-system-continuation-A6x6u`（マージコミット `f2df54a`） |
 | 6〜8 | ⏸️ 保留 | 詳細は調査レポート参照 |
 
 #### 関連ドキュメント
@@ -158,7 +168,8 @@ docs/
 | 3 | ✅ 完了 | 偵察モードを店舗ランキング画面（`ScoutDashboard` + ダミーデータ）に刷新 | `b5dc141` / PR #182 |
 | 4 | ✅ 完了（ダミー） | 台選びモード（ホール図面風ヒートマップ＋良台TOP5）。`SelectDashboard` + `selectSelectors` + ダミー島データ | PR #184・#185・#186 |
 | 5 | ⏸️ 未着手 | P-EVIDENCE 移植（GAS → JS）。**GAS 数式の共有が必須** | ー |
-| 6 | ⏸️ 未着手 | ハンターランク・通知 | ー |
+| 6 (1.5 先行投入) | ✅ 一部完了 | ハンターランク簡易版（`pt_hunterRank` + `HunterRankBadge`）。XP加算は「セッション完了 +50」のみ。ロードマップ §5-3 推奨の Phase 1.5 先行投入版 | ブランチ: `claude/hunting-system-continue-xHXgl` |
+| 6（本実装） | ⏸️ 未着手 | 通知・複数XPトリガー（回転1000/大当たり/連続日数）・レベルアップ演出・バッジ解放 | ー |
 | 7 | ⏸️ 未着手 | モード連携・半自動切替・全体調整 | ー |
 
 #### Phase 関連の新規ファイル
@@ -353,6 +364,9 @@ if (evAdj < -50 || bDiff < -1.0)                      → "stop"
 - ✅ 狩猟型UX Phase 1.7+1.8 - 直近イベント表示と通知ベル/歯車（PR #180）
 - ✅ 狩猟型UX Phase 2 - 分析モード（収支分析ダッシュボード）（PR #181）
 - ✅ 狩猟型UX Phase 3 - 偵察モード（店舗ランキング画面、ダミーデータ）（PR #182）
+- ✅ 狩猟型UX Phase 4 - 台選びモード（ホール図面風ヒートマップ + 良台TOP5、ダミー）（PR #184・#185・#186）
+- ✅ 大当たり後フロー サブステップ4・5（`calcPreciseEV` 実測ベース netGain 分岐 + baseline.json 再生成）（PR #188）
+- ✅ Phase 6 簡易先行投入版（ハンターランク `pt_hunterRank` + `HunterRankBadge`、本ブランチ）
 
 ---
 
@@ -378,11 +392,11 @@ if (evAdj < -50 || bDiff < -1.0)                      → "stop"
 
 ### 保留タスク2：大当たり後フロー サブステップ6以降
 
-**サブステップ4**: ✅ 完了。`calcPreciseEV` の `totalNetGain` 集計に `finalRealBalls` 分岐を追加（本ブランチ）
+**サブステップ4**: ✅ 完了（PR #188 マージ済み）。`calcPreciseEV` の `totalNetGain` 集計に `finalRealBalls` 分岐を追加
 
-**サブステップ5**: ✅ 完了。`baseline.json` 再生成。新ケース `evFinalRealBallsMixed` 追加で実測ベース分岐を検証（本ブランチ）
+**サブステップ5**: ✅ 完了（PR #188 マージ済み）。`baseline.json` 再生成。新ケース `evFinalRealBallsMixed` 追加で実測ベース分岐を検証
 
-**サブステップ6〜8**: 調査レポート参照（ブランチ: `claude/investigate-jackpot-flow-IXTu2`）
+**サブステップ6〜8**: 調査レポート参照（ブランチ: `claude/investigate-jackpot-flow-IXTu2`）。**次の作業着手時に再調査が必要**
 
 **重要**: ロードマップ Phase 5（P-EVIDENCE 移植）は実測ベースの netGain を必要とする。サブステップ4・5 完了により、`avgNetGainPerJP` と `measuredBorder` は `finalRealBalls` 設定時に実測ベースで計算される。
 
@@ -613,15 +627,19 @@ ls src/components/select/     # SelectDashboard.jsx, selectSelectors.js
 ls src/components/decision/RecentEventList.jsx
 ```
 
-### 直近の状態サマリー（2026-05-19 時点）
+### 直近の状態サマリー（2026-05-19 時点、Phase 1.5 ハンターランク追加後）
 
-- **main ブランチ最新コミット**: `bd70fcb`（PR #186、台選びヒートマップをホール図面風に刷新）
+- **main ブランチ最新コミット**: `f2df54a`（PR #188、大当たり後フロー サブステップ4・5：実測ベース netGain 分岐）
+- **作業ブランチ（push 未）**: `claude/hunting-system-continue-xHXgl`
 - **今回追加**:
   - PR #184: Phase 4 台選びモードを追加（ダミー島データ、良台候補TOP5、実戦開始導線）
   - PR #185: 台選びから未稼働状態でも実戦開始できるよう修正
   - PR #186: 参照画像を元にヒートマップをホール図面風へ刷新
+  - PR #187: HANDOVER の Phase 4 引き継ぎ更新
+  - PR #188: サブステップ4・5（`calcPreciseEV` 実測ベース netGain 分岐 + `baseline.json` 再生成）
+  - 本ブランチ（push 未）: Phase 6 簡易先行投入版（ハンターランク `pt_hunterRank` + `HunterRankBadge`）。`logic.js` 不変
 - **ユーザー確認**: 2026-05-19、ホール図面風ヒートマップについて「確認しました。いい感じです。」と確認済み
-- **狩猟型UX**: Phase 0・1・1.B・1.5・1.6・1.7・1.8・2・3・4 完了。**次は Phase 4 の実データ化/スコアリング定義確定、または Phase 5（P-EVIDENCE 移植）**
+- **狩猟型UX**: Phase 0・1・1.B・1.5（モック視覚刷新）・1.6・1.7・1.8・2・3・4・6先行投入（ハンターランク簡易版）完了。**次は Phase 4 の実データ化/スコアリング定義確定、または Phase 5（P-EVIDENCE 移植）、または Phase 6 本実装（複数XPトリガー・通知）**
 - **配色**: モック2準拠のブルー寄りダークネイビーに刷新済み（PR #177）
 - **判定バッジ**: 大型化＋円形試行充足率リング、各種表示バグ修正済み（PR #174・#175・#176）
 - **実戦タブ**: 判断 + 回転入力を統合（Phase 1.B、PR #173）。クイック入力 +1/+5/+10/+25 は廃止、テンキーは bottom sheet 化
@@ -634,16 +652,19 @@ ls src/components/decision/RecentEventList.jsx
 
 着手前に**必ずユーザーに方針確認**すること。以下は推奨順。
 
-#### 候補A：保留タスク2（大当たり後フロー サブステップ4・5）を先行消化【推奨】
+#### 候補A：狩猟型UX Phase 6 本実装（簡易先行投入版の拡張）
 
-理由：Phase 5（P-EVIDENCE 移植）が実測ベース netGain を必要とするため、先に消化しておきたい。
+理由：Phase 1.5 で `pt_hunterRank` + `HunterRankBadge` の最小版を投入済み。次は複数XPトリガー・通知・レベルアップ演出・バッジ解放を追加していくのが自然な流れ。
 
 実装内容：
-1. `calcPreciseEV` の `totalNetGain` 集計に `chain.finalRealBalls !== undefined` の分岐追加
-2. フォールバックは液晶ベース（後方互換）
-3. `baseline.json` を再生成（diff レビュー必須）
-4. `node src/__tests__/protected-fns.mjs` でスナップショット確認
-5. `npm run lint && npm run build` エラーゼロ
+1. XPトリガー追加（回転 1000 ごと +10、大当たり +20、7日連続 +100）
+2. レベルアップ時の控えめなトースト（要ユーザー方針確認、過剰演出を避ける）
+3. `pt_notificationLog` データ構造追加（判定変化・信頼度マイルストーン・ハンターレベルアップ・モード切替提案）
+4. 通知ベル UI（記録モードヘッダー）の本実装
+
+要ユーザー方針確認：
+- XP式の係数調整（現状 `100 * level^1.5` の妥当性）
+- 演出強度（業務端末感を損なわない範囲で）
 
 #### 候補B：狩猟型UX Phase 4 の実データ化・スコアリング定義
 

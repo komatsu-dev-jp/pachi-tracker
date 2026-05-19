@@ -9,6 +9,7 @@ import { VerdictBadge } from "./decision/VerdictBadge";
 import { KeyMetrics } from "./decision/KeyMetrics";
 import { ReasonList } from "./decision/ReasonList";
 import { RecentEventList } from "./decision/RecentEventList";
+import HunterRankBadge from "./hunter/HunterRankBadge";
 
 /* ================================================================
    Simple SVG Line Chart component
@@ -8041,6 +8042,11 @@ export function SettingsTab({ s, onReset }) {
 
             {/* ── スクロールコンテンツ ── */}
             <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(84px + env(safe-area-inset-bottom))" }}>
+
+                {/* ハンターランク（Phase 1.5 簡易先行投入） */}
+                <div style={{ marginTop: 14 }}>
+                    <HunterRankBadge rank={s.hunterRank} />
+                </div>
 
                 {/* 外観 */}
                 <SectionLabel label="外観" />

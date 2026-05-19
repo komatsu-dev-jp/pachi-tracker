@@ -7,6 +7,7 @@ import ModeTabBar from "./components/ModeTabBar";
 import AnalysisDashboard from "./components/analysis/AnalysisDashboard";
 import ScoutDashboard from "./components/scout/ScoutDashboard";
 import SelectDashboard from "./components/select/SelectDashboard";
+import { addXp, computeMigratedRank, deriveRankFromTotalXp, initialRank, XP_SESSION_COMPLETE } from "./components/hunter/hunterRank";
 import { takeSnapshot, takeSnapshotImmediate, getLatest as getLatestSnapshot } from "./snapshot";
 
 // 旧タブ名 → 新モード名 のマッピング
@@ -154,6 +155,26 @@ export default function App() {
 
   // Archives
   const [archives, setArchives] = useLS("pt_archives", []);
+
+  // ハンターランク（Phase 1.5 簡易先行投入版）
+  // - Phase 1.5 では XP 加算は handleMoveTable（=実戦アーカイブ作成）のみ
+  // - Phase 6 で複数トリガー（回転 1000・大当たり・連続日数）に拡張予定
+  const [hunterRank, setHunterRank] = useLS("pt_hunterRank", initialRank());
+  const [hunterRankMigrated, setHunterRankMigrated] = useLS("pt_hunterRankMigrated", false);
+
+  // 初回マイグレーション: 既存 archives 件数から遡及加算
+  useEffect(() => {
+    if (hunterRankMigrated) return;
+    setHunterRank(computeMigratedRank({ archives }));
+    setHunterRankMigrated(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hunterRankMigrated]);
+
+  // 表示用に nextRequired を毎回再導出（保存値は level/currentXp/totalXp のみ）
+  const hunterRankDisplay = (() => {
+    const d = deriveRankFromTotalXp(hunterRank?.totalXp);
+    return { ...hunterRank, ...d };
+  })();
 
   // 日付変更時に貯玉使用量をリセット
   useEffect(() => {
@@ -332,6 +353,8 @@ export default function App() {
         isMoveArchive: true,
       };
       setArchives((prev) => [...prev, archive]);
+      // ハンターランク: 実戦アーカイブ確定で XP 加算（Phase 1.5）
+      setHunterRank((prev) => addXp(prev, XP_SESSION_COMPLETE));
     }
     resetAll();
     setCurrentMode("record");
@@ -380,6 +403,8 @@ export default function App() {
     sessionSubTab, setSessionSubTab,
     // Undo/Redo
     pushSnapshot, undo, redo, canUndo, canRedo,
+    // ハンターランク（Phase 1.5）
+    hunterRank: hunterRankDisplay,
   };
 
   // PINロック画面
