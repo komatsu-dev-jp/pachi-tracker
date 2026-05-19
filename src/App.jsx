@@ -2,9 +2,10 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useLS, calcPreciseEV } from "./logic";
 import { useUndoStack } from "./history";
 import { C, font } from "./constants";
-import { RotTab, SettingsTab, CalendarTab } from "./components/Tabs";
+import { RotTab, SettingsTab } from "./components/Tabs";
 import ModeTabBar from "./components/ModeTabBar";
 import ModePlaceholder from "./components/ModePlaceholder";
+import AnalysisDashboard from "./components/analysis/AnalysisDashboard";
 import { takeSnapshot, takeSnapshotImmediate, getLatest as getLatestSnapshot } from "./snapshot";
 
 // 旧タブ名 → 新モード名 のマッピング
@@ -34,10 +35,21 @@ export default function App() {
   // 既存ユーザーは初回起動時に "record" モードから始まる（既存体験を維持）
   const [currentMode, setCurrentMode] = useLS("pt_currentMode", "record");
 
+  // 分析モード内の期間サブタブ
+  // "month" | "year" | "all" | "calendar"
+  const [analysisTab, setAnalysisTab] = useLS("pt_analysisTab", "month");
+
   // 後方互換: Tabs.jsx 内の S.setTab("rot" | "calendar" | "settings") を新モードへ変換
+  // 旧 "calendar" タブはカレンダー一覧（既存 UI）を期待しているので、
+  // 分析モードのカレンダー サブタブを選択した状態で遷移させる
   const setTab = useCallback((legacy) => {
+    if (legacy === "calendar") {
+      setCurrentMode("analysis");
+      setAnalysisTab("calendar");
+      return;
+    }
     setCurrentMode(LEGACY_TAB_TO_MODE[legacy] ?? legacy);
-  }, [setCurrentMode]);
+  }, [setCurrentMode, setAnalysisTab]);
 
   // Theme management
   const [theme, setTheme] = useLS("pt_theme", "dark");
@@ -452,7 +464,14 @@ export default function App() {
         {currentMode === "scout" && <ModePlaceholder mode="scout" />}
         {currentMode === "select" && <ModePlaceholder mode="select" />}
         {currentMode === "record" && <RotTab border={border} rows={rotRows} setRows={setRotRows} S={S} ev={ev} />}
-        {currentMode === "analysis" && <CalendarTab S={S} onReset={resetAll} />}
+        {currentMode === "analysis" && (
+          <AnalysisDashboard
+            S={S}
+            onReset={resetAll}
+            periodTab={analysisTab}
+            onChangePeriodTab={setAnalysisTab}
+          />
+        )}
         {currentMode === "settings" && <SettingsTab s={S} onReset={resetAll} />}
       </main>
 
