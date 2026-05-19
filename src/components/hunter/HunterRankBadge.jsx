@@ -3,7 +3,7 @@ import { C, font, f } from "../../constants";
 
 // ハンターランクバッジ
 //
-// Phase 1.5（先行投入版）の表示コンポーネント。
+// Phase 6 本実装版の表示コンポーネント。
 // 設定モードのトップに配置することを想定。
 //
 // props:
@@ -118,7 +118,7 @@ export default function HunterRankBadge({ rank }) {
           paddingTop: 8,
         }}
       >
-        台移動・実戦リセットで +50 EXP
+        セッション +50 / 大当たり +20 / 1000回転 +10 / 7日連続 +100
       </div>
     </div>
   );

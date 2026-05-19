@@ -1,6 +1,6 @@
 # HANDOVER.md — Pachi Tracker 引き継ぎドキュメント
 
-最終更新: 2026-05-19（Phase 1.5 ハンターランク先行投入・サブステップ4・5 マージ反映）
+最終更新: 2026-05-19（Phase 6 ハンターランク本実装：複数XPトリガー・レベルアップトースト・通知ログ・通知ベル本実装）
 
 ---
 
@@ -30,11 +30,13 @@ src/
   dummyData.js                  # 偵察/台選びモード等のダミーデータ生成
   constants.js                  # 配色 C / フォント / ヘルパー
   index.css                     # ダークネイビー配色（モック2準拠）
+  notifications.js              # 通知ログヘルパー（Phase 6、純関数）
   components/
     Atoms.jsx                   # 共通UIパーツ
-    Tabs.jsx                    # 記録モード内の主要UI（実戦タブ統合済み）
+    Tabs.jsx                    # 記録モード内の主要UI（実戦タブ統合済み・通知ベル含む）
     ModeTabBar.jsx              # フッター5タブ（偵察/台選び/記録/分析/設定）
     ModePlaceholder.jsx         # 旧プレースホルダー（未実装モード用、現在 select では未使用）
+    NotificationPanel.jsx       # 通知ボトムシート（Phase 6）
     decision/
       evDecision.js             # 判断ロジック（純粋関数）
       DecisionTab.jsx           # 判断UI コンテナ（実戦タブ内に統合）
@@ -58,9 +60,10 @@ src/
       selectSelectors.js
       __tests__/
         selectSelectors.test.mjs
-    hunter/                     # ハンターランク（Phase 1.5 先行投入版）
-      hunterRank.js             # 純関数（XP加算・レベル導出・マイグレーション）
+    hunter/                     # ハンターランク（Phase 6 本実装版）
+      hunterRank.js             # 純関数（XP加算・レベル導出・マイグレーション・連続日数）
       HunterRankBadge.jsx       # 設定モードトップに表示するバッジ
+      LevelUpToast.jsx          # レベルアップ時の控えめなトースト（Phase 6）
       __tests__/
         hunterRank.test.mjs
   __tests__/
@@ -89,11 +92,22 @@ docs/
     - 取りうる値: `"scout" | "select" | "record" | "analysis" | "settings"`
     - `App.jsx:465-476` で `currentMode` ごとに対応コンポーネントを切替
     - 既存の `sessionSubTabs` は記録モード内の下位タブとして継続使用
-  - `hunterRank` — ハンターランク（Phase 1.5）。`useLS("pt_hunterRank", initialRank())`
+  - `hunterRank` — ハンターランク（Phase 6 本実装版）。`useLS("pt_hunterRank", initialRank())`
     - 構造: `{ level, currentXp, totalXp, unlockedBadges, lastActionAt }`
     - 表示時は `deriveRankFromTotalXp(totalXp)` で `nextRequired` を再導出
-    - XP 加算は `handleMoveTable` 内のアーカイブ確定時のみ（Phase 1.5）
+    - XP 加算は `grantXp(amount, reason)` ヘルパー経由（`addXpWithLevelUp` でレベルアップ検出）
+    - トリガー: セッション完了 +50 / 大当たり +20 / 通常回転 1000 ごと +10 / 7日連続 +100
     - `pt_hunterRankMigrated` フラグで初回のみ `archives.length × 50` を遡及加算
+  - `hunterCounters` — XPトリガー検出カウンタ。`useLS("pt_hunterCounters", { ... })`
+    - `countedHits` — XP 計上済みの大当たり累計（`jpLog` の hits 総数と比較し増分にXP加算）
+    - `countedRotKilo` — XP 計上済みの 1000 回転マイルストーン数（`ev.netRot` から導出）
+    - `lastDate` — 最終加算日（YYYY-MM-DD）
+    - `streakDays` — 連続日数
+    - 初回マイグレーション時に既存 hits/netRot を「既計上」として記録し、二重加算を防止
+    - `resetAll` で countedHits/countedRotKilo を 0 にリセット（次セッションは新規に数え直す）
+  - `notificationLog` — 通知ログ（Phase 6）。`useLS("pt_notificationLog", [])`
+    - 先頭が最新、最大 50 件（`NOTIFICATION_LOG_MAX`）
+    - 種別: `NOTIF_LEVEL_UP` / `NOTIF_XP_GAINED` / `NOTIF_STREAK` / `NOTIF_VERDICT_CHANGE`
 
 ### 2-3. 計算精度問題①：ラベルとウィザード順序（✅ 解決済み）
 
@@ -168,8 +182,9 @@ docs/
 | 3 | ✅ 完了 | 偵察モードを店舗ランキング画面（`ScoutDashboard` + ダミーデータ）に刷新 | `b5dc141` / PR #182 |
 | 4 | ✅ 完了（ダミー） | 台選びモード（ホール図面風ヒートマップ＋良台TOP5）。`SelectDashboard` + `selectSelectors` + ダミー島データ | PR #184・#185・#186 |
 | 5 | ⏸️ 未着手 | P-EVIDENCE 移植（GAS → JS）。**GAS 数式の共有が必須** | ー |
-| 6 (1.5 先行投入) | ✅ 一部完了 | ハンターランク簡易版（`pt_hunterRank` + `HunterRankBadge`）。XP加算は「セッション完了 +50」のみ。ロードマップ §5-3 推奨の Phase 1.5 先行投入版 | ブランチ: `claude/hunting-system-continue-xHXgl` |
-| 6（本実装） | ⏸️ 未着手 | 通知・複数XPトリガー（回転1000/大当たり/連続日数）・レベルアップ演出・バッジ解放 | ー |
+| 6 (1.5 先行投入) | ✅ 完了 | ハンターランク簡易版（`pt_hunterRank` + `HunterRankBadge`）。XP加算は「セッション完了 +50」のみ | PR #189（マージ済み） |
+| 6（本実装） | ✅ 完了 | 複数XPトリガー（大当たり +20・回転1000ごと +10・7日連続 +100）、レベルアップトースト、`pt_notificationLog` + `NotificationPanel`、通知ベル本実装（未読件数バッジ） | ブランチ: `claude/hunting-system-handover-KmslM` |
+| 6（バッジ解放） | ⏸️ 未着手 | `unlockedBadges` の活用、特定マイルストーン達成バッジ表示 | ー |
 | 7 | ⏸️ 未着手 | モード連携・半自動切替・全体調整 | ー |
 
 #### Phase 関連の新規ファイル
@@ -366,7 +381,8 @@ if (evAdj < -50 || bDiff < -1.0)                      → "stop"
 - ✅ 狩猟型UX Phase 3 - 偵察モード（店舗ランキング画面、ダミーデータ）（PR #182）
 - ✅ 狩猟型UX Phase 4 - 台選びモード（ホール図面風ヒートマップ + 良台TOP5、ダミー）（PR #184・#185・#186）
 - ✅ 大当たり後フロー サブステップ4・5（`calcPreciseEV` 実測ベース netGain 分岐 + baseline.json 再生成）（PR #188）
-- ✅ Phase 6 簡易先行投入版（ハンターランク `pt_hunterRank` + `HunterRankBadge`、本ブランチ）
+- ✅ Phase 6 簡易先行投入版（ハンターランク `pt_hunterRank` + `HunterRankBadge`、PR #189）
+- ✅ Phase 6 本実装：複数XPトリガー（大当たり/回転1000/連続日数）・`addXpWithLevelUp`・`applyDailyStreak`・レベルアップトースト・`pt_notificationLog` + `NotificationPanel`・通知ベル本実装（本ブランチ `claude/hunting-system-handover-KmslM`）
 
 ---
 
@@ -413,7 +429,10 @@ if (evAdj < -50 || bDiff < -1.0)                      → "stop"
 - **Phase 5**: P-EVIDENCE 移植
   - GAS スプレッドシートの数式群を **ユーザーから共有してもらうことが必須**
   - 共有まではインターフェース固定でダミー実装のまま進行可
-- **Phase 6**: ハンターランク・通知
+- **Phase 6 バッジ解放**: `unlockedBadges` 配列の活用
+  - 「初の Lv10 到達」「30日連続稼働」「累計1万回転」等のマイルストーンバッジ
+  - バッジ一覧画面（設定モード内）の設計と表示要素が必要
+- **Phase 6 残：判定変化通知**: `NOTIF_VERDICT_CHANGE` の発火条件設計（要ユーザー方針確認）
 - **Phase 7**: モード連携・半自動切替・全体調整
 
 ### 保留タスク4：偵察モードのダミー → 実データ切替
@@ -625,48 +644,82 @@ ls src/components/select/     # SelectDashboard.jsx, selectSelectors.js
 
 # Phase 1.7: 直近イベントリスト
 ls src/components/decision/RecentEventList.jsx
+
+# === Phase 6 本実装の確認 ===
+# 通知ログヘルパー
+ls src/notifications.js
+
+# 通知パネル
+ls src/components/NotificationPanel.jsx
+
+# レベルアップトースト
+ls src/components/hunter/LevelUpToast.jsx
+
+# XPトリガー（App.jsx に 3 つの useEffect）
+grep -n "XPトリガー" src/App.jsx
+# → 「大当たり」「通常回転1000ごと」「連続稼働日数」の 3 箇所が見つかる
+
+# 通知ベル本実装（未読件数バッジ）
+grep -n "openNotificationPanel" src/components/Tabs.jsx
 ```
 
-### 直近の状態サマリー（2026-05-19 時点、Phase 1.5 ハンターランク追加後）
+### 直近の状態サマリー（2026-05-19 時点、Phase 6 本実装完了後）
 
-- **main ブランチ最新コミット**: `f2df54a`（PR #188、大当たり後フロー サブステップ4・5：実測ベース netGain 分岐）
-- **作業ブランチ（push 未）**: `claude/hunting-system-continue-xHXgl`
-- **今回追加**:
-  - PR #184: Phase 4 台選びモードを追加（ダミー島データ、良台候補TOP5、実戦開始導線）
-  - PR #185: 台選びから未稼働状態でも実戦開始できるよう修正
-  - PR #186: 参照画像を元にヒートマップをホール図面風へ刷新
-  - PR #187: HANDOVER の Phase 4 引き継ぎ更新
-  - PR #188: サブステップ4・5（`calcPreciseEV` 実測ベース netGain 分岐 + `baseline.json` 再生成）
-  - 本ブランチ（push 未）: Phase 6 簡易先行投入版（ハンターランク `pt_hunterRank` + `HunterRankBadge`）。`logic.js` 不変
+- **main ブランチ最新コミット**: `2419dbf`（PR #189、Phase 6 ハンターランク簡易先行投入のマージ）
+- **作業ブランチ（push 未）**: `claude/hunting-system-handover-KmslM`
+- **本ブランチで追加**:
+  - `src/components/hunter/hunterRank.js`: `addXpWithLevelUp` / `applyDailyStreak` / `classifyStreakTransition` を追加。XP定数 `XP_JP_HIT=20` / `XP_ROT_1000=10` / `XP_STREAK_BONUS=100` を新規 export
+  - `src/components/hunter/LevelUpToast.jsx`: 控えめなレベルアップトースト（画面下部、2.5秒で自動消滅）
+  - `src/notifications.js`: 通知ログ純関数群（`makeNotification` / `addNotification` / `markAsRead` / `markAllAsRead` / `unreadCount` / `clearAll`）
+  - `src/components/NotificationPanel.jsx`: 通知ボトムシート。種別ごとのアイコン色、相対時刻表示、既読化操作
+  - `App.jsx`: `pt_hunterCounters` / `pt_notificationLog` 追加、`grantXp` ヘルパー、3つの useEffect トリガー（大当たり・回転1000・連続日数）、トースト/パネルのマウント、`S.openNotificationPanel` を S 経由で公開
+  - `Tabs.jsx`: 通知ベルを「直近イベントへスクロール」から「通知パネルを開く」に変更。未読件数バッジ（数値表示、99+ 上限）を追加
+  - 既存 `setHunterRank((prev) => addXp(prev, XP_SESSION_COMPLETE))` を `grantXp(XP_SESSION_COMPLETE, "セッション完了")` に置換
+  - `HunterRankBadge.jsx`: フッター注記を「セッション +50 / 大当たり +20 / 1000回転 +10 / 7日連続 +100」に更新
+  - `hunterRank.test.mjs`: `addXpWithLevelUp` / `classifyStreakTransition` / `applyDailyStreak` の境界値テスト 14 件を追加（33 件 PASS）
 - **ユーザー確認**: 2026-05-19、ホール図面風ヒートマップについて「確認しました。いい感じです。」と確認済み
-- **狩猟型UX**: Phase 0・1・1.B・1.5（モック視覚刷新）・1.6・1.7・1.8・2・3・4・6先行投入（ハンターランク簡易版）完了。**次は Phase 4 の実データ化/スコアリング定義確定、または Phase 5（P-EVIDENCE 移植）、または Phase 6 本実装（複数XPトリガー・通知）**
+- **狩猟型UX**: Phase 0・1・1.B・1.5（モック視覚刷新）・1.6・1.7・1.8・2・3・4・6（簡易先行投入）・6本実装 完了。**次は Phase 4 の実データ化/スコアリング定義確定、Phase 5（P-EVIDENCE 移植）、Phase 6 バッジ解放、または Phase 7（モード連携）**
 - **配色**: モック2準拠のブルー寄りダークネイビーに刷新済み（PR #177）
 - **判定バッジ**: 大型化＋円形試行充足率リング、各種表示バグ修正済み（PR #174・#175・#176）
 - **実戦タブ**: 判断 + 回転入力を統合（Phase 1.B、PR #173）。クイック入力 +1/+5/+10/+25 は廃止、テンキーは bottom sheet 化
 - **PWA**: `registerType: prompt` + ボトムシート形式の更新バナー（PR #166・#167・#168）
 - **上皿補正**: Step 1〜3 完了。Step 2b で判断ロジックも補正後の値を使用
-- **大当たり後フロー**: サブステップ1〜3 完了。**サブステップ4以降は保留**
+- **大当たり後フロー**: サブステップ1〜5 完了（PR #188）。サブステップ6以降は保留
+- **ハンターランク**: Phase 6 本実装完了。XPトリガー4種類、レベルアップトースト、通知ログ・通知パネル稼働中
 - **既存バグ修正**: 現金カード 0円（PR #160）、履歴削除（PR #155）、`FlowStatusCard` 表示（PR #170）
 
 ### 次にやることの候補（優先順）
 
 着手前に**必ずユーザーに方針確認**すること。以下は推奨順。
 
-#### 候補A：狩猟型UX Phase 6 本実装（簡易先行投入版の拡張）
+#### 候補A：狩猟型UX Phase 6 バッジ解放（残タスク）
 
-理由：Phase 1.5 で `pt_hunterRank` + `HunterRankBadge` の最小版を投入済み。次は複数XPトリガー・通知・レベルアップ演出・バッジ解放を追加していくのが自然な流れ。
+理由：Phase 6 本実装で XPトリガー・トースト・通知ログ・通知ベルまで実装済み。残るは `unlockedBadges` 配列の活用とバッジ一覧 UI のみ。
 
 実装内容：
-1. XPトリガー追加（回転 1000 ごと +10、大当たり +20、7日連続 +100）
-2. レベルアップ時の控えめなトースト（要ユーザー方針確認、過剰演出を避ける）
-3. `pt_notificationLog` データ構造追加（判定変化・信頼度マイルストーン・ハンターレベルアップ・モード切替提案）
-4. 通知ベル UI（記録モードヘッダー）の本実装
+1. バッジ定義の決定（例: `{ id, label, icon, condition: rank => boolean }`）
+   - 「Lv10 到達」「Lv25 到達」「累計 10000 EXP」「30日連続稼働」「累計 100 大当たり」等
+2. バッジ解放判定（XP加算時／日次ストリーク判定後にチェック）
+3. 設定モード内のバッジ一覧表示（既獲得 / 未獲得 + 達成条件）
+4. バッジ解放時の通知（`NOTIF_BADGE_UNLOCKED` 種別を追加）
 
 要ユーザー方針確認：
-- XP式の係数調整（現状 `100 * level^1.5` の妥当性）
-- 演出強度（業務端末感を損なわない範囲で）
+- 解放条件の難易度バランス（最初のバッジが取りやすいか）
+- バッジ一覧の表示優先度（設定モード内 vs 専用画面）
 
-#### 候補B：狩猟型UX Phase 4 の実データ化・スコアリング定義
+#### 候補B：判定変化通知の本実装
+
+理由：通知ログの種別 `NOTIF_VERDICT_CHANGE` は予約済みだが、発火ロジック未実装。実戦中に判定が「続行→様子見」等に変わったタイミングで通知することで、ユーザーの撤退判断を支援できる。
+
+実装内容：
+1. 判定 verdict の前回値を `useRef` で記憶
+2. verdict 変化検出時に `makeNotification(NOTIF_VERDICT_CHANGE, ...)` を発火
+3. 連続通知の抑制（同じ verdict への 5分以内の往復はノイズ）
+
+要ユーザー方針確認：
+- 通知頻度のしきい値（毎回 vs 5分 vs 大きな変化のみ）
+
+#### 候補C：狩猟型UX Phase 4 の実データ化・スコアリング定義
 
 理由：UI はホール図面風マップとしてダミーデータで実装済み。ただし良台スコアリング定義と島データ構造は未確定。
 
@@ -675,7 +728,7 @@ ls src/components/decision/RecentEventList.jsx
 - 「島平均」「前日実績」の集計定義
 - 島の物理隣接情報の必要性（当面は線形配置で代替可）
 
-#### 候補C：狩猟型UX Phase 5（P-EVIDENCE 移植）
+#### 候補D：狩猟型UX Phase 5（P-EVIDENCE 移植）
 
 **前提**: GAS スプレッドシートの数式群を**ユーザーから共有してもらうことが必須**（未受領）。
 
@@ -684,7 +737,7 @@ ls src/components/decision/RecentEventList.jsx
 - 入出力：`{ trueBorder, posteriorMean, trialSufficiency, evAdjusted, scoreForRanking, reasons, predictedRotToConfidence40 }`
 - `src/__tests__/evidence.test.mjs` 新規
 
-#### 候補D：偵察モードのダミー → 実データ切替
+#### 候補E：偵察モードのダミー → 実データ切替
 
 「店舗実績」タブのみ既存 `archives` から店舗別集計で本実装可能。
 「本日予測」「イベント」タブは Phase 5 完了後に保留。

@@ -8,8 +8,13 @@ import {
   deriveRankFromTotalXp,
   initialRank,
   addXp,
+  addXpWithLevelUp,
+  applyDailyStreak,
+  classifyStreakTransition,
   computeMigratedRank,
   XP_SESSION_COMPLETE,
+  XP_STREAK_BONUS,
+  STREAK_BONUS_INTERVAL,
 } from "../hunterRank.js";
 
 let pass = 0;
@@ -156,6 +161,95 @@ it("computeMigratedRank: 引数なしでも安全", () => {
   const r = computeMigratedRank();
   assert.equal(r.totalXp, 0);
   assert.equal(r.level, 1);
+});
+
+// --- addXpWithLevelUp ---
+
+it("addXpWithLevelUp: 同レベル内は leveledUp=false", () => {
+  const res = addXpWithLevelUp(initialRank(), 50, 1);
+  assert.equal(res.leveledUp, false);
+  assert.equal(res.fromLevel, 1);
+  assert.equal(res.toLevel, 1);
+  assert.equal(res.gainedXp, 50);
+});
+
+it("addXpWithLevelUp: ちょうど 100 XP でレベルアップ", () => {
+  const res = addXpWithLevelUp(initialRank(), 100, 1);
+  assert.equal(res.leveledUp, true);
+  assert.equal(res.fromLevel, 1);
+  assert.equal(res.toLevel, 2);
+  assert.equal(res.gainedXp, 100);
+});
+
+it("addXpWithLevelUp: 一気に複数レベル上がる", () => {
+  const res = addXpWithLevelUp(initialRank(), 10000, 1);
+  assert.equal(res.leveledUp, true);
+  assert.equal(res.fromLevel, 1);
+  assert.ok(res.toLevel > 3);
+});
+
+it("addXpWithLevelUp: 不正入力で 0 加算扱い", () => {
+  const res = addXpWithLevelUp(initialRank(), NaN, 1);
+  assert.equal(res.leveledUp, false);
+  assert.equal(res.gainedXp, 0);
+});
+
+// --- classifyStreakTransition ---
+
+it("classifyStreakTransition: 初回は first", () => {
+  assert.equal(classifyStreakTransition("", "2026-05-19").kind, "first");
+  assert.equal(classifyStreakTransition(null, "2026-05-19").kind, "first");
+});
+
+it("classifyStreakTransition: 同日は same", () => {
+  assert.equal(classifyStreakTransition("2026-05-19", "2026-05-19").kind, "same");
+});
+
+it("classifyStreakTransition: 翌日は next", () => {
+  assert.equal(classifyStreakTransition("2026-05-19", "2026-05-20").kind, "next");
+});
+
+it("classifyStreakTransition: 2日以上空いたら broken", () => {
+  assert.equal(classifyStreakTransition("2026-05-19", "2026-05-21").kind, "broken");
+  assert.equal(classifyStreakTransition("2026-05-01", "2026-05-19").kind, "broken");
+});
+
+// --- applyDailyStreak ---
+
+it("applyDailyStreak: 初回で streakDays=1, bonus なし", () => {
+  const r = applyDailyStreak({ lastDate: "", streakDays: 0 }, "2026-05-19");
+  assert.equal(r.lastDate, "2026-05-19");
+  assert.equal(r.streakDays, 1);
+  assert.equal(r.bonusXp, 0);
+});
+
+it("applyDailyStreak: 同日呼び出しは streakDays 維持・bonus 0", () => {
+  const r = applyDailyStreak({ lastDate: "2026-05-19", streakDays: 3 }, "2026-05-19");
+  assert.equal(r.streakDays, 3);
+  assert.equal(r.bonusXp, 0);
+});
+
+it("applyDailyStreak: 6日目→7日目で 100 XP ボーナス", () => {
+  const r = applyDailyStreak({ lastDate: "2026-05-18", streakDays: 6 }, "2026-05-19");
+  assert.equal(r.streakDays, 7);
+  assert.equal(r.bonusXp, XP_STREAK_BONUS);
+  assert.equal(r.milestone, 7);
+});
+
+it("applyDailyStreak: 14日目もボーナス対象", () => {
+  const r = applyDailyStreak({ lastDate: "2026-05-18", streakDays: 13 }, "2026-05-19");
+  assert.equal(r.streakDays, 14);
+  assert.equal(r.bonusXp, XP_STREAK_BONUS);
+});
+
+it("applyDailyStreak: 連続途切れで 1 にリセット", () => {
+  const r = applyDailyStreak({ lastDate: "2026-05-10", streakDays: 9 }, "2026-05-19");
+  assert.equal(r.streakDays, 1);
+  assert.equal(r.bonusXp, 0);
+});
+
+it("applyDailyStreak: STREAK_BONUS_INTERVAL 定数の妥当性", () => {
+  assert.equal(STREAK_BONUS_INTERVAL, 7);
 });
 
 console.log(`\n  ${pass} passed, ${fail} failed`);

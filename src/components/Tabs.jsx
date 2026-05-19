@@ -1935,14 +1935,18 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         </div>
                         <span style={{ fontSize: 9, color: C.sub, flexShrink: 0 }}>{summaryCollapsed ? "▼" : "▲"}</span>
                     </button>
-                    {/* 通知ベル：直近イベントセクションへスクロールするアンカーショートカット */}
+                    {/* 通知ベル：通知パネル（Phase 6）を開く。未読件数を右上にバッジ表示 */}
                     <button
                         className="b"
                         type="button"
-                        aria-label="直近イベントへ移動"
+                        aria-label="通知を開く"
                         onClick={() => {
-                            const el = document.getElementById("record-recent-events");
-                            if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                            if (typeof S.openNotificationPanel === "function") {
+                                S.openNotificationPanel();
+                            } else {
+                                const el = document.getElementById("record-recent-events");
+                                if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                            }
                         }}
                         style={{
                             position: "relative",
@@ -1956,20 +1960,32 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
                         </svg>
                         {(() => {
-                            const totalHits = (S.jpLog || []).reduce((s, c) => s + ((c.hits || []).length), 0);
-                            if (totalHits <= 0) return null;
+                            const log = S.notificationLog;
+                            const unread = Array.isArray(log)
+                                ? log.reduce((n, it) => n + (it && it.read === false ? 1 : 0), 0)
+                                : 0;
+                            if (unread <= 0) return null;
+                            const label = unread > 99 ? "99+" : String(unread);
                             return (
                                 <span
-                                    aria-hidden="true"
+                                    aria-label={`未読 ${unread} 件`}
                                     style={{
                                         position: "absolute",
-                                        top: 1, right: 1,
-                                        width: 8, height: 8,
-                                        borderRadius: "50%",
+                                        top: -4, right: -4,
                                         background: C.orange,
+                                        color: "#fff",
+                                        fontSize: 9,
+                                        fontWeight: 800,
+                                        lineHeight: 1,
+                                        borderRadius: 999,
+                                        padding: unread < 10 ? "3px 5px" : "3px 6px",
+                                        minWidth: 14,
+                                        textAlign: "center",
                                         boxShadow: `0 0 0 2px var(--surface-hi)`,
                                     }}
-                                />
+                                >
+                                    {label}
+                                </span>
                             );
                         })()}
                     </button>
@@ -8043,7 +8059,7 @@ export function SettingsTab({ s, onReset }) {
             {/* ── スクロールコンテンツ ── */}
             <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(84px + env(safe-area-inset-bottom))" }}>
 
-                {/* ハンターランク（Phase 1.5 簡易先行投入） */}
+                {/* ハンターランク（Phase 6 本実装版） */}
                 <div style={{ marginTop: 14 }}>
                     <HunterRankBadge rank={s.hunterRank} />
                 </div>
