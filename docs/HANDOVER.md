@@ -132,8 +132,8 @@ docs/
 | 1 | ✅ 完了 | `machineDB.js` に `displayToReal: null` を全19機種に追加<br>ブランチ: `claude/jackpot-flow-substep1-KYCUw`（PR #156 マージ済み） |
 | 2 | ✅ 完了 | chain オブジェクトに `finalRealBalls: undefined` を追加<br>ブランチ: `claude/jackpot-flow-substep2-nd2XC`（PR #158 マージ済み） |
 | 3 | ✅ 完了 | ラッシュ終了ウィザードに「最終実測持ち玉」入力 Step を追加<br>`chain.finalRealBalls` と `chain.finalRealBallsEdited` に保存<br>計算値を初期値として表示、ユーザー編集可能<br>ブランチ: `claude/jackpot-flow-substep3-LPtw0`（PR #159 マージ済み） |
-| 4 | ⏸️ 保留 | `calcPreciseEV` の `totalNetGain` 集計に分岐追加（実測 vs 液晶）<br>優先タスクが完了してから再開 |
-| 5 | ⏸️ 保留 | `baseline.json` 再生成（サブステップ4完了後に実施） |
+| 4 | ✅ 完了 | `calcPreciseEV` の `totalNetGain` 集計に分岐追加。<br>`chain.finalRealBalls !== undefined` のとき実測ベース netGain（`finalRealBalls − trayBalls`）を採用、未設定なら液晶ベース（`summary.netGain`）にフォールバック。<br>新規プロパティ `totalNetGainDisplay` / `totalNetGainReal` / `realMeasuredChainCount` を `calcPreciseEV` の返り値に追加。<br>ブランチ: `claude/hunting-system-continuation-A6x6u` |
+| 5 | ✅ 完了 | `baseline.json` 再生成。既存値は不変、新ケース `evFinalRealBallsMixed` と新プロパティのみ追加。<br>`node src/__tests__/protected-fns.mjs` で出力決定的を確認。<br>ブランチ: `claude/hunting-system-continuation-A6x6u` |
 | 6〜8 | ⏸️ 保留 | 詳細は調査レポート参照 |
 
 #### 関連ドキュメント
@@ -376,16 +376,15 @@ if (evAdj < -50 || bDiff < -1.0)                      → "stop"
 **対応方針**: ロードマップ Phase 5（P-EVIDENCE 移植）の冒頭で吸収する案を推奨。
 他タスクが落ち着いたら改めて判断。
 
-### 保留タスク2：大当たり後フロー サブステップ4以降
+### 保留タスク2：大当たり後フロー サブステップ6以降
 
-**サブステップ4**: `calcPreciseEV` の `totalNetGain` 集計に分岐追加
-- `chain.finalRealBalls !== undefined` → 実測ベース計算
-- フォールバック → 旧データは液晶ベース（後方互換）
+**サブステップ4**: ✅ 完了。`calcPreciseEV` の `totalNetGain` 集計に `finalRealBalls` 分岐を追加（本ブランチ）
 
-**サブステップ5〜8**: 調査レポート参照（ブランチ: `claude/investigate-jackpot-flow-IXTu2`）
+**サブステップ5**: ✅ 完了。`baseline.json` 再生成。新ケース `evFinalRealBallsMixed` 追加で実測ベース分岐を検証（本ブランチ）
 
-**重要**: ロードマップ Phase 5（P-EVIDENCE 移植）は実測ベースの netGain を必要とする。
-Phase 5 着手前に **サブステップ4・5 を独立 PR で先行消化**することが望ましい。
+**サブステップ6〜8**: 調査レポート参照（ブランチ: `claude/investigate-jackpot-flow-IXTu2`）
+
+**重要**: ロードマップ Phase 5（P-EVIDENCE 移植）は実測ベースの netGain を必要とする。サブステップ4・5 完了により、`avgNetGainPerJP` と `measuredBorder` は `finalRealBalls` 設定時に実測ベースで計算される。
 
 ### 保留タスク3：狩猟型UX Phase 4 以降
 

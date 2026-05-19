@@ -122,6 +122,23 @@ const sampleJpLog = [
   },
 ];
 
+// 実測ベース netGain 検証用（サブステップ4）
+// 1チェーン目: 実測 4800玉 − 開始時上皿 100玉 = 4700玉（液晶ベース 4200玉と差分あり）
+// 2チェーン目: finalRealBalls 未設定 → 液晶ベースにフォールバック（2500玉）
+const sampleJpLogWithFinalReal = [
+  {
+    completed: true,
+    trayBalls: 100,
+    finalRealBalls: 4800,
+    summary: { totalRounds: 30, totalDisplayBalls: 4500, netGain: 4200, totalSapoRot: 100, totalSapoChange: -50 },
+  },
+  {
+    completed: true,
+    trayBalls: 0,
+    summary: { totalRounds: 18, totalDisplayBalls: 2700, netGain: 2500, totalSapoRot: 60, totalSapoChange: -30 },
+  },
+];
+
 const evCases = {
   evEmpty: {
     rotRows: [],
@@ -186,6 +203,15 @@ const evCases = {
     jpLog: [{ completed: false, trayBalls: 100, hits: [] }],
     rentBalls: 250, exRate: 250, synthDenom: 319.6, rotPerHour: 500,
     totalTrayBalls: 0, border: 20,
+    spec1R: 140, specAvgRounds: 34.17, specSapo: 0,
+    chodamaSettings: { includeChodamaInBalance: true },
+  },
+  evFinalRealBallsMixed: {
+    rotRows: cases.cashThreeRows.rotRows,
+    startRot: 100,
+    jpLog: sampleJpLogWithFinalReal,
+    rentBalls: 250, exRate: 250, synthDenom: 319.6, rotPerHour: 250,
+    totalTrayBalls: 100, border: 20,
     spec1R: 140, specAvgRounds: 34.17, specSapo: 0,
     chodamaSettings: { includeChodamaInBalance: true },
   },

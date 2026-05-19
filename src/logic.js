@@ -94,6 +94,9 @@ export function calcPreciseEV({
     let totalRounds = 0;
     let totalDisplayBalls = 0;
     let totalNetGain = 0;
+    let totalNetGainDisplay = 0;
+    let totalNetGainReal = 0;
+    let realMeasuredChainCount = 0;
     let totalSapoRot = 0;
     let totalSapoChange = 0;
 
@@ -101,7 +104,19 @@ export function calcPreciseEV({
         if (chain.summary) {
             totalRounds += (chain.summary.totalRounds || 0);
             totalDisplayBalls += (chain.summary.totalDisplayBalls || 0);
-            totalNetGain += (chain.summary.netGain || 0);
+            // 液晶ベース netGain（参考値・後方互換用）
+            const displayNetGain = chain.summary.netGain || 0;
+            totalNetGainDisplay += displayNetGain;
+            // 実測ベース netGain（finalRealBalls がある場合）= 最終実測持ち玉 − 開始時上皿玉
+            if (chain.finalRealBalls !== undefined && chain.finalRealBalls !== null) {
+                const trayBalls = Number(chain.trayBalls) || 0;
+                const realNetGain = (Number(chain.finalRealBalls) || 0) - trayBalls;
+                totalNetGainReal += realNetGain;
+                totalNetGain += realNetGain;
+                realMeasuredChainCount++;
+            } else {
+                totalNetGain += displayNetGain;
+            }
             totalSapoRot += (chain.summary.totalSapoRot || 0);
             totalSapoChange += (chain.summary.totalSapoChange || chain.summary.sapoDelta || 0);
         }
@@ -237,6 +252,9 @@ export function calcPreciseEV({
         totalRounds,
         totalDisplayBalls,
         totalNetGain,
+        totalNetGainDisplay,
+        totalNetGainReal,
+        realMeasuredChainCount,
         totalSapoDelta,
 
         // 回転率・ボーダー
