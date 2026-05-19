@@ -6,6 +6,7 @@ import { RotTab, SettingsTab } from "./components/Tabs";
 import ModeTabBar from "./components/ModeTabBar";
 import ModePlaceholder from "./components/ModePlaceholder";
 import AnalysisDashboard from "./components/analysis/AnalysisDashboard";
+import ScoutDashboard from "./components/scout/ScoutDashboard";
 import { takeSnapshot, takeSnapshotImmediate, getLatest as getLatestSnapshot } from "./snapshot";
 
 // 旧タブ名 → 新モード名 のマッピング
@@ -461,7 +462,7 @@ export default function App() {
           paddingBottom: "calc(52px + env(safe-area-inset-bottom))",
         }}
       >
-        {currentMode === "scout" && <ModePlaceholder mode="scout" />}
+        {currentMode === "scout" && <ScoutDashboard S={S} />}
         {currentMode === "select" && <ModePlaceholder mode="select" />}
         {currentMode === "record" && <RotTab border={border} rows={rotRows} setRows={setRotRows} S={S} ev={ev} />}
         {currentMode === "analysis" && (
