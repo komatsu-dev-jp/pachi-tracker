@@ -477,6 +477,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [input, setInput] = useState("");
     const [inputError, setInputError] = useState("");
     const [showInputSheet, setShowInputSheet] = useState(false);
+    // テンキー bottom sheet のモード："count"=通常の回転数入力(decide), "jackpot"=初当たり入力(handleStartChain)
+    const [inputSheetMode, setInputSheetMode] = useState("count");
     const [showMoveModal, setShowMoveModal] = useState(false);
     const [showSetupModal, setShowSetupModal] = useState(false);
     const [showStoreDD, setShowStoreDD] = useState(false);
@@ -1239,11 +1241,12 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     };
 
     // 初当たりボタン → ウィザード開始
+    // テンキー bottom sheet (jackpot モード) の「決定」から呼ばれる前提
     const handleStartChain = () => {
         // 1. 入力欄が空文字なら警告して処理を中断
         const inputTrimmed = (input || "").toString().trim();
         if (inputTrimmed === "") {
-            alert("総回転数を入力してください。");
+            setInputError("総回転数を入力してください。");
             return;
         }
 
@@ -1251,7 +1254,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
         // 2. 数値変換できない or 0 以下なら警告
         if (!Number.isFinite(val) || val <= 0) {
-            alert("総回転数を入力してください。");
+            setInputError("総回転数を入力してください。");
             return;
         }
 
@@ -1259,7 +1262,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
         // 3. 逆行チェック（直前の累計回転数以下は不正）
         if (val <= prevCumRot) {
-            alert(`総回転数が直前の記録（${prevCumRot}回転）以下です。正しい値を入力してください。`);
+            setInputError(`直前の記録（${prevCumRot}回転）以下です。正しい値を入力してください。`);
             return;
         }
 
@@ -1290,6 +1293,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         });
         S.pushLog({ type: "初当たり", time: tsNow(), rot: hitRot });
         setInput("");
+        setInputError("");
+        setShowInputSheet(false);
         // ウィザードを開始
         setHitWizardData({ pushAmount: 0, trayBalls: "", rounds: 3, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
         setHitWizardStep(0);
@@ -2135,7 +2140,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 <button
                                     className="b btn-premium btn-primary input-trigger-btn"
                                     type="button"
-                                    onClick={() => { setInputError(""); setShowInputSheet(true); }}
+                                    onClick={() => { setInputError(""); setInputSheetMode("count"); setShowInputSheet(true); }}
                                     style={{ minHeight: 56, fontSize: 16, fontWeight: 800, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, padding: "6px 4px" }}>
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="6" width="18" height="14" rx="2" /><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10" /></svg>
                                     入力
@@ -2143,7 +2148,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 <button
                                     className="b"
                                     type="button"
-                                    onClick={handleStartChain}
+                                    onClick={() => { setInputError(""); setInputSheetMode("jackpot"); setShowInputSheet(true); }}
                                     style={{
                                         minHeight: 56, borderRadius: 12,
                                         background: `color-mix(in srgb, ${C.orange} 18%, transparent)`,
@@ -2343,11 +2348,13 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 className="input-sheet__panel"
                                 onClick={(e) => e.stopPropagation()}
                                 role="dialog"
-                                aria-label="回転数の入力"
+                                aria-label={inputSheetMode === "jackpot" ? "初当たり回転数の入力" : "回転数の入力"}
                             >
                                 <div className="input-sheet__handle" />
                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                                    <div style={{ fontSize: 13, fontWeight: 700, color: C.text, fontFamily: font }}>回転数を入力</div>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: inputSheetMode === "jackpot" ? C.orange : C.text, fontFamily: font }}>
+                                        {inputSheetMode === "jackpot" ? "初当たり回転数を入力" : "回転数を入力"}
+                                    </div>
                                     <button
                                         className="b"
                                         type="button"
@@ -2392,14 +2399,14 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 <button
                                     className="b btn-premium btn-primary"
                                     type="button"
-                                    onClick={decide}
+                                    onClick={inputSheetMode === "jackpot" ? handleStartChain : decide}
                                     style={{
                                         width: "100%", minHeight: 56, marginTop: 10,
                                         fontSize: 16, fontWeight: 800, borderRadius: 12,
                                         display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                                     }}>
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                                    決定
+                                    {inputSheetMode === "jackpot" ? "初当たりを記録" : "決定"}
                                 </button>
                             </div>
                         </div>

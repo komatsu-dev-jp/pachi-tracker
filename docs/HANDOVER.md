@@ -1,6 +1,6 @@
 # HANDOVER.md — Pachi Tracker 引き継ぎドキュメント
 
-最終更新: 2026-05-19（Phase 6 バッジ解放 + 判定変化通知 実装完了：12種バッジ・解放判定・設定画面一覧・NOTIF_BADGE_UNLOCKED / NOTIF_VERDICT_CHANGE 発火）
+最終更新: 2026-05-19（初当たりボタンが押せないバグ修正：bottom sheet を「初当たりモード」で再利用し、テンキー経由で `handleStartChain` を実行できるよう復旧）
 
 ---
 
@@ -293,6 +293,29 @@ docs/
 
 - 入力シートとバッジの重なり修正、サイズ調整
 - コミット: `8801373`
+
+#### 初当たりボタンが押せないバグ修正（✅ 本ブランチ）
+
+- **問題**: Phase 1.B（PR #173）でテンキーを bottom sheet 化した際、
+  - 「入力」ボタン → bottom sheet を開いてテンキー表示
+  - 「初当たり」ボタン → `handleStartChain` を直接呼ぶだけ
+  という構造になり、初当たり押下時に `input` 文字列が空のため
+  「総回転数を入力してください。」アラートが出て、テンキーに到達できない不具合が発生
+- **修正方針（現行の bottom sheet 構造に整合）**:
+  - `inputSheetMode` state（`"count"` / `"jackpot"`）を新設
+  - 「入力」ボタン → mode=`"count"` で bottom sheet を開く（従来通り `decide` を実行）
+  - 「初当たり」ボタン → mode=`"jackpot"` で同じ bottom sheet を開く
+  - bottom sheet 内の「決定」ボタンは mode により挙動を切替
+    - `"count"`: 従来通り `decide`、ラベル「決定」
+    - `"jackpot"`: `handleStartChain` を実行、ラベル「初当たりを記録」
+  - 見出しも mode により「回転数を入力」/「初当たり回転数を入力」へ切替（jackpot 時は橙色）
+  - `handleStartChain` のバリデーション失敗は `alert()` ではなく
+    `setInputError()` でシート内インライン表示に変更（jarring な alert を回避）
+  - 成功時は `setShowInputSheet(false)` でシートを閉じてからウィザード起動
+- **変更ファイル**: `src/components/Tabs.jsx`
+- **不変**: `logic.js` / 計算式 / `evDecision.js` / 保存データ構造はすべて未変更
+- **操作ステップ**: 1ステップ増（「初当たり」タップ → テンキー入力 → 決定）。
+  Phase 1.B 以前の挙動とほぼ同等（テンキーが画面下部に出る）。`lint` `build` 共にエラー 0。
 
 ---
 
