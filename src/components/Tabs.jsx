@@ -477,8 +477,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [input, setInput] = useState("");
     const [inputError, setInputError] = useState("");
     const [showInputSheet, setShowInputSheet] = useState(false);
-    // テンキー bottom sheet のモード："count"=通常の回転数入力(decide), "jackpot"=初当たり入力(handleStartChain)
-    const [inputSheetMode, setInputSheetMode] = useState("count");
+    // 旧UIの "jackpot" mode は撤去済み。bottom sheet は常に通常回転入力（count モード）として使用
     const [showMoveModal, setShowMoveModal] = useState(false);
     const [showSetupModal, setShowSetupModal] = useState(false);
     const [showStoreDD, setShowStoreDD] = useState(false);
@@ -521,16 +520,22 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [editError, setEditError] = useState("");
     const editPickedMachineRef = useRef(null);
 
-    // 初当たりウィザード用state
+    // 初当たり入力（画面 A）state
+    // 仕様書 docs/input-flow-design.md §3.1 画面 A に準拠、`rotCount` を 5 項目目として追加
     const [hitWizardOpen, setHitWizardOpen] = useState(false);
-    const [hitWizardStep, setHitWizardStep] = useState(0);
     const [hitWizardData, setHitWizardData] = useState({
         pushAmount: 0,
+        rotCount: "", // 画面 A 1.回転数（ゲーム数）
         trayBalls: "", rounds: 0, displayBalls: "", actualBalls: "",
         hitType: "", // "単発" or "確変"
         jitanSpins: "", // 時短回数
         finalBallsAfterJitan: "" // 時短終了後最終出玉
     });
+    // 画面 A 補助 state
+    const [hitInputFocus, setHitInputFocus] = useState("rotCount"); // テンキーで編集中の行
+    const [hitInputError, setHitInputError] = useState("");
+    const [hitInputShowPush, setHitInputShowPush] = useState(false); // プッシュ額の折りたたみ
+    const [hitInputSingleEndOpen, setHitInputSingleEndOpen] = useState(false); // 単発時の時短/最終持ち玉モーダル
     // 機種からラウンド情報を取得（初当たり用 - roundDist使用）
     const getMachineRounds = () => {
         const machine = searchMachines(S.machineName, S.customMachines)[0];
@@ -578,7 +583,9 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     const [editChainId, setEditChainId] = useState(null);
     const [editChainHits, setEditChainHits] = useState([]);
 
-    // 連チャン追加ウィザード state
+    // 連チャン追加（画面 B / 画面 C）state
+    // 仕様書 §3.1 画面 B・C に準拠。`chainWizardStep` は新UIでは `8`（画面 C = 最終実測持ち玉入力）のみ意味を持つ。
+    // 0〜7 は旧UI互換のため残置（後続クリーンアップで削除予定）。
     const [chainWizardOpen, setChainWizardOpen] = useState(false);
     const [chainWizardStep, setChainWizardStep] = useState(0);
     const [chainWizardFirstKey, setChainWizardFirstKey] = useState(true);
@@ -587,6 +594,11 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         hitType: "", jitanSpins: "", finalBallsAfterJitan: "", finalRealBalls: ""
     });
     const [chainWizardInitialFinalBalls, setChainWizardInitialFinalBalls] = useState(0);
+    // 画面 B 補助 state（テンキーで編集中の行）
+    const [chainInputFocus, setChainInputFocus] = useState("elecSapoRot");
+    const [chainInputError, setChainInputError] = useState("");
+    // 画面 B から単発終了サブモーダル
+    const [chainInputSingleEndOpen, setChainInputSingleEndOpen] = useState(false);
 
     // 直接単発終了モーダル state
     const [directSingleEndOpen, setDirectSingleEndOpen] = useState(false);
@@ -624,15 +636,18 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         setChainWizardInitialFinalBalls(0);
     };
 
-    // 連チャン追加ウィザードを開始
+    // 連チャン追加ウィザードを開始（画面 B）
     const openChainWizard = () => {
         const prevEndBalls = getPrevEndBalls();
         setChainWizardData({
-            rounds: 0, displayBalls: "", lastOutBalls: String(prevEndBalls),
+            rounds: 0, mult: 1, displayBalls: "", lastOutBalls: String(prevEndBalls),
             nextTimingBalls: "", elecSapoRot: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "", finalRealBalls: ""
         });
         setChainWizardStep(0);
         setChainWizardFirstKey(true);
+        setChainInputFocus("elecSapoRot");
+        setChainInputError("");
+        setChainInputSingleEndOpen(false);
         setChainWizardOpen(true);
     };
 
@@ -1253,33 +1268,36 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     };
 
     // 初当たりボタン → ウィザード開始
-    // テンキー bottom sheet (jackpot モード) の「決定」から呼ばれる前提
-    const handleStartChain = () => {
+    // 新UI: 画面 A の「連チャン継続」/「単発終了」押下時に rotCountArg を渡して呼ぶ
+    //       （旧UIのテンキー bottom sheet jackpot モードは廃止、引数なし呼び出しは下位互換用）
+    const handleStartChain = (rotCountArg) => {
         // 1. 入力欄が空文字なら警告して処理を中断
-        const inputTrimmed = (input || "").toString().trim();
+        const inputTrimmed = (rotCountArg != null ? String(rotCountArg) : (input || "")).toString().trim();
+        const setErr = rotCountArg != null ? setHitInputError : setInputError;
         if (inputTrimmed === "") {
-            setInputError("総回転数を入力してください。");
-            return;
+            setErr("総回転数を入力してください。");
+            return false;
         }
 
         const val = Number(inputTrimmed);
 
         // 2. 数値変換できない or 0 以下なら警告
         if (!Number.isFinite(val) || val <= 0) {
-            setInputError("総回転数を入力してください。");
-            return;
+            setErr("総回転数を入力してください。");
+            return false;
         }
 
         const prevCumRot = last ? last.cumRot : (S.startRot || 0);
 
         // 3. 逆行チェック（直前の累計回転数以下は不正）
         if (val <= prevCumRot) {
-            setInputError(`直前の記録（${prevCumRot}回転）以下です。正しい値を入力してください。`);
-            return;
+            setErr(`直前の記録（${prevCumRot}回転）以下です。正しい値を入力してください。`);
+            return false;
         }
 
         const hitRot = val;
         const hitThisRot = val - prevCumRot;
+        // eslint-disable-next-line react-hooks/purity -- イベントハンドラ内のID生成、レンダー中には呼ばれない
         const chainId = Date.now();
         const lastInvest = last ? (last.invest || 0) : 0;
 
@@ -1307,10 +1325,15 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         setInput("");
         setInputError("");
         setShowInputSheet(false);
-        // ウィザードを開始
-        setHitWizardData({ pushAmount: 0, trayBalls: "", rounds: 3, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
-        setHitWizardStep(0);
+        if (rotCountArg != null) {
+            // 新UI（画面 A）から呼ばれた場合: チェーン作成のみで終了
+            // 画面 A の hitWizardData は既にユーザーが入力済みなので、リセット・再オープンしない
+            return true;
+        }
+        // 旧UI互換フォールバック: 画面 A を開く（実際には呼ばれない経路）
+        setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: "", rounds: 3, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
         setHitWizardOpen(true);
+        return true;
     };
 
     // ウィザード完了時の処理
@@ -1397,7 +1420,10 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
         S.pushLog({ type: hitType === "単発" ? "単発終了" : "初当たり記録", time: tsNow(), rounds: rnd });
         setHitWizardOpen(false);
-        setHitWizardData({ pushAmount: 0, trayBalls: "", rounds: 3, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
+        setHitInputError("");
+        setHitInputShowPush(false);
+        setHitInputFocus("rotCount");
+        setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: "", rounds: 3, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
 
         // 確変の場合: HistoryTabで連チャン記録継続
         if (hitType === "確変") {
@@ -2152,7 +2178,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 <button
                                     className="b btn-premium btn-primary input-trigger-btn"
                                     type="button"
-                                    onClick={() => { setInputError(""); setInputSheetMode("count"); setShowInputSheet(true); }}
+                                    onClick={() => { setInputError(""); setShowInputSheet(true); }}
                                     style={{ minHeight: 56, fontSize: 16, fontWeight: 800, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, padding: "6px 4px" }}>
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="6" width="18" height="14" rx="2" /><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10" /></svg>
                                     入力
@@ -2160,7 +2186,14 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 <button
                                     className="b"
                                     type="button"
-                                    onClick={() => { setInputError(""); setInputSheetMode("jackpot"); setShowInputSheet(true); }}
+                                    onClick={() => {
+                                        // 新UI: 画面 A を直接フルスクリーン表示（仕様書 §3.1）
+                                        setHitInputError("");
+                                        setHitInputShowPush(false);
+                                        setHitInputFocus("rotCount");
+                                        setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: "", rounds: 0, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
+                                        setHitWizardOpen(true);
+                                    }}
                                     style={{
                                         minHeight: 56, borderRadius: 12,
                                         background: `color-mix(in srgb, ${C.orange} 18%, transparent)`,
@@ -2360,12 +2393,12 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 className="input-sheet__panel"
                                 onClick={(e) => e.stopPropagation()}
                                 role="dialog"
-                                aria-label={inputSheetMode === "jackpot" ? "初当たり回転数の入力" : "回転数の入力"}
+                                aria-label="回転数の入力"
                             >
                                 <div className="input-sheet__handle" />
                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                                    <div style={{ fontSize: 13, fontWeight: 700, color: inputSheetMode === "jackpot" ? C.orange : C.text, fontFamily: font }}>
-                                        {inputSheetMode === "jackpot" ? "初当たり回転数を入力" : "回転数を入力"}
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: C.text, fontFamily: font }}>
+                                        回転数を入力
                                     </div>
                                     <button
                                         className="b"
@@ -2411,14 +2444,14 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 <button
                                     className="b btn-premium btn-primary"
                                     type="button"
-                                    onClick={inputSheetMode === "jackpot" ? handleStartChain : decide}
+                                    onClick={decide}
                                     style={{
                                         width: "100%", minHeight: 56, marginTop: 10,
                                         fontSize: 16, fontWeight: 800, borderRadius: 12,
                                         display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                                     }}>
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                                    {inputSheetMode === "jackpot" ? "初当たりを記録" : "決定"}
+                                    決定
                                 </button>
                             </div>
                         </div>
@@ -3372,256 +3405,454 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 );
             })()}
 
-            {/* 初当たりウィザードモーダル - フルスクリーン */}
+            {/* ================================================================
+                画面 A — 初当たり入力（仕様書 docs/input-flow-design.md §3.1 準拠）
+                旧 8ステップ hitWizard を 1 画面 5 項目 + 次状態選択 に刷新
+            ================================================================ */}
             {hitWizardOpen && ReactDOM.createPortal(
-                <div className="jp-proto-screen" style={{
-                    position: "fixed",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    zIndex: 9999,
-                    display: "flex",
-                    flexDirection: "column",
-                    height: "100dvh",
-                    width: "100vw"
-                }}>
-                    {/* ヘッダー */}
-                    <div className="jp-proto-header" style={{
-                        padding: "12px 16px",
-                        paddingTop: "max(12px, env(safe-area-inset-top))",
-                        borderBottom: `1px solid ${C.border}`,
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        flexShrink: 0,
-                    }}>
-                        <button className="b" onClick={() => setHitWizardOpen(false)} style={{ background: "transparent", border: "none", color: C.red, fontSize: 14, fontWeight: 600, padding: 8 }}>キャンセル</button>
-                        <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>初当たり入力</span>
-                        <div style={{ width: 70 }} />
-                    </div>
+                (() => {
+                    const D = hitWizardData;
+                    const focus = hitInputFocus;
+                    const setFocus = (k) => setHitInputFocus(k);
+                    const updField = (key, val) => setHitWizardData(d => ({ ...d, [key]: val }));
+                    const keypadField = focus === "rounds" ? null : focus;
 
-                    {/* コンテンツエリア */}
-                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 14, justifyContent: "flex-start", padding: "16px 20px", overflowY: "auto" }}>
-                        {(() => {
-                            const steps = [
-                                { title: "基準値を固定", sub: "直近のプッシュ額を確認", tone: "yellow", badge: "初当たり入力" },
-                                { title: "開始上皿玉", sub: "チェーンの基準値を保存", tone: "blue", badge: "基準値固定" },
-                                { title: "ラウンド選択", sub: "大きなボタンで素早く選択", tone: "orange", badge: "各当たり入力" },
-                                { title: "液晶出玉", sub: "表示上の出玉を記録", tone: "yellow", badge: "各当たり入力" },
-                                { title: "実玉数", sub: "実測がある場合だけ入力", tone: "green", badge: "実測入力待ち" },
-                                { title: "終了後に判定", sub: "単発かラッシュ継続を選択", tone: "purple", badge: "判断カード" },
-                                { title: "時短回数", sub: "単発時の回転数を記録", tone: "purple", badge: "単発集計" },
-                                { title: "最終持ち玉", sub: "最後に1回だけ実測", tone: "green", badge: "チェーン集計" },
-                            ];
-                            const s = steps[hitWizardStep] || steps[0];
-                            return <FlowStatusCard title={s.title} subtitle={s.sub} tone={s.tone} badge={s.badge} metrics={[
-                                { label: "上皿", value: hitWizardData.trayBalls || "0", unit: "玉", color: C.blue },
-                                { label: "液晶出玉", value: hitWizardData.displayBalls || "0", unit: "玉", color: C.yellow },
-                                { label: "ラウンド", value: hitWizardData.rounds || "—", unit: "R", color: C.orange },
-                            ]} />;
-                        })()}
-                        {/* Step 0: 直近のプッシュ額 */}
-                        {hitWizardStep === 0 && (
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.text, marginBottom: 8 }}>直近のプッシュ額</div>
-                                <div style={{ fontSize: 13, color: C.sub, marginBottom: 24 }}>実機で最後にプッシュした金額を選択</div>
-                                <div style={{ fontSize: 48, fontWeight: 800, color: C.yellow, fontFamily: mono, marginBottom: 28 }}>
-                                    +{(hitWizardData.pushAmount || 0).toLocaleString()}円
+                    const v = (k) => D[k] === "" || D[k] == null ? "" : String(D[k]);
+                    const numOr0 = (k) => Number(D[k]) || 0;
+                    const trayN = numOr0("trayBalls");
+                    const rotN = numOr0("rotCount");
+                    const dispN = numOr0("displayBalls");
+                    const actualN = numOr0("actualBalls");
+                    const rndN = numOr0("rounds");
+
+                    const netGain = actualN > 0 ? actualN - trayN : (dispN > 0 ? dispN - trayN : 0);
+                    const requiredOk = rotN > 0 && trayN > 0 && rndN > 0 && dispN > 0;
+
+                    // ヘッダーのチェーン状態
+                    const chainLen = lastChain && !lastChain.completed ? (lastChain.hits || []).length : 0;
+                    const headerBadge = chainLen > 0 ? `RUSH中 ${chainLen}連` : "初当たり入力";
+
+                    // 上部ステータス：算出可能な値のみ表示、不明値は「—」
+                    // 仕様書 §9.1 #4-#6 で式未確定の指標は控えめに
+                    const evNet = ev && Number.isFinite(ev.netGain) ? ev.netGain : 0;
+                    const lastHitSapoPerRot = (() => {
+                        const c = lastChain;
+                        if (!c || !c.hits || c.hits.length === 0) return null;
+                        const lh = c.hits[c.hits.length - 1];
+                        return Number.isFinite(lh.sapoPerRot) ? lh.sapoPerRot : null;
+                    })();
+
+                    // テンキー入力：focus に対応する文字列フィールドを編集
+                    const keypadAppend = (n) => {
+                        if (!keypadField) return;
+                        setHitWizardData(d => {
+                            const cur = (d[keypadField] != null ? String(d[keypadField]) : "");
+                            const next = cur === "0" || cur === "" ? String(n) : cur + n;
+                            return { ...d, [keypadField]: next };
+                        });
+                    };
+                    const keypadClear = () => {
+                        if (!keypadField) return;
+                        setHitWizardData(d => ({ ...d, [keypadField]: "" }));
+                    };
+                    const keypadBackspace = () => {
+                        if (!keypadField) return;
+                        setHitWizardData(d => {
+                            const cur = (d[keypadField] != null ? String(d[keypadField]) : "");
+                            return { ...d, [keypadField]: cur.slice(0, -1) };
+                        });
+                    };
+
+                    const onClose = () => {
+                        setHitWizardOpen(false);
+                        setHitInputError("");
+                        setHitInputShowPush(false);
+                        setHitInputFocus("rotCount");
+                    };
+
+                    // 確変=ラッシュ継続
+                    const onContinue = () => {
+                        if (endLockRef.current) return;
+                        if (!requiredOk) {
+                            const missing = [];
+                            if (rotN <= 0) missing.push("回転数");
+                            if (trayN <= 0) missing.push("開始上皿玉");
+                            if (rndN <= 0) missing.push("ラウンド数");
+                            if (dispN <= 0) missing.push("液晶出玉");
+                            setHitInputError(`${missing.join("・")}を入力してください`);
+                            return;
+                        }
+                        setHitInputError("");
+                        const ok = handleStartChain(rotN);
+                        if (!ok) return;
+                        // チェーン作成成功 → 確変として hit を追加（既存 handleWizardComplete を再利用）
+                        handleWizardComplete("確変");
+                    };
+
+                    // 単発終了：時短回数/最終持ち玉モーダルを開く
+                    const onSingleEndStart = () => {
+                        if (!requiredOk) {
+                            const missing = [];
+                            if (rotN <= 0) missing.push("回転数");
+                            if (trayN <= 0) missing.push("開始上皿玉");
+                            if (rndN <= 0) missing.push("ラウンド数");
+                            if (dispN <= 0) missing.push("液晶出玉");
+                            setHitInputError(`${missing.join("・")}を入力してください`);
+                            return;
+                        }
+                        setHitInputError("");
+                        // 最終持ち玉のプリセット（旧UIと同じ：tray+disp 推定）
+                        const estimated = trayN + dispN;
+                        setHitWizardData(d => ({
+                            ...d,
+                            jitanSpins: d.jitanSpins || "",
+                            finalBallsAfterJitan: d.finalBallsAfterJitan || (estimated > 0 ? String(estimated) : "")
+                        }));
+                        setHitInputSingleEndOpen(true);
+                    };
+
+                    // 単発終了モーダルから記録完了
+                    const onSingleEndConfirm = () => {
+                        if (endLockRef.current) return;
+                        const ok = handleStartChain(rotN);
+                        if (!ok) return;
+                        handleWizardComplete("単発");
+                        setHitInputSingleEndOpen(false);
+                    };
+
+                    // 行コンポーネント
+                    const Row = ({ id, n, label, sub, value, unit, presets, required, color }) => {
+                        const active = focus === id;
+                        return (
+                            <div
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => setFocus(id)}
+                                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setFocus(id); }}
+                                style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "auto 1fr auto",
+                                    gap: 10,
+                                    alignItems: "center",
+                                    padding: "10px 12px",
+                                    borderRadius: 12,
+                                    background: active ? `color-mix(in srgb, ${color} 14%, var(--surface))` : "var(--surface)",
+                                    border: `1px solid ${active ? color : C.border}`,
+                                    cursor: "pointer",
+                                    boxShadow: active ? `0 0 0 2px color-mix(in srgb, ${color} 28%, transparent)` : "none",
+                                }}>
+                                <div style={{ minWidth: 110 }}>
+                                    <div style={{ fontSize: 11, color: C.sub, fontWeight: 600, lineHeight: 1 }}>{n}.</div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+                                        <span style={{ fontSize: 13, fontWeight: 800, color: C.text, fontFamily: font }}>{label}</span>
+                                        {required && (
+                                            <span style={{ fontSize: 9, fontWeight: 800, color: "#000", background: C.yellow, padding: "1px 5px", borderRadius: 4, fontFamily: font }}>必須</span>
+                                        )}
+                                    </div>
+                                    {sub && <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>{sub}</div>}
                                 </div>
-                                <div style={{ display: "flex", gap: 12, justifyContent: "center", marginBottom: 40 }}>
-                                    {[0, 500, 1000].map(amt => (
-                                        <button key={amt} className="b" onClick={() => setHitWizardData(d => ({ ...d, pushAmount: amt }))}
-                                            style={{
-                                                width: 90, height: 64, borderRadius: 14, fontWeight: 800, fontFamily: mono, fontSize: 18,
-                                                background: hitWizardData.pushAmount === amt ? C.yellow : "var(--surface-hi)",
-                                                border: hitWizardData.pushAmount === amt ? "none" : `1px solid ${C.border}`,
-                                                color: hitWizardData.pushAmount === amt ? "#000" : C.text,
-                                                boxShadow: "none"
-                                            }}>
-                                            +{amt === 0 ? "0" : amt.toLocaleString()}円
-                                        </button>
-                                    ))}
+                                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "flex-end", gap: 4 }}>
+                                    <span style={{ fontSize: 28, fontWeight: 800, color: value === "" ? C.sub : color, fontFamily: mono, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
+                                        {value === "" ? "—" : value}
+                                    </span>
+                                    {unit && <span style={{ fontSize: 11, color: C.sub, fontFamily: font, fontWeight: 600 }}>{unit}</span>}
                                 </div>
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                                    <button className="b" onClick={() => setHitWizardOpen(false)}
-                                        style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "var(--surface-hi)", border: "none", color: C.text }}>
-                                        キャンセル
-                                    </button>
-                                    <button className="b" onClick={() => setHitWizardStep(1)}
-                                        style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#2f6fed", border: "none", color: "#fff" }}>
-                                        次へ
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Step 1: 上皿の残り玉数 */}
-                        {hitWizardStep === 1 && (
-                            <div style={{ textAlign: "center" }}>
-                                <FlowValueCard label="開始上皿玉" value={hitWizardData.trayBalls || "0"} unit="玉" tone="blue" hint="ここで実測の基準を取ります" />
-                            </div>
-                        )}
-
-                        {/* Step 2: ラウンド数 */}
-                        {hitWizardStep === 2 && (
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.orange, marginBottom: 24 }}>ラウンド数</div>
-                                <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 12 }}>
-                                    {machineRounds.map(r => (
-                                        <FlowChoiceButton
-                                            key={r}
-                                            tone="orange"
-                                            onClick={() => { setHitWizardData(d => ({ ...d, rounds: r })); setHitWizardStep(3); }}
-                                            style={{
-                                                width: 80, height: 80, fontFamily: mono, fontSize: 26,
-                                            }}
-                                        >
-                                            {r}R
-                                        </FlowChoiceButton>
-                                    ))}
-                                </div>
-                                <button className="b" onClick={() => setHitWizardStep(1)} style={{ marginTop: 24, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 32px", color: C.sub, fontSize: 14 }}>戻る</button>
-                            </div>
-                        )}
-
-                        {/* Step 3: 液晶表示玉数 */}
-                        {hitWizardStep === 3 && (
-                            <div style={{ textAlign: "center" }}>
-                                <FlowValueCard label="液晶出玉" value={hitWizardData.displayBalls || "0"} unit="玉" tone="yellow" hint={`${hitWizardData.rounds}R選択中`} />
-                            </div>
-                        )}
-
-                        {/* Step 4: 実玉数 */}
-                        {hitWizardStep === 4 && (
-                            <div style={{ textAlign: "center" }}>
-                                <FlowValueCard label="実玉数" value={hitWizardData.actualBalls || "0"} unit="玉" tone="green" hint="実測できる場合だけ入力します" />
-                            </div>
-                        )}
-
-                        {/* Step 5: 単発/確変選択 */}
-                        {hitWizardStep === 5 && (
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.text, marginBottom: 28 }}>当たり種別</div>
-                                <div style={{ display: "flex", gap: 16, justifyContent: "center" }}>
-                                    <FlowChoiceButton tone="purple" onClick={() => { setHitWizardData(d => ({ ...d, hitType: "単発" })); setHitWizardStep(6); }}
-                                        style={{ width: 130, height: 90, fontSize: 22 }}>
-                                        単発
-                                    </FlowChoiceButton>
-                                    <FlowChoiceButton tone="orange" onClick={() => handleWizardComplete("確変")}
-                                        style={{ width: 130, height: 90, fontSize: 22 }}>
-                                        ラッシュ
-                                    </FlowChoiceButton>
-                                </div>
-                                <button className="b" onClick={() => setHitWizardStep(4)} style={{ marginTop: 28, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 32px", color: C.sub, fontSize: 14 }}>戻る</button>
-                            </div>
-                        )}
-
-                        {/* Step 6: 時短回数 */}
-                        {hitWizardStep === 6 && (
-                            <div style={{ textAlign: "center" }}>
-                                <FlowValueCard label="時短回数" value={hitWizardData.jitanSpins || "0"} unit="回転" tone="purple" />
-                            </div>
-                        )}
-
-                        {/* Step 7: 時短終了後最終出玉 */}
-                        {hitWizardStep === 7 && (() => {
-                            const estimated = (Number(hitWizardData.trayBalls) || 0) + (Number(hitWizardData.displayBalls) || 0);
-                            return (
-                                <div style={{ textAlign: "center" }}>
-                                    <FlowValueCard label="最終持ち玉" value={hitWizardData.finalBallsAfterJitan || "0"} unit="玉" tone="green" hint={estimated > 0 ? `推定 ${f(estimated)}玉を自動プリセット` : "実際の持ち玉を入力"} />
-                                    <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
-                                        {[-50, -10, +10, +50].map(delta => (
-                                            <button key={delta} className="b" onClick={() => { const cur = Number(hitWizardData.finalBallsAfterJitan) || 0; setHitWizardData(d => ({ ...d, finalBallsAfterJitan: String(Math.max(0, cur + delta)) })); }}
-                                                style={{ padding: "8px 14px", borderRadius: 8, fontWeight: 600, fontSize: 13, background: delta > 0 ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)", border: `1px solid ${delta > 0 ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.4)"}`, color: delta > 0 ? C.green : C.red, fontFamily: mono }}>
-                                                {delta > 0 ? "+" : ""}{delta}
+                                {presets && (
+                                    <div style={{ display: "flex", gap: 4 }}>
+                                        {presets.map(p => (
+                                            <button key={String(p.label)} className="b" type="button"
+                                                onClick={(e) => { e.stopPropagation(); p.onClick(); setFocus(id); }}
+                                                style={{
+                                                    minWidth: 44, minHeight: 36, padding: "0 8px", borderRadius: 8,
+                                                    background: p.active ? `color-mix(in srgb, ${color} 28%, transparent)` : "var(--surface-hi)",
+                                                    border: `1px solid ${p.active ? color : C.border}`,
+                                                    color: p.active ? color : C.text,
+                                                    fontSize: 12, fontWeight: 700, fontFamily: mono,
+                                                }}>
+                                                {p.label}
                                             </button>
                                         ))}
                                     </div>
-                                </div>
-                            );
-                        })()}
-                    </div>
-
-                    {/* テンキー（Step 0・2・5以外で表示） */}
-                    {hitWizardStep !== 0 && hitWizardStep !== 2 && hitWizardStep !== 5 && (
-                        <div className="jp-keypad" style={{
-                            padding: "8px 12px",
-                            paddingBottom: "max(12px, env(safe-area-inset-bottom))",
-                            background: "rgba(20,20,25,1)",
-                            borderTop: `1px solid ${C.border}`,
-                            flexShrink: 0
-                        }}>
-                            {/* 戻る/次へボタン */}
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
-                                <button className="b" onClick={() => {
-                                    if (hitWizardStep === 3) setHitWizardStep(2);
-                                    else if (hitWizardStep === 6) setHitWizardStep(5);
-                                    else setHitWizardStep(s => s - 1);
-                                }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "var(--surface-hi)", border: "none", color: C.text }}>
-                                    戻る
-                                </button>
-                                {hitWizardStep === 7 ? (
-                                    <button className="b" onClick={handleWizardComplete} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#16a34a", border: "none", color: "#fff" }}>
-                                        記録完了
-                                    </button>
-                                ) : (
-                                    <button className="b" onClick={() => {
-                                        // Step 6 → 7 に進む時に時短終了後出玉を自動プリセット（上皿玉 + 液晶表示玉）
-                                        if (hitWizardStep === 6 && !hitWizardData.finalBallsAfterJitan) {
-                                            const estimated = (Number(hitWizardData.trayBalls) || 0) + (Number(hitWizardData.displayBalls) || 0);
-                                            if (estimated > 0) {
-                                                setHitWizardData(d => ({ ...d, finalBallsAfterJitan: String(estimated) }));
-                                            }
-                                        }
-                                        setHitWizardStep(s => s + 1);
-                                    }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#2f6fed", border: "none", color: "#fff" }}>
-                                        次へ
-                                    </button>
                                 )}
                             </div>
-                            {/* テンキー - 大きくして精度向上 */}
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-                                {[1,2,3,4,5,6,7,8,9].map(n => (
-                                    <button key={n} className="b" onClick={() => {
-                                        const field = hitWizardStep === 1 ? "trayBalls" : hitWizardStep === 3 ? "displayBalls" : hitWizardStep === 4 ? "actualBalls" : hitWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
-                                        setHitWizardData(d => {
-                                            const current = d[field] || "";
-                                            // 先頭が0のみの場合は置き換え
-                                            const newVal = current === "0" ? String(n) : current + n;
-                                            return { ...d, [field]: newVal };
-                                        });
-                                    }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "var(--surface-hi)", border: "none", color: C.text, minHeight: 56 }}>
-                                        {n}
-                                    </button>
-                                ))}
-                                <button className="b" onClick={() => {
-                                    const field = hitWizardStep === 1 ? "trayBalls" : hitWizardStep === 3 ? "displayBalls" : hitWizardStep === 4 ? "actualBalls" : hitWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
-                                    setHitWizardData(d => ({ ...d, [field]: "" }));
-                                }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 15, background: "rgba(239,68,68,0.25)", border: "none", color: C.red, minHeight: 56 }}>
-                                    消去
+                        );
+                    };
+
+                    const rotPresetButtons = machineRounds.slice(0, 3).map(r => ({
+                        label: `${r}R`, active: rndN === r, onClick: () => updField("rounds", r),
+                    }));
+
+                    return (
+                        <div className="jp-proto-screen" style={{
+                            position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+                            zIndex: 9999, display: "flex", flexDirection: "column",
+                            height: "100dvh", width: "100vw", background: C.bg
+                        }}>
+                            {/* ヘッダー */}
+                            <div className="jp-proto-header" style={{
+                                padding: "10px 14px",
+                                paddingTop: "max(10px, env(safe-area-inset-top))",
+                                borderBottom: `1px solid ${C.border}`,
+                                display: "flex", justifyContent: "space-between", alignItems: "center",
+                                flexShrink: 0, gap: 8,
+                            }}>
+                                <button className="b" onClick={onClose} style={{ background: "transparent", border: "none", color: C.sub, fontSize: 13, fontWeight: 700, padding: 6, display: "flex", alignItems: "center", gap: 4 }}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                                    戻る
                                 </button>
-                                <button className="b" onClick={() => {
-                                    const field = hitWizardStep === 1 ? "trayBalls" : hitWizardStep === 3 ? "displayBalls" : hitWizardStep === 4 ? "actualBalls" : hitWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
-                                    setHitWizardData(d => {
-                                        const current = d[field] || "";
-                                        // 空の場合は0を入れない（表示上は0が見えている）
-                                        if (current === "") return d;
-                                        return { ...d, [field]: current + "0" };
-                                    });
-                                }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "var(--surface-hi)", border: "none", color: C.text, minHeight: 56 }}>
-                                    0
-                                </button>
-                                <button className="b" onClick={() => {
-                                    const field = hitWizardStep === 1 ? "trayBalls" : hitWizardStep === 3 ? "displayBalls" : hitWizardStep === 4 ? "actualBalls" : hitWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan";
-                                    setHitWizardData(d => ({ ...d, [field]: (d[field] || "").slice(0, -1) }));
-                                }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 20, background: "var(--surface-hi)", border: "none", color: C.sub, minHeight: 56 }}>
-                                    ←
-                                </button>
+                                <span style={{ fontSize: 14, fontWeight: 800, color: chainLen > 0 ? C.yellow : C.text, display: "flex", alignItems: "center", gap: 4 }}>
+                                    {chainLen > 0 && <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>}
+                                    {headerBadge}
+                                </span>
+                                <button className="b" onClick={() => S.setSessionSubTab("history")} style={{ background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, color: C.sub, fontSize: 12, fontWeight: 700, padding: "5px 10px" }}>履歴</button>
                             </div>
+
+                            {/* スクロール領域 */}
+                            <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+
+                                {/* 上部ステータスカード（2x2 グリッド） */}
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                                    <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 10px" }}>
+                                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>現在持玉</div>
+                                        <div style={{ fontSize: 20, fontWeight: 800, color: C.green, fontFamily: mono }}>{f(S.currentMochiBalls || 0)}<span style={{ fontSize: 11, color: C.sub, marginLeft: 3 }}>玉</span></div>
+                                    </div>
+                                    <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 10px" }}>
+                                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>期待差玉</div>
+                                        <div style={{ fontSize: 20, fontWeight: 800, color: sc(evNet), fontFamily: mono }}>{sp(Math.round(evNet))}<span style={{ fontSize: 11, color: C.sub, marginLeft: 3 }}>玉</span></div>
+                                    </div>
+                                    <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 10px" }}>
+                                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>電サポ効率</div>
+                                        <div style={{ fontSize: 20, fontWeight: 800, color: lastHitSapoPerRot != null ? sc(lastHitSapoPerRot) : C.sub, fontFamily: mono }}>
+                                            {lastHitSapoPerRot != null ? sp(lastHitSapoPerRot, 2) : "—"}<span style={{ fontSize: 10, color: C.sub, marginLeft: 3 }}>/回</span>
+                                        </div>
+                                    </div>
+                                    <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 10px" }}>
+                                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>チェーン</div>
+                                        <div style={{ fontSize: 20, fontWeight: 800, color: chainLen > 0 ? C.yellow : C.sub, fontFamily: mono }}>{chainLen > 0 ? `${chainLen}連目` : "1連目"}</div>
+                                    </div>
+                                </div>
+
+                                {/* タイトル */}
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
+                                    <div>
+                                        <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>初当たり入力</div>
+                                        <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>各項目を入力して、次の状態を選択してください</div>
+                                    </div>
+                                    <span style={{ fontSize: 10, fontWeight: 800, color: C.blue, background: `color-mix(in srgb, ${C.blue} 14%, transparent)`, padding: "3px 8px", borderRadius: 6, border: `1px solid color-mix(in srgb, ${C.blue} 30%, transparent)` }}>現在入力中</span>
+                                </div>
+
+                                {/* 5 項目並列 */}
+                                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                    <Row id="rotCount" n="1" label="回転数" sub="ゲーム数（累計）" color={C.subHi}
+                                        value={v("rotCount")} unit="回転"
+                                        presets={[
+                                            { label: "-10", onClick: () => updField("rotCount", String(Math.max(0, rotN - 10))) },
+                                            { label: "+10", onClick: () => updField("rotCount", String(rotN + 10)) },
+                                        ]} />
+                                    <Row id="trayBalls" n="2" label="開始上皿玉数" sub="当たり開始時の上皿" required color={C.yellow}
+                                        value={v("trayBalls")} unit="玉"
+                                        presets={[50, 100, 150].map(p => ({
+                                            label: String(p), active: trayN === p, onClick: () => updField("trayBalls", String(p))
+                                        }))} />
+                                    <Row id="rounds" n="3" label="ラウンド数" sub="大当たりのラウンド" color={C.orange}
+                                        value={rndN > 0 ? `${rndN}R` : ""} unit=""
+                                        presets={rotPresetButtons} />
+                                    <Row id="displayBalls" n="4" label="液晶出玉" sub="表示されている出玉" color={C.yellow}
+                                        value={v("displayBalls")} unit="玉"
+                                        presets={[450, 750, 1500].map(p => ({
+                                            label: String(p), active: dispN === p, onClick: () => updField("displayBalls", String(p))
+                                        }))} />
+                                    <Row id="actualBalls" n="5" label="実測出玉" sub="実際の獲得出玉" color={C.green}
+                                        value={v("actualBalls")} unit="玉"
+                                        presets={[380, 750, 1500].map(p => ({
+                                            label: String(p), active: actualN === p, onClick: () => updField("actualBalls", String(p))
+                                        }))} />
+                                </div>
+
+                                {/* 詳細：プッシュ額（折りたたみ） */}
+                                <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 12px" }}>
+                                    <button className="b" type="button" onClick={() => setHitInputShowPush(s => !s)} style={{ background: "transparent", border: "none", width: "100%", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center", padding: 0, color: C.sub, fontSize: 12, fontWeight: 700 }}>
+                                        <span>詳細（プッシュ額補正）{(D.pushAmount || 0) > 0 ? `: +${(D.pushAmount || 0).toLocaleString()}円` : ""}</span>
+                                        <span>{hitInputShowPush ? "▲" : "▼"}</span>
+                                    </button>
+                                    {hitInputShowPush && (
+                                        <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                                            {[0, 500, 1000].map(amt => (
+                                                <button key={amt} className="b" type="button" onClick={() => updField("pushAmount", amt)}
+                                                    style={{
+                                                        flex: 1, minHeight: 40, borderRadius: 8, fontFamily: mono, fontSize: 13, fontWeight: 700,
+                                                        background: D.pushAmount === amt ? `color-mix(in srgb, ${C.yellow} 26%, transparent)` : "var(--surface-hi)",
+                                                        border: `1px solid ${D.pushAmount === amt ? C.yellow : C.border}`,
+                                                        color: D.pushAmount === amt ? C.yellow : C.text,
+                                                    }}>
+                                                    +{amt === 0 ? "0" : amt.toLocaleString()}円
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 6. 次の状態を選択 */}
+                                <div>
+                                    <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 6 }}>6. 次の状態を選択</div>
+                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, alignItems: "stretch" }}>
+                                        <button className="b" type="button" onClick={onContinue} disabled={!requiredOk}
+                                            style={{
+                                                minHeight: 72, borderRadius: 14, padding: "8px 6px",
+                                                background: requiredOk ? `color-mix(in srgb, ${C.green} 22%, transparent)` : "var(--surface-hi)",
+                                                border: `1px solid ${requiredOk ? C.green : C.border}`,
+                                                color: requiredOk ? C.green : C.sub,
+                                                fontSize: 14, fontWeight: 800, fontFamily: font, opacity: requiredOk ? 1 : 0.55,
+                                                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4,
+                                            }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
+                                                <span>連チャン継続</span>
+                                            </div>
+                                            <span style={{ fontSize: 10, fontWeight: 600, color: C.sub }}>次の大当たりを入力する</span>
+                                        </button>
+                                        <button className="b" type="button" onClick={onSingleEndStart} disabled={!requiredOk}
+                                            style={{
+                                                minHeight: 72, borderRadius: 14, padding: "8px 6px",
+                                                background: requiredOk ? `color-mix(in srgb, ${C.red} 22%, transparent)` : "var(--surface-hi)",
+                                                border: `1px solid ${requiredOk ? C.red : C.border}`,
+                                                color: requiredOk ? C.red : C.sub,
+                                                fontSize: 14, fontWeight: 800, fontFamily: font, opacity: requiredOk ? 1 : 0.55,
+                                                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4,
+                                            }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                                <span style={{ width: 10, height: 10, background: "currentColor", borderRadius: 2, display: "inline-block" }} />
+                                                <span>単発終了</span>
+                                            </div>
+                                            <span style={{ fontSize: 10, fontWeight: 600, color: C.sub }}>通常時に戻る</span>
+                                        </button>
+                                        <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 14, padding: "8px 10px", minWidth: 110, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                                            <div style={{ fontSize: 10, color: C.sub, textAlign: "center" }}>今回の獲得（実測）</div>
+                                            <div style={{ fontSize: 22, fontWeight: 800, color: sc(netGain), fontFamily: mono, textAlign: "center", lineHeight: 1.1 }}>
+                                                {sp(netGain)}<span style={{ fontSize: 11, marginLeft: 2 }}>玉</span>
+                                            </div>
+                                            {actualN > 0 && trayN > 0 && (
+                                                <div style={{ fontSize: 9, color: C.sub, textAlign: "center" }}>実測{actualN} − 開始上皿{trayN}</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {hitInputError && (
+                                        <div style={{ marginTop: 6, fontSize: 11, color: C.red, fontWeight: 600 }}>{hitInputError}</div>
+                                    )}
+                                </div>
+
+                                {/* よく使う出玉プリセット */}
+                                <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 10px" }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                        <span style={{ fontSize: 11, color: C.sub, fontWeight: 700, minWidth: 80 }}>よく使う出玉プリセット</span>
+                                        {[
+                                            { v: 450, lbl: "3R平均" },
+                                            { v: 750, lbl: "5R平均" },
+                                            { v: 1500, lbl: "10R平均" },
+                                            { v: 3000, lbl: "10R×2" },
+                                        ].map(p => {
+                                            const target = focus === "actualBalls" ? "actualBalls" : "displayBalls";
+                                            return (
+                                                <button key={p.v} className="b" type="button"
+                                                    onClick={() => updField(target, String(p.v))}
+                                                    style={{
+                                                        flex: 1, minWidth: 60, minHeight: 44, borderRadius: 10, padding: "4px 6px",
+                                                        background: "var(--surface-hi)", border: `1px solid ${C.border}`,
+                                                        color: C.text, fontFamily: mono, fontSize: 13, fontWeight: 700,
+                                                        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", lineHeight: 1.1,
+                                                    }}>
+                                                    <span>{p.v}<span style={{ fontSize: 10, color: C.sub, marginLeft: 2 }}>玉</span></span>
+                                                    <span style={{ fontSize: 9, color: C.sub, fontFamily: font, fontWeight: 600 }}>({p.lbl})</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* 今回のまとめ */}
+                                <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px" }}>
+                                    <div style={{ fontSize: 11, color: C.sub, fontWeight: 700, marginBottom: 6 }}>今回のまとめ</div>
+                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 12px", fontSize: 12 }}>
+                                        <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.sub }}>開始上皿玉</span><span style={{ fontFamily: mono, fontWeight: 700 }}>{trayN > 0 ? f(trayN) : "—"}玉</span></div>
+                                        <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.sub }}>液晶出玉</span><span style={{ fontFamily: mono, fontWeight: 700 }}>{dispN > 0 ? f(dispN) : "—"}玉</span></div>
+                                        <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.sub }}>実測出玉</span><span style={{ fontFamily: mono, fontWeight: 700 }}>{actualN > 0 ? f(actualN) : "—"}玉</span></div>
+                                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                            <span style={{ color: C.sub }}>獲得（実測）</span>
+                                            <span style={{ fontFamily: mono, fontWeight: 800, color: sc(netGain) }}>{sp(netGain)}玉</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.sub, padding: "4px 0 12px" }}>
+                                    <span>ⓘ 入力はいつでも編集できます</span>
+                                    <span>✓ データは自動保存されます</span>
+                                </div>
+                            </div>
+
+                            {/* テンキー（フォーカスが ラウンド以外 のときのみ表示） */}
+                            {keypadField && (
+                                <div className="jp-keypad" style={{
+                                    padding: "6px 10px",
+                                    paddingBottom: "max(8px, env(safe-area-inset-bottom))",
+                                    background: "var(--surface-hi)",
+                                    borderTop: `1px solid ${C.border}`,
+                                    flexShrink: 0
+                                }}>
+                                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr) 64px", gap: 5 }}>
+                                        {[1,2,3,4,5,6,7,8,9].map(n => (
+                                            <button key={n} className="b" type="button" onClick={() => keypadAppend(n)}
+                                                style={{ padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 20, fontFamily: mono, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.text, minHeight: 44 }}>
+                                                {n}
+                                            </button>
+                                        ))}
+                                        <button className="b" type="button" onClick={keypadClear}
+                                            style={{ gridRow: "1 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 13, background: `color-mix(in srgb, ${C.red} 18%, transparent)`, border: `1px solid color-mix(in srgb, ${C.red} 40%, transparent)`, color: C.red, minHeight: 44 }}>
+                                            消去
+                                        </button>
+                                        <button className="b" type="button" onClick={() => keypadAppend(0)}
+                                            style={{ gridColumn: "2 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 20, fontFamily: mono, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.text, minHeight: 44 }}>
+                                            0
+                                        </button>
+                                        <button className="b" type="button" onClick={() => updField(keypadField, "0")}
+                                            style={{ gridColumn: "1 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 14, fontFamily: font, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.sub, minHeight: 44 }}>
+                                            0クリア
+                                        </button>
+                                        <button className="b" type="button" onClick={keypadBackspace}
+                                            style={{ gridColumn: "3 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 18, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.sub, minHeight: 44 }}>
+                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block", margin: "0 auto" }}><path d="M21 5H8l-7 7 7 7h13a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z" /><line x1="18" y1="9" x2="12" y2="15" /><line x1="12" y1="9" x2="18" y2="15" /></svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* 単発終了サブモーダル（時短回数 + 最終持ち玉） */}
+                            {hitInputSingleEndOpen && (
+                                <div onClick={() => setHitInputSingleEndOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 100 }}>
+                                    <div onClick={(e) => e.stopPropagation()} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: 16, maxWidth: 360, width: "100%" }}>
+                                        <div style={{ fontSize: 14, fontWeight: 800, color: C.purple, marginBottom: 4 }}>単発終了</div>
+                                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 12 }}>時短回数と最終持ち玉を入力して記録完了</div>
+                                        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                                            <label style={{ fontSize: 11, color: C.sub, fontWeight: 700 }}>
+                                                時短回数（回転）
+                                                <input type="tel" inputMode="numeric" value={hitWizardData.jitanSpins} onChange={(e) => updField("jitanSpins", e.target.value.replace(/[^0-9]/g, ""))}
+                                                    style={{ display: "block", marginTop: 4, width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontFamily: mono, fontSize: 18, fontWeight: 700, padding: "10px 12px", textAlign: "right" }} />
+                                            </label>
+                                            <label style={{ fontSize: 11, color: C.sub, fontWeight: 700 }}>
+                                                最終持ち玉（玉）
+                                                <input type="tel" inputMode="numeric" value={hitWizardData.finalBallsAfterJitan} onChange={(e) => updField("finalBallsAfterJitan", e.target.value.replace(/[^0-9]/g, ""))}
+                                                    style={{ display: "block", marginTop: 4, width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontFamily: mono, fontSize: 18, fontWeight: 700, padding: "10px 12px", textAlign: "right" }} />
+                                            </label>
+                                        </div>
+                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 14 }}>
+                                            <button className="b" type="button" onClick={() => setHitInputSingleEndOpen(false)} style={{ padding: "12px 0", borderRadius: 10, fontWeight: 700, fontSize: 14, background: "var(--surface-hi)", border: `1px solid ${C.border}`, color: C.text }}>戻る</button>
+                                            <button className="b" type="button" onClick={onSingleEndConfirm} style={{ padding: "12px 0", borderRadius: 10, fontWeight: 800, fontSize: 14, background: "#16a34a", border: "none", color: "#fff" }}>記録完了</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                    )}
-                </div>,
+                    );
+                })(),
                 document.body
             )}
 
@@ -3722,246 +3953,579 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 document.body
             )}
 
-            {/* 連チャン追加ウィザードモーダル */}
+            {/* ================================================================
+                画面 B — 連チャン追加入力（仕様書 docs/input-flow-design.md §3.1 準拠）
+                旧 chainWizard Step 0-7 を 1 画面 4 項目 + 次状態選択 に刷新。
+                Step 8 (画面 C = 最終実測持ち玉入力) は polished されたサブビューとして残す。
+            ================================================================ */}
             {chainWizardOpen && ReactDOM.createPortal(
-                <div className="jp-proto-screen" style={{
-                    position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-                    zIndex: 9999, display: "flex", flexDirection: "column", height: "100dvh", width: "100vw"
-                }}>
-                    {/* ヘッダー */}
-                    <div className="jp-proto-header" style={{
-                        padding: "12px 16px", paddingTop: "max(12px, env(safe-area-inset-top))",
-                        borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0
-                    }}>
-                        <button className="b" onClick={() => setChainWizardOpen(false)} style={{ background: "transparent", border: "none", color: C.red, fontSize: 14, fontWeight: 600, padding: 8 }}>キャンセル</button>
-                        <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>当たりを追加</span>
-                        <div style={{ width: 70 }} />
-                    </div>
+                (() => {
+                    const D = chainWizardData;
+                    const focus = chainInputFocus;
+                    const setFocus = (k) => setChainInputFocus(k);
+                    const updField = (key, val) => setChainWizardData(d => ({ ...d, [key]: val }));
 
-                    {/* コンテンツエリア */}
-                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 14, justifyContent: "flex-start", padding: "16px 20px", overflowY: "auto" }}>
-                        {(() => {
-                            const verdict = chainPrototypeVerdict(lastChain);
-                            return <FlowStatusCard title={verdict.label} subtitle={verdict.sub} tone={verdict.tone} badge={lastChain ? `${lastChain.hits.length + 1}連目入力` : "チェーン入力"} metrics={[
-                                { label: "総R数", value: lastChain?.summary?.totalRounds || (lastChain?.hits || []).reduce((s, h) => s + (h.rounds || 0), 0), unit: "R", color: C.orange },
-                                { label: "液晶出玉合計", value: f((lastChain?.summary?.totalDisplayBalls) || (lastChain?.hits || []).reduce((s, h) => s + (h.displayBalls || 0), 0)), unit: "玉", color: C.yellow },
-                                { label: "総サポ回転", value: f((lastChain?.summary?.totalSapoRot) || (lastChain?.hits || []).reduce((s, h) => s + (h.elecSapoRot || 0), 0)), unit: "回転", color: C.teal },
-                            ]} />;
-                        })()}
-                        {/* Step 0: ラウンド数選択 */}
-                        {chainWizardStep === 0 && (
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.orange, marginBottom: 24 }}>ラウンド数</div>
-                                <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 12 }}>
-                                    {machineRushRounds.map(({ rounds, mult }) => (
-                                        <FlowChoiceButton key={`${rounds}-${mult}`} tone="orange" onClick={() => { setChainWizardData(d => ({ ...d, rounds, mult })); setChainWizardStep(1); setChainWizardFirstKey(true); }}
-                                            style={{ minWidth: 80, height: 80, padding: mult > 1 ? "0 12px" : 0, fontFamily: mono, fontSize: mult > 1 ? 20 : 26 }}>
-                                            {mult > 1 ? `${rounds}R×${mult}` : `${rounds}R`}
-                                        </FlowChoiceButton>
-                                    ))}
+                    const v = (k) => D[k] === "" || D[k] == null ? "" : String(D[k]);
+                    const numOr0 = (k) => Number(D[k]) || 0;
+                    const rotN = numOr0("elecSapoRot");
+                    const rndN = numOr0("rounds");
+                    const multN = Math.max(1, Number(D.mult) || 1);
+                    const dispN = numOr0("displayBalls");
+                    const nextN = numOr0("nextTimingBalls");
+
+                    // 連チャン追加の場合、開始上皿玉は「前回終了時の持玉」（getPrevEndBalls）を自動引き継ぎ
+                    const prevEndBalls = getPrevEndBalls();
+                    const lastOutN = numOr0("lastOutBalls"); // openChainWizard で prevEndBalls を初期セット済み
+                    const trayCarryDisplay = lastOutN > 0 ? lastOutN : prevEndBalls;
+
+                    // サポ増減・1回転あたり（内部導出）
+                    const sapoChange = nextN > 0 ? nextN - lastOutN - dispN * multN : 0;
+                    const perRot = rotN > 0 ? sapoChange / rotN : 0;
+
+                    // チェーン集計
+                    const chainHits = lastChain ? (lastChain.hits || []) : [];
+                    const chainTotalRounds = chainHits.reduce((s, h) => s + (h.rounds || 0), 0);
+                    const chainTotalDisp = chainHits.reduce((s, h) => s + (h.displayBalls || 0), 0);
+                    const chainTotalSapoRot = chainHits.reduce((s, h) => s + (h.elecSapoRot || 0), 0);
+                    const chainTotalSapoChange = chainHits.reduce((s, h) => s + (h.sapoChange || 0), 0);
+                    const chainTrayBalls = lastChain ? (lastChain.trayBalls || 0) : 0;
+
+                    const requiredOk = rotN > 0 && rndN > 0 && dispN > 0; // 実測出玉は任意（仕様書 §3.2）
+                    const chainLen = chainHits.length + 1; // 入力中の連
+                    const headerBadge = `RUSH中 ${chainLen}連`;
+
+                    const keypadField = focus === "rounds" ? null : focus;
+
+                    const keypadAppend = (n) => {
+                        if (!keypadField) return;
+                        setChainWizardData(d => {
+                            const cur = (d[keypadField] != null ? String(d[keypadField]) : "");
+                            const next = cur === "0" || cur === "" ? String(n) : cur + n;
+                            return { ...d, [keypadField]: next };
+                        });
+                        setChainWizardFirstKey(false);
+                    };
+                    const keypadClear = () => {
+                        if (!keypadField) return;
+                        setChainWizardData(d => ({ ...d, [keypadField]: "" }));
+                        setChainWizardFirstKey(false);
+                    };
+                    const keypadBackspace = () => {
+                        if (!keypadField) return;
+                        setChainWizardData(d => {
+                            const cur = (d[keypadField] != null ? String(d[keypadField]) : "");
+                            return { ...d, [keypadField]: cur.slice(0, -1) };
+                        });
+                        setChainWizardFirstKey(false);
+                    };
+
+                    const onClose = () => {
+                        setChainWizardOpen(false);
+                        setChainInputError("");
+                        clearChainWizard();
+                    };
+
+                    const validateRequired = () => {
+                        if (!requiredOk) {
+                            const missing = [];
+                            if (rotN <= 0) missing.push("回転数");
+                            if (rndN <= 0) missing.push("ラウンド数");
+                            if (dispN <= 0) missing.push("液晶出玉");
+                            setChainInputError(`${missing.join("・")}を入力してください`);
+                            return false;
+                        }
+                        setChainInputError("");
+                        return true;
+                    };
+
+                    // 「継続」: 既存 handleChainWizardComplete(false) を呼ぶ
+                    const onContinue = () => {
+                        if (!validateRequired()) return;
+                        // nextTimingBalls 未入力ならプリセット（lastOut + disp×mult）
+                        if (nextN === 0) {
+                            const presetNext = lastOutN + dispN * multN;
+                            setChainWizardData(d => ({ ...d, nextTimingBalls: String(presetNext) }));
+                            // 同 tick で handleChainWizardComplete を呼ぶと d 旧値を読むので、ワンクッション
+                            setTimeout(() => handleChainWizardComplete(false), 0);
+                            return;
+                        }
+                        handleChainWizardComplete(false);
+                    };
+
+                    // 「ラッシュ終了へ」: 画面 C へ遷移
+                    const onRushEnd = () => {
+                        if (!validateRequired()) return;
+                        // nextTimingBalls 未入力ならプリセット
+                        const nextResolved = nextN > 0 ? nextN : lastOutN + dispN * multN;
+                        const existingTotal = chainTrayBalls + chainHits.reduce((s, h) => s + (h.displayBalls || 0) + (h.sapoChange || 0), 0);
+                        const estimated = existingTotal + (nextResolved - lastOutN);
+                        setChainWizardInitialFinalBalls(estimated);
+                        setChainWizardData(d => ({
+                            ...d,
+                            nextTimingBalls: String(nextResolved),
+                            finalRealBalls: String(estimated)
+                        }));
+                        setChainWizardStep(8);
+                        setChainWizardFirstKey(true);
+                    };
+
+                    // 「単発終了（チェーン中）」: 既存 handleChainWizardSingleEnd の Step 6,7 経由のためサブモーダルを開く
+                    const onSingleEndStart = () => {
+                        if (!validateRequired()) return;
+                        const nextResolved = nextN > 0 ? nextN : lastOutN + dispN * multN;
+                        setChainWizardData(d => ({
+                            ...d,
+                            nextTimingBalls: String(nextResolved),
+                            jitanSpins: d.jitanSpins || "",
+                            finalBallsAfterJitan: d.finalBallsAfterJitan || (nextResolved > 0 ? String(nextResolved) : ""),
+                        }));
+                        setChainInputSingleEndOpen(true);
+                    };
+                    const onSingleEndConfirm = () => {
+                        handleChainWizardSingleEnd();
+                        setChainInputSingleEndOpen(false);
+                    };
+
+                    // 行コンポーネント
+                    const Row = ({ id, n, label, sub, value, unit, presets, color }) => {
+                        const active = focus === id;
+                        return (
+                            <div
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => setFocus(id)}
+                                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setFocus(id); }}
+                                style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "auto 1fr auto",
+                                    gap: 10,
+                                    alignItems: "center",
+                                    padding: "10px 12px",
+                                    borderRadius: 12,
+                                    background: active ? `color-mix(in srgb, ${color} 14%, var(--surface))` : "var(--surface)",
+                                    border: `1px solid ${active ? color : C.border}`,
+                                    cursor: "pointer",
+                                    boxShadow: active ? `0 0 0 2px color-mix(in srgb, ${color} 28%, transparent)` : "none",
+                                }}>
+                                <div style={{ minWidth: 110 }}>
+                                    <div style={{ fontSize: 11, color: C.sub, fontWeight: 600, lineHeight: 1 }}>{n}.</div>
+                                    <div style={{ fontSize: 13, fontWeight: 800, color: C.text, fontFamily: font, marginTop: 2 }}>{label}</div>
+                                    {sub && <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>{sub}</div>}
                                 </div>
-                            </div>
-                        )}
-
-                        {/* Step 1: 大当り直前の出玉 */}
-                        {chainWizardStep === 1 && (() => {
-                            const prevEndBalls = getPrevEndBalls();
-                            const current = Number(chainWizardData.lastOutBalls) || 0;
-                            const diff = current - prevEndBalls;
-                            return (
-                                <div style={{ textAlign: "center" }}>
-                                    <FlowValueCard label="大当たり直前の出玉" value={chainWizardData.lastOutBalls || "0"} unit="玉" tone="teal" hint={prevEndBalls > 0 ? `前回終了時 ${f(prevEndBalls)}玉を自動プリセット` : "直前の持ち玉を確認"} />
-                                    <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
-                                        {[-50, -10, +10, +50].map(delta => (
-                                            <button key={delta} className="b" onClick={() => { const cur = Number(chainWizardData.lastOutBalls) || 0; setChainWizardData(d => ({ ...d, lastOutBalls: String(Math.max(0, cur + delta)) })); }}
-                                                style={{ padding: "8px 14px", borderRadius: 8, fontWeight: 600, fontSize: 13, background: delta > 0 ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)", border: `1px solid ${delta > 0 ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.4)"}`, color: delta > 0 ? C.green : C.red, fontFamily: mono }}>
-                                                {delta > 0 ? "+" : ""}{delta}
+                                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "flex-end", gap: 4 }}>
+                                    <span style={{ fontSize: 28, fontWeight: 800, color: value === "" ? C.sub : color, fontFamily: mono, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
+                                        {value === "" ? "—" : value}
+                                    </span>
+                                    {unit && <span style={{ fontSize: 11, color: C.sub, fontFamily: font, fontWeight: 600 }}>{unit}</span>}
+                                </div>
+                                {presets && (
+                                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                                        {presets.map((p, idx) => (
+                                            <button key={String(p.label) + idx} className="b" type="button"
+                                                onClick={(e) => { e.stopPropagation(); p.onClick(); setFocus(id); }}
+                                                style={{
+                                                    minWidth: 44, minHeight: 36, padding: "0 8px", borderRadius: 8,
+                                                    background: p.active ? `color-mix(in srgb, ${color} 28%, transparent)` : "var(--surface-hi)",
+                                                    border: `1px solid ${p.active ? color : C.border}`,
+                                                    color: p.active ? color : C.text,
+                                                    fontSize: 12, fontWeight: 700, fontFamily: mono,
+                                                }}>
+                                                {p.label}
                                             </button>
                                         ))}
                                     </div>
-                                    {prevEndBalls > 0 && current > 0 && (
-                                        <div style={{ marginTop: 12 }}>
-                                            <span style={{ fontSize: 12, color: C.sub }}>電サポ中の増減: <span style={{ fontWeight: 700, color: sc(diff), fontFamily: mono }}>{diff >= 0 ? "+" : ""}{diff}</span></span>
+                                )}
+                            </div>
+                        );
+                    };
+
+                    // ラウンド数プリセット: 機種マスタの rushDist から（最大3つ表示、mult>1 も含む）
+                    const roundPresets = machineRushRounds.slice(0, 4).map(({ rounds: r, mult: m }) => ({
+                        label: m > 1 ? `${r}R×${m}` : `${r}R`,
+                        active: rndN === r && multN === m,
+                        onClick: () => setChainWizardData(d => ({ ...d, rounds: r, mult: m })),
+                    }));
+
+                    return (
+                        <div className="jp-proto-screen" style={{
+                            position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+                            zIndex: 9999, display: "flex", flexDirection: "column",
+                            height: "100dvh", width: "100vw", background: C.bg
+                        }}>
+                            {/* ヘッダー */}
+                            <div className="jp-proto-header" style={{
+                                padding: "10px 14px",
+                                paddingTop: "max(10px, env(safe-area-inset-top))",
+                                borderBottom: `1px solid ${C.border}`,
+                                display: "flex", justifyContent: "space-between", alignItems: "center",
+                                flexShrink: 0, gap: 8,
+                            }}>
+                                <button className="b" onClick={onClose} style={{ background: "transparent", border: "none", color: C.sub, fontSize: 13, fontWeight: 700, padding: 6, display: "flex", alignItems: "center", gap: 4 }}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                                    閉じる
+                                </button>
+                                <span style={{ fontSize: 14, fontWeight: 800, color: C.yellow, display: "flex", alignItems: "center", gap: 4 }}>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
+                                    {chainWizardStep === 8 ? "ラッシュ終了 — 最終確認" : headerBadge}
+                                </span>
+                                <div style={{ width: 60 }} />
+                            </div>
+
+                            {chainWizardStep !== 8 ? (
+                                /* ====== 画面 B：連チャン追加入力 ====== */
+                                <>
+                                    <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+
+                                        {/* 上部ステータスカード（2×2） */}
+                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                                            <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 10px" }}>
+                                                <div style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>現在持玉（前回引き継ぎ）</div>
+                                                <div style={{ fontSize: 20, fontWeight: 800, color: C.green, fontFamily: mono }}>{f(trayCarryDisplay)}<span style={{ fontSize: 11, color: C.sub, marginLeft: 3 }}>玉</span></div>
+                                            </div>
+                                            <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 10px" }}>
+                                                <div style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>チェーン累計</div>
+                                                <div style={{ fontSize: 20, fontWeight: 800, color: C.yellow, fontFamily: mono }}>{chainTotalRounds}R / {f(chainTotalDisp)}玉</div>
+                                            </div>
+                                            <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 10px" }}>
+                                                <div style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>総サポ回転</div>
+                                                <div style={{ fontSize: 20, fontWeight: 800, color: C.teal, fontFamily: mono }}>{f(chainTotalSapoRot)}<span style={{ fontSize: 11, color: C.sub, marginLeft: 3 }}>回転</span></div>
+                                            </div>
+                                            <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 10px" }}>
+                                                <div style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>サポ増減</div>
+                                                <div style={{ fontSize: 20, fontWeight: 800, color: sc(chainTotalSapoChange), fontFamily: mono }}>{sp(chainTotalSapoChange)}<span style={{ fontSize: 11, color: C.sub, marginLeft: 3 }}>玉</span></div>
+                                            </div>
                                         </div>
-                                    )}
-                                </div>
-                            );
-                        })()}
 
-                        {/* Step 2: 電サポ回転数 */}
-                        {chainWizardStep === 2 && (
-                            <div style={{ textAlign: "center" }}>
-                                <FlowValueCard label="サポ回転" value={chainWizardData.elecSapoRot || "0"} unit="回転" tone="blue" hint="忙しい時はこの3項目だけ素早く入力" />
-                            </div>
-                        )}
+                                        {/* タイトル + 引き継ぎバッジ */}
+                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
+                                            <div>
+                                                <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>連チャン追加</div>
+                                                <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>※ 開始上皿玉数は前回終了時の持玉を自動で引き継ぎます</div>
+                                            </div>
+                                            <span style={{ fontSize: 10, fontWeight: 800, color: C.teal, background: `color-mix(in srgb, ${C.teal} 14%, transparent)`, padding: "3px 8px", borderRadius: 6, border: `1px solid color-mix(in srgb, ${C.teal} 30%, transparent)` }}>前回引き継ぎ: {f(trayCarryDisplay)}玉</span>
+                                        </div>
 
-                        {/* Step 3: 液晶出玉数 */}
-                        {chainWizardStep === 3 && (
-                            <div style={{ textAlign: "center" }}>
-                                <FlowValueCard label={`液晶出玉${chainWizardData.mult > 1 ? "（1連分）" : ""}`} value={chainWizardData.displayBalls || "0"} unit="玉" tone="yellow" hint={`${chainWizardData.rounds}R${chainWizardData.mult > 1 ? `×${chainWizardData.mult}` : ""}選択中`} />
-                            </div>
-                        )}
+                                        {/* 4 項目 */}
+                                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                            <Row id="elecSapoRot" n="1" label="回転数" sub="（電サポ回転）" color={C.subHi}
+                                                value={v("elecSapoRot")} unit="回転"
+                                                presets={[
+                                                    { label: "-10", onClick: () => updField("elecSapoRot", String(Math.max(0, rotN - 10))) },
+                                                    { label: "+10", onClick: () => updField("elecSapoRot", String(rotN + 10)) },
+                                                ]} />
+                                            <Row id="rounds" n="2" label="ラウンド数" sub="大当たりのラウンド" color={C.orange}
+                                                value={rndN > 0 ? (multN > 1 ? `${rndN}R×${multN}` : `${rndN}R`) : ""} unit=""
+                                                presets={roundPresets} />
+                                            <Row id="displayBalls" n="3" label={`液晶出玉${multN > 1 ? "（1連分）" : ""}`} sub="表示されている出玉" color={C.yellow}
+                                                value={v("displayBalls")} unit="玉"
+                                                presets={[450, 750, 1500].map(p => ({
+                                                    label: String(p), active: dispN === p, onClick: () => updField("displayBalls", String(p))
+                                                }))} />
+                                            <Row id="nextTimingBalls" n="4" label="実測出玉" sub="ラウンド終了時の持ち玉（任意）" color={C.green}
+                                                value={v("nextTimingBalls")} unit="玉"
+                                                presets={[
+                                                    { label: String(lastOutN + dispN * multN || 1450), onClick: () => updField("nextTimingBalls", String(lastOutN + dispN * multN || 0)) },
+                                                    { label: "自由入力", onClick: () => updField("nextTimingBalls", "") },
+                                                ]} />
+                                        </div>
 
-                        {/* Step 4: ラウンド終了時の出玉 */}
-                        {chainWizardStep === 4 && (() => {
-                            const prevBalls = Number(chainWizardData.lastOutBalls) || 0;
-                            const currentBalls = Number(chainWizardData.nextTimingBalls) || 0;
-                            const dispBalls = Number(chainWizardData.displayBalls) || 0;
-                            const multN = Math.max(1, Number(chainWizardData.mult) || 1);
-                            const sapoChange = currentBalls - prevBalls - dispBalls * multN;
-                            const rot = Number(chainWizardData.elecSapoRot) || 0;
-                            const perRot = rot > 0 ? sapoChange / rot : 0;
-                            return (
-                                <div style={{ textAlign: "center" }}>
-                                    <FlowValueCard label="ラウンド終了時の出玉" value={chainWizardData.nextTimingBalls || "0"} unit="玉" tone="yellow" hint={prevBalls > 0 ? `大当たり直前 ${f(prevBalls)}玉` : "終了時の持ち玉を確認"} />
-                                    <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
-                                        {[-50, -10, +10, +50].map(delta => (
-                                            <button key={delta} className="b" onClick={() => { const cur = Number(chainWizardData.nextTimingBalls) || 0; setChainWizardData(d => ({ ...d, nextTimingBalls: String(Math.max(0, cur + delta)) })); }}
-                                                style={{ padding: "8px 14px", borderRadius: 8, fontWeight: 600, fontSize: 13, background: delta > 0 ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)", border: `1px solid ${delta > 0 ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.4)"}`, color: delta > 0 ? C.green : C.red, fontFamily: mono }}>
-                                                {delta > 0 ? "+" : ""}{delta}
-                                            </button>
-                                        ))}
-                                    </div>
-                                    {currentBalls > 0 && (
-                                        <div style={{ marginTop: 16, padding: "12px 16px", background: "rgba(0,0,0,0.3)", borderRadius: 12 }}>
-                                            <div style={{ display: "flex", gap: 24, justifyContent: "center", alignItems: "center" }}>
-                                                <div>
-                                                    <div style={{ fontSize: 10, color: C.sub }}>電サポ増減</div>
-                                                    <div style={{ fontSize: 18, fontWeight: 700, color: sc(sapoChange), fontFamily: mono }}>{sapoChange >= 0 ? "+" : ""}{sapoChange}</div>
-                                                </div>
-                                                {rot > 0 && (
+                                        {/* サポ増減（内部導出のリアルタイム表示） */}
+                                        {nextN > 0 && (
+                                            <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 12px" }}>
+                                                <div style={{ display: "flex", gap: 24, justifyContent: "center", alignItems: "center" }}>
                                                     <div>
-                                                        <div style={{ fontSize: 10, color: C.sub }}>1回転あたり</div>
-                                                        <div style={{ fontSize: 18, fontWeight: 700, color: sc(perRot), fontFamily: mono }}>{perRot >= 0 ? "+" : ""}{perRot.toFixed(2)}</div>
+                                                        <div style={{ fontSize: 10, color: C.sub }}>電サポ増減</div>
+                                                        <div style={{ fontSize: 16, fontWeight: 700, color: sc(sapoChange), fontFamily: mono }}>{sp(sapoChange)}玉</div>
                                                     </div>
-                                                )}
+                                                    {rotN > 0 && (
+                                                        <div>
+                                                            <div style={{ fontSize: 10, color: C.sub }}>1回転あたり</div>
+                                                            <div style={{ fontSize: 16, fontWeight: 700, color: sc(perRot), fontFamily: mono }}>{sp(perRot, 2)}</div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* 5. 次の状態を選択 */}
+                                        <div>
+                                            <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 6 }}>5. 次の状態を選択</div>
+                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                                                <button className="b" type="button" onClick={onContinue} disabled={!requiredOk}
+                                                    style={{
+                                                        minHeight: 72, borderRadius: 14, padding: "8px 4px",
+                                                        background: requiredOk ? `color-mix(in srgb, ${C.green} 22%, transparent)` : "var(--surface-hi)",
+                                                        border: `1px solid ${requiredOk ? C.green : C.border}`,
+                                                        color: requiredOk ? C.green : C.sub,
+                                                        fontSize: 13, fontWeight: 800, fontFamily: font, opacity: requiredOk ? 1 : 0.55,
+                                                        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
+                                                    }}>
+                                                    <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
+                                                        連チャン継続
+                                                    </span>
+                                                    <span style={{ fontSize: 9, fontWeight: 600, color: C.sub }}>次の大当たりを入力</span>
+                                                </button>
+                                                <button className="b" type="button" onClick={onSingleEndStart} disabled={!requiredOk}
+                                                    style={{
+                                                        minHeight: 72, borderRadius: 14, padding: "8px 4px",
+                                                        background: requiredOk ? `color-mix(in srgb, ${C.purple} 22%, transparent)` : "var(--surface-hi)",
+                                                        border: `1px solid ${requiredOk ? C.purple : C.border}`,
+                                                        color: requiredOk ? C.purple : C.sub,
+                                                        fontSize: 13, fontWeight: 800, fontFamily: font, opacity: requiredOk ? 1 : 0.55,
+                                                        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
+                                                    }}>
+                                                    <span>単発終了</span>
+                                                    <span style={{ fontSize: 9, fontWeight: 600, color: C.sub }}>時短後に通常へ</span>
+                                                </button>
+                                                <button className="b" type="button" onClick={onRushEnd} disabled={!requiredOk}
+                                                    style={{
+                                                        minHeight: 72, borderRadius: 14, padding: "8px 4px",
+                                                        background: requiredOk ? `color-mix(in srgb, ${C.orange} 22%, transparent)` : "var(--surface-hi)",
+                                                        border: `1px solid ${requiredOk ? C.orange : C.border}`,
+                                                        color: requiredOk ? C.orange : C.sub,
+                                                        fontSize: 13, fontWeight: 800, fontFamily: font, opacity: requiredOk ? 1 : 0.55,
+                                                        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
+                                                    }}>
+                                                    <span>終了（RUSH終了）</span>
+                                                    <span style={{ fontSize: 9, fontWeight: 600, color: C.sub }}>最終持ち玉を入力</span>
+                                                </button>
+                                            </div>
+                                            {chainInputError && (
+                                                <div style={{ marginTop: 6, fontSize: 11, color: C.red, fontWeight: 600 }}>{chainInputError}</div>
+                                            )}
+                                        </div>
+
+                                        {/* 出玉プリセット */}
+                                        <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 10px" }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                                <span style={{ fontSize: 11, color: C.sub, fontWeight: 700, minWidth: 80 }}>よく使う出玉プリセット</span>
+                                                {[
+                                                    { v: 450, lbl: "3R平均" },
+                                                    { v: 750, lbl: "5R平均" },
+                                                    { v: 1500, lbl: "10R平均" },
+                                                    { v: 3000, lbl: "10R×2" },
+                                                ].map(p => {
+                                                    const target = focus === "nextTimingBalls" ? "nextTimingBalls" : "displayBalls";
+                                                    return (
+                                                        <button key={p.v} className="b" type="button"
+                                                            onClick={() => updField(target, String(p.v))}
+                                                            style={{
+                                                                flex: 1, minWidth: 60, minHeight: 44, borderRadius: 10, padding: "4px 6px",
+                                                                background: "var(--surface-hi)", border: `1px solid ${C.border}`,
+                                                                color: C.text, fontFamily: mono, fontSize: 13, fontWeight: 700,
+                                                                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", lineHeight: 1.1,
+                                                            }}>
+                                                            <span>{p.v}<span style={{ fontSize: 10, color: C.sub, marginLeft: 2 }}>玉</span></span>
+                                                            <span style={{ fontSize: 9, color: C.sub, fontFamily: font, fontWeight: 600 }}>({p.lbl})</span>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        {/* チェーン履歴サマリー（直近 hits） */}
+                                        {chainHits.length > 0 && (
+                                            <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px" }}>
+                                                <div style={{ fontSize: 11, color: C.sub, fontWeight: 700, marginBottom: 6 }}>これまでのRUSH履歴</div>
+                                                <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11 }}>
+                                                    {chainHits.slice(-3).map((h, i) => {
+                                                        const idx = chainHits.length - chainHits.slice(-3).length + i + 1;
+                                                        return (
+                                                            <div key={i} style={{ display: "grid", gridTemplateColumns: "44px 1fr 1fr", gap: 6, alignItems: "baseline" }}>
+                                                                <span style={{ color: C.sub, fontWeight: 700 }}>{idx}連目</span>
+                                                                <span style={{ fontFamily: mono }}>{h.rounds}R / 液晶{f(h.displayBalls)}玉</span>
+                                                                <span style={{ fontFamily: mono, color: sc(h.sapoChange) }}>サポ{sp(h.sapoChange)} (1R≈{h.rounds > 0 ? Math.round(h.displayBalls / h.rounds) : "—"}玉)</span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                                <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${C.border}`, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, fontSize: 11 }}>
+                                                    <div><span style={{ color: C.sub }}>合計R </span><span style={{ fontFamily: mono, fontWeight: 700 }}>{chainTotalRounds}R</span></div>
+                                                    <div><span style={{ color: C.sub }}>液晶 </span><span style={{ fontFamily: mono, fontWeight: 700 }}>{f(chainTotalDisp)}玉</span></div>
+                                                    <div><span style={{ color: C.sub }}>連数 </span><span style={{ fontFamily: mono, fontWeight: 700, color: C.yellow }}>{chainHits.length}連</span></div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* テンキー（ラウンド以外フォーカス時） */}
+                                    {keypadField && (
+                                        <div className="jp-keypad" style={{
+                                            padding: "6px 10px",
+                                            paddingBottom: "max(8px, env(safe-area-inset-bottom))",
+                                            background: "var(--surface-hi)",
+                                            borderTop: `1px solid ${C.border}`,
+                                            flexShrink: 0
+                                        }}>
+                                            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr) 64px", gap: 5 }}>
+                                                {[1,2,3,4,5,6,7,8,9].map(n => (
+                                                    <button key={n} className="b" type="button" onClick={() => keypadAppend(n)}
+                                                        style={{ padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 20, fontFamily: mono, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.text, minHeight: 44 }}>
+                                                        {n}
+                                                    </button>
+                                                ))}
+                                                <button className="b" type="button" onClick={keypadClear}
+                                                    style={{ gridRow: "1 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 13, background: `color-mix(in srgb, ${C.red} 18%, transparent)`, border: `1px solid color-mix(in srgb, ${C.red} 40%, transparent)`, color: C.red, minHeight: 44 }}>
+                                                    消去
+                                                </button>
+                                                <button className="b" type="button" onClick={() => updField(keypadField, "0")}
+                                                    style={{ gridColumn: "1 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 14, fontFamily: font, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.sub, minHeight: 44 }}>
+                                                    0クリア
+                                                </button>
+                                                <button className="b" type="button" onClick={() => keypadAppend(0)}
+                                                    style={{ gridColumn: "2 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 20, fontFamily: mono, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.text, minHeight: 44 }}>
+                                                    0
+                                                </button>
+                                                <button className="b" type="button" onClick={keypadBackspace}
+                                                    style={{ gridColumn: "3 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 18, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.sub, minHeight: 44 }}>
+                                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block", margin: "0 auto" }}><path d="M21 5H8l-7 7 7 7h13a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z" /><line x1="18" y1="9" x2="12" y2="15" /><line x1="12" y1="9" x2="18" y2="15" /></svg>
+                                                </button>
                                             </div>
                                         </div>
                                     )}
-                                </div>
-                            );
-                        })()}
 
-                        {/* Step 5: 継続/最終/単発選択 */}
-                        {chainWizardStep === 5 && (
-                            <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: C.text, marginBottom: 28 }}>この大当たりは？</div>
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center" }}>
-                                    <FlowChoiceButton tone="green" onClick={() => handleChainWizardComplete(false)}
-                                        style={{ width: 100, height: 80, fontSize: 16 }}>継続</FlowChoiceButton>
-                                    <FlowChoiceButton tone="purple" onClick={() => { setChainWizardStep(6); setChainWizardFirstKey(true); }}
-                                        style={{ width: 100, height: 80, fontSize: 16 }}>単発終了</FlowChoiceButton>
-                                    <FlowChoiceButton tone="orange" onClick={() => {
-                                        const lc = jpLog[jpLog.length - 1];
-                                        const existingTotal = (lc ? lc.trayBalls || 0 : 0) +
-                                            (lc ? lc.hits : []).reduce((s, h) => s + (h.displayBalls || 0) + (h.sapoChange || 0), 0);
-                                        const lastOut = Number(chainWizardData.lastOutBalls) || 0;
-                                        const nextTiming = Number(chainWizardData.nextTimingBalls) || 0;
-                                        const estimated = existingTotal + (nextTiming - lastOut);
-                                        setChainWizardInitialFinalBalls(estimated);
-                                        setChainWizardData(d => ({ ...d, finalRealBalls: String(estimated) }));
-                                        setChainWizardStep(8);
-                                        setChainWizardFirstKey(true);
-                                    }} style={{ width: 100, height: 80, fontSize: 16 }}>ラッシュ終了へ</FlowChoiceButton>
-                                </div>
-                                <button className="b" onClick={() => { setChainWizardStep(4); setChainWizardFirstKey(true); }} style={{ marginTop: 28, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 32px", color: C.sub, fontSize: 14 }}>戻る</button>
-                            </div>
-                        )}
+                                    {/* 単発終了サブモーダル */}
+                                    {chainInputSingleEndOpen && (
+                                        <div onClick={() => setChainInputSingleEndOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 100 }}>
+                                            <div onClick={(e) => e.stopPropagation()} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: 16, maxWidth: 360, width: "100%" }}>
+                                                <div style={{ fontSize: 14, fontWeight: 800, color: C.purple, marginBottom: 4 }}>単発終了</div>
+                                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 12 }}>時短回数と最終持ち玉を入力</div>
+                                                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                                                    <label style={{ fontSize: 11, color: C.sub, fontWeight: 700 }}>
+                                                        時短回数（回転）
+                                                        <input type="tel" inputMode="numeric" value={chainWizardData.jitanSpins} onChange={(e) => updField("jitanSpins", e.target.value.replace(/[^0-9]/g, ""))}
+                                                            style={{ display: "block", marginTop: 4, width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontFamily: mono, fontSize: 18, fontWeight: 700, padding: "10px 12px", textAlign: "right" }} />
+                                                    </label>
+                                                    <label style={{ fontSize: 11, color: C.sub, fontWeight: 700 }}>
+                                                        最終持ち玉（玉）
+                                                        <input type="tel" inputMode="numeric" value={chainWizardData.finalBallsAfterJitan} onChange={(e) => updField("finalBallsAfterJitan", e.target.value.replace(/[^0-9]/g, ""))}
+                                                            style={{ display: "block", marginTop: 4, width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontFamily: mono, fontSize: 18, fontWeight: 700, padding: "10px 12px", textAlign: "right" }} />
+                                                    </label>
+                                                </div>
+                                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 14 }}>
+                                                    <button className="b" type="button" onClick={() => setChainInputSingleEndOpen(false)} style={{ padding: "12px 0", borderRadius: 10, fontWeight: 700, fontSize: 14, background: "var(--surface-hi)", border: `1px solid ${C.border}`, color: C.text }}>戻る</button>
+                                                    <button className="b" type="button" onClick={onSingleEndConfirm} style={{ padding: "12px 0", borderRadius: 10, fontWeight: 800, fontSize: 14, background: "#16a34a", border: "none", color: "#fff" }}>記録完了</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            ) : (
+                                /* ====== 画面 C：ラッシュ終了 - 最終実測持ち玉入力 + 集計 ====== */
+                                <>
+                                    <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 12 }}>
+                                        <div style={{ background: "var(--surface)", border: `1px solid ${C.orange}`, borderRadius: 14, padding: "14px 16px" }}>
+                                            <div style={{ fontSize: 12, fontWeight: 700, color: C.orange, marginBottom: 4 }}>RUSH終了 — 最終実測持ち玉</div>
+                                            <div style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>計算値を自動プリセット。実測値に差があればここで調整してください。</div>
+                                            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 6, padding: "12px 0" }}>
+                                                <span style={{ fontSize: 44, fontWeight: 800, color: C.green, fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{f(Number(chainWizardData.finalRealBalls) || 0)}</span>
+                                                <span style={{ fontSize: 14, color: C.sub, fontWeight: 700 }}>玉</span>
+                                            </div>
+                                            {chainWizardInitialFinalBalls > 0 && (
+                                                <div style={{ fontSize: 10, color: C.sub, textAlign: "center" }}>計算値 {f(chainWizardInitialFinalBalls)}玉 / 差分 {sp((Number(chainWizardData.finalRealBalls) || 0) - chainWizardInitialFinalBalls)}玉</div>
+                                            )}
+                                            <div style={{ display: "flex", gap: 6, justifyContent: "center", marginTop: 12 }}>
+                                                {[-100, -50, -10, +10, +50, +100].map(delta => (
+                                                    <button key={delta} className="b" type="button"
+                                                        onClick={() => { const cur = Number(chainWizardData.finalRealBalls) || 0; setChainWizardData(d => ({ ...d, finalRealBalls: String(Math.max(0, cur + delta)) })); }}
+                                                        style={{ flex: 1, minHeight: 36, padding: "0 6px", borderRadius: 8, fontWeight: 700, fontSize: 12,
+                                                            background: delta > 0 ? `color-mix(in srgb, ${C.green} 16%, transparent)` : `color-mix(in srgb, ${C.red} 16%, transparent)`,
+                                                            border: `1px solid ${delta > 0 ? C.green : C.red}`, color: delta > 0 ? C.green : C.red, fontFamily: mono }}>
+                                                        {delta > 0 ? "+" : ""}{delta}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
 
-                        {/* Step 6: 時短回数 */}
-                        {chainWizardStep === 6 && (
-                            <div style={{ textAlign: "center" }}>
-                                <FlowValueCard label="時短回数" value={chainWizardData.jitanSpins || "0"} unit="回転" tone="purple" />
-                            </div>
-                        )}
-
-                        {/* Step 7: 時短終了後出玉 */}
-                        {chainWizardStep === 7 && (() => {
-                            const estimated = Number(chainWizardData.nextTimingBalls) || 0;
-                            return (
-                                <div style={{ textAlign: "center" }}>
-                                    <FlowValueCard label="最終持ち玉" value={chainWizardData.finalBallsAfterJitan || "0"} unit="玉" tone="green" hint={estimated > 0 ? `ラウンド終了時 ${f(estimated)}玉を自動プリセット` : "実際の持ち玉を入力"} />
-                                    <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
-                                        {[-50, -10, +10, +50].map(delta => (
-                                            <button key={delta} className="b" onClick={() => { const cur = Number(chainWizardData.finalBallsAfterJitan) || 0; setChainWizardData(d => ({ ...d, finalBallsAfterJitan: String(Math.max(0, cur + delta)) })); }}
-                                                style={{ padding: "8px 14px", borderRadius: 8, fontWeight: 600, fontSize: 13, background: delta > 0 ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)", border: `1px solid ${delta > 0 ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.4)"}`, color: delta > 0 ? C.green : C.red, fontFamily: mono }}>
-                                                {delta > 0 ? "+" : ""}{delta}
-                                            </button>
-                                        ))}
+                                        {/* 集計表示 */}
+                                        <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 14px" }}>
+                                            <div style={{ fontSize: 11, color: C.sub, fontWeight: 700, marginBottom: 8 }}>チェーン集計</div>
+                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 16px", fontSize: 12 }}>
+                                                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.sub }}>総R数</span><span style={{ fontFamily: mono, fontWeight: 700 }}>{chainTotalRounds}R</span></div>
+                                                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.sub }}>液晶出玉合計</span><span style={{ fontFamily: mono, fontWeight: 700 }}>{f(chainTotalDisp)}玉</span></div>
+                                                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.sub }}>総サポ回転</span><span style={{ fontFamily: mono, fontWeight: 700 }}>{f(chainTotalSapoRot)}回転</span></div>
+                                                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.sub }}>サポ増減</span><span style={{ fontFamily: mono, fontWeight: 700, color: sc(chainTotalSapoChange) }}>{sp(chainTotalSapoChange)}玉</span></div>
+                                                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.sub }}>連数</span><span style={{ fontFamily: mono, fontWeight: 700, color: C.yellow }}>{chainHits.length + 1}連</span></div>
+                                                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                                    <span style={{ color: C.sub }}>純増（実測）</span>
+                                                    <span style={{ fontFamily: mono, fontWeight: 800, color: sc((Number(chainWizardData.finalRealBalls) || 0) - chainTrayBalls) }}>{sp((Number(chainWizardData.finalRealBalls) || 0) - chainTrayBalls)}玉</span>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-                            );
-                        })()}
 
-                        {/* Step 8: 最終実測持ち玉入力 */}
-                        {chainWizardStep === 8 && (() => {
-                            const current = Number(chainWizardData.finalRealBalls) || 0;
-                            return (
-                                <div style={{ textAlign: "center" }}>
-                                    <FlowValueCard label="最終持ち玉" value={f(current)} unit="玉" tone="green" hint={chainWizardInitialFinalBalls > 0 ? `計算値 ${f(chainWizardInitialFinalBalls)}玉を自動プリセット` : "最後に1回だけ実測"} />
-                                    <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
-                                        {[-50, -10, +10, +50].map(delta => (
-                                            <button key={delta} className="b" onClick={() => { const cur = Number(chainWizardData.finalRealBalls) || 0; setChainWizardData(d => ({ ...d, finalRealBalls: String(Math.max(0, cur + delta)) })); }}
-                                                style={{ padding: "8px 14px", borderRadius: 8, fontWeight: 600, fontSize: 13, background: delta > 0 ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)", border: `1px solid ${delta > 0 ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.4)"}`, color: delta > 0 ? C.green : C.red, fontFamily: mono }}>
-                                                {delta > 0 ? "+" : ""}{delta}
+                                    {/* テンキー */}
+                                    <div className="jp-keypad" style={{
+                                        padding: "6px 10px",
+                                        paddingBottom: "max(8px, env(safe-area-inset-bottom))",
+                                        background: "var(--surface-hi)",
+                                        borderTop: `1px solid ${C.border}`,
+                                        flexShrink: 0
+                                    }}>
+                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 6 }}>
+                                            <button className="b" type="button" onClick={() => { setChainWizardStep(0); setChainWizardFirstKey(true); }}
+                                                style={{ padding: "12px 0", borderRadius: 10, fontWeight: 700, fontSize: 14, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.text }}>戻る</button>
+                                            <button className="b" type="button"
+                                                onClick={() => {
+                                                    const value = Number(chainWizardData.finalRealBalls) || 0;
+                                                    const edited = value !== chainWizardInitialFinalBalls;
+                                                    handleChainWizardComplete(true, { value, edited });
+                                                }}
+                                                style={{ padding: "12px 0", borderRadius: 10, fontWeight: 800, fontSize: 14, background: "#16a34a", border: "none", color: "#fff" }}>結果を保存</button>
+                                        </div>
+                                        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr) 64px", gap: 5 }}>
+                                            {[1,2,3,4,5,6,7,8,9].map(n => (
+                                                <button key={n} className="b" type="button"
+                                                    onClick={() => {
+                                                        setChainWizardData(d => {
+                                                            const cur = d.finalRealBalls != null ? String(d.finalRealBalls) : "";
+                                                            const next = chainWizardFirstKey ? String(n) : (cur === "0" ? String(n) : cur + n);
+                                                            return { ...d, finalRealBalls: next };
+                                                        });
+                                                        setChainWizardFirstKey(false);
+                                                    }}
+                                                    style={{ padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 20, fontFamily: mono, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.text, minHeight: 44 }}>
+                                                    {n}
+                                                </button>
+                                            ))}
+                                            <button className="b" type="button" onClick={() => { setChainWizardData(d => ({ ...d, finalRealBalls: "" })); setChainWizardFirstKey(false); }}
+                                                style={{ gridRow: "1 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 13, background: `color-mix(in srgb, ${C.red} 18%, transparent)`, border: `1px solid color-mix(in srgb, ${C.red} 40%, transparent)`, color: C.red, minHeight: 44 }}>
+                                                消去
                                             </button>
-                                        ))}
+                                            <button className="b" type="button" onClick={() => setChainWizardData(d => ({ ...d, finalRealBalls: String(chainWizardInitialFinalBalls || 0) }))}
+                                                style={{ gridColumn: "1 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 11, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.sub, minHeight: 44 }}>
+                                                計算値
+                                            </button>
+                                            <button className="b" type="button"
+                                                onClick={() => {
+                                                    setChainWizardData(d => {
+                                                        const cur = d.finalRealBalls != null ? String(d.finalRealBalls) : "";
+                                                        return { ...d, finalRealBalls: chainWizardFirstKey ? "0" : (cur === "" ? "" : cur + "0") };
+                                                    });
+                                                    setChainWizardFirstKey(false);
+                                                }}
+                                                style={{ gridColumn: "2 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 20, fontFamily: mono, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.text, minHeight: 44 }}>
+                                                0
+                                            </button>
+                                            <button className="b" type="button"
+                                                onClick={() => {
+                                                    setChainWizardData(d => {
+                                                        const cur = d.finalRealBalls != null ? String(d.finalRealBalls) : "";
+                                                        return { ...d, finalRealBalls: cur.slice(0, -1) };
+                                                    });
+                                                    setChainWizardFirstKey(false);
+                                                }}
+                                                style={{ gridColumn: "3 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 18, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.sub, minHeight: 44 }}>
+                                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block", margin: "0 auto" }}><path d="M21 5H8l-7 7 7 7h13a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z" /><line x1="18" y1="9" x2="12" y2="15" /><line x1="12" y1="9" x2="18" y2="15" /></svg>
+                                            </button>
+                                        </div>
                                     </div>
-                                </div>
-                            );
-                        })()}
-                    </div>
-
-                    {/* テンキー */}
-                    {chainWizardStep !== 0 && chainWizardStep !== 5 && (
-                        <div className="jp-keypad" style={{ padding: "8px 12px", paddingBottom: "max(12px, env(safe-area-inset-bottom))", background: "rgba(20,20,25,1)", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
-                                <button className="b" onClick={() => { if (chainWizardStep === 1) setChainWizardStep(0); else if (chainWizardStep === 6) setChainWizardStep(5); else if (chainWizardStep === 8) setChainWizardStep(5); else setChainWizardStep(s => s - 1); setChainWizardFirstKey(true); }}
-                                    style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "var(--surface-hi)", border: "none", color: C.text }}>戻る</button>
-                                {chainWizardStep === 7 ? (
-                                    <button className="b" onClick={handleChainWizardSingleEnd} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#16a34a", border: "none", color: "#fff" }}>記録完了</button>
-                                ) : chainWizardStep === 8 ? (
-                                    <button className="b" onClick={() => {
-                                        const value = Number(chainWizardData.finalRealBalls) || 0;
-                                        const edited = value !== chainWizardInitialFinalBalls;
-                                        handleChainWizardComplete(true, { value, edited });
-                                    }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#16a34a", border: "none", color: "#fff" }}>結果を保存</button>
-                                ) : (
-                                    <button className="b" onClick={() => {
-                                        if (chainWizardStep === 3 && !chainWizardData.nextTimingBalls) {
-                                            const lastOut = Number(chainWizardData.lastOutBalls) || 0;
-                                            const disp = Number(chainWizardData.displayBalls) || 0;
-                                            setChainWizardData(d => ({ ...d, nextTimingBalls: String(lastOut + disp) }));
-                                        }
-                                        // Step 6 → 7 に進む時に時短終了後出玉を自動プリセット（ラウンド終了時の持ち玉）
-                                        if (chainWizardStep === 6 && !chainWizardData.finalBallsAfterJitan) {
-                                            const estimated = Number(chainWizardData.nextTimingBalls) || 0;
-                                            if (estimated > 0) {
-                                                setChainWizardData(d => ({ ...d, finalBallsAfterJitan: String(estimated) }));
-                                            }
-                                        }
-                                        setChainWizardStep(s => s + 1); setChainWizardFirstKey(true);
-                                    }} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#2f6fed", border: "none", color: "#fff" }}>次へ</button>
-                                )}
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-                                {[1,2,3,4,5,6,7,8,9].map(n => (
-                                    <button key={n} className="b" onClick={() => {
-                                        const field = chainWizardStep === 1 ? "lastOutBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "displayBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : chainWizardStep === 8 ? "finalRealBalls" : "finalBallsAfterJitan";
-                                        setChainWizardData(d => chainWizardFirstKey ? { ...d, [field]: String(n) } : { ...d, [field]: (d[field] === "0" ? String(n) : (d[field] || "") + n) });
-                                        setChainWizardFirstKey(false);
-                                    }} style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "var(--surface-hi)", border: "none", color: C.text, minHeight: 56 }}>{n}</button>
-                                ))}
-                                <button className="b" onClick={() => { const field = chainWizardStep === 1 ? "lastOutBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "displayBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : chainWizardStep === 8 ? "finalRealBalls" : "finalBallsAfterJitan"; setChainWizardData(d => ({ ...d, [field]: "" })); setChainWizardFirstKey(false); }}
-                                    style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 15, background: "rgba(239,68,68,0.25)", border: "none", color: C.red, minHeight: 56 }}>消去</button>
-                                <button className="b" onClick={() => { const field = chainWizardStep === 1 ? "lastOutBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "displayBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : chainWizardStep === 8 ? "finalRealBalls" : "finalBallsAfterJitan"; setChainWizardData(d => chainWizardFirstKey ? { ...d, [field]: "0" } : (d[field] === "" ? d : { ...d, [field]: d[field] + "0" })); setChainWizardFirstKey(false); }}
-                                    style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 24, fontFamily: mono, background: "var(--surface-hi)", border: "none", color: C.text, minHeight: 56 }}>0</button>
-                                <button className="b" onClick={() => { const field = chainWizardStep === 1 ? "lastOutBalls" : chainWizardStep === 2 ? "elecSapoRot" : chainWizardStep === 3 ? "displayBalls" : chainWizardStep === 4 ? "nextTimingBalls" : chainWizardStep === 6 ? "jitanSpins" : "finalBallsAfterJitan"; setChainWizardData(d => ({ ...d, [field]: (d[field] || "").slice(0, -1) })); setChainWizardFirstKey(false); }}
-                                    style={{ padding: "18px 0", borderRadius: 12, fontWeight: 700, fontSize: 20, background: "var(--surface-hi)", border: "none", color: C.sub, minHeight: 56 }}>←</button>
-                            </div>
+                                </>
+                            )}
                         </div>
-                    )}
-                </div>,
+                    );
+                })(),
                 document.body
             )}
 

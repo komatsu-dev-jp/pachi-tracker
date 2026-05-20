@@ -1,6 +1,6 @@
 # HANDOVER.md — Pachi Tracker 引き継ぎドキュメント
 
-最終更新: 2026-05-19（初当たり入力フロー改修の設計ドキュメント `docs/input-flow-design.md` を新規作成。コード変更なし）
+最終更新: 2026-05-20（初当たり/連チャン入力フロー新UI（画面 A・B・C）を `Tabs.jsx` に統合実装。`logic.js` / `baseline.json` 不変）
 
 ---
 
@@ -423,7 +423,17 @@ if (evAdj < -50 || bDiff < -1.0)                      → "stop"
 - ✅ Phase 6 判定変化通知：`evDecision` の verdict 推移を `prevVerdictRef` で観測、5分以内の同 verdict 往復抑制、`NOTIF_VERDICT_CHANGE` 通知（本ブランチ `claude/hunting-system-continue-U0yhI`）
 - ✅ 大当たりタブの「稼働ログ」サブタブを UI のみ削除（`sesLog` データ自体は `RecentEventList` が継続利用するため保持）。`Tabs.jsx` のアクティブセッション側と `HistoryTab` 側の両方からサブタブバー＋ses表示ブロックを除去し、`historySub` / `sub` の useState、`HistoryTab` の `delSesLast` / `sesLog` propsも未参照になったため削除（本ブランチ `claude/fix-jackpot-page-layout-mkd6t`）
 - ✅ ヘッダーのサマリーカードを実績軸「総回転 / 現在ハマり / 時給 / 初当」に刷新。下の `KeyMetrics` と重複していた「回転率 / EV/K / 仕事量」を置換。`現在ハマり` は `rotRows` 末尾の `cumRot` − 最後の `type === "start"` 行の `cumRot`（rotRows 由来の派生のみで `logic.js` 不変）。`時給` は既存 `evEff.wage` を流用（本ブランチ `claude/fix-jackpot-page-layout-mkd6t`）
-- ✅ 初当たり入力フロー改修の設計ドキュメント `docs/input-flow-design.md` を新規作成（本ブランチ `claude/create-input-flow-design-vtV30`）。コード変更なし。新フロー（1画面5項目・開始上皿玉必須化・連チャン時の自動引き継ぎ・出玉プリセット）の画面構成・データモデル・実装ステップ案を整理。`logic.js`/`baseline.json`/`evDecision.js` 不変方針
+- ✅ 初当たり入力フロー改修の設計ドキュメント `docs/input-flow-design.md` を新規作成（PR #194 マージ済み）。コード変更なし。新フロー（1画面5項目・開始上皿玉必須化・連チャン時の自動引き継ぎ・出玉プリセット）の画面構成・データモデル・実装ステップ案を整理。`logic.js`/`baseline.json`/`evDecision.js` 不変方針
+- ✅ 上記設計ドキュメントの **Step C〜G を一括統合実装**（本ブランチ `claude/implement-ui-design-wqaYW`、2026-05-20）。`logic.js` / `baseline.json` 不変を厳守
+  - **画面 A**: 旧 hitWizard（8 ステップ）を 1 画面 5 項目（回転数 / 開始上皿玉 / ラウンド数 / 液晶出玉 / 実測出玉）+ 連チャン継続 / 単発終了 + プッシュ額折りたたみ + 出玉プリセット + リアルタイム獲得計算に刷新。開始上皿玉を**必須化**
+  - **画面 B**: 旧 chainWizard（9 ステップ）の 0〜7 を 1 画面 4 項目（回転数 / ラウンド数 / 液晶出玉 / 実測出玉）+ 継続 / 単発終了 / RUSH終了 へ刷新。開始上皿玉は前回終了時持玉から自動引き継ぎ（「前回引き継ぎ: ◯◯玉」バッジ表示）。`lastOutBalls` / `nextTimingBalls` / `elecSapoRot` / `sapoChange` の内部分離は保持（保存データ互換）
+  - **画面 C**: 旧 `chainWizardStep === 8` の最終実測持ち玉入力をヘッダー「ラッシュ終了 — 最終確認」+ チェーン集計表示として独立化
+  - 「初当たり」ボタンの起動経路を変更：旧（テンキー bottom sheet jackpot mode → 確定で wizard 起動）→ 新（直接画面 A 起動、回転数は 5 項目の 1 つとして同画面で入力）。bottom sheet の `inputSheetMode = "jackpot"` 経路を撤去（変数自体も削除）
+  - `handleStartChain(rotCountArg)` に引数を追加：画面 A から `(rotCount値)` を直接渡せるよう拡張。旧経路の引数なし呼び出しは下位互換として残置（実コードパスは消失済）
+  - 既存ハンドラ（`handleWizardComplete` / `handleChainWizardComplete` / `handleChainWizardSingleEnd`）は**シグネチャ不変**。新UI は presentational layer に徹してこれらを呼び出すだけ
+  - `chain.hits[]` / `chain.trayBalls` / `chain.finalRealBalls` 等の保存データ構造は完全に同一。旧UIで作成したチェーンは新UIで閲覧・編集・削除可能
+  - 仕様書未決事項（§9）はすべて `docs/implementation-notes.md` に判断記録：プッシュ額は画面 A 内の折りたたみ・「RUSH継続期待度」は算出式未確定のため非表示・電サポ効率は直近 hit の sapoPerRot で暫定表示など
+  - **検証**: `npm run lint` warnings=7 errors=0（ベースライン同等）、`npm run build` 成功、`node src/__tests__/protected-fns.mjs` の出力が `baseline.json` と完全一致、`evDecision.test.mjs` / `badges.test.mjs` も全 PASS
 
 ---
 
@@ -645,7 +655,8 @@ npm run build
 4. `docs/roadmap-mockup-impl.md` — モックアップ完全再現ロードマップ（先行書）
 5. `docs/decision-ui-design.md` — 判断ファーストUI 設計書
 6. `docs/input-flow-design.md` — 初当たり/連チャン入力フロー改修の設計書（2026-05-19 新規）
-7. 大当たり後フロー調査レポート — ブランチ `claude/investigate-jackpot-flow-IXTu2` 内
+7. `docs/implementation-notes.md` — 上記設計書の実装メモ（2026-05-20 新規）。仕様書未決事項への判断・妥協点・保存形式互換性
+8. 大当たり後フロー調査レポート — ブランチ `claude/investigate-jackpot-flow-IXTu2` 内
 
 > ロードマップが2つあるが、矛盾時は `roadmap-hunter-ux.md` を優先。
 > 先行書のサブステップは新ロードマップの各 Phase に吸収して扱う。
