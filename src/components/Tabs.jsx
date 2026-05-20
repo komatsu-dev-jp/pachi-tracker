@@ -532,7 +532,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         finalBallsAfterJitan: "" // 時短終了後最終出玉
     });
     // 画面 A 補助 state
-    const [hitInputFocus, setHitInputFocus] = useState("rotCount"); // テンキーで編集中の行
+    const [hitInputFocus, setHitInputFocus] = useState(""); // テンキーで編集中の行（"" = 未フォーカス）
     const [hitInputError, setHitInputError] = useState("");
     const [hitInputShowPush, setHitInputShowPush] = useState(true); // プッシュ額の折りたたみ（既定で開く＝押し忘れ防止）
     const [hitInputSingleEndOpen, setHitInputSingleEndOpen] = useState(false); // 単発時の時短/最終持ち玉モーダル
@@ -1422,7 +1422,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         setHitWizardOpen(false);
         setHitInputError("");
         setHitInputShowPush(true);
-        setHitInputFocus("rotCount");
+        setHitInputFocus("");
         setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: "", rounds: 3, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
 
         // 確変の場合: HistoryTabで連チャン記録継続
@@ -1466,7 +1466,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         } else if (!isChainActive) {
             setHitInputError("");
             setHitInputShowPush(true);
-            setHitInputFocus("rotCount");
+            setHitInputFocus("");
             setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: "", rounds: 0, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
             setHitWizardOpen(true);
         }
@@ -2211,7 +2211,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                         // 新UI: 画面 A を直接フルスクリーン表示（仕様書 §3.1）
                                         setHitInputError("");
                                         setHitInputShowPush(true);
-                                        setHitInputFocus("rotCount");
+                                        setHitInputFocus("");
                                         setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: "", rounds: 0, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
                                         setHitWizardOpen(true);
                                     }}
@@ -3446,22 +3446,13 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     const actualN = numOr0("actualBalls");
                     const rndN = numOr0("rounds");
 
-                    const netGain = actualN > 0 ? actualN - trayN : (dispN > 0 ? dispN - trayN : 0);
                     const requiredOk = rotN > 0 && trayN > 0 && rndN > 0 && dispN > 0;
 
                     // ヘッダーのチェーン状態
                     const chainLen = lastChain && !lastChain.completed ? (lastChain.hits || []).length : 0;
-                    const headerBadge = chainLen > 0 ? `RUSH中 ${chainLen}連` : "初当たり入力";
 
                     // 上部ステータス：算出可能な値のみ表示、不明値は「—」
-                    // 仕様書 §9.1 #4-#6 で式未確定の指標は控えめに
                     const evNet = ev && Number.isFinite(ev.netGain) ? ev.netGain : 0;
-                    const lastHitSapoPerRot = (() => {
-                        const c = lastChain;
-                        if (!c || !c.hits || c.hits.length === 0) return null;
-                        const lh = c.hits[c.hits.length - 1];
-                        return Number.isFinite(lh.sapoPerRot) ? lh.sapoPerRot : null;
-                    })();
 
                     // テンキー入力：focus に対応する文字列フィールドを編集
                     const keypadAppend = (n) => {
@@ -3488,7 +3479,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         setHitWizardOpen(false);
                         setHitInputError("");
                         setHitInputShowPush(true);
-                        setHitInputFocus("rotCount");
+                        setHitInputFocus("");
                     };
 
                     // 確変=ラッシュ継続
@@ -3541,8 +3532,54 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         setHitInputSingleEndOpen(false);
                     };
 
+                    // フィールド遷移順序（入力確定 = 次のフィールドへ）
+                    const FIELD_ORDER = ["rotCount", "trayBalls", "rounds", "displayBalls", "actualBalls"];
+                    const onEnterPress = () => {
+                        const idx = FIELD_ORDER.indexOf(focus);
+                        if (idx === -1) setFocus(FIELD_ORDER[0]);
+                        else if (idx < FIELD_ORDER.length - 1) setFocus(FIELD_ORDER[idx + 1]);
+                        else setFocus("");
+                    };
+
+                    // 上部 5 カード用の追加メトリクス
+                    const sapoRot = ev && Number.isFinite(ev.sapoPerRot) ? ev.sapoPerRot : 0;
+                    const startG1K = ev && Number.isFinite(ev.start1K) ? ev.start1K : 0;
+                    const avg1R = ev && Number.isFinite(ev.avg1R) ? ev.avg1R : 0;
+                    const per1RThis = (actualN > 0 && rndN > 0) ? Math.round(actualN / rndN) : 0;
+
+                    // 円形アイコン
+                    const RowIcon = ({ kind, color }) => {
+                        const ic = (() => {
+                            switch (kind) {
+                                case "rotate":
+                                    return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M20.49 15A9 9 0 0 1 5.64 18.36L1 14"/></svg>;
+                                case "coin":
+                                    return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="8" rx="8" ry="3"/><path d="M4 8v8c0 1.66 3.58 3 8 3s8-1.34 8-3V8"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>;
+                                case "r":
+                                    return <span style={{ fontSize: 16, fontWeight: 900, fontFamily: mono, lineHeight: 1 }}>R</span>;
+                                case "monitor":
+                                    return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>;
+                                case "target":
+                                    return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>;
+                                default: return null;
+                            }
+                        })();
+                        return (
+                            <div style={{
+                                width: 36, height: 36, borderRadius: "50%",
+                                background: `color-mix(in srgb, ${color} 16%, transparent)`,
+                                border: `1px solid color-mix(in srgb, ${color} 36%, transparent)`,
+                                color: color,
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                flexShrink: 0,
+                            }}>
+                                {ic}
+                            </div>
+                        );
+                    };
+
                     // 行コンポーネント
-                    const Row = ({ id, n, label, sub, value, unit, presets, required, color }) => {
+                    const Row = ({ id, icon, iconColor, label, sub, value, unit, presets, required, color }) => {
                         const active = focus === id;
                         return (
                             <div
@@ -3552,43 +3589,53 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setFocus(id); }}
                                 style={{
                                     display: "grid",
-                                    gridTemplateColumns: "auto 1fr auto",
-                                    gap: 10,
+                                    gridTemplateColumns: "1fr auto auto",
+                                    gap: 8,
                                     alignItems: "center",
-                                    padding: "10px 12px",
+                                    padding: "8px 10px",
                                     borderRadius: 12,
                                     background: active ? `color-mix(in srgb, ${color} 14%, var(--surface))` : "var(--surface)",
                                     border: `1px solid ${active ? color : C.border}`,
                                     cursor: "pointer",
                                     boxShadow: active ? `0 0 0 2px color-mix(in srgb, ${color} 28%, transparent)` : "none",
+                                    minHeight: 60,
                                 }}>
-                                <div style={{ minWidth: 110 }}>
-                                    <div style={{ fontSize: 11, color: C.sub, fontWeight: 600, lineHeight: 1 }}>{n}.</div>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-                                        <span style={{ fontSize: 13, fontWeight: 800, color: C.text, fontFamily: font }}>{label}</span>
-                                        {required && (
-                                            <span style={{ fontSize: 9, fontWeight: 800, color: "#000", background: C.yellow, padding: "1px 5px", borderRadius: 4, fontFamily: font }}>必須</span>
-                                        )}
+                                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                                    <RowIcon kind={icon} color={iconColor} />
+                                    <div style={{ minWidth: 0 }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 6, lineHeight: 1.2 }}>
+                                            <span style={{ fontSize: 13, fontWeight: 800, color: C.text, fontFamily: font }}>{label}</span>
+                                            {required && (
+                                                <span style={{ fontSize: 9, fontWeight: 800, color: "#000", background: C.yellow, padding: "1px 5px", borderRadius: 4, fontFamily: font }}>必須</span>
+                                            )}
+                                        </div>
+                                        {sub && <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>{sub}</div>}
                                     </div>
-                                    {sub && <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>{sub}</div>}
                                 </div>
-                                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "flex-end", gap: 4 }}>
-                                    <span style={{ fontSize: 28, fontWeight: 800, color: value === "" ? C.sub : color, fontFamily: mono, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
-                                        {value === "" ? "—" : value}
+                                <div style={{
+                                    background: "var(--surface-alt)",
+                                    border: `1px solid ${active ? color : C.border}`,
+                                    borderRadius: 8,
+                                    padding: "4px 10px",
+                                    minWidth: 88,
+                                    display: "flex", alignItems: "baseline", justifyContent: "flex-end", gap: 4,
+                                }}>
+                                    <span style={{ fontSize: 22, fontWeight: 800, color: value === "" ? C.sub : color, fontFamily: mono, fontVariantNumeric: "tabular-nums", lineHeight: 1, letterSpacing: 1 }}>
+                                        {value === "" ? "---" : value}
                                     </span>
-                                    {unit && <span style={{ fontSize: 11, color: C.sub, fontFamily: font, fontWeight: 600 }}>{unit}</span>}
+                                    {unit && <span style={{ fontSize: 10, color: C.sub, fontFamily: font, fontWeight: 600 }}>{unit}</span>}
                                 </div>
                                 {presets && (
-                                    <div style={{ display: "flex", gap: 4 }}>
+                                    <div style={{ display: "flex", gap: 3, flexShrink: 0 }}>
                                         {presets.map(p => (
                                             <button key={String(p.label)} className="b" type="button"
                                                 onClick={(e) => { e.stopPropagation(); p.onClick(); setFocus(id); }}
                                                 style={{
-                                                    minWidth: 44, minHeight: 36, padding: "0 8px", borderRadius: 8,
-                                                    background: p.active ? `color-mix(in srgb, ${color} 28%, transparent)` : "var(--surface-hi)",
+                                                    minWidth: 38, minHeight: 36, padding: "0 6px", borderRadius: 8,
+                                                    background: p.active ? `color-mix(in srgb, ${color} 28%, transparent)` : "var(--surface-alt)",
                                                     border: `1px solid ${p.active ? color : C.border}`,
                                                     color: p.active ? color : C.text,
-                                                    fontSize: 12, fontWeight: 700, fontFamily: mono,
+                                                    fontSize: 11, fontWeight: 700, fontFamily: mono,
                                                 }}>
                                                 {p.label}
                                             </button>
@@ -3603,91 +3650,233 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                         label: `${r}R`, active: rndN === r, onClick: () => updField("rounds", r),
                     }));
 
+                    // サマリー行（今回の入力まとめ用）
+                    const summaryRows = [
+                        { label: "回転数", value: rotN > 0 ? f(rotN) : "—", unit: "回転" },
+                        { label: "開始上皿玉数", value: trayN > 0 ? f(trayN) : "—", unit: "玉" },
+                        { label: "ラウンド数", value: rndN > 0 ? `${rndN}R` : "—", unit: "" },
+                        { label: "液晶出玉", value: dispN > 0 ? f(dispN) : "—", unit: "玉" },
+                        { label: "実測出玉", value: actualN > 0 ? f(actualN) : "—", unit: "玉" },
+                        { label: "1Rあたりの出球", value: per1RThis > 0 ? f(per1RThis) : "—", unit: "玉" },
+                    ];
+
                     return (
                         <div className="jp-proto-screen" style={{
                             position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
                             zIndex: 9999, display: "flex", flexDirection: "column",
                             height: "100dvh", width: "100vw", background: C.bg
                         }}>
-                            {/* ヘッダー */}
-                            <div className="jp-proto-header" style={{
-                                padding: "10px 14px",
+                            {/* ヘッダー: メニュー / RUSH中 N連 / 履歴 */}
+                            <div style={{
+                                padding: "10px 12px",
                                 paddingTop: "max(10px, env(safe-area-inset-top))",
-                                borderBottom: `1px solid ${C.border}`,
                                 display: "flex", justifyContent: "space-between", alignItems: "center",
                                 flexShrink: 0, gap: 8,
                             }}>
-                                <button className="b" onClick={onClose} style={{ background: "transparent", border: "none", color: C.sub, fontSize: 13, fontWeight: 700, padding: 6, display: "flex", alignItems: "center", gap: 4 }}>
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
-                                    戻る
+                                <button className="b" onClick={onClose} style={{
+                                    background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 10,
+                                    color: C.text, fontSize: 13, fontWeight: 700, fontFamily: font,
+                                    padding: "8px 12px",
+                                    display: "flex", alignItems: "center", gap: 6, minHeight: 40,
+                                }}>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                                    メニュー
                                 </button>
-                                <span style={{ fontSize: 14, fontWeight: 800, color: chainLen > 0 ? C.yellow : C.text, display: "flex", alignItems: "center", gap: 4 }}>
-                                    {chainLen > 0 && <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>}
-                                    {headerBadge}
+                                <span style={{
+                                    display: "flex", alignItems: "center", gap: 4,
+                                    fontSize: 17, fontWeight: 800,
+                                    color: chainLen > 0 ? C.yellow : C.text, fontFamily: font,
+                                }}>
+                                    {chainLen > 0 && <svg width="20" height="20" viewBox="0 0 24 24" fill={C.yellow}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>}
+                                    {chainLen > 0 ? (
+                                        <>
+                                            <span>RUSH中</span>
+                                            <span style={{ fontSize: 24, fontFamily: mono, marginLeft: 2 }}>{chainLen}</span>
+                                            <span style={{ fontSize: 14 }}>連</span>
+                                        </>
+                                    ) : "初当たり入力"}
                                 </span>
-                                <button className="b" onClick={() => S.setSessionSubTab("history")} style={{ background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, color: C.sub, fontSize: 12, fontWeight: 700, padding: "5px 10px" }}>履歴</button>
+                                <button className="b" onClick={() => S.setSessionSubTab("history")} style={{
+                                    background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 10,
+                                    color: C.text, fontSize: 13, fontWeight: 700, fontFamily: font,
+                                    padding: "8px 12px",
+                                    display: "flex", alignItems: "center", gap: 6, minHeight: 40,
+                                }}>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                    履歴
+                                </button>
                             </div>
 
                             {/* スクロール領域 */}
-                            <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+                            <div style={{ flex: 1, overflowY: "auto", padding: "0 12px 8px", display: "flex", flexDirection: "column", gap: 10 }}>
 
-                                {/* 上部ステータスカード（2x2 グリッド） */}
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                                    <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 10px" }}>
-                                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>現在持玉</div>
-                                        <div style={{ fontSize: 20, fontWeight: 800, color: C.green, fontFamily: mono }}>{f(S.currentMochiBalls || 0)}<span style={{ fontSize: 11, color: C.sub, marginLeft: 3 }}>玉</span></div>
-                                    </div>
-                                    <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 10px" }}>
-                                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>期待差玉</div>
-                                        <div style={{ fontSize: 20, fontWeight: 800, color: sc(evNet), fontFamily: mono }}>{sp(Math.round(evNet))}<span style={{ fontSize: 11, color: C.sub, marginLeft: 3 }}>玉</span></div>
-                                    </div>
-                                    <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 10px" }}>
-                                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>電サポ効率</div>
-                                        <div style={{ fontSize: 20, fontWeight: 800, color: lastHitSapoPerRot != null ? sc(lastHitSapoPerRot) : C.sub, fontFamily: mono }}>
-                                            {lastHitSapoPerRot != null ? sp(lastHitSapoPerRot, 2) : "—"}<span style={{ fontSize: 10, color: C.sub, marginLeft: 3 }}>/回</span>
+                                {/* 5項目ステータスカード（横並び） */}
+                                <div style={{
+                                    background: "var(--surface)",
+                                    border: `1px solid ${C.border}`,
+                                    borderRadius: 14,
+                                    padding: "10px 4px",
+                                    display: "grid", gridTemplateColumns: "repeat(5, 1fr)",
+                                }}>
+                                    {/* 現在持玉 */}
+                                    <div style={{ textAlign: "center", padding: "0 2px" }}>
+                                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, fontFamily: font }}>現在持玉</div>
+                                        <div style={{ fontSize: 17, fontWeight: 900, color: C.green, fontFamily: mono, lineHeight: 1.1, marginTop: 2 }}>{f(S.currentMochiBalls || 0)}<span style={{ fontSize: 9, marginLeft: 1, fontFamily: font }}>玉</span></div>
+                                        <div style={{ display: "inline-block", marginTop: 3, fontSize: 9, fontWeight: 700, color: sc(evNet), background: `color-mix(in srgb, ${sc(evNet)} 18%, transparent)`, padding: "1px 5px", borderRadius: 5, fontFamily: mono }}>
+                                            {sp(Math.round(evNet))}玉
                                         </div>
                                     </div>
-                                    <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 10px" }}>
-                                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>チェーン</div>
-                                        <div style={{ fontSize: 20, fontWeight: 800, color: chainLen > 0 ? C.yellow : C.sub, fontFamily: mono }}>{chainLen > 0 ? `${chainLen}連目` : "1連目"}</div>
+                                    {/* 期待差玉 */}
+                                    <div style={{ textAlign: "center", padding: "0 2px", borderLeft: `1px solid ${C.border}` }}>
+                                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, fontFamily: font }}>期待差玉</div>
+                                        <div style={{ fontSize: 17, fontWeight: 900, color: sc(evNet), fontFamily: mono, lineHeight: 1.1, marginTop: 2 }}>{sp(Math.round(evNet))}<span style={{ fontSize: 9, marginLeft: 1, fontFamily: font }}>玉</span></div>
+                                        <div style={{ fontSize: 9, color: C.sub, marginTop: 3, fontFamily: font }}>回転率 <span style={{ fontFamily: mono }}>{startG1K > 0 ? f(startG1K, 1) : "—"}</span>G/千円</div>
+                                    </div>
+                                    {/* 電サポ効率 */}
+                                    <div style={{ textAlign: "center", padding: "0 2px", borderLeft: `1px solid ${C.border}` }}>
+                                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, fontFamily: font }}>電サポ効率</div>
+                                        <div style={{ fontSize: 17, fontWeight: 900, color: sapoRot !== 0 ? sc(sapoRot) : C.sub, fontFamily: mono, lineHeight: 1.1, marginTop: 2 }}>
+                                            {sapoRot !== 0 ? sp(sapoRot, 2) : "—"}<span style={{ fontSize: 9, marginLeft: 1, fontFamily: font }}>/回</span>
+                                        </div>
+                                        <div style={{ fontSize: 9, color: C.sub, marginTop: 3, fontFamily: font }}>前回比 —</div>
+                                    </div>
+                                    {/* RUSH継続期待度 */}
+                                    <div style={{ textAlign: "center", padding: "0 2px", borderLeft: `1px solid ${C.border}` }}>
+                                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, fontFamily: font }}>RUSH継続期待度</div>
+                                        <div style={{ fontSize: 17, fontWeight: 900, color: C.yellow, fontFamily: mono, lineHeight: 1.1, marginTop: 2 }}>—<span style={{ fontSize: 9, marginLeft: 1, fontFamily: font }}>%</span></div>
+                                        <div style={{ fontSize: 9, color: C.sub, marginTop: 3, fontFamily: font }}>転落確率 —</div>
+                                    </div>
+                                    {/* 1Rあたりの出球 */}
+                                    <div style={{ textAlign: "center", padding: "0 2px", borderLeft: `1px solid ${C.border}` }}>
+                                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, fontFamily: font }}>1Rあたりの出球</div>
+                                        <div style={{ fontSize: 17, fontWeight: 900, color: C.green, fontFamily: mono, lineHeight: 1.1, marginTop: 2 }}>{avg1R > 0 ? `約${f(Math.round(avg1R))}` : "—"}<span style={{ fontSize: 9, marginLeft: 1, fontFamily: font }}>玉</span></div>
+                                        <div style={{ fontSize: 9, color: C.sub, marginTop: 3, fontFamily: font }}>（実測ベース）</div>
                                     </div>
                                 </div>
 
-                                {/* タイトル */}
-                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
-                                    <div>
-                                        <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>初当たり入力</div>
-                                        <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>各項目を入力して、次の状態を選択してください</div>
+                                {/* 現在入力中: デフォルト + 入力ガイド */}
+                                <div style={{
+                                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                                    padding: "0 2px", gap: 8,
+                                }}>
+                                    <div style={{ display: "flex", alignItems: "baseline", gap: 4, flexWrap: "wrap", minWidth: 0 }}>
+                                        <span style={{ fontSize: 14, fontWeight: 800, color: C.blue, fontFamily: font }}>現在入力中:</span>
+                                        <span style={{ fontSize: 14, fontWeight: 800, color: C.text, fontFamily: font }}>デフォルト</span>
+                                        <span style={{ fontSize: 11, color: C.sub, marginLeft: 4 }}>（次の大当たりを入力してください）</span>
                                     </div>
-                                    <span style={{ fontSize: 10, fontWeight: 800, color: C.blue, background: `color-mix(in srgb, ${C.blue} 14%, transparent)`, padding: "3px 8px", borderRadius: 6, border: `1px solid color-mix(in srgb, ${C.blue} 30%, transparent)` }}>現在入力中</span>
+                                    <button className="b" type="button" style={{
+                                        background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 8,
+                                        color: C.sub, fontSize: 11, fontWeight: 700, padding: "6px 10px",
+                                        display: "flex", alignItems: "center", gap: 4, fontFamily: font, flexShrink: 0,
+                                    }}>
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                        入力ガイド
+                                    </button>
                                 </div>
 
-                                {/* 5 項目並列 */}
+                                {/* タブ: 初当たり / 連チャン追加 */}
+                                <div style={{
+                                    background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 14,
+                                    padding: 4, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4,
+                                }}>
+                                    <button className="b" type="button" style={{
+                                        minHeight: 46, borderRadius: 10,
+                                        background: C.blue, border: "none", color: "#fff",
+                                        fontSize: 15, fontWeight: 800, fontFamily: font,
+                                        boxShadow: `0 4px 12px color-mix(in srgb, ${C.blue} 40%, transparent)`,
+                                    }}>
+                                        初当たり
+                                    </button>
+                                    <button className="b" type="button" onClick={() => {
+                                        if (chainLen > 0) {
+                                            setHitWizardOpen(false);
+                                            openChainWizard();
+                                        }
+                                    }} style={{
+                                        minHeight: 46, borderRadius: 10,
+                                        background: "transparent", border: "none",
+                                        color: chainLen > 0 ? C.text : C.sub,
+                                        fontSize: 15, fontWeight: 800, fontFamily: font,
+                                        opacity: chainLen > 0 ? 1 : 0.5,
+                                        cursor: chainLen > 0 ? "pointer" : "not-allowed",
+                                    }}>
+                                        連チャン追加
+                                    </button>
+                                </div>
+
+                                {/* 5項目入力行 */}
                                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                    <Row id="rotCount" n="1" label="回転数" sub="ゲーム数（累計）" color={C.subHi}
+                                    <Row id="rotCount" icon="rotate" iconColor={C.sub} label="1. 回転数" sub="（ゲーム数）" color={C.subHi}
                                         value={v("rotCount")} unit="回転"
                                         presets={[
                                             { label: "-10", onClick: () => updField("rotCount", String(Math.max(0, rotN - 10))) },
                                             { label: "+10", onClick: () => updField("rotCount", String(rotN + 10)) },
                                         ]} />
-                                    <Row id="trayBalls" n="2" label="開始上皿玉数" sub="当たり開始時の上皿" required color={C.yellow}
+                                    <Row id="trayBalls" icon="coin" iconColor={C.yellow} label="2. 開始上皿玉数" sub="（当たり開始時の上皿）" required color={C.yellow}
                                         value={v("trayBalls")} unit="玉"
                                         presets={[50, 100, 150].map(p => ({
                                             label: String(p), active: trayN === p, onClick: () => updField("trayBalls", String(p))
                                         }))} />
-                                    <Row id="rounds" n="3" label="ラウンド数" sub="大当たりのラウンド" color={C.orange}
+                                    <Row id="rounds" icon="r" iconColor={C.purple} label="3. ラウンド数" sub="（大当たりのラウンド）" color={C.purple}
                                         value={rndN > 0 ? `${rndN}R` : ""} unit=""
                                         presets={rotPresetButtons} />
-                                    <Row id="displayBalls" n="4" label="液晶出玉" sub="表示されている出玉" color={C.yellow}
+                                    <Row id="displayBalls" icon="monitor" iconColor={C.teal} label="4. 液晶出玉" sub="（表示されている出玉）" color={C.teal}
                                         value={v("displayBalls")} unit="玉"
-                                        presets={[450, 750, 1500].map(p => ({
+                                        presets={[450, 750, 1500, 3000].map(p => ({
                                             label: String(p), active: dispN === p, onClick: () => updField("displayBalls", String(p))
                                         }))} />
-                                    <Row id="actualBalls" n="5" label="実測出玉" sub="実際の獲得出玉" color={C.green}
+                                    <Row id="actualBalls" icon="target" iconColor={C.green} label="5. 実測出玉" sub="（実際の獲得出玉）" color={C.green}
                                         value={v("actualBalls")} unit="玉"
-                                        presets={[380, 750, 1500].map(p => ({
+                                        presets={[380, 750, 1500, 3000].map(p => ({
                                             label: String(p), active: actualN === p, onClick: () => updField("actualBalls", String(p))
                                         }))} />
+                                </div>
+
+                                {/* 6. 次の状態を選択 */}
+                                <div>
+                                    <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 6, padding: "0 2px", fontFamily: font }}>6. 次の状態を選択</div>
+                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 6, alignItems: "stretch" }}>
+                                        <button className="b" type="button" onClick={onContinue} disabled={!requiredOk}
+                                            style={{
+                                                minHeight: 64, borderRadius: 12, padding: "8px 6px",
+                                                background: requiredOk ? `color-mix(in srgb, ${C.green} 22%, var(--surface))` : "var(--surface)",
+                                                border: `1px solid ${requiredOk ? C.green : C.border}`,
+                                                color: requiredOk ? C.green : C.sub,
+                                                fontSize: 14, fontWeight: 800, fontFamily: font, opacity: requiredOk ? 1 : 0.55,
+                                                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
+                                            }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
+                                                <span>連チャン継続</span>
+                                            </div>
+                                            <span style={{ fontSize: 10, fontWeight: 600, color: C.sub }}>次の大当たりを入力する</span>
+                                        </button>
+                                        <button className="b" type="button" onClick={onSingleEndStart} disabled={!requiredOk}
+                                            style={{
+                                                minHeight: 64, borderRadius: 12, padding: "8px 6px",
+                                                background: requiredOk ? `color-mix(in srgb, ${C.red} 22%, var(--surface))` : "var(--surface)",
+                                                border: `1px solid ${requiredOk ? C.red : C.border}`,
+                                                color: requiredOk ? C.red : C.sub,
+                                                fontSize: 14, fontWeight: 800, fontFamily: font, opacity: requiredOk ? 1 : 0.55,
+                                                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
+                                            }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                                <span style={{ width: 10, height: 10, background: "currentColor", borderRadius: 2, display: "inline-block" }} />
+                                                <span>単発終了</span>
+                                            </div>
+                                            <span style={{ fontSize: 10, fontWeight: 600, color: C.sub }}>通常時に戻る</span>
+                                        </button>
+                                        <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "6px 10px", minWidth: 110, display: "flex", flexDirection: "column", justifyContent: "center", textAlign: "center" }}>
+                                            <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, fontFamily: font }}>1Rあたりの出球（今回）</div>
+                                            <div style={{ fontSize: 18, fontWeight: 800, color: per1RThis > 0 ? C.yellow : C.sub, fontFamily: mono, lineHeight: 1.2 }}>
+                                                {per1RThis > 0 ? f(per1RThis) : "---"}<span style={{ fontSize: 10, marginLeft: 2, fontFamily: font }}>玉</span>
+                                            </div>
+                                            <div style={{ fontSize: 9, color: C.sub, fontFamily: font }}>（実測ベース）</div>
+                                        </div>
+                                    </div>
+                                    {hitInputError && (
+                                        <div style={{ marginTop: 6, fontSize: 11, color: C.red, fontWeight: 600, padding: "0 2px" }}>{hitInputError}</div>
+                                    )}
                                 </div>
 
                                 {/* 詳細：プッシュ額（折りたたみ） */}
@@ -3712,135 +3901,99 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                         </div>
                                     )}
                                 </div>
-
-                                {/* 6. 次の状態を選択 */}
-                                <div>
-                                    <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 6 }}>6. 次の状態を選択</div>
-                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, alignItems: "stretch" }}>
-                                        <button className="b" type="button" onClick={onContinue} disabled={!requiredOk}
-                                            style={{
-                                                minHeight: 72, borderRadius: 14, padding: "8px 6px",
-                                                background: requiredOk ? `color-mix(in srgb, ${C.green} 22%, transparent)` : "var(--surface-hi)",
-                                                border: `1px solid ${requiredOk ? C.green : C.border}`,
-                                                color: requiredOk ? C.green : C.sub,
-                                                fontSize: 14, fontWeight: 800, fontFamily: font, opacity: requiredOk ? 1 : 0.55,
-                                                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4,
-                                            }}>
-                                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
-                                                <span>連チャン継続</span>
-                                            </div>
-                                            <span style={{ fontSize: 10, fontWeight: 600, color: C.sub }}>次の大当たりを入力する</span>
-                                        </button>
-                                        <button className="b" type="button" onClick={onSingleEndStart} disabled={!requiredOk}
-                                            style={{
-                                                minHeight: 72, borderRadius: 14, padding: "8px 6px",
-                                                background: requiredOk ? `color-mix(in srgb, ${C.red} 22%, transparent)` : "var(--surface-hi)",
-                                                border: `1px solid ${requiredOk ? C.red : C.border}`,
-                                                color: requiredOk ? C.red : C.sub,
-                                                fontSize: 14, fontWeight: 800, fontFamily: font, opacity: requiredOk ? 1 : 0.55,
-                                                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4,
-                                            }}>
-                                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                                <span style={{ width: 10, height: 10, background: "currentColor", borderRadius: 2, display: "inline-block" }} />
-                                                <span>単発終了</span>
-                                            </div>
-                                            <span style={{ fontSize: 10, fontWeight: 600, color: C.sub }}>通常時に戻る</span>
-                                        </button>
-                                        <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 14, padding: "8px 10px", minWidth: 110, display: "flex", flexDirection: "column", justifyContent: "center" }}>
-                                            <div style={{ fontSize: 10, color: C.sub, textAlign: "center" }}>今回の獲得（実測）</div>
-                                            <div style={{ fontSize: 22, fontWeight: 800, color: sc(netGain), fontFamily: mono, textAlign: "center", lineHeight: 1.1 }}>
-                                                {sp(netGain)}<span style={{ fontSize: 11, marginLeft: 2 }}>玉</span>
-                                            </div>
-                                            {actualN > 0 && trayN > 0 && (
-                                                <div style={{ fontSize: 9, color: C.sub, textAlign: "center" }}>実測{actualN} − 開始上皿{trayN}</div>
-                                            )}
-                                        </div>
-                                    </div>
-                                    {hitInputError && (
-                                        <div style={{ marginTop: 6, fontSize: 11, color: C.red, fontWeight: 600 }}>{hitInputError}</div>
-                                    )}
-                                </div>
-
-                                {/* よく使う出玉プリセット */}
-                                <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 10px" }}>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                        <span style={{ fontSize: 11, color: C.sub, fontWeight: 700, minWidth: 80 }}>よく使う出玉プリセット</span>
-                                        {[
-                                            { v: 450, lbl: "3R平均" },
-                                            { v: 750, lbl: "5R平均" },
-                                            { v: 1500, lbl: "10R平均" },
-                                            { v: 3000, lbl: "10R×2" },
-                                        ].map(p => {
-                                            const target = focus === "actualBalls" ? "actualBalls" : "displayBalls";
-                                            return (
-                                                <button key={p.v} className="b" type="button"
-                                                    onClick={() => updField(target, String(p.v))}
-                                                    style={{
-                                                        flex: 1, minWidth: 60, minHeight: 44, borderRadius: 10, padding: "4px 6px",
-                                                        background: "var(--surface-hi)", border: `1px solid ${C.border}`,
-                                                        color: C.text, fontFamily: mono, fontSize: 13, fontWeight: 700,
-                                                        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", lineHeight: 1.1,
-                                                    }}>
-                                                    <span>{p.v}<span style={{ fontSize: 10, color: C.sub, marginLeft: 2 }}>玉</span></span>
-                                                    <span style={{ fontSize: 9, color: C.sub, fontFamily: font, fontWeight: 600 }}>({p.lbl})</span>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-
-                                {/* 今回のまとめ */}
-                                <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px" }}>
-                                    <div style={{ fontSize: 11, color: C.sub, fontWeight: 700, marginBottom: 6 }}>今回のまとめ</div>
-                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 12px", fontSize: 12 }}>
-                                        <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.sub }}>開始上皿玉</span><span style={{ fontFamily: mono, fontWeight: 700 }}>{trayN > 0 ? f(trayN) : "—"}玉</span></div>
-                                        <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.sub }}>液晶出玉</span><span style={{ fontFamily: mono, fontWeight: 700 }}>{dispN > 0 ? f(dispN) : "—"}玉</span></div>
-                                        <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.sub }}>実測出玉</span><span style={{ fontFamily: mono, fontWeight: 700 }}>{actualN > 0 ? f(actualN) : "—"}玉</span></div>
-                                        <div style={{ display: "flex", justifyContent: "space-between" }}>
-                                            <span style={{ color: C.sub }}>獲得（実測）</span>
-                                            <span style={{ fontFamily: mono, fontWeight: 800, color: sc(netGain) }}>{sp(netGain)}玉</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.sub, padding: "4px 0 12px" }}>
-                                    <span>ⓘ 入力はいつでも編集できます</span>
-                                    <span>✓ データは自動保存されます</span>
-                                </div>
                             </div>
 
-                            {/* テンキー（フォーカスが ラウンド以外 のときのみ表示） */}
-                            {keypadField && (
-                                <div className="jp-keypad" style={{
-                                    padding: "6px 10px",
-                                    paddingBottom: "max(8px, env(safe-area-inset-bottom))",
-                                    background: "var(--surface-hi)",
-                                    borderTop: `1px solid ${C.border}`,
-                                    flexShrink: 0
+                            {/* 下部固定: テンキー (フォーカス時のみ) + 入力まとめ + 入力確定 */}
+                            <div style={{
+                                borderTop: `1px solid ${C.border}`,
+                                paddingBottom: "max(8px, env(safe-area-inset-bottom))",
+                                background: "var(--surface-alt)",
+                                flexShrink: 0,
+                            }}>
+                                {/* テンキー + サマリパネル */}
+                                <div style={{
+                                    display: "grid",
+                                    gridTemplateColumns: keypadField ? "minmax(0, 1.1fr) minmax(0, 1fr)" : "1fr",
+                                    gap: 8, padding: "8px 12px 4px",
+                                    alignItems: "stretch",
                                 }}>
-                                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
-                                        {[1,2,3,4,5,6,7,8,9].map(n => (
-                                            <button key={n} className="b" type="button" onClick={() => keypadAppend(n)}
-                                                style={{ padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 20, fontFamily: mono, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.text, minHeight: 44 }}>
-                                                {n}
-                                            </button>
+                                    {keypadField && (
+                                        <div className="jp-keypad" style={{
+                                            background: "transparent",
+                                        }}>
+                                            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
+                                                {[1,2,3,4,5,6,7,8,9].map(n => (
+                                                    <button key={n} className="b" type="button" onClick={() => keypadAppend(n)}
+                                                        style={{ padding: "8px 0", borderRadius: 10, fontWeight: 800, fontSize: 22, fontFamily: mono, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.text, minHeight: 46 }}>
+                                                        {n}
+                                                    </button>
+                                                ))}
+                                                <button className="b" type="button" onClick={keypadClear}
+                                                    style={{ padding: "8px 0", borderRadius: 10, fontWeight: 800, fontSize: 16, background: `color-mix(in srgb, ${C.red} 24%, transparent)`, border: `1px solid color-mix(in srgb, ${C.red} 40%, transparent)`, color: C.red, minHeight: 46, fontFamily: font }}>
+                                                    消去
+                                                </button>
+                                                <button className="b" type="button" onClick={() => keypadAppend(0)}
+                                                    style={{ padding: "8px 0", borderRadius: 10, fontWeight: 800, fontSize: 22, fontFamily: mono, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.text, minHeight: 46 }}>
+                                                    0
+                                                </button>
+                                                <button className="b" type="button" onClick={keypadBackspace}
+                                                    style={{ padding: "8px 0", borderRadius: 10, fontWeight: 800, fontSize: 18, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.sub, minHeight: 46 }}>
+                                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block", margin: "0 auto" }}><path d="M21 5H8l-7 7 7 7h13a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z" /><line x1="18" y1="9" x2="12" y2="15" /><line x1="12" y1="9" x2="18" y2="15" /></svg>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {/* 今回の入力まとめ */}
+                                    <div style={{
+                                        background: "var(--surface)", border: `1px solid ${C.border}`,
+                                        borderRadius: 12, padding: 10,
+                                        display: "flex", flexDirection: "column", gap: 3,
+                                    }}>
+                                        <div style={{ fontSize: 11, color: C.blue, fontWeight: 800, marginBottom: 4, fontFamily: font }}>今回の入力まとめ（未確定）</div>
+                                        {summaryRows.map(r => (
+                                            <div key={r.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 11 }}>
+                                                <span style={{ color: C.sub, fontFamily: font }}>{r.label}</span>
+                                                <span style={{ fontFamily: mono, fontWeight: 700, color: r.value === "—" ? C.sub : C.text }}>
+                                                    {r.value}{r.unit && <span style={{ fontSize: 9, color: C.sub, marginLeft: 2, fontFamily: font }}>{r.unit}</span>}
+                                                </span>
+                                            </div>
                                         ))}
-                                        <button className="b" type="button" onClick={keypadClear}
-                                            style={{ gridColumn: "1 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 14, background: `color-mix(in srgb, ${C.red} 18%, transparent)`, border: `1px solid color-mix(in srgb, ${C.red} 40%, transparent)`, color: C.red, minHeight: 44 }}>
-                                            消去
-                                        </button>
-                                        <button className="b" type="button" onClick={() => keypadAppend(0)}
-                                            style={{ gridColumn: "2 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 20, fontFamily: mono, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.text, minHeight: 44 }}>
-                                            0
-                                        </button>
-                                        <button className="b" type="button" onClick={keypadBackspace}
-                                            style={{ gridColumn: "3 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 18, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.sub, minHeight: 44 }}>
-                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block", margin: "0 auto" }}><path d="M21 5H8l-7 7 7 7h13a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z" /><line x1="18" y1="9" x2="12" y2="15" /><line x1="12" y1="9" x2="18" y2="15" /></svg>
-                                        </button>
+                                        {chainLen > 0 && (
+                                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 4, paddingTop: 6, borderTop: `1px solid ${C.border}` }}>
+                                                <span style={{ fontSize: 11, color: C.blue, fontWeight: 800, fontFamily: font }}>RUSH継続回数</span>
+                                                <span style={{ fontFamily: mono, fontWeight: 900, color: C.yellow, display: "inline-flex", alignItems: "baseline", gap: 2 }}>
+                                                    <span style={{ fontSize: 24 }}>{chainLen}</span>
+                                                    <span style={{ fontSize: 12, fontFamily: font }}>連</span>
+                                                </span>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
-                            )}
+
+                                {/* 入力確定 ボタン（Enter = 次フィールドへ遷移） */}
+                                <div style={{ padding: "4px 12px 6px" }}>
+                                    <button className="b" type="button" onClick={onEnterPress}
+                                        style={{
+                                            width: "100%", minHeight: 54, borderRadius: 12,
+                                            background: `linear-gradient(180deg, ${C.blue}, color-mix(in srgb, ${C.blue} 70%, #1a3a8e))`,
+                                            border: "none", color: "#fff",
+                                            fontSize: 17, fontWeight: 800, fontFamily: font,
+                                            boxShadow: `0 4px 16px color-mix(in srgb, ${C.blue} 40%, transparent)`,
+                                            display: "flex", alignItems: "center", justifyContent: "center", gap: 14,
+                                            position: "relative",
+                                        }}>
+                                        入力確定
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", right: 20 }}><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                                    </button>
+                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: C.sub, padding: "6px 4px 0", gap: 8, flexWrap: "wrap" }}>
+                                        <span style={{ fontFamily: font }}>※ 入力はいつでも編集できます（確定するまでデータは保存されません）</span>
+                                        <span style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0, fontFamily: font }}>
+                                            <svg width="11" height="11" viewBox="0 0 24 24" fill={C.green}><circle cx="12" cy="12" r="10"/></svg>
+                                            データは自動保存されます
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
 
                             {/* 単発終了サブモーダル（時短回数 + 最終持ち玉） */}
                             {hitInputSingleEndOpen && (
