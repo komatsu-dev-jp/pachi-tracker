@@ -534,8 +534,16 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     // 画面 A 補助 state
     const [hitInputFocus, setHitInputFocus] = useState(""); // テンキーで編集中の行（"" = 未フォーカス）
     const [hitInputError, setHitInputError] = useState("");
-    const [hitInputShowPush, setHitInputShowPush] = useState(true); // プッシュ額の折りたたみ（既定で開く＝押し忘れ防止）
     const [hitInputSingleEndOpen, setHitInputSingleEndOpen] = useState(false); // 単発時の時短/最終持ち玉モーダル
+
+    // 入力確定でフォーカスが移ったら、対応する行を可視領域へスクロール
+    useEffect(() => {
+        if (!hitInputFocus || !hitWizardOpen) return;
+        const el = document.querySelector(`[data-row-id="${hitInputFocus}"]`);
+        if (el && typeof el.scrollIntoView === "function") {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+    }, [hitInputFocus, hitWizardOpen]);
     // 機種からラウンド情報を取得（初当たり用 - roundDist使用）
     const getMachineRounds = () => {
         const machine = searchMachines(S.machineName, S.customMachines)[0];
@@ -1421,7 +1429,6 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         S.pushLog({ type: hitType === "単発" ? "単発終了" : "初当たり記録", time: tsNow(), rounds: rnd });
         setHitWizardOpen(false);
         setHitInputError("");
-        setHitInputShowPush(true);
         setHitInputFocus("");
         setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: "", rounds: 3, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
 
@@ -1465,7 +1472,6 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             openChainWizard();
         } else if (!isChainActive) {
             setHitInputError("");
-            setHitInputShowPush(true);
             setHitInputFocus("");
             setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: "", rounds: 0, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
             setHitWizardOpen(true);
@@ -2210,7 +2216,6 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     onClick={() => {
                                         // 新UI: 画面 A を直接フルスクリーン表示（仕様書 §3.1）
                                         setHitInputError("");
-                                        setHitInputShowPush(true);
                                         setHitInputFocus("");
                                         setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: "", rounds: 0, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
                                         setHitWizardOpen(true);
@@ -3436,7 +3441,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     const focus = hitInputFocus;
                     const setFocus = (k) => setHitInputFocus(k);
                     const updField = (key, val) => setHitWizardData(d => ({ ...d, [key]: val }));
-                    const keypadField = focus === "rounds" ? null : focus;
+                    // テンキー表示対象外: ラウンド数（プリセット選択）・プッシュ補正額（カテゴリ選択）
+                    const keypadField = (focus === "rounds" || focus === "pushAmount") ? null : focus;
 
                     const v = (k) => D[k] === "" || D[k] == null ? "" : String(D[k]);
                     const numOr0 = (k) => Number(D[k]) || 0;
@@ -3478,7 +3484,6 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     const onClose = () => {
                         setHitWizardOpen(false);
                         setHitInputError("");
-                        setHitInputShowPush(true);
                         setHitInputFocus("");
                     };
 
@@ -3533,7 +3538,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     };
 
                     // フィールド遷移順序（入力確定 = 次のフィールドへ）
-                    const FIELD_ORDER = ["rotCount", "trayBalls", "rounds", "displayBalls", "actualBalls"];
+                    const FIELD_ORDER = ["pushAmount", "rotCount", "trayBalls", "rounds", "displayBalls", "actualBalls"];
                     const onEnterPress = () => {
                         const idx = FIELD_ORDER.indexOf(focus);
                         if (idx === -1) setFocus(FIELD_ORDER[0]);
@@ -3585,6 +3590,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             <div
                                 role="button"
                                 tabIndex={0}
+                                data-row-id={id}
                                 onClick={() => setFocus(id)}
                                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setFocus(id); }}
                                 style={{
@@ -3804,32 +3810,26 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     </button>
                                 </div>
 
-                                {/* 5項目入力行 */}
+                                {/* 6項目入力行 */}
                                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                    <Row id="rotCount" icon="rotate" iconColor={C.sub} label="1. 回転数" sub="（ゲーム数）" color={C.subHi}
-                                        value={v("rotCount")} unit="回転"
+                                    <Row id="pushAmount" icon="coin" iconColor={C.yellow} label="1. プッシュ補正額" sub="（任意・投資補正）" color={C.yellow}
+                                        value={(D.pushAmount || 0) > 0 ? `+${(D.pushAmount).toLocaleString()}` : ""} unit="円"
                                         presets={[
-                                            { label: "-10", onClick: () => updField("rotCount", String(Math.max(0, rotN - 10))) },
-                                            { label: "+10", onClick: () => updField("rotCount", String(rotN + 10)) },
+                                            { label: "なし", active: !D.pushAmount, onClick: () => updField("pushAmount", 0) },
+                                            { label: "+500", active: D.pushAmount === 500, onClick: () => updField("pushAmount", 500) },
+                                            { label: "+1000", active: D.pushAmount === 1000, onClick: () => updField("pushAmount", 1000) },
                                         ]} />
-                                    <Row id="trayBalls" icon="coin" iconColor={C.yellow} label="2. 開始上皿玉数" sub="（当たり開始時の上皿）" required color={C.yellow}
-                                        value={v("trayBalls")} unit="玉"
-                                        presets={[50, 100, 150].map(p => ({
-                                            label: String(p), active: trayN === p, onClick: () => updField("trayBalls", String(p))
-                                        }))} />
-                                    <Row id="rounds" icon="r" iconColor={C.purple} label="3. ラウンド数" sub="（大当たりのラウンド）" color={C.purple}
+                                    <Row id="rotCount" icon="rotate" iconColor={C.sub} label="2. 回転数" sub="（ゲーム数）" color={C.subHi}
+                                        value={v("rotCount")} unit="回転" />
+                                    <Row id="trayBalls" icon="coin" iconColor={C.yellow} label="3. 開始上皿玉数" sub="（当たり開始時の上皿）" required color={C.yellow}
+                                        value={v("trayBalls")} unit="玉" />
+                                    <Row id="rounds" icon="r" iconColor={C.purple} label="4. ラウンド数" sub="（大当たりのラウンド）" color={C.purple}
                                         value={rndN > 0 ? `${rndN}R` : ""} unit=""
                                         presets={rotPresetButtons} />
-                                    <Row id="displayBalls" icon="monitor" iconColor={C.teal} label="4. 液晶出玉" sub="（表示されている出玉）" color={C.teal}
-                                        value={v("displayBalls")} unit="玉"
-                                        presets={[450, 750, 1500, 3000].map(p => ({
-                                            label: String(p), active: dispN === p, onClick: () => updField("displayBalls", String(p))
-                                        }))} />
-                                    <Row id="actualBalls" icon="target" iconColor={C.green} label="5. 実測出玉" sub="（実際の獲得出玉）" color={C.green}
-                                        value={v("actualBalls")} unit="玉"
-                                        presets={[380, 750, 1500, 3000].map(p => ({
-                                            label: String(p), active: actualN === p, onClick: () => updField("actualBalls", String(p))
-                                        }))} />
+                                    <Row id="displayBalls" icon="monitor" iconColor={C.teal} label="5. 液晶出玉" sub="（表示されている出玉）" color={C.teal}
+                                        value={v("displayBalls")} unit="玉" />
+                                    <Row id="actualBalls" icon="target" iconColor={C.green} label="6. 実測出玉" sub="（実際の獲得出玉）" color={C.green}
+                                        value={v("actualBalls")} unit="玉" />
                                 </div>
 
                                 {/* 6. 次の状態を選択 */}
@@ -3879,28 +3879,6 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     )}
                                 </div>
 
-                                {/* 詳細：プッシュ額（折りたたみ） */}
-                                <div style={{ background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 12px" }}>
-                                    <button className="b" type="button" onClick={() => setHitInputShowPush(s => !s)} style={{ background: "transparent", border: "none", width: "100%", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center", padding: 0, color: C.sub, fontSize: 12, fontWeight: 700 }}>
-                                        <span>詳細（プッシュ額補正）{(D.pushAmount || 0) > 0 ? `: +${(D.pushAmount || 0).toLocaleString()}円` : ""}</span>
-                                        <span>{hitInputShowPush ? "▲" : "▼"}</span>
-                                    </button>
-                                    {hitInputShowPush && (
-                                        <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                                            {[500, 1000].map(amt => (
-                                                <button key={amt} className="b" type="button" onClick={() => updField("pushAmount", amt)}
-                                                    style={{
-                                                        flex: 1, minHeight: 40, borderRadius: 8, fontFamily: mono, fontSize: 13, fontWeight: 700,
-                                                        background: D.pushAmount === amt ? `color-mix(in srgb, ${C.yellow} 26%, transparent)` : "var(--surface-hi)",
-                                                        border: `1px solid ${D.pushAmount === amt ? C.yellow : C.border}`,
-                                                        color: D.pushAmount === amt ? C.yellow : C.text,
-                                                    }}>
-                                                    +{amt.toLocaleString()}円
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
                             </div>
 
                             {/* 下部固定: テンキー (フォーカス時のみ) + 入力まとめ + 入力確定 */}
