@@ -534,7 +534,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
     // 画面 A 補助 state
     const [hitInputFocus, setHitInputFocus] = useState("rotCount"); // テンキーで編集中の行
     const [hitInputError, setHitInputError] = useState("");
-    const [hitInputShowPush, setHitInputShowPush] = useState(false); // プッシュ額の折りたたみ
+    const [hitInputShowPush, setHitInputShowPush] = useState(true); // プッシュ額の折りたたみ（既定で開く＝押し忘れ防止）
     const [hitInputSingleEndOpen, setHitInputSingleEndOpen] = useState(false); // 単発時の時短/最終持ち玉モーダル
     // 機種からラウンド情報を取得（初当たり用 - roundDist使用）
     const getMachineRounds = () => {
@@ -1421,7 +1421,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         S.pushLog({ type: hitType === "単発" ? "単発終了" : "初当たり記録", time: tsNow(), rounds: rnd });
         setHitWizardOpen(false);
         setHitInputError("");
-        setHitInputShowPush(false);
+        setHitInputShowPush(true);
         setHitInputFocus("rotCount");
         setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: "", rounds: 3, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
 
@@ -1465,7 +1465,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             openChainWizard();
         } else if (!isChainActive) {
             setHitInputError("");
-            setHitInputShowPush(false);
+            setHitInputShowPush(true);
             setHitInputFocus("rotCount");
             setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: "", rounds: 0, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
             setHitWizardOpen(true);
@@ -2210,7 +2210,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     onClick={() => {
                                         // 新UI: 画面 A を直接フルスクリーン表示（仕様書 §3.1）
                                         setHitInputError("");
-                                        setHitInputShowPush(false);
+                                        setHitInputShowPush(true);
                                         setHitInputFocus("rotCount");
                                         setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: "", rounds: 0, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
                                         setHitWizardOpen(true);
@@ -3487,7 +3487,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                     const onClose = () => {
                         setHitWizardOpen(false);
                         setHitInputError("");
-                        setHitInputShowPush(false);
+                        setHitInputShowPush(true);
                         setHitInputFocus("rotCount");
                     };
 
@@ -3698,7 +3698,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     </button>
                                     {hitInputShowPush && (
                                         <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                                            {[0, 500, 1000].map(amt => (
+                                            {[500, 1000].map(amt => (
                                                 <button key={amt} className="b" type="button" onClick={() => updField("pushAmount", amt)}
                                                     style={{
                                                         flex: 1, minHeight: 40, borderRadius: 8, fontFamily: mono, fontSize: 13, fontWeight: 700,
@@ -3706,7 +3706,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                                         border: `1px solid ${D.pushAmount === amt ? C.yellow : C.border}`,
                                                         color: D.pushAmount === amt ? C.yellow : C.text,
                                                     }}>
-                                                    +{amt === 0 ? "0" : amt.toLocaleString()}円
+                                                    +{amt.toLocaleString()}円
                                                 </button>
                                             ))}
                                         </div>
