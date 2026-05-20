@@ -1451,6 +1451,27 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             setSessionSubTab("rot");
         }
     }, [currentSubTab, sessionSubTabs, setSessionSubTab]);
+
+    // 大当たり タブに入った時点で入力画面（画面 A / 画面 B）を自動表示
+    // 仕様: 5枚目モック準拠 — 大当たりタブの「デフォルト表示」を入力フォームにする
+    const prevSubTabRef = useRef(null);
+    useEffect(() => {
+        const prev = prevSubTabRef.current;
+        prevSubTabRef.current = currentSubTab;
+        if (currentSubTab !== "history" || prev === "history") return;
+        // 既に別のモーダル/ウィザードが開いている場合は何もしない
+        if (hitWizardOpen || chainWizardOpen || directSingleEndOpen || editChainOpen) return;
+        if (isChainActive && lastChain) {
+            openChainWizard();
+        } else if (!isChainActive) {
+            setHitInputError("");
+            setHitInputShowPush(false);
+            setHitInputFocus("rotCount");
+            setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: "", rounds: 0, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
+            setHitWizardOpen(true);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentSubTab, isChainActive]);
     const swipeAreaRef = useRef(null);
     const swipeState = useRef({ startX: null, startY: null, dir: null, offset: 0 });
     const [headerSwipeOffset, setHeaderSwipeOffset] = useState(0);
@@ -3798,7 +3819,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     borderTop: `1px solid ${C.border}`,
                                     flexShrink: 0
                                 }}>
-                                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr) 64px", gap: 5 }}>
+                                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
                                         {[1,2,3,4,5,6,7,8,9].map(n => (
                                             <button key={n} className="b" type="button" onClick={() => keypadAppend(n)}
                                                 style={{ padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 20, fontFamily: mono, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.text, minHeight: 44 }}>
@@ -3806,16 +3827,12 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                             </button>
                                         ))}
                                         <button className="b" type="button" onClick={keypadClear}
-                                            style={{ gridRow: "1 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 13, background: `color-mix(in srgb, ${C.red} 18%, transparent)`, border: `1px solid color-mix(in srgb, ${C.red} 40%, transparent)`, color: C.red, minHeight: 44 }}>
+                                            style={{ gridColumn: "1 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 14, background: `color-mix(in srgb, ${C.red} 18%, transparent)`, border: `1px solid color-mix(in srgb, ${C.red} 40%, transparent)`, color: C.red, minHeight: 44 }}>
                                             消去
                                         </button>
                                         <button className="b" type="button" onClick={() => keypadAppend(0)}
                                             style={{ gridColumn: "2 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 20, fontFamily: mono, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.text, minHeight: 44 }}>
                                             0
-                                        </button>
-                                        <button className="b" type="button" onClick={() => updField(keypadField, "0")}
-                                            style={{ gridColumn: "1 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 14, fontFamily: font, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.sub, minHeight: 44 }}>
-                                            0クリア
                                         </button>
                                         <button className="b" type="button" onClick={keypadBackspace}
                                             style={{ gridColumn: "3 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 18, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.sub, minHeight: 44 }}>
@@ -4358,7 +4375,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                             borderTop: `1px solid ${C.border}`,
                                             flexShrink: 0
                                         }}>
-                                            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr) 64px", gap: 5 }}>
+                                            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
                                                 {[1,2,3,4,5,6,7,8,9].map(n => (
                                                     <button key={n} className="b" type="button" onClick={() => keypadAppend(n)}
                                                         style={{ padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 20, fontFamily: mono, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.text, minHeight: 44 }}>
@@ -4366,12 +4383,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                                     </button>
                                                 ))}
                                                 <button className="b" type="button" onClick={keypadClear}
-                                                    style={{ gridRow: "1 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 13, background: `color-mix(in srgb, ${C.red} 18%, transparent)`, border: `1px solid color-mix(in srgb, ${C.red} 40%, transparent)`, color: C.red, minHeight: 44 }}>
+                                                    style={{ gridColumn: "1 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 14, background: `color-mix(in srgb, ${C.red} 18%, transparent)`, border: `1px solid color-mix(in srgb, ${C.red} 40%, transparent)`, color: C.red, minHeight: 44 }}>
                                                     消去
-                                                </button>
-                                                <button className="b" type="button" onClick={() => updField(keypadField, "0")}
-                                                    style={{ gridColumn: "1 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 14, fontFamily: font, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.sub, minHeight: 44 }}>
-                                                    0クリア
                                                 </button>
                                                 <button className="b" type="button" onClick={() => keypadAppend(0)}
                                                     style={{ gridColumn: "2 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 20, fontFamily: mono, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.text, minHeight: 44 }}>
@@ -4474,7 +4487,14 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                                 }}
                                                 style={{ padding: "12px 0", borderRadius: 10, fontWeight: 800, fontSize: 14, background: "#16a34a", border: "none", color: "#fff" }}>結果を保存</button>
                                         </div>
-                                        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr) 64px", gap: 5 }}>
+                                        {/* 計算値リセット — テンキー上部に独立配置 */}
+                                        <div style={{ display: "flex", justifyContent: "center", marginBottom: 6 }}>
+                                            <button className="b" type="button" onClick={() => setChainWizardData(d => ({ ...d, finalRealBalls: String(chainWizardInitialFinalBalls || 0) }))}
+                                                style={{ padding: "8px 24px", borderRadius: 10, fontWeight: 700, fontSize: 12, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.sub, minHeight: 36 }}>
+                                                計算値に戻す
+                                            </button>
+                                        </div>
+                                        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
                                             {[1,2,3,4,5,6,7,8,9].map(n => (
                                                 <button key={n} className="b" type="button"
                                                     onClick={() => {
@@ -4490,12 +4510,8 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                                 </button>
                                             ))}
                                             <button className="b" type="button" onClick={() => { setChainWizardData(d => ({ ...d, finalRealBalls: "" })); setChainWizardFirstKey(false); }}
-                                                style={{ gridRow: "1 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 13, background: `color-mix(in srgb, ${C.red} 18%, transparent)`, border: `1px solid color-mix(in srgb, ${C.red} 40%, transparent)`, color: C.red, minHeight: 44 }}>
+                                                style={{ gridColumn: "1 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 14, background: `color-mix(in srgb, ${C.red} 18%, transparent)`, border: `1px solid color-mix(in srgb, ${C.red} 40%, transparent)`, color: C.red, minHeight: 44 }}>
                                                 消去
-                                            </button>
-                                            <button className="b" type="button" onClick={() => setChainWizardData(d => ({ ...d, finalRealBalls: String(chainWizardInitialFinalBalls || 0) }))}
-                                                style={{ gridColumn: "1 / span 1", gridRow: "4 / span 1", padding: "10px 0", borderRadius: 10, fontWeight: 700, fontSize: 11, background: "var(--surface)", border: `1px solid ${C.border}`, color: C.sub, minHeight: 44 }}>
-                                                計算値
                                             </button>
                                             <button className="b" type="button"
                                                 onClick={() => {
