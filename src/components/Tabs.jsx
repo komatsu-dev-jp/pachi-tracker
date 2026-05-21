@@ -2491,6 +2491,168 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                     <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
                         <div>
+                                {/* ヒーローカード（3項目）: 現在持玉 / 現在評価 / 1Rあたりの出球
+                                    将来連携予定: スパークラインは実測トレンドと連動予定（暫定ダミーパス） */}
+                                {(() => {
+                                    const heroEvNet = ev && Number.isFinite(ev.netGain) ? ev.netGain : 0;
+                                    const heroAvg1R = ev && Number.isFinite(ev.avg1R) ? ev.avg1R : 0;
+                                    const heroMochi = S.currentMochiBalls || 0;
+                                    // 最新チェーンの純増を「持玉の増減」仮表示として利用
+                                    const lastChainGain = lastChain && lastChain.completed && lastChain.summary
+                                        ? Math.round(lastChain.summary.netGain || 0)
+                                        : 0;
+                                    // 評価ラベル（プロトタイプ用マッピング）
+                                    const verdictCfg = heroEvNet > 1500
+                                        ? { label: "圧倒", emoji: "🤩", color: C.green }
+                                        : heroEvNet > 300
+                                            ? { label: "優勢", emoji: "😊", color: C.green }
+                                            : heroEvNet > -300
+                                                ? { label: "互角", emoji: "😐", color: C.yellow }
+                                                : { label: "不利", emoji: "😟", color: C.red };
+                                    // 1R 出球の星評価（暫定しきい値）
+                                    let stars = 0, starLabel = "—";
+                                    if (heroAvg1R >= 150) { stars = 5; starLabel = "神級"; }
+                                    else if (heroAvg1R >= 140) { stars = 4; starLabel = "優秀"; }
+                                    else if (heroAvg1R >= 130) { stars = 3; starLabel = "良好"; }
+                                    else if (heroAvg1R >= 120) { stars = 2; starLabel = "普通"; }
+                                    else if (heroAvg1R > 0) { stars = 1; starLabel = "厳しい"; }
+                                    // ダミーのスパークラインデータ（将来連携予定）
+                                    const makeSpark = (seed) => {
+                                        const pts = [];
+                                        let v = 0;
+                                        for (let i = 0; i < 16; i++) {
+                                            v += Math.sin(i * 0.7 + seed) * 6 + (seed * 1.4);
+                                            pts.push(v);
+                                        }
+                                        return pts;
+                                    };
+                                    const sparkPath = (vals, w = 100, h = 28) => {
+                                        const min = Math.min(...vals), max = Math.max(...vals);
+                                        const range = (max - min) || 1;
+                                        return vals.map((v, i) => {
+                                            const x = (i / (vals.length - 1)) * w;
+                                            const y = h - ((v - min) / range) * h;
+                                            return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+                                        }).join(" ");
+                                    };
+                                    const Spark = ({ color, seed }) => {
+                                        const vals = makeSpark(seed);
+                                        const d = sparkPath(vals);
+                                        return (
+                                            <svg viewBox="0 0 100 28" preserveAspectRatio="none" style={{ display: "block", width: "100%", height: 28, marginTop: 8 }}>
+                                                <defs>
+                                                    <linearGradient id={`sg-${seed}`} x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="0%" stopColor={color} stopOpacity="0.35" />
+                                                        <stop offset="100%" stopColor={color} stopOpacity="0" />
+                                                    </linearGradient>
+                                                </defs>
+                                                <path d={`${d} L100,28 L0,28 Z`} fill={`url(#sg-${seed})`} />
+                                                <path d={d} fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                        );
+                                    };
+                                    return (
+                                        <>
+                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+                                                {/* 現在持玉 */}
+                                                <div style={{
+                                                    background: `linear-gradient(160deg, color-mix(in srgb, ${C.green} 14%, var(--surface)) 0%, var(--surface) 100%)`,
+                                                    border: `1px solid color-mix(in srgb, ${C.green} 38%, ${C.border})`,
+                                                    borderRadius: 14, padding: "10px 8px 8px",
+                                                    boxShadow: `0 0 18px color-mix(in srgb, ${C.green} 18%, transparent)`,
+                                                    display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center",
+                                                }}>
+                                                    <div style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: C.sub, fontWeight: 700 }}>
+                                                        <span>現在持玉</span>
+                                                        <span style={{ fontSize: 9, opacity: 0.7 }}>?</span>
+                                                    </div>
+                                                    <div style={{ fontSize: 22, fontWeight: 900, color: C.green, fontFamily: mono, lineHeight: 1.1, marginTop: 4 }}>
+                                                        {f(heroMochi)}<span style={{ fontSize: 11, marginLeft: 1, fontFamily: font, color: C.green, opacity: 0.85 }}>玉</span>
+                                                    </div>
+                                                    {lastChainGain !== 0 && (
+                                                        <div style={{
+                                                            marginTop: 4, fontSize: 10, fontWeight: 700,
+                                                            color: lastChainGain > 0 ? C.green : C.red, fontFamily: mono,
+                                                            background: `color-mix(in srgb, ${lastChainGain > 0 ? C.green : C.red} 18%, transparent)`,
+                                                            padding: "1px 6px", borderRadius: 6,
+                                                        }}>
+                                                            {sp(lastChainGain)}玉
+                                                        </div>
+                                                    )}
+                                                    <Spark color="#22c55e" seed={2} />
+                                                </div>
+                                                {/* 現在評価 */}
+                                                <div style={{
+                                                    background: `linear-gradient(160deg, color-mix(in srgb, ${verdictCfg.color} 14%, var(--surface)) 0%, var(--surface) 100%)`,
+                                                    border: `1px solid color-mix(in srgb, ${verdictCfg.color} 38%, ${C.border})`,
+                                                    borderRadius: 14, padding: "10px 8px 8px",
+                                                    boxShadow: `0 0 18px color-mix(in srgb, ${verdictCfg.color} 18%, transparent)`,
+                                                    display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center",
+                                                }}>
+                                                    <div style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: C.sub, fontWeight: 700 }}>
+                                                        <span>現在評価</span>
+                                                        <span style={{ fontSize: 9, opacity: 0.7 }}>?</span>
+                                                    </div>
+                                                    <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
+                                                        <span style={{ fontSize: 22 }}>{verdictCfg.emoji}</span>
+                                                        <span style={{ fontSize: 20, fontWeight: 900, color: verdictCfg.color, fontFamily: font, lineHeight: 1.1 }}>
+                                                            {verdictCfg.label}
+                                                        </span>
+                                                    </div>
+                                                    <div style={{ fontSize: 12, fontWeight: 800, color: sc(heroEvNet), fontFamily: mono, marginTop: 2 }}>
+                                                        {sp(Math.round(heroEvNet))}玉
+                                                    </div>
+                                                    <div style={{ fontSize: 9, color: C.sub, fontFamily: font, marginTop: 1 }}>（理論ベース）</div>
+                                                    <Spark color="#3b82f6" seed={4} />
+                                                </div>
+                                                {/* 1Rあたりの出球 */}
+                                                <div style={{
+                                                    background: `linear-gradient(160deg, color-mix(in srgb, ${C.orange} 14%, var(--surface)) 0%, var(--surface) 100%)`,
+                                                    border: `1px solid color-mix(in srgb, ${C.orange} 38%, ${C.border})`,
+                                                    borderRadius: 14, padding: "10px 8px 8px",
+                                                    boxShadow: `0 0 18px color-mix(in srgb, ${C.orange} 18%, transparent)`,
+                                                    display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center",
+                                                }}>
+                                                    <div style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: C.sub, fontWeight: 700 }}>
+                                                        <span>1Rあたりの出球</span>
+                                                        <span style={{ fontSize: 9, opacity: 0.7 }}>?</span>
+                                                    </div>
+                                                    <div style={{ fontSize: 20, fontWeight: 900, color: C.orange, fontFamily: mono, lineHeight: 1.1, marginTop: 4 }}>
+                                                        {heroAvg1R > 0 ? `約${f(Math.round(heroAvg1R))}` : "—"}<span style={{ fontSize: 11, marginLeft: 1, fontFamily: font, color: C.orange, opacity: 0.85 }}>玉/R</span>
+                                                    </div>
+                                                    {stars > 0 && (
+                                                        <div style={{
+                                                            marginTop: 4, fontSize: 10, fontWeight: 800,
+                                                            color: C.orange, fontFamily: font,
+                                                            border: `1px solid color-mix(in srgb, ${C.orange} 40%, transparent)`,
+                                                            padding: "1px 8px", borderRadius: 999,
+                                                            letterSpacing: 1,
+                                                        }}>
+                                                            {"★".repeat(stars)}{"☆".repeat(5 - stars)} {starLabel}
+                                                        </div>
+                                                    )}
+                                                    <Spark color="#f59e0b" seed={6} />
+                                                </div>
+                                            </div>
+                                            {/* 詳細を表示 トグル（将来連携予定: 折り畳みで詳細チャートを展開） */}
+                                            <details style={{ marginBottom: 12 }}>
+                                                <summary style={{
+                                                    listStyle: "none", cursor: "pointer",
+                                                    display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                                                    fontSize: 12, color: C.sub, fontWeight: 700, fontFamily: font,
+                                                    padding: "8px 0",
+                                                }}>
+                                                    <span style={{ fontSize: 10 }}>▼</span>
+                                                    <span>詳細を表示</span>
+                                                </summary>
+                                                <div style={{ fontSize: 11, color: C.sub, padding: "0 4px 4px", textAlign: "center" }}>
+                                                    詳細チャートは今後追加予定です。
+                                                </div>
+                                            </details>
+                                        </>
+                                    );
+                                })()}
+
                                 {/* 連チャン中バナー */}
                                 {isChainActive && (
                                     (() => {
@@ -2537,13 +2699,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                             boxShadow: "0 0 18px rgba(245,158,11,0.30)"
                                         }}>ラッシュ終了へ</button>
                                     </div>
-                                ) : (
-                                    <Card style={{ padding: 20, marginBottom: 16, textAlign: "center" }}>
-                                        <div style={{ fontSize: 12, color: C.sub, lineHeight: 1.6 }}>
-                                            回転数タブの「初当たり」ボタンから<br />チェーンを開始してください
-                                        </div>
-                                    </Card>
-                                )}
+                                ) : null /* 空状態メッセージはヒーローカードに置き換え済み */}
 
                                 {/* 実測サマリー */}
                                 <div style={{ margin: "0 0 16px", background: "linear-gradient(135deg, rgba(15,23,42,0.92), rgba(2,6,23,0.78))", border: `1px solid ${C.teal}44`, borderRadius: 18, overflow: "hidden", boxShadow: "0 0 22px rgba(45,212,191,0.16)" }}>
@@ -2619,20 +2775,24 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                                         </div>
                                                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
                                                             <div>
-                                                                <div style={{ fontSize: 7, color: C.sub }}>出玉(液晶)</div>
-                                                                <div style={{ fontSize: 12, fontWeight: 600, color: C.yellow, fontFamily: mono }}>{f(hit.displayBalls)}</div>
+                                                                <div style={{ fontSize: 8, color: C.sub }}>液晶出玉</div>
+                                                                <div style={{ fontSize: 13, fontWeight: 700, color: C.yellow, fontFamily: mono }}>
+                                                                    {f(hit.displayBalls)}<span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>玉</span>
+                                                                </div>
                                                             </div>
                                                             <div>
-                                                                <div style={{ fontSize: 7, color: C.sub }}>電サポ回転</div>
-                                                                <div style={{ fontSize: 12, fontWeight: 600, color: C.subHi, fontFamily: mono }}>{hit.elecSapoRot || hit.sapoRot || 0}回</div>
+                                                                <div style={{ fontSize: 8, color: C.sub }}>電サポ回転</div>
+                                                                <div style={{ fontSize: 13, fontWeight: 700, color: C.subHi, fontFamily: mono }}>{hit.elecSapoRot || hit.sapoRot || 0}<span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>回</span></div>
                                                             </div>
                                                             <div>
-                                                                <div style={{ fontSize: 7, color: C.sub }}>サポ増減</div>
-                                                                <div style={{ fontSize: 12, fontWeight: 600, color: sc(change), fontFamily: mono }}>{change >= 0 ? "+" : ""}{change}</div>
+                                                                <div style={{ fontSize: 8, color: C.sub }}>サポ増減</div>
+                                                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(change), fontFamily: mono }}>
+                                                                    {change >= 0 ? "+" : ""}{change}<span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>玉</span>
+                                                                </div>
                                                             </div>
                                                             <div>
-                                                                <div style={{ fontSize: 7, color: C.sub }}>サポ/回転</div>
-                                                                <div style={{ fontSize: 12, fontWeight: 600, color: sc(perRot), fontFamily: mono }}>{perRot !== 0 ? (perRot >= 0 ? "+" : "") + perRot.toFixed(2) : "—"}</div>
+                                                                <div style={{ fontSize: 8, color: C.sub }}>サポ/回転</div>
+                                                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(perRot), fontFamily: mono }}>{perRot !== 0 ? (perRot >= 0 ? "+" : "") + perRot.toFixed(2) : "—"}</div>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -2642,23 +2802,30 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                             {chain.completed && chain.summary && (
                                                 <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
                                                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4, marginBottom: 4 }}>
-                                                        <div style={{ textAlign: "center" }}>
-                                                            <div style={{ fontSize: 7, color: C.sub }}>1R出玉</div>
-                                                            <div style={{ fontSize: 13, fontWeight: 700, color: C.teal, fontFamily: mono }}>{f(chain.summary.avg1R, 1)}</div>
-                                                        </div>
-                                                        <div style={{ textAlign: "center" }}>
-                                                            <div style={{ fontSize: 7, color: C.sub }}>サポ増減/回転</div>
-                                                            <div style={{ fontSize: 13, fontWeight: 700, color: sc(chain.summary.sapoPerRot || 0), fontFamily: mono }}>
-                                                                {chain.summary.totalSapoRot > 0 ? sp(chain.summary.sapoPerRot, 2) : "—"}
+                                                        <div style={{ textAlign: "left" }}>
+                                                            <div style={{ fontSize: 8, color: C.sub }}>1R出玉</div>
+                                                            <div style={{ fontSize: 14, fontWeight: 800, color: C.teal, fontFamily: mono }}>
+                                                                {f(chain.summary.avg1R, 1)}<span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>玉</span>
                                                             </div>
                                                         </div>
-                                                        <div style={{ textAlign: "center" }}>
-                                                            <div style={{ fontSize: 7, color: C.sub }}>サポ総増減</div>
-                                                            <div style={{ fontSize: 13, fontWeight: 700, color: sc(chain.summary.sapoDelta), fontFamily: mono }}>{sp(chain.summary.sapoDelta, 0)}</div>
+                                                        <div style={{ textAlign: "left" }}>
+                                                            <div style={{ fontSize: 8, color: C.sub }}>サポ増減/回転</div>
+                                                            <div style={{ fontSize: 14, fontWeight: 800, color: sc(chain.summary.sapoPerRot || 0), fontFamily: mono }}>
+                                                                {chain.summary.totalSapoRot > 0 ? sp(chain.summary.sapoPerRot, 2) : "—"}
+                                                                {chain.summary.totalSapoRot > 0 && <span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>玉/回転</span>}
+                                                            </div>
                                                         </div>
-                                                        <div style={{ textAlign: "center" }}>
-                                                            <div style={{ fontSize: 7, color: C.sub }}>純増出玉</div>
-                                                            <div style={{ fontSize: 13, fontWeight: 700, color: C.green, fontFamily: mono }}>{f(chain.summary.netGain)}</div>
+                                                        <div style={{ textAlign: "left" }}>
+                                                            <div style={{ fontSize: 8, color: C.sub }}>サポ総増減</div>
+                                                            <div style={{ fontSize: 14, fontWeight: 800, color: sc(chain.summary.sapoDelta), fontFamily: mono }}>
+                                                                {sp(chain.summary.sapoDelta, 0)}<span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>玉</span>
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ textAlign: "left" }}>
+                                                            <div style={{ fontSize: 8, color: C.sub }}>純増出玉</div>
+                                                            <div style={{ fontSize: 14, fontWeight: 800, color: C.green, fontFamily: mono }}>
+                                                                {f(chain.summary.netGain)}<span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>玉</span>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                     <div style={{ textAlign: "center", fontSize: 9, color: C.sub, fontFamily: mono }}>
@@ -2669,24 +2836,108 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                             {!chain.completed && chain.hits.length === 0 && (
                                                 <div style={{ fontSize: 11, color: C.sub }}>上皿: {f(chain.trayBalls)}玉 — 大当たり中…</div>
                                             )}
+                                            {/* + データを追加 ボタン（チェーン直下インライン版）
+                                                将来連携予定: 連チャン継続時のみ表示し当たり追加ウィザードを開く想定 */}
+                                            {ci === 0 && !chain.completed && (
+                                                <button
+                                                    type="button"
+                                                    className="b"
+                                                    onClick={openChainWizard}
+                                                    style={{
+                                                        width: "100%", marginTop: 10, minHeight: 44,
+                                                        background: "transparent",
+                                                        border: `1px dashed color-mix(in srgb, ${C.blue} 50%, ${C.border})`,
+                                                        borderRadius: 12, color: C.blue,
+                                                        fontSize: 13, fontWeight: 700, fontFamily: font,
+                                                        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                                                    }}>
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                                                        <line x1="12" y1="5" x2="12" y2="19" />
+                                                        <line x1="5" y1="12" x2="19" y2="12" />
+                                                    </svg>
+                                                    データを追加
+                                                </button>
+                                            )}
                                         </Card>
                                     ))
                                 )}
-                                <Btn label="最新履歴を削除" onClick={() => {
-                                    const lastChain = (S.jpLog || []).length > 0 ? (S.jpLog || [])[S.jpLog.length - 1] : null;
-                                    if (!lastChain) return;
-                                    S.pushSnapshot();
-                                    if (lastChain.completed) {
-                                        S.setCurrentMochiBalls((p) => Math.max(0, p - (lastChain.finalBalls || 0)));
-                                    }
-                                    if ((lastChain.trayBalls || 0) > 0) {
-                                        S.setTotalTrayBalls((p) => Math.max(0, p - lastChain.trayBalls));
-                                    }
-                                    S.setJpLog((prev) => prev.slice(0, -1));
-                                    if (lastChain.chainId) {
-                                        S.setRotRows((prev) => prev.filter(r => !(r.type === "hit" && r.chainId === lastChain.chainId)));
-                                    }
-                                }} bg="rgba(239, 68, 68, 0.1)" fg={C.red} bd={C.red + "30"} />
+                                {/* 今回の入力まとめ（未確定）— 将来連携予定: 入力中のチェーン値を集約表示 */}
+                                {jpLog.length > 0 && (() => {
+                                    const summaryChain = lastChain || jpLog[jpLog.length - 1];
+                                    if (!summaryChain) return null;
+                                    const sumRot = summaryChain.hitRot || 0;
+                                    const sumTray = summaryChain.trayBalls || 0;
+                                    const sumRounds = (summaryChain.hits || []).reduce((s, h) => s + (h.rounds || 0), 0);
+                                    const sumDisplay = (summaryChain.hits || []).reduce((s, h) => s + (h.displayBalls || 0), 0);
+                                    const sumMeasured = summaryChain.completed && summaryChain.summary ? Math.round(summaryChain.summary.netGain || 0) : 0;
+                                    const sumAvg1R = sumRounds > 0 ? sumDisplay / sumRounds : 0;
+                                    const rows = [
+                                        { label: "回転数", val: sumRot > 0 ? f(sumRot) : "—", unit: sumRot > 0 ? "回転" : "" },
+                                        { label: "開始上皿玉数", val: sumTray > 0 ? f(sumTray) : "—", unit: sumTray > 0 ? "玉" : "玉" },
+                                        { label: "ラウンド数", val: sumRounds > 0 ? f(sumRounds) : "—", unit: sumRounds > 0 ? "R" : "R" },
+                                        { label: "液晶出玉", val: sumDisplay > 0 ? f(sumDisplay) : "—", unit: sumDisplay > 0 ? "玉" : "玉" },
+                                        { label: "実測出玉", val: sumMeasured > 0 ? f(sumMeasured) : "—", unit: sumMeasured > 0 ? "玉" : "玉" },
+                                        { label: "1Rあたりの出球", val: sumAvg1R > 0 ? f(Math.round(sumAvg1R)) : "—", unit: sumAvg1R > 0 ? "玉/R" : "玉/R" },
+                                    ];
+                                    return (
+                                        <details open style={{ marginTop: 4, marginBottom: 12, background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px" }}>
+                                            <summary style={{
+                                                listStyle: "none", cursor: "pointer",
+                                                fontSize: 12, fontWeight: 800, color: C.blue, fontFamily: font,
+                                                display: "flex", alignItems: "center", gap: 6,
+                                            }}>
+                                                <span style={{ fontSize: 9 }}>▼</span>
+                                                今回の入力まとめ（未確定）
+                                            </summary>
+                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px 10px", marginTop: 10 }}>
+                                                {rows.map(r => (
+                                                    <div key={r.label}>
+                                                        <div style={{ fontSize: 9, color: C.sub, fontFamily: font }}>{r.label}</div>
+                                                        <div style={{ fontSize: 13, fontWeight: 800, color: r.val === "—" ? C.sub : C.text, fontFamily: mono }}>
+                                                            {r.val}<span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>{r.unit}</span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </details>
+                                    );
+                                })()}
+                                {/* 最新履歴を削除（ゴミ箱アイコン付き） */}
+                                <button
+                                    type="button"
+                                    className="b"
+                                    onClick={() => {
+                                        const lastChain = (S.jpLog || []).length > 0 ? (S.jpLog || [])[S.jpLog.length - 1] : null;
+                                        if (!lastChain) return;
+                                        S.pushSnapshot();
+                                        if (lastChain.completed) {
+                                            S.setCurrentMochiBalls((p) => Math.max(0, p - (lastChain.finalBalls || 0)));
+                                        }
+                                        if ((lastChain.trayBalls || 0) > 0) {
+                                            S.setTotalTrayBalls((p) => Math.max(0, p - lastChain.trayBalls));
+                                        }
+                                        S.setJpLog((prev) => prev.slice(0, -1));
+                                        if (lastChain.chainId) {
+                                            S.setRotRows((prev) => prev.filter(r => !(r.type === "hit" && r.chainId === lastChain.chainId)));
+                                        }
+                                    }}
+                                    style={{
+                                        width: "100%", minHeight: 48,
+                                        background: "rgba(239, 68, 68, 0.10)",
+                                        border: `1px solid ${C.red}30`,
+                                        borderRadius: 12, color: C.red,
+                                        fontSize: 14, fontWeight: 800, fontFamily: font,
+                                        display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                                    }}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <polyline points="3 6 5 6 21 6" />
+                                        <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
+                                        <path d="M10 11v6" />
+                                        <path d="M14 11v6" />
+                                        <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+                                    </svg>
+                                    最新履歴を削除
+                                </button>
                         </div>
                     </div>
 
