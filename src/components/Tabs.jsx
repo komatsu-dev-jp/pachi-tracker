@@ -2690,7 +2690,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
                                 {/* アクションボタン */}
                                 {isChainActive ? (
-                                    <div style={{ position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: "calc(64px + env(safe-area-inset-bottom))", zIndex: 80, width: "calc(100% - 28px)", maxWidth: 452, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, padding: 8, borderRadius: 18, background: "rgba(2,6,23,0.86)", border: "1px solid rgba(148,163,184,0.18)", backdropFilter: "blur(18px)", boxShadow: "0 -14px 36px rgba(0,0,0,0.32)" }}>
+                                    <div style={{ position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: "calc(64px + env(safe-area-inset-bottom))", zIndex: 80, width: "calc(100% - 28px)", maxWidth: 452, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, padding: 8, borderRadius: 18, background: "color-mix(in srgb, var(--bg) 86%, transparent)", border: `1px solid ${C.border}`, backdropFilter: "blur(18px)", boxShadow: "0 -14px 36px rgba(0,0,0,0.42)" }}>
                                         <button className="b" onClick={openChainWizard} style={{
                                             padding: "16px 0", borderRadius: 14, fontWeight: 800, fontSize: 14,
                                             background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", color: "#fff",
@@ -2712,7 +2712,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                 ) : null /* 空状態メッセージはヒーローカードに置き換え済み */}
 
                                 {/* 実測サマリー */}
-                                <div style={{ margin: "0 0 16px", background: "linear-gradient(135deg, rgba(15,23,42,0.92), rgba(2,6,23,0.78))", border: `1px solid ${C.teal}44`, borderRadius: 18, overflow: "hidden", boxShadow: "0 0 22px rgba(45,212,191,0.16)" }}>
+                                <div style={{ margin: "0 0 16px", background: `linear-gradient(135deg, var(--surface), var(--surface-alt))`, border: `1px solid color-mix(in srgb, ${C.teal} 32%, ${C.border})`, borderRadius: 18, overflow: "hidden", boxShadow: `0 0 22px color-mix(in srgb, ${C.teal} 14%, transparent)` }}>
                                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
                                         {[
                                             { label: "平均1R出玉", val: ev.avg1R > 0 ? f(ev.avg1R, 1) : "—", unit: "玉", col: C.teal },
@@ -2738,10 +2738,16 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                             key={chain.chainId || ci}
                                             style={{
                                                 padding: "14px 16px", marginBottom: 12,
-                                                background: !chain.completed ? "linear-gradient(135deg, rgba(34,197,94,0.14), rgba(15,23,42,0.78))" : "linear-gradient(135deg, rgba(59,130,246,0.10), rgba(15,23,42,0.70))",
-                                                border: !chain.completed ? "1px solid rgba(34,197,94,0.34)" : "1px solid rgba(96,165,250,0.22)",
+                                                background: !chain.completed
+                                                    ? `linear-gradient(135deg, color-mix(in srgb, ${C.green} 14%, var(--surface)), var(--surface-alt))`
+                                                    : `linear-gradient(135deg, color-mix(in srgb, ${C.blue} 10%, var(--surface)), var(--surface-alt))`,
+                                                border: !chain.completed
+                                                    ? `1px solid color-mix(in srgb, ${C.green} 34%, ${C.border})`
+                                                    : `1px solid color-mix(in srgb, ${C.blue} 22%, ${C.border})`,
                                                 borderRadius: 18,
-                                                boxShadow: !chain.completed ? "0 0 20px rgba(34,197,94,0.15)" : "0 0 18px rgba(59,130,246,0.10)"
+                                                boxShadow: !chain.completed
+                                                    ? `0 0 20px color-mix(in srgb, ${C.green} 15%, transparent)`
+                                                    : `0 0 18px color-mix(in srgb, ${C.blue} 10%, transparent)`
                                             }}
                                             onTouchStart={() => handleLongPressStart(chain.chainId)}
                                             onTouchEnd={handleLongPressEnd}
@@ -4237,7 +4243,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                         <button className="b" type="button" onClick={onConfirm}
                                             style={{
                                                 width: "100%", minHeight: 54, borderRadius: 12,
-                                                background: `linear-gradient(180deg, ${themeColor}, color-mix(in srgb, ${themeColor} 70%, #1a3a8e))`,
+                                                background: `linear-gradient(180deg, ${themeColor}, color-mix(in srgb, ${themeColor} 70%, var(--bg)))`,
                                                 border: "none", color: "#fff",
                                                 fontSize: 17, fontWeight: 800, fontFamily: font,
                                                 boxShadow: `0 4px 16px color-mix(in srgb, ${themeColor} 40%, transparent)`,
@@ -4976,7 +4982,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                                 <button className="b" type="button" onClick={onConfirm}
                                                     style={{
                                                         width: "100%", minHeight: 54, borderRadius: 12,
-                                                        background: `linear-gradient(180deg, ${themeColor}, color-mix(in srgb, ${themeColor} 70%, #0f6e3a))`,
+                                                        background: `linear-gradient(180deg, ${themeColor}, color-mix(in srgb, ${themeColor} 70%, var(--bg)))`,
                                                         border: "none", color: "#fff",
                                                         fontSize: 17, fontWeight: 800, fontFamily: font,
                                                         boxShadow: `0 4px 16px color-mix(in srgb, ${themeColor} 40%, transparent)`,

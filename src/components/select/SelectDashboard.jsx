@@ -177,10 +177,10 @@ function HallMap({ machines, activeFilter, selectedId, onSelect }) {
         borderRadius: 14,
         overflow: "hidden",
         background:
-          "linear-gradient(90deg, rgba(96,165,250,0.08) 1px, transparent 1px), linear-gradient(0deg, rgba(96,165,250,0.08) 1px, transparent 1px), radial-gradient(circle at 50% 12%, rgba(96,165,250,0.16), transparent 36%), #071224",
+          "linear-gradient(90deg, color-mix(in srgb, var(--blue) 8%, transparent) 1px, transparent 1px), linear-gradient(0deg, color-mix(in srgb, var(--blue) 8%, transparent) 1px, transparent 1px), radial-gradient(circle at 50% 12%, color-mix(in srgb, var(--blue) 14%, transparent), transparent 36%), var(--surface-alt)",
         backgroundSize: "22px 22px, 22px 22px, auto, auto",
-        border: "1px solid rgba(148,178,255,0.18)",
-        boxShadow: "inset 0 0 28px rgba(15,23,42,0.72)",
+        border: "1px solid var(--border-hi)",
+        boxShadow: "inset 0 0 28px rgba(0,0,0,0.55)",
       }}>
         <FloorLine top={14} left={16} width={94} />
         <FloorLine top={14} right={16} width={94} />
@@ -189,7 +189,7 @@ function HallMap({ machines, activeFilter, selectedId, onSelect }) {
         <div style={{
           position: "absolute",
           inset: 12,
-          border: "1px solid rgba(148,178,255,0.18)",
+          border: "1px solid var(--border-hi)",
           borderRadius: 10,
           pointerEvents: "none",
         }} />
@@ -199,7 +199,7 @@ function HallMap({ machines, activeFilter, selectedId, onSelect }) {
           top: 54,
           bottom: 50,
           width: 2,
-          background: "linear-gradient(180deg, transparent, rgba(148,178,255,0.38), transparent)",
+          background: "linear-gradient(180deg, transparent, color-mix(in srgb, var(--blue) 38%, transparent), transparent)",
         }} />
         <div style={{
           position: "absolute",
@@ -207,7 +207,7 @@ function HallMap({ machines, activeFilter, selectedId, onSelect }) {
           top: 54,
           bottom: 50,
           width: 2,
-          background: "linear-gradient(180deg, transparent, rgba(148,178,255,0.38), transparent)",
+          background: "linear-gradient(180deg, transparent, color-mix(in srgb, var(--blue) 38%, transparent), transparent)",
         }} />
 
         <div style={{
@@ -245,8 +245,8 @@ function FloorLine({ top, bottom, left, right, width }) {
       right,
       width,
       height: 8,
-      borderTop: "1px solid rgba(148,178,255,0.35)",
-      borderBottom: "1px solid rgba(148,178,255,0.22)",
+      borderTop: "1px solid color-mix(in srgb, var(--blue) 35%, transparent)",
+      borderBottom: "1px solid color-mix(in srgb, var(--blue) 22%, transparent)",
       opacity: 0.8,
     }} />
   );
@@ -271,9 +271,9 @@ function Island({ label, machines, activeFilter, selectedId, onSelect }) {
         maxWidth: 94,
         padding: "8px 7px",
         borderRadius: 11,
-        background: "rgba(15,23,42,0.76)",
-        border: "1px solid rgba(148,178,255,0.24)",
-        boxShadow: "0 10px 24px rgba(0,0,0,0.22), inset 0 0 0 1px rgba(255,255,255,0.03)",
+        background: "color-mix(in srgb, var(--surface-alt) 90%, transparent)",
+        border: "1px solid color-mix(in srgb, var(--blue) 24%, var(--border-hi))",
+        boxShadow: "0 10px 24px rgba(0,0,0,0.32), inset 0 0 0 1px rgba(255,255,255,0.03)",
       }}>
         <div style={{
           position: "absolute",
@@ -283,7 +283,7 @@ function Island({ label, machines, activeFilter, selectedId, onSelect }) {
           width: 2,
           transform: "translateX(-50%)",
           borderRadius: 2,
-          background: "rgba(148,178,255,0.22)",
+          background: "color-mix(in srgb, var(--blue) 22%, transparent)",
         }} />
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
           {machines.map((machine) => (
@@ -315,7 +315,7 @@ function MachineCabinet({ machine, activeFilter, selected, onSelect }) {
         minHeight: 30,
         borderRadius: 6,
         border: selected ? `2px solid ${C.blue}` : `1px solid ${col.border}`,
-        background: visible ? col.bg : "rgba(30,41,59,0.52)",
+        background: visible ? col.bg : "color-mix(in srgb, var(--surface-hi) 70%, transparent)",
         color: visible ? C.text : C.sub,
         opacity: visible ? 1 : 0.38,
         padding: "3px 2px",
