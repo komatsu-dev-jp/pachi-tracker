@@ -1,6 +1,6 @@
 # HANDOVER.md — Pachi Tracker 引き継ぎドキュメント
 
-最終更新: 2026-05-22（大当たりタブのヒーロー3カードをモック2準拠に再調整。スパークラインを滑らかな正弦波 → 実データ風のジッターライン（シード式ランダムウォーク・32点）に刷新、カード最低高 158px、現在評価カードの絵文字・ラベル拡大、+N玉 サブ表示をプレーンテキスト化。`logic.js` / `baseline.json` 不変・見た目優先プロトタイプ）
+最終更新: 2026-05-22（ダークテーマをモックアップ2準拠のピュアブラック高コントラストパレットへ刷新。`--bg #0c1428 → #05070d` ほか CSS 変数を中立ブラック寄りに置換、`Tabs.jsx` / `SelectDashboard.jsx` / `index.css` 内のハードコード slate-900/950 を CSS 変数化、`index.html` / `vite.config.js` の `theme-color` も同期。`logic.js` / `baseline.json` 不変、保護関数テスト通過）
 
 ---
 
@@ -29,7 +29,7 @@ src/
   snapshot.js                   # セッション復元保証
   dummyData.js                  # 偵察/台選びモード等のダミーデータ生成
   constants.js                  # 配色 C / フォント / ヘルパー
-  index.css                     # ダークネイビー配色（モック2準拠）
+  index.css                     # ピュアブラック高コントラスト配色（モック2準拠、2026-05-22 刷新）
   notifications.js              # 通知ログヘルパー（Phase 6、純関数）
   components/
     Atoms.jsx                   # 共通UIパーツ
@@ -189,6 +189,7 @@ docs/
 | 1.B | ✅ 完了 | 判断タブと回転入力タブを実戦タブに統合（クイック入力 +1/+5/+10/+25 廃止、テンキーをbottom sheet化） | `979f9f2` / PR #173 |
 | 1.5 | ✅ 完了 | 判定バッジの大型化＋円形試行充足率リング | `42f6b85` / PR #176 |
 | 1.6 | ✅ 完了 | モックアップ2準拠のダークネイビー配色刷新 | `1cae238` / PR #177 |
+| 1.6.1 | ✅ 完了 | ダークテーマをモック2準拠のピュアブラック高コントラストパレットへ再刷新（ネイビー寄り→中立ブラック寄り、ハードコード slate を CSS 変数化、`theme-color` 同期） | `25e6f92` / `8722aca`（ブランチ `claude/session-XffIS`） |
 | 1.7 + 1.8 | ✅ 完了 | 記録モードに直近イベント表示（`RecentEventList`）と通知ベル/歯車ショートカット追加 | `702a932` / PR #180 |
 | 2 | ✅ 完了 | 分析モードを収支分析ダッシュボード（`AnalysisDashboard` + `analysisSelectors`）に刷新 | `5de0c86` / PR #181 |
 | 3 | ✅ 完了 | 偵察モードを店舗ランキング画面（`ScoutDashboard` + ダミーデータ）に刷新 | `b5dc141` / PR #182 |
@@ -217,6 +218,54 @@ docs/
 `src/index.css` の CSS 変数を「ブルー寄りダークネイビー」に統一。
 ダーク／ライト両テーマで `--bg`, `--surface`, `--accent` 等を再定義。
 `src/constants.js` の `C.*` は `var(--*)` への参照なので、新色は CSS 側を編集すれば全コンポーネントに伝播する。
+
+#### 配色再刷新（2026-05-22、ブランチ `claude/session-XffIS`）
+
+PR #177 のネイビー寄りパレットを「モックアップ2 の入力フロー画面に近いピュアブラック寄り・高コントラスト」へ更新。
+ライトテーマは未変更。ダークテーマのみ刷新。
+
+主な変数変更（`src/index.css`、`[data-theme="dark"]`）:
+
+| 変数 | 旧（ネイビー寄り） | 新（ピュアブラック寄り） |
+|---|---|---|
+| `--bg` | `#0c1428` | `#05070d` |
+| `--surface` | `#1a2238` | `#0e1117` |
+| `--surface-hi` | `#222c47` | `#181d27` |
+| `--surface-alt` | `#121a30` | `#090b12` |
+| `--border` | `rgba(148,178,255,0.08)`（青味） | `rgba(255,255,255,0.06)`（中立） |
+| `--border-hi` | `rgba(148,178,255,0.16)` | `rgba(255,255,255,0.14)` |
+| `--blue` | `#60a5fa` | `#38bdf8`（明瞭なシアン寄り） |
+| `--green` | `#34d399` | `#22c55e`（ビビッドネオン） |
+| `--text` | `#e8eef9` | `#f3f6fb` |
+| `--header-bg` / `--nav-bg` | `rgba(12,20,40,0.9x)` | `rgba(5,7,13,0.9x)` |
+
+`src/constants.js` の `C.*` 抽象は不変。CSS 変数の値だけで全コンポーネントに伝播する。
+
+ハードコード除去（CSS 変数化）:
+
+- `src/index.css` の `.jp-*`（大当たり後フロープロトタイプ）クラス群
+  - `rgba(15, 23, 42, ...)`（slate-900）/ `rgba(2, 6, 23, ...)`（slate-950）/ `#0f172a` / `#020617` → `var(--surface)` / `var(--bg)` / `color-mix` ベースに置換
+  - `rgba(148, 163, 184, ...)` ボーダー → `var(--border)`
+- `src/components/Tabs.jsx`
+  - チェーン履歴カードの背景・ボーダー（行 2741 付近）を `color-mix(in srgb, ${C.green/blue} N%, var(--surface))` に
+  - アクティブチェーン下部 CTA バー（行 2693 付近）を `color-mix(in srgb, var(--bg) 86%, transparent)` に
+  - 実測サマリーカード勾配（行 2715 付近）を `var(--surface) → var(--surface-alt)` に
+  - 「入力を確定する」ボタンの勾配下端を `#1a3a8e` / `#0f6e3a` → `var(--bg)` に
+  - モーダル下部アクションバーの `rgba(20,20,25,1)` を `var(--bg)` に統一
+- `src/components/select/SelectDashboard.jsx`
+  - ホール図面風マップ背景 `#071224` ほか青系ハードコードを `var(--surface-alt)` と `color-mix(var(--blue) ...)` ベースに
+
+メタタグ同期:
+
+- `index.html` の `<meta name="theme-color">`: `#0c1428` → `#05070d`
+- `vite.config.js` の PWA `theme_color`: `#0a0a12` → `#05070d`
+
+検証:
+
+- `npm run lint`: 0 エラー（既存 8 警告のみ、無関連）
+- `npm run build`: 成功（dist の CSS に `#05070d` / `#0e1117` / `#181d27` を確認、旧 `#0c1428` / `#1a2238` は消滅）
+- `node src/__tests__/protected-fns.mjs`: 通過（`logic.js` 不変）
+- 操作ステップ数の変化: なし（CSS 変数・色トークンのみの変更）
 
 #### モード切替ロジック（App.jsx:465-476 抜粋）
 
@@ -917,6 +966,25 @@ grep -n "判定変化通知\|prevVerdictRef\|lastVerdictNotifyRef" src/App.jsx
 # 設定画面のバッジ一覧マウント
 grep -n "BadgeList" src/components/Tabs.jsx
 ```
+
+### 直近の状態サマリー（2026-05-22 時点、ダークテーマをピュアブラック高コントラストパレットへ刷新 完了後）
+
+- **作業ブランチ**: `claude/session-XffIS`（push 済 / PR 未作成）
+- **本ブランチで変更**:
+  - `src/index.css`:
+    - `[data-theme="dark"]` の CSS 変数群を中立ブラック寄りパレットに刷新（`--bg #0c1428 → #05070d`、`--surface #1a2238 → #0e1117`、`--surface-hi → #181d27`、`--border` を青味から中立白系へ、`--blue → #38bdf8`、`--green → #22c55e` ほか）
+    - `.jp-proto-screen` / `.jp-proto-header` / `.jp-flow-status` / `.jp-flow-metric` / `.jp-value-card` / `.jp-choice-button` / `.jp-keypad` / `.jp-flow-orb` のハードコード slate-900/950 と `rgba(148, 163, 184, ...)` を `var(--surface)` / `var(--bg)` / `color-mix(...)` ベースに置換
+  - `src/components/Tabs.jsx`:
+    - チェーン履歴カード・アクティブチェーン下部 CTA バー・実測サマリー勾配・「入力を確定する」ボタンの勾配下端を `var(--surface)` / `var(--surface-alt)` / `var(--bg)` ベースに統一（旧 `rgba(15,23,42,...)`・`rgba(2,6,23,...)`・`#1a3a8e`・`#0f6e3a` を除去）
+    - モーダル下部アクションバーの `rgba(20,20,25,1)` を `var(--bg)` に統一（3 箇所）
+  - `src/components/select/SelectDashboard.jsx`:
+    - ホール図面風マップの背景 `#071224` ほか青系ハードコード（`rgba(148,178,255,...)`・`rgba(15,23,42,...)`・`rgba(30,41,59,...)`）を `var(--surface-alt)` ＋ `color-mix(var(--blue) ...)` ベースに置換
+  - `index.html`: `<meta name="theme-color">` を `#0c1428 → #05070d`
+  - `vite.config.js`: PWA `theme_color` を `#0a0a12 → #05070d`
+- **lint / build**: いずれもエラー 0（既存警告 8 件のみ、無関連）
+- **保護関数テスト**: `node src/__tests__/protected-fns.mjs` 通過（`logic.js` 不変）
+- **コミット**: `25e6f92`（CSS 変数刷新本体）+ `8722aca`（モーダル下部背景の `var(--bg)` 統一）
+- **以下は前回時点のサマリー（参考）**
 
 ### 直近の状態サマリー（2026-05-22 時点、大当たりタブ ヒーロー3カードのモック2準拠 再調整 完了後）
 
