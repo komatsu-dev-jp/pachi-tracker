@@ -4704,7 +4704,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
 
                                                 <div style={{
                                                     display: "flex", alignItems: "baseline", justifyContent: "flex-end", gap: 4,
-                                                    padding: "10px 0 6px",
+                                                    padding: curStep.id === "elecSapoRot" ? "10px 0 10px" : "10px 0 6px",
                                                 }}>
                                                     <span style={{ fontSize: 44, fontWeight: 800, color: bigValueText === "0" || bigValueText === "" ? C.sub : curStep.color, fontFamily: mono, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
                                                         {bigValueText === "" ? "0" : bigValueText}
@@ -4713,28 +4713,6 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                                 </div>
 
                                                 {/* ステップ別プリセット */}
-                                                {curStep.id === "elecSapoRot" && (
-                                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 6 }}>
-                                                        <button className="b" type="button" onClick={() => updField("elecSapoRot", String(Math.max(0, rotN - 10)))}
-                                                            style={{
-                                                                minHeight: 44, borderRadius: 10, padding: "0 6px",
-                                                                background: "var(--surface-hi)", border: `1px solid ${C.border}`,
-                                                                color: C.text, fontSize: 14, fontWeight: 700, fontFamily: mono,
-                                                            }}>-10</button>
-                                                        <button className="b" type="button" onClick={() => updField("elecSapoRot", String(rotN + 10))}
-                                                            style={{
-                                                                minHeight: 44, borderRadius: 10, padding: "0 6px",
-                                                                background: "var(--surface-hi)", border: `1px solid ${C.border}`,
-                                                                color: C.text, fontSize: 14, fontWeight: 700, fontFamily: mono,
-                                                            }}>+10</button>
-                                                        <button className="b" type="button" onClick={() => updField("elecSapoRot", "")}
-                                                            style={{
-                                                                minHeight: 44, borderRadius: 10, padding: "0 6px",
-                                                                background: "var(--surface-hi)", border: `1px solid ${C.border}`,
-                                                                color: C.text, fontSize: 13, fontWeight: 700, fontFamily: font,
-                                                            }}>クリア</button>
-                                                    </div>
-                                                )}
                                                 {curStep.id === "rounds" && (
                                                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 6 }}>
                                                         {roundPresets.map(p => (
