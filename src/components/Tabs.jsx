@@ -2516,38 +2516,47 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                     else if (heroAvg1R >= 130) { stars = 3; starLabel = "良好"; }
                                     else if (heroAvg1R >= 120) { stars = 2; starLabel = "普通"; }
                                     else if (heroAvg1R > 0) { stars = 1; starLabel = "厳しい"; }
-                                    // ダミーのスパークラインデータ（将来連携予定）
+                                    // ダミーのスパークラインデータ（将来連携予定: 実測トレンドと連動）
+                                    // ジッター強めのランダムウォーク → 実データ風のスタイリッシュなライン
                                     const makeSpark = (seed) => {
                                         const pts = [];
                                         let v = 0;
-                                        for (let i = 0; i < 16; i++) {
-                                            v += Math.sin(i * 0.7 + seed) * 6 + (seed * 1.4);
+                                        // 線形合同法による疑似乱数（seed毎に決定的）
+                                        let s = (seed * 9301 + 49297) >>> 0;
+                                        const N = 32;
+                                        for (let i = 0; i < N; i++) {
+                                            s = (s * 1664525 + 1013904223) >>> 0;
+                                            const r = (s / 0xffffffff) - 0.5; // -0.5〜0.5
+                                            // ジッター + 緩やかな上昇トレンド
+                                            v += r * 14 + 0.35;
                                             pts.push(v);
                                         }
                                         return pts;
                                     };
-                                    const sparkPath = (vals, w = 100, h = 28) => {
+                                    const sparkPath = (vals, w = 100, h = 40) => {
                                         const min = Math.min(...vals), max = Math.max(...vals);
                                         const range = (max - min) || 1;
                                         return vals.map((v, i) => {
                                             const x = (i / (vals.length - 1)) * w;
-                                            const y = h - ((v - min) / range) * h;
+                                            // 上下に少し余白を取って線が枠にベタ付きしないように
+                                            const y = (h - 2) - ((v - min) / range) * (h - 4) + 1;
                                             return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
                                         }).join(" ");
                                     };
                                     const Spark = ({ color, seed }) => {
+                                        const H = 40;
                                         const vals = makeSpark(seed);
-                                        const d = sparkPath(vals);
+                                        const d = sparkPath(vals, 100, H);
                                         return (
-                                            <svg viewBox="0 0 100 28" preserveAspectRatio="none" style={{ display: "block", width: "100%", height: 28, marginTop: 8 }}>
+                                            <svg viewBox={`0 0 100 ${H}`} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: H, marginTop: "auto" }}>
                                                 <defs>
                                                     <linearGradient id={`sg-${seed}`} x1="0" y1="0" x2="0" y2="1">
-                                                        <stop offset="0%" stopColor={color} stopOpacity="0.35" />
+                                                        <stop offset="0%" stopColor={color} stopOpacity="0.30" />
                                                         <stop offset="100%" stopColor={color} stopOpacity="0" />
                                                     </linearGradient>
                                                 </defs>
-                                                <path d={`${d} L100,28 L0,28 Z`} fill={`url(#sg-${seed})`} />
-                                                <path d={d} fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                                                <path d={`${d} L100,${H} L0,${H} Z`} fill={`url(#sg-${seed})`} />
+                                                <path d={d} fill="none" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
                                             </svg>
                                         );
                                     };
@@ -2558,25 +2567,24 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                                 <div style={{
                                                     background: `linear-gradient(160deg, color-mix(in srgb, ${C.green} 14%, var(--surface)) 0%, var(--surface) 100%)`,
                                                     border: `1px solid color-mix(in srgb, ${C.green} 38%, ${C.border})`,
-                                                    borderRadius: 14, padding: "10px 8px 8px",
+                                                    borderRadius: 14, padding: "10px 8px 6px",
                                                     boxShadow: `0 0 18px color-mix(in srgb, ${C.green} 18%, transparent)`,
                                                     display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center",
+                                                    minHeight: 158,
                                                 }}>
-                                                    <div style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: C.sub, fontWeight: 700 }}>
+                                                    <div style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, color: C.sub, fontWeight: 700 }}>
                                                         <span>現在持玉</span>
-                                                        <span style={{ fontSize: 9, opacity: 0.7 }}>?</span>
+                                                        <span style={{ fontSize: 10, opacity: 0.7 }}>?</span>
                                                     </div>
-                                                    <div style={{ fontSize: 22, fontWeight: 900, color: C.green, fontFamily: mono, lineHeight: 1.1, marginTop: 4 }}>
+                                                    <div style={{ fontSize: 22, fontWeight: 900, color: C.green, fontFamily: mono, lineHeight: 1.1, marginTop: 6 }}>
                                                         {f(heroMochi)}<span style={{ fontSize: 11, marginLeft: 1, fontFamily: font, color: C.green, opacity: 0.85 }}>玉</span>
                                                     </div>
                                                     {lastChainGain !== 0 && (
                                                         <div style={{
-                                                            marginTop: 4, fontSize: 10, fontWeight: 700,
+                                                            marginTop: 3, fontSize: 12, fontWeight: 800,
                                                             color: lastChainGain > 0 ? C.green : C.red, fontFamily: mono,
-                                                            background: `color-mix(in srgb, ${lastChainGain > 0 ? C.green : C.red} 18%, transparent)`,
-                                                            padding: "1px 6px", borderRadius: 6,
                                                         }}>
-                                                            {sp(lastChainGain)}玉
+                                                            {sp(lastChainGain)}<span style={{ fontSize: 10, fontFamily: font, opacity: 0.85, marginLeft: 1 }}>玉</span>
                                                         </div>
                                                     )}
                                                     <Spark color="#22c55e" seed={2} />
@@ -2585,22 +2593,23 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                                 <div style={{
                                                     background: `linear-gradient(160deg, color-mix(in srgb, ${verdictCfg.color} 14%, var(--surface)) 0%, var(--surface) 100%)`,
                                                     border: `1px solid color-mix(in srgb, ${verdictCfg.color} 38%, ${C.border})`,
-                                                    borderRadius: 14, padding: "10px 8px 8px",
+                                                    borderRadius: 14, padding: "10px 8px 6px",
                                                     boxShadow: `0 0 18px color-mix(in srgb, ${verdictCfg.color} 18%, transparent)`,
                                                     display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center",
+                                                    minHeight: 158,
                                                 }}>
-                                                    <div style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: C.sub, fontWeight: 700 }}>
+                                                    <div style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, color: C.sub, fontWeight: 700 }}>
                                                         <span>現在評価</span>
-                                                        <span style={{ fontSize: 9, opacity: 0.7 }}>?</span>
+                                                        <span style={{ fontSize: 10, opacity: 0.7 }}>?</span>
                                                     </div>
-                                                    <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
-                                                        <span style={{ fontSize: 22 }}>{verdictCfg.emoji}</span>
-                                                        <span style={{ fontSize: 20, fontWeight: 900, color: verdictCfg.color, fontFamily: font, lineHeight: 1.1 }}>
+                                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, marginTop: 4 }}>
+                                                        <span style={{ fontSize: 26, lineHeight: 1 }}>{verdictCfg.emoji}</span>
+                                                        <span style={{ fontSize: 22, fontWeight: 900, color: verdictCfg.color, fontFamily: font, lineHeight: 1.1 }}>
                                                             {verdictCfg.label}
                                                         </span>
                                                     </div>
-                                                    <div style={{ fontSize: 12, fontWeight: 800, color: sc(heroEvNet), fontFamily: mono, marginTop: 2 }}>
-                                                        {sp(Math.round(heroEvNet))}玉
+                                                    <div style={{ fontSize: 13, fontWeight: 800, color: sc(heroEvNet), fontFamily: mono, marginTop: 3 }}>
+                                                        {sp(Math.round(heroEvNet))}<span style={{ fontSize: 10, fontFamily: font, opacity: 0.85, marginLeft: 1 }}>玉</span>
                                                     </div>
                                                     <div style={{ fontSize: 9, color: C.sub, fontFamily: font, marginTop: 1 }}>（理論ベース）</div>
                                                     <Spark color="#3b82f6" seed={4} />
@@ -2609,15 +2618,16 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                                                 <div style={{
                                                     background: `linear-gradient(160deg, color-mix(in srgb, ${C.orange} 14%, var(--surface)) 0%, var(--surface) 100%)`,
                                                     border: `1px solid color-mix(in srgb, ${C.orange} 38%, ${C.border})`,
-                                                    borderRadius: 14, padding: "10px 8px 8px",
+                                                    borderRadius: 14, padding: "10px 8px 6px",
                                                     boxShadow: `0 0 18px color-mix(in srgb, ${C.orange} 18%, transparent)`,
                                                     display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center",
+                                                    minHeight: 158,
                                                 }}>
-                                                    <div style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: C.sub, fontWeight: 700 }}>
+                                                    <div style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, color: C.sub, fontWeight: 700 }}>
                                                         <span>1Rあたりの出球</span>
-                                                        <span style={{ fontSize: 9, opacity: 0.7 }}>?</span>
+                                                        <span style={{ fontSize: 10, opacity: 0.7 }}>?</span>
                                                     </div>
-                                                    <div style={{ fontSize: 20, fontWeight: 900, color: C.orange, fontFamily: mono, lineHeight: 1.1, marginTop: 4 }}>
+                                                    <div style={{ fontSize: 20, fontWeight: 900, color: C.orange, fontFamily: mono, lineHeight: 1.1, marginTop: 6 }}>
                                                         {heroAvg1R > 0 ? `約${f(Math.round(heroAvg1R))}` : "—"}<span style={{ fontSize: 11, marginLeft: 1, fontFamily: font, color: C.orange, opacity: 0.85 }}>玉/R</span>
                                                     </div>
                                                     {stars > 0 && (
