@@ -5193,7 +5193,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
                             );
                         })()}
                     </div>
-                    <div style={{ padding: "8px 12px", paddingBottom: "max(12px, env(safe-area-inset-bottom))", background: "rgba(20,20,25,1)", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
+                    <div style={{ padding: "8px 12px", paddingBottom: "max(12px, env(safe-area-inset-bottom))", background: "var(--bg)", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
                             <button className="b" onClick={() => { if (directSingleEndStep === 0) setDirectSingleEndOpen(false); else setDirectSingleEndStep(0); }}
                                 style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "var(--surface-hi)", border: "none", color: C.text }}>{directSingleEndStep === 0 ? "キャンセル" : "戻る"}</button>
@@ -6264,7 +6264,7 @@ export function HistoryTab({ jpLog, delJPLast, S, ev }) {
                         <div style={{
                             padding: "8px 12px",
                             paddingBottom: "max(12px, env(safe-area-inset-bottom))",
-                            background: "rgba(20,20,25,1)",
+                            background: "var(--bg)",
                             borderTop: `1px solid ${C.border}`,
                             flexShrink: 0
                         }}>
@@ -6444,7 +6444,7 @@ export function HistoryTab({ jpLog, delJPLast, S, ev }) {
                     <div style={{
                         padding: "8px 12px",
                         paddingBottom: "max(12px, env(safe-area-inset-bottom))",
-                        background: "rgba(20,20,25,1)",
+                        background: "var(--bg)",
                         borderTop: `1px solid ${C.border}`,
                         flexShrink: 0
                     }}>
