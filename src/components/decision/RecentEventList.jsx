@@ -58,7 +58,7 @@ const EVENT_STYLES = {
   other:      { color: "var(--sub)",    label: "",             icon: <MoveIcon /> },
 };
 
-// 回転入力イベント（"1K決定" / "500円決定" / "持ち玉NN玉消費" / "貯玉NN玉消費"）はノイズ扱いで除外
+// 回転入力イベント（"1K決定" / "500円決定" / "持ち玉NN玉消費" / "貯玉NN玉消費"）の判定
 function isRotInputType(type) {
   if (!type) return false;
   return /決定$/.test(type) || /消費$/.test(type);
@@ -77,6 +77,7 @@ function sesTypeToStyle(type) {
   if (type === "一時保存") return { ...EVENT_STYLES.note, color: "var(--yellow)", label: "一時保存" };
   if (type.startsWith("メモ")) return { ...EVENT_STYLES.note, label: type };
   if (type.startsWith("継続判断")) return { ...EVENT_STYLES.afterJp, label: type };
+  if (isRotInputType(type)) return EVENT_STYLES.rotInput;
   return { ...EVENT_STYLES.other, label: type };
 }
 
@@ -114,14 +115,30 @@ export function RecentEventList({ jpLog = [], sesLog = [], anchorId }) {
     (sesLog || []).forEach((e) => {
       if (!e || !e.type) return;
       if (e.type === "data" || e.type === "data記録") return;
-      if (isRotInputType(e.type)) return;
       if (e.type === "初当たり" || e.type === "初当たり記録") return;
       const style = sesTypeToStyle(e.type);
+      const isRotInput = isRotInputType(e.type);
       const sub = [];
-      if (e.rot != null) sub.push(`${e.rot}回転`);
       const chips = [];
-      if (e.rot != null) chips.push({ label: "総回転", val: `${e.rot.toLocaleString("ja-JP")}回` });
-      if (e.cash != null && e.cash > 0) chips.push({ label: "投資", val: `${e.cash.toLocaleString("ja-JP")}円` });
+      if (isRotInput) {
+        // 回転入力イベント: e.rot は今回入力分の増分（thisRot）
+        if (e.rot != null) {
+          sub.push(`+${e.rot}回転`);
+          chips.push({ label: "今回", val: `+${e.rot.toLocaleString("ja-JP")}回` });
+        }
+        if (e.cash != null && e.cash > 0) {
+          chips.push({ label: "投資", val: `${e.cash.toLocaleString("ja-JP")}円` });
+        } else if (e.mode === "mochi") {
+          chips.push({ label: "持ち玉", val: "消費" });
+        } else if (e.mode === "chodama") {
+          chips.push({ label: "貯玉", val: "消費" });
+        }
+      } else {
+        // 通常イベント: e.rot は累積回転数
+        if (e.rot != null) sub.push(`${e.rot}回転`);
+        if (e.rot != null) chips.push({ label: "総回転", val: `${e.rot.toLocaleString("ja-JP")}回` });
+        if (e.cash != null && e.cash > 0) chips.push({ label: "投資", val: `${e.cash.toLocaleString("ja-JP")}円` });
+      }
       list.push({
         kind: "ses",
         time: e.time || "",
