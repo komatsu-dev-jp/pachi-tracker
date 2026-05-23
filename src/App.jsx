@@ -745,7 +745,7 @@ export default function App() {
           flexDirection: "column",
           overflow: "auto",
           overflowX: "hidden",
-          paddingBottom: "calc(52px + env(safe-area-inset-bottom))",
+          paddingBottom: "calc(44px + env(safe-area-inset-bottom))",
         }}
       >
         {currentMode === "scout" && <ScoutDashboard S={S} />}
