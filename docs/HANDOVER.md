@@ -1,6 +1,6 @@
 # HANDOVER.md — Pachi Tracker 引き継ぎドキュメント
 
-最終更新: 2026-05-22（詳細データタブを「分析OS風ダークUI（モック準拠）」に全面刷新。AI分析サマリー + 1Kスタート/想定時給 2カラム + 終了予定までの想定仕事量レンジバー + 仕事量vs実収支 3カラム + 期待値との差 半円σゲージ + ボーダー差・信頼度の2線推移グラフ + 詳細スタッツ + 計算根拠 の 8 セクション構成。配色は `#050B18` 背景 + `rgba(11,22,40,...)` 半透明カード + 青/緑/黄/赤/紫のネオン系アクセント。実データがあれば既存 `ev` / `evEff` から取得、無い時はモック準拠のダミー値。交換率は `S.ballVal`（円/玉）を優先。`logic.js` / `baseline.json` / `evDecision.js` 不変、保護関数テスト通過）
+最終更新: 2026-05-23（詳細データタブを「折りたたみ型 分析OS UI」へ再刷新。常時表示は AI分析サマリー（チェックリスト型）+ 1Kスタート / 想定時給（LOW強調・小型化）+ 終了予定までの想定仕事量レンジバー の 4 セクションに集約。仕事量vs実収支 / σ分析（青→グレー→黄のみ）/ ボーダー差・信頼度の推移（現在点パルス）/ 詳細スタッツ（優先度別レイアウト）/ 計算根拠 の 5 セクションは折りたたみ化、通常時は 1 行サマリーのみ。スクロール中も「持ち玉遊技中 / ボーダー / 期待値プラス／マイナス / 信頼度 / 次の判断ライン」を表示する下部固定ステータスバーを追加。`logic.js` / `baseline.json` / `evDecision.js` 不変、保護関数テスト通過 — 2026-05-22 の旧記述は以下に続く）<br>2026-05-22（詳細データタブを「分析OS風ダークUI（モック準拠）」に全面刷新。AI分析サマリー + 1Kスタート/想定時給 2カラム + 終了予定までの想定仕事量レンジバー + 仕事量vs実収支 3カラム + 期待値との差 半円σゲージ + ボーダー差・信頼度の2線推移グラフ + 詳細スタッツ + 計算根拠 の 8 セクション構成。配色は `#050B18` 背景 + `rgba(11,22,40,...)` 半透明カード + 青/緑/黄/赤/紫のネオン系アクセント。実データがあれば既存 `ev` / `evEff` から取得、無い時はモック準拠のダミー値。交換率は `S.ballVal`（円/玉）を優先。`logic.js` / `baseline.json` / `evDecision.js` 不変、保護関数テスト通過）
 
 ---
 
@@ -809,6 +809,62 @@ if (evAdj < -50 || bDiff < -1.0)                      → "stop"
   - 撤去: 履歴アコーディオン、`showHistory` state、`rotCol` / `rowBg` ヘルパー、`displayBorder` プロップ、neon-card 現金/持ち玉 2連、stat バー
   - **検証**: `npm run lint` errors=0（既存 warning 8 件のみ、本変更で増減なし）、`npm run build` 成功（`built in 1.97s`）、`protected-fns.mjs` の出力が `baseline.json` と完全一致、`evDecision.test.mjs` 5/5 PASS、Playwright + Chromium で iPhone 14 viewport（390x844）スクリーンショット検証実施
   - **コミット**: `b7dd01e`
+- ✅ 詳細データタブを「折りたたみ型 分析OS UI」へ刷新（ブランチ `claude/claude-code-detail-ui-redesign-J0Hzo`、2026-05-23）。**見た目優先プロトタイプ**として実装、`logic.js` / `baseline.json` / `evDecision.js` 不変を厳守
+  - **背景**: ユーザー提供モック（黒背景・カード型・折りたたみ展開のスタイリッシュな分析OS）に従い、詳細データタブ（`sessionSubTab === "data"`）を「常時表示4セクション + 折りたたみ5セクション + 下部固定ステータスバー」構造へ再構成。「読ませるレポート」ではなく「ホールで3秒で判断する分析OS」を目標
+  - **常時表示エリア**（タブを開いた瞬間に見える）:
+    | # | 内容 | 主な実装 |
+    |---|---|---|
+    | 1 | AI分析サマリー（チェックリスト型） | 旧プロセ文（「現在のベースは〜」）を撤去し、`aiChecklist` 4 行のチェックリストに置換（`✓`緑 / `✗`赤 / `⚠`黄 / `◎`青のSVGアイコン）。各行は `bDiff / confidence / netRot` から動的生成。右上に折りたたみボタン（`aiSummaryOpen` で開閉、既定: 展開）。サブカードは 4 個 → 2×2 グリッドに再配置（データ精度・信頼度・次の判断ライン・信頼度MIDまで） |
+    | 2 | 1Kスタート（左カード） | 大数字 + 理論ボーダー + 「ボーダーを +N回 上回って／下回って」ピル。`bDiff` の符号で色を緑/赤に切替（チェックアイコンつき） |
+    | 3 | 想定時給（右カード、参考値強調） | LOW 信頼度時は数値サイズを 32→22px に縮小し opacity 0.85 で控えめに。`LOW`バッジを右上にカラフルに表示（LOW=黄、MID=青、HIGH=緑）、`ブレ幅 ±N円/h` を独立行に明記 |
+    | 4 | 終了予定までの想定仕事量 | 中央値 + 推定レンジバー（緑→シアン→青グラデ、中央値白マーカー、両端ドット）+ 右上に終了予定時刻 |
+  - **折りたたみエリア**（通常時は 1 行サマリーのみ、タップで展開）:
+    - 状態管理: `dataExpanded: { work, sigma, trend, stats, calc }` を `RotTab` 直下の `useState` に新設。`toggleDataSec(k)` で開閉切替。既定はすべて折りたたみ
+    - 共通ヘッダ: `CollapseRow` 内部コンポーネント（番号バッジ + タイトル + 1 行サマリー + 回転シェブロン）。タップ領域 48px 以上
+    - 展開アニメーション: CSS `.data-collapse-body` + `@keyframes data-expand`（iOS 風 ease-out 0.28s）
+    | セクション | 折りたたみ時サマリー | 展開時 |
+    |---|---|---|
+    | 仕事量 vs 実収支 | `期待値 +N円 / 実収支 +N円 / 差分 +N円（上振れ／下振れ／想定通り）` | 3 カラム + ダミースパークライン |
+    | 期待値との差（σ分析） | `+1.8σ（上振れ中）` | 半円ゲージ。**虹色グラデを撤去し、青 → グレー → 黄 のみ**（`sigmaGradV2`）。ピル色も `sigmaPillBg/Border/Color` で 3 色（青/グレー/黄）に統一 |
+    | ボーダー差・信頼度の推移 | `ボーダー差 +N / 信頼度 N%` | 2 線グラフ（緑実線・紫点線）+ 右側現在値カード。**最終点にパルス発光**（`.data-pulse-ring` + `@keyframes data-pulse` 1.8s ループ）、白枠ドットで現在地を強調 |
+    | 詳細スタッツ | `単価 +N円/回 / 持ち玉比率 N%` | **優先度別レイアウト**：高（単価・持ち玉比率・平均出玉）は色付き 3 カード（大きめ）、低（大当たり確率・通常回転・大当たり回数・初当たり確率）はグレー小行リスト |
+    | 計算根拠 | `初当たり 1/N / 交換率 N円/玉` | 6 行リスト（初当たり確率・表記出玉・持ち玉・総投資・交換率・再プレイ上限）+ 「すべての計算根拠を見る」ピル型ボタン（既存 `setShowGraphModal(true)` を呼ぶ） |
+  - **最下部固定ステータスバー**（スクロール中も常時表示）:
+    - 位置: `position: fixed; bottom: calc(56px + env(safe-area-inset-bottom))`、`maxWidth: 480px` でセンタリング、ModeTabBar の上に重ねる
+    - 背景: 上から透明 → 濃紺グラデで馴染ませる + バー本体は半透明グラデ + blur 12px + ボーダー
+    - 左: 円形ステータスアイコン（緑/赤）+ 「持ち玉遊技中／稼働中」+「ボーダー +N回 | 期待値プラス／マイナス／ニュートラル」
+    - 右: 信頼度 % + 縦区切り線 + 次の判断ライン（300回転 or 継続中）
+    - スクロール領域の `paddingBottom` を `calc(96px + safe-area)` → `calc(120px + safe-area)` に拡大して被りを回避
+  - **撤去**: 旧 AI サマリーのプロセ文 3 行、旧 σ ゲージの紫→赤虹色グラデ、旧詳細スタッツの均一テーブル風レイアウト
+  - **新規 CSS**（`src/index.css`）:
+    - `@keyframes data-pulse` — 現在点パルス（1.8s ループ、scale 1→2.4 + opacity 0.85→0）
+    - `@keyframes data-expand` — iOS 風スプリング展開（0.28s ease-out）
+    - `.data-pulse-ring` / `.data-collapse-body` / `.data-card-hover` クラス
+  - **新規 state**（`Tabs.jsx` 内 `RotTab`）:
+    - `dataExpanded: { work, sigma, trend, stats, calc }` — 折りたたみ5セクションの開閉
+    - `toggleDataSec(k)` — トグルヘルパー
+    - `aiSummaryOpen` — AI 分析サマリーの折りたたみ
+  - **保護**:
+    - `logic.js` / `calcPreciseEV` / `deriveFromRows` / `calcCash` / `calcMochi` / `useLS` 不変
+    - `evDecision.js` / `baseline.json` 不変（判定閾値も不変）
+    - `rotRows` / `jpLog` / `S.currentMochiBalls` / `hitWizardData` 等の保存データ構造は完全に同一
+    - 既存ハンドラ（`evDecision` / `effectiveEv` / `setShowGraphModal` / `UndoControls` / `S.setTab` 等）の**シグネチャ不変**。新 UI は presentation layer に徹してこれらを呼ぶだけ
+    - 想定仕事量レンジ・推移グラフのダミー時系列・σ プロキシ概算は前回実装と同じロジックを維持
+  - **操作ステップへの影響**:
+    - 詳細データタブ閲覧: 0 ステップ（タブを開くだけ）— 既存と同じ
+    - 折りたたみセクションの詳細表示: タブ内タップ +1 ステップ。だが「店内3秒判断」優先で常時表示が4セクションに絞られ、初期画面の情報密度は下がる
+    - 「すべての計算根拠を見る」リンク: 既存 `setShowGraphModal(true)` を呼ぶ
+  - **検証**:
+    - `npm run lint`: errors=0（既存 warning 8 件のみ、本変更で増減なし）
+    - `npm run build`: 成功（`built in 1.87s`、CSS 31.31 kB / JS 698.74 kB）
+    - `node src/__tests__/protected-fns.mjs`: 出力が `baseline.json` と完全一致（`diff` 結果なし）
+    - `node src/components/decision/__tests__/evDecision.test.mjs`: 5/5 PASS
+    - 注: 本セッションのリモート実行環境にはブラウザ（Chromium/Playwright）が同梱されておらず、Playwright スクリーンショット検証は未実施。`npm run dev` でローカル確認を要する
+  - **将来連携予定（メモ）**:
+    - チェックリスト項目の判定条件を `evDecision` の閾値定数（`continue_strong`/`continue`/`hold`/`stop`）と連動
+    - 「次の判断ライン」を `evDecision` の信頼度しきい値（0.4/0.5）と動的連動
+    - 推移グラフの時系列を `rotRows` の実タイムスタンプ系列から実データ化（パルス位置も実データに同期）
+    - σ プロキシを過去セッションの workAmount 分布から推定した標準偏差で正規化
 
 ---
 

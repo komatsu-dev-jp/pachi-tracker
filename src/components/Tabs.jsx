@@ -546,6 +546,13 @@ export function RotTab({ rows, setRows, S, ev }) {
     // 記録モード イベントメニュー（FAB から開く） + 詳細データ折りたたみ
     const [showEventMenu, setShowEventMenu] = useState(false);
     const [showDetailCollapse, setShowDetailCollapse] = useState(false);
+    // 詳細データタブ — 折りたたみセクション（5〜9）の開閉状態。通常時は 1 行サマリーのみ表示
+    const [dataExpanded, setDataExpanded] = useState({
+        work: false, sigma: false, trend: false, stats: false, calc: false,
+    });
+    const toggleDataSec = (k) => setDataExpanded((prev) => ({ ...prev, [k]: !prev[k] }));
+    // AI 分析サマリーの折りたたみ（既定: 展開）
+    const [aiSummaryOpen, setAiSummaryOpen] = useState(true);
     // テンキーの直近入力履歴（表示専用・店内での再入力ヒント）
     const [inputHistory, setInputHistory] = useState([]);
     const [showSetupModal, setShowSetupModal] = useState(false);
@@ -3214,7 +3221,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                 </div>
             )}
 
-            {/* データタブ - 分析OS風ダークUI（モック準拠）*/}
+            {/* データタブ - 分析OS風ダークUI（折りたたみ型）*/}
             {S.sessionSubTab === "data" && (() => {
                 const evEff = effectiveEv(ev);
                 const decision = evDecision(ev);
@@ -3263,7 +3270,6 @@ export function RotTab({ rows, setRows, S, ev }) {
                 const wageConfLabel = confidence > 0.5 ? "HIGH" : confidence > 0.3 ? "MID" : "LOW";
                 // 上振れラベル
                 const sigmaLabel = sigmaVal >= 2 ? "大きく上振れ中" : sigmaVal >= 1 ? "上振れ中" : sigmaVal >= -1 ? "想定通り" : sigmaVal >= -2 ? "下振れ中" : "大きく下振れ中";
-                const sigmaColor = sigmaVal >= 1 ? C.yellow : sigmaVal >= -1 ? C.blue : C.red;
 
                 // SVG アイコン群
                 const IcAi = ({ s = 36 }) => (
@@ -3321,89 +3327,226 @@ export function RotTab({ rows, setRows, S, ev }) {
                 // 半円ゲージ（σ）の針角度
                 const sigmaAngle = ((sigmaVal + 3) / 6) * 180 - 90; // -90〜+90
 
+                // AI 分析サマリーのチェックリスト（瞬間理解UI）
+                const aiChecklist = [
+                    {
+                        kind: bDiff >= 0 ? "ok" : "ng",
+                        text: <>ボーダーを <strong style={{ color: bDiff >= 0 ? "#21D99B" : "#FF5A5F", fontWeight: 800 }}>{sp(bDiff, 1)}回</strong> {bDiff >= 0 ? "上回っています" : "下回っています"}</>,
+                    },
+                    {
+                        kind: bDiff > 0 ? "ok" : "ng",
+                        text: bDiff > 0 ? "現状はプラス期待値です" : "現状はマイナス期待値です",
+                    },
+                    confidence < 0.3
+                        ? { kind: "warn", text: "まだ初期判定（試行浅）" }
+                        : { kind: "ok", text: `信頼度 ${Math.round(confidence * 100)}% で判定継続中` },
+                    netRot < 300
+                        ? { kind: "target", text: `300回転到達で再評価します` }
+                        : { kind: "target", text: `データ蓄積中（${f(netRot)}回転）` },
+                ];
+
+                // 折りたたみエリア用 1 行サマリー
+                const workSummary = `期待値 ${sp(expectedWork, 0)}円 / 実収支 ${sp(actualBalance, 0)}円 / 差分 ${sp(diffActVsExp, 0)}円${diffActVsExp > 0 ? "（上振れ）" : diffActVsExp < 0 ? "（下振れ）" : "（想定通り）"}`;
+                const sigmaSummary = `${sp(sigmaVal, 1)}σ（${sigmaLabel}）`;
+                const trendSummary = `ボーダー差 ${sp(bDiff, 1)} / 信頼度 ${Math.round(confidence * 100)}%`;
+                const statsSummary = `単価 ${sp(evEff.evPerRot || 11.39, 2)}円/回 / 持ち玉比率 ${Math.round((ev.mochiRatio > 0 ? ev.mochiRatio : 0.884) * 100 * 10) / 10}%`;
+                const calcSummary = `初当たり ${jpCount > 0 ? `1/${f(netRot / Math.max(1, jpCount), 1)}` : "1/104.0"} / 交換率 ${f(exRate, 2)}円/玉`;
+
+                // チェック / 警告 / 注視 / ターゲット 用アイコン
+                const IcOk = ({ s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="#21D99B" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>);
+                const IcNg = ({ s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="#FF5A5F" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 6l12 12M18 6L6 18" /></svg>);
+                const IcWarn = ({ s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="#FFB020" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4l10 17H2z" /><path d="M12 10v5M12 18.5v.5" /></svg>);
+                const IcTarget = ({ s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="#0A84FF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.5" fill="#0A84FF" stroke="none" /></svg>);
+
+                // 折りたたみセクションヘッダ（タップで開閉）
+                const CollapseRow = ({ num, title, summary, openKey }) => (
+                    <button
+                        type="button"
+                        className="b"
+                        onClick={() => toggleDataSec(openKey)}
+                        style={{
+                            width: "100%",
+                            background: "transparent",
+                            border: "none",
+                            padding: "12px 14px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            cursor: "pointer",
+                            textAlign: "left",
+                            minHeight: 48,
+                            color: "inherit",
+                            fontFamily: "inherit",
+                        }}
+                        aria-expanded={dataExpanded[openKey]}
+                    >
+                        <span style={cardNumDot()}>{num}</span>
+                        <span style={{ ...cardTitleStyle(), fontSize: 12.5 }}>{title}</span>
+                        <span style={{
+                            marginLeft: "auto",
+                            fontSize: 10.5,
+                            color: C.subHi,
+                            fontFamily: font,
+                            fontWeight: 500,
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            maxWidth: "55%",
+                            textAlign: "right",
+                        }}>{!dataExpanded[openKey] && summary}</span>
+                        <span style={{
+                            transition: "transform 0.28s cubic-bezier(0.22, 1, 0.36, 1)",
+                            transform: dataExpanded[openKey] ? "rotate(90deg)" : "rotate(0deg)",
+                            display: "inline-flex",
+                            flexShrink: 0,
+                        }}>
+                            <IcChevron c={C.sub} s={14} />
+                        </span>
+                    </button>
+                );
+
+                // σゲージ用カラー（青→グレー→黄 のみ）
+                const sigmaPillBg = sigmaVal >= 1 ? "rgba(255,176,32,0.18)" : sigmaVal <= -1 ? "rgba(10,132,255,0.18)" : "rgba(107,114,128,0.18)";
+                const sigmaPillBorder = sigmaVal >= 1 ? "rgba(255,176,32,0.45)" : sigmaVal <= -1 ? "rgba(10,132,255,0.45)" : "rgba(107,114,128,0.45)";
+                const sigmaPillColor = sigmaVal >= 1 ? "#FFB020" : sigmaVal <= -1 ? "#0A84FF" : "#9CA3AF";
+
                 return (
+                    <>
                     <div style={{
                         flex: 1, overflowY: "auto",
                         padding: "10px 12px",
-                        paddingBottom: "calc(96px + env(safe-area-inset-bottom))",
+                        // 下部固定ステータスバー(52px) + ModeTabBar(~60px) + セーフエリア
+                        paddingBottom: "calc(120px + env(safe-area-inset-bottom))",
                         background: "#050B18",
                     }}>
-                        {/* 1. AI分析サマリー */}
+                        {/* ============================ */}
+                        {/* 常時表示エリア（1〜4）       */}
+                        {/* ============================ */}
+
+                        {/* 1. AI分析サマリー — チェックリスト型 */}
                         <div className="data-card" style={dataCardStyle()}>
-                            <div style={cardHeaderStyle()}>
+                            <div style={{ ...cardHeaderStyle(), paddingBottom: 4 }}>
                                 <span style={cardNumDot()}>1</span>
                                 <span style={cardTitleStyle()}>AI分析サマリー</span>
+                                <button
+                                    type="button"
+                                    className="b"
+                                    onClick={() => setAiSummaryOpen((v) => !v)}
+                                    style={{
+                                        marginLeft: "auto",
+                                        background: "transparent",
+                                        border: "none",
+                                        padding: 6,
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        cursor: "pointer",
+                                        transition: "transform 0.28s cubic-bezier(0.22, 1, 0.36, 1)",
+                                        transform: aiSummaryOpen ? "rotate(180deg)" : "rotate(0deg)",
+                                    }}
+                                    aria-label={aiSummaryOpen ? "折りたたむ" : "展開する"}
+                                >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.sub} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M6 9l6 6 6-6" />
+                                    </svg>
+                                </button>
                             </div>
-                            <div style={{ display: "flex", gap: 12, padding: "0 14px 14px", alignItems: "flex-start" }}>
-                                <div style={{
-                                    flexShrink: 0, width: 64, height: 64, borderRadius: 16,
-                                    background: "radial-gradient(circle at 30% 30%, rgba(10,132,255,0.22), rgba(10,132,255,0.04) 70%)",
-                                    border: "1px solid rgba(10,132,255,0.45)",
-                                    display: "flex", alignItems: "center", justifyContent: "center",
-                                    boxShadow: "0 0 18px rgba(10,132,255,0.18)",
-                                }}>
-                                    <IcAi s={42} />
-                                </div>
-                                <div style={{ flex: 1, fontSize: 12.5, lineHeight: 1.6, color: C.subHi, fontFamily: font }}>
-                                    現在のベースはボーダーを <strong style={{ color: "#21D99B", fontWeight: 800 }}>{sp(bDiff, 1)}回</strong> {bDiff >= 0 ? "上回って" : "下回って"}います。<br />
-                                    ただし試行がまだ浅いため、初期判定です。<br />
-                                    データを積み上げることで、時給の精度が上がります。
-                                </div>
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, padding: "0 14px 14px" }}>
-                                {/* データ精度 */}
-                                <div style={subCardStyle()}>
-                                    <div style={subCardLabel()}>データ精度</div>
-                                    <div style={{ fontSize: 14, fontWeight: 800, color: "#FFB020", fontFamily: font, marginBottom: 4 }}>{accuracyLabel}</div>
-                                    <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
-                                        {[0, 1, 2, 3, 4].map((i) => (
-                                            <span key={i} style={{
-                                                flex: 1, height: 3, borderRadius: 2,
-                                                background: i < Math.max(1, Math.round(accuracyFill * 5)) ? "#FFB020" : "rgba(255,255,255,0.08)",
-                                            }} />
-                                        ))}
+                            {aiSummaryOpen && (
+                                <div className="data-collapse-body">
+                                    <div style={{ display: "flex", gap: 12, padding: "0 14px 12px", alignItems: "flex-start" }}>
+                                        <div style={{
+                                            flexShrink: 0, width: 56, height: 56, borderRadius: 14,
+                                            background: "radial-gradient(circle at 30% 30%, rgba(10,132,255,0.22), rgba(10,132,255,0.04) 70%)",
+                                            border: "1px solid rgba(10,132,255,0.45)",
+                                            display: "flex", alignItems: "center", justifyContent: "center",
+                                            boxShadow: "0 0 14px rgba(10,132,255,0.16)",
+                                        }}>
+                                            <IcAi s={36} />
+                                        </div>
+                                        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+                                            {aiChecklist.map((item, i) => (
+                                                <div key={i} style={{
+                                                    display: "flex", alignItems: "center", gap: 8,
+                                                    fontSize: 12, lineHeight: 1.4,
+                                                    color: C.text,
+                                                    fontFamily: font,
+                                                    minHeight: 22,
+                                                }}>
+                                                    <span style={{
+                                                        flexShrink: 0,
+                                                        width: 18, height: 18, borderRadius: "50%",
+                                                        background:
+                                                            item.kind === "ok" ? "rgba(33,217,155,0.16)" :
+                                                                item.kind === "ng" ? "rgba(255,90,95,0.16)" :
+                                                                    item.kind === "warn" ? "rgba(255,176,32,0.18)" :
+                                                                        "rgba(10,132,255,0.16)",
+                                                        display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                                    }}>
+                                                        {item.kind === "ok" && <IcOk s={11} />}
+                                                        {item.kind === "ng" && <IcNg s={11} />}
+                                                        {item.kind === "warn" && <IcWarn s={11} />}
+                                                        {item.kind === "target" && <IcTarget s={11} />}
+                                                    </span>
+                                                    <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{item.text}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, padding: "0 14px 14px" }}>
+                                        {/* データ精度 */}
+                                        <div style={subCardStyle()}>
+                                            <div style={subCardLabel()}>データ精度</div>
+                                            <div style={{ fontSize: 14, fontWeight: 800, color: "#FFB020", fontFamily: font, marginBottom: 4 }}>{accuracyLabel}</div>
+                                            <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+                                                {[0, 1, 2, 3, 4].map((i) => (
+                                                    <span key={i} style={{
+                                                        flex: 1, height: 3, borderRadius: 2,
+                                                        background: i < Math.max(1, Math.round(accuracyFill * 5)) ? "#FFB020" : "rgba(255,255,255,0.08)",
+                                                    }} />
+                                                ))}
+                                            </div>
+                                        </div>
+                                        {/* 信頼度 */}
+                                        <div style={subCardStyle()}>
+                                            <div style={subCardLabel()}>信頼度</div>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                                <span style={{
+                                                    width: 14, height: 14, borderRadius: "50%",
+                                                    background: "radial-gradient(circle, #c084fc 0%, #7c3aed 70%)",
+                                                    boxShadow: "0 0 6px rgba(192,132,252,0.6)",
+                                                    flexShrink: 0,
+                                                }} />
+                                                <span style={{ fontSize: 15, fontWeight: 800, color: "#C084FC", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
+                                                    {Math.round(confidence * 100)}%
+                                                </span>
+                                            </div>
+                                        </div>
+                                        {/* 次の判断ライン */}
+                                        <div style={subCardStyle()}>
+                                            <div style={subCardLabel()}>
+                                                <IcCross c="#0A84FF" s={11} />
+                                                <span style={{ marginLeft: 3 }}>次の判断ライン</span>
+                                            </div>
+                                            <div style={{ fontSize: 11, color: C.subHi, fontFamily: font, fontWeight: 600, lineHeight: 1.35 }}>
+                                                {netRot < 300 ? "300回転到達で再評価" : "次のチェックポイントへ"}
+                                            </div>
+                                        </div>
+                                        {/* 信頼度MIDまで */}
+                                        <div style={subCardStyle()}>
+                                            <div style={subCardLabel()}>信頼度MIDまで</div>
+                                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                                                <span style={{ fontSize: 10, color: C.subHi, fontFamily: font, fontWeight: 600 }}>あと</span>
+                                                <span style={{ fontSize: 15, fontWeight: 800, color: "#0A84FF", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{f(remainsToMid)}</span>
+                                                <span style={{ fontSize: 9.5, color: C.sub, fontFamily: font }}>回転</span>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
-                                {/* 信頼度 */}
-                                <div style={subCardStyle()}>
-                                    <div style={subCardLabel()}>信頼度</div>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                        <span style={{
-                                            width: 14, height: 14, borderRadius: "50%",
-                                            background: "radial-gradient(circle, #c084fc 0%, #7c3aed 70%)",
-                                            boxShadow: "0 0 6px rgba(192,132,252,0.6)",
-                                            flexShrink: 0,
-                                        }} />
-                                        <span style={{ fontSize: 15, fontWeight: 800, color: "#C084FC", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
-                                            {Math.round(confidence * 100)}%
-                                        </span>
-                                    </div>
-                                </div>
-                                {/* 次の判断ライン */}
-                                <div style={subCardStyle()}>
-                                    <div style={subCardLabel()}>
-                                        <IcCross c="#0A84FF" s={11} />
-                                        <span style={{ marginLeft: 3 }}>次の判断ライン</span>
-                                    </div>
-                                    <div style={{ fontSize: 10.5, color: C.subHi, fontFamily: font, fontWeight: 600, lineHeight: 1.35 }}>
-                                        300回転到達で<br />再評価
-                                    </div>
-                                </div>
-                                {/* 信頼度MIDまで */}
-                                <div style={subCardStyle()}>
-                                    <div style={subCardLabel()}>信頼度MIDまで</div>
-                                    <div style={{ display: "flex", alignItems: "baseline", gap: 3, justifyContent: "space-between" }}>
-                                        <span style={{ fontSize: 10, color: C.subHi, fontFamily: font, fontWeight: 600 }}>あと</span>
-                                        <span style={{ fontSize: 14, fontWeight: 800, color: "#0A84FF", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{f(remainsToMid)}</span>
-                                        <span style={{ fontSize: 9.5, color: C.sub, fontFamily: font }}>回転</span>
-                                        <IcInfo c={C.sub} s={11} />
-                                    </div>
-                                </div>
-                            </div>
+                            )}
                         </div>
 
-                        {/* 2. 1Kスタート / 想定時給 */}
+                        {/* 2 + 3. 1Kスタート / 想定時給 */}
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                            {/* 2. 1Kスタート */}
                             <div style={dataCardStyle()}>
                                 <div style={cardHeaderStyle()}>
                                     <span style={cardNumDot()}>2</span>
@@ -3412,7 +3555,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                                 </div>
                                 <div style={{ padding: "0 14px 8px" }}>
                                     <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                        <span style={{ fontSize: 36, fontWeight: 800, color: "#21D99B", fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{f(start1K, 1)}</span>
+                                        <span style={{ fontSize: 34, fontWeight: 800, color: "#21D99B", fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{f(start1K, 1)}</span>
                                         <span style={{ fontSize: 12, color: C.sub, fontWeight: 600 }}>回/K</span>
                                     </div>
                                     <div style={{ marginTop: 8, fontSize: 10.5, color: C.subHi, fontFamily: font }}>
@@ -3421,420 +3564,461 @@ export function RotTab({ rows, setRows, S, ev }) {
                                 </div>
                                 <div style={{
                                     margin: "0 10px 10px", padding: "8px 10px",
-                                    background: "rgba(33,217,155,0.08)",
-                                    border: "1px solid rgba(33,217,155,0.25)",
+                                    background: bDiff >= 0 ? "rgba(33,217,155,0.08)" : "rgba(255,90,95,0.08)",
+                                    border: `1px solid ${bDiff >= 0 ? "rgba(33,217,155,0.25)" : "rgba(255,90,95,0.25)"}`,
                                     borderRadius: 10,
                                     display: "flex", alignItems: "center", gap: 6,
                                     fontSize: 10.5, fontFamily: font, color: C.subHi,
                                 }}>
                                     <span style={{
                                         width: 16, height: 16, borderRadius: "50%",
-                                        background: "rgba(33,217,155,0.18)",
+                                        background: bDiff >= 0 ? "rgba(33,217,155,0.18)" : "rgba(255,90,95,0.18)",
                                         display: "inline-flex", alignItems: "center", justifyContent: "center",
                                     }}>
-                                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#21D99B" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+                                        <IcOk s={9} />
                                     </span>
                                     <span style={{ flex: 1 }}>
-                                        ボーダーを <strong style={{ color: "#21D99B" }}>{sp(bDiff, 1)}回</strong> {bDiff >= 0 ? "上回って" : "下回って"}います
+                                        ボーダーを <strong style={{ color: bDiff >= 0 ? "#21D99B" : "#FF5A5F" }}>{sp(bDiff, 1)}回</strong> {bDiff >= 0 ? "上回って" : "下回って"}います
                                     </span>
                                     <IcChevron c={C.sub} s={10} />
                                 </div>
                             </div>
+                            {/* 3. 想定時給（参考値・LOW強調） */}
                             <div style={dataCardStyle()}>
                                 <div style={cardHeaderStyle()}>
                                     <span style={{ ...cardTitleStyle(), fontSize: 12.5 }}>想定時給</span>
-                                    <span style={{ marginLeft: "auto", fontSize: 9.5, color: C.sub, fontWeight: 500 }}>（参考値）</span>
+                                    <span style={{ marginLeft: 4, fontSize: 9.5, color: C.sub, fontWeight: 500 }}>（参考値）</span>
+                                    <span style={{
+                                        marginLeft: "auto",
+                                        padding: "2px 8px",
+                                        background: wageConfLabel === "LOW" ? "rgba(255,176,32,0.22)" :
+                                            wageConfLabel === "MID" ? "rgba(10,132,255,0.22)" :
+                                                "rgba(33,217,155,0.22)",
+                                        border: `1px solid ${wageConfLabel === "LOW" ? "rgba(255,176,32,0.55)" :
+                                            wageConfLabel === "MID" ? "rgba(10,132,255,0.55)" :
+                                                "rgba(33,217,155,0.55)"}`,
+                                        color: wageConfLabel === "LOW" ? "#FFB020" :
+                                            wageConfLabel === "MID" ? "#0A84FF" : "#21D99B",
+                                        borderRadius: 5,
+                                        fontSize: 10, fontWeight: 800, letterSpacing: 0.6,
+                                    }}>{wageConfLabel}</span>
                                 </div>
-                                <div style={{ padding: "0 14px 8px" }}>
+                                <div style={{ padding: "0 14px 6px" }}>
                                     <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                        <span style={{ fontSize: 32, fontWeight: 800, color: wage >= 0 ? "#21D99B" : "#FF5A5F", fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{sp(wage, 0)}</span>
-                                        <span style={{ fontSize: 12, color: C.sub, fontWeight: 600 }}>円/h</span>
+                                        <span style={{
+                                            fontSize: wageConfLabel === "LOW" ? 22 : 28,
+                                            fontWeight: 800,
+                                            color: wage >= 0 ? "#21D99B" : "#FF5A5F",
+                                            fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums",
+                                            opacity: wageConfLabel === "LOW" ? 0.85 : 1,
+                                        }}>{sp(wage, 0)}</span>
+                                        <span style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>円/h</span>
                                     </div>
                                 </div>
-                                <div style={{ padding: "0 12px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: C.subHi, fontFamily: font }}>
-                                        <span>信頼度：</span>
-                                        <span style={{
-                                            padding: "1px 7px",
-                                            background: wageConfLabel === "LOW" ? "rgba(255,176,32,0.18)" : "rgba(33,217,155,0.18)",
-                                            color: wageConfLabel === "LOW" ? "#FFB020" : "#21D99B",
-                                            borderRadius: 5,
-                                            fontSize: 9.5, fontWeight: 800, letterSpacing: 0.4,
-                                        }}>{wageConfLabel}</span>
-                                    </div>
+                                <div style={{ padding: "0 12px 10px" }}>
                                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 10.5, color: C.subHi, fontFamily: font }}>
-                                        <span>プレ幅：<span style={{ color: C.text, fontWeight: 600 }}>±{f(wageSpread)} 円/h</span></span>
+                                        <span>ブレ幅：<span style={{ color: C.text, fontWeight: 700, fontFamily: mono }}>±{f(wageSpread)}</span> <span style={{ color: C.sub, fontSize: 9.5 }}>円/h</span></span>
                                         <IcInfo c={C.sub} s={11} />
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        {/* 3. 終了予定までの想定仕事量 */}
+                        {/* 4. 終了予定までの想定仕事量 */}
                         <div style={dataCardStyle()}>
                             <div style={cardHeaderStyle()}>
                                 <span style={cardNumDot()}>3</span>
                                 <span style={cardTitleStyle()}>終了予定までの想定仕事量</span>
-                            </div>
-                            <div style={{ display: "flex", padding: "0 14px 12px", alignItems: "flex-start", gap: 12 }}>
-                                <div style={{ flex: "0 0 auto" }}>
-                                    <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                        <span style={{ fontSize: 26, fontWeight: 800, color: "#21D99B", fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{sp(workMid, 0)}</span>
-                                        <span style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>円</span>
-                                    </div>
-                                    <div style={{ marginTop: 6, fontSize: 9.5, color: C.sub, fontFamily: font }}>
-                                        推定レンジ：<span style={{ color: C.subHi }}>{sp(workLo, 0)} 〜 {sp(workHi, 0)}円</span>
-                                    </div>
-                                </div>
-                                {/* レンジバー */}
-                                <div style={{ flex: 1, position: "relative", height: 60, paddingTop: 4 }}>
-                                    <div style={{ position: "relative", height: 8, marginTop: 14 }}>
-                                        <div style={{
-                                            position: "absolute", left: 0, right: 0, top: 0, height: 8,
-                                            borderRadius: 999,
-                                            background: "linear-gradient(90deg, #21D99B 0%, #21D99B 50%, #009DFF 100%)",
-                                            boxShadow: "0 0 10px rgba(33,217,155,0.35)",
-                                        }} />
-                                        <div style={{
-                                            position: "absolute", left: 0, top: -3, width: 4, height: 14, borderRadius: 2,
-                                            background: "#21D99B", boxShadow: "0 0 6px rgba(33,217,155,0.7)",
-                                        }} />
-                                        <div style={{
-                                            position: "absolute", right: 0, top: -3, width: 4, height: 14, borderRadius: 2,
-                                            background: "#009DFF", boxShadow: "0 0 6px rgba(0,157,255,0.7)",
-                                        }} />
-                                        <div style={{
-                                            position: "absolute", left: "50%", top: -7, transform: "translateX(-50%)",
-                                            width: 2, height: 22, background: "#fff",
-                                        }} />
-                                    </div>
-                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: C.sub, fontFamily: font, marginTop: 6 }}>
-                                        <span>{sp(workLo, 0)}円</span>
-                                        <span style={{ color: C.text, fontWeight: 700 }}>中央値 {sp(workMid, 0)}円</span>
-                                        <span>{sp(workHi, 0)}円</span>
-                                    </div>
-                                </div>
-                                <div style={{
-                                    flex: "0 0 auto", textAlign: "right",
-                                    fontSize: 10, color: C.sub, fontFamily: font,
-                                }}>
+                                <div style={{ marginLeft: "auto", textAlign: "right", fontSize: 9.5, color: C.sub, fontFamily: font }}>
                                     <div>終了予定</div>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 3, marginTop: 4, justifyContent: "flex-end" }}>
-                                        <span style={{ fontSize: 18, fontWeight: 800, color: C.text, fontFamily: mono }}>{endTimeLabel}</span>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 3, justifyContent: "flex-end" }}>
+                                        <span style={{ fontSize: 14, fontWeight: 800, color: C.text, fontFamily: mono }}>{endTimeLabel}</span>
                                         <IcClock c={C.subHi} s={11} />
                                     </div>
                                 </div>
                             </div>
+                            <div style={{ padding: "0 14px 14px" }}>
+                                <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                                    <span style={{ fontSize: 30, fontWeight: 800, color: "#21D99B", fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{sp(workMid, 0)}</span>
+                                    <span style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>円</span>
+                                </div>
+                                <div style={{ marginTop: 6, fontSize: 10, color: C.sub, fontFamily: font }}>
+                                    推定レンジ：<span style={{ color: C.subHi }}>{sp(workLo, 0)} 〜 {sp(workHi, 0)}円</span>
+                                </div>
+                                {/* レンジバー */}
+                                <div style={{ position: "relative", height: 10, marginTop: 14 }}>
+                                    <div style={{
+                                        position: "absolute", left: 0, right: 0, top: 1, height: 8,
+                                        borderRadius: 999,
+                                        background: "linear-gradient(90deg, #21D99B 0%, #38bdf8 60%, #009DFF 100%)",
+                                        boxShadow: "0 0 10px rgba(33,217,155,0.30)",
+                                    }} />
+                                    <div style={{
+                                        position: "absolute", left: 0, top: -2, width: 4, height: 14, borderRadius: 2,
+                                        background: "#21D99B",
+                                    }} />
+                                    <div style={{
+                                        position: "absolute", right: 0, top: -2, width: 4, height: 14, borderRadius: 2,
+                                        background: "#009DFF",
+                                    }} />
+                                    {/* 中央値マーカー（白） */}
+                                    <div style={{
+                                        position: "absolute", left: "50%", top: -5, transform: "translateX(-50%)",
+                                        width: 3, height: 20, borderRadius: 1, background: "#fff",
+                                        boxShadow: "0 0 6px rgba(255,255,255,0.7)",
+                                    }} />
+                                </div>
+                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9.5, color: C.sub, fontFamily: font, marginTop: 8 }}>
+                                    <span>{sp(workLo, 0)}円</span>
+                                    <span style={{ color: C.text, fontWeight: 700 }}>中央値 {sp(workMid, 0)}円</span>
+                                    <span>{sp(workHi, 0)}円</span>
+                                </div>
+                            </div>
                         </div>
 
-                        {/* 4. 仕事量 vs 実収支 */}
+                        {/* ============================ */}
+                        {/* 折りたたみエリア（5〜9）     */}
+                        {/* ============================ */}
+
+                        {/* 5. 仕事量 vs 実収支 [折りたたみ] */}
                         <div style={dataCardStyle()}>
-                            <div style={cardHeaderStyle()}>
-                                <span style={cardNumDot()}>4</span>
-                                <span style={cardTitleStyle()}>仕事量 vs 実収支</span>
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, padding: "0 12px 14px" }}>
-                                {[
-                                    { label: "積み上げた期待値", val: expectedWork, color: "#21D99B", seed: 7, asc: true },
-                                    { label: "現在の実収支（差玉換算）", val: actualBalance, color: "#0A84FF", seed: 12, asc: true },
-                                    { label: "差分（実収支 − 期待値）", val: diffActVsExp, color: "#FFB020", seed: 31, asc: true, badge: diffActVsExp > 0 ? "上振れ中" : diffActVsExp < 0 ? "下振れ中" : "想定通り" },
-                                ].map((m, idx) => {
-                                    const sp1 = sparkPath(m.seed, m.color, m.asc);
-                                    return (
-                                        <div key={idx} style={{
-                                            background: "rgba(11,22,40,0.55)",
-                                            border: "1px solid rgba(26,77,117,0.45)",
-                                            borderRadius: 12,
-                                            padding: "10px 8px 6px",
-                                            display: "flex", flexDirection: "column",
-                                        }}>
-                                            <div style={{ fontSize: 9, color: C.sub, fontWeight: 600, fontFamily: font, lineHeight: 1.2, minHeight: 22 }}>{m.label}</div>
-                                            <div style={{ display: "flex", alignItems: "baseline", gap: 2, marginTop: 4 }}>
-                                                <span style={{ fontSize: 16, fontWeight: 800, color: m.color, fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{sp(m.val, 0)}</span>
-                                                <span style={{ fontSize: 9, color: C.sub, fontWeight: 600 }}>円</span>
+                            <CollapseRow num="4" title="仕事量 vs 実収支" summary={workSummary} openKey="work" />
+                            {dataExpanded.work && (
+                                <div className="data-collapse-body" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, padding: "0 12px 14px" }}>
+                                    {[
+                                        { label: "期待値（積み上げ）", val: expectedWork, color: "#21D99B", seed: 7, asc: true },
+                                        { label: "実収支（差玉換算）", val: actualBalance, color: "#0A84FF", seed: 12, asc: true },
+                                        { label: "差分（実収支 − 期待値）", val: diffActVsExp, color: "#FFB020", seed: 31, asc: true, badge: diffActVsExp > 0 ? "上振れ中" : diffActVsExp < 0 ? "下振れ中" : "想定通り" },
+                                    ].map((m, idx) => {
+                                        const sp1 = sparkPath(m.seed, m.color, m.asc);
+                                        return (
+                                            <div key={idx} style={{
+                                                background: "rgba(11,22,40,0.55)",
+                                                border: "1px solid rgba(26,77,117,0.45)",
+                                                borderRadius: 12,
+                                                padding: "10px 8px 6px",
+                                                display: "flex", flexDirection: "column",
+                                            }}>
+                                                <div style={{ fontSize: 9, color: C.sub, fontWeight: 600, fontFamily: font, lineHeight: 1.2, minHeight: 22 }}>{m.label}</div>
+                                                <div style={{ display: "flex", alignItems: "baseline", gap: 2, marginTop: 4 }}>
+                                                    <span style={{ fontSize: 16, fontWeight: 800, color: m.color, fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{sp(m.val, 0)}</span>
+                                                    <span style={{ fontSize: 9, color: C.sub, fontWeight: 600 }}>円</span>
+                                                </div>
+                                                {m.badge && (
+                                                    <div style={{
+                                                        alignSelf: "flex-start", marginTop: 4,
+                                                        padding: "1px 8px", borderRadius: 999,
+                                                        background: diffActVsExp > 0 ? "rgba(33,217,155,0.18)" : diffActVsExp < 0 ? "rgba(255,176,32,0.18)" : "rgba(107,114,128,0.18)",
+                                                        fontSize: 9,
+                                                        color: diffActVsExp > 0 ? "#21D99B" : diffActVsExp < 0 ? "#FFB020" : "#9CA3AF",
+                                                        fontWeight: 700, fontFamily: font,
+                                                    }}>{m.badge}</div>
+                                                )}
+                                                <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ width: "100%", height: 32, marginTop: 6 }}>
+                                                    <path d={sp1.d} stroke={sp1.color} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                                                    <circle cx="100" cy={(() => {
+                                                        const parts = sp1.d.split(" ");
+                                                        const last = parts[parts.length - 1];
+                                                        const [, y] = last.replace("L", "").split(",");
+                                                        return y;
+                                                    })()} r="2" fill={sp1.color} />
+                                                </svg>
                                             </div>
-                                            {m.badge && (
-                                                <div style={{
-                                                    alignSelf: "flex-start", marginTop: 4,
-                                                    padding: "1px 8px", borderRadius: 999,
-                                                    background: "rgba(255,176,32,0.18)",
-                                                    fontSize: 9, color: "#FFB020", fontWeight: 700, fontFamily: font,
-                                                }}>{m.badge}</div>
-                                            )}
-                                            <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ width: "100%", height: 32, marginTop: 6 }}>
-                                                <path d={sp1.d} stroke={sp1.color} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                                                <circle cx="100" cy={(() => {
-                                                    const parts = sp1.d.split(" ");
-                                                    const last = parts[parts.length - 1];
-                                                    const [, y] = last.replace("L", "").split(",");
-                                                    return y;
-                                                })()} r="2" fill={sp1.color} />
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 6. 期待値との差（σ）[折りたたみ] */}
+                        <div style={dataCardStyle()}>
+                            <CollapseRow num="5" title="期待値との差（σ分析）" summary={sigmaSummary} openKey="sigma" />
+                            {dataExpanded.sigma && (
+                                <div className="data-collapse-body" style={{ display: "flex", padding: "0 14px 16px", gap: 10, alignItems: "center" }}>
+                                    {/* 半円ゲージ（青→グレー→黄 のみ） */}
+                                    <div style={{ position: "relative", width: 180, height: 116, flexShrink: 0 }}>
+                                        <svg viewBox="0 0 200 116" width="180" height="116">
+                                            <defs>
+                                                <linearGradient id="sigmaGradV2" x1="0" y1="0" x2="1" y2="0">
+                                                    <stop offset="0%" stopColor="#0A84FF" />
+                                                    <stop offset="50%" stopColor="#6b7280" />
+                                                    <stop offset="100%" stopColor="#FFB020" />
+                                                </linearGradient>
+                                            </defs>
+                                            <path d="M15,100 A85,85 0 0 1 185,100" fill="none" stroke="url(#sigmaGradV2)" strokeWidth="14" strokeLinecap="round" opacity="0.92" />
+                                            {/* 目盛り */}
+                                            {[-3, -2, -1, 0, 1, 2, 3].map((t) => {
+                                                const a = ((t + 3) / 6) * Math.PI;
+                                                const x1 = 100 - 78 * Math.cos(a);
+                                                const y1 = 100 - 78 * Math.sin(a);
+                                                const x2 = 100 - 92 * Math.cos(a);
+                                                const y2 = 100 - 92 * Math.sin(a);
+                                                const lx = 100 - 100 * Math.cos(a);
+                                                const ly = 100 - 100 * Math.sin(a);
+                                                return (
+                                                    <g key={t}>
+                                                        <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(255,255,255,0.25)" strokeWidth="1" />
+                                                        <text x={lx} y={ly} fontSize="9" fill="rgba(255,255,255,0.55)" textAnchor="middle" dominantBaseline="middle" fontFamily="Inter">{(t > 0 ? "+" : "") + t}σ</text>
+                                                    </g>
+                                                );
+                                            })}
+                                            {/* 針 */}
+                                            <g transform={`rotate(${sigmaAngle} 100 100)`}>
+                                                <line x1="100" y1="100" x2="100" y2="22" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" />
+                                                <circle cx="100" cy="100" r="5" fill="#fff" />
+                                            </g>
+                                        </svg>
+                                        {/* 中央値（数値） */}
+                                        <div style={{
+                                            position: "absolute", left: 0, right: 0, top: 64,
+                                            textAlign: "center",
+                                        }}>
+                                            <div style={{ fontSize: 22, fontWeight: 800, color: sigmaPillColor, fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{sp(sigmaVal, 1)}<span style={{ fontSize: 13, marginLeft: 2 }}>σ</span></div>
+                                        </div>
+                                        {/* ステータスピル */}
+                                        <div style={{
+                                            position: "absolute", left: "50%", bottom: -4, transform: "translateX(-50%)",
+                                            padding: "2px 10px", borderRadius: 999,
+                                            background: sigmaPillBg,
+                                            border: `1px solid ${sigmaPillBorder}`,
+                                            fontSize: 10, fontWeight: 700,
+                                            color: sigmaPillColor,
+                                            whiteSpace: "nowrap", fontFamily: font,
+                                        }}>{sigmaLabel}</div>
+                                    </div>
+                                    <div style={{ flex: 1, fontSize: 11.5, color: C.subHi, fontFamily: font, lineHeight: 1.55 }}>
+                                        現在の実収支は、<br />
+                                        期待値に対して統計的に<br />
+                                        {sigmaVal >= 1 ? "上振れ" : sigmaVal <= -1 ? "下振れ" : "想定通り推移し"}ています。
+                                        <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 5 }}>
+                                            <span style={{ fontSize: 10, color: C.sub }}>（統計目安：{sp(sigmaVal, 1)}σ）</span>
+                                            <IcInfo c={C.sub} s={11} />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 7. ボーダー差・信頼度の推移 [折りたたみ] */}
+                        <div style={dataCardStyle()}>
+                            <CollapseRow num="6" title="ボーダー差・信頼度の推移" summary={trendSummary} openKey="trend" />
+                            {dataExpanded.trend && (
+                                <div className="data-collapse-body">
+                                    {/* レジェンド */}
+                                    <div style={{ display: "flex", gap: 14, padding: "0 14px 6px", fontSize: 10, color: C.subHi, fontFamily: font }}>
+                                        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                            <span style={{ width: 14, height: 2, background: "#21D99B", borderRadius: 1 }} />
+                                            ボーダー差（回/K）
+                                        </span>
+                                        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                            <span style={{ width: 14, height: 2, background: "transparent", borderTop: "2px dashed #C084FC", borderRadius: 1 }} />
+                                            信頼度（%）
+                                        </span>
+                                    </div>
+                                    <div style={{ display: "flex", padding: "0 8px 8px", gap: 6, alignItems: "stretch" }}>
+                                        {/* グラフ本体 */}
+                                        <div style={{ flex: 1, position: "relative" }}>
+                                            <svg viewBox="0 0 280 120" preserveAspectRatio="none" width="100%" height="140" style={{ display: "block" }}>
+                                                {/* グリッド */}
+                                                {[0, 1, 2, 3, 4].map((i) => (
+                                                    <line key={i} x1="22" y1={10 + i * 24} x2="278" y2={10 + i * 24} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
+                                                ))}
+                                                {/* 左軸 */}
+                                                {[20, 10, 0, -10, -20].map((v, i) => (
+                                                    <text key={v} x="20" y={14 + i * 24} fontSize="7" fill="rgba(255,255,255,0.4)" textAnchor="end" fontFamily="Inter">{(v > 0 ? "+" : "") + v}</text>
+                                                ))}
+                                                {/* 右軸 */}
+                                                {[100, 75, 50, 25, 0].map((v, i) => (
+                                                    <text key={v} x="280" y={14 + i * 24} fontSize="7" fill="rgba(192,132,252,0.6)" textAnchor="start" fontFamily="Inter">{v}%</text>
+                                                ))}
+                                                {/* ボーダー差ライン（緑実線） */}
+                                                {(() => {
+                                                    const N = 18;
+                                                    let s = 41;
+                                                    const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s % 1000) / 1000; };
+                                                    const vals = [];
+                                                    let cv = -10;
+                                                    for (let i = 0; i < N; i++) {
+                                                        cv += (rnd() - 0.42) * 6;
+                                                        cv = Math.max(-18, Math.min(15, cv));
+                                                        if (i === N - 1) cv = bDiff * 1; // 末尾は現在値
+                                                        vals.push(cv);
+                                                    }
+                                                    const yFor = (v) => 58 - (v / 20) * 48;
+                                                    const xFor = (i) => 22 + (i / (N - 1)) * 254;
+                                                    const d = vals.map((v, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(v)}`).join(" ");
+                                                    const lastX = xFor(N - 1);
+                                                    const lastY = yFor(vals[N - 1]);
+                                                    return (
+                                                        <g>
+                                                            <path d={d} stroke="#21D99B" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                                                            {vals.slice(0, -1).map((v, i) => (
+                                                                <circle key={i} cx={xFor(i)} cy={yFor(v)} r="1.8" fill="#21D99B" />
+                                                            ))}
+                                                            {/* 現在点 — パルス + 発光 */}
+                                                            <circle cx={lastX} cy={lastY} r="4" fill="#21D99B" opacity="0.35" className="data-pulse-ring" />
+                                                            <circle cx={lastX} cy={lastY} r="3" fill="#21D99B" stroke="#fff" strokeWidth="1" />
+                                                        </g>
+                                                    );
+                                                })()}
+                                                {/* 信頼度ライン（紫点線） */}
+                                                {(() => {
+                                                    const N = 18;
+                                                    let s = 77;
+                                                    const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s % 1000) / 1000; };
+                                                    const vals = [];
+                                                    let cv = 5;
+                                                    for (let i = 0; i < N; i++) {
+                                                        cv += (rnd() - 0.3) * 7;
+                                                        cv = Math.max(0, Math.min(100, cv));
+                                                        if (i === N - 1) cv = confidence * 100;
+                                                        vals.push(cv);
+                                                    }
+                                                    const yFor = (v) => 106 - (v / 100) * 96;
+                                                    const xFor = (i) => 22 + (i / (N - 1)) * 254;
+                                                    const d = vals.map((v, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(v)}`).join(" ");
+                                                    const lastX = xFor(N - 1);
+                                                    const lastY = yFor(vals[N - 1]);
+                                                    return (
+                                                        <g>
+                                                            <path d={d} stroke="#C084FC" strokeWidth="1.6" fill="none" strokeDasharray="3 2" strokeLinecap="round" strokeLinejoin="round" />
+                                                            {vals.slice(0, -1).map((v, i) => (
+                                                                <circle key={i} cx={xFor(i)} cy={yFor(v)} r="1.6" fill="#C084FC" />
+                                                            ))}
+                                                            {/* 現在点 — パルス */}
+                                                            <circle cx={lastX} cy={lastY} r="3.5" fill="#C084FC" opacity="0.35" className="data-pulse-ring" />
+                                                            <circle cx={lastX} cy={lastY} r="2.6" fill="#C084FC" stroke="#fff" strokeWidth="0.8" />
+                                                        </g>
+                                                    );
+                                                })()}
+                                                {/* 時刻軸 */}
+                                                {["12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "現在"].map((t, i) => (
+                                                    <text key={t} x={22 + (i / 6) * 254} y="118" fontSize="7" fill={i === 6 ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.45)"} fontWeight={i === 6 ? "700" : "400"} textAnchor="middle" fontFamily="Inter">{t}</text>
+                                                ))}
                                             </svg>
                                         </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-
-                        {/* 5. 期待値との差（統計指標） */}
-                        <div style={dataCardStyle()}>
-                            <div style={cardHeaderStyle()}>
-                                <span style={cardNumDot()}>5</span>
-                                <span style={cardTitleStyle()}>期待値との差</span>
-                                <span style={{ marginLeft: 8, fontSize: 9.5, color: C.sub, fontWeight: 500 }}>（統計的指標）</span>
-                            </div>
-                            <div style={{ display: "flex", padding: "0 14px 14px", gap: 10, alignItems: "center" }}>
-                                {/* 半円ゲージ */}
-                                <div style={{ position: "relative", width: 180, height: 110, flexShrink: 0 }}>
-                                    <svg viewBox="0 0 200 110" width="180" height="110">
-                                        <defs>
-                                            <linearGradient id="sigmaGrad" x1="0" y1="0" x2="1" y2="0">
-                                                <stop offset="0%" stopColor="#7c3aed" />
-                                                <stop offset="25%" stopColor="#0A84FF" />
-                                                <stop offset="50%" stopColor="#4b5563" />
-                                                <stop offset="75%" stopColor="#FFB020" />
-                                                <stop offset="100%" stopColor="#FF5A5F" />
-                                            </linearGradient>
-                                        </defs>
-                                        <path d="M15,100 A85,85 0 0 1 185,100" fill="none" stroke="url(#sigmaGrad)" strokeWidth="14" strokeLinecap="round" />
-                                        {/* 目盛り */}
-                                        {[-3, -2, -1, 0, 1, 2, 3].map((t) => {
-                                            const a = ((t + 3) / 6) * Math.PI;
-                                            const x1 = 100 - 78 * Math.cos(a);
-                                            const y1 = 100 - 78 * Math.sin(a);
-                                            const x2 = 100 - 92 * Math.cos(a);
-                                            const y2 = 100 - 92 * Math.sin(a);
-                                            const lx = 100 - 100 * Math.cos(a);
-                                            const ly = 100 - 100 * Math.sin(a);
-                                            return (
-                                                <g key={t}>
-                                                    <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(255,255,255,0.25)" strokeWidth="1" />
-                                                    <text x={lx} y={ly} fontSize="9" fill="rgba(255,255,255,0.55)" textAnchor="middle" dominantBaseline="middle" fontFamily="Inter">{(t > 0 ? "+" : "") + t}σ</text>
-                                                </g>
-                                            );
-                                        })}
-                                        {/* 針 */}
-                                        <g transform={`rotate(${sigmaAngle} 100 100)`}>
-                                            <line x1="100" y1="100" x2="100" y2="22" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" />
-                                            <circle cx="100" cy="100" r="5" fill="#fff" />
-                                        </g>
-                                    </svg>
-                                    {/* 中央値 */}
-                                    <div style={{
-                                        position: "absolute", left: 0, right: 0, top: 64,
-                                        textAlign: "center",
-                                    }}>
-                                        <div style={{ fontSize: 22, fontWeight: 800, color: "#FFB020", fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{sp(sigmaVal, 1)}<span style={{ fontSize: 13, marginLeft: 2 }}>σ</span></div>
-                                    </div>
-                                    {/* ステータスピル */}
-                                    <div style={{
-                                        position: "absolute", left: "50%", bottom: -4, transform: "translateX(-50%)",
-                                        padding: "2px 10px", borderRadius: 999,
-                                        background: `${sigmaColor === C.yellow ? "rgba(255,176,32,0.22)" : sigmaColor === C.blue ? "rgba(10,132,255,0.22)" : "rgba(255,90,95,0.22)"}`,
-                                        border: `1px solid ${sigmaColor === C.yellow ? "rgba(255,176,32,0.45)" : sigmaColor === C.blue ? "rgba(10,132,255,0.45)" : "rgba(255,90,95,0.45)"}`,
-                                        fontSize: 10, fontWeight: 700,
-                                        color: sigmaColor === C.yellow ? "#FFB020" : sigmaColor === C.blue ? "#0A84FF" : "#FF5A5F",
-                                        whiteSpace: "nowrap", fontFamily: font,
-                                    }}>{sigmaLabel}</div>
-                                </div>
-                                <div style={{ flex: 1, fontSize: 11.5, color: C.subHi, fontFamily: font, lineHeight: 1.55 }}>
-                                    現在の実収支は、<br />
-                                    期待値に対して統計的に<br />
-                                    {sigmaVal >= 1 ? "上振れ" : sigmaVal <= -1 ? "下振れ" : "想定通り推移し"}ています。
-                                    <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 5 }}>
-                                        <span style={{ fontSize: 10, color: C.sub }}>（統計目安：{sp(sigmaVal, 1)}σ）</span>
-                                        <IcInfo c={C.sub} s={11} />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* 6. ボーダー差・信頼度の推移 */}
-                        <div style={dataCardStyle()}>
-                            <div style={cardHeaderStyle()}>
-                                <span style={cardNumDot()}>6</span>
-                                <span style={cardTitleStyle()}>ボーダー差・信頼度の推移</span>
-                            </div>
-                            {/* レジェンド */}
-                            <div style={{ display: "flex", gap: 14, padding: "0 14px 6px", fontSize: 10, color: C.subHi, fontFamily: font }}>
-                                <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                    <span style={{ width: 14, height: 2, background: "#21D99B", borderRadius: 1 }} />
-                                    ボーダー差（回/K）
-                                </span>
-                                <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                    <span style={{ width: 14, height: 2, background: "transparent", borderTop: "2px dashed #C084FC", borderRadius: 1 }} />
-                                    信頼度（%）
-                                </span>
-                            </div>
-                            <div style={{ display: "flex", padding: "0 8px 8px", gap: 6, alignItems: "stretch" }}>
-                                {/* グラフ本体 */}
-                                <div style={{ flex: 1, position: "relative" }}>
-                                    <svg viewBox="0 0 280 120" preserveAspectRatio="none" width="100%" height="140" style={{ display: "block" }}>
-                                        {/* グリッド */}
-                                        {[0, 1, 2, 3, 4].map((i) => (
-                                            <line key={i} x1="22" y1={10 + i * 24} x2="278" y2={10 + i * 24} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
-                                        ))}
-                                        {/* 左軸 */}
-                                        {[20, 10, 0, -10, -20].map((v, i) => (
-                                            <text key={v} x="20" y={14 + i * 24} fontSize="7" fill="rgba(255,255,255,0.4)" textAnchor="end" fontFamily="Inter">{(v > 0 ? "+" : "") + v}</text>
-                                        ))}
-                                        {/* 右軸 */}
-                                        {[100, 75, 50, 25, 0].map((v, i) => (
-                                            <text key={v} x="280" y={14 + i * 24} fontSize="7" fill="rgba(192,132,252,0.6)" textAnchor="start" fontFamily="Inter">{v}%</text>
-                                        ))}
-                                        {/* ボーダー差ライン（緑） */}
-                                        {(() => {
-                                            const N = 18;
-                                            let s = 41;
-                                            const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s % 1000) / 1000; };
-                                            const vals = [];
-                                            let cv = -10;
-                                            for (let i = 0; i < N; i++) {
-                                                cv += (rnd() - 0.42) * 6;
-                                                cv = Math.max(-18, Math.min(15, cv));
-                                                if (i === N - 1) cv = bDiff * 1; // 末尾は現在値
-                                                vals.push(cv);
-                                            }
-                                            const yFor = (v) => 58 - (v / 20) * 48;
-                                            const xFor = (i) => 22 + (i / (N - 1)) * 254;
-                                            const d = vals.map((v, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(v)}`).join(" ");
-                                            return (
-                                                <g>
-                                                    <path d={d} stroke="#21D99B" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                                                    {vals.map((v, i) => (
-                                                        <circle key={i} cx={xFor(i)} cy={yFor(v)} r="1.8" fill="#21D99B" />
-                                                    ))}
-                                                </g>
-                                            );
-                                        })()}
-                                        {/* 信頼度ライン（紫点線） */}
-                                        {(() => {
-                                            const N = 18;
-                                            let s = 77;
-                                            const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s % 1000) / 1000; };
-                                            const vals = [];
-                                            let cv = 5;
-                                            for (let i = 0; i < N; i++) {
-                                                cv += (rnd() - 0.3) * 7;
-                                                cv = Math.max(0, Math.min(100, cv));
-                                                if (i === N - 1) cv = confidence * 100;
-                                                vals.push(cv);
-                                            }
-                                            const yFor = (v) => 106 - (v / 100) * 96;
-                                            const xFor = (i) => 22 + (i / (N - 1)) * 254;
-                                            const d = vals.map((v, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(v)}`).join(" ");
-                                            return (
-                                                <g>
-                                                    <path d={d} stroke="#C084FC" strokeWidth="1.6" fill="none" strokeDasharray="3 2" strokeLinecap="round" strokeLinejoin="round" />
-                                                    {vals.map((v, i) => (
-                                                        <circle key={i} cx={xFor(i)} cy={yFor(v)} r="1.6" fill="#C084FC" />
-                                                    ))}
-                                                </g>
-                                            );
-                                        })()}
-                                        {/* 時刻軸 */}
-                                        {["12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "現在"].map((t, i) => (
-                                            <text key={t} x={22 + (i / 6) * 254} y="118" fontSize="7" fill="rgba(255,255,255,0.45)" textAnchor="middle" fontFamily="Inter">{t}</text>
-                                        ))}
-                                    </svg>
-                                </div>
-                                {/* 右側現在値 */}
-                                <div style={{
-                                    flex: "0 0 auto", width: 78,
-                                    display: "flex", flexDirection: "column", justifyContent: "center", gap: 8,
-                                    padding: "0 4px",
-                                }}>
-                                    <div style={{ fontSize: 9, color: C.sub, fontFamily: font, fontWeight: 600 }}>現在値</div>
-                                    <div>
-                                        <div style={{ fontSize: 9, color: C.sub, fontFamily: font }}>ボーダー差</div>
-                                        <div style={{ fontSize: 15, fontWeight: 800, color: "#21D99B", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{sp(bDiff, 1)}<span style={{ fontSize: 9, color: C.sub, marginLeft: 2 }}>回/K</span></div>
-                                    </div>
-                                    <div>
-                                        <div style={{ fontSize: 9, color: C.sub, fontFamily: font }}>信頼度</div>
-                                        <div style={{ fontSize: 15, fontWeight: 800, color: "#C084FC", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{Math.round(confidence * 100)}<span style={{ fontSize: 9, color: C.sub, marginLeft: 2 }}>%</span></div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* 7 + 8: 詳細スタッツ / 計算根拠 */}
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                            {/* 7. 詳細スタッツ */}
-                            <div style={dataCardStyle()}>
-                                <div style={cardHeaderStyle()}>
-                                    <span style={cardNumDot()}>7</span>
-                                    <span style={{ ...cardTitleStyle(), fontSize: 12.5 }}>詳細スタッツ</span>
-                                </div>
-                                <div style={{ display: "flex", flexDirection: "column", padding: "0 8px 8px" }}>
-                                    {[
-                                        { Icon: IcCircleDot, color: "#21D99B", label: "単価（期待値）", val: `${sp(evEff.evPerRot || 11.39, 2)}`, unit: "円/回" },
-                                        { Icon: IcMochi, color: "#FFB020", label: "持ち玉比率", val: `${Math.round((ev.mochiRatio > 0 ? ev.mochiRatio : 0.884) * 100 * 10) / 10}`, unit: "%" },
-                                        { Icon: IcBalls, color: "#C084FC", label: "平均出玉（10R換算）", val: f(avg1R, 0), unit: "玉" },
-                                        { Icon: IcLight, color: "#C084FC", label: "大当たり確率（実測）", val: jpCount > 0 ? `1/${f(netRot / jpCount, 1)}` : "1/128.7", unit: "" },
-                                        { Icon: IcRot, color: "#0A84FF", label: "通常回転数", val: f(netRot), unit: "回" },
-                                        { Icon: IcFlame, color: "#FF5A5F", label: "大当たり回数", val: `${jpCount}`, unit: "回" },
-                                        { Icon: IcPercent, color: "#FF5A5F", label: "初当たり確率（実測）", val: jpCount > 0 ? `1/${f(netRot / Math.max(1, jpCount), 1)}` : "1/104.0", unit: "" },
-                                    ].map((r, i) => (
-                                        <div key={i} style={{
-                                            display: "flex", alignItems: "center", justifyContent: "space-between",
-                                            padding: "8px 4px",
-                                            borderBottom: i < 6 ? "1px solid rgba(255,255,255,0.04)" : "none",
+                                        {/* 右側現在値 */}
+                                        <div style={{
+                                            flex: "0 0 auto", width: 86,
+                                            display: "flex", flexDirection: "column", justifyContent: "center", gap: 10,
+                                            padding: "0 4px",
                                         }}>
-                                            <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0, flex: 1 }}>
-                                                <r.Icon c={r.color} s={13} />
-                                                <span style={{ fontSize: 10.5, color: C.subHi, fontFamily: font, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.label}</span>
+                                            <div style={{ fontSize: 9, color: C.sub, fontFamily: font, fontWeight: 700, letterSpacing: 0.4 }}>現在値</div>
+                                            <div>
+                                                <div style={{ fontSize: 9, color: C.sub, fontFamily: font }}>ボーダー差</div>
+                                                <div style={{ fontSize: 16, fontWeight: 800, color: "#21D99B", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{sp(bDiff, 1)}<span style={{ fontSize: 9, color: C.sub, marginLeft: 2 }}>回/K</span></div>
                                             </div>
-                                            <div style={{ display: "flex", alignItems: "baseline", gap: 2, flexShrink: 0 }}>
-                                                <span style={{ fontSize: 11, fontWeight: 800, color: C.text, fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{r.val}</span>
-                                                {r.unit && <span style={{ fontSize: 9, color: C.sub }}>{r.unit}</span>}
-                                                <IcChevron c={C.sub} s={10} />
+                                            <div>
+                                                <div style={{ fontSize: 9, color: C.sub, fontFamily: font }}>信頼度</div>
+                                                <div style={{ fontSize: 16, fontWeight: 800, color: "#C084FC", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{Math.round(confidence * 100)}<span style={{ fontSize: 9, color: C.sub, marginLeft: 2 }}>%</span></div>
                                             </div>
                                         </div>
-                                    ))}
-                                </div>
-                            </div>
-                            {/* 8. 計算根拠 */}
-                            <div style={dataCardStyle()}>
-                                <div style={{ ...cardHeaderStyle(), flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                        <span style={cardNumDot()}>8</span>
-                                        <span style={{ ...cardTitleStyle(), fontSize: 12.5 }}>計算根拠</span>
                                     </div>
-                                    <span style={{ fontSize: 9, color: C.sub, fontFamily: font, marginLeft: 24 }}>（タップで詳細を確認）</span>
                                 </div>
-                                <div style={{ display: "flex", flexDirection: "column", padding: "0 8px 4px" }}>
-                                    {[
-                                        { Icon: IcDice, color: "#21D99B", label: "初当たり確率（実測）", val: jpCount > 0 ? `1/${f(netRot / Math.max(1, jpCount), 1)}` : "1/104.0" },
-                                        { Icon: IcBalls, color: "#0A84FF", label: "表記出玉（平均）", val: `${f(avg1R, 0)} 玉` },
-                                        { Icon: IcMochi, color: "#0A84FF", label: "持ち玉（現在）", val: `${f(currentBalls)} 玉` },
-                                        { Icon: IcCoin, color: "#21D99B", label: "総投資", val: `${f(totalInvestActual)} 円` },
-                                        { Icon: IcSwap, color: "#0A84FF", label: "交換率", val: `${f(exRate, 2)} 円/玉` },
-                                        { Icon: IcInv, color: "#FF5A5F", label: "再プレイ上限", val: "無制限" },
-                                    ].map((r, i) => (
-                                        <div key={i} style={{
-                                            display: "flex", alignItems: "center", justifyContent: "space-between",
-                                            padding: "8px 4px",
-                                            borderBottom: "1px solid rgba(255,255,255,0.04)",
-                                        }}>
-                                            <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0, flex: 1 }}>
-                                                <r.Icon c={r.color} s={13} />
-                                                <span style={{ fontSize: 10.5, color: C.subHi, fontFamily: font, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.label}</span>
+                            )}
+                        </div>
+
+                        {/* 8. 詳細スタッツ [折りたたみ] — 優先度別レイアウト */}
+                        <div style={dataCardStyle()}>
+                            <CollapseRow num="7" title="詳細スタッツ" summary={statsSummary} openKey="stats" />
+                            {dataExpanded.stats && (
+                                <div className="data-collapse-body" style={{ padding: "0 12px 12px" }}>
+                                    {/* 優先度高 - 大きめ 3カード */}
+                                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 10 }}>
+                                        {[
+                                            { Icon: IcCircleDot, color: "#21D99B", label: "単価", val: `${sp(evEff.evPerRot || 11.39, 2)}`, unit: "円/回" },
+                                            { Icon: IcMochi, color: "#FFB020", label: "持ち玉比率", val: `${Math.round((ev.mochiRatio > 0 ? ev.mochiRatio : 0.884) * 100 * 10) / 10}`, unit: "%" },
+                                            { Icon: IcBalls, color: "#C084FC", label: "平均出玉", val: f(avg1R, 0), unit: "玉" },
+                                        ].map((m, i) => (
+                                            <div key={i} style={{
+                                                background: "rgba(11,22,40,0.55)",
+                                                border: "1px solid rgba(26,77,117,0.45)",
+                                                borderRadius: 12,
+                                                padding: "10px 10px 8px",
+                                                display: "flex", flexDirection: "column", gap: 4,
+                                            }}>
+                                                <div style={{ display: "flex", alignItems: "center", gap: 5, color: C.sub, fontSize: 9.5, fontWeight: 600, fontFamily: font }}>
+                                                    <m.Icon c={m.color} s={12} />
+                                                    <span>{m.label}</span>
+                                                </div>
+                                                <div style={{ display: "flex", alignItems: "baseline", gap: 2, marginTop: 2 }}>
+                                                    <span style={{ fontSize: 17, fontWeight: 800, color: m.color, fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{m.val}</span>
+                                                    <span style={{ fontSize: 9.5, color: C.sub, fontWeight: 600 }}>{m.unit}</span>
+                                                </div>
                                             </div>
-                                            <span style={{ fontSize: 11, fontWeight: 800, color: C.text, fontFamily: mono, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>{r.val}</span>
-                                        </div>
-                                    ))}
+                                        ))}
+                                    </div>
+                                    {/* 優先度低 - 小さめ行リスト */}
+                                    <div style={{ display: "flex", flexDirection: "column", background: "rgba(7,17,31,0.45)", borderRadius: 10, padding: "2px 8px" }}>
+                                        {[
+                                            { Icon: IcLight, color: "#9CA3AF", label: "大当たり確率（実測）", val: jpCount > 0 ? `1/${f(netRot / jpCount, 1)}` : "1/128.7", unit: "" },
+                                            { Icon: IcRot, color: "#9CA3AF", label: "通常回転数", val: f(netRot), unit: "回" },
+                                            { Icon: IcFlame, color: "#9CA3AF", label: "大当たり回数", val: `${jpCount}`, unit: "回" },
+                                            { Icon: IcPercent, color: "#9CA3AF", label: "初当たり確率（実測）", val: jpCount > 0 ? `1/${f(netRot / Math.max(1, jpCount), 1)}` : "1/104.0", unit: "" },
+                                        ].map((r, i, arr) => (
+                                            <div key={i} style={{
+                                                display: "flex", alignItems: "center", justifyContent: "space-between",
+                                                padding: "7px 2px",
+                                                borderBottom: i < arr.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
+                                            }}>
+                                                <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0, flex: 1 }}>
+                                                    <r.Icon c={r.color} s={12} />
+                                                    <span style={{ fontSize: 10.5, color: C.subHi, fontFamily: font, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.label}</span>
+                                                </div>
+                                                <div style={{ display: "flex", alignItems: "baseline", gap: 2, flexShrink: 0 }}>
+                                                    <span style={{ fontSize: 11, fontWeight: 700, color: C.text, fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{r.val}</span>
+                                                    {r.unit && <span style={{ fontSize: 9, color: C.sub }}>{r.unit}</span>}
+                                                    <IcChevron c={C.sub} s={10} />
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
-                                <button className="b" style={{
-                                    margin: "6px 10px 10px", padding: "8px",
-                                    background: "transparent", border: "none",
-                                    color: "#0A84FF", fontSize: 11, fontWeight: 700, fontFamily: font,
-                                    display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-                                    cursor: "pointer",
-                                }} onClick={() => setShowGraphModal(true)}>
-                                    すべての計算根拠を見る
-                                    <IcArrowFwd c="#0A84FF" s={11} />
-                                </button>
-                            </div>
+                            )}
+                        </div>
+
+                        {/* 9. 計算根拠 [折りたたみ] */}
+                        <div style={dataCardStyle()}>
+                            <CollapseRow num="8" title="計算根拠" summary={calcSummary} openKey="calc" />
+                            {dataExpanded.calc && (
+                                <div className="data-collapse-body">
+                                    <div style={{ fontSize: 9.5, color: C.sub, fontFamily: font, margin: "0 14px 4px" }}>（タップで詳細を確認）</div>
+                                    <div style={{ display: "flex", flexDirection: "column", padding: "0 8px 4px" }}>
+                                        {[
+                                            { Icon: IcDice, color: "#21D99B", label: "初当たり確率（実測）", val: jpCount > 0 ? `1/${f(netRot / Math.max(1, jpCount), 1)}` : "1/104.0" },
+                                            { Icon: IcBalls, color: "#0A84FF", label: "表記出玉（平均）", val: `${f(avg1R, 0)} 玉` },
+                                            { Icon: IcMochi, color: "#0A84FF", label: "持ち玉（現在）", val: `${f(currentBalls)} 玉` },
+                                            { Icon: IcCoin, color: "#21D99B", label: "総投資", val: `${f(totalInvestActual)} 円` },
+                                            { Icon: IcSwap, color: "#0A84FF", label: "交換率", val: `${f(exRate, 2)} 円/玉` },
+                                            { Icon: IcInv, color: "#FF5A5F", label: "再プレイ上限", val: "無制限" },
+                                        ].map((r, i, arr) => (
+                                            <div key={i} style={{
+                                                display: "flex", alignItems: "center", justifyContent: "space-between",
+                                                padding: "8px 6px",
+                                                borderBottom: i < arr.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
+                                            }}>
+                                                <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0, flex: 1 }}>
+                                                    <r.Icon c={r.color} s={13} />
+                                                    <span style={{ fontSize: 11, color: C.subHi, fontFamily: font, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.label}</span>
+                                                </div>
+                                                <span style={{ fontSize: 11.5, fontWeight: 800, color: C.text, fontFamily: mono, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>{r.val}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button className="b" style={{
+                                        margin: "6px 10px 10px", padding: "10px",
+                                        background: "rgba(10,132,255,0.08)",
+                                        border: "1px solid rgba(10,132,255,0.28)",
+                                        borderRadius: 10,
+                                        color: "#0A84FF", fontSize: 11.5, fontWeight: 700, fontFamily: font,
+                                        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                                        cursor: "pointer", width: "calc(100% - 20px)",
+                                    }} onClick={() => setShowGraphModal(true)}>
+                                        すべての計算根拠を見る
+                                        <IcArrowFwd c="#0A84FF" s={12} />
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
                         {/* Undo controls inline at the bottom */}
@@ -3842,6 +4026,81 @@ export function RotTab({ rows, setRows, S, ev }) {
                             <UndoControls S={S} />
                         </div>
                     </div>
+
+                    {/* ============================ */}
+                    {/* 最下部固定ステータスバー       */}
+                    {/* スクロールしても常時表示       */}
+                    {/* ============================ */}
+                    <div style={{
+                        position: "fixed",
+                        bottom: "calc(56px + env(safe-area-inset-bottom))",
+                        left: "50%",
+                        transform: "translateX(-50%)",
+                        width: "100%",
+                        maxWidth: 480,
+                        zIndex: 99,
+                        padding: "8px 12px 6px",
+                        background: "linear-gradient(180deg, rgba(5,11,24,0) 0%, rgba(5,11,24,0.92) 35%, rgba(5,11,24,0.98) 100%)",
+                        pointerEvents: "none",
+                    }}>
+                        <div style={{
+                            background: "linear-gradient(180deg, rgba(11,22,40,0.95) 0%, rgba(16,27,45,0.92) 100%)",
+                            border: "1px solid rgba(26,77,117,0.55)",
+                            borderRadius: 14,
+                            padding: "10px 14px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            backdropFilter: "blur(12px)",
+                            WebkitBackdropFilter: "blur(12px)",
+                            boxShadow: "0 6px 22px rgba(0,0,0,0.5)",
+                            pointerEvents: "auto",
+                            minHeight: 48,
+                        }}>
+                            {/* 左：現在の状態 */}
+                            <div style={{
+                                width: 28, height: 28, borderRadius: "50%",
+                                background: bDiff >= 0 ? "rgba(33,217,155,0.18)" : "rgba(255,90,95,0.18)",
+                                border: `1.5px solid ${bDiff >= 0 ? "rgba(33,217,155,0.7)" : "rgba(255,90,95,0.7)"}`,
+                                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                flexShrink: 0,
+                                boxShadow: bDiff >= 0 ? "0 0 10px rgba(33,217,155,0.35)" : "0 0 10px rgba(255,90,95,0.35)",
+                            }}>
+                                <IcOk s={14} />
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+                                <div style={{
+                                    fontSize: 12.5, fontWeight: 800,
+                                    color: C.text, fontFamily: font,
+                                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                                }}>{currentBalls > 0 ? "持ち玉遊技中" : "稼働中"}</div>
+                                <div style={{
+                                    fontSize: 10, color: C.subHi, fontFamily: font,
+                                    display: "flex", alignItems: "center", gap: 6,
+                                    whiteSpace: "nowrap",
+                                }}>
+                                    <span>ボーダー <strong style={{ color: bDiff >= 0 ? "#21D99B" : "#FF5A5F", fontWeight: 800 }}>{sp(bDiff, 1)}回</strong></span>
+                                    <span style={{ color: C.sub }}>|</span>
+                                    <span style={{ color: bDiff > 0 ? "#21D99B" : bDiff < 0 ? "#FF5A5F" : C.subHi, fontWeight: 700 }}>{bDiff > 0 ? "期待値プラス" : bDiff < 0 ? "期待値マイナス" : "期待値ニュートラル"}</span>
+                                </div>
+                            </div>
+                            {/* 右：信頼度 + 次の判断ライン */}
+                            <div style={{ display: "flex", gap: 10, flexShrink: 0 }}>
+                                <div style={{ textAlign: "center" }}>
+                                    <div style={{ fontSize: 8.5, color: C.sub, fontFamily: font, fontWeight: 600, marginBottom: 1 }}>信頼度</div>
+                                    <div style={{ fontSize: 12, fontWeight: 800, color: "#C084FC", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{Math.round(confidence * 100)}%</div>
+                                </div>
+                                <div style={{ width: 1, background: "rgba(255,255,255,0.08)" }} />
+                                <div style={{ textAlign: "center" }}>
+                                    <div style={{ fontSize: 8.5, color: C.sub, fontFamily: font, fontWeight: 600, marginBottom: 1 }}>次の判断</div>
+                                    <div style={{ fontSize: 11, fontWeight: 800, color: "#0A84FF", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
+                                        {netRot < 300 ? "300回転" : "継続中"}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    </>
                 );
             })()}
 
