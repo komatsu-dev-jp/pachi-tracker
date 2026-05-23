@@ -9,8 +9,6 @@ import { VerdictBadge } from "./decision/VerdictBadge";
 import { KeyMetrics } from "./decision/KeyMetrics";
 import { ReasonList } from "./decision/ReasonList";
 import { RecentEventList } from "./decision/RecentEventList";
-import HunterRankBadge from "./hunter/HunterRankBadge";
-import BadgeList from "./hunter/BadgeList";
 
 /* ================================================================
    Simple SVG Line Chart component
@@ -8501,6 +8499,8 @@ export function SettingsTab({ s, onReset }) {
     const [showMachineSpecView, setShowMachineSpecView] = useState(false);
     const [showChodamaView, setShowChodamaView] = useState(false);
     const [showBackupView, setShowBackupView] = useState(false);
+    const [showRotationView, setShowRotationView] = useState(false);
+    const [showAdvancedView, setShowAdvancedView] = useState(false);
 
     // 削除確認
     const [confirmingDeleteMachine, setConfirmingDeleteMachine] = useState(null);
@@ -9667,6 +9667,14 @@ export function SettingsTab({ s, onReset }) {
     const IconShield = () => (<svg {...svgProps}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>);
     const IconContrast = () => (<svg {...svgProps}><circle cx="12" cy="12" r="9"/><path d="M12 3v18" fill="currentColor"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/></svg>);
     const IconEye = () => (<svg {...svgProps}><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>);
+    const IconExchange = () => (<svg {...svgProps}><circle cx="12" cy="12" r="9"/><path d="M9 8h4.5a2.5 2.5 0 0 1 0 5H9"/><path d="M9 13h4.5a2.5 2.5 0 0 1 0 5H9"/><path d="M11 6v12"/><path d="M14 6v12"/></svg>);
+    const IconTrending = () => (<svg {...svgProps}><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>);
+    const IconCoin = () => (<svg {...svgProps}><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>);
+    const IconCalculator = () => (<svg {...svgProps}><rect x="4" y="3" width="16" height="18" rx="2.5"/><rect x="7" y="6" width="10" height="3" rx="0.5"/><circle cx="8.5" cy="13" r="0.6" fill="currentColor"/><circle cx="12" cy="13" r="0.6" fill="currentColor"/><circle cx="15.5" cy="13" r="0.6" fill="currentColor"/><circle cx="8.5" cy="17" r="0.6" fill="currentColor"/><circle cx="12" cy="17" r="0.6" fill="currentColor"/><circle cx="15.5" cy="17" r="0.6" fill="currentColor"/></svg>);
+    const IconChartBars = () => (<svg {...svgProps}><path d="M4 19V11"/><path d="M10 19V5"/><path d="M16 19v-9"/><path d="M22 19v-5"/></svg>);
+    const IconBell = () => (<svg {...svgProps}><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>);
+    const IconCsv = () => (<svg {...svgProps}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 14h1.5a1 1 0 1 1 0 2H8v2"/><path d="M16 14a1 1 0 0 0-1 1c0 1 2 1 2 2a1 1 0 0 1-1 1"/><path d="M11 14l1 4 1-4"/></svg>);
+    const IconFaceId = () => (<svg {...svgProps}><path d="M5 8V6a1 1 0 0 1 1-1h2"/><path d="M19 8V6a1 1 0 0 0-1-1h-2"/><path d="M5 16v2a1 1 0 0 0 1 1h2"/><path d="M19 16v2a1 1 0 0 1-1 1h-2"/><circle cx="9.5" cy="11" r="0.6" fill="currentColor"/><circle cx="14.5" cy="11" r="0.6" fill="currentColor"/><path d="M12 10v3.5"/><path d="M10 16c0.6 0.7 1.3 1 2 1s1.4-0.3 2-1"/></svg>);
 
     // ── サブ画面共通ヘッダー ──
     const SubHeader = ({ title, onBack }) => (
@@ -9998,73 +10006,309 @@ export function SettingsTab({ s, onReset }) {
         );
     }
 
-    // ── メイン設定（フラットリスト）──
-    return (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            {/* CSS: Sectionの最終行ボーダーを除去 */}
-            <style>{`.settings-row:last-child{border-bottom:none!important}`}</style>
+    // ── 回転・補正サブビュー ──
+    if (showRotationView) {
+        return (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <style>{`.settings-row:last-child{border-bottom:none!important}`}</style>
+                <SubHeader title="回転・補正" onBack={() => setShowRotationView(false)} />
+                <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(72px + env(safe-area-inset-bottom))" }}>
+                    <SectionLabel label="回転数・確率" />
+                    <Section>
+                        {[
+                            { lbl: "合成確率分母", v: s.synthDenom, set: s.setSynthDenom, unit: "1/x" },
+                            { lbl: "1h消化回転数", v: s.rotPerHour, set: s.setRotPerHour, unit: "回/h" },
+                            { lbl: "ボーダー手動値", v: s.border, set: s.setBorder, unit: "回/K" },
+                        ].map(({ lbl, v, set, unit }, i, arr) => (
+                            <div key={lbl} className="settings-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: i < arr.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                                <div style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>{lbl}</div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <NI v={v} set={set} w={80} center />
+                                    <span style={{ fontSize: 11, color: C.sub, minWidth: 40 }}>{unit}</span>
+                                </div>
+                            </div>
+                        ))}
+                    </Section>
 
-            {/* ヘッダー */}
-            <div style={{
-                background: C.surface,
-                padding: "calc(env(safe-area-inset-top, 0px) + 14px) 16px 18px",
-                flexShrink: 0,
-                borderBottom: `1px solid ${C.border}`,
-            }}>
-                <div style={{ fontSize: 26, fontWeight: 800, color: C.text, fontFamily: font, letterSpacing: -0.5 }}>設定</div>
-                <div style={{ fontSize: 12, color: C.sub, marginTop: 2, fontFamily: font }}>
-                    貸玉 {Math.round((s.rentBalls || 250) / 10)}玉 / 交換 {Math.round((s.exRate || 250) / 10)}玉 / ボーダー {calcBorder > 0 ? f(calcBorder, 1) : "—"}回/K
+                    <SectionLabel label="ボーダー（自動計算）" />
+                    <Section>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px" }}>
+                            <div>
+                                <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{borderSource === "db" ? "DB標準ボーダー" : "理論ボーダー"}</div>
+                                <div style={{ fontSize: 11, color: C.teal, marginTop: 2 }}>{exRateLabel}</div>
+                            </div>
+                            <div style={{ fontSize: 22, fontWeight: 800, color: C.green, fontFamily: mono }}>
+                                {calcBorder > 0 ? f(calcBorder, 1) : "—"}
+                                <span style={{ fontSize: 11, color: C.sub, marginLeft: 4 }}>回/K</span>
+                            </div>
+                        </div>
+                    </Section>
                 </div>
+                <ToastPortal />
+            </div>
+        );
+    }
+
+    // ── 詳細設定サブビュー ──
+    if (showAdvancedView) {
+        return (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <style>{`.settings-row:last-child{border-bottom:none!important}`}</style>
+                <SubHeader title="詳細設定" onBack={() => setShowAdvancedView(false)} />
+                <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(72px + env(safe-area-inset-bottom))" }}>
+                    <SectionLabel label="セッションの初期化" />
+                    <Section danger>
+                        {!confirming ? (
+                            <Row IconComp={IconTrash} iconColor={C.red} label="データをリセット" sub="セッションデータ・履歴を消去します" danger onPress={() => setConfirming(true)} />
+                        ) : (
+                            <div style={{ padding: "16px" }}>
+                                <div style={{ fontSize: 13, color: C.text, fontWeight: 600, marginBottom: 6 }}>本当にリセットしますか？</div>
+                                <div style={{ fontSize: 12, color: C.sub, marginBottom: 14, lineHeight: 1.6 }}>
+                                    回転数・獲得出玉・履歴などのセッションデータがすべて消去されます。設定値は保持されます。この操作は元に戻せません。
+                                </div>
+                                <div style={{ display: "flex", gap: 10 }}>
+                                    <Btn label="本当にリセット" onClick={() => { onReset(); setConfirming(false); }} bg={C.red} fg="#fff" bd="none" />
+                                    <Btn label="キャンセル" onClick={() => setConfirming(false)} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
+                                </div>
+                            </div>
+                        )}
+                    </Section>
+                </div>
+                <ToastPortal />
+            </div>
+        );
+    }
+
+    // ── メイン設定（モック準拠・分析OS風ダークUI）──
+    // 環境サマリー用の値
+    const rateDisplay = `${Math.round((s.exRate || 250) / 10)}玉交換`;
+    const exLabelShort = exRateKey === "4.00" ? "等価"
+        : exRateKey ? `${exRateKey}円`
+        : `${yenPerBall.toFixed(2)}円`;
+    const borderShort = calcBorder > 0 ? `${f(calcBorder, 1)}/K` : "—";
+
+    // ネオン系アイコン枠（グラデーション + 内側グロー）
+    const NeonIconBox = ({ color, IconComp, size = 48 }) => (
+        <div style={{
+            width: size, height: size, borderRadius: size * 0.32,
+            background: `linear-gradient(135deg, color-mix(in srgb, ${color} 32%, transparent), color-mix(in srgb, ${color} 8%, transparent))`,
+            border: `1px solid color-mix(in srgb, ${color} 40%, transparent)`,
+            boxShadow: `0 0 20px color-mix(in srgb, ${color} 22%, transparent), inset 0 1px 0 color-mix(in srgb, ${color} 30%, transparent)`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: color, flexShrink: 0,
+        }}>
+            {IconComp ? <IconComp /> : null}
+        </div>
+    );
+
+    // 半透明濃紺カード（モック準拠）
+    const glassCardStyle = {
+        background: "linear-gradient(180deg, color-mix(in srgb, #0b1a2e 80%, transparent), color-mix(in srgb, #08111e 70%, transparent))",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
+        border: "1px solid color-mix(in srgb, #5b8fcf 16%, transparent)",
+        borderRadius: 18,
+        overflow: "hidden",
+    };
+
+    // 小カード（遊技設定の各チップ）
+    const subTileStyle = (color) => ({
+        background: `linear-gradient(180deg, color-mix(in srgb, ${color} 10%, transparent), color-mix(in srgb, ${color} 3%, transparent))`,
+        border: `1px solid color-mix(in srgb, ${color} 18%, transparent)`,
+        borderRadius: 14,
+        padding: "12px 6px 10px",
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+        cursor: "pointer", WebkitTapHighlightColor: "transparent",
+        minHeight: 110,
+    });
+
+    // セクションタイトル
+    const SectionTitle = ({ label, right }) => (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 4px 10px" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: C.text, letterSpacing: 0.2 }}>{label}</div>
+            {right || null}
+        </div>
+    );
+
+    // リスト型行（左半分・右半分のカード内で使用）
+    const ListRow = ({ color, IconComp, label, sub, onPress, right }) => (
+        <button className="b" onClick={onPress} style={{
+            width: "100%", background: "transparent", border: "none",
+            display: "flex", alignItems: "center", gap: 11,
+            padding: "12px 14px", cursor: onPress ? "pointer" : "default",
+            textAlign: "left", WebkitTapHighlightColor: "transparent",
+            borderBottom: "1px solid color-mix(in srgb, #5b8fcf 10%, transparent)",
+            minHeight: 56,
+        }}>
+            <NeonIconBox color={color} IconComp={IconComp} size={36} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: C.text, fontWeight: 600, lineHeight: 1.3 }}>{label}</div>
+                {sub && <div style={{ fontSize: 10.5, color: "#6f8aae", marginTop: 2, lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>}
+            </div>
+            {right !== undefined ? right : (onPress ? <span style={{ fontSize: 14, color: "#5e7ba0", flexShrink: 0 }}>›</span> : null)}
+        </button>
+    );
+
+    return (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "linear-gradient(180deg, #030714 0%, #06101e 100%)" }}>
+            <style>{`.settings-list-card > button:last-child{border-bottom:none!important}`}</style>
+
+            {/* ── ヘッダー（タイトル＋環境サマリー） ── */}
+            <div style={{
+                padding: "calc(env(safe-area-inset-top, 0px) + 14px) 14px 12px",
+                flexShrink: 0,
+                display: "flex", alignItems: "flex-start", gap: 12,
+            }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 30, fontWeight: 800, color: C.text, fontFamily: font, letterSpacing: -0.6, lineHeight: 1.05 }}>設定</div>
+                    <div style={{ fontSize: 11.5, color: "#6f8aae", marginTop: 4, fontFamily: font }}>アプリの各種設定を管理します</div>
+                </div>
+                {/* 環境サマリーカード */}
+                <button className="b" onClick={() => setShowGameSettingsView(true)} style={{
+                    ...glassCardStyle,
+                    border: "1px solid color-mix(in srgb, #5b8fcf 22%, transparent)",
+                    padding: "10px 12px",
+                    display: "flex", alignItems: "center", gap: 10,
+                    cursor: "pointer", flexShrink: 0, minWidth: 196,
+                    WebkitTapHighlightColor: "transparent",
+                }}>
+                    <NeonIconBox color="#38bdf8" IconComp={IconGear} size={36} />
+                    <div style={{ flex: 1, minWidth: 0, textAlign: "right" }}>
+                        <div style={{ fontSize: 9.5, color: "#6f8aae", marginBottom: 2, letterSpacing: 0.4 }}>環境サマリー</div>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: C.text, lineHeight: 1.2 }}>{rateDisplay} / {exLabelShort}</div>
+                        <div style={{ fontSize: 10.5, color: "#7da4cf", marginTop: 2, fontFamily: mono }}>ボーダー {borderShort}</div>
+                    </div>
+                    <span style={{ fontSize: 14, color: "#5e7ba0", flexShrink: 0 }}>›</span>
+                </button>
             </div>
 
             {/* ── スクロールコンテンツ ── */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(84px + env(safe-area-inset-bottom))" }}>
+            <div style={{ flex: 1, overflowY: "auto", padding: "6px 14px calc(72px + env(safe-area-inset-bottom))" }}>
 
-                {/* ハンターランク（Phase 6 本実装版） */}
-                <div style={{ marginTop: 14 }}>
-                    <HunterRankBadge rank={s.hunterRank} />
+                {/* ── 1. 遊技設定（横長カード + 5チップ） ── */}
+                <div style={{ marginBottom: 14 }}>
+                    <button className="b" onClick={() => setShowGameSettingsView(true)} style={{
+                        ...glassCardStyle,
+                        padding: "14px 14px 12px",
+                        cursor: "pointer", width: "100%", textAlign: "left",
+                        WebkitTapHighlightColor: "transparent",
+                    }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                            <div style={{ fontSize: 15, fontWeight: 700, color: C.text, letterSpacing: 0.2 }}>遊技設定</div>
+                            <span style={{ fontSize: 14, color: "#5e7ba0" }}>›</span>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 7 }}>
+                            {[
+                                { color: "#38bdf8", icon: IconExchange,   label: "レート・交換率", sub: `${Math.round((s.exRate || 250) / 10)}玉 / ${exLabelShort}`, onClick: () => setShowGameSettingsView(true) },
+                                { color: "#ef476f", icon: IconTarget,     label: "機種スペック",   sub: `${s.synthDenom || 319.6} / ${borderShort}`,                  onClick: () => setShowMachineSpecView(true) },
+                                { color: "#ff9f43", icon: IconTrending,   label: "回転・補正",     sub: "ボーダー補正",                                                onClick: () => setShowRotationView(true) },
+                                { color: "#21d99b", icon: IconCoin,       label: "貯玉設定",       sub: s.includeChodamaInBalance ? "収支に含める" : "含めない",       onClick: () => setShowChodamaView(true) },
+                                { color: "#c084fc", icon: IconCalculator, label: "詳細設定",       sub: "その他",                                                       onClick: () => setShowAdvancedView(true) },
+                            ].map(t => (
+                                <div
+                                    key={t.label}
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={(e) => { e.stopPropagation(); t.onClick(); }}
+                                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); t.onClick(); } }}
+                                    style={subTileStyle(t.color)}
+                                >
+                                    <NeonIconBox color={t.color} IconComp={t.icon} size={42} />
+                                    <div style={{ fontSize: 10.5, fontWeight: 700, color: C.text, lineHeight: 1.15, textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", width: "100%" }}>{t.label}</div>
+                                    <div style={{ fontSize: 9, color: "#6f8aae", lineHeight: 1.15, textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", width: "100%" }}>{t.sub}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </button>
                 </div>
 
-                {/* バッジ一覧（Phase 6 バッジ解放） */}
-                <div style={{ marginTop: 4, marginBottom: 14 }}>
-                    <BadgeList unlockedIds={s.hunterRank?.unlockedBadges} />
+                {/* ── 2. 表示・カスタマイズ + 3. データ管理（2カラム） ── */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+                    {/* 表示・カスタマイズ */}
+                    <div style={glassCardStyle}>
+                        <div style={{ padding: "12px 14px 4px", fontSize: 13, fontWeight: 700, color: C.text, letterSpacing: 0.2 }}>表示・カスタマイズ</div>
+                        <div className="settings-list-card">
+                            <ListRow color="#c084fc" IconComp={IconPaint}      label="テーマ・カラー" sub="ダーク / 配色 / フォント" onPress={() => setShowAppearanceView(true)} />
+                            <ListRow color="#38bdf8" IconComp={IconChartBars}  label="グラフ・表示"   sub="形式 / 表示項目 / 単位"   onPress={() => showToast("グラフ設定は準備中です", "warn")} />
+                            <ListRow color="#ff5f8a" IconComp={IconBell}       label="通知・サウンド" sub="通知 / 効果音 / 振動"     onPress={() => showToast("通知設定は準備中です", "warn")} />
+                        </div>
+                    </div>
+                    {/* データ管理 */}
+                    <div style={glassCardStyle}>
+                        <div style={{ padding: "12px 14px 4px", fontSize: 13, fontWeight: 700, color: C.text, letterSpacing: 0.2 }}>データ管理</div>
+                        <div className="settings-list-card">
+                            <ListRow color="#21d99b" IconComp={IconStore}      label="店舗検索・登録" sub={`登録店舗: ${(s.stores || []).length}件`}                  onPress={() => setShowStoreSearch(true)} />
+                            <ListRow color="#22d3ee" IconComp={IconMagnifier}  label="機種検索・登録" sub={`カスタム機種: ${(s.customMachines || []).length}件`}    onPress={() => setShowMachineSearch(true)} />
+                            <ListRow color="#38bdf8" IconComp={IconCloud}      label="バックアップ・復元" sub="エクスポート / インポート"                              onPress={() => setShowBackupView(true)} />
+                            <ListRow color="#ff9f43" IconComp={IconCsv}        label="CSV出力"          sub="セッションデータを出力"                                   onPress={() => setShowBackupView(true)} />
+                        </div>
+                    </div>
                 </div>
 
-                {/* 外観 */}
-                <SectionLabel label="外観" />
-                <Section>
-                    <Row IconComp={IconPaint} iconColor={C.purple} label="外観" sub="テーマ・カラー・アクセシビリティ" onPress={() => setShowAppearanceView(true)} />
-                </Section>
+                {/* ── 4. セキュリティ（3項目横並び） ── */}
+                <div style={{ ...glassCardStyle, padding: "12px 14px 14px", marginBottom: 14 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.text, letterSpacing: 0.2, marginBottom: 10 }}>セキュリティ</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                        {/* アプリロック */}
+                        <div style={{
+                            background: "color-mix(in srgb, #0a1525 60%, transparent)",
+                            border: "1px solid color-mix(in srgb, #5b8fcf 14%, transparent)",
+                            borderRadius: 14, padding: "11px 12px",
+                            display: "flex", alignItems: "center", gap: 9, minHeight: 56,
+                        }}>
+                            <NeonIconBox color="#38bdf8" IconComp={IconLock} size={32} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 11.5, color: C.text, fontWeight: 600, lineHeight: 1.2 }}>アプリロック</div>
+                                <div style={{ fontSize: 9.5, color: "#6f8aae", marginTop: 2 }}>{s.appLock ? (s.appPin ? "PIN設定済み" : "PIN未設定") : "オフ"}</div>
+                            </div>
+                            <Toggle value={s.appLock} onChange={(v) => {
+                                if (!v) { s.setAppLock(false); s.setAppPin(""); setPinSetStep("idle"); }
+                                else if (!s.appPin) { s.setAppLock(true); setPinSetStep("enter"); setPinDraft(""); }
+                                else s.setAppLock(true);
+                            }} color={C.blue} />
+                        </div>
+                        {/* 自動ロック */}
+                        <button className="b" onClick={() => showToast("自動ロックは準備中です", "warn")} style={{
+                            background: "color-mix(in srgb, #0a1525 60%, transparent)",
+                            border: "1px solid color-mix(in srgb, #5b8fcf 14%, transparent)",
+                            borderRadius: 14, padding: "11px 12px",
+                            display: "flex", alignItems: "center", gap: 9, minHeight: 56,
+                            cursor: "pointer", WebkitTapHighlightColor: "transparent", textAlign: "left",
+                        }}>
+                            <NeonIconBox color="#c084fc" IconComp={IconFaceId} size={32} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 11.5, color: C.text, fontWeight: 600, lineHeight: 1.2 }}>自動ロック</div>
+                                <div style={{ fontSize: 9.5, color: "#6f8aae", marginTop: 2 }}>未設定</div>
+                            </div>
+                            <span style={{ fontSize: 13, color: "#5e7ba0" }}>›</span>
+                        </button>
+                        {/* スクショ保護 */}
+                        <button className="b" onClick={() => showToast("スクショ保護は準備中です", "warn")} style={{
+                            background: "color-mix(in srgb, #0a1525 60%, transparent)",
+                            border: "1px solid color-mix(in srgb, #5b8fcf 14%, transparent)",
+                            borderRadius: 14, padding: "11px 12px",
+                            display: "flex", alignItems: "center", gap: 9, minHeight: 56,
+                            cursor: "pointer", WebkitTapHighlightColor: "transparent", textAlign: "left",
+                        }}>
+                            <NeonIconBox color="#21d99b" IconComp={IconShield} size={32} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 11.5, color: C.text, fontWeight: 600, lineHeight: 1.2 }}>スクショ保護</div>
+                                <div style={{ fontSize: 9.5, color: "#6f8aae", marginTop: 2 }}>オフ</div>
+                            </div>
+                            <span style={{ fontSize: 13, color: "#5e7ba0" }}>›</span>
+                        </button>
+                    </div>
 
-                {/* ゲーム設定 */}
-                <SectionLabel label="ゲーム設定" />
-                <Section>
-                    <Row IconComp={IconGear} iconColor={C.blue} label="基本設定" sub={`貸玉 ${Math.round((s.rentBalls || 250) / 10)}玉 / 交換 ${Math.round((s.exRate || 250) / 10)}玉`} onPress={() => setShowGameSettingsView(true)} />
-                    <Row IconComp={IconTarget} iconColor={C.red} label="機種スペック" sub={`確率分母: ${s.synthDenom || 319.6} / ボーダー: ${calcBorder > 0 ? f(calcBorder, 1) : "—"}回/K`} onPress={() => setShowMachineSpecView(true)} />
-                    <Row IconComp={IconDiamond} iconColor={C.teal} label="貯玉設定" sub={s.includeChodamaInBalance ? "収支に含める" : "収支に含めない"} onPress={() => setShowChodamaView(true)} />
-                    <Row IconComp={IconMagnifier} iconColor={C.subHi} label="機種検索・登録" sub={`カスタム機種: ${(s.customMachines || []).length}件`} onPress={() => setShowMachineSearch(true)} />
-                    <Row IconComp={IconStore} iconColor={C.green} label="店舗検索・登録" sub={`登録店舗: ${(s.stores || []).length}件`} onPress={() => setShowStoreSearch(true)} />
-                </Section>
-
-                {/* セキュリティ */}
-                <SectionLabel label="セキュリティ" />
-                <Section>
-                    <Row IconComp={IconLock} iconColor={C.subHi} label="アプリロック" sub={s.appLock ? (s.appPin ? "PIN設定済み" : "PIN未設定") : "オフ"}
-                        right={<Toggle value={s.appLock} onChange={(v) => {
-                            if (!v) { s.setAppLock(false); s.setAppPin(""); setPinSetStep("idle"); }
-                            else if (!s.appPin) { s.setAppLock(true); setPinSetStep("enter"); setPinDraft(""); }
-                            else s.setAppLock(true);
-                        }} color={C.red} />} />
-                    {s.appLock && s.appPin && pinSetStep === "idle" && (
-                        <Row IconComp={IconKey} iconColor={C.orange} label="PINを変更" onPress={() => { setPinSetStep("enter"); setPinDraft(""); setPinSetError(false); }} />
-                    )}
+                    {/* PIN設定UI（展開時のみ表示） */}
                     {pinSetStep !== "idle" && (
-                        <div style={{ padding: "16px 16px 14px", borderTop: `1px solid ${C.border}` }}>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 6 }}>
+                        <div style={{ marginTop: 14, padding: "14px", borderRadius: 12,
+                            background: "color-mix(in srgb, #0a1525 60%, transparent)",
+                            border: "1px solid color-mix(in srgb, #5b8fcf 14%, transparent)",
+                        }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 8 }}>
                                 {pinSetStep === "enter" ? "新しいPINを入力（4桁）" : "PINを再入力して確認"}
                             </div>
-                            {/* PINドットインジケーター */}
-                            <div style={{ display: "flex", gap: 10, justifyContent: "center", marginBottom: 14 }}>
+                            <div style={{ display: "flex", gap: 10, justifyContent: "center", marginBottom: 12 }}>
                                 {[0,1,2,3].map(i => {
                                     const val = pinSetStep === "enter" ? pinDraft : pinConfirm;
                                     return (
@@ -10078,15 +10322,11 @@ export function SettingsTab({ s, onReset }) {
                             </div>
                             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                                 <input
-                                    type="text"
-                                    inputMode="numeric"
-                                    pattern="[0-9]*"
-                                    maxLength={4}
+                                    type="text" inputMode="numeric" pattern="[0-9]*" maxLength={4}
                                     value={pinSetStep === "enter" ? pinDraft : pinConfirm}
                                     onChange={e => {
                                         const v = e.target.value.replace(/\D/g, "").slice(0, 4);
-                                        if (pinSetStep === "enter") setPinDraft(v);
-                                        else setPinConfirm(v);
+                                        if (pinSetStep === "enter") setPinDraft(v); else setPinConfirm(v);
                                         setPinSetError(false);
                                     }}
                                     placeholder="••••"
@@ -10095,32 +10335,24 @@ export function SettingsTab({ s, onReset }) {
                                         border: `1.5px solid ${pinSetError ? C.red : C.borderHi}`,
                                         borderRadius: 10, padding: "11px 12px", fontSize: 22, color: C.text,
                                         fontFamily: mono, outline: "none", letterSpacing: 10, textAlign: "center",
-                                        transition: "border-color 0.2s",
                                     }}
                                 />
                                 <button className="b" onClick={() => {
                                     const val = pinSetStep === "enter" ? pinDraft : pinConfirm;
                                     if (val.length !== 4 || !/^\d{4}$/.test(val)) { setPinSetError(true); return; }
                                     if (pinSetStep === "enter") {
-                                        setPinSetStep("confirm");
-                                        setPinConfirm("");
-                                        setPinSetError(false);
+                                        setPinSetStep("confirm"); setPinConfirm(""); setPinSetError(false);
                                     } else {
                                         if (pinConfirm !== pinDraft) { setPinSetError(true); return; }
-                                        s.setAppPin(pinConfirm);
-                                        s.setAppLock(true);
-                                        s.setIsLocked(false);
-                                        setPinSetStep("idle");
-                                        setPinDraft(""); setPinConfirm("");
+                                        s.setAppPin(pinConfirm); s.setAppLock(true); s.setIsLocked(false);
+                                        setPinSetStep("idle"); setPinDraft(""); setPinConfirm("");
                                         showToast("PINを設定しました");
                                     }
                                 }} style={{
                                     background: C.blue, border: "none", borderRadius: 10,
                                     color: "#fff", fontSize: 13, padding: "11px 18px",
                                     fontFamily: font, fontWeight: 700, cursor: "pointer", flexShrink: 0,
-                                }}>
-                                    {pinSetStep === "enter" ? "次へ" : "確定"}
-                                </button>
+                                }}>{pinSetStep === "enter" ? "次へ" : "確定"}</button>
                                 <button className="b" onClick={() => {
                                     setPinSetStep("idle"); setPinDraft(""); setPinConfirm(""); setPinSetError(false);
                                     if (!s.appPin) s.setAppLock(false);
@@ -10137,62 +10369,91 @@ export function SettingsTab({ s, onReset }) {
                             )}
                         </div>
                     )}
-                </Section>
-                {s.appLock && (
-                    <div style={{ padding: "6px 4px 0", fontSize: 12, color: C.sub, lineHeight: 1.7 }}>
-                        PINを忘れた場合はデータリセットが必要になります。
-                    </div>
-                )}
-
-                {/* データ */}
-                <SectionLabel label="データ" />
-                <Section>
-                    <Row IconComp={IconCloud} iconColor={C.blue} label="バックアップ・復元" sub="全データのエクスポート・インポート" onPress={() => setShowBackupView(true)} />
-                </Section>
-
-                {/* 危険な操作 */}
-                <SectionLabel label="危険な操作" />
-                <Section danger>
-                    {!confirming ? (
-                        <Row IconComp={IconTrash} iconColor={C.red} label="データをリセット" sub="セッションデータ・履歴を消去します" danger onPress={() => setConfirming(true)} />
-                    ) : (
-                        <div style={{ padding: "16px" }}>
-                            <div style={{ fontSize: 13, color: C.text, fontWeight: 600, marginBottom: 6 }}>本当にリセットしますか？</div>
-                            <div style={{ fontSize: 12, color: C.sub, marginBottom: 14, lineHeight: 1.6 }}>
-                                回転数・獲得出玉・履歴などのセッションデータがすべて消去されます。設定値は保持されます。この操作は元に戻せません。
-                            </div>
-                            <div style={{ display: "flex", gap: 10 }}>
-                                <Btn label="本当にリセット" onClick={() => { onReset(); setConfirming(false); }} bg={C.red} fg="#fff" bd="none" />
-                                <Btn label="キャンセル" onClick={() => setConfirming(false)} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
-                            </div>
-                        </div>
-                    )}
-                </Section>
-
-                {/* アプリ情報 */}
-                <SectionLabel label="アプリ情報" />
-                {/* アプリアイコン風ヘッダー */}
-                <div style={{
-                    display: "flex", flexDirection: "column", alignItems: "center",
-                    padding: "20px 16px 16px", marginBottom: 8,
-                }}>
-                    <div style={{
-                        width: 64, height: 64, borderRadius: 16,
-                        background: C.blue,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 32, marginBottom: 10,
-                    }}>🎰</div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: C.text, fontFamily: font }}>パチトラッカー</div>
-                    <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>バージョン 1.0.0 (2025.7.1)</div>
                 </div>
-                <Section>
-                    <Row IconComp={IconChat} iconColor={C.sub} label="お問い合わせ" onPress={() => showToast("サポートページは準備中です", "warn")} />
-                    <Row IconComp={IconStar} iconColor={C.sub} label="アプリを評価" onPress={() => showToast("ストアページは準備中です", "warn")} />
-                    <Row IconComp={IconDoc} iconColor={C.sub} label="利用規約" onPress={() => showToast("利用規約ページは準備中です", "warn")} />
-                    <Row IconComp={IconShield} iconColor={C.sub} label="プライバシーポリシー" onPress={() => showToast("プライバシーポリシーは準備中です", "warn")} />
-                </Section>
 
-                <div style={{ height: 24 }} />
+                {/* ── 5. サポート（2項目横並び） ── */}
+                <div style={{ ...glassCardStyle, padding: "12px 14px 14px", marginBottom: 14 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.text, letterSpacing: 0.2, marginBottom: 10 }}>サポート</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <button className="b" onClick={() => showToast("サポートページは準備中です", "warn")} style={{
+                            background: "color-mix(in srgb, #0a1525 60%, transparent)",
+                            border: "1px solid color-mix(in srgb, #5b8fcf 14%, transparent)",
+                            borderRadius: 14, padding: "11px 12px",
+                            display: "flex", alignItems: "center", gap: 10, minHeight: 56,
+                            cursor: "pointer", WebkitTapHighlightColor: "transparent", textAlign: "left",
+                        }}>
+                            <NeonIconBox color="#38bdf8" IconComp={IconChat} size={34} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 12.5, color: C.text, fontWeight: 600, lineHeight: 1.2 }}>お問い合わせ</div>
+                                <div style={{ fontSize: 10, color: "#6f8aae", marginTop: 2 }}>サポート / 不具合報告</div>
+                            </div>
+                            <span style={{ fontSize: 13, color: "#5e7ba0" }}>›</span>
+                        </button>
+                        <button className="b" onClick={() => showToast("利用規約は準備中です", "warn")} style={{
+                            background: "color-mix(in srgb, #0a1525 60%, transparent)",
+                            border: "1px solid color-mix(in srgb, #5b8fcf 14%, transparent)",
+                            borderRadius: 14, padding: "11px 12px",
+                            display: "flex", alignItems: "center", gap: 10, minHeight: 56,
+                            cursor: "pointer", WebkitTapHighlightColor: "transparent", textAlign: "left",
+                        }}>
+                            <NeonIconBox color="#c084fc" IconComp={IconDoc} size={34} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 12.5, color: C.text, fontWeight: 600, lineHeight: 1.2 }}>利用規約・プライバシー</div>
+                                <div style={{ fontSize: 10, color: "#6f8aae", marginTop: 2 }}>利用規約 / ポリシー</div>
+                            </div>
+                            <span style={{ fontSize: 13, color: "#5e7ba0" }}>›</span>
+                        </button>
+                    </div>
+                </div>
+
+                {/* ── 6. アプリ情報 ── */}
+                <div style={{ ...glassCardStyle, padding: "14px 14px 14px", marginBottom: 14 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.text, letterSpacing: 0.2, marginBottom: 12 }}>アプリ情報</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        {/* アプリアイコン */}
+                        <div style={{
+                            width: 56, height: 56, borderRadius: 14,
+                            background: "linear-gradient(135deg, #1e3a8a 0%, #1e1b4b 100%)",
+                            border: "1px solid color-mix(in srgb, #5b8fcf 26%, transparent)",
+                            boxShadow: "0 4px 14px rgba(0,0,0,0.45), 0 0 18px color-mix(in srgb, #38bdf8 18%, transparent)",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 28, flexShrink: 0,
+                        }}>🎰</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 15, fontWeight: 800, color: C.text, lineHeight: 1.2 }}>パチトラッカー</div>
+                            <div style={{ fontSize: 10.5, color: "#6f8aae", marginTop: 2, fontFamily: mono }}>Version 1.0.0 (2025.7.1)</div>
+                            <div style={{ fontSize: 10.5, color: "#7da4cf", marginTop: 4, lineHeight: 1.3 }}>パチンコデータをもっと賢く、もっと楽しく。</div>
+                        </div>
+                        <div style={{
+                            background: "color-mix(in srgb, #21d99b 14%, transparent)",
+                            border: "1px solid color-mix(in srgb, #21d99b 32%, transparent)",
+                            borderRadius: 999,
+                            padding: "4px 10px 4px 8px",
+                            display: "flex", alignItems: "center", gap: 4,
+                            flexShrink: 0,
+                        }}>
+                            <span style={{ fontSize: 10, color: "#21d99b", fontWeight: 700 }}>最新版</span>
+                            <span style={{ fontSize: 10, color: "#21d99b" }}>✓</span>
+                        </div>
+                    </div>
+                    {/* アップデート履歴 */}
+                    <button className="b" onClick={() => showToast("リリースノートは準備中です", "warn")} style={{
+                        marginTop: 12, width: "100%",
+                        background: "color-mix(in srgb, #0a1525 60%, transparent)",
+                        border: "1px solid color-mix(in srgb, #5b8fcf 14%, transparent)",
+                        borderRadius: 12, padding: "10px 14px",
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        cursor: "pointer", WebkitTapHighlightColor: "transparent",
+                    }}>
+                        <div style={{ textAlign: "left" }}>
+                            <div style={{ fontSize: 12, color: C.text, fontWeight: 600 }}>アップデート履歴</div>
+                            <div style={{ fontSize: 10, color: "#6f8aae", marginTop: 2 }}>リリースノートを見る</div>
+                        </div>
+                        <span style={{ fontSize: 14, color: "#5e7ba0" }}>›</span>
+                    </button>
+                </div>
+
+                <div style={{ height: 16 }} />
             </div>
 
             <ToastPortal />
