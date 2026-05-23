@@ -1515,25 +1515,8 @@ export function RotTab({ rows, setRows, S, ev }) {
         }
     }, [currentSubTab, sessionSubTabs, setSessionSubTab]);
 
-    // 大当たり タブに入った時点で入力画面（画面 A / 画面 B）を自動表示
-    // 仕様: 5枚目モック準拠 — 大当たりタブの「デフォルト表示」を入力フォームにする
-    const prevSubTabRef = useRef(null);
-    useEffect(() => {
-        const prev = prevSubTabRef.current;
-        prevSubTabRef.current = currentSubTab;
-        if (currentSubTab !== "history" || prev === "history") return;
-        // 既に別のモーダル/ウィザードが開いている場合は何もしない
-        if (hitWizardOpen || chainWizardOpen || directSingleEndOpen || editChainOpen) return;
-        if (isChainActive && lastChain) {
-            openChainWizard();
-        } else if (!isChainActive) {
-            setHitInputError("");
-            setHitInputFocus("pushAmount");
-            setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: "", rounds: 0, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
-            setHitWizardOpen(true);
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentSubTab, isChainActive]);
+    // 大当たり履歴タブに入った時点では履歴画面を表示する。
+    // 入力は FAB の「初当たりを記録」/連チャン中バナーの「当たりを追加」/カード内の「データを追加」から明示的に開く。
     const swipeAreaRef = useRef(null);
     const swipeState = useRef({ startX: null, startY: null, dir: null, offset: 0 });
     const [headerSwipeOffset, setHeaderSwipeOffset] = useState(0);
