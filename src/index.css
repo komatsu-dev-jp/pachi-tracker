@@ -136,6 +136,51 @@ input, select, textarea {
   }
 }
 
+/* 詳細データタブ — 現在点パルス（推移グラフ） */
+@keyframes data-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  70% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.data-pulse-ring {
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: data-pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* 詳細データタブ — 折りたたみセクションの iOS 風スプリング展開 */
+@keyframes data-expand {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.data-collapse-body {
+  overflow: hidden;
+  animation: data-expand 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 詳細データタブ — カードの微弱グロー（タップで沈み込み） */
+.data-card-hover:active {
+  transform: scale(0.997);
+  transition: transform 0.12s ease;
+}
+
 /* Flat card (was glassmorphism) */
 .glass {
   background: var(--surface);
