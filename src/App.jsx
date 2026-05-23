@@ -7,6 +7,7 @@ import ModeTabBar from "./components/ModeTabBar";
 import AnalysisDashboard from "./components/analysis/AnalysisDashboard";
 import ScoutDashboard from "./components/scout/ScoutDashboard";
 import SelectDashboard from "./components/select/SelectDashboard";
+import HomeDashboard from "./components/home/HomeDashboard";
 import {
   addXpWithLevelUp,
   applyDailyStreak,
@@ -81,9 +82,9 @@ const COLOR_THEMES = [
 ];
 
 export default function App() {
-  // 現在のモード: "scout" | "select" | "record" | "analysis" | "settings"
-  // 既存ユーザーは初回起動時に "record" モードから始まる（既存体験を維持）
-  const [currentMode, setCurrentMode] = useLS("pt_currentMode", "record");
+  // 現在のモード: "home" | "scout" | "select" | "record" | "analysis" | "settings"
+  // 新規ユーザーはホーム画面から始まる。既存ユーザーは保存済みの値を維持。
+  const [currentMode, setCurrentMode] = useLS("pt_currentMode", "home");
 
   // 分析モード内の期間サブタブ
   // "month" | "year" | "all" | "calendar"
@@ -663,6 +664,7 @@ export default function App() {
     pushSnapshot, undo, redo, canUndo, canRedo,
     // ハンターランク（Phase 6）
     hunterRank: hunterRankDisplay,
+    hunterCounters,
     // 通知（Phase 6）
     notificationLog,
     openNotificationPanel: () => setNotificationPanelOpen(true),
@@ -748,6 +750,7 @@ export default function App() {
           paddingBottom: "calc(44px + env(safe-area-inset-bottom))",
         }}
       >
+        {currentMode === "home" && <HomeDashboard S={S} />}
         {currentMode === "scout" && <ScoutDashboard S={S} />}
         {currentMode === "select" && (
           <SelectDashboard
