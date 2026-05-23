@@ -2246,7 +2246,6 @@ export function RotTab({ rows, setRows, S, ev }) {
                             jpLog={jpLog}
                             sesLog={sesLog}
                             anchorId="record-recent-events"
-                            onViewAll={() => S.setSessionSubTab("history")}
                         />
 
                         {/* 4. 判定の根拠（要約） */}
