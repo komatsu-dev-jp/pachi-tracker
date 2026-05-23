@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { C, font, mono } from "../../constants";
 
 const MAX_ITEMS = 5;
@@ -88,8 +88,10 @@ function hitLabel(hit, chain) {
   return ht.trim() || "大当たり";
 }
 
-export function RecentEventList({ jpLog = [], sesLog = [], anchorId, onViewAll }) {
-  const events = useMemo(() => {
+export function RecentEventList({ jpLog = [], sesLog = [], anchorId }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const allEvents = useMemo(() => {
     const list = [];
 
     (jpLog || []).forEach((chain) => {
@@ -131,8 +133,11 @@ export function RecentEventList({ jpLog = [], sesLog = [], anchorId, onViewAll }
     });
 
     list.sort((a, b) => (a.time < b.time ? 1 : a.time > b.time ? -1 : 0));
-    return list.slice(0, MAX_ITEMS);
+    return list;
   }, [jpLog, sesLog]);
+
+  const events = expanded ? allEvents : allEvents.slice(0, MAX_ITEMS);
+  const hasMore = allEvents.length > MAX_ITEMS;
 
   return (
     <div id={anchorId} className="timeline-card" style={{ fontFamily: font }}>
@@ -146,9 +151,16 @@ export function RecentEventList({ jpLog = [], sesLog = [], anchorId, onViewAll }
           </svg>
           直近の行動ログ
         </span>
-        <button className="b timeline-head__link" type="button" onClick={onViewAll}>
-          すべて見る ›
-        </button>
+        {hasMore && (
+          <button
+            className="b timeline-head__link"
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+          >
+            {expanded ? "折りたたむ ›" : `すべて見る（${allEvents.length}件） ›`}
+          </button>
+        )}
       </div>
 
       {events.length === 0 ? (
