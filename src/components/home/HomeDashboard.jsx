@@ -1,6 +1,7 @@
 import React, { useMemo, useId } from "react";
 import { font } from "../../constants";
 import { BADGES } from "../hunter/badges";
+import { aggregateByDay } from "../analysis/analysisSelectors";
 
 // =====================================================
 // 「EV運用OS」風 ホームダッシュボード
@@ -472,83 +473,172 @@ function TodaySummary({ todayEv, todayActual, todayRotRate }) {
 }
 
 // ===== 今月の期待値推移グラフ =====
-function MonthlyEvChart({ data, tab, onTabChange }) {
+const CHART_TABS = [
+    { id: "ev", label: "期待値" },
+    { id: "actual", label: "実収支" },
+    { id: "compare", label: "比較" },
+];
+
+// 値の配列から見やすい min/max/ticks を導出（最低 4 段階、ゼロ線を含む）
+function buildYScale(values) {
+    if (values.length === 0) return { minY: -10000, maxY: 10000, ticks: [10000, 5000, 0, -10000] };
+    const rawMin = Math.min(0, ...values);
+    const rawMax = Math.max(0, ...values);
+    // ステップは 5K / 10K / 25K / 50K / 100K のいずれか
+    const span = Math.max(1, rawMax - rawMin);
+    const candidateSteps = [1000, 2000, 5000, 10000, 25000, 50000, 100000, 250000, 500000];
+    const step = candidateSteps.find((s) => span / s <= 5) || 1000000;
+    const minY = Math.floor(rawMin / step) * step;
+    const maxY = Math.ceil(rawMax / step) * step;
+    const ticks = [];
+    for (let v = maxY; v >= minY; v -= step) ticks.push(v);
+    return { minY, maxY, ticks };
+}
+
+function ChartTabBar({ tab, onTabChange }) {
+    return (
+        <div style={{
+            display: "flex",
+            background: "#0B1424",
+            border: `1px solid ${P.border}`,
+            borderRadius: 999,
+            padding: 3,
+            gap: 2,
+        }}>
+            {CHART_TABS.map((t) => {
+                const active = tab === t.id;
+                return (
+                    <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => onTabChange(t.id)}
+                        style={{
+                            minHeight: 28,
+                            padding: "5px 12px",
+                            borderRadius: 999,
+                            border: active ? `1px solid ${P.blue}` : "1px solid transparent",
+                            background: active
+                                ? "color-mix(in srgb, #00A6FF 16%, transparent)"
+                                : "transparent",
+                            color: active ? P.blue : P.sub,
+                            fontSize: 11.5,
+                            fontWeight: active ? 700 : 600,
+                            fontFamily: font,
+                            cursor: "pointer",
+                            transition: "all 0.2s ease",
+                            boxShadow: active ? "0 0 8px rgba(0,166,255,0.25)" : "none",
+                        }}
+                    >
+                        {t.label}
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
+function MonthlyEvChart({ data, tab, onTabChange, hasData }) {
+    const headerTitle = tab === "actual" ? "今月の実収支推移" : tab === "compare" ? "期待値 vs 実収支" : "今月の期待値推移";
+
+    // 空データ時：プレースホルダーを表示してタブだけ操作可能に
+    if (!hasData || !data || data.length === 0) {
+        return (
+            <div style={{ ...cardBase, ...sectionGap }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: P.textHi, fontFamily: font }}>{headerTitle}</span>
+                    <ChartTabBar tab={tab} onTabChange={onTabChange} />
+                </div>
+                <div style={{
+                    height: 160,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    color: P.sub,
+                    fontSize: 12,
+                    fontFamily: font,
+                    background: "#0B1424",
+                    border: `1px dashed ${P.border}`,
+                    borderRadius: 10,
+                }}>
+                    <div style={{ fontWeight: 600 }}>今月の記録がまだありません</div>
+                    <div style={{ fontSize: 10.5, color: P.subDim }}>セッションを記録するとグラフが表示されます</div>
+                </div>
+            </div>
+        );
+    }
+
     // SVG 座標系
     const W = 320;
     const H = 130;
-    const padL = 32;
+    const padL = 36;
     const padR = 12;
     const padT = 10;
     const padB = 22;
-    const xs = (i) => padL + (i / (data.length - 1)) * (W - padL - padR);
-    const minY = -15000;
-    const maxY = 30000;
-    const ys = (v) => padT + (1 - (v - minY) / (maxY - minY)) * (H - padT - padB);
-    const linePath = data.map((d, i) => `${i === 0 ? "M" : "L"} ${xs(i).toFixed(1)} ${ys(d.v).toFixed(1)}`).join(" ");
-    const areaPath = `${linePath} L ${xs(data.length - 1).toFixed(1)} ${ys(minY).toFixed(1)} L ${xs(0).toFixed(1)} ${ys(minY).toFixed(1)} Z`;
-    const lastX = xs(data.length - 1);
-    const lastY = ys(data[data.length - 1].v);
-    const lastV = data[data.length - 1].v;
+    const xs = (i) => data.length === 1
+        ? padL + (W - padL - padR) / 2
+        : padL + (i / (data.length - 1)) * (W - padL - padR);
 
-    const yTicks = [30000, 15000, 0, -15000];
-    const xTicks = [0, 7, 14, 21, 30];
-    const TABS = [
-        { id: "ev", label: "期待値" },
-        { id: "actual", label: "実収支" },
-        { id: "compare", label: "比較" },
-    ];
+    // 現在タブで使う値配列（compare 時は両方含む）
+    const valuesForScale = tab === "compare"
+        ? data.flatMap((d) => [d.ev, d.actual])
+        : data.map((d) => (tab === "actual" ? d.actual : d.ev));
+    const { minY, maxY, ticks: yTicks } = buildYScale(valuesForScale);
+    const ys = (v) => padT + (1 - (v - minY) / Math.max(1, maxY - minY)) * (H - padT - padB);
+
+    const pickValue = (d, series) => (series === "actual" ? d.actual : d.ev);
+    const buildPath = (series) => data
+        .map((d, i) => `${i === 0 ? "M" : "L"} ${xs(i).toFixed(1)} ${ys(pickValue(d, series)).toFixed(1)}`)
+        .join(" ");
+    const buildArea = (series) => {
+        const line = buildPath(series);
+        if (data.length === 0) return "";
+        return `${line} L ${xs(data.length - 1).toFixed(1)} ${ys(minY).toFixed(1)} L ${xs(0).toFixed(1)} ${ys(minY).toFixed(1)} Z`;
+    };
+
+    const mainSeries = tab === "actual" ? "actual" : "ev";
+    const mainColor = tab === "actual" ? P.green : P.blue;
+    const linePath = buildPath(mainSeries);
+    const areaPath = buildArea(mainSeries);
+    const lastIdx = data.length - 1;
+    const lastX = xs(lastIdx);
+    const lastY = ys(pickValue(data[lastIdx], mainSeries));
+    const lastV = pickValue(data[lastIdx], mainSeries);
+
+    // 比較タブ用のセカンダリ線（実収支を緑で重ねる）
+    const secondaryPath = tab === "compare" ? buildPath("actual") : null;
+
+    // X軸ラベル: データ点数に応じて 5 個程度
+    const xTickIndices = (() => {
+        const n = data.length;
+        if (n <= 1) return [0];
+        const want = Math.min(5, n);
+        const set = new Set();
+        for (let i = 0; i < want; i++) {
+            set.add(Math.round((i / (want - 1)) * (n - 1)));
+        }
+        return Array.from(set).sort((a, b) => a - b);
+    })();
+
+    const lastDotGlow = tab === "actual" ? "rgba(34,197,94,0.4)" : "rgba(0,166,255,0.4)";
+    const areaGradId = tab === "actual" ? "actualArea" : "evArea";
+    const areaGradColor = tab === "actual" ? "#22C55E" : "#00A6FF";
 
     return (
         <div style={{ ...cardBase, ...sectionGap }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <span style={{ fontSize: 14, fontWeight: 700, color: P.textHi, fontFamily: font }}>今月の期待値推移</span>
-                {/* セグメント切替 */}
-                <div style={{
-                    display: "flex",
-                    background: "#0B1424",
-                    border: `1px solid ${P.border}`,
-                    borderRadius: 999,
-                    padding: 3,
-                    gap: 2,
-                }}>
-                    {TABS.map((t) => {
-                        const active = tab === t.id;
-                        return (
-                            <button
-                                key={t.id}
-                                type="button"
-                                onClick={() => onTabChange(t.id)}
-                                style={{
-                                    minHeight: 28,
-                                    padding: "5px 12px",
-                                    borderRadius: 999,
-                                    border: active ? `1px solid ${P.blue}` : "1px solid transparent",
-                                    background: active
-                                        ? "color-mix(in srgb, #00A6FF 16%, transparent)"
-                                        : "transparent",
-                                    color: active ? P.blue : P.sub,
-                                    fontSize: 11.5,
-                                    fontWeight: active ? 700 : 600,
-                                    fontFamily: font,
-                                    cursor: "pointer",
-                                    transition: "all 0.2s ease",
-                                    boxShadow: active ? "0 0 8px rgba(0,166,255,0.25)" : "none",
-                                }}
-                            >
-                                {t.label}
-                            </button>
-                        );
-                    })}
-                </div>
+                <span style={{ fontSize: 14, fontWeight: 700, color: P.textHi, fontFamily: font }}>{headerTitle}</span>
+                <ChartTabBar tab={tab} onTabChange={onTabChange} />
             </div>
 
             {/* グラフ本体 */}
             <div style={{ position: "relative" }}>
                 <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="160" preserveAspectRatio="none">
                     <defs>
-                        <linearGradient id="evArea" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#00A6FF" stopOpacity="0.32" />
-                            <stop offset="100%" stopColor="#00A6FF" stopOpacity="0" />
+                        <linearGradient id={areaGradId} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={areaGradColor} stopOpacity="0.32" />
+                            <stop offset="100%" stopColor={areaGradColor} stopOpacity="0" />
                         </linearGradient>
                     </defs>
                     {/* Y軸グリッド */}
@@ -560,24 +650,29 @@ function MonthlyEvChart({ data, tab, onTabChange }) {
                                 strokeWidth="1" />
                             <text x={padL - 6} y={ys(v) + 3}
                                 fontSize="9" fill={P.subDim} textAnchor="end" fontFamily="system-ui">
-                                {v >= 0 ? `+${(v / 1000) | 0}K` : `${(v / 1000) | 0}K`}
+                                {v >= 0 ? `+${Math.round(v / 1000)}K` : `${Math.round(v / 1000)}K`}
                             </text>
                         </g>
                     ))}
-                    {/* エリア */}
-                    <path d={areaPath} fill="url(#evArea)" />
-                    {/* ライン */}
-                    <path d={linePath} fill="none" stroke="#00A6FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    {/* エリア（メイン系列） */}
+                    {data.length > 1 && <path d={areaPath} fill={`url(#${areaGradId})`} />}
+                    {/* 比較タブ：実収支をセカンダリ線として重ねる */}
+                    {secondaryPath && (
+                        <path d={secondaryPath} fill="none" stroke="#22C55E" strokeWidth="1.6"
+                            strokeDasharray="3 3" strokeLinecap="round" strokeLinejoin="round" />
+                    )}
+                    {/* メインライン */}
+                    <path d={linePath} fill="none" stroke={mainColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     {/* 最終点 */}
-                    <circle cx={lastX} cy={lastY} r="3.5" fill="#00A6FF" />
-                    <circle cx={lastX} cy={lastY} r="6" fill="none" stroke="#00A6FF" strokeOpacity="0.4" strokeWidth="1" />
+                    <circle cx={lastX} cy={lastY} r="3.5" fill={mainColor} />
+                    <circle cx={lastX} cy={lastY} r="6" fill="none" stroke={mainColor} strokeOpacity="0.4" strokeWidth="1" />
                     {/* X軸ラベル */}
-                    {xTicks.map((dayIdx) => (
-                        <text key={dayIdx}
-                            x={xs(Math.min(dayIdx, data.length - 1))}
+                    {xTickIndices.map((idx) => (
+                        <text key={idx}
+                            x={xs(idx)}
                             y={H - 6}
                             fontSize="9" fill={P.subDim} textAnchor="middle" fontFamily="system-ui">
-                            {(dayIdx === 30 ? 31 : dayIdx + 1)}日
+                            {data[idx].day}日
                         </text>
                     ))}
                 </svg>
@@ -586,19 +681,45 @@ function MonthlyEvChart({ data, tab, onTabChange }) {
                     position: "absolute",
                     top: 0,
                     right: 8,
-                    background: "color-mix(in srgb, #00A6FF 22%, transparent)",
-                    border: `1px solid ${P.blue}`,
+                    background: tab === "actual"
+                        ? "color-mix(in srgb, #22C55E 22%, transparent)"
+                        : "color-mix(in srgb, #00A6FF 22%, transparent)",
+                    border: `1px solid ${mainColor}`,
                     borderRadius: 8,
                     padding: "3px 8px",
                     fontSize: 11,
                     fontWeight: 800,
-                    color: P.cyan,
+                    color: tab === "actual" ? "#86EFAC" : P.cyan,
                     fontFamily: font,
                     fontVariantNumeric: "tabular-nums",
-                    boxShadow: "0 0 12px rgba(0,166,255,0.35)",
+                    boxShadow: `0 0 12px ${lastDotGlow}`,
                 }}>
                     {fmtSigned(lastV)}円
                 </div>
+                {/* 比較タブ用の凡例 */}
+                {tab === "compare" && (
+                    <div style={{
+                        display: "flex",
+                        gap: 12,
+                        marginTop: 4,
+                        fontSize: 10,
+                        color: P.sub,
+                        fontFamily: font,
+                    }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                            <span style={{ width: 12, height: 2, background: P.blue, display: "inline-block" }} />
+                            期待値
+                        </span>
+                        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                            <span style={{
+                                width: 12, height: 2, background: P.green, display: "inline-block",
+                                backgroundImage: "linear-gradient(90deg, #22C55E 50%, transparent 50%)",
+                                backgroundSize: "6px 2px",
+                            }} />
+                            実収支
+                        </span>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -942,21 +1063,43 @@ export default function HomeDashboard({ S }) {
         };
     }, [S?.archives]);
 
-    // 月間 EV 推移グラフのデータ
-    // TODO: 将来連携予定 — archives + sesLog から日別 EV を再構成
-    const chartData = useMemo(() => {
-        const seeded = [];
-        let v = -2500;
-        // 30 日分のモック準拠の上昇トレンド
-        const trend = [-2500, -1200, 2400, 1600, 3800, 5200, 7600, 9800, 11200, 14400,
-            15800, 18600, 21400, 20600, 22800, 25200, 27800, 26600, 29400, 32000,
-            34200, 36800, 39200, 41600, 44800, 50200, 53600, 56400, 61200, 68950];
-        for (let i = 0; i < trend.length; i++) {
-            v = trend[i];
-            seeded.push({ day: i + 1, v });
+    // 月間 EV 推移グラフのデータ（実データ）
+    //   - 今月の archives を日別集計し、ev / actual の累積系列を当日まで構築
+    //   - 期待値: stats.workAmount の累積
+    //   - 実収支: (recoveryYen - investYen) の累積（投資 or 回収のある archive のみ）
+    //   - 今月の archive が 1 件も無い場合は hasData=false で「記録なし」プレースホルダー
+    const { chartData, hasChartData } = useMemo(() => {
+        const archives = S?.archives || [];
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, "0");
+        const currentMonth = `${yyyy}-${mm}`;
+        const today = now.getDate();
+
+        const daily = aggregateByDay(archives, currentMonth);
+        if (daily.length === 0) {
+            return { chartData: [], hasChartData: false };
         }
-        return seeded;
-    }, []);
+
+        const byDay = {};
+        for (const d of daily) {
+            const day = Number(d.date.slice(-2));
+            if (Number.isFinite(day)) byDay[day] = d;
+        }
+
+        const points = [];
+        let cumEv = 0;
+        let cumActual = 0;
+        for (let day = 1; day <= today; day++) {
+            const d = byDay[day];
+            if (d) {
+                cumEv += Number(d.evAmount) || 0;
+                if (d.hasActual) cumActual += Number(d.actualPL) || 0;
+            }
+            points.push({ day, ev: cumEv, actual: cumActual });
+        }
+        return { chartData: points, hasChartData: true };
+    }, [S?.archives]);
 
     const [chartTab, setChartTab] = React.useState("ev");
 
@@ -1060,7 +1203,7 @@ export default function HomeDashboard({ S }) {
             />
 
             {/* 5. 今月の期待値推移 */}
-            <MonthlyEvChart data={chartData} tab={chartTab} onTabChange={setChartTab} />
+            <MonthlyEvChart data={chartData} tab={chartTab} onTabChange={setChartTab} hasData={hasChartData} />
 
             {/* 6. 最近の分析 */}
             <AnalysisCardsRow cards={analysisCards} onSeeAll={goAnalysis} />
