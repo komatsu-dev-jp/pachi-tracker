@@ -156,6 +156,8 @@ export default function ModeTabBar({ currentMode, onChange }) {
           style={{
             position: "absolute",
             top: -22,
+            left: "50%",
+            transform: "translateX(-50%)",
             width: 52,
             height: 52,
             borderRadius: "50%",
