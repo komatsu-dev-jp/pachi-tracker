@@ -57,10 +57,10 @@ const SettingsIcon = ({ active }) => {
   );
 };
 
-// 6タブ構成（中央の「記録開始」は別レイアウト、中央に大きな + FAB を配置）
-// 左側: ホーム / 偵察 / 台選び
-// 中央: 記録開始（FAB）
-// 右側: 分析 / 設定
+// 6タブ構成（中央の「記録開始」FAB は nav の真の水平中央 50% に絶対配置 — 左右タブ数が増減しても動かない）
+// 左側: ホーム / 偵察 / 台選び（左半 50% 内で flex:1 均等分割）
+// 中央: 記録開始（絶対配置 FAB + ラベル）
+// 右側: 分析 / 設定（右半 50% 内で flex:1 均等分割）
 const LEFT_MODES = [
   { id: "home",   label: "ホーム", IconC: HomeIcon },
   { id: "scout",  label: "偵察",   IconC: ScoutIcon },
@@ -132,65 +132,67 @@ export default function ModeTabBar({ currentMode, onChange }) {
         zIndex: 100,
       }}
     >
-      {LEFT_MODES.map(renderTab)}
-
-      {/* 中央：記録開始（大きな丸い + FAB） */}
-      <div
-        style={{
-          flex: 1,
-          minHeight: 44,
-          position: "relative",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "flex-end",
-          padding: "5px 0 4px",
-        }}
-      >
-        <button
-          className="b"
-          type="button"
-          onClick={() => onChange("record")}
-          aria-label="記録開始"
-          aria-current={recordActive ? "page" : undefined}
-          style={{
-            position: "absolute",
-            top: -22,
-            left: "50%",
-            transform: "translateX(-50%)",
-            width: 52,
-            height: 52,
-            borderRadius: "50%",
-            background: "linear-gradient(180deg, #38bdf8 0%, #00a6ff 100%)",
-            border: "3px solid color-mix(in srgb, var(--nav-bg) 92%, transparent)",
-            boxShadow: "0 6px 18px rgba(0,166,255,0.45), 0 0 0 1px rgba(0,166,255,0.35)",
-            color: "#fff",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-        </button>
-        <span
-          style={{
-            fontSize: 9,
-            fontWeight: recordActive ? 700 : 500,
-            color: recordActive ? C.blue : C.sub,
-            fontFamily: font,
-            letterSpacing: 0.2,
-            marginTop: 22,
-          }}
-        >
-          記録開始
-        </span>
+      {/* 左半セクション(50%): ホーム / 偵察 / 台選び 等 */}
+      <div style={{ display: "flex", flex: 1, alignItems: "stretch" }}>
+        {LEFT_MODES.map(renderTab)}
       </div>
 
-      {RIGHT_MODES.map(renderTab)}
+      {/* 右半セクション(50%): 分析 / 設定 等 */}
+      <div style={{ display: "flex", flex: 1, alignItems: "stretch" }}>
+        {RIGHT_MODES.map(renderTab)}
+      </div>
+
+      {/* 中央：記録開始 FAB（nav の真の中央 50% に絶対配置 — 左右タブ数が変わっても動かない） */}
+      <button
+        className="b"
+        type="button"
+        onClick={() => onChange("record")}
+        aria-label="記録開始"
+        aria-current={recordActive ? "page" : undefined}
+        style={{
+          position: "absolute",
+          top: -22,
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: 52,
+          height: 52,
+          borderRadius: "50%",
+          background: "linear-gradient(180deg, #38bdf8 0%, #00a6ff 100%)",
+          border: "3px solid color-mix(in srgb, var(--nav-bg) 92%, transparent)",
+          boxShadow: "0 6px 18px rgba(0,166,255,0.45), 0 0 0 1px rgba(0,166,255,0.35)",
+          color: "#fff",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 2,
+        }}
+      >
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="12" y1="5" x2="12" y2="19" />
+          <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+      </button>
+
+      {/* 中央：記録開始ラベル（FAB の真下に絶対配置で固定） */}
+      <span
+        style={{
+          position: "absolute",
+          bottom: "calc(env(safe-area-inset-bottom) + 6px)",
+          left: "50%",
+          transform: "translateX(-50%)",
+          fontSize: 9,
+          fontWeight: recordActive ? 700 : 500,
+          color: recordActive ? C.blue : C.sub,
+          fontFamily: font,
+          letterSpacing: 0.2,
+          pointerEvents: "none",
+          whiteSpace: "nowrap",
+          zIndex: 2,
+        }}
+      >
+        記録開始
+      </span>
     </nav>
   );
 }
