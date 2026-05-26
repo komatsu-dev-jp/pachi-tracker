@@ -215,6 +215,10 @@ export default function App() {
   // Archives
   const [archives, setArchives] = useLS("pt_archives", []);
 
+  // 月間期待値目標（ホーム画面の目標カード用 / 円）
+  // 既存ユーザーは保存値、未設定は 100,000 円をデフォルトとして表示する。
+  const [monthlyEvTarget, setMonthlyEvTarget] = useLS("pt_monthlyEvTarget", 100000);
+
   // ハンターランク（Phase 6 本実装版）
   // - XP トリガー: セッション完了 +50 / 大当たり +20 / 通常回転 1000 ごと +10 / 7日連続 +100
   // - 状態は pt_hunterRank に集約。トリガー検出用のカウンタは pt_hunterCounters に分離
@@ -635,6 +639,7 @@ export default function App() {
     stores, setStores,
     customMachines, setCustomMachines,
     archives, setArchives,
+    monthlyEvTarget, setMonthlyEvTarget,
     ev, handleMoveTable,
     theme, setTheme,
     // 外観
