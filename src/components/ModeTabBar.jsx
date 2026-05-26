@@ -57,62 +57,18 @@ const SettingsIcon = ({ active }) => {
   );
 };
 
-// 6タブ構成（中央の「記録開始」FAB は nav の真の水平中央 50% に絶対配置 — 左右タブ数が増減しても動かない）
-// 左側: ホーム / 偵察 / 台選び（左半 50% 内で flex:1 均等分割）
-// 中央: 記録開始（絶対配置 FAB + ラベル）
-// 右側: 分析 / 設定（右半 50% 内で flex:1 均等分割）
-const LEFT_MODES = [
-  { id: "home",   label: "ホーム", IconC: HomeIcon },
-  { id: "scout",  label: "偵察",   IconC: ScoutIcon },
-  { id: "select", label: "台選び", IconC: SelectIcon },
-];
-const RIGHT_MODES = [
-  { id: "analysis", label: "分析", IconC: AnalysisIcon },
-  { id: "settings", label: "設定", IconC: SettingsIcon },
+// 6項目を CSS Grid 6 等分で均等配置（ホーム / 偵察 / 台選び / 記録開始(FAB) / 分析 / 設定）
+// 中央の「記録開始」セルは FAB＋ラベルを縦に積み、左右タブと縦位置・横間隔を揃える
+const TABS = [
+  { id: "home",     label: "ホーム",   IconC: HomeIcon },
+  { id: "scout",    label: "偵察",     IconC: ScoutIcon },
+  { id: "select",   label: "台選び",   IconC: SelectIcon },
+  { id: "record",   label: "記録開始", IconC: null, isFab: true },
+  { id: "analysis", label: "分析",     IconC: AnalysisIcon },
+  { id: "settings", label: "設定",     IconC: SettingsIcon },
 ];
 
 export default function ModeTabBar({ currentMode, onChange }) {
-  const recordActive = currentMode === "record";
-  const renderTab = (item) => {
-    const Icon = item.IconC;
-    const active = currentMode === item.id;
-    return (
-      <button
-        key={item.id}
-        className="b"
-        onClick={() => onChange(item.id)}
-        aria-label={item.label}
-        aria-current={active ? "page" : undefined}
-        style={{
-          flex: 1,
-          minHeight: 44,
-          background: "transparent",
-          border: "none",
-          padding: "5px 0 4px",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 2,
-          transition: "all 0.2s ease",
-          cursor: "pointer",
-        }}
-      >
-        <Icon active={active} />
-        <span
-          style={{
-            fontSize: 9,
-            fontWeight: active ? 700 : 500,
-            color: active ? C.blue : C.sub,
-            fontFamily: font,
-            letterSpacing: 0.2,
-          }}
-        >
-          {item.label}
-        </span>
-      </button>
-    );
-  };
-
   return (
     <nav
       style={{
@@ -126,73 +82,115 @@ export default function ModeTabBar({ currentMode, onChange }) {
         backdropFilter: "saturate(180%) blur(24px)",
         WebkitBackdropFilter: "saturate(180%) blur(24px)",
         borderTop: "1px solid color-mix(in srgb, #5b8fcf 14%, transparent)",
-        display: "flex",
+        display: "grid",
+        gridTemplateColumns: "repeat(6, 1fr)",
         alignItems: "stretch",
-        paddingBottom: "env(safe-area-inset-bottom)",
+        paddingTop: 6,
+        paddingBottom: "calc(env(safe-area-inset-bottom) + 4px)",
         zIndex: 100,
       }}
     >
-      {/* 左半セクション(50%): ホーム / 偵察 / 台選び 等 */}
-      <div style={{ display: "flex", flex: 1, alignItems: "stretch" }}>
-        {LEFT_MODES.map(renderTab)}
-      </div>
-
-      {/* 右半セクション(50%): 分析 / 設定 等 */}
-      <div style={{ display: "flex", flex: 1, alignItems: "stretch" }}>
-        {RIGHT_MODES.map(renderTab)}
-      </div>
-
-      {/* 中央：記録開始 FAB（nav の真の中央 50% に絶対配置 — 左右タブ数が変わっても動かない） */}
-      <button
-        className="b"
-        type="button"
-        onClick={() => onChange("record")}
-        aria-label="記録開始"
-        aria-current={recordActive ? "page" : undefined}
-        style={{
-          position: "absolute",
-          top: -22,
-          left: "50%",
-          transform: "translateX(-50%)",
-          width: 52,
-          height: 52,
-          borderRadius: "50%",
-          background: "linear-gradient(180deg, #38bdf8 0%, #00a6ff 100%)",
-          border: "3px solid color-mix(in srgb, var(--nav-bg) 92%, transparent)",
-          boxShadow: "0 6px 18px rgba(0,166,255,0.45), 0 0 0 1px rgba(0,166,255,0.35)",
-          color: "#fff",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 2,
-        }}
-      >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="12" y1="5" x2="12" y2="19" />
-          <line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-      </button>
-
-      {/* 中央：記録開始ラベル（FAB の真下に絶対配置で固定） */}
-      <span
-        style={{
-          position: "absolute",
-          bottom: "calc(env(safe-area-inset-bottom) + 6px)",
-          left: "50%",
-          transform: "translateX(-50%)",
-          fontSize: 9,
-          fontWeight: recordActive ? 700 : 500,
-          color: recordActive ? C.blue : C.sub,
-          fontFamily: font,
-          letterSpacing: 0.2,
-          pointerEvents: "none",
-          whiteSpace: "nowrap",
-          zIndex: 2,
-        }}
-      >
-        記録開始
-      </span>
+      {TABS.map((item) => {
+        const active = currentMode === item.id;
+        if (item.isFab) {
+          return (
+            <div
+              key={item.id}
+              style={{
+                position: "relative",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "flex-end",
+              }}
+            >
+              {/* 中央 FAB（セル中央から自然に持ち上がる） */}
+              <button
+                className="b"
+                type="button"
+                onClick={() => onChange("record")}
+                aria-label="記録開始"
+                aria-current={active ? "page" : undefined}
+                style={{
+                  position: "absolute",
+                  top: -24,
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  width: 52,
+                  height: 52,
+                  borderRadius: "50%",
+                  background: "linear-gradient(180deg, #38bdf8 0%, #00a6ff 100%)",
+                  border: "3px solid color-mix(in srgb, var(--nav-bg) 92%, transparent)",
+                  boxShadow: "0 6px 18px rgba(0,166,255,0.45), 0 0 0 1px rgba(0,166,255,0.35)",
+                  color: "#fff",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  zIndex: 2,
+                }}
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
+              {/* ラベル（左右タブのラベル位置と縦方向で揃える） */}
+              <span
+                style={{
+                  fontSize: 9,
+                  fontWeight: active ? 700 : 500,
+                  color: active ? C.blue : C.sub,
+                  fontFamily: font,
+                  letterSpacing: 0.2,
+                  whiteSpace: "nowrap",
+                  marginTop: 24,
+                  marginBottom: 4,
+                  pointerEvents: "none",
+                }}
+              >
+                {item.label}
+              </span>
+            </div>
+          );
+        }
+        const Icon = item.IconC;
+        return (
+          <button
+            key={item.id}
+            className="b"
+            onClick={() => onChange(item.id)}
+            aria-label={item.label}
+            aria-current={active ? "page" : undefined}
+            style={{
+              minHeight: 44,
+              background: "transparent",
+              border: "none",
+              padding: "0 0 4px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              gap: 3,
+              transition: "all 0.2s ease",
+              cursor: "pointer",
+            }}
+          >
+            <Icon active={active} />
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: active ? 700 : 500,
+                color: active ? C.blue : C.sub,
+                fontFamily: font,
+                letterSpacing: 0.2,
+              }}
+            >
+              {item.label}
+            </span>
+          </button>
+        );
+      })}
     </nav>
   );
 }
