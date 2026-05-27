@@ -353,6 +353,104 @@ function effectiveEv(ev = {}) {
     };
 }
 
+// 遊タイム狙い目分析カード（記録タブ用）
+// - 天井回転数（ceilingRot）が 0/未設定なら何も描画しない（=非搭載機種）
+// - 残り回転数 = max(0, ceilingRot - currentHamari)
+// - 到達コスト = 残り回転数 ÷ 1Kスタート × 1000（円）。1Kスタート未測定時は理論ボーダー（S.border）を仮置きで利用
+// - 期待値 = 期待出玉 × ballVal − 到達コスト（円）
+// - 期待値 > 0 を「狙い目」、< 0 を「割に合わない」と表示
+function YutimeEvCard({ ceilingRot, yutimePayout, currentHamari, start1K, fallbackStart1K, ballVal }) {
+    const ceiling = Number(ceilingRot) || 0;
+    if (ceiling <= 0) return null;
+
+    const payout = Number(yutimePayout) || 0;
+    const hamari = Math.max(0, Number(currentHamari) || 0);
+    const remainingRot = Math.max(0, ceiling - hamari);
+
+    const measuredRate = Number(start1K) || 0;
+    const fallbackRate = Number(fallbackStart1K) || 0;
+    const rate = measuredRate > 0 ? measuredRate : fallbackRate;
+    const usingFallback = !(measuredRate > 0) && fallbackRate > 0;
+
+    const reachable = remainingRot === 0;
+    const canCompute = rate > 0;
+    const arrivalCost = canCompute ? Math.round((remainingRot / rate) * 1000) : null;
+    const payoutValue = Math.round(payout * (Number(ballVal) || 0));
+    const ev = canCompute && payout > 0 ? payoutValue - arrivalCost : null;
+
+    let verdictLabel, verdictColor, verdictBg;
+    if (reachable) {
+        verdictLabel = "天井到達済み";
+        verdictColor = C.blue;
+        verdictBg = "rgba(56,189,248,0.14)";
+    } else if (ev == null || payout <= 0) {
+        verdictLabel = "期待出玉未設定";
+        verdictColor = C.sub;
+        verdictBg = "rgba(148,163,184,0.12)";
+    } else if (ev > 0) {
+        verdictLabel = "狙い目";
+        verdictColor = C.green;
+        verdictBg = "rgba(34,197,94,0.16)";
+    } else if (ev < 0) {
+        verdictLabel = "割に合わない";
+        verdictColor = C.red;
+        verdictBg = "rgba(239,68,68,0.16)";
+    } else {
+        verdictLabel = "ボーダー上";
+        verdictColor = C.yellow;
+        verdictBg = "rgba(234,179,8,0.16)";
+    }
+
+    const fmtYen = (n) => (n == null ? "—" : (n >= 0 ? "+" : "") + Number(n).toLocaleString("ja-JP") + "円");
+    const cell = (label, value, color) => (
+        <div style={{ flex: 1, textAlign: "center", padding: "8px 4px" }}>
+            <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>{label}</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: color || C.text, fontFamily: mono, fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}>{value}</div>
+        </div>
+    );
+
+    return (
+        <div style={{
+            background: "linear-gradient(180deg, rgba(11,22,40,0.85) 0%, rgba(16,27,45,0.75) 100%)",
+            border: "1px solid rgba(26,77,117,0.45)",
+            borderRadius: 14,
+            padding: 12,
+            backdropFilter: "blur(8px)",
+            WebkitBackdropFilter: "blur(8px)",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
+        }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.blue} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="9" />
+                        <circle cx="12" cy="12" r="5" />
+                        <circle cx="12" cy="12" r="1.5" fill={C.blue} />
+                    </svg>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>遊タイム狙い目分析</div>
+                </div>
+                <div style={{
+                    fontSize: 11, fontWeight: 800, color: verdictColor,
+                    background: verdictBg, border: `1px solid ${verdictColor}`,
+                    borderRadius: 999, padding: "3px 10px",
+                }}>
+                    {verdictLabel}
+                </div>
+            </div>
+            <div style={{ display: "flex", background: "rgba(7,17,31,0.55)", border: `1px solid ${C.border}`, borderRadius: 10 }}>
+                {cell("残り回転", remainingRot > 0 ? `${remainingRot.toLocaleString("ja-JP")}回` : "0回", remainingRot > 0 ? C.orange : C.green)}
+                {cell("到達コスト", arrivalCost == null ? "—" : `${arrivalCost.toLocaleString("ja-JP")}円`, C.subHi)}
+                {cell("期待値", ev == null ? "—" : fmtYen(ev), ev == null ? C.sub : (ev > 0 ? C.green : ev < 0 ? C.red : C.yellow))}
+            </div>
+            <div style={{ fontSize: 10, color: C.sub, marginTop: 6, lineHeight: 1.4 }}>
+                天井 {ceiling.toLocaleString("ja-JP")}回 / 期待出玉 {payout > 0 ? `${payout.toLocaleString("ja-JP")}玉` : "未設定"}
+                {canCompute && (
+                    <span> ・ 1Kスタート {Number(rate).toFixed(1)}回/K{usingFallback ? "（理論ボーダー使用）" : ""}</span>
+                )}
+            </div>
+        </div>
+    );
+}
+
 // 詳細データタブ専用 スタイルヘルパー（分析OS風 ダークUI）
 function dataCardStyle() {
     return {
@@ -2231,6 +2329,16 @@ export function RotTab({ rows, setRows, S, ev }) {
                             verdict={decision.verdict}
                             confidence={decision.confidence}
                             netRot={ev.netRot}
+                        />
+
+                        {/* 1.5. 遊タイム狙い目分析（天井未設定機種では非表示） */}
+                        <YutimeEvCard
+                            ceilingRot={S.ceilingRot}
+                            yutimePayout={S.yutimePayout}
+                            currentHamari={currentHamari}
+                            start1K={evEff.start1K}
+                            fallbackStart1K={S.border}
+                            ballVal={S.ballVal}
                         />
 
                         {/* 2. 指標カード（3 + 4） */}
@@ -9005,7 +9113,7 @@ export function SettingsTab({ s, onReset }) {
     // 旧形式（値が JSON 文字列の二重エンコード）のバックアップファイルとも後方互換。
     const backupAllData = async () => {
         const keys = ["pt_rentBalls","pt_exRate","pt_synthDenom","pt_rotPerHour","pt_border","pt_investPace","pt_ballVal",
-            "pt_spec1R","pt_specAvgRounds","pt_specSapo","pt_jpLog3","pt_sesLog","pt_rotRows","pt_startRot",
+            "pt_spec1R","pt_specAvgRounds","pt_specSapo","pt_ceilingRot","pt_yutimePayout","pt_jpLog3","pt_sesLog","pt_rotRows","pt_startRot",
             "pt_totalTrayBalls","pt_playMode","pt_includeChodamaInBalance","pt_chodamaReplayLimit",
             "pt_chodamaUsedToday","pt_chodamaLastDate","pt_currentMochiBalls","pt_currentChodama",
             "pt_sessionStarted","pt_startGameCount","pt_initialMochiBalls","pt_initialChodama",
@@ -9920,6 +10028,25 @@ export function SettingsTab({ s, onReset }) {
                         ].map(({ lbl, v, set, unit }) => (
                             <div key={lbl} className="settings-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
                                 <div style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>{lbl}</div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <NI v={v} set={set} w={80} center />
+                                    <span style={{ fontSize: 11, color: C.sub, minWidth: 40 }}>{unit}</span>
+                                </div>
+                            </div>
+                        ))}
+                    </Section>
+
+                    <SectionLabel label="遊タイム狙い目分析（任意）" />
+                    <Section>
+                        {[
+                            { lbl: "天井回転数", sub: "0 で未設定（非搭載機種）", v: s.ceilingRot, set: s.setCeilingRot, unit: "回" },
+                            { lbl: "遊タイム期待出玉", sub: "突入後の平均トータル出玉", v: s.yutimePayout, set: s.setYutimePayout, unit: "玉" },
+                        ].map(({ lbl, sub, v, set, unit }) => (
+                            <div key={lbl} className="settings-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>{lbl}</div>
+                                    {sub && <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>{sub}</div>}
+                                </div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                     <NI v={v} set={set} w={80} center />
                                     <span style={{ fontSize: 11, color: C.sub, minWidth: 40 }}>{unit}</span>
