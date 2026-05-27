@@ -157,6 +157,9 @@ export default function App() {
   const [spec1R, setSpec1R] = useLS("pt_spec1R", 140);
   const [specAvgRounds, setSpecAvgRounds] = useLS("pt_specAvgRounds", 34.17);
   const [specSapo, setSpecSapo] = useLS("pt_specSapo", 0);
+  // 遊タイム関連設定（0 = 未設定 / 天井非搭載機種）。設定された場合のみ記録モードに分析カードを表示
+  const [ceilingRot, setCeilingRot] = useLS("pt_ceilingRot", 0);
+  const [yutimePayout, setYutimePayout] = useLS("pt_yutimePayout", 0);
 
   // Logs
   const [jpLog, setJpLog] = useLS("pt_jpLog3", []);
@@ -628,6 +631,7 @@ export default function App() {
     rotPerHour, setRotPerHour, border, setBorder, ballVal, setBallVal,
     investPace, setInvestPace,
     spec1R, setSpec1R, specAvgRounds, setSpecAvgRounds, specSapo, setSpecSapo,
+    ceilingRot, setCeilingRot, yutimePayout, setYutimePayout,
     rotRows, setRotRows,
     jpLog, setJpLog, pushJP,
     sesLog, setSesLog,
