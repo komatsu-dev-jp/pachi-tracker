@@ -8,7 +8,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'prompt',
-      includeAssets: ['icon.svg', 'icon-192.png', 'icon-512.png'],
+      includeAssets: ['favicon-32.png', 'icon-192.png', 'icon-512.png'],
       manifest: {
         name: 'パチトラッカー',
         short_name: 'パチトラ',
@@ -19,6 +19,11 @@ export default defineConfig({
         theme_color: '#05070d',
         icons: [
           {
+            src: 'favicon-32.png',
+            sizes: '32x32',
+            type: 'image/png'
+          },
+          {
             src: 'icon-192.png',
             sizes: '192x192',
             type: 'image/png'
@@ -27,11 +32,6 @@ export default defineConfig({
             src: 'icon-512.png',
             sizes: '512x512',
             type: 'image/png'
-          },
-          {
-            src: 'icon.svg',
-            sizes: 'any',
-            type: 'image/svg+xml'
           }
         ]
       },
