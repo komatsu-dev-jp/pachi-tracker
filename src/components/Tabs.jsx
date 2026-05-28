@@ -1815,7 +1815,11 @@ export function RotTab({ rows, setRows, S, ev }) {
                                                         setSetupStore(name);
                                                         if (typeof st === "object") {
                                                             if (st.rentBalls) S.setRentBalls(st.rentBalls);
-                                                            if (st.exRate) S.setExRate(st.exRate);
+                                                            if (st.exRate) {
+                                                                S.setExRate(st.exRate);
+                                                                // 複数交換率対応: 玉単価も exRate から同期
+                                                                S.setBallVal(1000 / st.exRate);
+                                                            }
                                                             if (st.chodama) S.setCurrentChodama(st.chodama);
                                                             // 貯玉入力欄を店舗の残高で自動セット
                                                             if (st.chodama) setSetupInitialBalls(String(st.chodama));
@@ -2086,9 +2090,9 @@ export function RotTab({ rows, setRows, S, ev }) {
         );
     }
 
-    // 貯玉使用時の投資額計算（等価4円: 250玉 = 1000円）
+    // 貯玉使用時の投資額計算（複数交換率対応: ballVal=円/玉を S から取得）
     const _getChodamaInvestYen = (balls) => {
-        const ballValue = 4; // 等価4円
+        const ballValue = Number(S.ballVal) > 0 ? Number(S.ballVal) : 4;
         return Math.floor(balls / (1000 / ballValue / S.rentBalls)) * 1000;
     };
 
@@ -4470,7 +4474,89 @@ export function RotTab({ rows, setRows, S, ev }) {
                                 />
                             </div>
 
-                            {/* 貸玉数・交換率 */}
+                            {/* 貸玉レート・交換率プリセット
+                                4円 / 1円 / 0.5円 対応。プリセットをタップすると貸玉数と交換率（等価既定）を一括更新。
+                                個別の数値入力は下に従来どおり残し、カスタム交換率もそのまま入力可能。 */}
+                            {(() => {
+                                const RENT_PRESETS = [
+                                    { label: "4円", rb: 250 },
+                                    { label: "1円", rb: 1000 },
+                                    { label: "0.5円", rb: 2000 },
+                                ];
+                                const EX_PRESETS_BY_RB = {
+                                    250: [
+                                        { label: "等価", v: 250 },
+                                        { label: "3.57円", v: 280 },
+                                        { label: "3.3円", v: 303 },
+                                        { label: "2.5円", v: 400 },
+                                    ],
+                                    1000: [
+                                        { label: "等価", v: 1000 },
+                                        { label: "0.9円", v: 1111 },
+                                        { label: "0.8円", v: 1250 },
+                                    ],
+                                    2000: [
+                                        { label: "等価", v: 2000 },
+                                        { label: "0.45円", v: 2222 },
+                                    ],
+                                };
+                                const rbNum = Number(String(editRentBalls).replace(",", ".").trim());
+                                const exPresets = EX_PRESETS_BY_RB[rbNum] || EX_PRESETS_BY_RB[250];
+                                const chipStyle = (active) => ({
+                                    flexShrink: 0,
+                                    background: active ? C.blue : "var(--surface-hi)",
+                                    color: active ? "#fff" : C.text,
+                                    border: "none",
+                                    borderRadius: 999,
+                                    padding: "8px 14px",
+                                    fontSize: 12, fontWeight: 700,
+                                    fontFamily: font,
+                                    minHeight: 36,
+                                    whiteSpace: "nowrap",
+                                });
+                                return (
+                                    <div style={{ marginBottom: 12 }}>
+                                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>貸玉レート</div>
+                                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+                                            {RENT_PRESETS.map(p => {
+                                                const active = rbNum === p.rb;
+                                                return (
+                                                    <button
+                                                        key={p.rb}
+                                                        className="b"
+                                                        onClick={() => {
+                                                            setEditRentBalls(String(p.rb));
+                                                            // 貸玉レート変更時は等価交換率を既定としてセット（その後ユーザが交換率チップで上書き可能）
+                                                            setEditExRate(String(p.rb));
+                                                        }}
+                                                        style={chipStyle(active)}
+                                                    >
+                                                        {p.label}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>交換率プリセット</div>
+                                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
+                                            {exPresets.map(p => {
+                                                const active = Number(String(editExRate).replace(",", ".").trim()) === p.v;
+                                                return (
+                                                    <button
+                                                        key={p.v}
+                                                        className="b"
+                                                        onClick={() => setEditExRate(String(p.v))}
+                                                        style={chipStyle(active)}
+                                                    >
+                                                        {p.label}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* 貸玉数・交換率（数値入力 — カスタム値や微調整用） */}
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
                                 <div>
                                     <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>貸玉数 (玉/K)</div>
@@ -4525,6 +4611,10 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     S.setSpec1R(r1);
                                     S.setRentBalls(rb);
                                     S.setExRate(ex);
+                                    // 玉単価（円/玉）は交換率から導出して同期する。
+                                    // 1円・0.5円パチンコでも YutimeEvCard / 詳細データの「交換率」表示が
+                                    // 正しい値になるように、ballVal を exRate と整合させる。
+                                    S.setBallVal(1000 / ex);
                                     const picked = editPickedMachineRef.current;
                                     if (picked) {
                                         if (picked.specAvgRounds != null) S.setSpecAvgRounds(picked.specAvgRounds);
@@ -8758,11 +8848,14 @@ export function SettingsTab({ s, onReset }) {
         showToast(`「${store.name}」を削除しました`);
     };
 
-    // 店舗の設定を反映
+    // 店舗の設定を反映（複数交換率対応: 玉単価 ballVal も exRate から同期）
     const applyStore = (store) => {
         s.setStoreName(store.name);
         if (store.rentBalls) s.setRentBalls(store.rentBalls);
-        if (store.exRate) s.setExRate(store.exRate);
+        if (store.exRate) {
+            s.setExRate(store.exRate);
+            s.setBallVal(1000 / store.exRate);
+        }
         setSelectedStore(null);
         setShowStoreSearch(false);
     };
@@ -9300,11 +9393,11 @@ export function SettingsTab({ s, onReset }) {
                                 style={{ flex: 1, boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
                             <span style={{ fontSize: 10, color: C.sub, whiteSpace: "nowrap" }}>{(100 / (parseFloat(storeFormData.rentBalls) || 25)).toFixed(2)}円/玉</span>
                         </div>
-                        {/* プリセット */}
+                        {/* プリセット（4円/1円/0.5円 を含む複数交換率対応） */}
                         <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                            {[{l:"等価",v:25},{l:"28玉",v:28},{l:"30玉",v:30},{l:"33玉",v:33}].map(({l,v}) => {
+                            {[{l:"4円等価",v:25},{l:"28玉",v:28},{l:"30玉",v:30},{l:"33玉",v:33},{l:"1円",v:100},{l:"0.5円",v:200}].map(({l,v}) => {
                                 const active = String(storeFormData.rentBalls) === String(v);
-                                return <button key={v} className="b" onClick={() => setStoreFormData(p => ({...p, rentBalls: v}))} style={{ fontSize: 10, padding: "5px 10px", borderRadius: 6, border: `1px solid ${active ? C.blue : C.borderHi}`, background: active ? `${C.blue}22` : C.surfaceHi, color: active ? C.blue : C.sub, fontFamily: font, fontWeight: active ? 700 : 500, cursor: "pointer" }}>{l}</button>;
+                                return <button key={v} className="b" onClick={() => setStoreFormData(p => ({...p, rentBalls: v, exRate: v}))} style={{ fontSize: 10, padding: "5px 10px", borderRadius: 6, border: `1px solid ${active ? C.blue : C.borderHi}`, background: active ? `${C.blue}22` : C.surfaceHi, color: active ? C.blue : C.sub, fontFamily: font, fontWeight: active ? 700 : 500, cursor: "pointer" }}>{l}</button>;
                             })}
                         </div>
                     </div>
@@ -9321,12 +9414,19 @@ export function SettingsTab({ s, onReset }) {
                                 style={{ flex: 1, boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
                             <span style={{ fontSize: 10, color: C.sub, whiteSpace: "nowrap" }}>{(100 / (parseFloat(storeFormData.exRate) || 25)).toFixed(2)}円/玉</span>
                         </div>
-                        {/* プリセット */}
+                        {/* プリセット（貸玉レート別の代表的な交換率: 4円/1円/0.5円） */}
                         <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                            {[{l:"等価",v:25},{l:"28玉",v:28},{l:"30玉",v:30},{l:"33玉",v:33}].map(({l,v}) => {
-                                const active = String(storeFormData.exRate) === String(v);
-                                return <button key={v} className="b" onClick={() => setStoreFormData(p => ({...p, exRate: v}))} style={{ fontSize: 10, padding: "5px 10px", borderRadius: 6, border: `1px solid ${active ? C.blue : C.borderHi}`, background: active ? `${C.blue}22` : C.surfaceHi, color: active ? C.blue : C.sub, fontFamily: font, fontWeight: active ? 700 : 500, cursor: "pointer" }}>{l}</button>;
-                            })}
+                            {(() => {
+                                const rb = parseFloat(storeFormData.rentBalls) || 25;
+                                let presets;
+                                if (rb >= 180) presets = [{l:"等価",v:200}];
+                                else if (rb >= 80) presets = [{l:"等価",v:100},{l:"0.9円",v:111}];
+                                else presets = [{l:"等価",v:25},{l:"28玉",v:28},{l:"30玉",v:30},{l:"33玉",v:33}];
+                                return presets.map(({l,v}) => {
+                                    const active = String(storeFormData.exRate) === String(v);
+                                    return <button key={v} className="b" onClick={() => setStoreFormData(p => ({...p, exRate: v}))} style={{ fontSize: 10, padding: "5px 10px", borderRadius: 6, border: `1px solid ${active ? C.blue : C.borderHi}`, background: active ? `${C.blue}22` : C.surfaceHi, color: active ? C.blue : C.sub, fontFamily: font, fontWeight: active ? 700 : 500, cursor: "pointer" }}>{l}</button>;
+                                });
+                            })()}
                         </div>
                     </div>
 
