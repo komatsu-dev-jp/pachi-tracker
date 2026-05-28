@@ -16,7 +16,10 @@ import {
   buildYearlyChartPoints,
   filterArchives,
   getActualPL,
+  isFilterActive,
+  listAvailableMachines,
   listAvailableMonths,
+  listAvailableStores,
   listAvailableYears,
   machineRanking,
   summarize,
@@ -238,6 +241,145 @@ test("extreme: 負の収支も正しく扱う", () => {
   const s = summarize(list, {});
   assert.strictEqual(s.totalPL, -4000);
   assert.strictEqual(s.winRate, 0);
+});
+
+// ──────────── 拡張フィルタ（店舗・機種・日付範囲・曜日） ────────────
+test("filter: storeName で絞り込める", () => {
+  const list = [
+    { date: "2026-05-01", storeName: "ホールA", investYen: 100, recoveryYen: 200 },
+    { date: "2026-05-02", storeName: "ホールB", investYen: 100, recoveryYen: 300 },
+    { date: "2026-05-03", storeName: "ホールA", investYen: 100, recoveryYen: 400 },
+  ];
+  const filtered = filterArchives(list, { storeName: "ホールA" });
+  assert.strictEqual(filtered.length, 2);
+  assert.strictEqual(filtered[0].date, "2026-05-01");
+  assert.strictEqual(filtered[1].date, "2026-05-03");
+});
+test("filter: 空文字の storeName は全件返す", () => {
+  const list = [{ date: "2026-05-01", storeName: "" }, { date: "2026-05-02", storeName: "A" }];
+  assert.strictEqual(filterArchives(list, { storeName: "" }).length, 2);
+});
+test("filter: machineName で絞り込める", () => {
+  const list = [
+    { date: "2026-05-01", machineName: "Pエヴァ", investYen: 100, recoveryYen: 200 },
+    { date: "2026-05-02", machineName: "Pうみ", investYen: 100, recoveryYen: 200 },
+  ];
+  assert.strictEqual(filterArchives(list, { machineName: "Pエヴァ" }).length, 1);
+});
+test("filter: dateStart / dateEnd の両端は含む", () => {
+  const list = [
+    { date: "2026-05-01" }, { date: "2026-05-15" },
+    { date: "2026-05-20" }, { date: "2026-05-31" },
+  ];
+  const filtered = filterArchives(list, { dateStart: "2026-05-15", dateEnd: "2026-05-20" });
+  assert.strictEqual(filtered.length, 2);
+  assert.strictEqual(filtered[0].date, "2026-05-15");
+  assert.strictEqual(filtered[1].date, "2026-05-20");
+});
+test("filter: dateStart のみ指定でも効く", () => {
+  const list = [{ date: "2026-04-30" }, { date: "2026-05-01" }, { date: "2026-05-02" }];
+  assert.strictEqual(filterArchives(list, { dateStart: "2026-05-01" }).length, 2);
+});
+test("filter: dateEnd のみ指定でも効く", () => {
+  const list = [{ date: "2026-04-30" }, { date: "2026-05-01" }, { date: "2026-05-02" }];
+  assert.strictEqual(filterArchives(list, { dateEnd: "2026-04-30" }).length, 1);
+});
+test("filter: weekdays で曜日絞り込み", () => {
+  // 2026-05-01 = 金, 02 = 土, 03 = 日, 04 = 月
+  const list = [
+    { date: "2026-05-01" }, { date: "2026-05-02" },
+    { date: "2026-05-03" }, { date: "2026-05-04" },
+  ];
+  const filtered = filterArchives(list, { weekdays: [0, 6] }); // 日と土
+  assert.strictEqual(filtered.length, 2);
+  assert.deepStrictEqual(filtered.map((a) => a.date).sort(), ["2026-05-02", "2026-05-03"]);
+});
+test("filter: weekdays が空配列なら全曜日通す", () => {
+  const list = [{ date: "2026-05-01" }, { date: "2026-05-02" }];
+  assert.strictEqual(filterArchives(list, { weekdays: [] }).length, 2);
+});
+test("filter: 複数フィルタを AND で結合", () => {
+  const list = [
+    { date: "2026-05-01", storeName: "A", machineName: "X" }, // 金、A、X
+    { date: "2026-05-02", storeName: "A", machineName: "Y" }, // 土、A、Y
+    { date: "2026-05-08", storeName: "A", machineName: "X" }, // 金、A、X
+    { date: "2026-05-08", storeName: "B", machineName: "X" }, // 金、B、X
+  ];
+  const filtered = filterArchives(list, {
+    storeName: "A", machineName: "X", weekdays: [5], // 金
+  });
+  assert.strictEqual(filtered.length, 2); // 05-01 と 05-08（store=A, machine=X, 金）
+});
+test("filter: 既存 month と 拡張フィルタの AND 結合", () => {
+  const list = [
+    { date: "2026-04-30", storeName: "A" },
+    { date: "2026-05-01", storeName: "A" },
+    { date: "2026-05-02", storeName: "B" },
+  ];
+  const filtered = filterArchives(list, { month: "2026-05", storeName: "A" });
+  assert.strictEqual(filtered.length, 1);
+  assert.strictEqual(filtered[0].date, "2026-05-01");
+});
+
+// ──────────── 拡張フィルタが集計関数に伝搬すること ────────────
+test("summarize: 拡張フィルタ（storeName）が反映される", () => {
+  const list = [
+    { date: "2026-05-01", storeName: "A", investYen: 1000, recoveryYen: 2000 }, // +1000
+    { date: "2026-05-02", storeName: "B", investYen: 1000, recoveryYen: 500  }, // -500
+  ];
+  const s = summarize(list, { storeName: "A" });
+  assert.strictEqual(s.sessions, 1);
+  assert.strictEqual(s.totalPL, 1000);
+});
+test("machineRanking: 拡張フィルタ（dateStart/End）が反映される", () => {
+  const list = [
+    { date: "2026-04-01", machineName: "X", investYen: 1000, recoveryYen: 9999, settings: { synthDenom: 319 } },
+    { date: "2026-05-01", machineName: "X", investYen: 1000, recoveryYen: 1500, settings: { synthDenom: 319 } },
+  ];
+  const top = machineRanking(list, { dateStart: "2026-05-01", limit: 5 });
+  assert.strictEqual(top.length, 1);
+  assert.strictEqual(top[0].actualPL, 500);
+});
+test("buildDailyChartPoints: 拡張フィルタが反映される", () => {
+  // 2026-05-01 = 金, 02 = 土
+  const list = [
+    { date: "2026-05-01", investYen: 1000, recoveryYen: 2000 },
+    { date: "2026-05-02", investYen: 1000, recoveryYen: 500  },
+  ];
+  const pts = buildDailyChartPoints(list, "2026-05", { weekdays: [6] }); // 土だけ
+  assert.strictEqual(pts.length, 1);
+  assert.strictEqual(pts[0].label, "5/2");
+});
+
+// ──────────── listAvailableStores / listAvailableMachines ────────────
+test("listAvailableStores: 一意・昇順・空文字除外", () => {
+  const list = [
+    { storeName: "ホールC" }, { storeName: "ホールA" },
+    { storeName: "" }, { storeName: "ホールA" }, { storeName: "ホールB" },
+  ];
+  const stores = listAvailableStores(list);
+  assert.strictEqual(stores.length, 3);
+  // localeCompare("ja") は実行環境依存だが、少なくとも重複が除去されていること
+  assert.ok(stores.includes("ホールA"));
+  assert.ok(stores.includes("ホールB"));
+  assert.ok(stores.includes("ホールC"));
+});
+test("listAvailableMachines: 一意・空文字除外", () => {
+  const list = [{ machineName: "X" }, { machineName: "Y" }, { machineName: "X" }];
+  assert.strictEqual(listAvailableMachines(list).length, 2);
+});
+
+// ──────────── isFilterActive ────────────
+test("isFilterActive: 全空なら false", () => {
+  assert.strictEqual(isFilterActive({}), false);
+  assert.strictEqual(isFilterActive({ storeName: "", machineName: "", dateStart: "", dateEnd: "", weekdays: [] }), false);
+});
+test("isFilterActive: 1つでも条件があれば true", () => {
+  assert.strictEqual(isFilterActive({ storeName: "A" }), true);
+  assert.strictEqual(isFilterActive({ machineName: "X" }), true);
+  assert.strictEqual(isFilterActive({ dateStart: "2026-01-01" }), true);
+  assert.strictEqual(isFilterActive({ dateEnd: "2026-01-01" }), true);
+  assert.strictEqual(isFilterActive({ weekdays: [0] }), true);
 });
 
 console.log(`${passed} passed / ${failed} failed`);

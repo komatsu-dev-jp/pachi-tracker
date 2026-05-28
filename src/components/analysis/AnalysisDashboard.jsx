@@ -6,11 +6,33 @@ import {
   buildDailyChartPoints,
   buildMonthlyChartPoints,
   buildYearlyChartPoints,
+  isFilterActive,
+  listAvailableMachines,
   listAvailableMonths,
+  listAvailableStores,
   listAvailableYears,
   machineRanking,
   summarize,
 } from "./analysisSelectors";
+
+// 曜日チップの並び（日始まりに合わせる）
+const WEEKDAY_CHIPS = [
+  { value: 0, label: "日", color: "var(--red)" },
+  { value: 1, label: "月" },
+  { value: 2, label: "火" },
+  { value: 3, label: "水" },
+  { value: 4, label: "木" },
+  { value: 5, label: "金" },
+  { value: 6, label: "土", color: "var(--blue)" },
+];
+
+const EMPTY_FILTERS = Object.freeze({
+  storeName: "",
+  machineName: "",
+  dateStart: "",
+  dateEnd: "",
+  weekdays: [],
+});
 
 // 期間タブ定義
 const PERIOD_TABS = [
@@ -287,12 +309,55 @@ function emptyState(text) {
   );
 }
 
-export default function AnalysisDashboard({ S, onReset, periodTab: extPeriodTab, onChangePeriodTab }) {
+export default function AnalysisDashboard({
+  S,
+  onReset,
+  periodTab: extPeriodTab,
+  onChangePeriodTab,
+  filters: extFilters,
+  onChangeFilters,
+}) {
   const rawArchives = S?.archives;
   const archives = useMemo(() => rawArchives || [], [rawArchives]);
   const [innerPeriodTab, setInnerPeriodTab] = useState("month");
   const periodTab = extPeriodTab ?? innerPeriodTab;
   const setPeriodTab = onChangePeriodTab ?? setInnerPeriodTab;
+
+  // 絞り込み条件（永続化 props がなければローカル state でフォールバック）
+  const [innerFilters, setInnerFilters] = useState(EMPTY_FILTERS);
+  const filters = extFilters ?? innerFilters;
+  const setFilters = onChangeFilters ?? setInnerFilters;
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+
+  // フィルタ更新ヘルパー
+  const updateFilter = (patch) => setFilters({ ...filters, ...patch });
+  const resetFilters = () => setFilters({ ...EMPTY_FILTERS });
+  const toggleWeekday = (wd) => {
+    const cur = Array.isArray(filters.weekdays) ? filters.weekdays : [];
+    const next = cur.includes(wd) ? cur.filter((w) => w !== wd) : [...cur, wd].sort((a, b) => a - b);
+    updateFilter({ weekdays: next });
+  };
+
+  const filterActive = isFilterActive(filters);
+  const activeFilterCount = (
+    (filters.storeName ? 1 : 0) +
+    (filters.machineName ? 1 : 0) +
+    (filters.dateStart || filters.dateEnd ? 1 : 0) +
+    (Array.isArray(filters.weekdays) && filters.weekdays.length > 0 ? 1 : 0)
+  );
+
+  // フィルタ用の選択肢一覧
+  const availableStores = useMemo(() => listAvailableStores(archives), [archives]);
+  const availableMachines = useMemo(() => listAvailableMachines(archives), [archives]);
+
+  // 集計関数に渡す絞り込み（period 由来の月／年を除いた追加条件）
+  const extraFilters = useMemo(() => ({
+    storeName: filters.storeName || "",
+    machineName: filters.machineName || "",
+    dateStart: filters.dateStart || "",
+    dateEnd: filters.dateEnd || "",
+    weekdays: Array.isArray(filters.weekdays) ? filters.weekdays : [],
+  }), [filters]);
 
   // 利用可能な期間の一覧
   const availableMonths = useMemo(() => listAvailableMonths(archives), [archives]);
@@ -332,22 +397,22 @@ export default function AnalysisDashboard({ S, onReset, periodTab: extPeriodTab,
   const isYear = periodTab === "year";
 
   const summary = useMemo(() => {
-    if (periodTab === "all") return summarize(archives, {});
-    if (periodTab === "year") return summarize(archives, { year: viewYear });
-    return summarize(archives, { month: viewMonth });
-  }, [archives, periodTab, viewMonth, viewYear]);
+    if (periodTab === "all") return summarize(archives, { ...extraFilters });
+    if (periodTab === "year") return summarize(archives, { ...extraFilters, year: viewYear });
+    return summarize(archives, { ...extraFilters, month: viewMonth });
+  }, [archives, periodTab, viewMonth, viewYear, extraFilters]);
 
   const chartPoints = useMemo(() => {
-    if (periodTab === "all") return buildYearlyChartPoints(archives);
-    if (periodTab === "year") return buildMonthlyChartPoints(archives, viewYear);
-    return buildDailyChartPoints(archives, viewMonth);
-  }, [archives, periodTab, viewMonth, viewYear]);
+    if (periodTab === "all") return buildYearlyChartPoints(archives, extraFilters);
+    if (periodTab === "year") return buildMonthlyChartPoints(archives, viewYear, extraFilters);
+    return buildDailyChartPoints(archives, viewMonth, extraFilters);
+  }, [archives, periodTab, viewMonth, viewYear, extraFilters]);
 
   const machineTop = useMemo(() => {
-    if (periodTab === "all") return machineRanking(archives, { limit: 5 });
-    if (periodTab === "year") return machineRanking(archives, { year: viewYear, limit: 5 });
-    return machineRanking(archives, { month: viewMonth, limit: 5 });
-  }, [archives, periodTab, viewMonth, viewYear]);
+    if (periodTab === "all") return machineRanking(archives, { ...extraFilters, limit: 5 });
+    if (periodTab === "year") return machineRanking(archives, { ...extraFilters, year: viewYear, limit: 5 });
+    return machineRanking(archives, { ...extraFilters, month: viewMonth, limit: 5 });
+  }, [archives, periodTab, viewMonth, viewYear, extraFilters]);
 
   // 期間ナビの可否
   const hasMonthData = availableMonths.length > 0;
@@ -357,7 +422,7 @@ export default function AnalysisDashboard({ S, onReset, periodTab: extPeriodTab,
   const prevAvailableYear  = hasYearData  ? availableYears[0]  : viewYear;
   const nextAvailableYear  = hasYearData  ? availableYears[availableYears.length - 1] : viewYear;
 
-  // カレンダーモードは既存 CalendarTab を埋め込み
+  // カレンダーモードは既存 CalendarTab を埋め込み（絞り込みは適用しない）
   if (periodTab === "calendar") {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -377,6 +442,20 @@ export default function AnalysisDashboard({ S, onReset, periodTab: extPeriodTab,
         flex: 1, overflowY: "auto", overflowX: "hidden",
         padding: "8px 14px calc(20px + env(safe-area-inset-bottom))",
       }}>
+        {/* 絞り込みパネル */}
+        <FilterPanel
+          open={filterPanelOpen}
+          onToggle={() => setFilterPanelOpen((v) => !v)}
+          filters={filters}
+          updateFilter={updateFilter}
+          toggleWeekday={toggleWeekday}
+          resetFilters={resetFilters}
+          availableStores={availableStores}
+          availableMachines={availableMachines}
+          activeCount={activeFilterCount}
+          active={filterActive}
+        />
+
         {/* 期間ナビ */}
         {periodTab === "month" && (
           <PeriodNav
@@ -410,7 +489,14 @@ export default function AnalysisDashboard({ S, onReset, periodTab: extPeriodTab,
         {/* 記録ゼロの場合 */}
         {archives.length === 0 && emptyState("アーカイブがまだありません。実戦記録を保存すると、ここに集計が表示されます。")}
 
-        {archives.length > 0 && (
+        {/* 絞り込みで該当ゼロの場合 */}
+        {archives.length > 0 && summary.sessions === 0 && (
+          emptyState(filterActive
+            ? "指定された条件に一致する記録がありません。絞り込みを変更するかリセットしてください。"
+            : "この期間には記録がありません。")
+        )}
+
+        {archives.length > 0 && summary.sessions > 0 && (
           <>
             {/* 4 サマリーカード */}
             <SummaryCards summary={summary} />
@@ -498,6 +584,211 @@ function DashboardHeader({ periodTab, onChangeTab }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// 絞り込みパネル（折りたたみ式）
+function FilterPanel({
+  open, onToggle,
+  filters, updateFilter, toggleWeekday, resetFilters,
+  availableStores, availableMachines,
+  activeCount, active,
+}) {
+  const selectStyle = {
+    width: "100%",
+    minHeight: 44,
+    background: C.bg,
+    border: `1px solid ${C.border}`,
+    borderRadius: 10,
+    padding: "0 12px",
+    color: C.text,
+    fontFamily: font,
+    fontSize: 14,
+    appearance: "none",
+    WebkitAppearance: "none",
+    backgroundImage:
+      "linear-gradient(45deg, transparent 50%, var(--sub) 50%), linear-gradient(135deg, var(--sub) 50%, transparent 50%)",
+    backgroundPosition:
+      "calc(100% - 16px) center, calc(100% - 11px) center",
+    backgroundSize: "5px 5px, 5px 5px",
+    backgroundRepeat: "no-repeat",
+  };
+  const dateInputStyle = {
+    flex: 1, minWidth: 0, minHeight: 44,
+    background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10,
+    padding: "0 12px", color: C.text, fontFamily: font, fontSize: 14,
+  };
+
+  return (
+    <div style={{
+      background: C.surface,
+      border: `1px solid ${active ? C.blue : C.border}`,
+      borderRadius: 14,
+      marginBottom: 12,
+      overflow: "hidden",
+      boxShadow: "var(--card-shadow)",
+    }}>
+      {/* ヘッダー（タップで開閉） */}
+      <button
+        className="b"
+        onClick={onToggle}
+        aria-expanded={open}
+        style={{
+          width: "100%", minHeight: 44,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          gap: 8, padding: "8px 14px",
+          background: "transparent", border: "none",
+          color: C.text, fontFamily: font, fontSize: 14, fontWeight: 700,
+          cursor: "pointer", textAlign: "left",
+        }}
+      >
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span>絞り込み</span>
+          {activeCount > 0 && (
+            <span style={{
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              minWidth: 20, height: 20, padding: "0 6px",
+              borderRadius: 10,
+              background: C.blue, color: "#fff",
+              fontSize: 11, fontWeight: 800, fontFamily: mono,
+            }}>
+              {activeCount}
+            </span>
+          )}
+        </span>
+        <span style={{ color: C.sub, fontSize: 12 }}>{open ? "閉じる ▲" : "開く ▼"}</span>
+      </button>
+
+      {open && (
+        <div style={{
+          padding: "4px 14px 14px",
+          display: "flex", flexDirection: "column", gap: 12,
+          borderTop: `1px solid ${C.border}`,
+        }}>
+          {/* 店舗名 */}
+          <div>
+            <div style={{ fontSize: 11, color: C.sub, fontWeight: 700, marginBottom: 6, letterSpacing: 0.4 }}>
+              店舗名
+            </div>
+            <select
+              value={filters.storeName || ""}
+              onChange={(e) => updateFilter({ storeName: e.target.value })}
+              style={selectStyle}
+            >
+              <option value="">すべての店舗</option>
+              {availableStores.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+            {availableStores.length === 0 && (
+              <div style={{ fontSize: 10, color: C.sub, marginTop: 4 }}>
+                記録に店舗名がありません
+              </div>
+            )}
+          </div>
+
+          {/* 機種名 */}
+          <div>
+            <div style={{ fontSize: 11, color: C.sub, fontWeight: 700, marginBottom: 6, letterSpacing: 0.4 }}>
+              機種名
+            </div>
+            <select
+              value={filters.machineName || ""}
+              onChange={(e) => updateFilter({ machineName: e.target.value })}
+              style={selectStyle}
+            >
+              <option value="">すべての機種</option>
+              {availableMachines.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+            {availableMachines.length === 0 && (
+              <div style={{ fontSize: 10, color: C.sub, marginTop: 4 }}>
+                記録に機種名がありません
+              </div>
+            )}
+          </div>
+
+          {/* 期間（カスタム日付範囲） */}
+          <div>
+            <div style={{ fontSize: 11, color: C.sub, fontWeight: 700, marginBottom: 6, letterSpacing: 0.4 }}>
+              期間（カスタム）
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="date"
+                value={filters.dateStart || ""}
+                onChange={(e) => updateFilter({ dateStart: e.target.value })}
+                style={dateInputStyle}
+                aria-label="開始日"
+              />
+              <span style={{ color: C.sub, fontSize: 12 }}>〜</span>
+              <input
+                type="date"
+                value={filters.dateEnd || ""}
+                onChange={(e) => updateFilter({ dateEnd: e.target.value })}
+                style={dateInputStyle}
+                aria-label="終了日"
+              />
+            </div>
+            <div style={{ fontSize: 10, color: C.sub, marginTop: 4 }}>
+              月／年タブの選択範囲内でさらに絞り込みます
+            </div>
+          </div>
+
+          {/* 曜日 */}
+          <div>
+            <div style={{ fontSize: 11, color: C.sub, fontWeight: 700, marginBottom: 6, letterSpacing: 0.4 }}>
+              曜日（複数選択可）
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {WEEKDAY_CHIPS.map((wd) => {
+                const selected = Array.isArray(filters.weekdays) && filters.weekdays.includes(wd.value);
+                const accent = wd.color || C.text;
+                return (
+                  <button
+                    key={wd.value}
+                    className="b"
+                    onClick={() => toggleWeekday(wd.value)}
+                    style={{
+                      minWidth: 44, minHeight: 44,
+                      borderRadius: 10,
+                      background: selected ? `color-mix(in srgb, ${C.blue} 24%, ${C.surfaceHi})` : C.surfaceHi,
+                      border: `1px solid ${selected ? C.blue : C.border}`,
+                      color: selected ? C.text : accent,
+                      fontSize: 14, fontWeight: 800, fontFamily: font,
+                      cursor: "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}
+                  >
+                    {wd.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* リセットボタン */}
+          <button
+            className="b"
+            onClick={resetFilters}
+            disabled={!active}
+            style={{
+              width: "100%", minHeight: 44,
+              borderRadius: 10,
+              background: active ? "transparent" : C.surfaceHi,
+              border: `1px solid ${active ? C.red : C.border}`,
+              color: active ? C.red : C.sub,
+              fontSize: 13, fontWeight: 700, fontFamily: font,
+              cursor: active ? "pointer" : "default",
+              opacity: active ? 1 : 0.5,
+            }}
+          >
+            絞り込みをリセット
+          </button>
+        </div>
+      )}
     </div>
   );
 }
