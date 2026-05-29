@@ -1199,7 +1199,7 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
             : S.playMode === "chodama"
             ? `貯玉${ballsConsumed}玉消費`
             : `${investPace >= 1000 ? investPace/1000 + "K" : investPace + "円"}決定`;
-        S.pushLog({ type: logType, time: tsNow(), rot: thisRot, cash: S.playMode === "mochi" ? 0 : investPace, mode: S.playMode });
+        S.pushLog({ type: logType, time: tsNow(), rot: thisRot, cash: S.playMode === "cash" ? investPace : 0, mode: S.playMode });
         setInput("");
         setInputError("");
         setShowInputSheet(false);
@@ -1216,15 +1216,17 @@ export function RotTab({ border: displayBorder, rows, setRows, S, ev }) {
         if (setupMachineName) S.setMachineName(setupMachineName);
         // 新規稼働開始時は貯玉を設定（未入力なら0でリセット）
         const initialChodama = Number(setupInitialBalls) || 0;
+        const startPlayMode = initialChodama > 0 ? "chodama" : "cash";
         S.setCurrentChodama(initialChodama);
         S.setInitialChodama(initialChodama);
+        S.setPlayMode(startPlayMode);
         // 持ち玉は0にリセット（移動時に設定する）
         S.setCurrentMochiBalls(0);
 
         // セッション開始
         S.setStartRot(val);
         S.setSessionStarted(true);
-        setRows((r) => [...r, { type: "start", cumRot: val, mode: S.playMode, mochiBalls: 0, chodamaBalls: initialChodama }]);
+        setRows((r) => [...r, { type: "start", cumRot: val, mode: startPlayMode, mochiBalls: 0, chodamaBalls: initialChodama }]);
         S.pushLog({ type: "スタート", time: tsNow(), rot: val });
 
         // モーダルを閉じてリセット

@@ -470,14 +470,16 @@ export default function App() {
               setMachineNum(String(machine.machineNumber || ""));
               setMachineName(machine.machineName || "");
               if (!sessionStarted) {
+                const startPlayMode = currentChodama > 0 ? "chodama" : playMode;
                 setStartRot(0);
                 setCurrentMochiBalls(0);
                 setInitialChodama(currentChodama || 0);
+                setPlayMode(startPlayMode);
                 setSessionStarted(true);
                 setRotRows((prev) => (
                   prev.length > 0
                     ? prev
-                    : [{ type: "start", cumRot: 0, mode: playMode, mochiBalls: 0, chodamaBalls: currentChodama || 0 }]
+                    : [{ type: "start", cumRot: 0, mode: startPlayMode, mochiBalls: 0, chodamaBalls: currentChodama || 0 }]
                 ));
                 setSesLog((prev) => [...prev, { type: "スタート", time: tsNow(), rot: 0 }]);
               }
