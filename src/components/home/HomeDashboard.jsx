@@ -8,11 +8,9 @@ import { aggregateByDay } from "../analysis/analysisSelectors";
 // 見た目優先プロトタイプ（CLAUDE.md 規定）
 // - logic.js / 計算式 / 保存データ構造には一切触れていない
 // - 既存 S.hunterRank / S.archives / S.notificationLog の値を読むだけ
-// - 一部の KPI（本日の稼働目標達成率・月間 EV 推移・最近の分析カード等）は
-//   将来連携予定のため、モック準拠のサンプル値で見た目を再現している
 // =====================================================
 
-// モック準拠の固定パレット（ダーク前提）
+// 固定パレット（ダーク前提）
 const P = {
     bgGrad: "linear-gradient(180deg, #08111A 0%, #020713 100%)",
     card: "#0F1A2B",
@@ -134,27 +132,6 @@ const IconSparkle = ({ color = "#FBBF24", size = 14 }) => (
         <path d="M12 2 L14 9 L21 11 L14 13 L12 20 L10 13 L3 11 L10 9 Z" fill={color} fillOpacity="0.85" />
     </svg>
 );
-const IconStore = ({ color = P.green }) => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 9 L4 4 H20 L21 9" />
-        <path d="M3 9 V20 H21 V9" />
-        <path d="M9 20 V13 H15 V20" />
-    </svg>
-);
-const IconTrophy = ({ color = P.purple }) => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M8 21h8" />
-        <path d="M12 17v4" />
-        <path d="M7 4h10v5a5 5 0 0 1-10 0V4z" />
-        <path d="M17 4h3v3a3 3 0 0 1-3 3" />
-        <path d="M7 4H4v3a3 3 0 0 0 3 3" />
-    </svg>
-);
-const IconFlame = ({ color = "#FB923C" }) => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 22c4.418 0 8-3.582 8-8 0-1.892-1.5-4-3-5.5-1 2-2 2.5-3 2-1-1 1-3 0-5-1-2-4-3-4-3s.5 3-1 4-3 2-3 6c0 4.418 3.582 8 8 8z" />
-    </svg>
-);
 const IconShield = ({ color = P.purple, size = 36 }) => (
     <svg width={size} height={size} viewBox="0 0 64 64" fill="none">
         <defs>
@@ -257,9 +234,11 @@ function Header({ onBell, hasUnread }) {
 }
 
 // ===== 目標・月間サマリーカード =====
-//   左: 本日の稼働目標（既存モック – 将来連携予定）
+//   左: 本日の稼働目標（未設定時はプレースホルダー）
 //   右: 今月の期待値目標（pt_monthlyEvTarget と当月 archives 累計 EV を連動）
 function GoalAndMonthlyCard({ todayGoalRate, monthlyEv, monthlyTarget, onEditTarget }) {
+    const hasTodayGoal = todayGoalRate != null && Number.isFinite(Number(todayGoalRate));
+    const safeTodayRate = hasTodayGoal ? Math.max(0, Math.min(100, Math.round(Number(todayGoalRate)))) : 0;
     const safeTarget = Math.max(0, Math.floor(Number(monthlyTarget) || 0));
     const safeEv = Math.floor(Number(monthlyEv) || 0);
     const rawRate = safeTarget > 0 ? (safeEv / safeTarget) * 100 : 0;
@@ -276,7 +255,7 @@ function GoalAndMonthlyCard({ todayGoalRate, monthlyEv, monthlyTarget, onEditTar
 
     return (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, ...sectionGap }}>
-            {/* 左：本日の稼働目標（モック・将来連携予定） */}
+            {/* 左：本日の稼働目標 */}
             <div style={{ ...cardBase, position: "relative", overflow: "hidden" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
                     <span style={labelStyle(11.5, P.cyan)}>本日の稼働目標</span>
@@ -284,21 +263,21 @@ function GoalAndMonthlyCard({ todayGoalRate, monthlyEv, monthlyTarget, onEditTar
                 </div>
                 <div style={{ fontSize: 11, color: P.sub, fontFamily: font, marginTop: 6 }}>達成率</div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 2, marginTop: 2 }}>
-                    <span style={numStyle(34, P.textHi)}>{todayGoalRate}</span>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: P.textHi, fontFamily: font }}>%</span>
+                    <span style={numStyle(34, P.textHi)}>{hasTodayGoal ? safeTodayRate : "—"}</span>
+                    {hasTodayGoal && <span style={{ fontSize: 14, fontWeight: 700, color: P.textHi, fontFamily: font }}>%</span>}
                 </div>
                 {/* プログレスバー */}
                 <div style={{ position: "relative", height: 6, borderRadius: 999, background: "#16243A", marginTop: 10, overflow: "hidden" }}>
                     <div style={{
                         position: "absolute", left: 0, top: 0, bottom: 0,
-                        width: `${todayGoalRate}%`,
+                        width: `${safeTodayRate}%`,
                         background: `linear-gradient(90deg, ${P.blue}, ${P.cyan})`,
                         borderRadius: 999,
                         boxShadow: "0 0 8px rgba(0,166,255,0.4)",
                     }} />
                 </div>
                 <div style={{ fontSize: 11, color: P.sub, fontFamily: font, marginTop: 8 }}>
-                    目標まで あと {100 - todayGoalRate}%
+                    {hasTodayGoal ? `目標まで あと ${100 - safeTodayRate}%` : "日別目標は未設定です"}
                 </div>
                 {/* 右下装飾 */}
                 <div style={{ position: "absolute", right: -6, bottom: -6 }}>
@@ -962,6 +941,7 @@ function MonthlyEvChart({ data, tab, onTabChange, hasData }) {
 
 // ===== 最近の分析（3カード横スクロール対応） =====
 function AnalysisCardsRow({ cards, onSeeAll }) {
+    if (!cards || cards.length === 0) return null;
     return (
         <div style={sectionGap}>
             <SectionHeader title="最近の分析" action="すべて見る" onAction={onSeeAll} />
@@ -1205,18 +1185,20 @@ function RecentRecord({ record, onSeeAll }) {
                         <span style={{ fontSize: 10.5, color: P.sub, fontFamily: font }}>
                             {record.timeLabel}
                         </span>
-                        <span style={{
-                            fontSize: 9,
-                            fontWeight: 800,
-                            color: P.yellow,
-                            background: "color-mix(in srgb, #F59E0B 18%, transparent)",
-                            border: `1px solid color-mix(in srgb, #F59E0B 32%, transparent)`,
-                            padding: "2px 6px",
-                            borderRadius: 4,
-                            fontFamily: font,
-                        }}>
-                            EXP +{record.exp}
-                        </span>
+                        {record.exp != null && (
+                            <span style={{
+                                fontSize: 9,
+                                fontWeight: 800,
+                                color: P.yellow,
+                                background: "color-mix(in srgb, #F59E0B 18%, transparent)",
+                                border: `1px solid color-mix(in srgb, #F59E0B 32%, transparent)`,
+                                padding: "2px 6px",
+                                borderRadius: 4,
+                                fontFamily: font,
+                            }}>
+                                EXP +{record.exp}
+                            </span>
+                        )}
                     </div>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
@@ -1275,15 +1257,7 @@ export default function HomeDashboard({ S }) {
     const latestRecord = useMemo(() => {
         const arc = S?.archives || [];
         if (arc.length === 0) {
-            // 将来連携予定：実セッションがまだ無いときはモック準拠のダミーを表示
-            return {
-                machineName: "e Re:ゼロから始める異世界生活 season2",
-                timeLabel: "今日 10:15 - 12:45",
-                exp: 24,
-                ev: 8420,
-                actual: -12500,
-                thumb: "Re:0",
-            };
+            return null;
         }
         const last = arc[arc.length - 1];
         const ev = Number(last?.stats?.netGain) || 0;
@@ -1291,7 +1265,7 @@ export default function HomeDashboard({ S }) {
         return {
             machineName: last.machineName || "(機種未設定)",
             timeLabel: `${last.date || ""} ${last.time || ""}`,
-            exp: 24, // TODO: 将来連携予定 — セッションごとの XP 取得量
+            exp: null,
             ev,
             actual,
             thumb: (last.machineName || "?").slice(0, 4),
@@ -1353,47 +1327,12 @@ export default function HomeDashboard({ S }) {
         }
     };
 
-    // 「最近の分析」3カード（将来連携予定 — モック準拠ダミー）
-    const analysisCards = [
-        {
-            id: "best-yesterday",
-            label: "昨日よかった台",
-            title: "e Re:ゼロ season2",
-            amount: "+12,400円",
-            sub: "回転率 18.9 / K",
-            btnLabel: "詳細",
-            icon: <IconTrophy color={P.purple} />,
-            accent: P.purple,
-            accentSoft: "color-mix(in srgb, #8B5CF6 16%, #0F1A2B)",
-        },
-        {
-            id: "best-store",
-            label: "今週の高期待店舗",
-            title: "パーラーABC",
-            amount: "+32,800円",
-            sub: "平均回転率 18.6 / K",
-            btnLabel: "詳細",
-            icon: <IconStore color={P.green} />,
-            accent: P.green,
-            accentSoft: "color-mix(in srgb, #22C55E 14%, #0F1A2B)",
-        },
-        {
-            id: "hot-machine",
-            label: "最近強い機種",
-            title: "北斗の拳 暴凶星",
-            amount: "+28,400円",
-            sub: "平均回転率 18.2 / K",
-            btnLabel: "詳細",
-            icon: <IconFlame color="#FB923C" />,
-            accent: "#FB923C",
-            accentSoft: "color-mix(in srgb, #FB923C 14%, #0F1A2B)",
-        },
-    ];
+    const analysisCards = [];
 
-    // バッジ：実 unlockedBadges を元に、BADGES 定義から表示。未獲得もモック準拠で混ぜる
+    // バッジ：実 unlockedBadges を元に、BADGES 定義から表示。未獲得も一覧に含める
     const homeBadges = useMemo(() => {
         const unlockedSet = new Set(S?.hunterRank?.unlockedBadges || []);
-        // モック準拠の 6 種類（順序固定）
+        // 代表的な6種類（順序固定）
         const displayIds = ["first_jp", "streak_7", "lv25", "rot_10k", "streak_30", "jp_100"];
         const labelMap = {
             first_jp: { glyph: "★", short: "初撃破", sub: "初めての大当たり" },
@@ -1432,7 +1371,7 @@ export default function HomeDashboard({ S }) {
 
             {/* 2. 目標・月間サマリー */}
             <GoalAndMonthlyCard
-                todayGoalRate={65}
+                todayGoalRate={null}
                 monthlyEv={monthlyEvTotal}
                 monthlyTarget={monthlyTarget}
                 onEditTarget={() => setTargetEditorOpen(true)}

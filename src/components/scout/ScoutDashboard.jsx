@@ -2,14 +2,7 @@ import React, { useMemo, useState } from "react";
 import { C, font } from "../../constants";
 import { Card } from "../Atoms";
 import StoreRankingCard from "./StoreRankingCard";
-import TodayHighlightList from "./TodayHighlightList";
 import { getStoreRanking } from "./scoutSelectors";
-import {
-  getDummyStoreRanking,
-  getDummyHighlights,
-  todayKey,
-  timeLabel,
-} from "../../dummyData";
 
 const SCOUT_TABS = [
   { id: "forecast", label: "本日予測" },
@@ -104,27 +97,6 @@ function ScoutTabBar({ activeId, onChange }) {
   );
 }
 
-// ダミーデータ告知バナー
-function DummyBanner({ children }) {
-  return (
-    <div
-      style={{
-        margin: "0 0 12px",
-        padding: "8px 12px",
-        background: "rgba(234,179,8,0.12)",
-        border: "1px solid rgba(234,179,8,0.4)",
-        borderRadius: 10,
-        color: "#fcd34d",
-        fontSize: 11,
-        fontFamily: font,
-        lineHeight: 1.5,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
 // 空状態メッセージ
 function EmptyState({ children }) {
   return (
@@ -134,6 +106,12 @@ function EmptyState({ children }) {
       </div>
     </Card>
   );
+}
+
+function timeLabel(now = new Date()) {
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
 export default function ScoutDashboard({ S }) {
@@ -150,10 +128,6 @@ export default function ScoutDashboard({ S }) {
     void refreshTick;
     return timeLabel(new Date());
   }, [refreshTick]);
-
-  // ダミー店舗ランキング & 本日の注目ポイント
-  const dummyRanking = useMemo(() => getDummyStoreRanking(todayKey(), 5), []);
-  const dummyHighlights = useMemo(() => getDummyHighlights(todayKey(), 4), []);
 
   // 実データ: 店舗別ランキング
   const actualRanking = useMemo(
@@ -175,38 +149,11 @@ export default function ScoutDashboard({ S }) {
         }}
       >
         {activeTab === "forecast" && (
-          <>
-            <DummyBanner>
-              ※ 本日予測はダミー表示です。実データへの切り替えは P-EVIDENCE エンジン実装後に行います。
-            </DummyBanner>
-
-            <Card>
-              <div style={{ padding: "12px 14px 4px" }}>
-                <div style={{ fontSize: 12, color: C.sub, fontWeight: 700, letterSpacing: 0.4 }}>
-                  期待値ランキング TOP5
-                </div>
-              </div>
-              <div>
-                {dummyRanking.map((r, i) => (
-                  <StoreRankingCard
-                    key={r.storeName}
-                    entry={r}
-                    isFirst={i === 0}
-                    isDummy
-                  />
-                ))}
-              </div>
-            </Card>
-
-            <Card>
-              <div style={{ padding: "12px 14px 4px" }}>
-                <div style={{ fontSize: 12, color: C.sub, fontWeight: 700, letterSpacing: 0.4 }}>
-                  本日の注目ポイント
-                </div>
-              </div>
-              <TodayHighlightList items={dummyHighlights} />
-            </Card>
-          </>
+          <EmptyState>
+            本日予測は P-EVIDENCE 連携後に表示します。
+            <br />
+            現在は未連携のため、予測データを表示していません。
+          </EmptyState>
         )}
 
         {activeTab === "actual" && (

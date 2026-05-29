@@ -2773,8 +2773,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                     <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
                         <div>
-                                {/* ヒーローカード（3項目）: 現在持玉 / 現在評価 / 1Rあたりの出球
-                                    将来連携予定: スパークラインは実測トレンドと連動予定（暫定ダミーパス） */}
+                                {/* ヒーローカード（3項目）: 現在持玉 / 現在評価 / 1Rあたりの出球 */}
                                 {(() => {
                                     const heroEvNet = ev && Number.isFinite(ev.netGain) ? ev.netGain : 0;
                                     const heroAvg1R = ev && Number.isFinite(ev.avg1R) ? ev.avg1R : 0;
@@ -2798,50 +2797,6 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     else if (heroAvg1R >= 130) { stars = 3; starLabel = "良好"; }
                                     else if (heroAvg1R >= 120) { stars = 2; starLabel = "普通"; }
                                     else if (heroAvg1R > 0) { stars = 1; starLabel = "厳しい"; }
-                                    // ダミーのスパークラインデータ（将来連携予定: 実測トレンドと連動）
-                                    // ジッター強めのランダムウォーク → 実データ風のスタイリッシュなライン
-                                    const makeSpark = (seed) => {
-                                        const pts = [];
-                                        let v = 0;
-                                        // 線形合同法による疑似乱数（seed毎に決定的）
-                                        let s = (seed * 9301 + 49297) >>> 0;
-                                        const N = 32;
-                                        for (let i = 0; i < N; i++) {
-                                            s = (s * 1664525 + 1013904223) >>> 0;
-                                            const r = (s / 0xffffffff) - 0.5; // -0.5〜0.5
-                                            // ジッター + 緩やかな上昇トレンド
-                                            v += r * 14 + 0.35;
-                                            pts.push(v);
-                                        }
-                                        return pts;
-                                    };
-                                    const sparkPath = (vals, w = 100, h = 40) => {
-                                        const min = Math.min(...vals), max = Math.max(...vals);
-                                        const range = (max - min) || 1;
-                                        return vals.map((v, i) => {
-                                            const x = (i / (vals.length - 1)) * w;
-                                            // 上下に少し余白を取って線が枠にベタ付きしないように
-                                            const y = (h - 2) - ((v - min) / range) * (h - 4) + 1;
-                                            return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
-                                        }).join(" ");
-                                    };
-                                    const Spark = ({ color, seed }) => {
-                                        const H = 40;
-                                        const vals = makeSpark(seed);
-                                        const d = sparkPath(vals, 100, H);
-                                        return (
-                                            <svg viewBox={`0 0 100 ${H}`} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: H, marginTop: "auto" }}>
-                                                <defs>
-                                                    <linearGradient id={`sg-${seed}`} x1="0" y1="0" x2="0" y2="1">
-                                                        <stop offset="0%" stopColor={color} stopOpacity="0.30" />
-                                                        <stop offset="100%" stopColor={color} stopOpacity="0" />
-                                                    </linearGradient>
-                                                </defs>
-                                                <path d={`${d} L100,${H} L0,${H} Z`} fill={`url(#sg-${seed})`} />
-                                                <path d={d} fill="none" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-                                            </svg>
-                                        );
-                                    };
                                     return (
                                         <>
                                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
@@ -2869,7 +2824,6 @@ export function RotTab({ rows, setRows, S, ev }) {
                                                             {sp(lastChainGain)}<span style={{ fontSize: 10, fontFamily: font, opacity: 0.85, marginLeft: 1 }}>玉</span>
                                                         </div>
                                                     )}
-                                                    <Spark color="#22c55e" seed={2} />
                                                 </div>
                                                 {/* 現在評価 */}
                                                 <div style={{
@@ -2894,7 +2848,6 @@ export function RotTab({ rows, setRows, S, ev }) {
                                                         {sp(Math.round(heroEvNet))}<span style={{ fontSize: 10, fontFamily: font, opacity: 0.85, marginLeft: 1 }}>玉</span>
                                                     </div>
                                                     <div style={{ fontSize: 9, color: C.sub, fontFamily: font, marginTop: 1 }}>（理論ベース）</div>
-                                                    <Spark color="#3b82f6" seed={4} />
                                                 </div>
                                                 {/* 1Rあたりの出球 */}
                                                 <div style={{
@@ -2923,7 +2876,6 @@ export function RotTab({ rows, setRows, S, ev }) {
                                                             {"★".repeat(stars)}{"☆".repeat(5 - stars)} {starLabel}
                                                         </div>
                                                     )}
-                                                    <Spark color="#f59e0b" seed={6} />
                                                 </div>
                                             </div>
                                             {/* 詳細を表示 トグル（将来連携予定: 折り畳みで詳細チャートを展開） */}
@@ -3337,47 +3289,59 @@ export function RotTab({ rows, setRows, S, ev }) {
                 const evEff = effectiveEv(ev);
                 const decision = evDecision(ev);
                 const hasData = (ev.netRot || 0) > 0;
+                if (!hasData) {
+                    return (
+                        <div style={{ padding: 14 }}>
+                            <Card style={{ padding: "28px 16px", textAlign: "center" }}>
+                                <div style={{ fontSize: 14, color: C.text, fontWeight: 800, marginBottom: 8 }}>
+                                    詳細データはまだありません
+                                </div>
+                                <div style={{ fontSize: 12, color: C.sub, lineHeight: 1.7 }}>
+                                    回転数や大当たりを記録すると、実データに基づく分析を表示します。
+                                </div>
+                            </Card>
+                        </div>
+                    );
+                }
 
-                // 実データ／ダミーフォールバック
-                const start1K = hasData ? evEff.start1K : 20.6;
+                const start1K = evEff.start1K;
                 const theoreticalBorder = ev.theoreticalBorder > 0 ? ev.theoreticalBorder : 16.7;
-                const bDiff = hasData ? evEff.bDiff : 3.9;
-                const wage = hasData ? evEff.wage : 2847;
+                const bDiff = evEff.bDiff;
+                const wage = evEff.wage;
                 const wageSpread = Math.max(2500, Math.abs(wage) * 1.5);
-                const confidence = hasData ? decision.confidence : 0.09;
-                const expectedWork = hasData ? evEff.workAmount : 752;
+                const confidence = decision.confidence;
+                const expectedWork = evEff.workAmount;
                 // 実収支（差玉換算）= 現持ち玉×交換単価 - 投資 - 補正
-                // 交換率（円/玉）：ballVal を優先、未設定なら exRate を 1000/exRate で換算、なければダミー
+                // 交換率（円/玉）：ballVal を優先、未設定なら exRate を 1000/exRate で換算
                 const ballValYenPerBall = Number(S.ballVal) > 0 ? Number(S.ballVal) :
-                    (Number(S.exRate) > 0 ? 1000 / Number(S.exRate) : 28.57);
+                    (Number(S.exRate) > 0 ? 1000 / Number(S.exRate) : 4);
                 const exRate = ballValYenPerBall;
                 const currentMochi = Number(S.currentMochiBalls) || 0;
-                const totalInvestActual = ev.rawInvest > 0 ? ev.rawInvest : 2500;
-                const actualBalance = hasData
-                    ? Math.round(currentMochi * ballValYenPerBall - totalInvestActual)
-                    : 13560;
+                const totalInvestActual = ev.rawInvest > 0 ? ev.rawInvest : 0;
+                const actualBalance = Math.round(currentMochi * ballValYenPerBall - totalInvestActual);
                 const diffActVsExp = actualBalance - expectedWork;
                 // σ プロキシ（見た目優先・概算）
                 const sigmaStdEst = Math.max(3500, Math.sqrt(Math.max(ev.netRot || 0, 80)) * 280);
-                const sigmaVal = hasData
-                    ? Math.max(-3, Math.min(3, diffActVsExp / sigmaStdEst))
-                    : 1.8;
-                const currentBalls = hasData ? currentMochi : 4190;
-                const jpCount = ev.jpCount || (hasData ? 0 : 1);
-                const netRot = ev.netRot || (hasData ? 0 : 104);
-                const avg1R = ev.avg1R > 0 ? ev.avg1R : 1420;
+                const sigmaVal = Math.max(-3, Math.min(3, diffActVsExp / sigmaStdEst));
+                const currentBalls = currentMochi;
+                const jpCount = ev.jpCount || 0;
+                const netRot = ev.netRot || 0;
+                const avg1R = ev.avg1R > 0 ? ev.avg1R : 0;
                 // 信頼度MIDまで（基準1500回転に対する不足分）
                 const remainsToMid = Math.max(0, 1500 - netRot);
+                const evPerRot = Number.isFinite(evEff.evPerRot) ? evEff.evPerRot : 0;
+                const mochiRatio = ev.mochiRatio > 0 ? ev.mochiRatio : 0;
+                const firstHitRateLabel = jpCount > 0 && netRot > 0 ? `1/${f(netRot / jpCount, 1)}` : "—";
+                const replayLimitLabel = Number(S.chodamaReplayLimit) > 0 ? `${f(Number(S.chodamaReplayLimit))} 玉` : "—";
                 // 想定仕事量レンジ
-                const workMid = expectedWork > 0 ? Math.round(expectedWork / (1500) * 45000) || 22700 : 22700;
+                const workMid = expectedWork > 0 ? Math.round(expectedWork / 1500 * 45000) : 0;
                 const workLo = Math.round(workMid * 0.62);
                 const workHi = Math.round(workMid * 1.37);
-                // 終了予定（ダミー）
-                const endTimeLabel = "21:00";
+                const endTimeLabel = "未設定";
                 // データ精度ラベル
                 const accuracyLabel = confidence > 0.6 ? "高い" : confidence > 0.3 ? "中" : "低い";
                 const accuracyFill = Math.min(1, Math.max(0.08, confidence));
-                // 想定時給 信頼度（モックは LOW）
+                // 想定時給 信頼度
                 const wageConfLabel = confidence > 0.5 ? "HIGH" : confidence > 0.3 ? "MID" : "LOW";
                 // 上振れラベル
                 const sigmaLabel = sigmaVal >= 2 ? "大きく上振れ中" : sigmaVal >= 1 ? "上振れ中" : sigmaVal >= -1 ? "想定通り" : sigmaVal >= -2 ? "下振れ中" : "大きく下振れ中";
@@ -3418,23 +3382,6 @@ export function RotTab({ rows, setRows, S, ev }) {
                 const IcInv = ({ c, s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16v12H4z" /><path d="M4 10h16M8 7V4h8v3" /></svg>);
                 const IcSwap = ({ c, s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8h12l-3-3M20 16H8l3 3" /></svg>);
 
-                // ダミースパークライン（LCG ベース）
-                const sparkPath = (seed, color, ascending = true) => {
-                    const N = 24;
-                    let s = seed;
-                    const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s % 1000) / 1000; };
-                    const pts = [];
-                    let v = 0.45;
-                    for (let i = 0; i < N; i++) {
-                        v += (rnd() - 0.45) * 0.14;
-                        if (ascending) v += 0.018;
-                        v = Math.max(0.08, Math.min(0.92, v));
-                        pts.push(v);
-                    }
-                    const d = pts.map((p, i) => `${i === 0 ? "M" : "L"}${(i / (N - 1)) * 100},${(1 - p) * 100}`).join(" ");
-                    return { d, color };
-                };
-
                 // 半円ゲージ（σ）の針角度
                 const sigmaAngle = ((sigmaVal + 3) / 6) * 180 - 90; // -90〜+90
 
@@ -3460,8 +3407,8 @@ export function RotTab({ rows, setRows, S, ev }) {
                 const workSummary = `期待値 ${sp(expectedWork, 0)}円 / 実収支 ${sp(actualBalance, 0)}円 / 差分 ${sp(diffActVsExp, 0)}円${diffActVsExp > 0 ? "（上振れ）" : diffActVsExp < 0 ? "（下振れ）" : "（想定通り）"}`;
                 const sigmaSummary = `${sp(sigmaVal, 1)}σ（${sigmaLabel}）`;
                 const trendSummary = `ボーダー差 ${sp(bDiff, 1)} / 信頼度 ${Math.round(confidence * 100)}%`;
-                const statsSummary = `単価 ${sp(evEff.evPerRot || 11.39, 2)}円/回 / 持ち玉比率 ${Math.round((ev.mochiRatio > 0 ? ev.mochiRatio : 0.884) * 100 * 10) / 10}%`;
-                const calcSummary = `初当たり ${jpCount > 0 ? `1/${f(netRot / Math.max(1, jpCount), 1)}` : "1/104.0"} / 交換率 ${f(exRate, 2)}円/玉`;
+                const statsSummary = `単価 ${sp(evPerRot, 2)}円/回 / 持ち玉比率 ${Math.round(mochiRatio * 1000) / 10}%`;
+                const calcSummary = `初当たり ${firstHitRateLabel} / 交換率 ${f(exRate, 2)}円/玉`;
 
                 // チェック / 警告 / 注視 / ターゲット 用アイコン
                 const IcOk = ({ s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="#21D99B" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>);
@@ -3797,11 +3744,10 @@ export function RotTab({ rows, setRows, S, ev }) {
                             {dataExpanded.work && (
                                 <div className="data-collapse-body" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, padding: "0 12px 14px" }}>
                                     {[
-                                        { label: "期待値（積み上げ）", val: expectedWork, color: "#21D99B", seed: 7, asc: true },
-                                        { label: "実収支（差玉換算）", val: actualBalance, color: "#0A84FF", seed: 12, asc: true },
-                                        { label: "差分（実収支 − 期待値）", val: diffActVsExp, color: "#FFB020", seed: 31, asc: true, badge: diffActVsExp > 0 ? "上振れ中" : diffActVsExp < 0 ? "下振れ中" : "想定通り" },
+                                        { label: "期待値（積み上げ）", val: expectedWork, color: "#21D99B" },
+                                        { label: "実収支（差玉換算）", val: actualBalance, color: "#0A84FF" },
+                                        { label: "差分（実収支 − 期待値）", val: diffActVsExp, color: "#FFB020", badge: diffActVsExp > 0 ? "上振れ中" : diffActVsExp < 0 ? "下振れ中" : "想定通り" },
                                     ].map((m, idx) => {
-                                        const sp1 = sparkPath(m.seed, m.color, m.asc);
                                         return (
                                             <div key={idx} style={{
                                                 background: "rgba(11,22,40,0.55)",
@@ -3825,15 +3771,6 @@ export function RotTab({ rows, setRows, S, ev }) {
                                                         fontWeight: 700, fontFamily: font,
                                                     }}>{m.badge}</div>
                                                 )}
-                                                <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ width: "100%", height: 32, marginTop: 6 }}>
-                                                    <path d={sp1.d} stroke={sp1.color} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                                                    <circle cx="100" cy={(() => {
-                                                        const parts = sp1.d.split(" ");
-                                                        const last = parts[parts.length - 1];
-                                                        const [, y] = last.replace("L", "").split(",");
-                                                        return y;
-                                                    })()} r="2" fill={sp1.color} />
-                                                </svg>
                                             </div>
                                         );
                                     })}
@@ -4037,8 +3974,8 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     {/* 優先度高 - 大きめ 3カード */}
                                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 10 }}>
                                         {[
-                                            { Icon: IcCircleDot, color: "#21D99B", label: "単価", val: `${sp(evEff.evPerRot || 11.39, 2)}`, unit: "円/回" },
-                                            { Icon: IcMochi, color: "#FFB020", label: "持ち玉比率", val: `${Math.round((ev.mochiRatio > 0 ? ev.mochiRatio : 0.884) * 100 * 10) / 10}`, unit: "%" },
+                                            { Icon: IcCircleDot, color: "#21D99B", label: "単価", val: `${sp(evPerRot, 2)}`, unit: "円/回" },
+                                            { Icon: IcMochi, color: "#FFB020", label: "持ち玉比率", val: `${Math.round(mochiRatio * 1000) / 10}`, unit: "%" },
                                             { Icon: IcBalls, color: "#C084FC", label: "平均出玉", val: f(avg1R, 0), unit: "玉" },
                                         ].map((m, i) => (
                                             <div key={i} style={{
@@ -4062,10 +3999,10 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     {/* 優先度低 - 小さめ行リスト */}
                                     <div style={{ display: "flex", flexDirection: "column", background: "rgba(7,17,31,0.45)", borderRadius: 10, padding: "2px 8px" }}>
                                         {[
-                                            { Icon: IcLight, color: "#9CA3AF", label: "大当たり確率（実測）", val: jpCount > 0 ? `1/${f(netRot / jpCount, 1)}` : "1/128.7", unit: "" },
+                                            { Icon: IcLight, color: "#9CA3AF", label: "大当たり確率（実測）", val: firstHitRateLabel, unit: "" },
                                             { Icon: IcRot, color: "#9CA3AF", label: "通常回転数", val: f(netRot), unit: "回" },
                                             { Icon: IcFlame, color: "#9CA3AF", label: "大当たり回数", val: `${jpCount}`, unit: "回" },
-                                            { Icon: IcPercent, color: "#9CA3AF", label: "初当たり確率（実測）", val: jpCount > 0 ? `1/${f(netRot / Math.max(1, jpCount), 1)}` : "1/104.0", unit: "" },
+                                            { Icon: IcPercent, color: "#9CA3AF", label: "初当たり確率（実測）", val: firstHitRateLabel, unit: "" },
                                         ].map((r, i, arr) => (
                                             <div key={i} style={{
                                                 display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -4096,12 +4033,12 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     <div style={{ fontSize: 9.5, color: C.sub, fontFamily: font, margin: "0 14px 4px" }}>（タップで詳細を確認）</div>
                                     <div style={{ display: "flex", flexDirection: "column", padding: "0 8px 4px" }}>
                                         {[
-                                            { Icon: IcDice, color: "#21D99B", label: "初当たり確率（実測）", val: jpCount > 0 ? `1/${f(netRot / Math.max(1, jpCount), 1)}` : "1/104.0" },
+                                            { Icon: IcDice, color: "#21D99B", label: "初当たり確率（実測）", val: firstHitRateLabel },
                                             { Icon: IcBalls, color: "#0A84FF", label: "表記出玉（平均）", val: `${f(avg1R, 0)} 玉` },
                                             { Icon: IcMochi, color: "#0A84FF", label: "持ち玉（現在）", val: `${f(currentBalls)} 玉` },
                                             { Icon: IcCoin, color: "#21D99B", label: "総投資", val: `${f(totalInvestActual)} 円` },
                                             { Icon: IcSwap, color: "#0A84FF", label: "交換率", val: `${f(exRate, 2)} 円/玉` },
-                                            { Icon: IcInv, color: "#FF5A5F", label: "再プレイ上限", val: "無制限" },
+                                            { Icon: IcInv, color: "#FF5A5F", label: "再プレイ上限", val: replayLimitLabel },
                                         ].map((r, i, arr) => (
                                             <div key={i} style={{
                                                 display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -10279,7 +10216,7 @@ export function SettingsTab({ s, onReset }) {
         );
     }
 
-    // ── メイン設定（モック準拠・分析OS風ダークUI、全1カラム縦リスト） ──
+    // ── メイン設定（分析OS風ダークUI、全1カラム縦リスト） ──
     // 環境プロファイル用の値
     const rateDisplay = `${Math.round((s.exRate || 250) / 10)}玉交換`;
     const exLabelShort = exRateKey === "4.00" ? "等価"
@@ -10287,7 +10224,7 @@ export function SettingsTab({ s, onReset }) {
         : `${yenPerBall.toFixed(2)}円`;
     const borderShort = calcBorder > 0 ? `${f(calcBorder, 1)}/K` : "—";
     // 環境プロファイル名（将来連携予定: ホール別プロファイルストアと接続）
-    const profileName = "マイホールA";
+    const profileName = s.storeName || "未設定";
 
     // ネオン系アイコン枠（グラデーション + 内側グロー）
     const NeonIconBox = ({ color, IconComp, size = 44 }) => (
@@ -10303,7 +10240,7 @@ export function SettingsTab({ s, onReset }) {
         </div>
     );
 
-    // 半透明濃紺カード（モック準拠）
+    // 半透明濃紺カード
     const glassCardStyle = {
         background: "linear-gradient(180deg, color-mix(in srgb, #0b1a2e 80%, transparent), color-mix(in srgb, #08111e 70%, transparent))",
         backdropFilter: "blur(8px)",
@@ -10374,7 +10311,7 @@ export function SettingsTab({ s, onReset }) {
                 <button
                     className="b"
                     onClick={() => {
-                        // TODO: 将来、ホール環境プロファイルの切替画面（マイホールA / B / 遠征用 など）へ遷移する
+                        // TODO: 将来、ホール環境プロファイルの切替画面へ遷移する
                         setShowGameSettingsView(true);
                     }}
                     style={{

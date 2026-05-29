@@ -10,24 +10,17 @@ const VERDICT_LABEL = {
   weak:    { text: "弱", bg: "rgba(239,68,68,0.18)",  fg: "#f87171", border: "rgba(239,68,68,0.5)" },
 };
 
-// 1 行分の店舗カード（ランクアイコン + 店舗名 + 期待値 + 勝率 + 判定バッジ）
-export default function StoreRankingCard({ entry, isFirst, isDummy }) {
+// 1 行分の店舗カード（ランクアイコン + 店舗名 + 期待値/収支 + 勝率 + 判定バッジ）
+export default function StoreRankingCard({ entry, isFirst }) {
   if (!entry) return null;
   const rank = entry.rank || 1;
   const rankColor = RANK_COLORS[rank - 1] || C.sub;
   const isTop3 = rank <= 3;
   const verdict = VERDICT_LABEL[entry.verdict] || VERDICT_LABEL.neutral;
 
-  // 実データなら totalPL（実損益）、ダミーなら expectedValue（期待値）を表示
-  const moneyValue = isDummy
-    ? entry.expectedValue
-    : (entry.hasActual ? entry.totalPL : entry.evAmount);
-  const moneyColor = isDummy
-    ? (entry.expectedValue >= 0 ? C.green : C.red)
-    : sc(moneyValue);
-  const moneyLabel = isDummy
-    ? "期待値"
-    : (entry.hasActual ? "収支" : "期待値");
+  const moneyValue = entry.hasActual ? entry.totalPL : entry.evAmount;
+  const moneyColor = sc(moneyValue);
+  const moneyLabel = entry.hasActual ? "収支" : "期待値";
 
   return (
     <div
@@ -85,16 +78,10 @@ export default function StoreRankingCard({ entry, isFirst, isDummy }) {
             alignItems: "center",
           }}
         >
-          {isDummy ? (
-            <span>勝率 {f(entry.winRate, 1)}%</span>
-          ) : (
-            <>
-              <span>{entry.sessions}回</span>
-              {entry.winRate != null && <span>勝率 {f(entry.winRate, 1)}%</span>}
-              {entry.recoverRate != null && (
-                <span>回収率 {f(entry.recoverRate, 1)}%</span>
-              )}
-            </>
+          <span>{entry.sessions}回</span>
+          {entry.winRate != null && <span>勝率 {f(entry.winRate, 1)}%</span>}
+          {entry.recoverRate != null && (
+            <span>回収率 {f(entry.recoverRate, 1)}%</span>
           )}
         </div>
       </div>
@@ -111,9 +98,7 @@ export default function StoreRankingCard({ entry, isFirst, isDummy }) {
             letterSpacing: "-0.3px",
           }}
         >
-          {isDummy
-            ? `${entry.expectedValue >= 0 ? "+" : ""}${f(Math.round(entry.expectedValue))}`
-            : sp(Math.round(moneyValue))}
+          {sp(Math.round(moneyValue))}
           <span style={{ fontSize: 10, color: C.sub, marginLeft: 2, fontFamily: font, fontWeight: 600 }}>
             円
           </span>

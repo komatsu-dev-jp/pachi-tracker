@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { C, f, sp, font, mono } from "../../constants";
 import { Card } from "../Atoms";
-import { getDummyIslandMachines, todayKey, timeLabel } from "../../dummyData";
 import {
   getGoodMachineCandidates,
   normalizeMachineRows,
@@ -80,24 +79,6 @@ function FilterTabs({ active, onChange }) {
   );
 }
 
-function DummyBanner() {
-  return (
-    <div style={{
-      margin: "0 0 12px",
-      padding: "8px 12px",
-      background: "rgba(234,179,8,0.12)",
-      border: "1px solid rgba(234,179,8,0.4)",
-      borderRadius: 10,
-      color: "#fcd34d",
-      fontSize: 11,
-      fontFamily: font,
-      lineHeight: 1.5,
-    }}>
-      ※ 台選びはダミー島データです。実データ化は P-EVIDENCE エンジン移植後に行います。
-    </div>
-  );
-}
-
 function machineColor(machine) {
   const meta = VERDICT_META[machine.verdict] || VERDICT_META.unknown;
   const opacity = Math.max(0.18, Math.min(0.72, machine.confidence / 110));
@@ -146,7 +127,7 @@ function HallMap({ machines, activeFilter, selectedId, onSelect }) {
               ホールマップ
             </div>
             <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>
-              店舗A 4F ・ P大海物語5 島
+              P-EVIDENCE 連携データ
             </div>
           </div>
           <div style={{ fontSize: 10, color: C.sub, flexShrink: 0 }}>
@@ -520,6 +501,27 @@ function CandidateList({ rows, selectedId, onSelect }) {
   );
 }
 
+function EmptyState() {
+  return (
+    <Card style={{ padding: "28px 16px", textAlign: "center" }}>
+      <div style={{ fontSize: 14, color: C.text, fontWeight: 800, marginBottom: 8 }}>
+        台選びデータは未連携です
+      </div>
+      <div style={{ fontSize: 12, color: C.sub, lineHeight: 1.7 }}>
+        P-EVIDENCE 連携後に、ホールマップと良台候補をここへ表示します。
+        <br />
+        現在は未連携のため、台データを表示していません。
+      </div>
+    </Card>
+  );
+}
+
+function timeLabel(now = new Date()) {
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
 export default function SelectDashboard({ S, onStart }) {
   const [activeFilter, setActiveFilter] = useState("all");
   const [refreshTick] = useState(0);
@@ -527,7 +529,7 @@ export default function SelectDashboard({ S, onStart }) {
     void refreshTick;
     return timeLabel(new Date());
   }, [refreshTick]);
-  const machines = useMemo(() => getDummyIslandMachines(todayKey()), []);
+  const machines = useMemo(() => [], []);
   const normalized = useMemo(() => normalizeMachineRows(machines), [machines]);
   const summary = useMemo(() => summarizeIsland(normalized), [normalized]);
   const top = useMemo(() => getGoodMachineCandidates(normalized, 5), [normalized]);
@@ -546,10 +548,15 @@ export default function SelectDashboard({ S, onStart }) {
         overflowX: "hidden",
         padding: "0 14px calc(20px + env(safe-area-inset-bottom))",
       }}>
-        <DummyBanner />
-        <HallMap machines={normalized} activeFilter={activeFilter} selectedId={selectedId} onSelect={setSelectedId} />
-        <SelectedPanel machine={selected} onStart={onStart} />
-        <CandidateList rows={top} selectedId={selectedId} onSelect={setSelectedId} />
+        {normalized.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <>
+            <HallMap machines={normalized} activeFilter={activeFilter} selectedId={selectedId} onSelect={setSelectedId} />
+            <SelectedPanel machine={selected} onStart={onStart} />
+            <CandidateList rows={top} selectedId={selectedId} onSelect={setSelectedId} />
+          </>
+        )}
       </div>
     </div>
   );
