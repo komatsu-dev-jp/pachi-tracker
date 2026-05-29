@@ -234,7 +234,7 @@ function Header({ onBell, hasUnread }) {
 }
 
 // ===== 目標カード（左右共通） =====
-function TargetCard({ label, ev, target, onEdit, editAriaLabel }) {
+function TargetCard({ label, subtitle, ev, target, onEdit, editAriaLabel }) {
     const safeTarget = Math.max(0, Math.floor(Number(target) || 0));
     const safeEv = Math.floor(Number(ev) || 0);
     const rawRate = safeTarget > 0 ? (safeEv / safeTarget) * 100 : 0;
@@ -256,7 +256,7 @@ function TargetCard({ label, ev, target, onEdit, editAriaLabel }) {
             border: achieved ? `1px solid color-mix(in srgb, #FBBF24 50%, ${P.border})` : `1px solid ${P.border}`,
             boxShadow: achieved ? "0 0 16px color-mix(in srgb, #FBBF24 16%, transparent)" : "none",
         }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 2 }}>
                 <span style={labelStyle(11.5, achieved ? "#FBBF24" : P.cyan)}>
                     {achieved ? "目標達成！" : label}
                 </span>
@@ -281,7 +281,12 @@ function TargetCard({ label, ev, target, onEdit, editAriaLabel }) {
                     <IconPencil color={P.cyan} size={13} />
                 </button>
             </div>
-            <div style={{ ...numStyle(22, achieved ? "#FBBF24" : P.textHi), marginTop: 8 }}>
+            {subtitle && (
+                <div style={{ fontSize: 10, color: P.subDim, fontFamily: font, marginBottom: 2 }}>
+                    {subtitle}
+                </div>
+            )}
+            <div style={{ ...numStyle(22, achieved ? "#FBBF24" : P.textHi), marginTop: 4 }}>
                 {fmtSigned(safeEv)}<span style={{ fontSize: 13, fontWeight: 700, marginLeft: 2 }}>円</span>
             </div>
             <div style={{ position: "relative", height: 8, borderRadius: 999, background: "#16243A", marginTop: 10, overflow: "hidden" }}>
@@ -317,17 +322,18 @@ function TargetCard({ label, ev, target, onEdit, editAriaLabel }) {
 }
 
 // ===== 目標・月間サマリーカード =====
-//   左: 本日の稼働目標（pt_dailyEvTarget と当日 archives 累計 EV を連動）
+//   左: 本日の稼働目標（月間目標の残額 ÷ 残り日数で自動逆算）
 //   右: 今月の期待値目標（pt_monthlyEvTarget と当月 archives 累計 EV を連動）
-function GoalAndMonthlyCard({ dailyEv, dailyTarget, monthlyEv, monthlyTarget, onEditDailyTarget, onEditMonthlyTarget }) {
+function GoalAndMonthlyCard({ dailyEv, dailyTarget, monthlyEv, monthlyTarget, onEditMonthlyTarget }) {
     return (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, ...sectionGap }}>
             <TargetCard
                 label="本日の稼働目標"
+                subtitle="月間目標から逆算"
                 ev={dailyEv}
                 target={dailyTarget}
-                onEdit={onEditDailyTarget}
-                editAriaLabel="本日の目標を編集"
+                onEdit={onEditMonthlyTarget}
+                editAriaLabel="月間目標を編集"
             />
             <TargetCard
                 label="今月の期待値目標"
@@ -493,157 +499,6 @@ function MonthlyTargetEditor({ current, onClose, onSave }) {
                             fontFamily: font,
                             cursor: canSave ? "pointer" : "not-allowed",
                             opacity: canSave ? 1 : 0.5,
-                            boxShadow: "0 0 14px rgba(0,166,255,0.35)",
-                        }}
-                    >
-                        保存
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-// ===== 本日の目標 編集ボトムシート =====
-function DailyTargetEditor({ current, onClose, onSave }) {
-    const [value, setValue] = useState(() => String(Math.max(0, Math.floor(Number(current) || 0))));
-
-    const PRESETS = [
-        { label: "5千", value: 5000 },
-        { label: "1万", value: 10000 },
-        { label: "2万", value: 20000 },
-        { label: "3万", value: 30000 },
-        { label: "5万", value: 50000 },
-    ];
-
-    const parsed = Math.max(0, Math.floor(Number(value) || 0));
-
-    const handleSave = () => {
-        onSave(parsed);
-        onClose();
-    };
-
-    return (
-        <div
-            onClick={onClose}
-            style={{
-                position: "fixed",
-                inset: 0,
-                background: "rgba(0,0,0,0.55)",
-                zIndex: 9000,
-                display: "flex",
-                alignItems: "flex-end",
-                justifyContent: "center",
-            }}
-        >
-            <div
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                    width: "100%",
-                    maxWidth: 480,
-                    background: "#0F1A2B",
-                    borderTop: `1px solid ${P.borderHi}`,
-                    borderRadius: "20px 20px 0 0",
-                    padding: "18px 16px calc(20px + env(safe-area-inset-bottom))",
-                    color: P.text,
-                    fontFamily: font,
-                    boxShadow: "0 -8px 32px rgba(0,0,0,0.4)",
-                }}
-            >
-                <div style={{ width: 36, height: 4, borderRadius: 2, background: P.border, margin: "0 auto 14px" }} />
-                <div style={{ fontSize: 16, fontWeight: 800, color: P.textHi, marginBottom: 6 }}>
-                    本日の稼働目標を設定
-                </div>
-                <div style={{ fontSize: 11.5, color: P.sub, marginBottom: 16 }}>
-                    今日のセッション累計期待値の目標額（円）を設定します
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-                    <input
-                        type="number"
-                        inputMode="numeric"
-                        value={value}
-                        onChange={(e) => setValue(e.target.value.replace(/[^\d]/g, ""))}
-                        placeholder="10000"
-                        style={{
-                            flex: 1,
-                            minHeight: 48,
-                            padding: "10px 14px",
-                            background: "#0B1424",
-                            border: `1px solid ${P.borderHi}`,
-                            borderRadius: 12,
-                            color: P.textHi,
-                            fontSize: 22,
-                            fontWeight: 800,
-                            fontFamily: font,
-                            fontVariantNumeric: "tabular-nums",
-                            outline: "none",
-                            textAlign: "right",
-                            letterSpacing: -0.3,
-                        }}
-                    />
-                    <span style={{ fontSize: 14, fontWeight: 700, color: P.sub }}>円</span>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6, marginBottom: 18 }}>
-                    {PRESETS.map((p) => {
-                        const active = parsed === p.value;
-                        return (
-                            <button
-                                key={p.value}
-                                type="button"
-                                onClick={() => setValue(String(p.value))}
-                                style={{
-                                    minHeight: 44,
-                                    padding: "8px 4px",
-                                    borderRadius: 10,
-                                    border: active ? `1px solid ${P.blue}` : `1px solid ${P.border}`,
-                                    background: active
-                                        ? "color-mix(in srgb, #00A6FF 22%, transparent)"
-                                        : "#0B1424",
-                                    color: active ? P.cyan : P.text,
-                                    fontSize: 12,
-                                    fontWeight: 700,
-                                    fontFamily: font,
-                                    cursor: "pointer",
-                                }}
-                            >
-                                {p.label}
-                            </button>
-                        );
-                    })}
-                </div>
-                <div style={{ display: "flex", gap: 10 }}>
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        style={{
-                            flex: 1,
-                            minHeight: 48,
-                            borderRadius: 12,
-                            background: "transparent",
-                            border: `1px solid ${P.border}`,
-                            color: P.sub,
-                            fontSize: 14,
-                            fontWeight: 700,
-                            fontFamily: font,
-                            cursor: "pointer",
-                        }}
-                    >
-                        キャンセル
-                    </button>
-                    <button
-                        type="button"
-                        onClick={handleSave}
-                        style={{
-                            flex: 1.4,
-                            minHeight: 48,
-                            borderRadius: 12,
-                            background: `linear-gradient(135deg, ${P.blue}, ${P.cyan})`,
-                            border: "none",
-                            color: "#03101F",
-                            fontSize: 14,
-                            fontWeight: 800,
-                            fontFamily: font,
-                            cursor: "pointer",
                             boxShadow: "0 0 14px rgba(0,166,255,0.35)",
                         }}
                     >
@@ -1451,17 +1306,18 @@ export default function HomeDashboard({ S }) {
             .reduce((acc, a) => acc + getEvAmount(a), 0);
     }, [S?.archives]);
 
-    // 本日の目標値
-    const dailyTarget = Math.max(0, Math.floor(Number(S?.dailyEvTarget) || 0));
-    const [dailyEditorOpen, setDailyEditorOpen] = useState(false);
-    const handleSaveDailyTarget = (v) => {
-        if (typeof S?.setDailyEvTarget === "function") {
-            S.setDailyEvTarget(Math.max(0, Math.floor(Number(v) || 0)));
-        }
-    };
-
     // 月間目標値（永続化された設定値）。未保存時は 100,000 円のデフォルト
     const monthlyTarget = Math.max(0, Math.floor(Number(S?.monthlyEvTarget) || 0));
+
+    // 本日の目標値 = 月間残額 ÷ 残り日数（今日含む）から逆算
+    const dailyTarget = useMemo(() => {
+        const today = new Date();
+        const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+        const remainingDays = lastDay - today.getDate() + 1;
+        const remainingEv = Math.max(0, monthlyTarget - monthlyEvTotal);
+        return remainingDays > 0 ? Math.ceil(remainingEv / remainingDays) : 0;
+    }, [monthlyTarget, monthlyEvTotal]);
+
     const [targetEditorOpen, setTargetEditorOpen] = useState(false);
     const handleSaveTarget = (v) => {
         if (typeof S?.setMonthlyEvTarget === "function") {
@@ -1517,18 +1373,8 @@ export default function HomeDashboard({ S }) {
                 dailyTarget={dailyTarget}
                 monthlyEv={monthlyEvTotal}
                 monthlyTarget={monthlyTarget}
-                onEditDailyTarget={() => setDailyEditorOpen(true)}
                 onEditMonthlyTarget={() => setTargetEditorOpen(true)}
             />
-
-            {/* 本日の目標 編集ボトムシート */}
-            {dailyEditorOpen && (
-                <DailyTargetEditor
-                    current={dailyTarget}
-                    onClose={() => setDailyEditorOpen(false)}
-                    onSave={handleSaveDailyTarget}
-                />
-            )}
 
             {/* 月間目標 編集ボトムシート（開いている間だけマウント） */}
             {targetEditorOpen && (

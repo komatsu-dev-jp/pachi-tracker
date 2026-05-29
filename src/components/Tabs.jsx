@@ -9162,7 +9162,7 @@ export function SettingsTab({ s, onReset }) {
             "pt_selectedStoreId","pt_storeName","pt_machineNum","pt_machineName","pt_investYen","pt_recoveryYen",
             "pt_stores","pt_customMachines","pt_archives","pt_theme","pt_accentColor","pt_highContrast",
             "pt_colorBlind","pt_appLock","pt_appPin",
-            "pt_monthlyEvTarget","pt_dailyEvTarget"];
+            "pt_monthlyEvTarget"];
         try { await flushAll(); } catch { /* 続行 */ }
         const data = {};
         keys.forEach(k => {
