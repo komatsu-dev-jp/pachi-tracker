@@ -1,7 +1,7 @@
 import React, { useMemo, useId, useState } from "react";
 import { font } from "../../constants";
 import { BADGES } from "../hunter/badges";
-import { aggregateByDay } from "../analysis/analysisSelectors";
+import { aggregateByDay, getEvAmount } from "../analysis/analysisSelectors";
 
 // =====================================================
 // 「EV運用OS」風 ホームダッシュボード
@@ -233,19 +233,14 @@ function Header({ onBell, hasUnread }) {
     );
 }
 
-// ===== 目標・月間サマリーカード =====
-//   左: 本日の稼働目標（未設定時はプレースホルダー）
-//   右: 今月の期待値目標（pt_monthlyEvTarget と当月 archives 累計 EV を連動）
-function GoalAndMonthlyCard({ todayGoalRate, monthlyEv, monthlyTarget, onEditTarget }) {
-    const hasTodayGoal = todayGoalRate != null && Number.isFinite(Number(todayGoalRate));
-    const safeTodayRate = hasTodayGoal ? Math.max(0, Math.min(100, Math.round(Number(todayGoalRate)))) : 0;
-    const safeTarget = Math.max(0, Math.floor(Number(monthlyTarget) || 0));
-    const safeEv = Math.floor(Number(monthlyEv) || 0);
+// ===== 目標カード（左右共通） =====
+function TargetCard({ label, ev, target, onEdit, editAriaLabel }) {
+    const safeTarget = Math.max(0, Math.floor(Number(target) || 0));
+    const safeEv = Math.floor(Number(ev) || 0);
     const rawRate = safeTarget > 0 ? (safeEv / safeTarget) * 100 : 0;
-    const monthlyRate = safeTarget > 0 ? Math.max(0, Math.min(100, Math.round(rawRate))) : 0;
+    const rate = safeTarget > 0 ? Math.max(0, Math.min(100, Math.round(rawRate))) : 0;
     const achieved = safeTarget > 0 && safeEv >= safeTarget;
     const remain = Math.max(0, safeTarget - safeEv);
-    // 進捗バーの色（達成時は金色グラデ、未達は通常ブルー）
     const barFill = achieved
         ? "linear-gradient(90deg, #F59E0B, #FBBF24)"
         : `linear-gradient(90deg, ${P.blue}, ${P.cyan})`;
@@ -254,114 +249,93 @@ function GoalAndMonthlyCard({ todayGoalRate, monthlyEv, monthlyTarget, onEditTar
         : "0 0 8px rgba(0,166,255,0.4)";
 
     return (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, ...sectionGap }}>
-            {/* 左：本日の稼働目標 */}
-            <div style={{ ...cardBase, position: "relative", overflow: "hidden" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                    <span style={labelStyle(11.5, P.cyan)}>本日の稼働目標</span>
-                    <IconInfo />
-                </div>
-                <div style={{ fontSize: 11, color: P.sub, fontFamily: font, marginTop: 6 }}>達成率</div>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 2, marginTop: 2 }}>
-                    <span style={numStyle(34, P.textHi)}>{hasTodayGoal ? safeTodayRate : "—"}</span>
-                    {hasTodayGoal && <span style={{ fontSize: 14, fontWeight: 700, color: P.textHi, fontFamily: font }}>%</span>}
-                </div>
-                {/* プログレスバー */}
-                <div style={{ position: "relative", height: 6, borderRadius: 999, background: "#16243A", marginTop: 10, overflow: "hidden" }}>
-                    <div style={{
-                        position: "absolute", left: 0, top: 0, bottom: 0,
-                        width: `${safeTodayRate}%`,
-                        background: `linear-gradient(90deg, ${P.blue}, ${P.cyan})`,
-                        borderRadius: 999,
-                        boxShadow: "0 0 8px rgba(0,166,255,0.4)",
-                    }} />
-                </div>
-                <div style={{ fontSize: 11, color: P.sub, fontFamily: font, marginTop: 8 }}>
-                    {hasTodayGoal ? `目標まで あと ${100 - safeTodayRate}%` : "日別目標は未設定です"}
-                </div>
-                {/* 右下装飾 */}
-                <div style={{ position: "absolute", right: -6, bottom: -6 }}>
-                    <IconTarget />
-                </div>
+        <div style={{
+            ...cardBase,
+            position: "relative",
+            overflow: "hidden",
+            border: achieved ? `1px solid color-mix(in srgb, #FBBF24 50%, ${P.border})` : `1px solid ${P.border}`,
+            boxShadow: achieved ? "0 0 16px color-mix(in srgb, #FBBF24 16%, transparent)" : "none",
+        }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={labelStyle(11.5, achieved ? "#FBBF24" : P.cyan)}>
+                    {achieved ? "目標達成！" : label}
+                </span>
+                <button
+                    type="button"
+                    onClick={onEdit}
+                    aria-label={editAriaLabel}
+                    style={{
+                        width: 28,
+                        height: 28,
+                        minHeight: 28,
+                        borderRadius: 8,
+                        background: "color-mix(in srgb, #00A6FF 12%, transparent)",
+                        border: `1px solid ${P.border}`,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: "pointer",
+                        padding: 0,
+                    }}
+                >
+                    <IconPencil color={P.cyan} size={13} />
+                </button>
             </div>
+            <div style={{ ...numStyle(22, achieved ? "#FBBF24" : P.textHi), marginTop: 8 }}>
+                {fmtSigned(safeEv)}<span style={{ fontSize: 13, fontWeight: 700, marginLeft: 2 }}>円</span>
+            </div>
+            <div style={{ position: "relative", height: 8, borderRadius: 999, background: "#16243A", marginTop: 10, overflow: "hidden" }}>
+                <div style={{
+                    position: "absolute", left: 0, top: 0, bottom: 0,
+                    width: `${rate}%`,
+                    background: barFill,
+                    borderRadius: 999,
+                    boxShadow: barGlow,
+                    transition: "width 0.6s ease",
+                }} />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8, gap: 4 }}>
+                {achieved ? (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 800, color: "#FBBF24", fontFamily: font }}>
+                        <IconSparkle color="#FBBF24" size={12} />
+                        達成済み
+                    </span>
+                ) : (
+                    <span style={{ fontSize: 10.5, color: P.sub, fontFamily: font }}>
+                        あと <span style={{ color: P.textHi, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmt(remain)}</span>円
+                    </span>
+                )}
+                <span style={{ fontSize: 10.5, color: achieved ? "#FBBF24" : P.cyan, fontWeight: 700, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
+                    {rate}%
+                </span>
+            </div>
+            <div style={{ fontSize: 10, color: P.subDim, fontFamily: font, marginTop: 4 }}>
+                目標 {fmt(safeTarget)}円
+            </div>
+        </div>
+    );
+}
 
-            {/* 右：今月の期待値目標（実データ連動 + 編集可能） */}
-            <div style={{
-                ...cardBase,
-                position: "relative",
-                overflow: "hidden",
-                border: achieved ? `1px solid color-mix(in srgb, #FBBF24 50%, ${P.border})` : `1px solid ${P.border}`,
-                boxShadow: achieved ? "0 0 16px color-mix(in srgb, #FBBF24 16%, transparent)" : "none",
-            }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                    <span style={labelStyle(11.5, achieved ? "#FBBF24" : P.cyan)}>
-                        {achieved ? "目標達成！" : "今月の期待値目標"}
-                    </span>
-                    <button
-                        type="button"
-                        onClick={onEditTarget}
-                        aria-label="月間目標を編集"
-                        style={{
-                            width: 28,
-                            height: 28,
-                            minHeight: 28,
-                            borderRadius: 8,
-                            background: "color-mix(in srgb, #00A6FF 12%, transparent)",
-                            border: `1px solid ${P.border}`,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            cursor: "pointer",
-                            padding: 0,
-                        }}
-                    >
-                        <IconPencil color={P.cyan} size={13} />
-                    </button>
-                </div>
-                {/* 現在の EV 累計 */}
-                <div style={{ ...numStyle(22, achieved ? "#FBBF24" : P.textHi), marginTop: 8 }}>
-                    {fmtSigned(safeEv)}<span style={{ fontSize: 13, fontWeight: 700, marginLeft: 2 }}>円</span>
-                </div>
-                {/* 進捗バー */}
-                <div style={{ position: "relative", height: 8, borderRadius: 999, background: "#16243A", marginTop: 10, overflow: "hidden" }}>
-                    <div style={{
-                        position: "absolute", left: 0, top: 0, bottom: 0,
-                        width: `${monthlyRate}%`,
-                        background: barFill,
-                        borderRadius: 999,
-                        boxShadow: barGlow,
-                        transition: "width 0.6s ease",
-                    }} />
-                </div>
-                {/* あと〇〇円 or 達成バッジ */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8, gap: 4 }}>
-                    {achieved ? (
-                        <span style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 4,
-                            fontSize: 11,
-                            fontWeight: 800,
-                            color: "#FBBF24",
-                            fontFamily: font,
-                        }}>
-                            <IconSparkle color="#FBBF24" size={12} />
-                            達成済み
-                        </span>
-                    ) : (
-                        <span style={{ fontSize: 10.5, color: P.sub, fontFamily: font }}>
-                            あと <span style={{ color: P.textHi, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmt(remain)}</span>円
-                        </span>
-                    )}
-                    <span style={{ fontSize: 10.5, color: achieved ? "#FBBF24" : P.cyan, fontWeight: 700, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
-                        {monthlyRate}%
-                    </span>
-                </div>
-                {/* 目標金額（小さく下部） */}
-                <div style={{ fontSize: 10, color: P.subDim, fontFamily: font, marginTop: 4 }}>
-                    目標 {fmt(safeTarget)}円
-                </div>
-            </div>
+// ===== 目標・月間サマリーカード =====
+//   左: 本日の稼働目標（pt_dailyEvTarget と当日 archives 累計 EV を連動）
+//   右: 今月の期待値目標（pt_monthlyEvTarget と当月 archives 累計 EV を連動）
+function GoalAndMonthlyCard({ dailyEv, dailyTarget, monthlyEv, monthlyTarget, onEditDailyTarget, onEditMonthlyTarget }) {
+    return (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, ...sectionGap }}>
+            <TargetCard
+                label="本日の稼働目標"
+                ev={dailyEv}
+                target={dailyTarget}
+                onEdit={onEditDailyTarget}
+                editAriaLabel="本日の目標を編集"
+            />
+            <TargetCard
+                label="今月の期待値目標"
+                ev={monthlyEv}
+                target={monthlyTarget}
+                onEdit={onEditMonthlyTarget}
+                editAriaLabel="月間目標を編集"
+            />
         </div>
     );
 }
@@ -519,6 +493,157 @@ function MonthlyTargetEditor({ current, onClose, onSave }) {
                             fontFamily: font,
                             cursor: canSave ? "pointer" : "not-allowed",
                             opacity: canSave ? 1 : 0.5,
+                            boxShadow: "0 0 14px rgba(0,166,255,0.35)",
+                        }}
+                    >
+                        保存
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ===== 本日の目標 編集ボトムシート =====
+function DailyTargetEditor({ current, onClose, onSave }) {
+    const [value, setValue] = useState(() => String(Math.max(0, Math.floor(Number(current) || 0))));
+
+    const PRESETS = [
+        { label: "5千", value: 5000 },
+        { label: "1万", value: 10000 },
+        { label: "2万", value: 20000 },
+        { label: "3万", value: 30000 },
+        { label: "5万", value: 50000 },
+    ];
+
+    const parsed = Math.max(0, Math.floor(Number(value) || 0));
+
+    const handleSave = () => {
+        onSave(parsed);
+        onClose();
+    };
+
+    return (
+        <div
+            onClick={onClose}
+            style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.55)",
+                zIndex: 9000,
+                display: "flex",
+                alignItems: "flex-end",
+                justifyContent: "center",
+            }}
+        >
+            <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                    width: "100%",
+                    maxWidth: 480,
+                    background: "#0F1A2B",
+                    borderTop: `1px solid ${P.borderHi}`,
+                    borderRadius: "20px 20px 0 0",
+                    padding: "18px 16px calc(20px + env(safe-area-inset-bottom))",
+                    color: P.text,
+                    fontFamily: font,
+                    boxShadow: "0 -8px 32px rgba(0,0,0,0.4)",
+                }}
+            >
+                <div style={{ width: 36, height: 4, borderRadius: 2, background: P.border, margin: "0 auto 14px" }} />
+                <div style={{ fontSize: 16, fontWeight: 800, color: P.textHi, marginBottom: 6 }}>
+                    本日の稼働目標を設定
+                </div>
+                <div style={{ fontSize: 11.5, color: P.sub, marginBottom: 16 }}>
+                    今日のセッション累計期待値の目標額（円）を設定します
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                    <input
+                        type="number"
+                        inputMode="numeric"
+                        value={value}
+                        onChange={(e) => setValue(e.target.value.replace(/[^\d]/g, ""))}
+                        placeholder="10000"
+                        style={{
+                            flex: 1,
+                            minHeight: 48,
+                            padding: "10px 14px",
+                            background: "#0B1424",
+                            border: `1px solid ${P.borderHi}`,
+                            borderRadius: 12,
+                            color: P.textHi,
+                            fontSize: 22,
+                            fontWeight: 800,
+                            fontFamily: font,
+                            fontVariantNumeric: "tabular-nums",
+                            outline: "none",
+                            textAlign: "right",
+                            letterSpacing: -0.3,
+                        }}
+                    />
+                    <span style={{ fontSize: 14, fontWeight: 700, color: P.sub }}>円</span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6, marginBottom: 18 }}>
+                    {PRESETS.map((p) => {
+                        const active = parsed === p.value;
+                        return (
+                            <button
+                                key={p.value}
+                                type="button"
+                                onClick={() => setValue(String(p.value))}
+                                style={{
+                                    minHeight: 44,
+                                    padding: "8px 4px",
+                                    borderRadius: 10,
+                                    border: active ? `1px solid ${P.blue}` : `1px solid ${P.border}`,
+                                    background: active
+                                        ? "color-mix(in srgb, #00A6FF 22%, transparent)"
+                                        : "#0B1424",
+                                    color: active ? P.cyan : P.text,
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    fontFamily: font,
+                                    cursor: "pointer",
+                                }}
+                            >
+                                {p.label}
+                            </button>
+                        );
+                    })}
+                </div>
+                <div style={{ display: "flex", gap: 10 }}>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        style={{
+                            flex: 1,
+                            minHeight: 48,
+                            borderRadius: 12,
+                            background: "transparent",
+                            border: `1px solid ${P.border}`,
+                            color: P.sub,
+                            fontSize: 14,
+                            fontWeight: 700,
+                            fontFamily: font,
+                            cursor: "pointer",
+                        }}
+                    >
+                        キャンセル
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleSave}
+                        style={{
+                            flex: 1.4,
+                            minHeight: 48,
+                            borderRadius: 12,
+                            background: `linear-gradient(135deg, ${P.blue}, ${P.cyan})`,
+                            border: "none",
+                            color: "#03101F",
+                            fontSize: 14,
+                            fontWeight: 800,
+                            fontFamily: font,
+                            cursor: "pointer",
                             boxShadow: "0 0 14px rgba(0,166,255,0.35)",
                         }}
                     >
@@ -1318,6 +1443,23 @@ export default function HomeDashboard({ S }) {
         return Number(chartData[chartData.length - 1]?.ev) || 0;
     }, [chartData, hasChartData]);
 
+    // 当日の累積期待値（archives から今日分を合算）
+    const todayEv = useMemo(() => {
+        const today = new Date().toISOString().slice(0, 10);
+        return (S?.archives || [])
+            .filter((a) => a.date === today)
+            .reduce((acc, a) => acc + getEvAmount(a), 0);
+    }, [S?.archives]);
+
+    // 本日の目標値
+    const dailyTarget = Math.max(0, Math.floor(Number(S?.dailyEvTarget) || 0));
+    const [dailyEditorOpen, setDailyEditorOpen] = useState(false);
+    const handleSaveDailyTarget = (v) => {
+        if (typeof S?.setDailyEvTarget === "function") {
+            S.setDailyEvTarget(Math.max(0, Math.floor(Number(v) || 0)));
+        }
+    };
+
     // 月間目標値（永続化された設定値）。未保存時は 100,000 円のデフォルト
     const monthlyTarget = Math.max(0, Math.floor(Number(S?.monthlyEvTarget) || 0));
     const [targetEditorOpen, setTargetEditorOpen] = useState(false);
@@ -1371,11 +1513,22 @@ export default function HomeDashboard({ S }) {
 
             {/* 2. 目標・月間サマリー */}
             <GoalAndMonthlyCard
-                todayGoalRate={null}
+                dailyEv={todayEv}
+                dailyTarget={dailyTarget}
                 monthlyEv={monthlyEvTotal}
                 monthlyTarget={monthlyTarget}
-                onEditTarget={() => setTargetEditorOpen(true)}
+                onEditDailyTarget={() => setDailyEditorOpen(true)}
+                onEditMonthlyTarget={() => setTargetEditorOpen(true)}
             />
+
+            {/* 本日の目標 編集ボトムシート */}
+            {dailyEditorOpen && (
+                <DailyTargetEditor
+                    current={dailyTarget}
+                    onClose={() => setDailyEditorOpen(false)}
+                    onSave={handleSaveDailyTarget}
+                />
+            )}
 
             {/* 月間目標 編集ボトムシート（開いている間だけマウント） */}
             {targetEditorOpen && (
