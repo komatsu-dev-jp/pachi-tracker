@@ -99,8 +99,13 @@ export function calcPreciseEV({
     let realMeasuredChainCount = 0;
     let totalSapoRot = 0;
     let totalSapoChange = 0;
+    // 大当たり1回あたりの平均算出用（簡易入力フロー対応・追加のみ）
+    let totalHits = 0;            // 総大当たり回数（連チャン中の各当たりも1回として数える）
+    let realMeasuredRounds = 0;   // 実測純増が確定したチェーンの総ラウンド数（サポ増減の残差算出用）
 
     completedEntries.forEach(chain => {
+        // 大当たり回数 = 各チェーンの hit 数の合計（hits 未定義のチェーンは 0 として安全に扱う）
+        totalHits += (chain.hits?.length || 0);
         if (chain.summary) {
             totalRounds += (chain.summary.totalRounds || 0);
             totalDisplayBalls += (chain.summary.totalDisplayBalls || 0);
@@ -114,6 +119,7 @@ export function calcPreciseEV({
                 totalNetGainReal += realNetGain;
                 totalNetGain += realNetGain;
                 realMeasuredChainCount++;
+                realMeasuredRounds += (chain.summary.totalRounds || 0);
             } else {
                 totalNetGain += displayNetGain;
             }
@@ -140,6 +146,18 @@ export function calcPreciseEV({
 
     // 平均純増出玉/初当たり
     const avgNetGainPerJP = jpCount > 0 ? totalNetGain / jpCount : 0;
+
+    // ── 大当たり1回あたりの平均（簡易入力フロー用・追加のみ） ──
+    // 平均出玉/大当たり = 総純増 ÷ 総大当たり回数（連チャン中の各当たりも1回として数える）
+    const avgNetGainPerHit = totalHits > 0 ? totalNetGain / totalHits : 0;
+    // 平均ラウンド/大当たり = 総ラウンド ÷ 総大当たり回数
+    const avgRoundsPerHit = totalHits > 0 ? totalRounds / totalHits : 0;
+    // サポ増減（残差・連チャン終了後に算出）
+    // = 実測純増（最終玉 − 開始玉）− 大当たり出玉分（Σラウンド × 1R実出玉）
+    // 実測純増が確定したチェーンのみを対象とし、無ければ 0。
+    const estimatedSapoChange = realMeasuredChainCount > 0
+        ? totalNetGainReal - realMeasuredRounds * (spec1R || 140)
+        : 0;
 
     // ── 投資玉数の補正（上皿玉を除外した真の消費玉） ──
     const jpTrayBalls = (jpLog || []).reduce((sum, chain) => sum + (Number(chain?.trayBalls) || 0), 0);
@@ -248,6 +266,10 @@ export function calcPreciseEV({
         sapoPerRot,
         totalSapoRot,
         avgNetGainPerJP,
+        avgNetGainPerHit,
+        avgRoundsPerHit,
+        totalHits,
+        estimatedSapoChange,
         jpCount,
         totalRounds,
         totalDisplayBalls,

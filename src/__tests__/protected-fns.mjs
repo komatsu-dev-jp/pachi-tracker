@@ -139,6 +139,24 @@ const sampleJpLogWithFinalReal = [
   },
 ];
 
+// 簡易入力フロー検証用（大当たり1回あたりの平均・サポ増減残差）
+// 1チェーンに hit 3回（10R / 10R / 5R = 計25R）、開始上皿0玉・最終実測3000玉。
+// totalHits=3 / avgNetGainPerHit=1000 / avgRoundsPerHit≒8.33
+// estimatedSapoChange = 3000 − 25×140 = −500
+const sampleJpLogSimpleFlow = [
+  {
+    completed: true,
+    trayBalls: 0,
+    finalRealBalls: 3000,
+    hits: [
+      { rounds: 10 },
+      { rounds: 10 },
+      { rounds: 5 },
+    ],
+    summary: { totalRounds: 25, totalDisplayBalls: 0, netGain: 0, totalSapoRot: 120, totalSapoChange: 0 },
+  },
+];
+
 const evCases = {
   evEmpty: {
     rotRows: [],
@@ -212,6 +230,15 @@ const evCases = {
     jpLog: sampleJpLogWithFinalReal,
     rentBalls: 250, exRate: 250, synthDenom: 319.6, rotPerHour: 250,
     totalTrayBalls: 100, border: 20,
+    spec1R: 140, specAvgRounds: 34.17, specSapo: 0,
+    chodamaSettings: { includeChodamaInBalance: true },
+  },
+  evSimpleFlowMultiHit: {
+    rotRows: cases.cashThreeRows.rotRows,
+    startRot: 100,
+    jpLog: sampleJpLogSimpleFlow,
+    rentBalls: 250, exRate: 250, synthDenom: 319.6, rotPerHour: 250,
+    totalTrayBalls: 0, border: 20,
     spec1R: 140, specAvgRounds: 34.17, specSapo: 0,
     chodamaSettings: { includeChodamaInBalance: true },
   },
