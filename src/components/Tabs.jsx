@@ -8381,6 +8381,7 @@ export function SettingsTab({ s, onReset }) {
     const [nearbyRadius, setNearbyRadius] = useState(3000);
     const [nearbyStores, setNearbyStores] = useState([]);
     const [nearbyLoading, setNearbyLoading] = useState(false);
+    const [nearbyStatus, setNearbyStatus] = useState("");
     const [nearbyError, setNearbyError] = useState("");
     const [nearbySearched, setNearbySearched] = useState(false);
 
@@ -8490,6 +8491,60 @@ export function SettingsTab({ s, onReset }) {
 
     const normalizeStoreName = (name) => String(name || "").trim().replace(/\s+/g, "").toLowerCase();
 
+    const timeoutError = (message = "timeout") => {
+        const err = new Error(message);
+        err.code = "APP_TIMEOUT";
+        return err;
+    };
+
+    const withTimeout = (promise, timeoutMs, message) => new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(timeoutError(message)), timeoutMs);
+        promise
+            .then(resolve, reject)
+            .finally(() => clearTimeout(timer));
+    });
+
+    const fetchWithAbortTimeout = async (url, options = {}, timeoutMs = 12000) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            return await fetch(url, { ...options, signal: controller.signal });
+        } finally {
+            clearTimeout(timer);
+        }
+    };
+
+    const nearbyBounds = (lat, lon, radiusM) => {
+        const latDelta = radiusM / 111320;
+        const lonDelta = radiusM / (111320 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
+        return {
+            north: lat + latDelta,
+            south: lat - latDelta,
+            east: lon + lonDelta,
+            west: lon - lonDelta,
+        };
+    };
+
+    const isLikelyPachinkoStore = (name) => {
+        const text = normalizeStoreName(name);
+        return /パチンコ|ぱちんこ|pachinko|スロット|slot|パーラー|マルハン|ダイナム|キコーナ|楽園|pia|d'?station|やすだ|123|nikko/.test(text);
+    };
+
+    const uniqueNearbyRows = (rows) => {
+        const seen = new Set();
+        return rows
+            .filter(Boolean)
+            .filter(row => row.name && Number.isFinite(Number(row.lat)) && Number.isFinite(Number(row.lon)))
+            .filter(row => {
+                const key = `${normalizeStoreName(row.name)}|${row.address || `${Number(row.lat).toFixed(5)},${Number(row.lon).toFixed(5)}`}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            })
+            .sort((a, b) => a.distanceM - b.distanceM)
+            .slice(0, 20);
+    };
+
     const isRegisteredNearbyStore = (candidate) => normalizedStores.some(st => {
         const sameName = normalizeStoreName(st.name) && normalizeStoreName(st.name) === normalizeStoreName(candidate.name);
         const sameAddress = st.address && candidate.address && String(st.address).trim() === String(candidate.address).trim();
@@ -8497,23 +8552,27 @@ export function SettingsTab({ s, onReset }) {
     });
 
     const fetchNearbyPachinkoStores = async () => {
+        if (nearbyLoading) return;
         if (!navigator.geolocation) {
             setNearbyError("この端末では現在地を取得できません。");
             return;
         }
         setNearbyLoading(true);
+        setNearbyStatus("現在地を取得しています...");
         setNearbyError("");
+        setNearbyStores([]);
         setNearbySearched(true);
         try {
-            const pos = await new Promise((resolve, reject) => {
+            const pos = await withTimeout(new Promise((resolve, reject) => {
                 navigator.geolocation.getCurrentPosition(resolve, reject, {
                     enableHighAccuracy: true,
                     timeout: 12000,
                     maximumAge: 300000,
                 });
-            });
+            }), 15000, "geo-timeout");
             const lat = pos.coords.latitude;
             const lon = pos.coords.longitude;
+            setNearbyStatus("地図データを検索しています...");
             const namePattern = "パチンコ|ぱちんこ|PACHINKO|スロット|SLOT|パーラー|マルハン|ダイナム|キコーナ|楽園|PIA|Dステーション|D'?STATION";
             const query = `
                 [out:json][timeout:25];
@@ -8527,16 +8586,27 @@ export function SettingsTab({ s, onReset }) {
                 );
                 out center tags 30;
             `;
-            const res = await fetch("https://overpass-api.de/api/interpreter", {
-                method: "POST",
-                headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-                body: `data=${encodeURIComponent(query)}`,
-            });
-            if (!res.ok) throw new Error(`overpass:${res.status}`);
-            const data = await res.json();
-            const seen = new Set();
-            const rows = (data.elements || [])
-                .map(el => {
+            const overpassRows = async () => {
+                const endpoints = [
+                    "https://overpass-api.de/api/interpreter",
+                    "https://overpass.kumi.systems/api/interpreter",
+                ];
+                let data = null;
+                for (const endpoint of endpoints) {
+                    try {
+                        const res = await fetchWithAbortTimeout(endpoint, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+                            body: `data=${encodeURIComponent(query)}`,
+                        }, 12000);
+                        if (!res.ok) continue;
+                        data = await res.json();
+                        break;
+                    } catch {
+                        data = null;
+                    }
+                }
+                return (data?.elements || []).map(el => {
                     const tags = el.tags || {};
                     const rowLat = Number(el.lat ?? el.center?.lat);
                     const rowLon = Number(el.lon ?? el.center?.lon);
@@ -8544,7 +8614,7 @@ export function SettingsTab({ s, onReset }) {
                     if (!name || !Number.isFinite(rowLat) || !Number.isFinite(rowLon)) return null;
                     const distanceM = Math.round(calcDistanceMeters(lat, lon, rowLat, rowLon));
                     return {
-                        id: `nearby-${el.type}-${el.id}`,
+                        id: `nearby-overpass-${el.type}-${el.id}`,
                         name,
                         address: formatOsmAddress(tags),
                         lat: rowLat,
@@ -8556,29 +8626,69 @@ export function SettingsTab({ s, onReset }) {
                         chodama: 0,
                         osmType: el.type,
                         osmId: el.id,
+                        source: "overpass",
                     };
-                })
-                .filter(Boolean)
-                .filter(row => {
-                    const key = `${normalizeStoreName(row.name)}|${row.address || `${row.lat.toFixed(5)},${row.lon.toFixed(5)}`}`;
-                    if (seen.has(key)) return false;
-                    seen.add(key);
-                    return true;
-                })
-                .sort((a, b) => a.distanceM - b.distanceM)
-                .slice(0, 20);
+                });
+            };
+
+            const nominatimRows = async () => {
+                const bounds = nearbyBounds(lat, lon, nearbyRadius);
+                const viewbox = `${bounds.west},${bounds.north},${bounds.east},${bounds.south}`;
+                const terms = ["パチンコ", "スロット", "pachinko", "パーラー"];
+                const lists = await Promise.all(terms.map(async term => {
+                    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=jp&limit=20&bounded=1&viewbox=${encodeURIComponent(viewbox)}&q=${encodeURIComponent(term)}`;
+                    try {
+                        const res = await fetchWithAbortTimeout(url, {
+                            headers: { "Accept": "application/json" },
+                        }, 9000);
+                        if (!res.ok) return [];
+                        return await res.json();
+                    } catch {
+                        return [];
+                    }
+                }));
+                return lists.flat().map(item => {
+                    const rowLat = Number(item.lat);
+                    const rowLon = Number(item.lon);
+                    const name = item.name || item.display_name?.split(",")[0] || "";
+                    if (!name || !Number.isFinite(rowLat) || !Number.isFinite(rowLon)) return null;
+                    const distanceM = Math.round(calcDistanceMeters(lat, lon, rowLat, rowLon));
+                    if (distanceM > nearbyRadius + 200) return null;
+                    if (!isLikelyPachinkoStore(`${name} ${item.display_name || ""}`)) return null;
+                    return {
+                        id: `nearby-nominatim-${item.osm_type}-${item.osm_id}`,
+                        name,
+                        address: item.display_name || "",
+                        lat: rowLat,
+                        lon: rowLon,
+                        distanceM,
+                        rentBalls: 250,
+                        exRate: 250,
+                        memo: `周辺検索から追加（${distanceLabel(distanceM)}）`,
+                        chodama: 0,
+                        osmType: item.osm_type,
+                        osmId: item.osm_id,
+                        source: "nominatim",
+                    };
+                });
+            };
+
+            const results = await Promise.allSettled([overpassRows(), nominatimRows()]);
+            const rows = uniqueNearbyRows(results.flatMap(r => r.status === "fulfilled" ? r.value : []));
             setNearbyStores(rows);
             if (rows.length === 0) {
-                setNearbyError("周辺に候補が見つかりませんでした。距離を広げて再検索してください。");
+                setNearbyError("地図データ上に候補が見つかりませんでした。5kmに広げるか、店舗名検索で登録してください。");
             }
         } catch (e) {
             const code = e && typeof e === "object" ? e.code : null;
             if (code === 1) setNearbyError("位置情報の許可が必要です。ブラウザの設定で現在地を許可してください。");
             else if (code === 2) setNearbyError("現在地を取得できませんでした。電波状況を確認してください。");
-            else if (code === 3) setNearbyError("現在地の取得がタイムアウトしました。もう一度お試しください。");
+            else if (code === 3 || code === "APP_TIMEOUT") setNearbyError("検索がタイムアウトしました。距離を1kmにするか、少し時間をおいて再検索してください。");
+            else if (e?.name === "AbortError") setNearbyError("地図データの応答が遅いため中断しました。少し時間をおいて再検索してください。");
             else setNearbyError("周辺検索に失敗しました。時間をおいて再検索してください。");
         } finally {
             setNearbyLoading(false);
+            setNearbyStatus("");
         }
     };
 
@@ -9520,6 +9630,21 @@ export function SettingsTab({ s, onReset }) {
                             {nearbyLoading ? "検索中..." : "現在地から検索"}
                         </button>
                     </div>
+
+                    {nearbyLoading && (
+                        <div style={{
+                            background: "rgba(10,132,255,0.10)",
+                            border: "1px solid rgba(10,132,255,0.28)",
+                            color: C.blue,
+                            borderRadius: 8,
+                            padding: "8px 10px",
+                            fontSize: 11,
+                            lineHeight: 1.5,
+                            marginBottom: 10,
+                        }}>
+                            {nearbyStatus || "検索しています..."} 15秒ほどで戻らない場合は自動で中断します。
+                        </div>
+                    )}
 
                     <div style={{ display: "flex", gap: 6, marginBottom: nearbyError || nearbyStores.length > 0 ? 10 : 0 }}>
                         {[
