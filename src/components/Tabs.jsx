@@ -8375,6 +8375,11 @@ export function SettingsTab({ s, onReset }) {
     const [selectedStore, setSelectedStore] = useState(null);
     const [editingStore, setEditingStore] = useState(null);
     const [showStoreForm, setShowStoreForm] = useState(false);
+    const [nearbyRadius, setNearbyRadius] = useState(3000);
+    const [nearbyStores, setNearbyStores] = useState([]);
+    const [nearbyLoading, setNearbyLoading] = useState(false);
+    const [nearbyError, setNearbyError] = useState("");
+    const [nearbySearched, setNearbySearched] = useState(false);
 
     // サブ画面ナビゲーション
     const [showAppearanceView, setShowAppearanceView] = useState(false);
@@ -8445,6 +8450,151 @@ export function SettingsTab({ s, onReset }) {
             (st.address && st.address.toLowerCase().includes(storeQuery.toLowerCase()))
         )
         : normalizedStores;
+
+    const distanceLabel = (meters) => {
+        const n = Number(meters);
+        if (!Number.isFinite(n)) return "";
+        return n >= 1000 ? `${(n / 1000).toFixed(1)}km` : `${Math.round(n)}m`;
+    };
+
+    const formatOsmAddress = (tags = {}) => {
+        if (tags["addr:full"]) return tags["addr:full"];
+        const parts = [
+            tags["addr:province"],
+            tags["addr:city"],
+            tags["addr:ward"],
+            tags["addr:suburb"],
+            tags["addr:neighbourhood"],
+            tags["addr:quarter"],
+            tags["addr:street"],
+            tags["addr:block_number"],
+            tags["addr:housenumber"],
+        ].filter(Boolean);
+        return parts.join("");
+    };
+
+    const calcDistanceMeters = (aLat, aLon, bLat, bLon) => {
+        const toRad = (v) => (v * Math.PI) / 180;
+        const R = 6371000;
+        const dLat = toRad(bLat - aLat);
+        const dLon = toRad(bLon - aLon);
+        const lat1 = toRad(aLat);
+        const lat2 = toRad(bLat);
+        const h = Math.sin(dLat / 2) ** 2 +
+            Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+        return 2 * R * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+    };
+
+    const normalizeStoreName = (name) => String(name || "").trim().replace(/\s+/g, "").toLowerCase();
+
+    const isRegisteredNearbyStore = (candidate) => normalizedStores.some(st => {
+        const sameName = normalizeStoreName(st.name) && normalizeStoreName(st.name) === normalizeStoreName(candidate.name);
+        const sameAddress = st.address && candidate.address && String(st.address).trim() === String(candidate.address).trim();
+        return sameName || sameAddress;
+    });
+
+    const fetchNearbyPachinkoStores = async () => {
+        if (!navigator.geolocation) {
+            setNearbyError("この端末では現在地を取得できません。");
+            return;
+        }
+        setNearbyLoading(true);
+        setNearbyError("");
+        setNearbySearched(true);
+        try {
+            const pos = await new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    enableHighAccuracy: true,
+                    timeout: 12000,
+                    maximumAge: 300000,
+                });
+            });
+            const lat = pos.coords.latitude;
+            const lon = pos.coords.longitude;
+            const namePattern = "パチンコ|ぱちんこ|PACHINKO|スロット|SLOT|パーラー|マルハン|ダイナム|キコーナ|楽園|PIA|Dステーション|D'?STATION";
+            const query = `
+                [out:json][timeout:25];
+                (
+                  node(around:${nearbyRadius},${lat},${lon})["gambling"="pachinko"];
+                  way(around:${nearbyRadius},${lat},${lon})["gambling"="pachinko"];
+                  relation(around:${nearbyRadius},${lat},${lon})["gambling"="pachinko"];
+                  node(around:${nearbyRadius},${lat},${lon})["name"~"${namePattern}",i];
+                  way(around:${nearbyRadius},${lat},${lon})["name"~"${namePattern}",i];
+                  relation(around:${nearbyRadius},${lat},${lon})["name"~"${namePattern}",i];
+                );
+                out center tags 30;
+            `;
+            const res = await fetch("https://overpass-api.de/api/interpreter", {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+                body: `data=${encodeURIComponent(query)}`,
+            });
+            if (!res.ok) throw new Error(`overpass:${res.status}`);
+            const data = await res.json();
+            const seen = new Set();
+            const rows = (data.elements || [])
+                .map(el => {
+                    const tags = el.tags || {};
+                    const rowLat = Number(el.lat ?? el.center?.lat);
+                    const rowLon = Number(el.lon ?? el.center?.lon);
+                    const name = tags["name:ja"] || tags.name || "";
+                    if (!name || !Number.isFinite(rowLat) || !Number.isFinite(rowLon)) return null;
+                    const distanceM = Math.round(calcDistanceMeters(lat, lon, rowLat, rowLon));
+                    return {
+                        id: `nearby-${el.type}-${el.id}`,
+                        name,
+                        address: formatOsmAddress(tags),
+                        lat: rowLat,
+                        lon: rowLon,
+                        distanceM,
+                        rentBalls: 250,
+                        exRate: 250,
+                        memo: `周辺検索から追加（${distanceLabel(distanceM)}）`,
+                        chodama: 0,
+                        osmType: el.type,
+                        osmId: el.id,
+                    };
+                })
+                .filter(Boolean)
+                .filter(row => {
+                    const key = `${normalizeStoreName(row.name)}|${row.address || `${row.lat.toFixed(5)},${row.lon.toFixed(5)}`}`;
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                })
+                .sort((a, b) => a.distanceM - b.distanceM)
+                .slice(0, 20);
+            setNearbyStores(rows);
+            if (rows.length === 0) {
+                setNearbyError("周辺に候補が見つかりませんでした。距離を広げて再検索してください。");
+            }
+        } catch (e) {
+            const code = e && typeof e === "object" ? e.code : null;
+            if (code === 1) setNearbyError("位置情報の許可が必要です。ブラウザの設定で現在地を許可してください。");
+            else if (code === 2) setNearbyError("現在地を取得できませんでした。電波状況を確認してください。");
+            else if (code === 3) setNearbyError("現在地の取得がタイムアウトしました。もう一度お試しください。");
+            else setNearbyError("周辺検索に失敗しました。時間をおいて再検索してください。");
+        } finally {
+            setNearbyLoading(false);
+        }
+    };
+
+    const addNearbyStore = (store) => {
+        if (isRegisteredNearbyStore(store)) {
+            showToast("この店舗はすでに登録されています", "warn");
+            return;
+        }
+        const storeData = {
+            ...store,
+            id: Date.now() + Math.random(),
+            rentBalls: store.rentBalls || 250,
+            exRate: store.exRate || 250,
+            chodama: store.chodama || 0,
+        };
+        s.setStores(prev => [...prev.filter(st => typeof st === "object"), storeData]);
+        setSelectedStore(storeData);
+        showToast(`「${store.name}」を登録しました`);
+    };
 
     // 機種登録フォームを開く
     const openMachineForm = (machine = null) => {
@@ -9340,6 +9490,147 @@ export function SettingsTab({ s, onReset }) {
                         }}
                     />
                 </div>
+
+                <Card style={{ padding: 14, marginBottom: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+                        <div>
+                            <div style={{ fontSize: 13, color: C.text, fontWeight: 800 }}>周辺のパチンコ店</div>
+                            <div style={{ fontSize: 10, color: C.sub, marginTop: 3 }}>現在地から地図データ上の候補を検索します</div>
+                        </div>
+                        <button
+                            className="b"
+                            onClick={fetchNearbyPachinkoStores}
+                            disabled={nearbyLoading}
+                            style={{
+                                flexShrink: 0,
+                                background: nearbyLoading ? C.surfaceHi : C.blue,
+                                border: nearbyLoading ? `1px solid ${C.borderHi}` : "none",
+                                borderRadius: 8,
+                                color: nearbyLoading ? C.sub : "#fff",
+                                fontSize: 11,
+                                padding: "8px 12px",
+                                fontFamily: font,
+                                fontWeight: 800,
+                                cursor: nearbyLoading ? "default" : "pointer",
+                            }}
+                        >
+                            {nearbyLoading ? "検索中..." : "現在地から検索"}
+                        </button>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 6, marginBottom: nearbyError || nearbyStores.length > 0 ? 10 : 0 }}>
+                        {[
+                            { label: "1km", value: 1000 },
+                            { label: "3km", value: 3000 },
+                            { label: "5km", value: 5000 },
+                        ].map(opt => {
+                            const active = nearbyRadius === opt.value;
+                            return (
+                                <button
+                                    key={opt.value}
+                                    className="b"
+                                    onClick={() => setNearbyRadius(opt.value)}
+                                    style={{
+                                        background: active ? `${C.blue}22` : C.surfaceHi,
+                                        border: `1px solid ${active ? C.blue : C.borderHi}`,
+                                        borderRadius: 999,
+                                        color: active ? C.blue : C.sub,
+                                        fontSize: 10,
+                                        padding: "5px 10px",
+                                        fontFamily: font,
+                                        fontWeight: active ? 800 : 600,
+                                    }}
+                                >
+                                    {opt.label}
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {nearbyError && (
+                        <div style={{
+                            background: nearbyStores.length > 0 ? "rgba(234,179,8,0.12)" : "rgba(239,68,68,0.12)",
+                            border: `1px solid ${nearbyStores.length > 0 ? "rgba(234,179,8,0.35)" : "rgba(239,68,68,0.35)"}`,
+                            color: nearbyStores.length > 0 ? C.yellow : C.red,
+                            borderRadius: 8,
+                            padding: "8px 10px",
+                            fontSize: 11,
+                            lineHeight: 1.5,
+                            marginBottom: nearbyStores.length > 0 ? 10 : 0,
+                        }}>
+                            {nearbyError}
+                        </div>
+                    )}
+
+                    {nearbyStores.length > 0 && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            {nearbyStores.map(store => {
+                                const registered = isRegisteredNearbyStore(store);
+                                const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${store.name} ${store.address || ""}`.trim())}`;
+                                return (
+                                    <div key={store.id} style={{
+                                        background: "rgba(7,17,31,0.55)",
+                                        border: `1px solid ${registered ? "rgba(34,197,94,0.35)" : C.border}`,
+                                        borderRadius: 10,
+                                        padding: "10px 10px",
+                                        display: "grid",
+                                        gridTemplateColumns: "1fr auto",
+                                        gap: 10,
+                                        alignItems: "center",
+                                    }}>
+                                        <div style={{ minWidth: 0 }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                                                <span style={{ fontSize: 13, color: C.text, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                    {store.name}
+                                                </span>
+                                                <span style={{ fontSize: 10, color: C.blue, fontFamily: mono, flexShrink: 0 }}>
+                                                    {distanceLabel(store.distanceM)}
+                                                </span>
+                                            </div>
+                                            {store.address && (
+                                                <div style={{ fontSize: 10, color: C.sub, lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                    {store.address}
+                                                </div>
+                                            )}
+                                            <a
+                                                href={mapUrl}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                style={{ display: "inline-block", marginTop: 5, color: C.subHi, fontSize: 10, textDecoration: "none" }}
+                                            >
+                                                地図で開く
+                                            </a>
+                                        </div>
+                                        <button
+                                            className="b"
+                                            onClick={() => addNearbyStore(store)}
+                                            disabled={registered}
+                                            style={{
+                                                background: registered ? "rgba(34,197,94,0.10)" : C.green,
+                                                border: registered ? "1px solid rgba(34,197,94,0.35)" : "none",
+                                                borderRadius: 8,
+                                                color: registered ? C.green : "#06120d",
+                                                fontSize: 11,
+                                                padding: "8px 10px",
+                                                fontFamily: font,
+                                                fontWeight: 800,
+                                                whiteSpace: "nowrap",
+                                            }}
+                                        >
+                                            {registered ? "登録済" : "追加"}
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {!nearbySearched && nearbyStores.length === 0 && (
+                        <div style={{ fontSize: 10, color: C.sub, lineHeight: 1.6 }}>
+                            初回のみブラウザの位置情報許可が必要です。候補は OpenStreetMap の公開データから取得します。
+                        </div>
+                    )}
+                </Card>
 
                 {/* CSV インポート/エクスポート */}
                 <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
