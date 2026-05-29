@@ -90,6 +90,20 @@ export default function App() {
   // "month" | "year" | "all" | "calendar"
   const [analysisTab, setAnalysisTab] = useLS("pt_analysisTab", "month");
 
+  // 分析モードの絞り込み条件（AND 条件で結合）
+  //   storeName    : 店舗名（完全一致、"" = 全店舗）
+  //   machineName  : 機種名（完全一致、"" = 全機種）
+  //   dateStart    : "YYYY-MM-DD" 開始日（含む、"" = 制限なし）
+  //   dateEnd      : "YYYY-MM-DD" 終了日（含む、"" = 制限なし）
+  //   weekdays     : 曜日（0=日..6=土の配列、[] = 全曜日）
+  const [analysisFilters, setAnalysisFilters] = useLS("pt_analysisFilters", {
+    storeName: "",
+    machineName: "",
+    dateStart: "",
+    dateEnd: "",
+    weekdays: [],
+  });
+
   // 後方互換: Tabs.jsx 内の S.setTab("rot" | "calendar" | "settings") を新モードへ変換
   // 旧 "calendar" タブはカレンダー一覧（既存 UI）を期待しているので、
   // 分析モードのカレンダー サブタブを選択した状態で遷移させる
@@ -790,6 +804,8 @@ export default function App() {
             onReset={resetAll}
             periodTab={analysisTab}
             onChangePeriodTab={setAnalysisTab}
+            filters={analysisFilters}
+            onChangeFilters={setAnalysisFilters}
           />
         )}
         {currentMode === "settings" && <SettingsTab s={S} onReset={resetAll} />}
