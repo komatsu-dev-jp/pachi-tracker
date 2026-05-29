@@ -609,6 +609,10 @@ export function DataTab({ ev, jpLog, S }) {
             <Card>
                 <SecLabel label="出玉データ" />
                 {!hasJp && <EmptySub msg="大当たり履歴なし" />}
+                {stat("平均出玉/大当たり", ev.avgNetGainPerHit > 0 ? f(ev.avgNetGainPerHit, 0) : "—", "玉", C.green)}
+                {stat("大当たり回数", ev.totalHits > 0 ? String(ev.totalHits) : "—", "回", C.purple)}
+                {stat("平均R数/大当たり", ev.avgRoundsPerHit > 0 ? f(ev.avgRoundsPerHit, 1) : "—", "R", C.blue)}
+                {stat("サポ増減(実測残差)", ev.realMeasuredChainCount > 0 ? sp(ev.estimatedSapoChange, 0) : "—", "玉", sc(ev.estimatedSapoChange))}
                 {stat("平均1R出玉", ev.avg1R > 0 ? f(ev.avg1R, 1) : "—", "玉", C.teal)}
                 {stat("平均R数/初当たり", ev.avgRpJ > 0 ? f(ev.avgRpJ, 1) : "—", "R", C.blue)}
                 {stat("サポ増減/回転", ev.totalSapoRot > 0 ? sp(ev.sapoPerRot, 2) : "—", "玉/回転", sc(ev.sapoPerRot))}
@@ -1567,6 +1571,8 @@ export function RotTab({ rows, setRows, S, ev }) {
                 chain.hitType = "単発";
                 chain.jitanSpins = jitan;
                 chain.finalBallsAfterJitan = finalBalls;
+                // 差分ベース: 最終玉数を実測持ち玉として記録（開始前の玉数との差が純増になる）
+                if (finalBalls > 0) chain.finalRealBalls = finalBalls;
                 chain.completed = true;
                 const totalRounds = chain.hits.reduce((s, h) => s + h.rounds, 0);
                 const totalDisplayBalls = chain.hits.reduce((s, h) => s + h.displayBalls, 0);
@@ -2950,7 +2956,6 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     (() => {
                                         const verdict = chainPrototypeVerdict(lastChain);
                                         const totalRounds = (lastChain.hits || []).reduce((s, h) => s + (h.rounds || 0), 0);
-                                        const totalDisplayBalls = (lastChain.hits || []).reduce((s, h) => s + (h.displayBalls || 0), 0);
                                         const totalSapoRot = (lastChain.hits || []).reduce((s, h) => s + (h.elecSapoRot || 0), 0);
                                         return (
                                             <div style={{ marginBottom: 12 }}>
@@ -2961,7 +2966,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                                                     badge={lastChain.hits.length === 0 ? "基準値固定中" : "現在のチェーン"}
                                                     metrics={[
                                                         { label: "総R数", value: totalRounds || "0", unit: "R", color: C.orange },
-                                                        { label: "液晶出玉合計", value: f(totalDisplayBalls), unit: "玉", color: C.yellow },
+                                                        { label: "開始前の玉数", value: f(lastChain.trayBalls || 0), unit: "玉", color: C.yellow },
                                                         { label: "総サポ回転", value: f(totalSapoRot), unit: "回転", color: C.teal },
                                                     ]}
                                                 />
@@ -2997,9 +3002,9 @@ export function RotTab({ rows, setRows, S, ev }) {
                                 <div style={{ margin: "0 0 16px", background: `linear-gradient(135deg, var(--surface), var(--surface-alt))`, border: `1px solid color-mix(in srgb, ${C.teal} 32%, ${C.border})`, borderRadius: 18, overflow: "hidden", boxShadow: `0 0 22px color-mix(in srgb, ${C.teal} 14%, transparent)` }}>
                                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
                                         {[
-                                            { label: "平均1R出玉", val: ev.avg1R > 0 ? f(ev.avg1R, 1) : "—", unit: "玉", col: C.teal },
-                                            { label: "サポ増減/回転", val: ev.totalSapoRot > 0 ? sp(ev.sapoPerRot, 2) : "—", unit: "玉/回転", col: sc(ev.sapoPerRot) },
-                                            { label: "平均R数", val: ev.avgRpJ > 0 ? f(ev.avgRpJ, 1) : "—", unit: "R", col: C.blue },
+                                            { label: "平均出玉/当", val: ev.avgNetGainPerHit > 0 ? f(ev.avgNetGainPerHit, 0) : "—", unit: "玉", col: C.green },
+                                            { label: "平均R数/当", val: ev.avgRoundsPerHit > 0 ? f(ev.avgRoundsPerHit, 1) : "—", unit: "R", col: C.blue },
+                                            { label: "大当たり", val: ev.totalHits > 0 ? String(ev.totalHits) : "0", unit: "回", col: C.purple },
                                             { label: "初当たり", val: jpLog.length > 0 ? jpLog.length.toString() : "0", unit: "回", col: C.green },
                                         ].map(({ label, val, unit, col }, idx) => (
                                             <div key={label} style={{ textAlign: "center", padding: "12px 2px", borderRight: idx < 3 ? `1px solid ${C.border}` : "none" }}>
@@ -3073,9 +3078,9 @@ export function RotTab({ rows, setRows, S, ev }) {
                                                         </div>
                                                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
                                                             <div>
-                                                                <div style={{ fontSize: 8, color: C.sub }}>液晶出玉</div>
-                                                                <div style={{ fontSize: 13, fontWeight: 700, color: C.yellow, fontFamily: mono }}>
-                                                                    {f(hit.displayBalls)}<span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>玉</span>
+                                                                <div style={{ fontSize: 8, color: C.sub }}>ラウンド</div>
+                                                                <div style={{ fontSize: 13, fontWeight: 700, color: C.purple, fontFamily: mono }}>
+                                                                    {hit.rounds || 0}<span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>R</span>
                                                                 </div>
                                                             </div>
                                                             <div>
@@ -3166,16 +3171,20 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     const sumRot = summaryChain.hitRot || 0;
                                     const sumTray = summaryChain.trayBalls || 0;
                                     const sumRounds = (summaryChain.hits || []).reduce((s, h) => s + (h.rounds || 0), 0);
-                                    const sumDisplay = (summaryChain.hits || []).reduce((s, h) => s + (h.displayBalls || 0), 0);
-                                    const sumMeasured = summaryChain.completed && summaryChain.summary ? Math.round(summaryChain.summary.netGain || 0) : 0;
-                                    const sumAvg1R = sumRounds > 0 ? sumDisplay / sumRounds : 0;
+                                    const sumSapoRot = (summaryChain.hits || []).reduce((s, h) => s + (h.elecSapoRot || 0), 0);
+                                    // 最終玉数（ラッシュ終了時に入力された実測持ち玉）と実測純増（最終玉 − 開始前の玉）
+                                    const sumFinal = (summaryChain.finalRealBalls !== undefined && summaryChain.finalRealBalls !== null)
+                                        ? Number(summaryChain.finalRealBalls) || 0 : 0;
+                                    const sumMeasured = sumFinal > 0
+                                        ? sumFinal - sumTray
+                                        : (summaryChain.completed && summaryChain.summary ? Math.round(summaryChain.summary.netGain || 0) : 0);
                                     const rows = [
-                                        { label: "回転数", val: sumRot > 0 ? f(sumRot) : "—", unit: sumRot > 0 ? "回転" : "" },
-                                        { label: "開始上皿玉数", val: sumTray > 0 ? f(sumTray) : "—", unit: sumTray > 0 ? "玉" : "玉" },
-                                        { label: "ラウンド数", val: sumRounds > 0 ? f(sumRounds) : "—", unit: sumRounds > 0 ? "R" : "R" },
-                                        { label: "液晶出玉", val: sumDisplay > 0 ? f(sumDisplay) : "—", unit: sumDisplay > 0 ? "玉" : "玉" },
-                                        { label: "実測出玉", val: sumMeasured > 0 ? f(sumMeasured) : "—", unit: sumMeasured > 0 ? "玉" : "玉" },
-                                        { label: "1Rあたりの出球", val: sumAvg1R > 0 ? f(Math.round(sumAvg1R)) : "—", unit: sumAvg1R > 0 ? "玉/R" : "玉/R" },
+                                        { label: "当たった回転数", val: sumRot > 0 ? f(sumRot) : "—", unit: sumRot > 0 ? "回転" : "" },
+                                        { label: "開始前の玉数", val: sumTray > 0 ? f(sumTray) : "—", unit: "玉" },
+                                        { label: "ラウンド数(計)", val: sumRounds > 0 ? f(sumRounds) : "—", unit: "R" },
+                                        { label: "電サポ回転(計)", val: sumSapoRot > 0 ? f(sumSapoRot) : "—", unit: "回転" },
+                                        { label: "最終玉数", val: sumFinal > 0 ? f(sumFinal) : "—", unit: "玉" },
+                                        { label: "実測純増", val: sumMeasured !== 0 ? f(sumMeasured) : "—", unit: "玉" },
                                     ];
                                     return (
                                         <details open style={{ marginTop: 4, marginBottom: 12, background: "var(--surface)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px" }}>
@@ -4737,7 +4746,8 @@ export function RotTab({ rows, setRows, S, ev }) {
                     const actualN = numOr0("actualBalls");
                     const rndN = numOr0("rounds");
 
-                    const requiredOk = rotN > 0 && trayN > 0 && rndN > 0 && dispN > 0;
+                    // 液晶出玉(dispN)は簡易フローでは入力しないため必須から除外
+                    const requiredOk = rotN > 0 && trayN > 0 && rndN > 0;
 
                     // ヘッダーのチェーン状態
                     const chainLen = lastChain && !lastChain.completed ? (lastChain.hits || []).length : 0;
@@ -4746,17 +4756,15 @@ export function RotTab({ rows, setRows, S, ev }) {
                     const evNet = ev && Number.isFinite(ev.netGain) ? ev.netGain : 0;
                     const startG1K = ev && Number.isFinite(ev.start1K) ? ev.start1K : 0;
                     const avg1R = ev && Number.isFinite(ev.avg1R) ? ev.avg1R : 0;
-                    const per1RThis = (actualN > 0 && rndN > 0) ? Math.round(actualN / rndN) : 0;
 
-                    // ステップ定義（仕様書 §3.1 画面A、入力順: プッシュ補正→回転→上皿→R→液晶→実測→結果）
+                    // ステップ定義（簡易入力フロー 画面A、入力順: プッシュ補正→当たった回転数→開始前の玉数→R→結果）
+                    // 液晶出玉・実測出玉の毎回入力は廃止。出玉は「開始前の玉数」と「最終玉数（ラッシュ終了時）」の差分で算出する。
                     const STEPS = [
                         { id: "pushAmount",   num: 1, label: "プッシュ補正額",  sub: "（任意・投資補正）",        short: "補正",     color: C.yellow, icon: "coin",   summaryUnit: "円" },
-                        { id: "rotCount",     num: 2, label: "回転数",          sub: "（ゲーム数）",              short: "回転数",   color: C.blue,   icon: "rotate", summaryUnit: "回転" },
-                        { id: "trayBalls",    num: 3, label: "開始上皿玉数",    sub: "（当たり開始時の上皿）",    short: "上皿",     color: C.yellow, icon: "coin",   summaryUnit: "玉",  required: true },
-                        { id: "rounds",       num: 4, label: "ラウンド数",      sub: "（大当たりのラウンド）",    short: "R数",      color: C.purple, icon: "r",      summaryUnit: "R" },
-                        { id: "displayBalls", num: 5, label: "液晶出玉",        sub: "（表示されている出玉）",    short: "液晶",     color: C.teal,   icon: "monitor", summaryUnit: "玉", required: true },
-                        { id: "actualBalls",  num: 6, label: "実測出玉",        sub: "（実際の獲得出玉）",        short: "実測",     color: C.green,  icon: "target", summaryUnit: "玉" },
-                        { id: "result",       num: 7, label: "結果を選択",      sub: "（連チャン継続 or 単発終了）", short: "結果",  color: C.orange, icon: "flag",   summaryUnit: "" },
+                        { id: "rotCount",     num: 2, label: "当たった回転数",  sub: "（はまり・ゲーム数）",      short: "回転数",   color: C.blue,   icon: "rotate", summaryUnit: "回転" },
+                        { id: "trayBalls",    num: 3, label: "開始前の玉数",    sub: "（当たり直前の持ち玉・上皿）", short: "開始玉",   color: C.yellow, icon: "coin",   summaryUnit: "玉",  required: true },
+                        { id: "rounds",       num: 4, label: "ラウンド数",      sub: "（当たったラウンド 10R・5Rなど）", short: "R数",  color: C.purple, icon: "r",      summaryUnit: "R" },
+                        { id: "result",       num: 5, label: "結果を選択",      sub: "（連チャン継続 or 単発終了）", short: "結果",  color: C.orange, icon: "flag",   summaryUnit: "" },
                     ];
                     const stepIdx = Math.max(0, STEPS.findIndex(s => s.id === focus));
                     const curStep = STEPS[stepIdx];
@@ -4816,10 +4824,9 @@ export function RotTab({ rows, setRows, S, ev }) {
                         if (endLockRef.current) return;
                         if (!requiredOk) {
                             const missing = [];
-                            if (rotN <= 0) missing.push("回転数");
-                            if (trayN <= 0) missing.push("開始上皿玉");
+                            if (rotN <= 0) missing.push("当たった回転数");
+                            if (trayN <= 0) missing.push("開始前の玉数");
                             if (rndN <= 0) missing.push("ラウンド数");
-                            if (dispN <= 0) missing.push("液晶出玉");
                             setHitInputError(`${missing.join("・")}を入力してください`);
                             return;
                         }
@@ -4834,16 +4841,15 @@ export function RotTab({ rows, setRows, S, ev }) {
                     const onSingleEndStart = () => {
                         if (!requiredOk) {
                             const missing = [];
-                            if (rotN <= 0) missing.push("回転数");
-                            if (trayN <= 0) missing.push("開始上皿玉");
+                            if (rotN <= 0) missing.push("当たった回転数");
+                            if (trayN <= 0) missing.push("開始前の玉数");
                             if (rndN <= 0) missing.push("ラウンド数");
-                            if (dispN <= 0) missing.push("液晶出玉");
                             setHitInputError(`${missing.join("・")}を入力してください`);
                             return;
                         }
                         setHitInputError("");
-                        // 最終持ち玉のプリセット（旧UIと同じ：tray+disp 推定）
-                        const estimated = trayN + dispN;
+                        // 最終持ち玉のプリセット（簡易フローでは液晶出玉が無いため開始玉を初期値とし、ユーザーが実測を入力）
+                        const estimated = trayN;
                         setHitWizardData(d => ({
                             ...d,
                             jitanSpins: d.jitanSpins || "",
@@ -4874,12 +4880,9 @@ export function RotTab({ rows, setRows, S, ev }) {
                     // 入力済みサマリー（折りたたみ用）
                     const summaryRows = [
                         { label: "プッシュ補正額", value: (D.pushAmount || 0) > 0 ? `+${(D.pushAmount).toLocaleString()}` : "0", unit: "円" },
-                        { label: "回転数",         value: rotN > 0 ? f(rotN) : "--",   unit: "回転" },
-                        { label: "開始上皿玉数",   value: trayN > 0 ? f(trayN) : "--", unit: "玉" },
+                        { label: "当たった回転数", value: rotN > 0 ? f(rotN) : "--",   unit: "回転" },
+                        { label: "開始前の玉数",   value: trayN > 0 ? f(trayN) : "--", unit: "玉" },
                         { label: "ラウンド数",     value: rndN > 0 ? `${rndN}R` : "--", unit: "" },
-                        { label: "液晶出玉",       value: dispN > 0 ? f(dispN) : "--", unit: "玉" },
-                        { label: "実測出玉",       value: actualN > 0 ? f(actualN) : "--", unit: "玉" },
-                        { label: "1Rあたりの出球", value: per1RThis > 0 ? f(per1RThis) : "--", unit: "玉/R" },
                     ];
 
                     // プッシュ補正額のプリセット
@@ -5447,12 +5450,11 @@ export function RotTab({ rows, setRows, S, ev }) {
                     // チェーン集計
                     const chainHits = lastChain ? (lastChain.hits || []) : [];
                     const chainTotalRounds = chainHits.reduce((s, h) => s + (h.rounds || 0), 0);
-                    const chainTotalDisp = chainHits.reduce((s, h) => s + (h.displayBalls || 0), 0);
                     const chainTotalSapoRot = chainHits.reduce((s, h) => s + (h.elecSapoRot || 0), 0);
-                    const chainTotalSapoChange = chainHits.reduce((s, h) => s + (h.sapoChange || 0), 0);
                     const chainTrayBalls = lastChain ? (lastChain.trayBalls || 0) : 0;
 
-                    const requiredOk = rotN > 0 && rndN > 0 && dispN > 0; // 実測出玉は任意（仕様書 §3.2）
+                    // 液晶出玉(dispN)・実測出玉は簡易フローでは入力しないため必須から除外
+                    const requiredOk = rotN > 0 && rndN > 0;
                     const chainLen = chainHits.length + 1; // 入力中の連
                     const headerBadge = `RUSH中 ${chainLen}連`;
 
@@ -5490,9 +5492,8 @@ export function RotTab({ rows, setRows, S, ev }) {
                     const validateRequired = () => {
                         if (!requiredOk) {
                             const missing = [];
-                            if (rotN <= 0) missing.push("回転数");
+                            if (rotN <= 0) missing.push("サポ回転数");
                             if (rndN <= 0) missing.push("ラウンド数");
-                            if (dispN <= 0) missing.push("液晶出玉");
                             setChainInputError(`${missing.join("・")}を入力してください`);
                             return false;
                         }
@@ -5548,13 +5549,12 @@ export function RotTab({ rows, setRows, S, ev }) {
                         setChainInputSingleEndOpen(false);
                     };
 
-                    // ステップ定義（仕様書 §3.1 画面B、入力順: サポ回転→R→液晶→実測→結果）
+                    // ステップ定義（簡易入力フロー 画面B、入力順: サポ回転→R→結果）
+                    // 液晶出玉・実測出玉の毎回入力は廃止。サポ増減はラッシュ終了時に「最終玉−開始玉−出玉分」の残差で自動算出する。
                     const STEPS_B = [
                         { id: "elecSapoRot",     num: 1, label: "サポ回転数", sub: "（電サポ回転）",            short: "サポ回転", color: C.green,  summaryUnit: "回転" },
-                        { id: "rounds",          num: 2, label: "ラウンド数",  sub: "（大当たりのラウンド）",    short: "R数",      color: C.purple, summaryUnit: "" },
-                        { id: "displayBalls",    num: 3, label: "液晶出玉",    sub: "（表示されている出玉）",    short: "液晶",     color: C.teal,   summaryUnit: "玉" },
-                        { id: "nextTimingBalls", num: 4, label: "実測出玉",    sub: "（ラウンド終了時の持ち玉）", short: "実測",     color: C.green,  summaryUnit: "玉" },
-                        { id: "result",          num: 5, label: "結果を選択",  sub: "（連チャン継続 or RUSH終了）", short: "結果",  color: C.orange, summaryUnit: "" },
+                        { id: "rounds",          num: 2, label: "ラウンド数",  sub: "（当たったラウンド 10R・5Rなど）", short: "R数",  color: C.purple, summaryUnit: "" },
+                        { id: "result",          num: 3, label: "結果を選択",  sub: "（連チャン継続 or RUSH終了）", short: "結果",  color: C.orange, summaryUnit: "" },
                     ];
                     const stepIdx = Math.max(0, STEPS_B.findIndex(s => s.id === focus));
                     const curStep = STEPS_B[stepIdx];
@@ -5601,9 +5601,6 @@ export function RotTab({ rows, setRows, S, ev }) {
                     const summaryRows = [
                         { label: "サポ回転数", value: rotN > 0 ? f(rotN) : "--", unit: "回転" },
                         { label: "ラウンド数", value: rndN > 0 ? (multN > 1 ? `${rndN}R×${multN}` : `${rndN}R`) : "--", unit: "" },
-                        { label: "液晶出玉", value: dispN > 0 ? f(dispN) : "--", unit: "玉" },
-                        { label: "実測出玉", value: nextN > 0 ? f(nextN) : "--", unit: "玉" },
-                        { label: "1Rあたりの出球", value: (dispN > 0 && rndN > 0) ? f(Math.round(dispN / (rndN * multN))) : "--", unit: "玉/R" },
                     ];
 
                     const themeColor = C.green;
@@ -6058,15 +6055,13 @@ export function RotTab({ rows, setRows, S, ev }) {
                                 <>
                                     <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 12 }}>
                                         <div style={{ background: "var(--surface)", border: `1px solid ${C.orange}`, borderRadius: 14, padding: "14px 16px" }}>
-                                            <div style={{ fontSize: 12, fontWeight: 700, color: C.orange, marginBottom: 4 }}>RUSH終了 — 最終実測持ち玉</div>
-                                            <div style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>計算値を自動プリセット。実測値に差があればここで調整してください。</div>
+                                            <div style={{ fontSize: 12, fontWeight: 700, color: C.orange, marginBottom: 4 }}>RUSH終了 — 最後に残った玉数</div>
+                                            <div style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>玉箱・カウンターの数字を入力してください。開始前の玉数との差が今回の出玉になります。</div>
                                             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 6, padding: "12px 0" }}>
                                                 <span style={{ fontSize: 44, fontWeight: 800, color: C.green, fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{f(Number(chainWizardData.finalRealBalls) || 0)}</span>
                                                 <span style={{ fontSize: 14, color: C.sub, fontWeight: 700 }}>玉</span>
                                             </div>
-                                            {chainWizardInitialFinalBalls > 0 && (
-                                                <div style={{ fontSize: 10, color: C.sub, textAlign: "center" }}>計算値 {f(chainWizardInitialFinalBalls)}玉 / 差分 {sp((Number(chainWizardData.finalRealBalls) || 0) - chainWizardInitialFinalBalls)}玉</div>
-                                            )}
+                                            <div style={{ fontSize: 10, color: C.sub, textAlign: "center" }}>開始前の玉数 {f(chainTrayBalls)}玉 / 今回の出玉 {sp((Number(chainWizardData.finalRealBalls) || 0) - chainTrayBalls)}玉</div>
                                             <div style={{ display: "flex", gap: 6, justifyContent: "center", marginTop: 12 }}>
                                                 {[-100, -50, -10, +10, +50, +100].map(delta => (
                                                     <button key={delta} className="b" type="button"
@@ -6085,9 +6080,16 @@ export function RotTab({ rows, setRows, S, ev }) {
                                             <div style={{ fontSize: 11, color: C.sub, fontWeight: 700, marginBottom: 8 }}>チェーン集計</div>
                                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 16px", fontSize: 12 }}>
                                                 <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.sub }}>総R数</span><span style={{ fontFamily: mono, fontWeight: 700 }}>{chainTotalRounds}R</span></div>
-                                                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.sub }}>液晶出玉合計</span><span style={{ fontFamily: mono, fontWeight: 700 }}>{f(chainTotalDisp)}玉</span></div>
+                                                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.sub }}>開始前の玉数</span><span style={{ fontFamily: mono, fontWeight: 700 }}>{f(chainTrayBalls)}玉</span></div>
                                                 <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.sub }}>総サポ回転</span><span style={{ fontFamily: mono, fontWeight: 700 }}>{f(chainTotalSapoRot)}回転</span></div>
-                                                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.sub }}>サポ増減</span><span style={{ fontFamily: mono, fontWeight: 700, color: sc(chainTotalSapoChange) }}>{sp(chainTotalSapoChange)}玉</span></div>
+                                                {(() => {
+                                                    // サポ増減（残差）= 今回の出玉（最終玉−開始玉）− 大当たり出玉分（総R×1R出玉）
+                                                    const finalN = Number(chainWizardData.finalRealBalls) || 0;
+                                                    const residualSapo = finalN > 0 ? Math.round((finalN - chainTrayBalls) - chainTotalRounds * (Number(S.spec1R) || 140)) : 0;
+                                                    return (
+                                                        <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.sub }}>サポ増減(残差)</span><span style={{ fontFamily: mono, fontWeight: 700, color: sc(residualSapo) }}>{finalN > 0 ? sp(residualSapo) + "玉" : "—"}</span></div>
+                                                    );
+                                                })()}
                                                 <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.sub }}>連数</span><span style={{ fontFamily: mono, fontWeight: 700, color: C.yellow }}>{chainHits.length + 1}連</span></div>
                                                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                                                     <span style={{ color: C.sub }}>純増（実測）</span>
@@ -8108,8 +8110,9 @@ export function CalendarTab({ S, onReset }) {
                                     {chain.hits?.map((hit, hi) => (
                                         <div key={hi} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, padding: "3px 0", borderTop: hi > 0 ? `1px solid ${C.border}` : "none" }}>
                                             <div style={{ fontSize: 10, color: C.sub }}>{hit.hitNumber}連: {hit.rounds}R</div>
-                                            <div style={{ fontSize: 10, color: C.yellow, fontFamily: mono }}>液晶{f(hit.displayBalls)}</div>
-                                            <div style={{ fontSize: 10, color: C.green, fontFamily: mono }}>実{f(hit.actualBalls)}</div>
+                                            {/* 旧データは液晶出玉、簡易フローのデータはサポ回転を表示 */}
+                                            <div style={{ fontSize: 10, color: C.yellow, fontFamily: mono }}>{(hit.displayBalls || 0) > 0 ? `液晶${f(hit.displayBalls)}` : ((hit.elecSapoRot || 0) > 0 ? `サポ${f(hit.elecSapoRot)}回` : "—")}</div>
+                                            <div style={{ fontSize: 10, color: C.green, fontFamily: mono }}>{(hit.actualBalls || 0) > 0 ? `実${f(hit.actualBalls)}` : "—"}</div>
                                         </div>
                                     ))}
                                     {chain.summary && (
