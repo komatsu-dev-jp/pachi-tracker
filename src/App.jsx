@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useLS, calcPreciseEV } from "./logic";
 import { useUndoStack } from "./history";
 import { C, font, tsNow } from "./constants";
@@ -7,6 +7,36 @@ import ModeTabBar from "./components/ModeTabBar";
 import AnalysisDashboard from "./components/analysis/AnalysisDashboard";
 import ScoutDashboard from "./components/scout/ScoutDashboard";
 import SelectDashboard from "./components/select/SelectDashboard";
+import HomeDashboard from "./components/home/HomeDashboard";
+import {
+  addXpWithLevelUp,
+  applyDailyStreak,
+  computeMigratedRank,
+  deriveRankFromTotalXp,
+  initialRank,
+  XP_JP_HIT,
+  XP_ROT_1000,
+  XP_SESSION_COMPLETE,
+} from "./components/hunter/hunterRank";
+import LevelUpToast from "./components/hunter/LevelUpToast";
+import NotificationPanel from "./components/NotificationPanel";
+import {
+  computeBadgeMetrics,
+  evaluateBadgeUnlocks,
+  unlockBadges,
+} from "./components/hunter/badges";
+import { evDecision } from "./components/decision/evDecision";
+import {
+  addNotification as appendNotification,
+  makeNotification,
+  markAsRead as markNotifAsRead,
+  markAllAsRead as markAllNotifAsRead,
+  clearAll as clearNotifAll,
+  NOTIF_LEVEL_UP,
+  NOTIF_STREAK,
+  NOTIF_BADGE_UNLOCKED,
+  NOTIF_VERDICT_CHANGE,
+} from "./notifications";
 import { takeSnapshot, takeSnapshotImmediate, getLatest as getLatestSnapshot } from "./snapshot";
 
 // 旧タブ名 → 新モード名 のマッピング
@@ -17,6 +47,26 @@ const LEGACY_TAB_TO_MODE = {
   calendar: "analysis",
   settings: "settings",
 };
+
+// verdict ID を日本語ラベルに変換（通知本文用）
+const VERDICT_LABELS = {
+  continue_strong: "続行",
+  continue: "続行",
+  hold: "様子見",
+  stop: "ヤメ",
+};
+function verdictLabel(v) {
+  return VERDICT_LABELS[v] || String(v || "");
+}
+function verdictBodyText(decision) {
+  if (!decision) return "";
+  const ev = Number(decision.evAdjusted);
+  const conf = Number(decision.confidence);
+  const parts = [];
+  if (Number.isFinite(ev)) parts.push(`EV/K ${ev >= 0 ? "+" : ""}${Math.round(ev)}円`);
+  if (Number.isFinite(conf)) parts.push(`信頼度 ${Math.round(conf * 100)}%`);
+  return parts.join(" / ");
+}
 
 const COLOR_THEMES = [
   { id: "purple",   gradient: "linear-gradient(135deg,#667eea,#764ba2)", primary: "#667eea" },
@@ -32,13 +82,27 @@ const COLOR_THEMES = [
 ];
 
 export default function App() {
-  // 現在のモード: "scout" | "select" | "record" | "analysis" | "settings"
-  // 既存ユーザーは初回起動時に "record" モードから始まる（既存体験を維持）
-  const [currentMode, setCurrentMode] = useLS("pt_currentMode", "record");
+  // 現在のモード: "home" | "scout" | "select" | "record" | "analysis" | "settings"
+  // 新規ユーザーはホーム画面から始まる。既存ユーザーは保存済みの値を維持。
+  const [currentMode, setCurrentMode] = useLS("pt_currentMode", "home");
 
   // 分析モード内の期間サブタブ
   // "month" | "year" | "all" | "calendar"
   const [analysisTab, setAnalysisTab] = useLS("pt_analysisTab", "month");
+
+  // 分析モードの絞り込み条件（AND 条件で結合）
+  //   storeName    : 店舗名（完全一致、"" = 全店舗）
+  //   machineName  : 機種名（完全一致、"" = 全機種）
+  //   dateStart    : "YYYY-MM-DD" 開始日（含む、"" = 制限なし）
+  //   dateEnd      : "YYYY-MM-DD" 終了日（含む、"" = 制限なし）
+  //   weekdays     : 曜日（0=日..6=土の配列、[] = 全曜日）
+  const [analysisFilters, setAnalysisFilters] = useLS("pt_analysisFilters", {
+    storeName: "",
+    machineName: "",
+    dateStart: "",
+    dateEnd: "",
+    weekdays: [],
+  });
 
   // 後方互換: Tabs.jsx 内の S.setTab("rot" | "calendar" | "settings") を新モードへ変換
   // 旧 "calendar" タブはカレンダー一覧（既存 UI）を期待しているので、
@@ -107,6 +171,9 @@ export default function App() {
   const [spec1R, setSpec1R] = useLS("pt_spec1R", 140);
   const [specAvgRounds, setSpecAvgRounds] = useLS("pt_specAvgRounds", 34.17);
   const [specSapo, setSpecSapo] = useLS("pt_specSapo", 0);
+  // 遊タイム関連設定（0 = 未設定 / 天井非搭載機種）。設定された場合のみ記録モードに分析カードを表示
+  const [ceilingRot, setCeilingRot] = useLS("pt_ceilingRot", 0);
+  const [yutimePayout, setYutimePayout] = useLS("pt_yutimePayout", 0);
 
   // Logs
   const [jpLog, setJpLog] = useLS("pt_jpLog3", []);
@@ -139,6 +206,16 @@ export default function App() {
   // セッション内サブタブ
   const [sessionSubTab, setSessionSubTab] = useState("rot");
 
+  // 下部タブから「記録」モードへ遷移した際は、必ず実戦サブタブを最初に表示する。
+  // sessionSubTab が "history" のまま残っていると、初当たり入力モーダルが
+  // 自動で開く挙動になっていたため（Tabs.jsx の auto-open useEffect 参照）。
+  const handleModeChange = useCallback((nextMode) => {
+    if (nextMode === "record") {
+      setSessionSubTab("rot");
+    }
+    setCurrentMode(nextMode);
+  }, [setCurrentMode]);
+
   // Session info
   const [storeName, setStoreName] = useLS("pt_storeName", "");
   const [machineNum, setMachineNum] = useLS("pt_machineNum", "");
@@ -154,6 +231,86 @@ export default function App() {
 
   // Archives
   const [archives, setArchives] = useLS("pt_archives", []);
+
+  // 月間期待値目標（ホーム画面の目標カード用 / 円）
+  // 既存ユーザーは保存値、未設定は 100,000 円をデフォルトとして表示する。
+  const [monthlyEvTarget, setMonthlyEvTarget] = useLS("pt_monthlyEvTarget", 100000);
+
+  // ハンターランク（Phase 6 本実装版）
+  // - XP トリガー: セッション完了 +50 / 大当たり +20 / 通常回転 1000 ごと +10 / 7日連続 +100
+  // - 状態は pt_hunterRank に集約。トリガー検出用のカウンタは pt_hunterCounters に分離
+  const [hunterRank, setHunterRank] = useLS("pt_hunterRank", initialRank());
+  const [hunterRankMigrated, setHunterRankMigrated] = useLS("pt_hunterRankMigrated", false);
+
+  // Phase 6 トリガー検出用のカウンタ・ストリーク状態
+  // - countedHits:    XP 計上済みの累計大当たり回数（jpLog の hits 合計と比較）
+  // - countedRotKilo: XP 計上済みの 1000 回転マイルストーン数（ev.netRot から導出）
+  // - lastDate:       最終加算日（YYYY-MM-DD）
+  // - streakDays:     連続日数
+  const [hunterCounters, setHunterCounters] = useLS("pt_hunterCounters", {
+    countedHits: 0,
+    countedRotKilo: 0,
+    lastDate: "",
+    streakDays: 0,
+  });
+
+  // 通知ログ（Phase 6）
+  const [notificationLog, setNotificationLog] = useLS("pt_notificationLog", []);
+
+  // レベルアップトースト表示状態（永続化しない）
+  const [levelUpToast, setLevelUpToast] = useState({ show: false, level: 1 });
+
+  // 通知パネル開閉
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
+
+  // 通知ログを追加するヘルパー
+  const pushNotification = useCallback((notif) => {
+    if (!notif) return;
+    setNotificationLog((prev) => appendNotification(prev, notif));
+  }, [setNotificationLog]);
+
+  // レベルアップ検出付き XP 加算ヘルパー。
+  // 大当たり・回転マイルストーン・セッション完了・連続日数の全トリガーで使う。
+  const grantXp = useCallback((amount, reason) => {
+    const safeAmount = Math.max(0, Math.floor(Number(amount) || 0));
+    if (safeAmount <= 0) return;
+    setHunterRank((prev) => {
+      const res = addXpWithLevelUp(prev, safeAmount);
+      if (res.leveledUp) {
+        setLevelUpToast({ show: true, level: res.toLevel });
+        pushNotification(makeNotification(NOTIF_LEVEL_UP, {
+          title: `ハンターランク LV ${res.toLevel} に到達`,
+          body: reason ? `(${reason})` : "",
+          payload: { fromLevel: res.fromLevel, toLevel: res.toLevel },
+        }));
+      }
+      return res.rank;
+    });
+  }, [setHunterRank, pushNotification]);
+
+  // 初回マイグレーション: 既存 archives 件数から遡及加算
+  useEffect(() => {
+    if (hunterRankMigrated) return;
+    setHunterRank(computeMigratedRank({ archives }));
+    // 既存の大当たり数・回転マイルストーン数を「既計上」として記録し、
+    // Phase 6 起動時に過去ぶんが二重加算されないようにする。
+    const existingHits = (jpLog || []).reduce((sum, c) => sum + ((c?.hits || []).length), 0);
+    const existingKilo = Math.max(0, Math.floor((ev?.netRot || 0) / 1000));
+    setHunterCounters({
+      countedHits: existingHits,
+      countedRotKilo: existingKilo,
+      lastDate: "",
+      streakDays: 0,
+    });
+    setHunterRankMigrated(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hunterRankMigrated]);
+
+  // 表示用に nextRequired を毎回再導出（保存値は level/currentXp/totalXp のみ）
+  const hunterRankDisplay = (() => {
+    const d = deriveRankFromTotalXp(hunterRank?.totalXp);
+    return { ...hunterRank, ...d };
+  })();
 
   // 日付変更時に貯玉使用量をリセット
   useEffect(() => {
@@ -175,6 +332,143 @@ export default function App() {
     spec1R, specAvgRounds, specSapo,
     chodamaSettings: { includeChodamaInBalance },
   });
+
+  // ── Phase 6 XPトリガー：大当たり（jpLog の hits 合計が増えたら +20/件） ──
+  // マイグレーション完了後にのみ作動。
+  const totalHits = (jpLog || []).reduce((sum, c) => sum + ((c?.hits || []).length), 0);
+  useEffect(() => {
+    if (!hunterRankMigrated) return;
+    const counted = Math.max(0, Math.floor(hunterCounters?.countedHits || 0));
+    if (totalHits === counted) return;
+    if (totalHits < counted) {
+      // hits が減った（履歴削除等）→ カウンタを揃え直すだけで XP は引かない
+      setHunterCounters((prev) => ({ ...(prev || {}), countedHits: totalHits }));
+      return;
+    }
+    const delta = totalHits - counted;
+    grantXp(delta * XP_JP_HIT, `大当たり ${delta} 回`);
+    setHunterCounters((prev) => ({ ...(prev || {}), countedHits: totalHits }));
+  }, [totalHits, hunterRankMigrated]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Phase 6 XPトリガー：通常回転1000ごと +10 ──
+  const currentKilo = Math.max(0, Math.floor((ev?.netRot || 0) / 1000));
+  useEffect(() => {
+    if (!hunterRankMigrated) return;
+    const counted = Math.max(0, Math.floor(hunterCounters?.countedRotKilo || 0));
+    if (currentKilo === counted) return;
+    if (currentKilo < counted) {
+      // 回転がリセット（resetAll など）→ カウンタを下げ直すだけ
+      setHunterCounters((prev) => ({ ...(prev || {}), countedRotKilo: currentKilo }));
+      return;
+    }
+    const delta = currentKilo - counted;
+    grantXp(delta * XP_ROT_1000, `${delta * 1000} 回転到達`);
+    setHunterCounters((prev) => ({ ...(prev || {}), countedRotKilo: currentKilo }));
+  }, [currentKilo, hunterRankMigrated]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Phase 6 XPトリガー：連続稼働日数（1日1回判定、7日ごとにボーナス） ──
+  // セッション開始時 or 大当たり1回目のいずれかでその日「稼働あり」と判定する。
+  const hasActivityToday = (jpLog || []).length > 0 || (rotRows || []).length > 0;
+  useEffect(() => {
+    if (!hunterRankMigrated) return;
+    if (!hasActivityToday) return;
+    const today = new Date().toISOString().slice(0, 10);
+    if (hunterCounters?.lastDate === today) return;
+    const next = applyDailyStreak(hunterCounters, today);
+    setHunterCounters((prev) => ({
+      ...(prev || {}),
+      lastDate: next.lastDate,
+      streakDays: next.streakDays,
+    }));
+    if (next.bonusXp > 0) {
+      grantXp(next.bonusXp, `${next.milestone}日連続稼働`);
+      pushNotification(makeNotification(NOTIF_STREAK, {
+        title: `${next.milestone}日連続稼働ボーナス`,
+        body: `+${next.bonusXp} EXP`,
+        payload: { streakDays: next.streakDays },
+      }));
+    }
+  }, [hasActivityToday, hunterRankMigrated]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Phase 6 バッジ解放：レベル・連続日数・累計回転/大当たり/セッション数を監視 ──
+  // 各 metrics の変化時に未解放のバッジ条件を評価し、成立分を unlockedBadges に追加 + 通知。
+  // 既存ユーザーのマイグレーション直後にも一斉に解放判定が走る（既存実績への遡及付与）。
+  const lifetimeRotForBadge = Math.max(0, Math.floor(Number(ev?.netRot) || 0));
+  useEffect(() => {
+    if (!hunterRankMigrated) return;
+    const metrics = computeBadgeMetrics({
+      rank: hunterRank,
+      hunterCounters,
+      archives,
+      jpLog,
+      ev,
+    });
+    const newly = evaluateBadgeUnlocks(metrics, hunterRank?.unlockedBadges || []);
+    if (newly.length === 0) return;
+    setHunterRank((prev) => unlockBadges(prev, newly.map((b) => b.id)));
+    for (const b of newly) {
+      pushNotification(makeNotification(NOTIF_BADGE_UNLOCKED, {
+        title: `バッジ獲得：${b.label}`,
+        body: b.description,
+        payload: { badgeId: b.id },
+      }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    hunterRankMigrated,
+    hunterRank?.level,
+    hunterRank?.totalXp,
+    hunterCounters?.streakDays,
+    archives?.length,
+    totalHits,
+    lifetimeRotForBadge,
+  ]);
+
+  // ── Phase 6 判定変化通知：実戦タブの verdict 推移を観測し、変化時に通知 ──
+  // 同じ verdict への 5 分以内の往復はノイズとして抑制する。
+  // ガード:
+  //   - マイグレーション未完了は無視（初回起動直後の連発を防ぐ）
+  //   - セッション未開始は無視（無稼働時の "stop" 連発を防ぐ）
+  //   - prev が null の初回観測は基準値登録のみで通知しない
+  const decision = evDecision(ev);
+  const prevVerdictRef = useRef(null);
+  const lastVerdictNotifyRef = useRef({});
+  const VERDICT_NOTIFY_COOLDOWN_MS = 5 * 60 * 1000;
+  useEffect(() => {
+    // セッション終了で基準を完全リセット（次セッションは初回観測扱い）
+    if (!sessionStarted) {
+      prevVerdictRef.current = null;
+      lastVerdictNotifyRef.current = {};
+    }
+  }, [sessionStarted]);
+  useEffect(() => {
+    if (!hunterRankMigrated) return;
+    if (!sessionStarted) return;
+    const newV = decision?.verdict;
+    if (!newV) return;
+    const prevV = prevVerdictRef.current;
+    if (prevV === newV) return;
+    if (prevV === null) {
+      prevVerdictRef.current = newV;
+      return;
+    }
+    const now = Date.now();
+    const lastNotifiedTs = Number(lastVerdictNotifyRef.current[newV]) || 0;
+    if (now - lastNotifiedTs < VERDICT_NOTIFY_COOLDOWN_MS) {
+      // 抑制対象でも prev は更新しておかないと、次の本物の変化を取りこぼす
+      prevVerdictRef.current = newV;
+      return;
+    }
+    prevVerdictRef.current = newV;
+    lastVerdictNotifyRef.current = { ...lastVerdictNotifyRef.current, [newV]: now };
+    pushNotification(makeNotification(NOTIF_VERDICT_CHANGE, {
+      title: `判定が「${verdictLabel(prevV)}」→「${verdictLabel(newV)}」に変化`,
+      body: verdictBodyText(decision),
+      payload: { from: prevV, to: newV, evAdjusted: decision?.evAdjusted },
+    }));
+    // decision を deps に含めると毎レンダで参照変化するため verdict のみ
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [decision?.verdict, hunterRankMigrated, sessionStarted]);
 
   // ── Undo/Redo（直近10操作分のセッション中スナップショット） ──
   const getUndoSnapshot = useCallback(() => ({
@@ -299,6 +593,13 @@ export default function App() {
     setInitialChodama(0);
     setCurrentMochiBalls(0);
     setCurrentChodama(0);
+    // Phase 6 XPトリガー用カウンタもセッション一緒にリセット（次のセッションは 0 から数え直す）
+    setHunterCounters((prev) => ({
+      countedHits: 0,
+      countedRotKilo: 0,
+      lastDate: prev?.lastDate || "",
+      streakDays: Math.max(0, Math.floor(Number(prev?.streakDays) || 0)),
+    }));
     setSelectedStoreId(null);
   };
 
@@ -332,6 +633,8 @@ export default function App() {
         isMoveArchive: true,
       };
       setArchives((prev) => [...prev, archive]);
+      // ハンターランク: 実戦アーカイブ確定で XP 加算（Phase 6：レベルアップ検出付き）
+      grantXp(XP_SESSION_COMPLETE, "セッション完了");
     }
     resetAll();
     setCurrentMode("record");
@@ -342,6 +645,7 @@ export default function App() {
     rotPerHour, setRotPerHour, border, setBorder, ballVal, setBallVal,
     investPace, setInvestPace,
     spec1R, setSpec1R, specAvgRounds, setSpecAvgRounds, specSapo, setSpecSapo,
+    ceilingRot, setCeilingRot, yutimePayout, setYutimePayout,
     rotRows, setRotRows,
     jpLog, setJpLog, pushJP,
     sesLog, setSesLog,
@@ -353,6 +657,7 @@ export default function App() {
     stores, setStores,
     customMachines, setCustomMachines,
     archives, setArchives,
+    monthlyEvTarget, setMonthlyEvTarget,
     ev, handleMoveTable,
     theme, setTheme,
     // 外観
@@ -380,6 +685,12 @@ export default function App() {
     sessionSubTab, setSessionSubTab,
     // Undo/Redo
     pushSnapshot, undo, redo, canUndo, canRedo,
+    // ハンターランク（Phase 6）
+    hunterRank: hunterRankDisplay,
+    hunterCounters,
+    // 通知（Phase 6）
+    notificationLog,
+    openNotificationPanel: () => setNotificationPanelOpen(true),
   };
 
   // PINロック画面
@@ -459,9 +770,10 @@ export default function App() {
           flexDirection: "column",
           overflow: "auto",
           overflowX: "hidden",
-          paddingBottom: "calc(52px + env(safe-area-inset-bottom))",
+          paddingBottom: "calc(44px + env(safe-area-inset-bottom))",
         }}
       >
+        {currentMode === "home" && <HomeDashboard S={S} />}
         {currentMode === "scout" && <ScoutDashboard S={S} />}
         {currentMode === "select" && (
           <SelectDashboard
@@ -494,13 +806,32 @@ export default function App() {
             onReset={resetAll}
             periodTab={analysisTab}
             onChangePeriodTab={setAnalysisTab}
+            filters={analysisFilters}
+            onChangeFilters={setAnalysisFilters}
           />
         )}
         {currentMode === "settings" && <SettingsTab s={S} onReset={resetAll} />}
       </main>
 
       {/* Mode Navigation (5 タブ) */}
-      <ModeTabBar currentMode={currentMode} onChange={setCurrentMode} />
+      <ModeTabBar currentMode={currentMode} onChange={handleModeChange} />
+
+      {/* Phase 6: レベルアップトースト */}
+      <LevelUpToast
+        show={levelUpToast.show}
+        level={levelUpToast.level}
+        onClose={() => setLevelUpToast((s) => ({ ...s, show: false }))}
+      />
+
+      {/* Phase 6: 通知パネル（ベルから開く） */}
+      <NotificationPanel
+        open={notificationPanelOpen}
+        notifications={notificationLog}
+        onClose={() => setNotificationPanelOpen(false)}
+        onMarkAllAsRead={() => setNotificationLog((prev) => markAllNotifAsRead(prev))}
+        onMarkAsRead={(id) => setNotificationLog((prev) => markNotifAsRead(prev, id))}
+        onClear={() => setNotificationLog(clearNotifAll())}
+      />
 
       {recoveryCandidate && (
         <RecoverySheet

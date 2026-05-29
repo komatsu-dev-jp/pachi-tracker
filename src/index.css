@@ -28,31 +28,33 @@
   --accent-grad: #2f6fed;
 }
 
-/* Dark Theme — モックアップ2 ブルー寄りダークネイビーパレット */
+/* Dark Theme — モックアップ準拠 ピュアブラック寄り高コントラストパレット
+   背景はほぼ純黒、サーフェスはほのかな冷色を含むダークグレー、
+   ボーダーは中立的な白の低不透明度。アクセントは鮮やかなネオン系。 */
 [data-theme="dark"] {
-  --bg: #0c1428;
-  --surface: #1a2238;
-  --surface-hi: #222c47;
-  --surface-alt: #121a30;
-  --border: rgba(148, 178, 255, 0.08);
-  --border-hi: rgba(148, 178, 255, 0.16);
-  --blue: #60a5fa;
-  --green: #34d399;
+  --bg: #05070d;
+  --surface: #0e1117;
+  --surface-hi: #181d27;
+  --surface-alt: #090b12;
+  --border: rgba(255, 255, 255, 0.06);
+  --border-hi: rgba(255, 255, 255, 0.14);
+  --blue: #38bdf8;
+  --green: #22c55e;
   --red: #f87171;
   --yellow: #fbbf24;
   --teal: #2dd4bf;
   --orange: #fb923c;
   --purple: #c084fc;
-  --text: #e8eef9;
-  --sub: #7c8aa3;
-  --sub-hi: #a8b3cc;
+  --text: #f3f6fb;
+  --sub: #6b7689;
+  --sub-hi: #a3adc2;
   --font-main: 'Inter', 'Hiragino Sans', 'Yu Gothic', sans-serif;
   --font-mono: 'Inter', 'Hiragino Sans', 'Yu Gothic', sans-serif;
   --font-feature-zero: "zero" 0;
-  --header-bg: rgba(12, 20, 40, 0.92);
-  --nav-bg: rgba(12, 20, 40, 0.96);
-  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 10px rgba(0, 0, 0, 0.28);
-  --accent-grad: #60a5fa;
+  --header-bg: rgba(5, 7, 13, 0.92);
+  --nav-bg: rgba(5, 7, 13, 0.96);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 2px 10px rgba(0, 0, 0, 0.35);
+  --accent-grad: #38bdf8;
 }
 
 * {
@@ -132,6 +134,51 @@ input, select, textarea {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* 詳細データタブ — 現在点パルス（推移グラフ） */
+@keyframes data-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  70% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.data-pulse-ring {
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: data-pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* 詳細データタブ — 折りたたみセクションの iOS 風スプリング展開 */
+@keyframes data-expand {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.data-collapse-body {
+  overflow: hidden;
+  animation: data-expand 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 詳細データタブ — カードの微弱グロー（タップで沈み込み） */
+.data-card-hover:active {
+  transform: scale(0.997);
+  transition: transform 0.12s ease;
 }
 
 /* Flat card (was glassmorphism) */
@@ -649,10 +696,10 @@ input, select, textarea {
 .verdict-badge--hold {
   background:
     linear-gradient(135deg,
-      color-mix(in srgb, var(--yellow) 38%, var(--surface)) 0%,
-      color-mix(in srgb, var(--yellow) 18%, var(--surface)) 70%,
+      color-mix(in srgb, var(--blue) 36%, var(--surface)) 0%,
+      color-mix(in srgb, var(--blue) 16%, var(--surface)) 70%,
       var(--surface) 100%);
-  border-color: color-mix(in srgb, var(--yellow) 60%, transparent);
+  border-color: color-mix(in srgb, var(--blue) 55%, transparent);
 }
 
 .verdict-badge--stop {
@@ -795,18 +842,19 @@ input, select, textarea {
 
 /* ==========================================================================
    大当たり後フロー 見た目優先プロトタイプ
+   ピュアブラック寄りのモックアップ2準拠パレット
    ========================================================================== */
 .jp-proto-screen {
   background:
-    radial-gradient(circle at 18% 0%, rgba(56, 189, 248, 0.20), transparent 30%),
-    radial-gradient(circle at 100% 18%, rgba(192, 132, 252, 0.18), transparent 34%),
-    linear-gradient(180deg, #06111f 0%, #070a12 54%, #030712 100%);
+    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--blue) 14%, transparent), transparent 30%),
+    radial-gradient(circle at 100% 18%, color-mix(in srgb, var(--purple) 12%, transparent), transparent 34%),
+    linear-gradient(180deg, var(--surface-alt) 0%, var(--bg) 54%, #020306 100%);
 }
 
 .jp-proto-header {
-  background: rgba(3, 7, 18, 0.82) !important;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.18) !important;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+  background: color-mix(in srgb, var(--bg) 82%, transparent) !important;
+  border-bottom: 1px solid var(--border) !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.38);
   backdrop-filter: blur(18px);
 }
 
@@ -818,10 +866,10 @@ input, select, textarea {
   border-radius: 22px;
   padding: 16px;
   background:
-    linear-gradient(135deg, var(--jp-soft), rgba(15, 23, 42, 0.72)),
-    rgba(15, 23, 42, 0.86);
-  border: 1px solid color-mix(in srgb, var(--jp-main) 42%, rgba(255,255,255,0.12));
-  box-shadow: 0 0 30px var(--jp-glow), inset 0 1px 0 rgba(255,255,255,0.09);
+    linear-gradient(135deg, var(--jp-soft), color-mix(in srgb, var(--surface) 80%, transparent)),
+    var(--surface);
+  border: 1px solid color-mix(in srgb, var(--jp-main) 42%, var(--border-hi));
+  box-shadow: 0 0 30px var(--jp-glow), inset 0 1px 0 rgba(255,255,255,0.06);
 }
 
 .jp-flow-status::after {
@@ -867,8 +915,8 @@ input, select, textarea {
   border-radius: 999px;
   display: grid;
   place-items: center;
-  color: #020617;
-  background: radial-gradient(circle at 35% 30%, #fff, var(--jp-main) 52%, color-mix(in srgb, var(--jp-main) 65%, #020617));
+  color: var(--bg);
+  background: radial-gradient(circle at 35% 30%, #fff, var(--jp-main) 52%, color-mix(in srgb, var(--jp-main) 65%, var(--bg)));
   font-size: 26px;
   font-weight: 900;
   box-shadow: 0 0 22px var(--jp-glow);
@@ -887,8 +935,8 @@ input, select, textarea {
   min-height: 58px;
   border-radius: 14px;
   padding: 9px 8px;
-  background: rgba(2, 6, 23, 0.46);
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+  border: 1px solid var(--border);
 }
 
 .jp-flow-metric div {
@@ -917,10 +965,10 @@ input, select, textarea {
   border-radius: 24px;
   padding: 18px 16px;
   background:
-    linear-gradient(180deg, rgba(15,23,42,0.86), rgba(2,6,23,0.72)),
+    linear-gradient(180deg, var(--surface), var(--surface-alt)),
     var(--jp-soft);
-  border: 1px solid color-mix(in srgb, var(--jp-main) 36%, rgba(255,255,255,0.10));
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 0 24px var(--jp-glow);
+  border: 1px solid color-mix(in srgb, var(--jp-main) 36%, var(--border-hi));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 0 24px var(--jp-glow);
 }
 
 .jp-value-label {
@@ -960,17 +1008,17 @@ input, select, textarea {
   border: 1px solid color-mix(in srgb, var(--jp-main) 45%, transparent);
   border-radius: 18px;
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--jp-main) 34%, #0f172a), rgba(15,23,42,0.94));
-  color: #f8fafc;
-  box-shadow: 0 0 22px var(--jp-glow), inset 0 1px 0 rgba(255,255,255,0.10);
+    linear-gradient(135deg, color-mix(in srgb, var(--jp-main) 34%, var(--surface)), var(--surface-alt));
+  color: var(--text);
+  box-shadow: 0 0 22px var(--jp-glow), inset 0 1px 0 rgba(255,255,255,0.08);
   font-family: var(--font-main);
   font-weight: 900;
 }
 
 .jp-keypad {
-  background: rgba(2, 6, 23, 0.94) !important;
-  border-top: 1px solid rgba(148, 163, 184, 0.18) !important;
-  box-shadow: 0 -16px 40px rgba(0,0,0,0.36);
+  background: color-mix(in srgb, var(--bg) 94%, transparent) !important;
+  border-top: 1px solid var(--border) !important;
+  box-shadow: 0 -16px 40px rgba(0,0,0,0.46);
 }
 
 .jp-keypad button {
@@ -982,4 +1030,833 @@ input, select, textarea {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1, "lnum" 1;
   letter-spacing: 0.2px;
+}
+
+/* ==========================================================================
+   記録モード ダーク × ネオンブルー × 戦略OS風 UI
+   ========================================================================== */
+
+/* 判定ステータスカード（モックアップ2準拠 — EKG風アイコン + 円形ゲージ） */
+.rec-verdict-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 64px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 14px;
+  border-radius: 18px;
+  flex-shrink: 0;
+  background:
+    radial-gradient(circle at 10% 0%, color-mix(in srgb, var(--blue) 22%, transparent), transparent 56%),
+    linear-gradient(180deg, color-mix(in srgb, var(--blue) 10%, var(--surface)), var(--surface));
+  border: 1px solid color-mix(in srgb, var(--blue) 30%, var(--border-hi));
+  box-shadow: var(--card-shadow), 0 0 18px color-mix(in srgb, var(--blue) 18%, transparent);
+  overflow: hidden;
+}
+
+.rec-verdict-card--continue,
+.rec-verdict-card--continue_strong {
+  background:
+    radial-gradient(circle at 10% 0%, color-mix(in srgb, var(--green) 22%, transparent), transparent 56%),
+    linear-gradient(180deg, color-mix(in srgb, var(--green) 10%, var(--surface)), var(--surface));
+  border-color: color-mix(in srgb, var(--green) 36%, var(--border-hi));
+}
+
+.rec-verdict-card--stop {
+  background:
+    radial-gradient(circle at 10% 0%, color-mix(in srgb, var(--red) 22%, transparent), transparent 56%),
+    linear-gradient(180deg, color-mix(in srgb, var(--red) 10%, var(--surface)), var(--surface));
+  border-color: color-mix(in srgb, var(--red) 36%, var(--border-hi));
+}
+
+.rec-verdict-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+}
+
+.rec-verdict-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--sub-hi);
+  letter-spacing: 0.4px;
+  margin-bottom: 2px;
+}
+
+.rec-verdict-main {
+  font-size: 30px;
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: 0.5px;
+}
+
+.rec-verdict-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+}
+
+.rec-verdict-status-pill::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+}
+
+.rec-verdict-hint {
+  font-size: 11px;
+  color: var(--sub-hi);
+  margin-top: 6px;
+  font-weight: 600;
+}
+
+.rec-verdict-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 92px;
+}
+
+.rec-verdict-ring {
+  position: relative;
+  width: 64px;
+  height: 64px;
+}
+
+.rec-verdict-ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.rec-verdict-ring-track {
+  fill: none;
+  stroke: color-mix(in srgb, currentColor 18%, transparent);
+  stroke-width: 5;
+}
+
+.rec-verdict-ring-fill {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.4s ease;
+}
+
+.rec-verdict-ring-num {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+}
+
+.rec-verdict-accuracy {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--sub-hi);
+}
+
+.rec-verdict-accuracy strong {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.rec-verdict-stable {
+  font-size: 10px;
+  color: var(--sub);
+  font-weight: 600;
+}
+
+.rec-verdict-stable strong {
+  color: var(--blue);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* メトリクスカード（補正後EV/K, 生EV/K, ボーダー差 など） */
+.metric-card-v2 {
+  position: relative;
+  padding: 10px 10px 8px;
+  border-radius: 14px;
+  flex-shrink: 0;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--metric-accent, var(--blue)) 8%, var(--surface)),
+    var(--surface));
+  border: 1px solid color-mix(in srgb, var(--metric-accent, var(--blue)) 22%, var(--border));
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.metric-card-v2--accent {
+  border: 1px solid color-mix(in srgb, var(--metric-accent, var(--blue)) 45%, transparent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--metric-accent, var(--blue)) 18%, transparent);
+}
+
+.metric-card-v2__label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--sub-hi);
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.metric-card-v2__row {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.metric-card-v2__num {
+  font-size: 21px;
+  font-weight: 900;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+  color: var(--metric-accent, var(--text));
+}
+
+.metric-card-v2__num--small {
+  font-size: 17px;
+}
+
+.metric-card-v2__unit {
+  font-size: 10px;
+  color: var(--sub-hi);
+  font-weight: 700;
+}
+
+.metric-card-v2__base {
+  font-size: 9px;
+  color: var(--sub);
+  font-weight: 600;
+  margin-top: -1px;
+}
+
+.metric-card-v2__spark {
+  margin-top: auto;
+  height: 22px;
+  display: block;
+  width: 100%;
+}
+
+/* タイムライン: 直近の行動ログ */
+.timeline-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 14px 10px;
+  flex-shrink: 0;
+}
+
+.timeline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.timeline-head__title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timeline-head__link {
+  font-size: 11px;
+  color: var(--blue);
+  font-weight: 700;
+  background: none;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.timeline-row {
+  display: grid;
+  grid-template-columns: 44px 28px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  position: relative;
+}
+
+.timeline-row + .timeline-row {
+  border-top: 1px dashed color-mix(in srgb, var(--border-hi) 70%, transparent);
+}
+
+.timeline-row__time {
+  font-size: 11px;
+  color: var(--sub-hi);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.4px;
+}
+
+.timeline-row__icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--ti-color, var(--blue)) 18%, transparent);
+  color: var(--ti-color, var(--blue));
+  border: 1px solid color-mix(in srgb, var(--ti-color, var(--blue)) 36%, transparent);
+  flex-shrink: 0;
+}
+
+.timeline-row__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.timeline-row__label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.timeline-row__sub {
+  font-size: 10px;
+  color: var(--sub);
+  font-weight: 500;
+  line-height: 1.2;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timeline-row__chips {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 50%;
+}
+
+.timeline-chip {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--sub-hi);
+  background: var(--surface-hi);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 6px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.timeline-chip strong {
+  color: var(--text);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline-chip--success strong {
+  color: var(--green);
+}
+
+/* 判定の根拠（要約）カード */
+.reasons-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 14px;
+  flex-shrink: 0;
+}
+
+.reasons-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.reasons-head__title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.reasons-head__link {
+  font-size: 11px;
+  color: var(--blue);
+  font-weight: 700;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.reasons-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.reason-item {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 9px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--reason-color, var(--green)) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--reason-color, var(--green)) 22%, transparent);
+  min-height: 50px;
+}
+
+.reason-item__icon {
+  color: var(--reason-color, var(--green));
+  font-weight: 900;
+  font-size: 11px;
+  line-height: 1.4;
+  margin-top: 1px;
+}
+
+.reason-item__text {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+/* 折りたたみ：詳細データ */
+.collapse-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  flex-shrink: 0;
+}
+
+.collapse-card__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.collapse-card__head svg {
+  transition: transform 0.2s ease;
+}
+
+.collapse-card__head[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+/* 下部固定CTA: 回転数を入力する（RotTabの flex 列内で最下部に配置） */
+.record-cta-bar {
+  flex-shrink: 0;
+  padding: 10px 12px calc(8px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, transparent, var(--bg) 40%, var(--bg));
+  border-top: 1px solid color-mix(in srgb, var(--blue) 12%, transparent);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.record-cta-input {
+  flex: 1;
+  min-height: 64px;
+  border-radius: 18px;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--blue) 88%, transparent),
+    color-mix(in srgb, var(--blue) 70%, transparent));
+  border: 1px solid color-mix(in srgb, var(--blue) 60%, transparent);
+  color: #fff;
+  font-family: var(--font-main);
+  font-weight: 900;
+  font-size: 16px;
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--blue) 35%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  text-align: left;
+}
+
+.record-cta-input__sub {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
+.record-fab {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface-hi);
+  border: 1px solid color-mix(in srgb, var(--blue) 50%, transparent);
+  color: var(--blue);
+  font-family: var(--font-main);
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45),
+    0 0 14px color-mix(in srgb, var(--blue) 28%, transparent);
+}
+
+.record-fab__plus {
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.record-fab__label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  margin-top: 2px;
+}
+
+/* イベントメニュー（FABから開くボトムシート） */
+.event-menu__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  z-index: 305;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: input-sheet-fade 180ms ease-out;
+}
+
+.event-menu__panel {
+  width: 100%;
+  max-width: 480px;
+  background: var(--surface);
+  border-top: 1px solid color-mix(in srgb, var(--blue) 25%, var(--border));
+  border-radius: 22px 22px 0 0;
+  padding: 12px 14px calc(18px + env(safe-area-inset-bottom));
+  box-shadow: 0 -14px 36px rgba(0, 0, 0, 0.5);
+  animation: input-sheet-slide 220ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.event-menu__title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--blue);
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.event-menu__sub {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--sub);
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.event-menu__item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 36px 1fr 14px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--surface-hi);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--text);
+  text-align: left;
+  margin-top: 8px;
+  cursor: pointer;
+  min-height: 56px;
+}
+
+.event-menu__item-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--em-color, var(--blue)) 18%, transparent);
+  color: var(--em-color, var(--blue));
+  border: 1px solid color-mix(in srgb, var(--em-color, var(--blue)) 36%, transparent);
+}
+
+.event-menu__item-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.event-menu__item-sub {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--sub);
+  margin-top: 3px;
+  line-height: 1.3;
+}
+
+.event-menu__item-chev {
+  color: var(--sub);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.event-menu__footer {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--sub);
+}
+
+/* テンキーモーダル モックアップ2準拠 */
+.numpad-modal__panel {
+  width: 100%;
+  max-width: 480px;
+  background: var(--surface);
+  border-top: 1px solid color-mix(in srgb, var(--blue) 25%, var(--border));
+  border-radius: 24px 24px 0 0;
+  padding: 14px 16px calc(20px + env(safe-area-inset-bottom));
+  box-shadow: 0 -14px 36px rgba(0, 0, 0, 0.5);
+  animation: input-sheet-slide 220ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+
+.numpad-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.numpad-modal__title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.numpad-modal__close {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--surface-hi);
+  border: 1px solid var(--border);
+  color: var(--sub-hi);
+  font-size: 18px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.numpad-modal__chips {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface-hi);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  margin-bottom: 12px;
+}
+
+.numpad-modal__chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.numpad-modal__chip-label {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--sub);
+  letter-spacing: 0.3px;
+}
+
+.numpad-modal__chip-val {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.numpad-modal__chip-val--accent {
+  color: var(--purple);
+}
+
+.numpad-modal__chip-val--blue {
+  color: var(--blue);
+}
+
+.numpad-modal__display {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  background: color-mix(in srgb, var(--blue) 6%, var(--surface-hi));
+  border: 1px solid color-mix(in srgb, var(--blue) 22%, var(--border-hi));
+  border-radius: 16px;
+  margin-bottom: 12px;
+  min-height: 76px;
+}
+
+.numpad-modal__display-num {
+  font-size: 48px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  line-height: 1;
+  letter-spacing: 0.5px;
+}
+
+.numpad-modal__display-num--empty {
+  color: var(--sub);
+}
+
+.numpad-modal__display-unit {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--sub-hi);
+  margin-left: 4px;
+}
+
+.numpad-modal__display-del {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--sub-hi);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.numpad-modal__keys {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.numpad-modal__key {
+  min-height: 56px;
+  border-radius: 14px;
+  background: var(--surface-hi);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 22px;
+  font-weight: 700;
+  font-family: var(--font-main);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.numpad-modal__key--zero {
+  grid-column: 1;
+}
+
+.numpad-modal__key--back {
+  background: color-mix(in srgb, var(--red) 8%, var(--surface-hi));
+}
+
+.numpad-modal__submit {
+  width: 100%;
+  min-height: 56px;
+  border-radius: 16px;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--blue) 88%, transparent),
+    color-mix(in srgb, var(--blue) 65%, transparent));
+  border: 1px solid color-mix(in srgb, var(--blue) 60%, transparent);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 900;
+  font-family: var(--font-main);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--blue) 32%, transparent);
+}
+
+.numpad-modal__history {
+  margin-top: 12px;
+}
+
+.numpad-modal__history-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--sub);
+  margin-bottom: 6px;
+}
+
+.numpad-modal__history-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.numpad-modal__history-chip {
+  padding: 5px 10px;
+  border-radius: 10px;
+  background: var(--surface-hi);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sub-hi);
+  font-variant-numeric: tabular-nums;
 }

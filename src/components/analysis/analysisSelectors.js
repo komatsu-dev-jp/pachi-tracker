@@ -33,22 +33,51 @@ function toMonthKey(date) {
 function toYearKey(date) {
   return typeof date === "string" && date.length >= 4 ? date.slice(0, 4) : "";
 }
+// YYYY-MM-DD → 曜日（0=日, 1=月, ..., 6=土）
+//   無効な日付なら null
+function toWeekday(date) {
+  if (typeof date !== "string" || date.length < 10) return null;
+  const y = Number(date.slice(0, 4));
+  const m = Number(date.slice(5, 7));
+  const d = Number(date.slice(8, 10));
+  if (!isFinite(y) || !isFinite(m) || !isFinite(d)) return null;
+  const dt = new Date(y, m - 1, d);
+  if (isNaN(dt.getTime())) return null;
+  return dt.getDay();
+}
 
-// 期間内に絞り込む（month: "YYYY-MM" / year: "YYYY" / null = 全件）
-export function filterArchives(archives, { month, year } = {}) {
+// 期間／属性で絞り込む（AND 条件）
+//   month     : "YYYY-MM"      （指定月の archive のみ）
+//   year      : "YYYY"         （指定年の archive のみ）
+//   storeName : string         （完全一致、"" / 未指定 = 全店舗）
+//   machineName: string        （完全一致、"" / 未指定 = 全機種）
+//   dateStart : "YYYY-MM-DD"   （開始日含む、"" / 未指定 = 制限なし）
+//   dateEnd   : "YYYY-MM-DD"   （終了日含む、"" / 未指定 = 制限なし）
+//   weekdays  : number[]       （0=日..6=土、空配列 / 未指定 = 全曜日）
+export function filterArchives(archives, opts = {}) {
   if (!Array.isArray(archives)) return [];
+  const { month, year, storeName, machineName, dateStart, dateEnd, weekdays } = opts;
+  const wdSet = Array.isArray(weekdays) && weekdays.length > 0 ? new Set(weekdays) : null;
   return archives.filter((a) => {
     if (!a || typeof a.date !== "string") return false;
-    if (month) return a.date.startsWith(month);
-    if (year) return a.date.startsWith(year);
+    if (month && !a.date.startsWith(month)) return false;
+    if (year && !a.date.startsWith(year)) return false;
+    if (dateStart && a.date < dateStart) return false;
+    if (dateEnd && a.date > dateEnd) return false;
+    if (storeName && String(a.storeName || "") !== storeName) return false;
+    if (machineName && String(a.machineName || "") !== machineName) return false;
+    if (wdSet) {
+      const wd = toWeekday(a.date);
+      if (wd == null || !wdSet.has(wd)) return false;
+    }
     return true;
   });
 }
 
 // 日別集計（指定月内）
 //   返却: [{ date: "YYYY-MM-DD", actualPL, evAmount, sessions, hasActual }, ...]（昇順）
-export function aggregateByDay(archives, month) {
-  const filtered = filterArchives(archives, { month });
+export function aggregateByDay(archives, month, extraFilters = {}) {
+  const filtered = filterArchives(archives, { ...extraFilters, month });
   const map = {};
   for (const a of filtered) {
     const d = a.date;
@@ -66,8 +95,8 @@ export function aggregateByDay(archives, month) {
 
 // 月別集計（指定年内）
 //   返却: [{ month: "YYYY-MM", actualPL, evAmount, sessions, days, hasActual }, ...]（昇順）
-export function aggregateByMonth(archives, year) {
-  const filtered = filterArchives(archives, { year });
+export function aggregateByMonth(archives, year, extraFilters = {}) {
+  const filtered = filterArchives(archives, { ...extraFilters, year });
   const map = {};
   for (const a of filtered) {
     const m = toMonthKey(a.date);
@@ -91,8 +120,8 @@ export function aggregateByMonth(archives, year) {
 
 // 年別集計（全件対象）
 //   返却: [{ year: "YYYY", actualPL, evAmount, sessions, days, hasActual }, ...]（昇順）
-export function aggregateByYear(archives) {
-  const filtered = filterArchives(archives, {});
+export function aggregateByYear(archives, extraFilters = {}) {
+  const filtered = filterArchives(archives, extraFilters);
   const map = {};
   for (const a of filtered) {
     const y = toYearKey(a.date);
@@ -116,8 +145,8 @@ export function aggregateByYear(archives) {
 
 // 期間サマリー集計
 //   返却: { totalPL, totalInvest, totalRecovery, recoverRate, days, sessions, winRate, hasActual, evAmount, workHours, wage }
-export function summarize(archives, { month, year } = {}) {
-  const filtered = filterArchives(archives, { month, year });
+export function summarize(archives, opts = {}) {
+  const filtered = filterArchives(archives, opts);
   let totalPL = 0;
   let totalInvest = 0;
   let totalRecovery = 0;
@@ -177,8 +206,9 @@ export function summarize(archives, { month, year } = {}) {
 // 機種別 TOP5（指定期間内）
 //   並び順は「実損益 (actualPL) の降順」
 //   返却: [{ key, machineName, synthDenom, sessions, actualPL, invest, recovery, recoverRate, evAmount }, ...]
-export function machineRanking(archives, { month, year, limit = 5 } = {}) {
-  const filtered = filterArchives(archives, { month, year });
+export function machineRanking(archives, opts = {}) {
+  const { limit = 5, ...filters } = opts;
+  const filtered = filterArchives(archives, filters);
   const map = {};
   for (const a of filtered) {
     const denom = a?.settings?.synthDenom ?? "";
@@ -226,8 +256,8 @@ export function machineRanking(archives, { month, year, limit = 5 } = {}) {
 
 // 日別収支推移グラフ用データ（指定月内、欠日は埋めずに記録のある日のみ）
 //   返却: [{ label: "5/12", value: number, date: "YYYY-MM-DD" }, ...]
-export function buildDailyChartPoints(archives, month) {
-  const days = aggregateByDay(archives, month);
+export function buildDailyChartPoints(archives, month, extraFilters = {}) {
+  const days = aggregateByDay(archives, month, extraFilters);
   return days
     .filter((d) => d.hasActual) // 実損益のある日のみ
     .map((d) => {
@@ -239,8 +269,8 @@ export function buildDailyChartPoints(archives, month) {
 }
 
 // 月別収支推移グラフ用データ（指定年内、欠月は埋めずに記録のある月のみ）
-export function buildMonthlyChartPoints(archives, year) {
-  const months = aggregateByMonth(archives, year);
+export function buildMonthlyChartPoints(archives, year, extraFilters = {}) {
+  const months = aggregateByMonth(archives, year, extraFilters);
   return months
     .filter((m) => m.hasActual)
     .map((m) => {
@@ -250,8 +280,8 @@ export function buildMonthlyChartPoints(archives, year) {
 }
 
 // 年別収支推移グラフ用データ
-export function buildYearlyChartPoints(archives) {
-  const years = aggregateByYear(archives);
+export function buildYearlyChartPoints(archives, extraFilters = {}) {
+  const years = aggregateByYear(archives, extraFilters);
   return years
     .filter((y) => y.hasActual)
     .map((y) => ({ label: `${y.year}年`, value: Math.round(y.actualPL), date: y.year }));
@@ -275,4 +305,36 @@ export function listAvailableYears(archives) {
     if (y) set.add(y);
   }
   return Array.from(set).sort();
+}
+
+// アーカイブ内に存在する店舗名の一覧（空文字除外、五十音昇順）
+export function listAvailableStores(archives) {
+  const set = new Set();
+  for (const a of archives || []) {
+    const s = String(a?.storeName || "").trim();
+    if (s) set.add(s);
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b, "ja"));
+}
+
+// アーカイブ内に存在する機種名の一覧（空文字除外、五十音昇順）
+export function listAvailableMachines(archives) {
+  const set = new Set();
+  for (const a of archives || []) {
+    const m = String(a?.machineName || "").trim();
+    if (m) set.add(m);
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b, "ja"));
+}
+
+// 現在のフィルタが「有効（1つでも絞り込みが入っている）」かを判定
+//   AnalysisDashboard でフィルタチップやリセットボタンの活性判定に使用
+export function isFilterActive(filters = {}) {
+  if (!filters || typeof filters !== "object") return false;
+  if (filters.storeName) return true;
+  if (filters.machineName) return true;
+  if (filters.dateStart) return true;
+  if (filters.dateEnd) return true;
+  if (Array.isArray(filters.weekdays) && filters.weekdays.length > 0) return true;
+  return false;
 }
