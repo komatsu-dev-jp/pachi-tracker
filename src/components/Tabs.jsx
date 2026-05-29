@@ -8416,259 +8416,6 @@ export function CalendarTab({ S, onReset }) {
                 );
             })()}
 
-            {/* CSV Import/Export */}
-            <Card style={{ padding: 14, marginTop: 12 }}>
-                <SecLabel label="データ管理" />
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <Btn label="CSVエクスポート" onClick={() => {
-                        if (archives.length === 0) {
-                            alert("エクスポートするデータがありません");
-                            return;
-                        }
-                        const headers = [
-                            "日付", "時刻", "店舗名", "台番号", "機種名",
-                            "投資", "回収", "収支", "確率分母", "貸玉数", "換金率",
-                            "時間回転数", "ボーダー", "玉単価", "仕事量", "期待値/K", "1Kスタート", "総回転"
-                        ];
-                        const rows = archives.map(a => {
-                            const st = a.stats || {};
-                            const invest = a.investYen || 0;
-                            const recovery = a.recoveryYen || 0;
-                            return [
-                                a.date || "",
-                                a.time || "",
-                                (a.storeName || "").replace(/,/g, "，"),
-                                a.machineNum || "",
-                                (a.machineName || "").replace(/,/g, "，"),
-                                invest,
-                                recovery,
-                                recovery - invest,
-                                a.settings?.synthDenom || "",
-                                a.settings?.rentBalls || "",
-                                a.settings?.exRate || "",
-                                a.settings?.rotPerHour || "",
-                                a.settings?.border || "",
-                                a.settings?.ballVal || "",
-                                Math.round(st.workAmount || 0),
-                                Math.round(st.ev1K || 0),
-                                st.start1K ? st.start1K.toFixed(2) : "",
-                                Math.round(st.netRot || 0)
-                            ].join(",");
-                        });
-                        const csv = "\uFEFF" + headers.join(",") + "\n" + rows.join("\n");
-                        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-                        const url = URL.createObjectURL(blob);
-                        const link = document.createElement("a");
-                        link.href = url;
-                        link.download = `pachi-tracker-${new Date().toISOString().slice(0, 10)}.csv`;
-                        link.click();
-                        URL.revokeObjectURL(url);
-                    }} fs={12} />
-                    <label style={{
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        background: "#2f6fed", border: "none", borderRadius: 12,
-                        color: "#fff", fontSize: 12, fontWeight: 700, padding: "12px 16px", cursor: "pointer",
-                        fontFamily: font, textAlign: "center"
-                    }}>
-                        CSVインポート
-                        <input type="file" accept=".csv" style={{ display: "none" }} onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (!file) return;
-                            const reader = new FileReader();
-                            reader.onload = (ev) => {
-                                try {
-                                    let text = ev.target?.result;
-                                    if (typeof text !== "string") return;
-                                    // BOM除去
-                                    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
-                                    const lines = text.split(/\r?\n/).filter(l => l.trim());
-                                    if (lines.length < 2) {
-                                        alert("有効なデータがありません");
-                                        return;
-                                    }
-                                    const headerLine = lines[0];
-                                    const headers = headerLine.split(",").map(h => h.trim().replace(/^["']|["']$/g, ""));
-                                    // カラム名の柔軟なマッチング
-                                    const colIdx = (names) => {
-                                        const arr = Array.isArray(names) ? names : [names];
-                                        for (const name of arr) {
-                                            const idx = headers.indexOf(name);
-                                            if (idx !== -1) return idx;
-                                        }
-                                        return -1;
-                                    };
-                                    const getCol = (cols, names, def = "") => {
-                                        const idx = colIdx(names);
-                                        return idx >= 0 && cols[idx] ? cols[idx] : def;
-                                    };
-                                    const newArchives = [];
-                                    for (let i = 1; i < lines.length; i++) {
-                                        const cols = lines[i].split(",").map(c => c.trim());
-                                        if (cols.length < 3) continue;
-                                        // 日付フォーマット変換 (2026/03/13 → 2026-03-13)
-                                        let date = getCol(cols, ["日付", "date"]);
-                                        if (date.includes("/")) date = date.replace(/\//g, "-");
-                                        if (!date) continue;
-                                        const time = getCol(cols, ["時刻", "time"]);
-                                        const invest = parseFloat(getCol(cols, ["投資額", "投資", "invest"], "0")) || 0;
-                                        const recovery = parseFloat(getCol(cols, ["回収額", "回収", "recovery"], "0")) || 0;
-                                        const synthDenom = parseFloat(getCol(cols, ["確率分母"], "319.6")) || 319.6;
-                                        const rentBalls = parseFloat(getCol(cols, ["貸玉数"], "250")) || 250;
-                                        const exRate = parseFloat(getCol(cols, ["換金率"], "250")) || 250;
-                                        const rotPerHour = parseFloat(getCol(cols, ["時間回転数"], "250")) || 250;
-                                        const border = parseFloat(getCol(cols, ["ボーダー"], "20")) || 20;
-                                        const ballVal = parseFloat(getCol(cols, ["玉単価"], "4")) || 4;
-                                        const workAmount = parseFloat(getCol(cols, ["仕事量", "期待値"], "0")) || 0;
-                                        const ev1K = parseFloat(getCol(cols, ["期待値/K"], "0")) || 0;
-                                        const start1K = parseFloat(getCol(cols, ["1Kスタート"], "0")) || 0;
-                                        const netRot = parseFloat(getCol(cols, ["総回転"], "0")) || 0;
-                                        newArchives.push({
-                                            id: Date.now() + i + Math.random(),
-                                            date,
-                                            time,
-                                            storeName: getCol(cols, ["店舗名", "店舗"]).replace(/，/g, ","),
-                                            machineNum: getCol(cols, ["台番号"]),
-                                            machineName: getCol(cols, ["機種名", "機種"]).replace(/，/g, ","),
-                                            investYen: invest,
-                                            recoveryYen: recovery,
-                                            settings: { synthDenom, rentBalls, exRate, rotPerHour, border, ballVal },
-                                            stats: { workAmount, ev1K, start1K, netRot },
-                                            rotRows: [],
-                                            jpLog: [],
-                                            sesLog: [],
-                                            totalTrayBalls: 0,
-                                            startRot: 0,
-                                        });
-                                    }
-                                    if (newArchives.length === 0) {
-                                        alert("インポートできるデータがありませんでした");
-                                        return;
-                                    }
-                                    // デバッグ: 最初のエントリの日付を表示
-                                    console.log("Import debug:", newArchives.map(a => ({ date: a.date, invest: a.investYen, recovery: a.recoveryYen, work: a.stats?.workAmount })));
-                                    // 重複チェック用のキー生成関数
-                                    const getKey = (a) => `${a.date}|${a.storeName || ""}|${a.machineNum || ""}|${a.machineName || ""}|${a.investYen || 0}|${a.recoveryYen || 0}`;
-                                    // CSVインポートしたデータにはisImportedフラグを付ける
-                                    const importedArchives = newArchives.map(a => ({ ...a, isImported: true }));
-                                    S.setArchives(prev => {
-                                        // 既存のインポートデータを除外
-                                        const nonImported = prev.filter(a => !a.isImported);
-                                        // 既存データのキーセットを作成
-                                        const existingKeys = new Set(nonImported.map(getKey));
-                                        // 重複を除外した新しいインポートデータ
-                                        const uniqueImported = importedArchives.filter(a => !existingKeys.has(getKey(a)));
-                                        // インポートデータ内での重複も除外
-                                        const seenKeys = new Set();
-                                        const dedupedImported = uniqueImported.filter(a => {
-                                            const key = getKey(a);
-                                            if (seenKeys.has(key)) return false;
-                                            seenKeys.add(key);
-                                            return true;
-                                        });
-                                        const updated = [...nonImported, ...dedupedImported];
-                                        console.log("Archives after import:", updated.length, "(non-imported:", nonImported.length, ", imported:", dedupedImported.length, ", skipped duplicates:", importedArchives.length - dedupedImported.length, ")");
-                                        return updated;
-                                    });
-                                    alert(`${newArchives.length}件のデータをインポートしました（重複データは自動的にスキップされました）\n日付例: ${newArchives[0]?.date}`);
-                                } catch (err) {
-                                    alert("CSVの読み込みに失敗しました: " + err.message);
-                                }
-                            };
-                            reader.readAsText(file, "UTF-8");
-                            e.target.value = "";
-                        }} />
-                    </label>
-                </div>
-            </Card>
-
-            {/* 重複データ削除・インポートデータ管理 */}
-            <Card style={{ padding: 14, marginTop: 12 }}>
-                <SecLabel label="データ整理" />
-                {/* 重複データ削除ボタン */}
-                {(() => {
-                    const getKey = (a) => `${a.date}|${a.storeName || ""}|${a.machineNum || ""}|${a.machineName || ""}|${a.investYen || 0}|${a.recoveryYen || 0}`;
-                    const keyCount = {};
-                    archives.forEach(a => {
-                        const key = getKey(a);
-                        keyCount[key] = (keyCount[key] || 0) + 1;
-                    });
-                    const duplicateCount = Object.values(keyCount).reduce((sum, c) => sum + (c > 1 ? c - 1 : 0), 0);
-                    return duplicateCount > 0 ? (
-                        <>
-                            <p style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>
-                                重複データ: {duplicateCount}件検出
-                            </p>
-                            <button
-                                className="b"
-                                onClick={() => {
-                                    if (window.confirm(`${duplicateCount}件の重複データを削除しますか？\n（各データは1件だけ残ります）`)) {
-                                        S.setArchives(prev => {
-                                            const seen = new Set();
-                                            return prev.filter(a => {
-                                                const key = getKey(a);
-                                                if (seen.has(key)) return false;
-                                                seen.add(key);
-                                                return true;
-                                            });
-                                        });
-                                        alert("重複データを削除しました");
-                                    }
-                                }}
-                                style={{
-                                    width: "100%",
-                                    background: "#d97706",
-                                    border: "none",
-                                    borderRadius: 12,
-                                    color: "#fff",
-                                    fontSize: 13,
-                                    fontWeight: 700,
-                                    padding: "14px 16px",
-                                    cursor: "pointer",
-                                    fontFamily: font,
-                                    marginBottom: 10,
-                                }}
-                            >
-                                重複データを削除
-                            </button>
-                        </>
-                    ) : (
-                        <p style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>
-                            重複データはありません
-                        </p>
-                    );
-                })()}
-                {/* CSVインポートデータ削除 */}
-                {archives.some(a => a.isImported) && (
-                    <>
-                        <p style={{ fontSize: 11, color: C.sub, marginBottom: 10, marginTop: 10 }}>
-                            CSVからインポートしたデータ: {archives.filter(a => a.isImported).length}件
-                        </p>
-                        <button
-                            className="b"
-                            onClick={() => {
-                                if (window.confirm("CSVでインポートしたデータをすべて削除しますか？\n（手動で記録したデータは残ります）")) {
-                                    S.setArchives(prev => prev.filter(a => !a.isImported));
-                                    alert("インポートデータを削除しました");
-                                }
-                            }}
-                            style={{
-                                width: "100%",
-                                background: "#dc2626",
-                                border: "none",
-                                borderRadius: 12,
-                                color: "#fff",
-                                fontSize: 13,
-                                fontWeight: 700,
-                                padding: "14px 16px",
-                                cursor: "pointer",
-                                fontFamily: font,
-                            }}
-                        >
-                            CSVインポートデータを削除
-                        </button>
-                    </>
-                )}
-            </Card>
         </div>
     );
 }
@@ -9267,6 +9014,176 @@ export function SettingsTab({ s, onReset }) {
         } catch {
             showToast("バックアップファイルの読み込みに失敗しました", "error");
         }
+    };
+
+    const archiveKey = (a) => `${a.date}|${a.storeName || ""}|${a.machineNum || ""}|${a.machineName || ""}|${a.investYen || 0}|${a.recoveryYen || 0}`;
+
+    const countDuplicateArchives = () => {
+        const keyCount = {};
+        (s.archives || []).forEach(a => {
+            const key = archiveKey(a);
+            keyCount[key] = (keyCount[key] || 0) + 1;
+        });
+        return Object.values(keyCount).reduce((sum, c) => sum + (c > 1 ? c - 1 : 0), 0);
+    };
+
+    const exportArchiveCSV = () => {
+        const archives = s.archives || [];
+        if (archives.length === 0) {
+            showToast("エクスポートする収支データがありません", "warn");
+            return;
+        }
+        const headers = [
+            "日付", "時刻", "店舗名", "台番号", "機種名",
+            "投資", "回収", "収支", "確率分母", "貸玉数", "換金率",
+            "時間回転数", "ボーダー", "玉単価", "仕事量", "期待値/K", "1Kスタート", "総回転"
+        ];
+        const rows = archives.map(a => {
+            const st = a.stats || {};
+            const invest = a.investYen || 0;
+            const recovery = a.recoveryYen || 0;
+            return [
+                a.date || "",
+                a.time || "",
+                (a.storeName || "").replace(/,/g, "，"),
+                a.machineNum || "",
+                (a.machineName || "").replace(/,/g, "，"),
+                invest,
+                recovery,
+                recovery - invest,
+                a.settings?.synthDenom || "",
+                a.settings?.rentBalls || "",
+                a.settings?.exRate || "",
+                a.settings?.rotPerHour || "",
+                a.settings?.border || "",
+                a.settings?.ballVal || "",
+                Math.round(st.workAmount || 0),
+                Math.round(st.ev1K || 0),
+                st.start1K ? st.start1K.toFixed(2) : "",
+                Math.round(st.netRot || 0)
+            ].join(",");
+        });
+        const csv = "\uFEFF" + headers.join(",") + "\n" + rows.join("\n");
+        downloadCSV(csv.replace(/^\uFEFF/, ""), `pachi-tracker-${new Date().toISOString().slice(0, 10)}.csv`);
+    };
+
+    const importArchiveCSV = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            try {
+                let text = ev.target?.result;
+                if (typeof text !== "string") return;
+                if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+                const lines = text.split(/\r?\n/).filter(l => l.trim());
+                if (lines.length < 2) {
+                    showToast("有効なCSVデータがありません", "error");
+                    return;
+                }
+                const headers = lines[0].split(",").map(h => h.trim().replace(/^["']|["']$/g, ""));
+                const colIdx = (names) => {
+                    const arr = Array.isArray(names) ? names : [names];
+                    for (const name of arr) {
+                        const idx = headers.indexOf(name);
+                        if (idx !== -1) return idx;
+                    }
+                    return -1;
+                };
+                const getCol = (cols, names, def = "") => {
+                    const idx = colIdx(names);
+                    return idx >= 0 && cols[idx] ? cols[idx] : def;
+                };
+
+                const newArchives = [];
+                for (let i = 1; i < lines.length; i++) {
+                    const cols = lines[i].split(",").map(c => c.trim());
+                    if (cols.length < 3) continue;
+                    let date = getCol(cols, ["日付", "date"]);
+                    if (date.includes("/")) date = date.replace(/\//g, "-");
+                    if (!date) continue;
+
+                    const time = getCol(cols, ["時刻", "time"]);
+                    const invest = parseFloat(getCol(cols, ["投資額", "投資", "invest"], "0")) || 0;
+                    const recovery = parseFloat(getCol(cols, ["回収額", "回収", "recovery"], "0")) || 0;
+                    const synthDenom = parseFloat(getCol(cols, ["確率分母"], "319.6")) || 319.6;
+                    const rentBalls = parseFloat(getCol(cols, ["貸玉数"], "250")) || 250;
+                    const exRate = parseFloat(getCol(cols, ["換金率"], "250")) || 250;
+                    const rotPerHour = parseFloat(getCol(cols, ["時間回転数"], "250")) || 250;
+                    const border = parseFloat(getCol(cols, ["ボーダー"], "20")) || 20;
+                    const ballVal = parseFloat(getCol(cols, ["玉単価"], "4")) || 4;
+                    const workAmount = parseFloat(getCol(cols, ["仕事量", "期待値"], "0")) || 0;
+                    const ev1K = parseFloat(getCol(cols, ["期待値/K"], "0")) || 0;
+                    const start1K = parseFloat(getCol(cols, ["1Kスタート"], "0")) || 0;
+                    const netRot = parseFloat(getCol(cols, ["総回転"], "0")) || 0;
+
+                    newArchives.push({
+                        id: Date.now() + i + Math.random(),
+                        date,
+                        time,
+                        storeName: getCol(cols, ["店舗名", "店舗"]).replace(/，/g, ","),
+                        machineNum: getCol(cols, ["台番号"]),
+                        machineName: getCol(cols, ["機種名", "機種"]).replace(/，/g, ","),
+                        investYen: invest,
+                        recoveryYen: recovery,
+                        settings: { synthDenom, rentBalls, exRate, rotPerHour, border, ballVal },
+                        stats: { workAmount, ev1K, start1K, netRot },
+                        rotRows: [],
+                        jpLog: [],
+                        sesLog: [],
+                        totalTrayBalls: 0,
+                        startRot: 0,
+                    });
+                }
+
+                if (newArchives.length === 0) {
+                    showToast("インポートできる収支データがありませんでした", "error");
+                    return;
+                }
+
+                const importedArchives = newArchives.map(a => ({ ...a, isImported: true }));
+                s.setArchives(prev => {
+                    const nonImported = prev.filter(a => !a.isImported);
+                    const existingKeys = new Set(nonImported.map(archiveKey));
+                    const uniqueImported = importedArchives.filter(a => !existingKeys.has(archiveKey(a)));
+                    const seenKeys = new Set();
+                    const dedupedImported = uniqueImported.filter(a => {
+                        const key = archiveKey(a);
+                        if (seenKeys.has(key)) return false;
+                        seenKeys.add(key);
+                        return true;
+                    });
+                    return [...nonImported, ...dedupedImported];
+                });
+                showToast(`${newArchives.length}件の収支データをインポートしました`);
+            } catch (err) {
+                showToast(`CSVの読み込みに失敗しました: ${err.message}`, "error");
+            }
+        };
+        reader.readAsText(file, "UTF-8");
+        e.target.value = "";
+    };
+
+    const deleteDuplicateArchives = () => {
+        const duplicateCount = countDuplicateArchives();
+        if (duplicateCount <= 0) return;
+        if (!window.confirm(`${duplicateCount}件の重複データを削除しますか？\n（各データは1件だけ残ります）`)) return;
+        s.setArchives(prev => {
+            const seen = new Set();
+            return prev.filter(a => {
+                const key = archiveKey(a);
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+        });
+        showToast("重複データを削除しました");
+    };
+
+    const deleteImportedArchives = () => {
+        if (!window.confirm("CSVでインポートしたデータをすべて削除しますか？\n（手動で記録したデータは残ります）")) return;
+        s.setArchives(prev => prev.filter(a => !a.isImported));
+        showToast("インポートデータを削除しました");
     };
 
     // 交換レート（円/玉）を計算
@@ -10204,7 +10121,7 @@ export function SettingsTab({ s, onReset }) {
         return (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <style>{`.settings-row:last-child{border-bottom:none!important}`}</style>
-                <SubHeader title="バックアップ・復元" onBack={() => setShowBackupView(false)} />
+                <SubHeader title="データ入出力" onBack={() => setShowBackupView(false)} />
                 <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(84px + env(safe-area-inset-bottom))" }}>
                     <SectionLabel label="全データバックアップ" />
                     <Section>
@@ -10231,6 +10148,56 @@ export function SettingsTab({ s, onReset }) {
                                 バックアップから復元
                                 <input type="file" accept=".json" onChange={restoreAllData} style={{ display: "none" }} />
                             </label>
+                        </div>
+                    </Section>
+
+                    <SectionLabel label="収支CSV" />
+                    <Section>
+                        <div style={{ padding: "14px 16px" }}>
+                            <div style={{ fontSize: 12, color: C.sub, marginBottom: 14, lineHeight: 1.6 }}>
+                                収支分析に使うアーカイブデータをCSV形式で出力・取り込みできます。
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                                <Btn label="CSVエクスポート" onClick={exportArchiveCSV} bg={C.orange} fg="#fff" bd="none" />
+                                <label style={{
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    minHeight: 44, boxSizing: "border-box",
+                                    background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 10,
+                                    color: C.text, fontSize: 14, padding: "12px 16px", fontFamily: font, fontWeight: 600,
+                                    textAlign: "center", cursor: "pointer",
+                                }}>
+                                    CSVインポート
+                                    <input type="file" accept=".csv,.txt,text/csv,text/plain" onChange={importArchiveCSV} style={{ display: "none" }} />
+                                </label>
+                            </div>
+                        </div>
+                    </Section>
+
+                    <SectionLabel label="収支データ整理" />
+                    <Section>
+                        <div style={{ padding: "14px 16px" }}>
+                            <div style={{ fontSize: 12, color: C.sub, marginBottom: 12, lineHeight: 1.6 }}>
+                                重複データとCSVから取り込んだデータを整理できます。
+                            </div>
+                            <Btn
+                                label={countDuplicateArchives() > 0 ? `重複データを削除（${countDuplicateArchives()}件）` : "重複データはありません"}
+                                onClick={deleteDuplicateArchives}
+                                bg={countDuplicateArchives() > 0 ? C.orange : C.surfaceHi}
+                                fg={countDuplicateArchives() > 0 ? "#fff" : C.sub}
+                                bd={countDuplicateArchives() > 0 ? "none" : C.border}
+                                disabled={countDuplicateArchives() <= 0}
+                            />
+                            {(s.archives || []).some(a => a.isImported) && (
+                                <div style={{ marginTop: 10 }}>
+                                    <Btn
+                                        label={`CSVインポートデータを削除（${(s.archives || []).filter(a => a.isImported).length}件）`}
+                                        onClick={deleteImportedArchives}
+                                        bg={C.red}
+                                        fg="#fff"
+                                        bd="none"
+                                    />
+                                </div>
+                            )}
                         </div>
                     </Section>
                 </div>
@@ -10493,8 +10460,8 @@ export function SettingsTab({ s, onReset }) {
                         const items = [
                             { color: "#21d99b", icon: IconStore,      label: "店舗検索・登録",   sub: `登録店舗: ${(s.stores || []).length}件`,               onPress: () => setShowStoreSearch(true) },
                             { color: "#22d3ee", icon: IconMagnifier,  label: "機種検索・登録",   sub: `カスタム機種: ${(s.customMachines || []).length}件`,  onPress: () => setShowMachineSearch(true) },
-                            { color: "#38bdf8", icon: IconCloud,      label: "バックアップ・復元", sub: "エクスポート / インポート",                            onPress: () => setShowBackupView(true) },
-                            { color: "#ff9f43", icon: IconCsv,        label: "CSV出力",          sub: "セッションデータを出力",                                onPress: () => setShowBackupView(true) },
+                            { color: "#38bdf8", icon: IconCloud,      label: "バックアップ・復元", sub: "JSON全体バックアップ",                                onPress: () => setShowBackupView(true) },
+                            { color: "#ff9f43", icon: IconCsv,        label: "収支CSV管理",       sub: "インポート / エクスポート",                            onPress: () => setShowBackupView(true) },
                         ];
                         return items.map((it, i) => (
                             <ListRow
