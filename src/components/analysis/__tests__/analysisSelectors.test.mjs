@@ -16,6 +16,7 @@ import {
   buildYearlyChartPoints,
   filterArchives,
   getActualPL,
+  getChodamaPL,
   isFilterActive,
   listAvailableMachines,
   listAvailableMonths,
@@ -380,6 +381,57 @@ test("isFilterActive: 1つでも条件があれば true", () => {
   assert.strictEqual(isFilterActive({ dateStart: "2026-01-01" }), true);
   assert.strictEqual(isFilterActive({ dateEnd: "2026-01-01" }), true);
   assert.strictEqual(isFilterActive({ weekdays: [0] }), true);
+});
+
+// ──────────── 貯玉消費分の収支（getChodamaPL / summarize） ────────────
+test("getChodamaPL: chodamaYen 未設定は 0", () => {
+  assert.strictEqual(getChodamaPL({}), 0);
+  assert.strictEqual(getChodamaPL({ chodamaYen: 0 }), 0);
+});
+test("getChodamaPL: 貯玉消費はマイナス（コスト）", () => {
+  assert.strictEqual(getChodamaPL({ chodamaYen: 10000 }), -10000);
+});
+test("summarize: 貯玉未使用なら hasChodama=false / 実質総収支=現金収支", () => {
+  const list = [{ date: "2026-05-01", investYen: 1000, recoveryYen: 3000 }]; // +2000
+  const s = summarize(list, {});
+  assert.strictEqual(s.hasChodama, false);
+  assert.strictEqual(s.totalChodamaPL, 0);
+  assert.strictEqual(s.totalPL, 2000);
+  assert.strictEqual(s.totalRealPL, 2000);
+});
+test("summarize: 貯玉消費分が実質総収支に合算される", () => {
+  // 現金収支 +2000、貯玉消費 10000円分 → 実質総収支 -8000
+  const list = [
+    { date: "2026-05-01", investYen: 1000, recoveryYen: 3000, chodamaYen: 10000, chodamaNetBalls: -2500 },
+  ];
+  const s = summarize(list, {});
+  assert.strictEqual(s.hasChodama, true);
+  assert.strictEqual(s.totalPL, 2000);
+  assert.strictEqual(s.totalChodamaPL, -10000);
+  assert.strictEqual(s.totalRealPL, -8000);
+});
+test("summarize: 現金記録ゼロ・貯玉のみのセッションも実質総収支に反映", () => {
+  // 投資・回収ゼロ（hasActual=false）だが貯玉 5000円分消費
+  const list = [
+    { date: "2026-05-01", investYen: 0, recoveryYen: 0, chodamaYen: 5000 },
+  ];
+  const s = summarize(list, {});
+  assert.strictEqual(s.hasActual, false);
+  assert.strictEqual(s.totalPL, 0);
+  assert.strictEqual(s.hasChodama, true);
+  assert.strictEqual(s.totalChodamaPL, -5000);
+  assert.strictEqual(s.totalRealPL, -5000);
+});
+test("summarize: 貯玉あり・なし混在の合算", () => {
+  const list = [
+    { date: "2026-05-01", investYen: 1000, recoveryYen: 2000 },                    // 現金+1000、貯玉なし
+    { date: "2026-05-02", investYen: 0,    recoveryYen: 4000, chodamaYen: 3000 },  // 現金+4000、貯玉-3000
+  ];
+  const s = summarize(list, {});
+  assert.strictEqual(s.totalPL, 5000);
+  assert.strictEqual(s.totalChodamaPL, -3000);
+  assert.strictEqual(s.totalRealPL, 2000);
+  assert.strictEqual(s.hasChodama, true);
 });
 
 console.log(`${passed} passed / ${failed} failed`);
