@@ -2121,6 +2121,13 @@ export function RotTab({ rows, setRows, S, ev }) {
         const lastDataIdx = rows.findLastIndex(r => r.type === "data");
         if (lastDataIdx < 0) return;
         S.pushSnapshot();
+        // 削除対象行が貯玉消費行なら、消費した貯玉を残高に差し戻す
+        // （記録追加時に setCurrentChodama で減算しているため、削除時は同量を加算してセットで取り消す）
+        const target = rows[lastDataIdx];
+        if (target && target.mode === "chodama" && (target.ballsConsumed || 0) > 0) {
+            const ballsToRestore = target.ballsConsumed || 0;
+            S.setCurrentChodama((p) => Math.max(0, p + ballsToRestore));
+        }
         setRows(r => r.filter((_, i) => i !== lastDataIdx));
         setInputError("");
     };
