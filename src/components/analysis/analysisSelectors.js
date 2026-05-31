@@ -25,6 +25,17 @@ export function getEvAmount(a) {
   return typeof w === "number" && isFinite(w) ? w : 0;
 }
 
+// 貯玉消費分の収支（円）
+//   archive.chodamaYen は確定時に「消費貯玉数 × 交換レート」で円換算済み（App.jsx / Tabs.jsx）。
+//   貯玉を消費すると資産（貯玉）が目減りするため、収支上は現金投資と同じ「コスト」= マイナスで扱う。
+//   （既存の大当たり履歴表示でも「合計投資 = investYen + chodamaYen」として加算済みの値）
+//   貯玉を消費していない archive は 0 を返す（従来計算と完全に同じ）。
+export function getChodamaPL(a) {
+  const yen = Number(a?.chodamaYen) || 0;
+  if (yen <= 0) return 0;
+  return -yen;
+}
+
 // YYYY-MM-DD → "YYYY-MM"
 function toMonthKey(date) {
   return typeof date === "string" && date.length >= 7 ? date.slice(0, 7) : "";
@@ -155,6 +166,8 @@ export function summarize(archives, opts = {}) {
   let hasActual = false;
   let evAmount = 0;
   let workMinutes = 0;
+  let totalChodamaPL = 0; // 貯玉消費分の収支（コスト = マイナス）
+  let hasChodama = false; // 期間内に貯玉消費があったか
   const dateSet = new Set();
 
   for (const a of filtered) {
@@ -170,6 +183,12 @@ export function summarize(archives, opts = {}) {
       totalRecovery += rec;
       realCount += 1;
       if (pl > 0) winCount += 1;
+    }
+    // 貯玉消費分（現金収支とは別経路で集計）
+    const chodamaPL = getChodamaPL(a);
+    if (chodamaPL !== 0) {
+      totalChodamaPL += chodamaPL;
+      hasChodama = true;
     }
     evAmount += getEvAmount(a);
 
@@ -200,6 +219,10 @@ export function summarize(archives, opts = {}) {
     evAmount,
     workHours,
     wage,
+    // 貯玉消費分の収支と、現金収支との合算（実質総収支）
+    totalChodamaPL,
+    hasChodama,
+    totalRealPL: totalPL + totalChodamaPL,
   };
 }
 
