@@ -198,6 +198,74 @@ function SummaryCards({ summary }) {
   );
 }
 
+// 実質収支カード（現金収支 + 貯玉消費分 = 実質総収支）
+//   貯玉を消費したセッションが期間内にある場合のみ表示する。
+//   貯玉未使用の期間では非表示となり、従来の収支表示のみとなる。
+function RealBalanceCard({ summary }) {
+  const cash = summary.totalPL;          // 現金収支
+  const chodama = summary.totalChodamaPL; // 貯玉消費分（コスト = マイナス）
+  const real = summary.totalRealPL;       // 実質総収支
+  const rows = [
+    { label: "現金収支", val: cash, col: sc(cash), sub: "回収 − 投資" },
+    { label: "貯玉消費分", val: chodama, col: sc(chodama), sub: "消費玉 × 交換率で換算" },
+  ];
+  return (
+    <Card style={{ marginBottom: 12 }}>
+      <div style={{ padding: "12px 14px 6px", display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={{ fontSize: 13 }}>💎</span>
+        <div style={{ fontSize: 12, color: C.sub, fontWeight: 700, letterSpacing: 0.4 }}>
+          実質収支（貯玉込み）
+        </div>
+      </div>
+      <div style={{ padding: "0 14px 4px" }}>
+        {rows.map((r) => (
+          <div
+            key={r.label}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "8px 0",
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{r.label}</div>
+              <div style={{ fontSize: 10, color: C.sub, marginTop: 1 }}>{r.sub}</div>
+            </div>
+            <div style={{
+              fontSize: 17, fontWeight: 800, color: r.col,
+              fontFamily: mono, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.3px",
+            }}>
+              {sp(Math.round(r.val))}
+              <span style={{ fontSize: 11, color: C.sub, marginLeft: 2, fontFamily: font, fontWeight: 600 }}>円</span>
+            </div>
+          </div>
+        ))}
+        {/* 合算（実質総収支） */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "10px 0 6px", borderTop: `1px solid ${C.border}`, marginTop: 2,
+        }}>
+          <div style={{ fontSize: 14, color: C.text, fontWeight: 800 }}>実質総収支</div>
+          <div style={{
+            fontSize: 22, fontWeight: 900, color: sc(real),
+            fontFamily: mono, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.5px",
+          }}>
+            {sp(Math.round(real))}
+            <span style={{ fontSize: 12, color: C.sub, marginLeft: 2, fontFamily: font, fontWeight: 600 }}>円</span>
+          </div>
+        </div>
+      </div>
+      {/* 計算式の注釈 */}
+      <div style={{
+        padding: "8px 14px 12px", fontSize: 10, color: C.sub, lineHeight: 1.6,
+        borderTop: `1px solid ${C.border}`, marginTop: 4,
+      }}>
+        現金収支 + 貯玉収支 = 実質総収支<br />
+        貯玉消費分は「消費玉数 × 交換率」で円換算したコストです
+      </div>
+    </Card>
+  );
+}
+
 // 機種別 TOP5 リスト
 function MachineRankList({ rows }) {
   if (!rows || rows.length === 0) {
@@ -500,6 +568,9 @@ export default function AnalysisDashboard({
           <>
             {/* 4 サマリーカード */}
             <SummaryCards summary={summary} />
+
+            {/* 実質収支（貯玉込み）: 期間内に貯玉消費がある場合のみ表示 */}
+            {summary.hasChodama && <RealBalanceCard summary={summary} />}
 
             {/* 収支推移グラフ */}
             <Card>
