@@ -8398,7 +8398,6 @@ export function SettingsTab({ s, onReset }) {
     const [showMachineSpecView, setShowMachineSpecView] = useState(false);
     const [showChodamaView, setShowChodamaView] = useState(false);
     const [showBackupView, setShowBackupView] = useState(false);
-    const [showRotationView, setShowRotationView] = useState(false);
     const [showAdvancedView, setShowAdvancedView] = useState(false);
 
     // 削除確認
@@ -10374,28 +10373,13 @@ export function SettingsTab({ s, onReset }) {
                         </div>
                     </Section>
 
-                    <SectionLabel label="その他" />
-                    <Section>
-                        {[
-                            { lbl: "合成確率分母", v: s.synthDenom, set: s.setSynthDenom, unit: "1/x" },
-                            { lbl: "1h消化回転数", v: s.rotPerHour, set: s.setRotPerHour, unit: "回/h" },
-                        ].map(({ lbl, v, set, unit }, i, arr) => (
-                            <div key={lbl} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: i < arr.length - 1 ? `1px solid ${C.border}` : "none" }}>
-                                <div style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>{lbl}</div>
-                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                    <NI v={v} set={set} w={80} center />
-                                    <span style={{ fontSize: 11, color: C.sub, minWidth: 40 }}>{unit}</span>
-                                </div>
-                            </div>
-                        ))}
-                    </Section>
                 </div>
                 <ToastPortal />
             </div>
         );
     }
 
-    // ── 機種スペックサブビュー ──
+    // ── 機種スペックサブビュー（回転・補正を統合）──
     if (showMachineSpecView) {
         return (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -10419,6 +10403,37 @@ export function SettingsTab({ s, onReset }) {
                         ))}
                     </Section>
 
+                    <SectionLabel label="合成確率・回転" />
+                    <Section>
+                        {[
+                            { lbl: "合成確率分母", v: s.synthDenom, set: s.setSynthDenom, unit: "1/x" },
+                            { lbl: "1h消化回転数", v: s.rotPerHour, set: s.setRotPerHour, unit: "回/h" },
+                            { lbl: "ボーダー手動値", v: s.border, set: s.setBorder, unit: "回/K" },
+                        ].map(({ lbl, v, set, unit }, i, arr) => (
+                            <div key={lbl} className="settings-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: i < arr.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                                <div style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>{lbl}</div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <NI v={v} set={set} w={80} center />
+                                    <span style={{ fontSize: 11, color: C.sub, minWidth: 40 }}>{unit}</span>
+                                </div>
+                            </div>
+                        ))}
+                    </Section>
+
+                    <SectionLabel label="ボーダー（自動計算）" />
+                    <Section>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px" }}>
+                            <div>
+                                <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{borderSource === "db" ? "DB標準ボーダー" : "理論ボーダー"}</div>
+                                <div style={{ fontSize: 11, color: C.teal, marginTop: 2 }}>{exRateLabel}</div>
+                            </div>
+                            <div style={{ fontSize: 22, fontWeight: 800, color: C.green, fontFamily: mono }}>
+                                {calcBorder > 0 ? f(calcBorder, 1) : "—"}
+                                <span style={{ fontSize: 11, color: C.sub, marginLeft: 4 }}>回/K</span>
+                            </div>
+                        </div>
+                    </Section>
+
                     <SectionLabel label="遊タイム狙い目分析（任意）" />
                     <Section>
                         {[
@@ -10436,15 +10451,6 @@ export function SettingsTab({ s, onReset }) {
                                 </div>
                             </div>
                         ))}
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "rgba(0,0,0,0.1)" }}>
-                            <div>
-                                <div style={{ fontSize: 14, color: C.text, fontWeight: 600 }}>{borderSource === "db" ? "DB標準ボーダー" : "理論ボーダー"}</div>
-                                <div style={{ fontSize: 11, color: C.teal }}>{exRateLabel}</div>
-                            </div>
-                            <div style={{ fontSize: 18, fontWeight: 800, color: C.green, fontFamily: mono }}>
-                                {calcBorder > 0 ? f(calcBorder, 1) : "—"}<span style={{ fontSize: 10, color: C.sub, marginLeft: 4 }}>回/K</span>
-                            </div>
-                        </div>
                     </Section>
                 </div>
                 <ToastPortal />
@@ -10570,48 +10576,6 @@ export function SettingsTab({ s, onReset }) {
         );
     }
 
-    // ── 回転・補正サブビュー ──
-    if (showRotationView) {
-        return (
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                <style>{`.settings-row:last-child{border-bottom:none!important}`}</style>
-                <SubHeader title="回転・補正" onBack={() => setShowRotationView(false)} />
-                <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(72px + env(safe-area-inset-bottom))" }}>
-                    <SectionLabel label="回転数・確率" />
-                    <Section>
-                        {[
-                            { lbl: "合成確率分母", v: s.synthDenom, set: s.setSynthDenom, unit: "1/x" },
-                            { lbl: "1h消化回転数", v: s.rotPerHour, set: s.setRotPerHour, unit: "回/h" },
-                            { lbl: "ボーダー手動値", v: s.border, set: s.setBorder, unit: "回/K" },
-                        ].map(({ lbl, v, set, unit }, i, arr) => (
-                            <div key={lbl} className="settings-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: i < arr.length - 1 ? `1px solid ${C.border}` : "none" }}>
-                                <div style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>{lbl}</div>
-                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                    <NI v={v} set={set} w={80} center />
-                                    <span style={{ fontSize: 11, color: C.sub, minWidth: 40 }}>{unit}</span>
-                                </div>
-                            </div>
-                        ))}
-                    </Section>
-
-                    <SectionLabel label="ボーダー（自動計算）" />
-                    <Section>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px" }}>
-                            <div>
-                                <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{borderSource === "db" ? "DB標準ボーダー" : "理論ボーダー"}</div>
-                                <div style={{ fontSize: 11, color: C.teal, marginTop: 2 }}>{exRateLabel}</div>
-                            </div>
-                            <div style={{ fontSize: 22, fontWeight: 800, color: C.green, fontFamily: mono }}>
-                                {calcBorder > 0 ? f(calcBorder, 1) : "—"}
-                                <span style={{ fontSize: 11, color: C.sub, marginLeft: 4 }}>回/K</span>
-                            </div>
-                        </div>
-                    </Section>
-                </div>
-                <ToastPortal />
-            </div>
-        );
-    }
 
     // ── 詳細設定サブビュー ──
     if (showAdvancedView) {
@@ -10776,7 +10740,6 @@ export function SettingsTab({ s, onReset }) {
                         const items = [
                             { color: "#38bdf8", icon: IconExchange,   label: "レート・交換率",         sub: `${Math.round((s.exRate || 250) / 10)}玉 / ${exLabelShort}`,                 onPress: () => setShowGameSettingsView(true) },
                             { color: "#ef476f", icon: IconTarget,     label: "機種スペック",           sub: `${s.synthDenom || 319.6} / ${borderShort}`,                                 onPress: () => setShowMachineSpecView(true) },
-                            { color: "#ff9f43", icon: IconTrending,   label: "回転・補正",             sub: "ボーダー補正 / 閉店補正",                                                    onPress: () => setShowRotationView(true) },
                             { color: "#21d99b", icon: IconCoin,       label: "貯玉設定",               sub: s.includeChodamaInBalance ? "収支に含める / 再プレイ上限あり" : "収支に含めない", onPress: () => setShowChodamaView(true) },
                             { color: "#c084fc", icon: IconCalculator, label: "詳細設定（上級者向け）", sub: "削り補正 / 持玉比率 など",                                                    onPress: () => setShowAdvancedView(true) },
                         ];
