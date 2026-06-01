@@ -235,7 +235,7 @@ export const machineDB = [
     synthProb: 349.9,
     spec1R: 140,
     specAvgTotalRounds: 42.8,
-    specSapo: 0,
+    specSapo: -800, // 電サポ中の削り玉(1連チャンあたり): synthProb×250/border["4.00"] - spec1R×specAvgTotalRounds ≈ 5191-5992=-801
     roundDist: "10R確:0.5% / 2R確:50% / 2R通常(時短100):49.5%",
     rushDist: "約4800個:0.5% / 約2400個:99.5%",
     border: { "4.00": 16.85, "3.57": 17.76, "3.33": 18.37, "3.03": 19.27 },
