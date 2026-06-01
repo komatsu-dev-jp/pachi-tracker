@@ -1,14 +1,43 @@
+import { useEffect, useRef } from "react";
 import { C, font, mono } from "../constants";
 
 export function NI({ v, set, w = 80, ph = "0", center = false, big = false, onEnter }) {
+    const inputRef = useRef(null);
+    const focused = useRef(false);
+
+    // 外部から値が変わったとき（機種プリセット適用など）はフォーカス外のみ DOM を直接更新
+    useEffect(() => {
+        if (!focused.current && inputRef.current) {
+            inputRef.current.value = v !== "" && v !== null && v !== undefined ? String(v) : "";
+        }
+    }, [v]);
+
+    const commit = () => {
+        const raw = inputRef.current ? inputRef.current.value : "";
+        if (raw === "") { set(""); return; }
+        const n = Number(raw);
+        set(isNaN(n) ? "" : n);
+    };
+
     return (
         <input
-            type="number"
+            ref={inputRef}
+            type="text"
             inputMode="decimal"
-            value={v}
+            defaultValue={v !== "" && v !== null && v !== undefined ? String(v) : ""}
             placeholder={ph}
-            onKeyDown={(e) => e.key === "Enter" && onEnter && onEnter()}
-            onChange={(e) => set(e.target.value === "" ? "" : Number(e.target.value))}
+            onKeyDown={(e) => {
+                if (e.key === "Enter") { commit(); onEnter && onEnter(); }
+            }}
+            onFocus={(e) => {
+                focused.current = true;
+                e.target.style.borderColor = C.blue;
+            }}
+            onBlur={(e) => {
+                focused.current = false;
+                e.target.style.borderColor = C.borderHi;
+                commit();
+            }}
             style={{
                 width: w,
                 background: C.surface,
@@ -23,8 +52,6 @@ export function NI({ v, set, w = 80, ph = "0", center = false, big = false, onEn
                 outline: "none",
                 transition: "border-color 0.2s ease",
             }}
-            onFocus={(e) => (e.target.style.borderColor = C.blue)}
-            onBlur={(e) => (e.target.style.borderColor = C.borderHi)}
         />
     );
 }
