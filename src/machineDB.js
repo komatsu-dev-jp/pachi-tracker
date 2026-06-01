@@ -134,7 +134,7 @@ export const machineDB = [
     synthProb: 99.9,
     spec1R: 50,
     specAvgTotalRounds: 22.0,
-    specSapo: 0,
+    specSapo: 280, // 電サポ中の純増(1連チャンあたり): synthProb×250/border["4.00"] - spec1R×specAvgTotalRounds ≈ 1380-1100=280
     roundDist: "3R:50%, 10R:50%",
     border: { "4.00": 18.1, "3.57": 19.1, "3.33": 20.0, "3.03": 20.9 },
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
@@ -147,7 +147,7 @@ export const machineDB = [
     synthProb: 99.9,
     spec1R: 45,
     specAvgTotalRounds: 20.0,
-    specSapo: 0,
+    specSapo: 225, // 電サポ中の純増(1連チャンあたり): synthProb×250/border["4.00"] - spec1R×specAvgTotalRounds ≈ 1125-900=225
     roundDist: "5R:70%, 10R:30%",
     border: { "4.00": 22.2, "3.57": 23.4, "3.33": 24.4, "3.03": 25.6 },
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
@@ -255,7 +255,7 @@ export const machineDB = [
     synthProb: 99.9,
     spec1R: 90,
     specAvgTotalRounds: 11.5,
-    specSapo: 0,
+    specSapo: 497, // 電サポ中の純増(1連チャンあたり): synthProb×250/border["4.00"] - spec1R×specAvgTotalRounds ≈ 1532-1035=497
     roundDist: "6R(ST125):約1% / 2R(ST25):約99%",
     rushDist: "10R:100%（上位RUSH）",
     border: { "4.00": 16.3, "3.57": 17.2, "3.33": 17.8, "3.03": 18.6 },
@@ -275,7 +275,7 @@ export const machineDB = [
     synthProb: 319.6,
     spec1R: 140,
     specAvgTotalRounds: 31.8,
-    specSapo: 0,
+    specSapo: 62, // 電サポ中の純増(1連チャンあたり): synthProb×250/border["4.00"] - spec1R×specAvgTotalRounds ≈ 4514-4452=62
     roundDist: "10R:100%（確変54%）",
     rushDist: "10R:100%",
     border: { "4.00": 17.7, "3.57": 18.7, "3.33": 19.3, "3.03": 20.1 },
