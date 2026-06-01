@@ -17,6 +17,7 @@ import {
   filterArchives,
   getActualPL,
   getChodamaPL,
+  getMachineHamariList,
   isFilterActive,
   listAvailableMachines,
   listAvailableMonths,
@@ -433,6 +434,130 @@ test("summarize: 貯玉あり・なし混在の合算", () => {
   assert.strictEqual(s.totalRealPL, 2000);
   assert.strictEqual(s.hasChodama, true);
 });
+
+// ──────────── getMachineHamariList ────────────
+{
+  // テスト用ヘルパー: rotRows を構築
+  const makeRotRows = (finalCumRot, lastStartCumRot = 0) => [
+    { type: "start", cumRot: lastStartCumRot },
+    { type: "data",  cumRot: finalCumRot, thisRot: finalCumRot - lastStartCumRot },
+  ];
+  // テスト用ヘルパー: jpLog (完了チェーン) を構築
+  const makeChain = (hitThisRot) => ({
+    hitThisRot,
+    completed: true,
+    hits: [{ rounds: 10 }],
+  });
+
+  // アーカイブ雛形
+  const archBase = (machine, jpLog, netRot, rotRows) => ({
+    date: "2026-05-01",
+    machineName: machine,
+    settings: { synthDenom: "319.6" },
+    jpLog: jpLog || [],
+    stats: { netRot: netRot || 0 },
+    rotRows: rotRows || [],
+    investYen: 0,
+    recoveryYen: 0,
+  });
+
+  test("getMachineHamariList: 空配列で空を返す", () => {
+    assert.deepStrictEqual(getMachineHamariList([]), []);
+  });
+
+  test("getMachineHamariList: 大当たりなしセッション → hasData=false", () => {
+    const archives = [archBase("テスト機種A", [], 300, makeRotRows(300, 0))];
+    const res = getMachineHamariList(archives);
+    assert.strictEqual(res.length, 1);
+    assert.strictEqual(res[0].hasData, false);
+    assert.strictEqual(res[0].totalJPCount, 0);
+    assert.strictEqual(res[0].totalHamariRot, 0);
+  });
+
+  test("getMachineHamariList: トータルハマり = hitThisRot の合計", () => {
+    const archives = [
+      { ...archBase("テスト機種A"), date: "2026-05-01",
+        jpLog: [makeChain(200), makeChain(150)],
+        stats: { netRot: 400 },
+        rotRows: makeRotRows(50, 0) },
+    ];
+    const res = getMachineHamariList(archives);
+    assert.strictEqual(res[0].totalHamariRot, 350); // 200 + 150
+  });
+
+  test("getMachineHamariList: 複数セッション合算", () => {
+    const archives = [
+      { ...archBase("テスト機種A"), date: "2026-05-01",
+        jpLog: [makeChain(200)], stats: { netRot: 250 }, rotRows: makeRotRows(50, 0) },
+      { ...archBase("テスト機種A"), date: "2026-05-02",
+        jpLog: [makeChain(100)], stats: { netRot: 130 }, rotRows: makeRotRows(30, 0) },
+    ];
+    const res = getMachineHamariList(archives);
+    assert.strictEqual(res[0].totalHamariRot, 300); // 200 + 100
+    assert.strictEqual(res[0].sessions, 2);
+  });
+
+  test("getMachineHamariList: 直近5回のハマり = 最新5セッションのみ", () => {
+    const makeA = (date, hitThisRot) => ({
+      ...archBase("テスト機種A"), date,
+      jpLog: [makeChain(hitThisRot)],
+      stats: { netRot: hitThisRot + 10 },
+      rotRows: makeRotRows(10, 0),
+    });
+    // 6セッション: 古い順に 100, 200, 300, 400, 500, 600
+    const archives = [
+      makeA("2026-01-01", 100),
+      makeA("2026-02-01", 200),
+      makeA("2026-03-01", 300),
+      makeA("2026-04-01", 400),
+      makeA("2026-05-01", 500),
+      makeA("2026-06-01", 600),
+    ];
+    const res = getMachineHamariList(archives);
+    // 直近5 = 200+300+400+500+600 = 2000
+    assert.strictEqual(res[0].recentHamariRot, 2000);
+    assert.strictEqual(res[0].recentCount, 5);
+  });
+
+  test("getMachineHamariList: sinceLastJP - 最後の大当たりから後のセッションを含む", () => {
+    // セッション1: 大当たりあり、最後のJPから50回転後終了
+    const s1 = {
+      ...archBase("テスト機種A"), date: "2026-05-01",
+      jpLog: [makeChain(200)],
+      stats: { netRot: 250 },
+      rotRows: makeRotRows(50, 0),
+    };
+    // セッション2: 大当たりなし、100回転
+    const s2 = {
+      ...archBase("テスト機種A"), date: "2026-05-02",
+      jpLog: [],
+      stats: { netRot: 100 },
+      rotRows: makeRotRows(100, 0),
+    };
+    const res = getMachineHamariList([s1, s2]);
+    // sinceLastJP = 50 (s1後) + 100 (s2全部) = 150
+    assert.strictEqual(res[0].sinceLastJPRot, 150);
+  });
+
+  test("getMachineHamariList: 大当たりが一度もない場合 sinceLastJP = 全回転数", () => {
+    const archives = [
+      { ...archBase("テスト機種A"), date: "2026-05-01", jpLog: [], stats: { netRot: 300 }, rotRows: [] },
+      { ...archBase("テスト機種A"), date: "2026-05-02", jpLog: [], stats: { netRot: 200 }, rotRows: [] },
+    ];
+    const res = getMachineHamariList(archives);
+    assert.strictEqual(res[0].sinceLastJPRot, 500); // 300 + 200
+  });
+
+  test("getMachineHamariList: 複数機種を sinceLastJP 降順でソート", () => {
+    const archives = [
+      { ...archBase("機種A"), date: "2026-05-01", jpLog: [], stats: { netRot: 100 }, rotRows: [] },
+      { ...archBase("機種B"), date: "2026-05-01", jpLog: [], stats: { netRot: 300 }, rotRows: [] },
+    ];
+    const res = getMachineHamariList(archives);
+    assert.strictEqual(res[0].machineName, "機種B");
+    assert.strictEqual(res[1].machineName, "機種A");
+  });
+}
 
 console.log(`${passed} passed / ${failed} failed`);
 if (failed > 0) process.exit(1);

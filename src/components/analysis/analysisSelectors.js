@@ -361,3 +361,97 @@ export function isFilterActive(filters = {}) {
   if (Array.isArray(filters.weekdays) && filters.weekdays.length > 0) return true;
   return false;
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 機種別ハマり回転数統計
+// ──────────────────────────────────────────────────────────────────────────────
+
+// アーカイブの rotRows から最後のジャックポット終了後の回転数を取得
+// （currentHamari の計算式と同一: 最後の "start" 行の cumRot から最終 cumRot までの差分）
+function _getPostLastJPRot(archive) {
+  const rows = archive.rotRows || [];
+  if (rows.length === 0) return 0;
+  let finalCumRot = 0;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i].cumRot != null) { finalCumRot = Number(rows[i].cumRot) || 0; break; }
+  }
+  let lastStartCumRot = null;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i].type === "start") { lastStartCumRot = Number(rows[i].cumRot) || 0; break; }
+  }
+  if (lastStartCumRot === null) return 0;
+  return Math.max(0, finalCumRot - lastStartCumRot);
+}
+
+// 最後の大当たりからの通算ハマり回転数（セッション横断）
+function _computeSinceLastJP(sortedArchives) {
+  // 完了チェーンを持つ最後のアーカイブを探す
+  let lastJPIdx = -1;
+  for (let i = sortedArchives.length - 1; i >= 0; i--) {
+    if ((sortedArchives[i].jpLog || []).some((c) => c.completed)) { lastJPIdx = i; break; }
+  }
+  if (lastJPIdx < 0) {
+    // 大当たり記録なし: 全セッションの total rotations を合算
+    return sortedArchives.reduce((s, a) => s + (Number(a.stats?.netRot) || 0), 0);
+  }
+  // 最後の大当たりセッションのジャックポット後の回転数
+  let total = _getPostLastJPRot(sortedArchives[lastJPIdx]);
+  // 以降のセッション（大当たりなし）の全回転数を加算
+  for (let i = lastJPIdx + 1; i < sortedArchives.length; i++) {
+    total += Number(sortedArchives[i].stats?.netRot) || 0;
+  }
+  return total;
+}
+
+// 機種別ハマり回転数一覧
+//   opts: filterArchives と同じ絞り込みオプション
+//   返却: [{ key, machineName, sessions, recentCount, totalHamariRot, recentHamariRot,
+//            sinceLastJPRot, totalJPCount, hasData }, ...] (sinceLastJPRot 降順)
+export function getMachineHamariList(archives, opts = {}) {
+  const filtered = filterArchives(archives, opts);
+  if (!filtered.length) return [];
+
+  const machineMap = {};
+  for (const a of filtered) {
+    const denom = a?.settings?.synthDenom ?? "";
+    const fallbackName = denom ? `1/${denom}` : "未設定";
+    const name =
+      a?.machineName && a.machineName !== `1/${denom}`
+        ? a.machineName
+        : a?.machineName || fallbackName;
+    const key = `${denom}|${name}`;
+    if (!machineMap[key]) machineMap[key] = { key, machineName: name, list: [] };
+    machineMap[key].list.push(a);
+  }
+
+  const RECENT_N = 5;
+  return Object.values(machineMap)
+    .map(({ key, machineName, list }) => {
+      const sorted = [...list].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+      let totalHamariRot = 0;
+      let totalJPCount = 0;
+      for (const a of sorted) {
+        const chains = (a.jpLog || []).filter((c) => c.completed);
+        totalJPCount += chains.length;
+        totalHamariRot += chains.reduce((s, c) => s + (Number(c.hitThisRot) || 0), 0);
+      }
+      const recent = sorted.slice(-RECENT_N);
+      const recentHamariRot = recent.reduce((s, a) => {
+        const chains = (a.jpLog || []).filter((c) => c.completed);
+        return s + chains.reduce((cs, c) => cs + (Number(c.hitThisRot) || 0), 0);
+      }, 0);
+      const sinceLastJPRot = _computeSinceLastJP(sorted);
+      return {
+        key,
+        machineName,
+        sessions: sorted.length,
+        recentCount: recent.length,
+        totalHamariRot,
+        recentHamariRot,
+        sinceLastJPRot,
+        totalJPCount,
+        hasData: totalJPCount > 0,
+      };
+    })
+    .sort((a, b) => b.sinceLastJPRot - a.sinceLastJPRot);
+}
