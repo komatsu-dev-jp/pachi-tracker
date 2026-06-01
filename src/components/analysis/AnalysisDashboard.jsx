@@ -6,6 +6,7 @@ import {
   buildDailyChartPoints,
   buildMonthlyChartPoints,
   buildYearlyChartPoints,
+  getMachineHamariList,
   isFilterActive,
   listAvailableMachines,
   listAvailableMonths,
@@ -482,6 +483,11 @@ export default function AnalysisDashboard({
     return machineRanking(archives, { ...extraFilters, month: viewMonth, limit: 5 });
   }, [archives, periodTab, viewMonth, viewYear, extraFilters]);
 
+  const machineHamariData = useMemo(
+    () => getMachineHamariList(archives, extraFilters).slice(0, 5),
+    [archives, extraFilters]
+  );
+
   // 期間ナビの可否
   const hasMonthData = availableMonths.length > 0;
   const hasYearData  = availableYears.length > 0;
@@ -596,6 +602,9 @@ export default function AnalysisDashboard({
               </div>
               <MachineRankList rows={machineTop} />
             </Card>
+
+            {/* 機種別ハマり分析 */}
+            <MachineHamariCard rows={machineHamariData} />
 
             {/* 補足: 期待値・時給など（実損益がある場合のみ） */}
             {summary.hasActual && (
@@ -861,6 +870,98 @@ function FilterPanel({
         </div>
       )}
     </div>
+  );
+}
+
+// 機種別ハマり回転数カード
+function MachineHamariCard({ rows }) {
+  if (!rows || rows.length === 0) return null;
+  return (
+    <Card style={{ marginBottom: 12 }}>
+      <div style={{ padding: "12px 14px 8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ fontSize: 12, color: C.sub, fontWeight: 700, letterSpacing: 0.4 }}>
+          機種別ハマり分析
+        </div>
+        <div style={{ fontSize: 10, color: C.sub, opacity: 0.7 }}>大当たりなし回転数</div>
+      </div>
+      {/* ヘッダー行 */}
+      <div style={{
+        display: "grid", gridTemplateColumns: "1fr 56px 60px 68px",
+        gap: 4, padding: "0 14px 6px",
+        borderBottom: `1px solid ${C.border}`,
+      }}>
+        {["機種", "通算", "直近5回", "現在継続"].map((h) => (
+          <div key={h} style={{ fontSize: 9, color: C.sub, fontWeight: 700, textAlign: h === "機種" ? "left" : "right" }}>
+            {h}
+          </div>
+        ))}
+      </div>
+      {rows.map((r, i) => (
+        <div
+          key={r.key}
+          style={{
+            display: "grid", gridTemplateColumns: "1fr 56px 60px 68px",
+            gap: 4, padding: "10px 14px",
+            borderTop: i === 0 ? "none" : `1px solid ${C.border}`,
+            alignItems: "center",
+          }}
+        >
+          {/* 機種名 */}
+          <div style={{
+            fontSize: 12, fontWeight: 700, color: C.text,
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}>
+            {r.machineName}
+            <div style={{ fontSize: 9, color: C.sub, fontWeight: 600, marginTop: 1 }}>
+              {r.sessions}セッション
+            </div>
+          </div>
+
+          {/* トータルハマり */}
+          {r.hasData ? (
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.orange, fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
+                {f(r.totalHamariRot)}
+              </div>
+              <div style={{ fontSize: 9, color: C.sub }}>回転</div>
+            </div>
+          ) : (
+            <div style={{ textAlign: "right", fontSize: 9, color: C.sub }}>データ不足</div>
+          )}
+
+          {/* 直近Nセッション */}
+          {r.hasData ? (
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.text, fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
+                {f(r.recentHamariRot)}
+              </div>
+              <div style={{ fontSize: 9, color: C.sub }}>直近{r.recentCount}回</div>
+            </div>
+          ) : (
+            <div style={{ textAlign: "right", fontSize: 9, color: C.sub }}>—</div>
+          )}
+
+          {/* 最後の大当たりからの累計 */}
+          <div style={{ textAlign: "right" }}>
+            <div style={{
+              fontSize: 13, fontWeight: 800,
+              color: r.sinceLastJPRot > 500 ? C.red : r.sinceLastJPRot > 200 ? C.orange : C.text,
+              fontFamily: mono, fontVariantNumeric: "tabular-nums",
+            }}>
+              {r.sinceLastJPRot > 0 ? f(r.sinceLastJPRot) : "—"}
+            </div>
+            <div style={{ fontSize: 9, color: C.sub }}>回転</div>
+          </div>
+        </div>
+      ))}
+      <div style={{
+        padding: "6px 14px 10px",
+        fontSize: 9, color: C.sub, lineHeight: 1.5,
+        borderTop: `1px solid ${C.border}`,
+      }}>
+        通算: 全セッションの初当たりまでの合計回転数 ／ 現在継続: 最後の大当たりから今日まで
+      </div>
+    </Card>
   );
 }
 
