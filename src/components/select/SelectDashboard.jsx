@@ -317,7 +317,7 @@ function MachineCabinet({ machine, activeFilter, selected, onSelect }) {
           position: "absolute",
           right: -5,
           top: -7,
-          color: machine.verdict === "strong" ? "#fcd34d" : C.blue,
+          color: machine.verdict === "strong" ? "var(--yellow)" : C.blue,
           fontSize: 13,
           lineHeight: 1,
           textShadow: "0 0 8px rgba(0,0,0,0.75)",

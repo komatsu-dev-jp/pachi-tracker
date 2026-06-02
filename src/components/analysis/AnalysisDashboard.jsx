@@ -96,16 +96,16 @@ function TrendChart({ points, width = 320, height = 160, color = "#3b82f6" }) {
       {yLabels.map((l, i) => (
         <g key={i}>
           <line x1={pad.left} y1={l.y} x2={width - pad.right} y2={l.y}
-            stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
+            stroke="var(--border)" strokeWidth={1} />
           <text x={pad.left - 4} y={l.y + 3} textAnchor="end"
-            fill="rgba(255,255,255,0.34)" fontSize={9} fontFamily="monospace">
+            fill="var(--sub)" fontSize={9} fontFamily="monospace">
             {Math.abs(l.v) >= 1000 ? (l.v / 1000).toFixed(0) + "k" : l.v.toLocaleString()}
           </text>
         </g>
       ))}
       {minV < 0 && maxV > 0 && (
         <line x1={pad.left} y1={zeroY} x2={width - pad.right} y2={zeroY}
-          stroke="rgba(255,255,255,0.18)" strokeWidth={1} strokeDasharray="4,3" />
+          stroke="var(--border-hi)" strokeWidth={1} strokeDasharray="4,3" />
       )}
       <path
         d={`${pathD} L ${pts[pts.length - 1].x} ${pad.top + h} L ${pts[0].x} ${pad.top + h} Z`}
@@ -122,7 +122,7 @@ function TrendChart({ points, width = 320, height = 160, color = "#3b82f6" }) {
         <circle key={i} cx={p.x} cy={p.y} r={3.2} fill={color} stroke="rgba(0,0,0,0.45)" strokeWidth={1} />
       ))}
       {xTickIdx.map((i) => (
-        <text key={i} x={pts[i].x} y={height - 4} textAnchor="middle" fill="rgba(255,255,255,0.36)" fontSize={9}>
+        <text key={i} x={pts[i].x} y={height - 4} textAnchor="middle" fill="var(--sub)" fontSize={9}>
           {points[i].label}
         </text>
       ))}
@@ -276,7 +276,7 @@ function MachineRankList({ rows }) {
       </div>
     );
   }
-  const rankColors = ["#fbbf24", "#cbd5e1", "#d97706"]; // 金 / 銀 / 銅
+  const rankColors = ["#ca8a04", "#94a3b8", "#b45309"]; // 金 / 銀 / 銅（ライト/ダーク両対応の中間トーン）
   return (
     <div>
       {rows.map((r, i) => {
