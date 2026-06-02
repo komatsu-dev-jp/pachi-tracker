@@ -11,18 +11,6 @@ const HomeIcon = ({ active }) => {
   );
 };
 
-const ScoutIcon = ({ active }) => {
-  const col = active ? C.blue : C.sub;
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="9" />
-      <circle cx="12" cy="12" r="5.5" />
-      <circle cx="12" cy="12" r="1.6" fill={col} />
-      <path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21" />
-    </svg>
-  );
-};
-
 const SelectIcon = ({ active }) => {
   const col = active ? C.blue : C.sub;
   return (
@@ -52,25 +40,22 @@ const SettingsIcon = ({ active }) => {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33 1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   );
 };
 
-// 左右セクション + 中央 FAB 用空きスペース構造。
-// FAB は flex フローには含めず、nav の真の水平中央(50%) に絶対配置で固定する。
-// nav 自体が `position: fixed; left: 50%; transform: translateX(-50%)` で viewport 中央に寄っているため、
-// FAB の `left: 50%` は viewport 中央 X (= window.innerWidth / 2) と一致する。
 const LEFT_TABS = [
-  { id: "home",   label: "ホーム", IconC: HomeIcon },
+  { id: "home", label: "ホーム", IconC: HomeIcon },
   { id: "select", label: "台選び", IconC: SelectIcon },
 ];
+
 const RIGHT_TABS = [
   { id: "analysis", label: "分析", IconC: AnalysisIcon },
   { id: "settings", label: "設定", IconC: SettingsIcon },
 ];
 
-const FAB_SLOT_WIDTH = 72; // 中央 FAB のための空きスペース幅(px)。FAB(52px) + 左右余白。
+const FAB_SLOT_WIDTH = 72;
 
 export default function ModeTabBar({ currentMode, onChange }) {
   const recordActive = currentMode === "record";
@@ -107,7 +92,7 @@ export default function ModeTabBar({ currentMode, onChange }) {
             fontWeight: active ? 700 : 500,
             color: active ? C.blue : C.sub,
             fontFamily: font,
-            letterSpacing: 0.2,
+            letterSpacing: 0,
           }}
         >
           {item.label}
@@ -136,12 +121,10 @@ export default function ModeTabBar({ currentMode, onChange }) {
         zIndex: 100,
       }}
     >
-      {/* 左セクション: ホーム / 台選び（2 タブ等幅） */}
       <div style={{ display: "flex", flex: 1, alignItems: "stretch" }}>
         {LEFT_TABS.map(renderTab)}
       </div>
 
-      {/* 中央: FAB 用の空きスペース。FAB 自体は absolute で nav 真の中央に固定、ここはラベルのみ通常フローで配置 */}
       <div
         style={{
           width: FAB_SLOT_WIDTH,
@@ -159,7 +142,7 @@ export default function ModeTabBar({ currentMode, onChange }) {
             fontWeight: recordActive ? 700 : 500,
             color: recordActive ? C.blue : C.sub,
             fontFamily: font,
-            letterSpacing: 0.2,
+            letterSpacing: 0,
             whiteSpace: "nowrap",
             pointerEvents: "none",
           }}
@@ -168,12 +151,10 @@ export default function ModeTabBar({ currentMode, onChange }) {
         </span>
       </div>
 
-      {/* 右セクション: 分析 / 設定（2 タブ等幅） */}
       <div style={{ display: "flex", flex: 1, alignItems: "stretch" }}>
         {RIGHT_TABS.map(renderTab)}
       </div>
 
-      {/* 中央 FAB: nav の真の水平中央(50%) に絶対配置 — flex フロー外、左右タブの並びに影響されない */}
       <button
         className="b"
         type="button"

@@ -7,7 +7,7 @@ import ModeTabBar from "./components/ModeTabBar";
 import AnalysisDashboard from "./components/analysis/AnalysisDashboard";
 import ScoutDashboard from "./components/scout/ScoutDashboard";
 import SelectDashboard from "./components/select/SelectDashboard";
-import HomeDashboard from "./components/home/HomeDashboard";
+import MachineSpecWorkspace from "./components/machines/MachineSpecWorkspace";
 import {
   addXpWithLevelUp,
   applyDailyStreak,
@@ -773,7 +773,7 @@ export default function App() {
           paddingBottom: "calc(44px + env(safe-area-inset-bottom))",
         }}
       >
-        {currentMode === "home" && <HomeDashboard S={S} />}
+        {currentMode === "home" && <MachineSpecWorkspace />}
         {currentMode === "scout" && <ScoutDashboard S={S} />}
         {currentMode === "select" && (
           <SelectDashboard
