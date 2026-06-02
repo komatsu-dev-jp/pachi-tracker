@@ -274,142 +274,133 @@ function Header({ onBell, hasUnread, greeting }) {
     );
 }
 
-// ===== スパークライン（小） =====
-function Sparkline({ values, color = P.blue, width = 96, height = 36 }) {
-    if (!values || values.length < 2) {
-        return <div style={{ width, height }} />;
-    }
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const span = Math.max(1, max - min);
-    const stepX = width / (values.length - 1);
-    const pts = values.map((v, i) => {
-        const x = i * stepX;
-        const y = height - ((v - min) / span) * (height - 6) - 3;
-        return [x, y];
-    });
-    const line = pts.map(([x, y], i) => `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
-    const area = `${line} L ${width.toFixed(1)} ${height} L 0 ${height} Z`;
-    const gid = `spark-${color.replace(/[^a-zA-Z0-9]/g, "")}`;
-    const [lx, ly] = pts[pts.length - 1];
-    return (
-        <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-            <defs>
-                <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={color} stopOpacity="0.28" />
-                    <stop offset="100%" stopColor={color} stopOpacity="0" />
-                </linearGradient>
-            </defs>
-            <path d={area} fill={`url(#${gid})`} />
-            <path d={line} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            <circle cx={lx} cy={ly} r="2.6" fill={color} />
-        </svg>
-    );
-}
+// ===== 空値表示（「—」の横線） =====
+const Dash = ({ color }) => (
+    <div style={{ marginTop: 8, width: 36, height: 4, borderRadius: 2, background: color, opacity: 0.9 }} />
+);
+// クリップボード（記録なし案内用）
+const IconClipboard = ({ color = P.sub, size = 18 }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="8" y="3" width="8" height="4" rx="1" />
+        <path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" />
+    </svg>
+);
 
 // ===== ② 本日のサマリーカード =====
-function TodaySummaryCard({ todayEv, todayActual, hasActual, dayDiff, confidencePct, hasConfidence, spark, onDetail }) {
+// hasData=false（今日まだ記録がない）のとき「—」と案内文を表示する空状態に切り替える。
+function TodaySummaryCard({ hasData, todayEv, todayActual, hasActual, dayDiff, confidencePct, hasConfidence, onDetail }) {
     const evColor = todayEv >= 0 ? P.green : P.red;
+    const actualColor = todayActual >= 0 ? P.green : P.red;
     const absEv = Math.abs(todayEv);
-    const evFs = absEv >= 1000000 ? 30 : absEv >= 100000 ? 36 : 42;
+    const evFs = absEv >= 1000000 ? 26 : absEv >= 100000 ? 30 : 36;
     const confPct = Math.max(0, Math.min(100, Math.round(confidencePct || 0)));
+    const showConf = hasData && hasConfidence;
     return (
         <div style={{ ...cardBase, ...sectionGap, position: "relative", overflow: "hidden" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-                <span style={{ fontSize: 14, fontWeight: 700, color: P.textHi, fontFamily: font }}>本日のサマリー</span>
-                <IconInfo />
+            {/* タイトル行 + 詳細を見る（右上） */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: P.textHi, fontFamily: font }}>本日のサマリー</span>
+                    <IconInfo />
+                </div>
+                <button
+                    type="button"
+                    onClick={onDetail}
+                    style={{
+                        background: "transparent",
+                        border: "none",
+                        color: P.cyan,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        fontFamily: font,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 3,
+                        padding: "6px 2px",
+                        minHeight: 36,
+                        cursor: "pointer",
+                    }}
+                >
+                    詳細を見る
+                    <IconChevron color={P.cyan} size={14} />
+                </button>
             </div>
 
-            {/* 期待値（大） + 実収支 + スパークライン */}
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
-                <div style={{ minWidth: 0 }}>
+            {/* 期待値（左） / 実収支（右）の2カラム */}
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                <div style={{ flex: 1, minWidth: 0, paddingRight: 12, borderRight: `1px solid ${P.border}` }}>
                     <div style={{ fontSize: 11.5, color: P.sub, fontFamily: font }}>期待値</div>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginTop: 2 }}>
-                        <span style={{ ...numStyle(evFs, evColor) }}>{fmtSigned(todayEv)}</span>
-                        <span style={{ fontSize: 16, fontWeight: 800, color: evColor }}>円</span>
-                        {todayEv >= 0
-                            ? <IconArrowUp color={evColor} size={18} />
-                            : <IconArrowDown color={evColor} size={18} />}
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                        <span style={{ fontSize: 10.5, color: P.subDim, fontFamily: font }}>前日比</span>
-                        <span style={{
-                            fontSize: 12,
-                            fontWeight: 800,
-                            color: dayDiff >= 0 ? P.green : P.red,
-                            fontFamily: font,
-                            fontVariantNumeric: "tabular-nums",
-                        }}>
-                            {fmtSigned(dayDiff)}円
-                        </span>
-                    </div>
+                    {hasData ? (
+                        <>
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 3, marginTop: 4, flexWrap: "wrap" }}>
+                                <span style={numStyle(evFs, evColor)}>{fmtSigned(todayEv)}</span>
+                                <span style={{ fontSize: 15, fontWeight: 800, color: evColor }}>円</span>
+                                {todayEv >= 0
+                                    ? <IconArrowUp color={evColor} size={16} />
+                                    : <IconArrowDown color={evColor} size={16} />}
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                                <span style={{ fontSize: 10.5, color: P.subDim, fontFamily: font }}>前日比</span>
+                                <span style={{
+                                    fontSize: 12,
+                                    fontWeight: 800,
+                                    color: dayDiff >= 0 ? P.green : P.red,
+                                    fontFamily: font,
+                                    fontVariantNumeric: "tabular-nums",
+                                }}>
+                                    {fmtSigned(dayDiff)}円
+                                </span>
+                            </div>
+                        </>
+                    ) : (
+                        <Dash color={P.blue} />
+                    )}
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0 }}>
-                    <Sparkline values={spark} color={P.blue} />
-                    <div style={{ marginTop: 6, textAlign: "right" }}>
-                        <div style={{ fontSize: 10, color: P.sub, fontFamily: font }}>実収支</div>
-                        <div style={{
-                            ...numStyle(18, hasActual ? (todayActual >= 0 ? P.green : P.red) : P.subDim),
-                            whiteSpace: "nowrap",
-                        }}>
-                            {hasActual ? fmtSigned(todayActual) : "—"}
-                            <span style={{ fontSize: 11, fontWeight: 800, marginLeft: 1 }}>円</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11.5, color: P.sub, fontFamily: font }}>実収支</div>
+                    {hasData && hasActual ? (
+                        <div style={{ display: "flex", alignItems: "baseline", gap: 3, marginTop: 4, flexWrap: "wrap" }}>
+                            <span style={numStyle(evFs * 0.82, actualColor)}>{fmtSigned(todayActual)}</span>
+                            <span style={{ fontSize: 14, fontWeight: 800, color: actualColor }}>円</span>
                         </div>
-                    </div>
+                    ) : (
+                        <Dash color={P.red} />
+                    )}
                 </div>
             </div>
 
             {/* 信頼度バー */}
-            <div style={{ marginTop: 14 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
+            <div style={{ marginTop: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                     <span style={{ fontSize: 11, color: P.sub, fontFamily: font, fontWeight: 600 }}>本日の信頼度</span>
-                    <span style={{ fontSize: 12, fontWeight: 800, color: hasConfidence ? P.blue : P.subDim, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
-                        {hasConfidence ? `${confPct}%` : "—"}
+                    <span style={{ fontSize: 12, fontWeight: 800, color: showConf ? P.blue : P.subDim, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
+                        {showConf ? `${confPct}%` : "—"}
                     </span>
                 </div>
                 <div style={{ position: "relative", height: 7, borderRadius: 999, background: "#16243A", overflow: "hidden" }}>
                     <div style={{
                         position: "absolute", left: 0, top: 0, bottom: 0,
-                        width: `${hasConfidence ? confPct : 0}%`,
+                        width: `${showConf ? confPct : 0}%`,
                         background: `linear-gradient(90deg, ${P.blue}, ${P.cyan})`,
                         borderRadius: 999,
                         boxShadow: "0 0 8px rgba(0,166,255,0.4)",
                         transition: "width 0.5s ease",
                     }} />
                 </div>
-                {!hasConfidence && (
-                    <div style={{ fontSize: 9.5, color: P.subDim, fontFamily: font, marginTop: 4 }}>
-                        セッション稼働中に算出されます
-                    </div>
-                )}
             </div>
 
-            {/* 詳細を見る */}
-            <button
-                type="button"
-                onClick={onDetail}
-                style={{
-                    width: "100%",
-                    minHeight: 44,
-                    marginTop: 14,
-                    borderRadius: 12,
-                    background: "color-mix(in srgb, #00A6FF 12%, transparent)",
-                    border: `1px solid color-mix(in srgb, #00A6FF 34%, ${P.border})`,
-                    color: P.cyan,
-                    fontSize: 13,
-                    fontWeight: 700,
-                    fontFamily: font,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 6,
-                    cursor: "pointer",
-                }}
-            >
-                詳細を見る
-                <IconChevron color={P.cyan} size={15} />
-            </button>
-            <div style={{ fontSize: 9.5, color: P.subDim, fontFamily: font, marginTop: 8, textAlign: "center" }}>
+            {/* データなし時の案内文 */}
+            {!hasData && (
+                <div style={{ marginTop: 14, display: "flex", alignItems: "flex-start", gap: 8 }}>
+                    <span style={{ marginTop: 1, flexShrink: 0 }}><IconClipboard /></span>
+                    <div>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: P.text, fontFamily: font }}>今日はまだ記録がありません</div>
+                        <div style={{ fontSize: 10.5, color: P.sub, fontFamily: font, marginTop: 2 }}>記録を開始すると表示されます</div>
+                    </div>
+                </div>
+            )}
+
+            <div style={{ fontSize: 9.5, color: P.subDim, fontFamily: font, marginTop: 12 }}>
                 回転率・稼働時間は詳細で確認できます
             </div>
         </div>
@@ -827,47 +818,49 @@ function MonthlyTargetEditor({ current, onClose, onSave }) {
     );
 }
 
-// ===== ⑥ ハンターランクカード =====
+// ===== ⑥ ハンターランクカード（コンパクト・横1行） =====
 function HunterRankCard({ rank, streakDays, sessionsCount, onOpen }) {
     const level = Math.max(1, Math.floor(Number(rank?.level) || 1));
     const currentXp = Math.max(0, Math.floor(Number(rank?.currentXp) || 0));
     const nextRequired = Math.max(1, Math.floor(Number(rank?.nextRequired) || 1));
     const totalXp = Math.max(0, Math.floor(Number(rank?.totalXp) || 0));
     const rate = Math.min(100, Math.round((currentXp / nextRequired) * 100));
-    const remain = Math.max(0, nextRequired - currentXp);
     return (
-        <div
-            onClick={onOpen}
-            style={{
-                ...cardBase,
-                background: "linear-gradient(180deg, #0F1A2B 0%, #0A1320 100%)",
-                border: `1px solid ${P.borderHi}`,
-                boxShadow: P.glowBlue,
-                ...sectionGap,
-                cursor: onOpen ? "pointer" : "default",
-            }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={sectionGap}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: P.text, fontFamily: font, letterSpacing: 0.3, marginBottom: 10 }}>
+                ハンターランク
+            </div>
+            <div
+                onClick={onOpen}
+                style={{
+                    ...cardBase,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    background: "linear-gradient(180deg, #0F1A2B 0%, #0A1320 100%)",
+                    border: `1px solid ${P.borderHi}`,
+                    boxShadow: P.glowBlue,
+                    cursor: onOpen ? "pointer" : "default",
+                }}>
+                {/* LVシールド */}
                 <div style={{ position: "relative", flexShrink: 0 }}>
-                    <IconShield size={64} />
+                    <IconShield size={54} />
                     <div style={{
                         position: "absolute", inset: 0,
                         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
                         pointerEvents: "none",
                     }}>
-                        <div style={{ fontSize: 9, color: P.text, fontWeight: 700, fontFamily: font, lineHeight: 1, marginTop: -4 }}>LV</div>
-                        <div style={{ fontSize: 22, color: "#FBBF24", fontWeight: 900, fontFamily: font, lineHeight: 1, textShadow: "0 1px 2px rgba(0,0,0,0.6)" }}>{level}</div>
-                        <div style={{ fontSize: 8, color: "#FBBF24", marginTop: 2 }}>★</div>
+                        <div style={{ fontSize: 8, color: P.text, fontWeight: 700, fontFamily: font, lineHeight: 1, marginTop: -2 }}>LV</div>
+                        <div style={{ fontSize: 19, color: "#FBBF24", fontWeight: 900, fontFamily: font, lineHeight: 1, textShadow: "0 1px 2px rgba(0,0,0,0.6)" }}>{level}</div>
                     </div>
                 </div>
+
+                {/* EXP + バー */}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <div>
-                            <div style={{ fontSize: 15, fontWeight: 700, color: P.textHi, fontFamily: font }}>ハンターランク</div>
-                            <div style={{ fontSize: 11, color: P.sub, fontFamily: font, marginTop: 2 }}>通算 {fmt(totalXp)} EXP</div>
-                        </div>
-                        <IconChevron color={P.subDim} />
+                    <div style={{ fontSize: 15, fontWeight: 800, color: P.textHi, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
+                        {fmt(totalXp)} <span style={{ fontSize: 11, fontWeight: 700, color: P.sub }}>EXP</span>
                     </div>
-                    <div style={{ position: "relative", height: 6, borderRadius: 999, background: "#16243A", marginTop: 10, overflow: "hidden" }}>
+                    <div style={{ position: "relative", height: 6, borderRadius: 999, background: "#16243A", marginTop: 6, overflow: "hidden" }}>
                         <div style={{
                             position: "absolute", left: 0, top: 0, bottom: 0,
                             width: `${rate}%`,
@@ -875,46 +868,28 @@ function HunterRankCard({ rank, streakDays, sessionsCount, onOpen }) {
                             borderRadius: 999,
                         }} />
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
-                        <span style={{ fontSize: 10.5, color: P.sub, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
-                            {fmt(currentXp)} / {fmt(nextRequired)}
-                        </span>
-                        <span style={{ fontSize: 10.5, color: P.sub, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
-                            次のLvまで {fmt(remain)} EXP
-                        </span>
+                    <div style={{ fontSize: 10, color: P.sub, fontFamily: font, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
+                        {fmt(currentXp)} / {fmt(nextRequired)}
                     </div>
                 </div>
-            </div>
 
-            <div style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 8,
-                marginTop: 14,
-                paddingTop: 14,
-                borderTop: `1px solid ${P.border}`,
-            }}>
-                <MiniStat icon={<span style={{ color: "#FB923C", fontSize: 14 }}>🔥</span>} label="連続稼働日数" value={`${streakDays}日`} />
-                <MiniStat icon={<span style={{ color: P.blue, fontSize: 14 }}>◎</span>} label="総セッション数" value={`${sessionsCount}回`} />
+                {/* 連続日数 / セッション数 / chevron */}
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+                    <RankStat glyph={<span style={{ fontSize: 15 }}>🔥</span>} value={`連続${streakDays}日`} />
+                    <RankStat glyph={<span style={{ color: P.blue, fontSize: 15 }}>◎</span>} value={`${sessionsCount}回`} />
+                    <IconChevron color={P.subDim} />
+                </div>
             </div>
         </div>
     );
 }
-function MiniStat({ icon, label, value, valColor = P.textHi }) {
+function RankStat({ glyph, value }) {
     return (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                {icon}
-                <span style={{ fontSize: 10.5, color: P.sub, fontFamily: font, fontWeight: 600 }}>{label}</span>
-            </div>
-            <div style={{
-                fontSize: 16,
-                fontWeight: 800,
-                color: valColor,
-                fontFamily: font,
-                fontVariantNumeric: "tabular-nums",
-                letterSpacing: -0.3,
-            }}>{value}</div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+            {glyph}
+            <span style={{ fontSize: 11, fontWeight: 800, color: P.textHi, fontFamily: font, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                {value}
+            </span>
         </div>
     );
 }
@@ -1093,6 +1068,7 @@ export default function HomeDashboard({ S }) {
     const liveEv = S?.ev;
     const investYen = S?.investYen;
     const recoveryYen = S?.recoveryYen;
+    const rotRowsRaw = S?.rotRows;
     const archives = useMemo(() => archivesRaw || [], [archivesRaw]);
 
     // 時間帯あいさつ
@@ -1118,6 +1094,14 @@ export default function HomeDashboard({ S }) {
         d.setDate(d.getDate() - 1);
         return d.toISOString().slice(0, 10);
     }, []);
+
+    // 本日データの有無：稼働中セッションの rotRows に type:"data" 行があるか、
+    // または今日の archives が存在すれば「データあり」とする（モック1枚目=なし / 2枚目=あり）
+    const hasTodayData = useMemo(() => {
+        const liveHasData = (rotRowsRaw || []).some((r) => r?.type === "data");
+        const archivedToday = archives.some((a) => a?.date === todayStr);
+        return liveHasData || archivedToday;
+    }, [rotRowsRaw, archives, todayStr]);
 
     // ② 本日のサマリー（今日の archives 集計 + 稼働中セッションの live 値を加味）
     const today = useMemo(() => {
@@ -1155,27 +1139,14 @@ export default function HomeDashboard({ S }) {
         return { confidencePct: 0, hasConfidence: false };
     }, [sessionStarted, liveEv]);
 
-    // 今月の日別累積 EV（スパークライン用 & 月間進捗用）
-    const { sparkValues, monthlyEvTotal } = useMemo(() => {
+    // 今月の累積 EV（④ 今月の進捗用）
+    const monthlyEvTotal = useMemo(() => {
         const now = new Date();
         const yyyy = now.getFullYear();
         const mm = String(now.getMonth() + 1).padStart(2, "0");
         const currentMonth = `${yyyy}-${mm}`;
-        const todayNum = now.getDate();
         const daily = aggregateByDay(archives, currentMonth);
-        const byDay = {};
-        for (const d of daily) {
-            const day = Number(d.date.slice(-2));
-            if (Number.isFinite(day)) byDay[day] = d;
-        }
-        const points = [];
-        let cum = 0;
-        for (let day = 1; day <= todayNum; day++) {
-            const d = byDay[day];
-            if (d) cum += Number(d.evAmount) || 0;
-            points.push(cum);
-        }
-        return { sparkValues: points, monthlyEvTotal: cum };
+        return daily.reduce((sum, d) => sum + (Number(d.evAmount) || 0), 0);
     }, [archives]);
 
     // ④ 月間目標（永続化された設定値）
@@ -1211,7 +1182,7 @@ export default function HomeDashboard({ S }) {
             streak_7: { glyph: "🔥", short: "7日連続", sub: "7日連続稼働" },
             lv25: { glyph: "♦", short: "一流ハンター", sub: "ランクLv25" },
             rot_10k: { glyph: "◉", short: "1万回転", sub: "通算1万回転" },
-            sessions_10: { glyph: "◎", short: "ホール常連", sub: "通算10回到達" },
+            sessions_10: { glyph: "＋", short: "+回到達", sub: "通算10回到達" },
         };
         return displayIds.map((id) => {
             const def = BADGES.find((b) => b.id === id);
@@ -1279,13 +1250,13 @@ export default function HomeDashboard({ S }) {
 
             {/* ② 本日のサマリー */}
             <TodaySummaryCard
+                hasData={hasTodayData}
                 todayEv={today.ev}
                 todayActual={today.actual}
                 hasActual={today.hasActual}
                 dayDiff={dayDiff}
                 confidencePct={confidencePct}
                 hasConfidence={hasConfidence}
-                spark={sparkValues}
                 onDetail={goAnalysis}
             />
 
