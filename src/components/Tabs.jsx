@@ -90,7 +90,7 @@ function MultiLineChart({ points, width = 340, height = 180 }) {
             </div>
         );
     }
-    const pad = { top: 12, right: 12, bottom: 22, left: 46 };
+    const pad = { top: 12, right: 12, bottom: 22, left: 56 };
     const w = width - pad.left - pad.right;
     const h = height - pad.top - pad.bottom;
     const all = points.flatMap(p => [p.actual, p.ev, p.diff]);
@@ -160,7 +160,7 @@ function WageRankCard({ title, rows, expanded, onToggle }) {
                     width: "100%", minHeight: 36, background: "transparent", border: "none",
                     borderTop: `1px solid ${C.border}`, color: C.blue, fontSize: 11, fontWeight: 700,
                     fontFamily: font, cursor: "pointer", marginTop: 2,
-                }}>{expanded ? "閉じる" : "すべて見る ›"}</button>
+                }}>{expanded ? "閉じる" : "すべて見る →"}</button>
             )}
         </div>
     );
@@ -8273,34 +8273,31 @@ export function CalendarTab({ S, onReset }) {
         );
     }
 
-    // Compact 万 formatting for calendar cell (-50000 -> -5万, +12000 -> +1.2万)
-    const compactYen = (n) => {
-        if (!isFinite(n) || n === 0) return "";
-        const sign = n < 0 ? "-" : "+";
-        const abs = Math.abs(n);
-        if (abs >= 10000) {
-            const man = abs / 10000;
-            const shown = man >= 10 ? Math.round(man).toString() : (Math.round(man * 10) / 10).toString();
-            return `${sign}${shown}万`;
-        }
-        if (abs >= 1000) return `${sign}${Math.round(abs / 1000)}k`;
-        return `${sign}${abs}`;
-    };
-
-    // ヒートマップ5色分け（大きくプラス / プラス / ±0 / マイナス / 大きくマイナス）
+    // ヒートマップ6段階の色分け（モックアップ準拠の濃い実色）
     const HEAT_BIG = 20000; // 「大きく」の閾値（円）
+    const HEAT = {
+        bigPlus: "#22c55e",  // 大きくプラス（濃い緑）
+        plus: "#86efac",     // プラス（薄い緑）
+        zero: "#374151",     // ±0（グレー）
+        minus: "#fca5a5",    // マイナス（薄い赤）
+        bigMinus: "#ef4444", // 大きくマイナス（濃い赤）
+        none: "#1f2937",     // 稼働なし（暗いグレー）
+    };
     const heatBg = (actual, hasActualData) => {
-        if (!hasActualData) return "transparent";
-        if (actual >= HEAT_BIG) return C.green;
-        if (actual > 0) return `color-mix(in srgb, ${C.green} 42%, transparent)`;
-        if (actual === 0) return `color-mix(in srgb, var(--sub) 28%, transparent)`;
-        if (actual > -HEAT_BIG) return `color-mix(in srgb, ${C.red} 42%, transparent)`;
-        return C.red;
+        if (!hasActualData) return HEAT.none;
+        if (actual >= HEAT_BIG) return HEAT.bigPlus;
+        if (actual > 0) return HEAT.plus;
+        if (actual === 0) return HEAT.zero;
+        if (actual > -HEAT_BIG) return HEAT.minus;
+        return HEAT.bigMinus;
     };
     const heatFg = (actual, hasActualData) => {
-        if (!hasActualData) return C.sub;
-        if (actual >= HEAT_BIG || actual <= -HEAT_BIG) return "#fff";
-        return C.text;
+        if (!hasActualData) return "#6b7280";      // 稼働なし → くすんだグレー
+        if (actual >= HEAT_BIG) return "#ffffff";  // 濃緑 → 白
+        if (actual > 0) return "#14532d";          // 薄緑 → 暗緑
+        if (actual === 0) return "#cbd5e1";        // グレー → 明るい文字
+        if (actual > -HEAT_BIG) return "#7f1d1d";  // 薄赤 → 暗赤
+        return "#ffffff";                          // 濃赤 → 白
     };
 
     // ── Calendar View ──
@@ -8323,30 +8320,32 @@ export function CalendarTab({ S, onReset }) {
                 }}>›</button>
             </div>
 
-            {/* ① KPI ストリップ（6指標を高密度に横並び・横スクロールなし） */}
+            {/* ① KPIカード（6指標を横1行・数値24px・画面に収まらなければ横スクロール） */}
             <div style={{
-                display: "grid", gridTemplateColumns: "repeat(6, 1fr)",
+                display: "flex",
                 background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14,
-                overflow: "hidden", marginBottom: 14, boxShadow: "var(--card-shadow)",
+                overflowX: "auto", overflowY: "hidden", marginBottom: 10, boxShadow: "var(--card-shadow)",
+                WebkitOverflowScrolling: "touch",
             }}>
                 {[
-                    { label: "月間収支", val: monthKpi.hasActual ? (monthKpi.pl === 0 ? "0" : compactYen(Math.round(monthKpi.pl))) : "—", unit: "", col: monthKpi.hasActual ? sc(monthKpi.pl) : C.sub },
-                    { label: "EV", val: monthKpi.ev !== 0 ? compactYen(Math.round(monthKpi.ev)) : "—", unit: "", col: monthKpi.ev !== 0 ? sc(monthKpi.ev) : C.sub },
+                    { label: "月間収支", val: monthKpi.hasActual ? sp(Math.round(monthKpi.pl)) : "—", unit: monthKpi.hasActual ? "円" : "", col: monthKpi.hasActual ? sc(monthKpi.pl) : C.sub },
+                    { label: "EV（期待値）", val: monthKpi.ev !== 0 ? sp(Math.round(monthKpi.ev)) : "—", unit: monthKpi.ev !== 0 ? "円" : "", col: monthKpi.ev !== 0 ? sc(monthKpi.ev) : C.sub },
                     { label: "ROI", val: monthKpi.roi != null ? f(monthKpi.roi, 0) : "—", unit: monthKpi.roi != null ? "%" : "", col: monthKpi.roi == null ? C.sub : monthKpi.roi >= 100 ? C.green : C.red },
                     { label: "稼働時間", val: monthKpi.hours > 0 ? f(monthKpi.hours, 1) : "—", unit: monthKpi.hours > 0 ? "h" : "", col: C.text },
-                    { label: "時給", val: monthKpi.wage != null ? (monthKpi.wage === 0 ? "0" : compactYen(monthKpi.wage)) : "—", unit: monthKpi.wage != null ? "/h" : "", col: monthKpi.wage != null ? sc(monthKpi.wage) : C.sub },
-                    { label: "勝率", val: monthKpi.winRate != null ? f(monthKpi.winRate, 0) : "—", unit: monthKpi.winRate != null ? "%" : "", col: monthKpi.winRate == null ? C.sub : monthKpi.winRate >= 50 ? C.green : C.red },
+                    { label: "時給", val: monthKpi.wage != null ? sp(monthKpi.wage) : "—", unit: monthKpi.wage != null ? "円/h" : "", col: monthKpi.wage != null ? sc(monthKpi.wage) : C.sub },
+                    { label: "勝率", val: monthKpi.winRate != null ? f(monthKpi.winRate, 0) : "—", unit: monthKpi.winRate != null ? "%" : "", col: monthKpi.winRate == null ? C.sub : monthKpi.winRate >= 50 ? C.green : C.red, sub: monthKpi.realCount > 0 ? `(${monthKpi.winCount}/${monthKpi.realCount})` : "" },
                 ].map((k, i) => (
                     <div key={k.label} style={{
-                        padding: "10px 2px 9px", textAlign: "center",
+                        flex: "1 0 auto", minWidth: 104,
+                        padding: "11px 12px 10px", textAlign: "center",
                         borderLeft: i === 0 ? "none" : `1px solid ${C.border}`,
-                        minWidth: 0,
                     }}>
-                        <div style={{ fontSize: 9, color: C.sub, fontWeight: 700, marginBottom: 4, whiteSpace: "nowrap", letterSpacing: "-0.2px" }}>{k.label}</div>
-                        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 1 }}>
-                            <span style={{ fontSize: 15, fontWeight: 900, color: k.col, fontFamily: font, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.5px", lineHeight: 1 }}>{k.val}</span>
-                            {k.unit && <span style={{ fontSize: 9, color: C.sub, fontWeight: 600 }}>{k.unit}</span>}
+                        <div style={{ fontSize: 11, color: C.sub, fontWeight: 700, marginBottom: 5, whiteSpace: "nowrap" }}>{k.label}</div>
+                        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 2, whiteSpace: "nowrap" }}>
+                            <span style={{ fontSize: 24, fontWeight: 900, color: k.col, fontFamily: font, fontVariantNumeric: "tabular-nums", letterSpacing: "-1px", lineHeight: 1 }}>{k.val}</span>
+                            {k.unit && <span style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>{k.unit}</span>}
                         </div>
+                        {k.sub && <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginTop: 3, fontVariantNumeric: "tabular-nums" }}>{k.sub}</div>}
                     </div>
                 ))}
             </div>
@@ -8393,14 +8392,77 @@ export function CalendarTab({ S, onReset }) {
                     })}
                 </div>
 
-                {/* 凡例（5色分け） */}
+                {/* ③ 選択日詳細アコーディオン（タップした日付の直下に縦展開） */}
+                {selectedDate && (() => {
+                    const arr = byDate[selectedDate] || [];
+                    let inv = 0, rec = 0, ev = 0, workMin = 0, hasActual = false;
+                    arr.forEach(a => {
+                        const i2 = Number(a.investYen) || 0;
+                        const r2 = Number(a.recoveryYen) || 0;
+                        if (i2 > 0 || r2 > 0) { inv += i2; rec += r2; hasActual = true; }
+                        ev += Number(a.stats?.workAmount) || 0;
+                        const nr = Number(a.stats?.netRot) || 0;
+                        const rph = Number(a.settings?.rotPerHour) || 0;
+                        if (nr > 0 && rph > 0) workMin += (nr / rph) * 60;
+                    });
+                    const actual = rec - inv;
+                    const diff = actual - ev;
+                    const hours = workMin / 60;
+                    const wage = hours > 0 && hasActual ? Math.round(actual / hours) : null;
+                    const rows = [
+                        { label: "収支", val: hasActual ? sp(Math.round(actual)) : "—", unit: "円", col: hasActual ? sc(actual) : C.sub, big: true },
+                        { label: "EV（期待値）", val: ev !== 0 ? sp(Math.round(ev)) : "—", unit: "円", col: ev !== 0 ? sc(ev) : C.sub },
+                        { label: "差（収支-EV）", val: hasActual ? sp(Math.round(diff)) : "—", unit: "円", col: hasActual ? sc(diff) : C.sub },
+                        { label: "投資", val: f(inv), unit: "円", col: C.text },
+                        { label: "回収", val: f(rec), unit: "円", col: C.text },
+                        { label: "稼働時間", val: hours > 0 ? f(hours, 1) : "—", unit: "h", col: C.text },
+                        { label: "時給", val: wage != null ? sp(wage) : "—", unit: "円/h", col: wage != null ? sc(wage) : C.sub },
+                    ];
+                    return (
+                        <div style={{
+                            marginTop: 10, padding: "10px 12px 4px",
+                            background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 12,
+                        }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                                <span style={{ fontSize: 11, color: C.sub, fontWeight: 700, letterSpacing: 0.4 }}>選択日詳細</span>
+                                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <span style={{ fontSize: 14, fontWeight: 800, color: C.text, fontVariantNumeric: "tabular-nums" }}>{selectedDate}</span>
+                                    <button className="b" onClick={() => setSelectedDate(null)} style={{
+                                        background: "transparent", border: "none", color: C.sub, fontSize: 12, fontWeight: 700,
+                                        fontFamily: font, cursor: "pointer", padding: "2px 4px",
+                                    }}>▲ 閉じる</button>
+                                </span>
+                            </div>
+                            {rows.map((r, i) => (
+                                <div key={r.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "5px 0", borderTop: i === 0 ? "none" : `1px solid ${C.border}` }}>
+                                    <span style={{ fontSize: r.big ? 13 : 12, color: r.big ? C.text : C.sub, fontWeight: r.big ? 700 : 600 }}>{r.label}</span>
+                                    <span style={{ display: "flex", alignItems: "baseline", gap: 2 }}>
+                                        <span style={{ fontSize: r.big ? 22 : 15, fontWeight: r.big ? 900 : 700, color: r.col, fontFamily: font, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.3px" }}>{r.val}</span>
+                                        <span style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>{r.unit}</span>
+                                    </span>
+                                </div>
+                            ))}
+                            {arr.length > 0 && (
+                                <button className="b" onClick={() => setSelectedArchiveId(arr[0].id)} style={{
+                                    width: "100%", minHeight: 40, marginTop: 4,
+                                    background: "transparent", border: "none", borderTop: `1px solid ${C.border}`,
+                                    color: C.blue, fontSize: 12, fontWeight: 700, fontFamily: font, cursor: "pointer",
+                                    display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4,
+                                }}>詳細を見る →</button>
+                            )}
+                        </div>
+                    );
+                })()}
+
+                {/* 凡例（6段階・濃い実色） */}
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 10px", padding: "10px 2px 0" }}>
                     {[
-                        { c: C.green, t: "大きくプラス" },
-                        { c: `color-mix(in srgb, ${C.green} 42%, transparent)`, t: "プラス" },
-                        { c: `color-mix(in srgb, var(--sub) 28%, transparent)`, t: "±0" },
-                        { c: `color-mix(in srgb, ${C.red} 42%, transparent)`, t: "マイナス" },
-                        { c: C.red, t: "大きくマイナス" },
+                        { c: HEAT.bigPlus, t: "大きくプラス" },
+                        { c: HEAT.plus, t: "プラス" },
+                        { c: HEAT.zero, t: "±0" },
+                        { c: HEAT.minus, t: "マイナス" },
+                        { c: HEAT.bigMinus, t: "大きくマイナス" },
+                        { c: HEAT.none, t: "稼働なし" },
                     ].map(l => (
                         <div key={l.t} style={{ display: "flex", alignItems: "center", gap: 4 }}>
                             <span style={{ width: 10, height: 10, borderRadius: 3, background: l.c, border: `1px solid ${C.border}` }} />
@@ -8410,61 +8472,8 @@ export function CalendarTab({ S, onReset }) {
                 </div>
             </div>
 
-            {/* ③ 選択日詳細パネル */}
-            {selectedDate && (() => {
-                const arr = byDate[selectedDate] || [];
-                let inv = 0, rec = 0, ev = 0, workMin = 0, hasActual = false;
-                arr.forEach(a => {
-                    const i2 = Number(a.investYen) || 0;
-                    const r2 = Number(a.recoveryYen) || 0;
-                    if (i2 > 0 || r2 > 0) { inv += i2; rec += r2; hasActual = true; }
-                    ev += Number(a.stats?.workAmount) || 0;
-                    const nr = Number(a.stats?.netRot) || 0;
-                    const rph = Number(a.settings?.rotPerHour) || 0;
-                    if (nr > 0 && rph > 0) workMin += (nr / rph) * 60;
-                });
-                const actual = rec - inv;
-                const diff = actual - ev;
-                const hours = workMin / 60;
-                const wage = hours > 0 && hasActual ? Math.round(actual / hours) : null;
-                const rows = [
-                    { label: "収支", val: hasActual ? sp(Math.round(actual)) : "—", unit: "円", col: hasActual ? sc(actual) : C.sub, big: true },
-                    { label: "EV（期待値）", val: ev !== 0 ? sp(Math.round(ev)) : "—", unit: "円", col: ev !== 0 ? sc(ev) : C.sub },
-                    { label: "差（収支-EV）", val: hasActual ? sp(Math.round(diff)) : "—", unit: "円", col: hasActual ? sc(diff) : C.sub },
-                    { label: "投資", val: f(inv), unit: "円", col: C.text },
-                    { label: "回収", val: f(rec), unit: "円", col: C.text },
-                    { label: "稼働時間", val: hours > 0 ? f(hours, 1) : "—", unit: "h", col: C.text },
-                    { label: "時給", val: wage != null ? sp(wage) : "—", unit: "円/h", col: wage != null ? sc(wage) : C.sub },
-                ];
-                return (
-                    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: "12px 14px 6px", marginBottom: 14, boxShadow: "var(--card-shadow)" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                            <span style={{ fontSize: 12, color: C.sub, fontWeight: 700, letterSpacing: 0.4 }}>選択日詳細</span>
-                            <span style={{ fontSize: 14, fontWeight: 800, color: C.text, fontVariantNumeric: "tabular-nums" }}>{selectedDate}</span>
-                        </div>
-                        {rows.map((r, i) => (
-                            <div key={r.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "7px 0", borderTop: i === 0 ? "none" : `1px solid ${C.border}` }}>
-                                <span style={{ fontSize: r.big ? 13 : 12, color: r.big ? C.text : C.sub, fontWeight: r.big ? 700 : 600 }}>{r.label}</span>
-                                <span style={{ display: "flex", alignItems: "baseline", gap: 2 }}>
-                                    <span style={{ fontSize: r.big ? 22 : 15, fontWeight: r.big ? 900 : 700, color: r.col, fontFamily: font, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.3px" }}>{r.val}</span>
-                                    <span style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>{r.unit}</span>
-                                </span>
-                            </div>
-                        ))}
-                        {arr.length > 0 && (
-                            <button className="b" onClick={() => setSelectedArchiveId(arr[0].id)} style={{
-                                width: "100%", minHeight: 40, marginTop: 6,
-                                background: "transparent", border: "none", borderTop: `1px solid ${C.border}`,
-                                color: C.blue, fontSize: 12, fontWeight: 700, fontFamily: font, cursor: "pointer",
-                                display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4,
-                            }}>詳細を見る ›</button>
-                        )}
-                    </div>
-                );
-            })()}
-
             {/* ④ 収支推移チャート（実収支 / EV / 差 の3系列） */}
-            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: "12px 8px 10px", marginBottom: 14, boxShadow: "var(--card-shadow)" }}>
+            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: "12px 8px 10px", marginBottom: 10, boxShadow: "var(--card-shadow)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 6px 8px" }}>
                     <span style={{ fontSize: 12, color: C.sub, fontWeight: 700, letterSpacing: 0.4 }}>収支推移</span>
                     <span style={{ fontSize: 10, color: C.sub }}>{viewMonth.year}年{viewMonth.month + 1}月（累計）</span>
@@ -8486,7 +8495,7 @@ export function CalendarTab({ S, onReset }) {
 
             {/* ⑤ 機種別・店舗別ランキング（時給順） */}
             {(machineWageRank.length > 0 || storeWageRank.length > 0) && (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
                     <WageRankCard title="機種別" rows={machineWageRank} expanded={showAllMachines} onToggle={() => setShowAllMachines(v => !v)} />
                     <WageRankCard title="店舗別" rows={storeWageRank} expanded={showAllStores} onToggle={() => setShowAllStores(v => !v)} />
                 </div>
@@ -8494,7 +8503,7 @@ export function CalendarTab({ S, onReset }) {
 
             {/* ⑥ 日別履歴テーブル（日付 / 収支 / EV / 差） */}
             {monthDays.length > 0 && (
-                <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: "12px 0 6px", marginBottom: 14, boxShadow: "var(--card-shadow)" }}>
+                <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: "12px 0 6px", marginBottom: 10, boxShadow: "var(--card-shadow)" }}>
                     <div style={{ fontSize: 12, color: C.sub, fontWeight: 700, letterSpacing: 0.4, padding: "0 14px 8px" }}>日別履歴</div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", padding: "0 14px 6px", borderBottom: `1px solid ${C.border}` }}>
                         {["日付", "収支", "EV", "差"].map((h, i) => (
@@ -8526,7 +8535,7 @@ export function CalendarTab({ S, onReset }) {
                         <button className="b" onClick={() => setShowAllHistory(v => !v)} style={{
                             width: "100%", minHeight: 40, background: "transparent", border: "none",
                             color: C.blue, fontSize: 12, fontWeight: 700, fontFamily: font, cursor: "pointer",
-                        }}>{showAllHistory ? "閉じる" : "すべて見る ›"}</button>
+                        }}>{showAllHistory ? "閉じる" : "すべて見る →"}</button>
                     )}
                 </div>
             )}
