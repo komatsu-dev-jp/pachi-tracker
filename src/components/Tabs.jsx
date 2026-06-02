@@ -10083,6 +10083,18 @@ export function SettingsTab({ s, onReset }) {
 
     // Machine detail view
     if (selected) {
+        return (
+            <MachineSpecWorkspace
+                machineData={selected}
+                onBack={() => setSelected(null)}
+                primaryActionLabel="この機種の確率を設定に反映"
+                onPrimaryAction={() => applyMachine(selected)}
+            />
+        );
+    }
+
+    // Legacy machine detail view
+    if (selected) {
         const borderKeys = selected.border ? Object.keys(selected.border).filter(k => selected.border[k] > 0).sort((a, b) => Number(b) - Number(a)) : [];
         return (
             <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>

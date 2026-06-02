@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import "./MachineSpecWorkspace.css";
 
-const machine = {
+const fallbackMachine = {
   name: "P大海物語5 MTE2",
   meta: "三洋 | ハイミドル | 3個賞球",
   tags: ["海シリーズ", "m_master連携", "削り込み適用"],
@@ -21,6 +21,79 @@ const machine = {
     { id: "ヘソ3", payout: "0", ratio: "0", rush: false },
   ],
 };
+
+function formatNumber(value, fallback = "—") {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return fallback;
+  return num.toLocaleString("ja-JP", { maximumFractionDigits: 2 });
+}
+
+function formatProbability(data) {
+  if (data?.prob) return data.prob;
+  const synthProb = Number(data?.synthProb);
+  if (Number.isFinite(synthProb) && synthProb > 0) return `1/${synthProb}`;
+  return fallbackMachine.probability;
+}
+
+function formatBorder(data) {
+  if (data?.border && typeof data.border === "object") {
+    const preferred = data.border["4.00"] || data.border["4"] || data.border["等価"];
+    if (preferred) return formatNumber(preferred);
+    const first = Object.values(data.border).find((value) => Number(value) > 0);
+    if (first) return formatNumber(first);
+  }
+  if (data?.border) return formatNumber(data.border);
+  return fallbackMachine.border;
+}
+
+function normalizeMachine(data) {
+  if (!data) return fallbackMachine;
+
+  const maker = data.maker || "メーカー未設定";
+  const type = data.type || "タイプ未設定";
+  const prize = Number(data.prize);
+  const prizeText = Number.isFinite(prize) && prize > 0 ? ` | ${prize}個賞球` : "";
+  const heso = Array.isArray(data.hesoDist) && data.hesoDist.length > 0
+    ? data.hesoDist.slice(0, 3).map((row, index) => ({
+        id: `ヘソ${index + 1}`,
+        payout: String(row.payout ?? 0),
+        ratio: String(row.rate ?? 0),
+        rush: Number(row.rate) > 0,
+      }))
+    : fallbackMachine.heso;
+
+  return {
+    name: data.name || fallbackMachine.name,
+    meta: `${maker} | ${type}${prizeText}`,
+    tags: [
+      data.name?.includes("海") ? "海シリーズ" : "機種検索連携",
+      "m_master連携",
+      "削り込み適用",
+    ],
+    updatedAt: fallbackMachine.updatedAt,
+    probability: formatProbability(data),
+    border: formatBorder(data),
+    avgPayout: formatNumber(data.avgPayoutPerHit, fallbackMachine.avgPayout),
+    stdDev: formatNumber(data.stdDev, fallbackMachine.stdDev),
+    rushEntry: Number(data.rushEntryRate) > 0 ? `${data.rushEntryRate}%` : fallbackMachine.rushEntry,
+    rushContinue: Number(data.rushContinueRate) > 0 ? `${data.rushContinueRate}%` : fallbackMachine.rushContinue,
+    hesoAvg: formatNumber(data.hesoAvgPayout, fallbackMachine.hesoAvg),
+    rushAvg: formatNumber(data.rushAvgPayout, fallbackMachine.rushAvg),
+    tsv: [
+      data.name || fallbackMachine.name,
+      String(data.synthProb || "").replace(/^1\//, "") || fallbackMachine.tsv[1],
+      formatBorder(data),
+      String(data.prize || ""),
+      String(data.unitCost || ""),
+      String(data.avgPayoutPerHit || ""),
+      String(data.stdDev || ""),
+      "0.5",
+    ],
+    heso,
+    roundDist: data.roundDist || fallbackMachine.roundDist || "1500発 100%",
+    rushDist: data.rushDist || fallbackMachine.rushDist || "1500発 100%",
+  };
+}
 
 const mappingItems = [
   ["A", "機種名"],
@@ -157,7 +230,7 @@ function CheckMark({ status = "ok" }) {
   );
 }
 
-function DetailScreen({ onEdit, onBack }) {
+function DetailScreen({ machine, onEdit, onBack, primaryActionLabel, onPrimaryAction }) {
   return (
     <section className="machine-spec-workspace machine-detail-screen" aria-label="機種詳細">
       <header className="ms-detail-header">
@@ -208,10 +281,12 @@ function DetailScreen({ onEdit, onBack }) {
               <Pill tone="success">比率合計 100%</Pill>
             </div>
             <div className="ms-chip-row">
-              <span>1500発</span>
-              <strong>60%</strong>
-              <span>1500発</span>
-              <strong>40%</strong>
+              {machine.heso.map((row) => (
+                <React.Fragment key={row.id}>
+                  <span>{formatNumber(row.payout, "0")}発</span>
+                  <strong>{row.ratio}%</strong>
+                </React.Fragment>
+              ))}
             </div>
             <div className="ms-divider" />
             <div className="ms-allocation-head">
@@ -219,7 +294,7 @@ function DetailScreen({ onEdit, onBack }) {
               <Pill tone="orange">確変ループ</Pill>
             </div>
             <div className="ms-chip-row">
-              <span>1500発</span>
+              <span>{machine.rushAvg}発</span>
               <strong>100%</strong>
             </div>
             <div className="ms-summary-line">
@@ -263,8 +338,8 @@ function DetailScreen({ onEdit, onBack }) {
             <Icon name="edit" />
             <span>編集する</span>
           </button>
-          <button type="button" className="ms-primary-cta">
-            <span>営業シミュレーションへ</span>
+          <button type="button" className="ms-primary-cta" onClick={onPrimaryAction}>
+            <span>{primaryActionLabel}</span>
             <span className="ms-chevron">›</span>
           </button>
         </div>
@@ -310,7 +385,7 @@ function Toggle({ checked }) {
   );
 }
 
-function RegisterScreen({ onSave, onBack }) {
+function RegisterScreen({ machine, onSave, onBack }) {
   return (
     <section className="machine-spec-workspace machine-register-screen" aria-label="機種スペック登録">
       <header className="ms-register-header">
@@ -440,12 +515,26 @@ function RegisterScreen({ onSave, onBack }) {
   );
 }
 
-export default function MachineSpecWorkspace({ onBack }) {
+export default function MachineSpecWorkspace({
+  onBack,
+  machineData,
+  primaryActionLabel = "営業シミュレーションへ",
+  onPrimaryAction,
+}) {
   const [screen, setScreen] = useState("detail");
+  const machine = normalizeMachine(machineData);
 
   if (screen === "register") {
-    return <RegisterScreen onSave={() => setScreen("detail")} onBack={() => setScreen("detail")} />;
+    return <RegisterScreen machine={machine} onSave={() => setScreen("detail")} onBack={() => setScreen("detail")} />;
   }
 
-  return <DetailScreen onEdit={() => setScreen("register")} onBack={onBack} />;
+  return (
+    <DetailScreen
+      machine={machine}
+      onEdit={() => setScreen("register")}
+      onBack={onBack}
+      primaryActionLabel={primaryActionLabel}
+      onPrimaryAction={onPrimaryAction}
+    />
+  );
 }
