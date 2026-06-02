@@ -44,15 +44,15 @@ function LineChart({ data, width = 320, height = 140, color = "#3b82f6", showZer
             {/* Grid lines */}
             {yLabels.map((l, i) => (
                 <g key={i}>
-                    <line x1={pad.left} y1={l.y} x2={width - pad.right} y2={l.y} stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
-                    <text x={pad.left - 4} y={l.y + 3} textAnchor="end" fill="rgba(255,255,255,0.3)" fontSize={8} fontFamily="monospace">
+                    <line x1={pad.left} y1={l.y} x2={width - pad.right} y2={l.y} stroke="var(--border)" strokeWidth={1} />
+                    <text x={pad.left - 4} y={l.y + 3} textAnchor="end" fill="var(--sub)" fontSize={8} fontFamily="monospace">
                         {l.v >= 1000 || l.v <= -1000 ? (l.v / 1000).toFixed(0) + "k" : l.v.toLocaleString()}
                     </text>
                 </g>
             ))}
             {/* Zero line */}
             {showZero && minV < 0 && maxV > 0 && (
-                <line x1={pad.left} y1={zeroY} x2={width - pad.right} y2={zeroY} stroke="rgba(255,255,255,0.15)" strokeWidth={1} strokeDasharray="4,3" />
+                <line x1={pad.left} y1={zeroY} x2={width - pad.right} y2={zeroY} stroke="var(--border-hi)" strokeWidth={1} strokeDasharray="4,3" />
             )}
             {/* Area fill */}
             <path d={`${pathD} L ${points[points.length - 1].x} ${pad.top + h} L ${points[0].x} ${pad.top + h} Z`}
@@ -71,7 +71,7 @@ function LineChart({ data, width = 320, height = 140, color = "#3b82f6", showZer
             ))}
             {/* X-axis labels (show first, middle, last) */}
             {[0, Math.floor(data.length / 2), data.length - 1].filter((v, i, a) => a.indexOf(v) === i).map(i => (
-                <text key={i} x={points[i].x} y={height - 4} textAnchor="middle" fill="rgba(255,255,255,0.3)" fontSize={8}>
+                <text key={i} x={points[i].x} y={height - 4} textAnchor="middle" fill="var(--sub)" fontSize={8}>
                     {data[i].label}
                 </text>
             ))}
@@ -112,21 +112,21 @@ function MultiLineChart({ points, width = 340, height = 180 }) {
         <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ display: "block" }}>
             {yLabels.map((l, i) => (
                 <g key={i}>
-                    <line x1={pad.left} y1={l.y} x2={width - pad.right} y2={l.y} stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
-                    <text x={pad.left - 4} y={l.y + 3} textAnchor="end" fill="rgba(255,255,255,0.34)" fontSize={9} fontFamily="monospace">
+                    <line x1={pad.left} y1={l.y} x2={width - pad.right} y2={l.y} stroke="var(--border)" strokeWidth={1} />
+                    <text x={pad.left - 4} y={l.y + 3} textAnchor="end" fill="var(--sub)" fontSize={9} fontFamily="monospace">
                         {Math.abs(l.v) >= 1000 ? (l.v / 1000).toFixed(0) + "k" : Math.round(l.v).toLocaleString()}
                     </text>
                 </g>
             ))}
             {minV < 0 && maxV > 0 && (
-                <line x1={pad.left} y1={zeroY} x2={width - pad.right} y2={zeroY} stroke="rgba(255,255,255,0.18)" strokeWidth={1} strokeDasharray="4,3" />
+                <line x1={pad.left} y1={zeroY} x2={width - pad.right} y2={zeroY} stroke="var(--border-hi)" strokeWidth={1} strokeDasharray="4,3" />
             )}
             {series.map(s => (
                 <path key={s.key} d={pathOf(s.key)} fill="none" stroke={s.color} strokeWidth={s.width}
                     strokeLinecap="round" strokeLinejoin="round" strokeDasharray={s.dash || undefined} />
             ))}
             {xIdx.map(i => (
-                <text key={i} x={xOf(i)} y={height - 4} textAnchor="middle" fill="rgba(255,255,255,0.36)" fontSize={9}>
+                <text key={i} x={xOf(i)} y={height - 4} textAnchor="middle" fill="var(--sub)" fontSize={9}>
                     {points[i].label}
                 </text>
             ))}
@@ -353,13 +353,13 @@ function UndoControls({ S }) {
 }
 
 const jackpotTone = {
-    blue: { main: "#38bdf8", soft: "rgba(56,189,248,0.16)", glow: "rgba(56,189,248,0.34)" },
+    blue: { main: "var(--blue)", soft: "rgba(56,189,248,0.16)", glow: "rgba(56,189,248,0.34)" },
     green: { main: "#34d399", soft: "rgba(52,211,153,0.16)", glow: "rgba(52,211,153,0.34)" },
     yellow: { main: "#fbbf24", soft: "rgba(251,191,36,0.16)", glow: "rgba(251,191,36,0.32)" },
     teal: { main: "#2dd4bf", soft: "rgba(45,212,191,0.16)", glow: "rgba(45,212,191,0.32)" },
     orange: { main: "#fb923c", soft: "rgba(251,146,60,0.16)", glow: "rgba(251,146,60,0.32)" },
     red: { main: "#f87171", soft: "rgba(248,113,113,0.15)", glow: "rgba(248,113,113,0.30)" },
-    purple: { main: "#c084fc", soft: "rgba(192,132,252,0.16)", glow: "rgba(192,132,252,0.32)" },
+    purple: { main: "var(--purple)", soft: "rgba(192,132,252,0.16)", glow: "rgba(192,132,252,0.32)" },
 };
 
 function FlowStatusCard({ title, subtitle, tone = "green", badge = "現在のチェーン", metrics = [] }) {
@@ -498,8 +498,8 @@ function YutimeEvCard({ ceilingRot, yutimePayout, currentHamari, start1K, fallba
 
     return (
         <div style={{
-            background: "linear-gradient(180deg, rgba(11,22,40,0.85) 0%, rgba(16,27,45,0.75) 100%)",
-            border: "1px solid rgba(26,77,117,0.45)",
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
             borderRadius: 14,
             padding: 12,
             backdropFilter: "blur(8px)",
@@ -523,7 +523,7 @@ function YutimeEvCard({ ceilingRot, yutimePayout, currentHamari, start1K, fallba
                     {verdictLabel}
                 </div>
             </div>
-            <div style={{ display: "flex", background: "rgba(7,17,31,0.55)", border: `1px solid ${C.border}`, borderRadius: 10 }}>
+            <div style={{ display: "flex", background: "var(--surface-hi)", border: `1px solid ${C.border}`, borderRadius: 10 }}>
                 {cell("残り回転", remainingRot > 0 ? `${remainingRot.toLocaleString("ja-JP")}回` : "0回", remainingRot > 0 ? C.orange : C.green)}
                 {cell("到達コスト", arrivalCost == null ? "—" : `${arrivalCost.toLocaleString("ja-JP")}円`, C.subHi)}
                 {cell("期待値", ev == null ? "—" : fmtYen(ev), ev == null ? C.sub : (ev > 0 ? C.green : ev < 0 ? C.red : C.yellow))}
@@ -541,8 +541,8 @@ function YutimeEvCard({ ceilingRot, yutimePayout, currentHamari, start1K, fallba
 // 詳細データタブ専用 スタイルヘルパー（分析OS風 ダークUI）
 function dataCardStyle() {
     return {
-        background: "linear-gradient(180deg, rgba(11,22,40,0.85) 0%, rgba(16,27,45,0.75) 100%)",
-        border: "1px solid rgba(26,77,117,0.45)",
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
         borderRadius: 16,
         marginBottom: 10,
         backdropFilter: "blur(8px)",
@@ -565,7 +565,7 @@ function cardNumDot() {
         width: 18, height: 18, borderRadius: "50%",
         background: "rgba(10,132,255,0.16)",
         border: "1px solid rgba(10,132,255,0.55)",
-        color: "#0A84FF",
+        color: "var(--blue)",
         fontSize: 10, fontWeight: 800,
         display: "inline-flex", alignItems: "center", justifyContent: "center",
         fontFamily: mono,
@@ -581,8 +581,8 @@ function cardTitleStyle() {
 }
 function subCardStyle() {
     return {
-        background: "rgba(7,17,31,0.75)",
-        border: "1px solid rgba(18,58,90,0.55)",
+        background: "var(--surface-hi)",
+        border: "1px solid var(--border)",
         borderRadius: 10,
         padding: "8px 8px 8px 9px",
         display: "flex",
@@ -3454,8 +3454,8 @@ export function RotTab({ rows, setRows, S, ev }) {
                     <svg width={s} height={s} viewBox="0 0 48 48" fill="none">
                         <defs>
                             <linearGradient id="aiGrad" x1="0" y1="0" x2="1" y2="1">
-                                <stop offset="0%" stopColor="#0A84FF" />
-                                <stop offset="100%" stopColor="#38bdf8" />
+                                <stop offset="0%" stopColor="var(--blue)" />
+                                <stop offset="100%" stopColor="var(--blue)" />
                             </linearGradient>
                         </defs>
                         <circle cx="24" cy="24" r="20" fill="none" stroke="url(#aiGrad)" strokeWidth="1.4" opacity="0.65" />
@@ -3492,7 +3492,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                 const aiChecklist = [
                     {
                         kind: bDiff >= 0 ? "ok" : "ng",
-                        text: <>ボーダーを <strong style={{ color: bDiff >= 0 ? "#21D99B" : "#FF5A5F", fontWeight: 800 }}>{sp(bDiff, 1)}回</strong> {bDiff >= 0 ? "上回っています" : "下回っています"}</>,
+                        text: <>ボーダーを <strong style={{ color: bDiff >= 0 ? "var(--green)" : "var(--red)", fontWeight: 800 }}>{sp(bDiff, 1)}回</strong> {bDiff >= 0 ? "上回っています" : "下回っています"}</>,
                     },
                     {
                         kind: bDiff > 0 ? "ok" : "ng",
@@ -3514,10 +3514,10 @@ export function RotTab({ rows, setRows, S, ev }) {
                 const calcSummary = `初当たり ${firstHitRateLabel} / 交換率 ${f(exRate, 2)}円/玉`;
 
                 // チェック / 警告 / 注視 / ターゲット 用アイコン
-                const IcOk = ({ s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="#21D99B" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>);
-                const IcNg = ({ s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="#FF5A5F" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 6l12 12M18 6L6 18" /></svg>);
-                const IcWarn = ({ s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="#FFB020" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4l10 17H2z" /><path d="M12 10v5M12 18.5v.5" /></svg>);
-                const IcTarget = ({ s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="#0A84FF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.5" fill="#0A84FF" stroke="none" /></svg>);
+                const IcOk = ({ s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>);
+                const IcNg = ({ s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="var(--red)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 6l12 12M18 6L6 18" /></svg>);
+                const IcWarn = ({ s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="var(--yellow)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4l10 17H2z" /><path d="M12 10v5M12 18.5v.5" /></svg>);
+                const IcTarget = ({ s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="var(--blue)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.5" fill="var(--blue)" stroke="none" /></svg>);
 
                 // 折りたたみセクションヘッダ（タップで開閉）
                 const CollapseRow = ({ num, title, summary, openKey }) => (
@@ -3569,7 +3569,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                 // σゲージ用カラー（青→グレー→黄 のみ）
                 const sigmaPillBg = sigmaVal >= 1 ? "rgba(255,176,32,0.18)" : sigmaVal <= -1 ? "rgba(10,132,255,0.18)" : "rgba(107,114,128,0.18)";
                 const sigmaPillBorder = sigmaVal >= 1 ? "rgba(255,176,32,0.45)" : sigmaVal <= -1 ? "rgba(10,132,255,0.45)" : "rgba(107,114,128,0.45)";
-                const sigmaPillColor = sigmaVal >= 1 ? "#FFB020" : sigmaVal <= -1 ? "#0A84FF" : "#9CA3AF";
+                const sigmaPillColor = sigmaVal >= 1 ? "var(--yellow)" : sigmaVal <= -1 ? "var(--blue)" : "var(--sub)";
 
                 return (
                     <>
@@ -3578,7 +3578,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                         padding: "10px 12px",
                         // 下部固定ステータスバー(52px) + ModeTabBar(~60px) + セーフエリア
                         paddingBottom: "calc(120px + env(safe-area-inset-bottom))",
-                        background: "#050B18",
+                        background: "var(--bg)",
                     }}>
                         {/* ============================ */}
                         {/* 常時表示エリア（1〜4）       */}
@@ -3656,12 +3656,12 @@ export function RotTab({ rows, setRows, S, ev }) {
                                         {/* データ精度 */}
                                         <div style={subCardStyle()}>
                                             <div style={subCardLabel()}>データ精度</div>
-                                            <div style={{ fontSize: 14, fontWeight: 800, color: "#FFB020", fontFamily: font, marginBottom: 4 }}>{accuracyLabel}</div>
+                                            <div style={{ fontSize: 14, fontWeight: 800, color: "var(--yellow)", fontFamily: font, marginBottom: 4 }}>{accuracyLabel}</div>
                                             <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
                                                 {[0, 1, 2, 3, 4].map((i) => (
                                                     <span key={i} style={{
                                                         flex: 1, height: 3, borderRadius: 2,
-                                                        background: i < Math.max(1, Math.round(accuracyFill * 5)) ? "#FFB020" : "rgba(255,255,255,0.08)",
+                                                        background: i < Math.max(1, Math.round(accuracyFill * 5)) ? "var(--yellow)" : "var(--surface-alt)",
                                                     }} />
                                                 ))}
                                             </div>
@@ -3676,7 +3676,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                                                     boxShadow: "0 0 6px rgba(192,132,252,0.6)",
                                                     flexShrink: 0,
                                                 }} />
-                                                <span style={{ fontSize: 15, fontWeight: 800, color: "#C084FC", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
+                                                <span style={{ fontSize: 15, fontWeight: 800, color: "var(--purple)", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
                                                     {Math.round(confidence * 100)}%
                                                 </span>
                                             </div>
@@ -3684,7 +3684,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                                         {/* 次の判断ライン */}
                                         <div style={subCardStyle()}>
                                             <div style={subCardLabel()}>
-                                                <IcCross c="#0A84FF" s={11} />
+                                                <IcCross c="var(--blue)" s={11} />
                                                 <span style={{ marginLeft: 3 }}>次の判断ライン</span>
                                             </div>
                                             <div style={{ fontSize: 11, color: C.subHi, fontFamily: font, fontWeight: 600, lineHeight: 1.35 }}>
@@ -3696,7 +3696,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                                             <div style={subCardLabel()}>信頼度MIDまで</div>
                                             <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
                                                 <span style={{ fontSize: 10, color: C.subHi, fontFamily: font, fontWeight: 600 }}>あと</span>
-                                                <span style={{ fontSize: 15, fontWeight: 800, color: "#0A84FF", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{f(remainsToMid)}</span>
+                                                <span style={{ fontSize: 15, fontWeight: 800, color: "var(--blue)", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{f(remainsToMid)}</span>
                                                 <span style={{ fontSize: 9.5, color: C.sub, fontFamily: font }}>回転</span>
                                             </div>
                                         </div>
@@ -3716,7 +3716,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                                 </div>
                                 <div style={{ padding: "0 14px 8px" }}>
                                     <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                        <span style={{ fontSize: 34, fontWeight: 800, color: "#21D99B", fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{f(start1K, 1)}</span>
+                                        <span style={{ fontSize: 34, fontWeight: 800, color: "var(--green)", fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{f(start1K, 1)}</span>
                                         <span style={{ fontSize: 12, color: C.sub, fontWeight: 600 }}>回/K</span>
                                     </div>
                                     <div style={{ marginTop: 8, fontSize: 10.5, color: C.subHi, fontFamily: font }}>
@@ -3739,7 +3739,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                                         <IcOk s={9} />
                                     </span>
                                     <span style={{ flex: 1 }}>
-                                        ボーダーを <strong style={{ color: bDiff >= 0 ? "#21D99B" : "#FF5A5F" }}>{sp(bDiff, 1)}回</strong> {bDiff >= 0 ? "上回って" : "下回って"}います
+                                        ボーダーを <strong style={{ color: bDiff >= 0 ? "var(--green)" : "var(--red)" }}>{sp(bDiff, 1)}回</strong> {bDiff >= 0 ? "上回って" : "下回って"}います
                                     </span>
                                     <IcChevron c={C.sub} s={10} />
                                 </div>
@@ -3758,8 +3758,8 @@ export function RotTab({ rows, setRows, S, ev }) {
                                         border: `1px solid ${wageConfLabel === "LOW" ? "rgba(255,176,32,0.55)" :
                                             wageConfLabel === "MID" ? "rgba(10,132,255,0.55)" :
                                                 "rgba(33,217,155,0.55)"}`,
-                                        color: wageConfLabel === "LOW" ? "#FFB020" :
-                                            wageConfLabel === "MID" ? "#0A84FF" : "#21D99B",
+                                        color: wageConfLabel === "LOW" ? "var(--yellow)" :
+                                            wageConfLabel === "MID" ? "var(--blue)" : "var(--green)",
                                         borderRadius: 5,
                                         fontSize: 10, fontWeight: 800, letterSpacing: 0.6,
                                     }}>{wageConfLabel}</span>
@@ -3769,7 +3769,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                                         <span style={{
                                             fontSize: wageConfLabel === "LOW" ? 22 : 28,
                                             fontWeight: 800,
-                                            color: wage >= 0 ? "#21D99B" : "#FF5A5F",
+                                            color: wage >= 0 ? "var(--green)" : "var(--red)",
                                             fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums",
                                             opacity: wageConfLabel === "LOW" ? 0.85 : 1,
                                         }}>{sp(wage, 0)}</span>
@@ -3800,7 +3800,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                             </div>
                             <div style={{ padding: "0 14px 14px" }}>
                                 <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                                    <span style={{ fontSize: 30, fontWeight: 800, color: "#21D99B", fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{sp(workMid, 0)}</span>
+                                    <span style={{ fontSize: 30, fontWeight: 800, color: "var(--green)", fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{sp(workMid, 0)}</span>
                                     <span style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>円</span>
                                 </div>
                                 <div style={{ marginTop: 6, fontSize: 10, color: C.sub, fontFamily: font }}>
@@ -3816,7 +3816,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     }} />
                                     <div style={{
                                         position: "absolute", left: 0, top: -2, width: 4, height: 14, borderRadius: 2,
-                                        background: "#21D99B",
+                                        background: "var(--green)",
                                     }} />
                                     <div style={{
                                         position: "absolute", right: 0, top: -2, width: 4, height: 14, borderRadius: 2,
@@ -3847,14 +3847,14 @@ export function RotTab({ rows, setRows, S, ev }) {
                             {dataExpanded.work && (
                                 <div className="data-collapse-body" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, padding: "0 12px 14px" }}>
                                     {[
-                                        { label: "期待値（積み上げ）", val: expectedWork, color: "#21D99B" },
-                                        { label: "実収支（差玉換算）", val: actualBalance, color: "#0A84FF" },
-                                        { label: "差分（実収支 − 期待値）", val: diffActVsExp, color: "#FFB020", badge: diffActVsExp > 0 ? "上振れ中" : diffActVsExp < 0 ? "下振れ中" : "想定通り" },
+                                        { label: "期待値（積み上げ）", val: expectedWork, color: "var(--green)" },
+                                        { label: "実収支（差玉換算）", val: actualBalance, color: "var(--blue)" },
+                                        { label: "差分（実収支 − 期待値）", val: diffActVsExp, color: "var(--yellow)", badge: diffActVsExp > 0 ? "上振れ中" : diffActVsExp < 0 ? "下振れ中" : "想定通り" },
                                     ].map((m, idx) => {
                                         return (
                                             <div key={idx} style={{
-                                                background: "rgba(11,22,40,0.55)",
-                                                border: "1px solid rgba(26,77,117,0.45)",
+                                                background: "var(--surface-hi)",
+                                                border: "1px solid var(--border)",
                                                 borderRadius: 12,
                                                 padding: "10px 8px 6px",
                                                 display: "flex", flexDirection: "column",
@@ -3870,7 +3870,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                                                         padding: "1px 8px", borderRadius: 999,
                                                         background: diffActVsExp > 0 ? "rgba(33,217,155,0.18)" : diffActVsExp < 0 ? "rgba(255,176,32,0.18)" : "rgba(107,114,128,0.18)",
                                                         fontSize: 9,
-                                                        color: diffActVsExp > 0 ? "#21D99B" : diffActVsExp < 0 ? "#FFB020" : "#9CA3AF",
+                                                        color: diffActVsExp > 0 ? "var(--green)" : diffActVsExp < 0 ? "var(--yellow)" : "var(--sub)",
                                                         fontWeight: 700, fontFamily: font,
                                                     }}>{m.badge}</div>
                                                 )}
@@ -3891,9 +3891,9 @@ export function RotTab({ rows, setRows, S, ev }) {
                                         <svg viewBox="0 0 200 116" width="180" height="116">
                                             <defs>
                                                 <linearGradient id="sigmaGradV2" x1="0" y1="0" x2="1" y2="0">
-                                                    <stop offset="0%" stopColor="#0A84FF" />
+                                                    <stop offset="0%" stopColor="var(--blue)" />
                                                     <stop offset="50%" stopColor="#6b7280" />
-                                                    <stop offset="100%" stopColor="#FFB020" />
+                                                    <stop offset="100%" stopColor="var(--yellow)" />
                                                 </linearGradient>
                                             </defs>
                                             <path d="M15,100 A85,85 0 0 1 185,100" fill="none" stroke="url(#sigmaGradV2)" strokeWidth="14" strokeLinecap="round" opacity="0.92" />
@@ -3908,8 +3908,8 @@ export function RotTab({ rows, setRows, S, ev }) {
                                                 const ly = 100 - 100 * Math.sin(a);
                                                 return (
                                                     <g key={t}>
-                                                        <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(255,255,255,0.25)" strokeWidth="1" />
-                                                        <text x={lx} y={ly} fontSize="9" fill="rgba(255,255,255,0.55)" textAnchor="middle" dominantBaseline="middle" fontFamily="Inter">{(t > 0 ? "+" : "") + t}σ</text>
+                                                        <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="var(--border-hi)" strokeWidth="1" />
+                                                        <text x={lx} y={ly} fontSize="9" fill="var(--sub-hi)" textAnchor="middle" dominantBaseline="middle" fontFamily="Inter">{(t > 0 ? "+" : "") + t}σ</text>
                                                     </g>
                                                 );
                                             })}
@@ -3958,7 +3958,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     {/* レジェンド */}
                                     <div style={{ display: "flex", gap: 14, padding: "0 14px 6px", fontSize: 10, color: C.subHi, fontFamily: font }}>
                                         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                            <span style={{ width: 14, height: 2, background: "#21D99B", borderRadius: 1 }} />
+                                            <span style={{ width: 14, height: 2, background: "var(--green)", borderRadius: 1 }} />
                                             ボーダー差（回/K）
                                         </span>
                                         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -3972,11 +3972,11 @@ export function RotTab({ rows, setRows, S, ev }) {
                                             <svg viewBox="0 0 280 120" preserveAspectRatio="none" width="100%" height="140" style={{ display: "block" }}>
                                                 {/* グリッド */}
                                                 {[0, 1, 2, 3, 4].map((i) => (
-                                                    <line key={i} x1="22" y1={10 + i * 24} x2="278" y2={10 + i * 24} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
+                                                    <line key={i} x1="22" y1={10 + i * 24} x2="278" y2={10 + i * 24} stroke="var(--border)" strokeWidth="1" />
                                                 ))}
                                                 {/* 左軸 */}
                                                 {[20, 10, 0, -10, -20].map((v, i) => (
-                                                    <text key={v} x="20" y={14 + i * 24} fontSize="7" fill="rgba(255,255,255,0.4)" textAnchor="end" fontFamily="Inter">{(v > 0 ? "+" : "") + v}</text>
+                                                    <text key={v} x="20" y={14 + i * 24} fontSize="7" fill="var(--sub)" textAnchor="end" fontFamily="Inter">{(v > 0 ? "+" : "") + v}</text>
                                                 ))}
                                                 {/* 右軸 */}
                                                 {[100, 75, 50, 25, 0].map((v, i) => (
@@ -4002,13 +4002,13 @@ export function RotTab({ rows, setRows, S, ev }) {
                                                     const lastY = yFor(vals[N - 1]);
                                                     return (
                                                         <g>
-                                                            <path d={d} stroke="#21D99B" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                                                            <path d={d} stroke="var(--green)" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
                                                             {vals.slice(0, -1).map((v, i) => (
-                                                                <circle key={i} cx={xFor(i)} cy={yFor(v)} r="1.8" fill="#21D99B" />
+                                                                <circle key={i} cx={xFor(i)} cy={yFor(v)} r="1.8" fill="var(--green)" />
                                                             ))}
                                                             {/* 現在点 — パルス + 発光 */}
-                                                            <circle cx={lastX} cy={lastY} r="4" fill="#21D99B" opacity="0.35" className="data-pulse-ring" />
-                                                            <circle cx={lastX} cy={lastY} r="3" fill="#21D99B" stroke="#fff" strokeWidth="1" />
+                                                            <circle cx={lastX} cy={lastY} r="4" fill="var(--green)" opacity="0.35" className="data-pulse-ring" />
+                                                            <circle cx={lastX} cy={lastY} r="3" fill="var(--green)" stroke="#fff" strokeWidth="1" />
                                                         </g>
                                                     );
                                                 })()}
@@ -4032,19 +4032,19 @@ export function RotTab({ rows, setRows, S, ev }) {
                                                     const lastY = yFor(vals[N - 1]);
                                                     return (
                                                         <g>
-                                                            <path d={d} stroke="#C084FC" strokeWidth="1.6" fill="none" strokeDasharray="3 2" strokeLinecap="round" strokeLinejoin="round" />
+                                                            <path d={d} stroke="var(--purple)" strokeWidth="1.6" fill="none" strokeDasharray="3 2" strokeLinecap="round" strokeLinejoin="round" />
                                                             {vals.slice(0, -1).map((v, i) => (
-                                                                <circle key={i} cx={xFor(i)} cy={yFor(v)} r="1.6" fill="#C084FC" />
+                                                                <circle key={i} cx={xFor(i)} cy={yFor(v)} r="1.6" fill="var(--purple)" />
                                                             ))}
                                                             {/* 現在点 — パルス */}
-                                                            <circle cx={lastX} cy={lastY} r="3.5" fill="#C084FC" opacity="0.35" className="data-pulse-ring" />
-                                                            <circle cx={lastX} cy={lastY} r="2.6" fill="#C084FC" stroke="#fff" strokeWidth="0.8" />
+                                                            <circle cx={lastX} cy={lastY} r="3.5" fill="var(--purple)" opacity="0.35" className="data-pulse-ring" />
+                                                            <circle cx={lastX} cy={lastY} r="2.6" fill="var(--purple)" stroke="#fff" strokeWidth="0.8" />
                                                         </g>
                                                     );
                                                 })()}
                                                 {/* 時刻軸 */}
                                                 {["12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "現在"].map((t, i) => (
-                                                    <text key={t} x={22 + (i / 6) * 254} y="118" fontSize="7" fill={i === 6 ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.45)"} fontWeight={i === 6 ? "700" : "400"} textAnchor="middle" fontFamily="Inter">{t}</text>
+                                                    <text key={t} x={22 + (i / 6) * 254} y="118" fontSize="7" fill={i === 6 ? "var(--text)" : "var(--sub)"} fontWeight={i === 6 ? "700" : "400"} textAnchor="middle" fontFamily="Inter">{t}</text>
                                                 ))}
                                             </svg>
                                         </div>
@@ -4057,11 +4057,11 @@ export function RotTab({ rows, setRows, S, ev }) {
                                             <div style={{ fontSize: 9, color: C.sub, fontFamily: font, fontWeight: 700, letterSpacing: 0.4 }}>現在値</div>
                                             <div>
                                                 <div style={{ fontSize: 9, color: C.sub, fontFamily: font }}>ボーダー差</div>
-                                                <div style={{ fontSize: 16, fontWeight: 800, color: "#21D99B", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{sp(bDiff, 1)}<span style={{ fontSize: 9, color: C.sub, marginLeft: 2 }}>回/K</span></div>
+                                                <div style={{ fontSize: 16, fontWeight: 800, color: "var(--green)", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{sp(bDiff, 1)}<span style={{ fontSize: 9, color: C.sub, marginLeft: 2 }}>回/K</span></div>
                                             </div>
                                             <div>
                                                 <div style={{ fontSize: 9, color: C.sub, fontFamily: font }}>信頼度</div>
-                                                <div style={{ fontSize: 16, fontWeight: 800, color: "#C084FC", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{Math.round(confidence * 100)}<span style={{ fontSize: 9, color: C.sub, marginLeft: 2 }}>%</span></div>
+                                                <div style={{ fontSize: 16, fontWeight: 800, color: "var(--purple)", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{Math.round(confidence * 100)}<span style={{ fontSize: 9, color: C.sub, marginLeft: 2 }}>%</span></div>
                                             </div>
                                         </div>
                                     </div>
@@ -4077,13 +4077,13 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     {/* 優先度高 - 大きめ 3カード */}
                                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 10 }}>
                                         {[
-                                            { Icon: IcCircleDot, color: "#21D99B", label: "単価", val: `${sp(evPerRot, 2)}`, unit: "円/回" },
-                                            { Icon: IcMochi, color: "#FFB020", label: "持ち玉比率", val: `${Math.round(mochiRatio * 1000) / 10}`, unit: "%" },
-                                            { Icon: IcBalls, color: "#C084FC", label: "平均出玉", val: f(avg1R, 0), unit: "玉" },
+                                            { Icon: IcCircleDot, color: "var(--green)", label: "単価", val: `${sp(evPerRot, 2)}`, unit: "円/回" },
+                                            { Icon: IcMochi, color: "var(--yellow)", label: "持ち玉比率", val: `${Math.round(mochiRatio * 1000) / 10}`, unit: "%" },
+                                            { Icon: IcBalls, color: "var(--purple)", label: "平均出玉", val: f(avg1R, 0), unit: "玉" },
                                         ].map((m, i) => (
                                             <div key={i} style={{
-                                                background: "rgba(11,22,40,0.55)",
-                                                border: "1px solid rgba(26,77,117,0.45)",
+                                                background: "var(--surface-hi)",
+                                                border: "1px solid var(--border)",
                                                 borderRadius: 12,
                                                 padding: "10px 10px 8px",
                                                 display: "flex", flexDirection: "column", gap: 4,
@@ -4100,17 +4100,17 @@ export function RotTab({ rows, setRows, S, ev }) {
                                         ))}
                                     </div>
                                     {/* 優先度低 - 小さめ行リスト */}
-                                    <div style={{ display: "flex", flexDirection: "column", background: "rgba(7,17,31,0.45)", borderRadius: 10, padding: "2px 8px" }}>
+                                    <div style={{ display: "flex", flexDirection: "column", background: "var(--surface-hi)", borderRadius: 10, padding: "2px 8px" }}>
                                         {[
-                                            { Icon: IcLight, color: "#9CA3AF", label: "大当たり確率（実測）", val: firstHitRateLabel, unit: "" },
-                                            { Icon: IcRot, color: "#9CA3AF", label: "通常回転数", val: f(netRot), unit: "回" },
-                                            { Icon: IcFlame, color: "#9CA3AF", label: "大当たり回数", val: `${jpCount}`, unit: "回" },
-                                            { Icon: IcPercent, color: "#9CA3AF", label: "初当たり確率（実測）", val: firstHitRateLabel, unit: "" },
+                                            { Icon: IcLight, color: "var(--sub)", label: "大当たり確率（実測）", val: firstHitRateLabel, unit: "" },
+                                            { Icon: IcRot, color: "var(--sub)", label: "通常回転数", val: f(netRot), unit: "回" },
+                                            { Icon: IcFlame, color: "var(--sub)", label: "大当たり回数", val: `${jpCount}`, unit: "回" },
+                                            { Icon: IcPercent, color: "var(--sub)", label: "初当たり確率（実測）", val: firstHitRateLabel, unit: "" },
                                         ].map((r, i, arr) => (
                                             <div key={i} style={{
                                                 display: "flex", alignItems: "center", justifyContent: "space-between",
                                                 padding: "7px 2px",
-                                                borderBottom: i < arr.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
+                                                borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none",
                                             }}>
                                                 <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0, flex: 1 }}>
                                                     <r.Icon c={r.color} s={12} />
@@ -4136,17 +4136,17 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     <div style={{ fontSize: 9.5, color: C.sub, fontFamily: font, margin: "0 14px 4px" }}>（タップで詳細を確認）</div>
                                     <div style={{ display: "flex", flexDirection: "column", padding: "0 8px 4px" }}>
                                         {[
-                                            { Icon: IcDice, color: "#21D99B", label: "初当たり確率（実測）", val: firstHitRateLabel },
-                                            { Icon: IcBalls, color: "#0A84FF", label: "表記出玉（平均）", val: `${f(avg1R, 0)} 玉` },
-                                            { Icon: IcMochi, color: "#0A84FF", label: "持ち玉（現在）", val: `${f(currentBalls)} 玉` },
-                                            { Icon: IcCoin, color: "#21D99B", label: "総投資", val: `${f(totalInvestActual)} 円` },
-                                            { Icon: IcSwap, color: "#0A84FF", label: "交換率", val: `${f(exRate, 2)} 円/玉` },
-                                            { Icon: IcInv, color: "#FF5A5F", label: "再プレイ上限", val: replayLimitLabel },
+                                            { Icon: IcDice, color: "var(--green)", label: "初当たり確率（実測）", val: firstHitRateLabel },
+                                            { Icon: IcBalls, color: "var(--blue)", label: "表記出玉（平均）", val: `${f(avg1R, 0)} 玉` },
+                                            { Icon: IcMochi, color: "var(--blue)", label: "持ち玉（現在）", val: `${f(currentBalls)} 玉` },
+                                            { Icon: IcCoin, color: "var(--green)", label: "総投資", val: `${f(totalInvestActual)} 円` },
+                                            { Icon: IcSwap, color: "var(--blue)", label: "交換率", val: `${f(exRate, 2)} 円/玉` },
+                                            { Icon: IcInv, color: "var(--red)", label: "再プレイ上限", val: replayLimitLabel },
                                         ].map((r, i, arr) => (
                                             <div key={i} style={{
                                                 display: "flex", alignItems: "center", justifyContent: "space-between",
                                                 padding: "8px 6px",
-                                                borderBottom: i < arr.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
+                                                borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none",
                                             }}>
                                                 <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0, flex: 1 }}>
                                                     <r.Icon c={r.color} s={13} />
@@ -4161,12 +4161,12 @@ export function RotTab({ rows, setRows, S, ev }) {
                                         background: "rgba(10,132,255,0.08)",
                                         border: "1px solid rgba(10,132,255,0.28)",
                                         borderRadius: 10,
-                                        color: "#0A84FF", fontSize: 11.5, fontWeight: 700, fontFamily: font,
+                                        color: "var(--blue)", fontSize: 11.5, fontWeight: 700, fontFamily: font,
                                         display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                                         cursor: "pointer", width: "calc(100% - 20px)",
                                     }} onClick={() => setShowGraphModal(true)}>
                                         すべての計算根拠を見る
-                                        <IcArrowFwd c="#0A84FF" s={12} />
+                                        <IcArrowFwd c="var(--blue)" s={12} />
                                     </button>
                                 </div>
                             )}
@@ -4230,21 +4230,21 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     display: "flex", alignItems: "center", gap: 6,
                                     whiteSpace: "nowrap",
                                 }}>
-                                    <span>ボーダー <strong style={{ color: bDiff >= 0 ? "#21D99B" : "#FF5A5F", fontWeight: 800 }}>{sp(bDiff, 1)}回</strong></span>
+                                    <span>ボーダー <strong style={{ color: bDiff >= 0 ? "var(--green)" : "var(--red)", fontWeight: 800 }}>{sp(bDiff, 1)}回</strong></span>
                                     <span style={{ color: C.sub }}>|</span>
-                                    <span style={{ color: bDiff > 0 ? "#21D99B" : bDiff < 0 ? "#FF5A5F" : C.subHi, fontWeight: 700 }}>{bDiff > 0 ? "期待値プラス" : bDiff < 0 ? "期待値マイナス" : "期待値ニュートラル"}</span>
+                                    <span style={{ color: bDiff > 0 ? "var(--green)" : bDiff < 0 ? "var(--red)" : C.subHi, fontWeight: 700 }}>{bDiff > 0 ? "期待値プラス" : bDiff < 0 ? "期待値マイナス" : "期待値ニュートラル"}</span>
                                 </div>
                             </div>
                             {/* 右：信頼度 + 次の判断ライン */}
                             <div style={{ display: "flex", gap: 10, flexShrink: 0 }}>
                                 <div style={{ textAlign: "center" }}>
                                     <div style={{ fontSize: 8.5, color: C.sub, fontFamily: font, fontWeight: 600, marginBottom: 1 }}>信頼度</div>
-                                    <div style={{ fontSize: 12, fontWeight: 800, color: "#C084FC", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{Math.round(confidence * 100)}%</div>
+                                    <div style={{ fontSize: 12, fontWeight: 800, color: "var(--purple)", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{Math.round(confidence * 100)}%</div>
                                 </div>
-                                <div style={{ width: 1, background: "rgba(255,255,255,0.08)" }} />
+                                <div style={{ width: 1, background: "var(--border)" }} />
                                 <div style={{ textAlign: "center" }}>
                                     <div style={{ fontSize: 8.5, color: C.sub, fontFamily: font, fontWeight: 600, marginBottom: 1 }}>次の判断</div>
-                                    <div style={{ fontSize: 11, fontWeight: 800, color: "#0A84FF", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
+                                    <div style={{ fontSize: 11, fontWeight: 800, color: "var(--blue)", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
                                         {netRot < 300 ? "300回転" : "継続中"}
                                     </div>
                                 </div>
@@ -6209,13 +6209,13 @@ export function RotTab({ rows, setRows, S, ev }) {
 
             {/* 直接単発終了モーダル */}
             {directSingleEndOpen && ReactDOM.createPortal(
-                <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "#000", zIndex: 9999, display: "flex", flexDirection: "column" }}>
-                    <div style={{ padding: "12px 16px", paddingTop: "max(12px, env(safe-area-inset-top))", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, background: "#000" }}>
+                <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "var(--bg)", zIndex: 9999, display: "flex", flexDirection: "column" }}>
+                    <div style={{ padding: "12px 16px", paddingTop: "max(12px, env(safe-area-inset-top))", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, background: "var(--bg)" }}>
                         <button className="b" onClick={() => setDirectSingleEndOpen(false)} style={{ background: "transparent", border: "none", color: C.red, fontSize: 14, fontWeight: 600, padding: 8 }}>キャンセル</button>
                         <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>単発終了</span>
                         <div style={{ width: 70 }} />
                     </div>
-                    <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "16px 20px", background: "#000" }}>
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "16px 20px", background: "var(--bg)" }}>
                         {directSingleEndStep === 0 && (
                             <div style={{ textAlign: "center" }}>
                                 <div style={{ fontSize: 22, fontWeight: 700, color: C.purple, marginBottom: 16 }}>時短回数</div>
@@ -7044,7 +7044,7 @@ export function HistoryTab({ jpLog, delJPLast, S, ev }) {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    background: "#000",
+                    background: "var(--bg)",
                     zIndex: 9999,
                     display: "flex",
                     flexDirection: "column",
@@ -7060,7 +7060,7 @@ export function HistoryTab({ jpLog, delJPLast, S, ev }) {
                         justifyContent: "space-between",
                         alignItems: "center",
                         flexShrink: 0,
-                        background: "#000"
+                        background: "var(--bg)"
                     }}>
                         <button className="b" onClick={() => setChainWizardOpen(false)} style={{ background: "transparent", border: "none", color: C.red, fontSize: 14, fontWeight: 600, padding: 8 }}>キャンセル</button>
                         <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{lastChain ? `${lastChain.hits.length + 1}連目` : "連チャン"} 入力</span>
@@ -7068,7 +7068,7 @@ export function HistoryTab({ jpLog, delJPLast, S, ev }) {
                     </div>
 
                     {/* コンテンツエリア */}
-                    <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "16px 20px", background: "#000" }}>
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "16px 20px", background: "var(--bg)" }}>
                         {/* Step 0: ラウンド数選択（確変中振り分けを使用） */}
                         {chainWizardStep === 0 && (
                             <div style={{ textAlign: "center" }}>
@@ -7436,7 +7436,7 @@ export function HistoryTab({ jpLog, delJPLast, S, ev }) {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    background: "#000",
+                    background: "var(--bg)",
                     zIndex: 9999,
                     display: "flex",
                     flexDirection: "column",
@@ -7450,7 +7450,7 @@ export function HistoryTab({ jpLog, delJPLast, S, ev }) {
                         justifyContent: "space-between",
                         alignItems: "center",
                         flexShrink: 0,
-                        background: "#000"
+                        background: "var(--bg)"
                     }}>
                         <button className="b" onClick={() => setDirectSingleEndOpen(false)} style={{ background: "transparent", border: "none", color: C.red, fontSize: 14, fontWeight: 600, padding: 8 }}>キャンセル</button>
                         <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>単発終了</span>
@@ -7458,7 +7458,7 @@ export function HistoryTab({ jpLog, delJPLast, S, ev }) {
                     </div>
 
                     {/* コンテンツエリア */}
-                    <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "16px 20px", background: "#000" }}>
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "16px 20px", background: "var(--bg)" }}>
                         {/* Step 0: 時短回数 */}
                         {directSingleEndStep === 0 && (
                             <div style={{ textAlign: "center" }}>
@@ -7898,7 +7898,7 @@ export function CalendarTab({ S, onReset }) {
                                         ? "rgba(52, 211, 153, 0.14)"
                                         : hourlyWage < 0
                                             ? "rgba(251, 113, 133, 0.14)"
-                                            : "rgba(255, 255, 255, 0.06)",
+                                            : "var(--surface-hi)",
                                     color: sc(hourlyWage),
                                     border: `1px solid ${hourlyWage > 0
                                         ? "rgba(52,211,153,0.3)"
@@ -9975,7 +9975,7 @@ export function SettingsTab({ s, onReset }) {
                                 const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${store.name} ${store.address || ""}`.trim())}`;
                                 return (
                                     <div key={store.id} style={{
-                                        background: "rgba(7,17,31,0.55)",
+                                        background: "var(--surface-hi)",
                                         border: `1px solid ${registered ? "rgba(34,197,94,0.35)" : C.border}`,
                                         borderRadius: 10,
                                         padding: "10px 10px",
@@ -10916,7 +10916,7 @@ export function SettingsTab({ s, onReset }) {
     const SectionLabelV2 = ({ label }) => (
         <div style={{
             padding: "4px 6px 8px",
-            fontSize: 12.5, fontWeight: 700, color: "#7da4cf",
+            fontSize: 12.5, fontWeight: 700, color: "var(--sub-hi)",
             letterSpacing: 0.4,
         }}>{label}</div>
     );
@@ -10942,11 +10942,11 @@ export function SettingsTab({ s, onReset }) {
                         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                     }}>{label}</div>
                     {sub && <div style={{
-                        fontSize: 11.5, color: "#6f8aae", marginTop: 3, lineHeight: 1.3,
+                        fontSize: 11.5, color: "var(--sub)", marginTop: 3, lineHeight: 1.3,
                         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                     }}>{sub}</div>}
                 </div>
-                {right !== undefined ? right : (onPress ? <span style={{ fontSize: 16, color: "#5e7ba0", flexShrink: 0, fontWeight: 400 }}>›</span> : null)}
+                {right !== undefined ? right : (onPress ? <span style={{ fontSize: 16, color: "var(--sub)", flexShrink: 0, fontWeight: 400 }}>›</span> : null)}
             </Tag>
         );
     };
@@ -10967,7 +10967,7 @@ export function SettingsTab({ s, onReset }) {
             }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 30, fontWeight: 800, color: C.text, fontFamily: font, letterSpacing: -0.6, lineHeight: 1.05 }}>設定</div>
-                    <div style={{ fontSize: 11.5, color: "#6f8aae", marginTop: 4, fontFamily: font }}>アプリの各種設定を管理します</div>
+                    <div style={{ fontSize: 11.5, color: "var(--sub)", marginTop: 4, fontFamily: font }}>アプリの各種設定を管理します</div>
                 </div>
                 {/* 環境プロファイルカード（タップで環境プロファイル切替画面へ — 遷移先は将来実装予定。現状は遊技設定サブビューへ） */}
                 <button
@@ -10985,19 +10985,19 @@ export function SettingsTab({ s, onReset }) {
                         WebkitTapHighlightColor: "transparent",
                     }}
                 >
-                    <NeonIconBox color="#38bdf8" IconComp={IconGear} size={38} />
+                    <NeonIconBox color="var(--blue)" IconComp={IconGear} size={38} />
                     <div style={{ flex: 1, minWidth: 0, textAlign: "right" }}>
-                        <div style={{ fontSize: 9.5, color: "#6f8aae", marginBottom: 2, letterSpacing: 0.4 }}>環境プロファイル</div>
+                        <div style={{ fontSize: 9.5, color: "var(--sub)", marginBottom: 2, letterSpacing: 0.4 }}>環境プロファイル</div>
                         <div style={{
                             fontSize: 13.5, fontWeight: 800, color: C.text, lineHeight: 1.2,
                             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                         }}>{profileName}</div>
                         <div style={{
-                            fontSize: 10.5, color: "#7da4cf", marginTop: 2, fontFamily: mono,
+                            fontSize: 10.5, color: "var(--sub-hi)", marginTop: 2, fontFamily: mono,
                             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                         }}>{rateDisplay} / {exLabelShort}</div>
                     </div>
-                    <span style={{ fontSize: 14, color: "#5e7ba0", flexShrink: 0 }}>›</span>
+                    <span style={{ fontSize: 14, color: "var(--sub)", flexShrink: 0 }}>›</span>
                 </button>
             </div>
 
@@ -11009,10 +11009,10 @@ export function SettingsTab({ s, onReset }) {
                 <SectionCard>
                     {(() => {
                         const items = [
-                            { color: "#38bdf8", icon: IconExchange,   label: "レート・交換率",         sub: `${Math.round((s.exRate || 250) / 10)}玉 / ${exLabelShort}`,                 onPress: () => setShowGameSettingsView(true) },
-                            { color: "#ef476f", icon: IconTarget,     label: "機種スペック",           sub: `${s.synthDenom || 319.6} / ${borderShort}`,                                 onPress: () => setShowMachineSpecView(true) },
-                            { color: "#21d99b", icon: IconCoin,       label: "貯玉設定",               sub: s.includeChodamaInBalance ? "収支に含める / 再プレイ上限あり" : "収支に含めない", onPress: () => setShowChodamaView(true) },
-                            { color: "#c084fc", icon: IconCalculator, label: "詳細設定（上級者向け）", sub: "削り補正 / 持玉比率 など",                                                    onPress: () => setShowAdvancedView(true) },
+                            { color: "var(--blue)", icon: IconExchange,   label: "レート・交換率",         sub: `${Math.round((s.exRate || 250) / 10)}玉 / ${exLabelShort}`,                 onPress: () => setShowGameSettingsView(true) },
+                            { color: "var(--red)", icon: IconTarget,     label: "機種スペック",           sub: `${s.synthDenom || 319.6} / ${borderShort}`,                                 onPress: () => setShowMachineSpecView(true) },
+                            { color: "var(--green)", icon: IconCoin,       label: "貯玉設定",               sub: s.includeChodamaInBalance ? "収支に含める / 再プレイ上限あり" : "収支に含めない", onPress: () => setShowChodamaView(true) },
+                            { color: "var(--purple)", icon: IconCalculator, label: "詳細設定（上級者向け）", sub: "削り補正 / 持玉比率 など",                                                    onPress: () => setShowAdvancedView(true) },
                         ];
                         return items.map((it, i) => (
                             <ListRow
@@ -11033,9 +11033,9 @@ export function SettingsTab({ s, onReset }) {
                 <SectionCard>
                     {(() => {
                         const items = [
-                            { color: "#c084fc", icon: IconPaint,      label: "テーマ・カラー・アクセシビリティ", sub: "ダーク / 配色 / フォント", onPress: () => setShowAppearanceView(true) },
-                            { color: "#38bdf8", icon: IconChartBars,  label: "グラフ・表示設定",                 sub: "形式 / 表示項目 / 単位",   onPress: () => showToast("グラフ設定は準備中です", "warn") },
-                            { color: "#ff5f8a", icon: IconBell,       label: "通知・サウンド・振動",             sub: "通知 / 効果音 / 振動",     onPress: () => showToast("通知設定は準備中です", "warn") },
+                            { color: "var(--purple)", icon: IconPaint,      label: "テーマ・カラー・アクセシビリティ", sub: "ダーク / 配色 / フォント", onPress: () => setShowAppearanceView(true) },
+                            { color: "var(--blue)", icon: IconChartBars,  label: "グラフ・表示設定",                 sub: "形式 / 表示項目 / 単位",   onPress: () => showToast("グラフ設定は準備中です", "warn") },
+                            { color: "var(--purple)", icon: IconBell,       label: "通知・サウンド・振動",             sub: "通知 / 効果音 / 振動",     onPress: () => showToast("通知設定は準備中です", "warn") },
                         ];
                         return items.map((it, i) => (
                             <ListRow
@@ -11056,10 +11056,10 @@ export function SettingsTab({ s, onReset }) {
                 <SectionCard>
                     {(() => {
                         const items = [
-                            { color: "#21d99b", icon: IconStore,      label: "店舗検索・登録",   sub: `登録店舗: ${(s.stores || []).length}件`,               onPress: () => setShowStoreSearch(true) },
-                            { color: "#22d3ee", icon: IconMagnifier,  label: "機種検索・登録",   sub: `カスタム機種: ${(s.customMachines || []).length}件`,  onPress: () => setShowMachineSearch(true) },
-                            { color: "#38bdf8", icon: IconCloud,      label: "バックアップ・復元", sub: "JSON全体バックアップ",                                onPress: () => setShowBackupView(true) },
-                            { color: "#ff9f43", icon: IconCsv,        label: "収支CSV管理",       sub: "インポート / エクスポート",                            onPress: () => setShowBackupView(true) },
+                            { color: "var(--green)", icon: IconStore,      label: "店舗検索・登録",   sub: `登録店舗: ${(s.stores || []).length}件`,               onPress: () => setShowStoreSearch(true) },
+                            { color: "var(--teal)", icon: IconMagnifier,  label: "機種検索・登録",   sub: `カスタム機種: ${(s.customMachines || []).length}件`,  onPress: () => setShowMachineSearch(true) },
+                            { color: "var(--blue)", icon: IconCloud,      label: "バックアップ・復元", sub: "JSON全体バックアップ",                                onPress: () => setShowBackupView(true) },
+                            { color: "var(--orange)", icon: IconCsv,        label: "収支CSV管理",       sub: "インポート / エクスポート",                            onPress: () => setShowBackupView(true) },
                         ];
                         return items.map((it, i) => (
                             <ListRow
@@ -11080,7 +11080,7 @@ export function SettingsTab({ s, onReset }) {
                 <SectionCard>
                     {/* アプリロック（Toggle） */}
                     <ListRow
-                        color="#38bdf8"
+                        color="var(--blue)"
                         IconComp={IconLock}
                         label="アプリロック"
                         sub={s.appLock ? (s.appPin ? "PIN設定済み" : "PIN未設定") : "オフ"}
@@ -11098,7 +11098,7 @@ export function SettingsTab({ s, onReset }) {
                     />
                     {/* 自動ロック（chevron） */}
                     <ListRow
-                        color="#c084fc"
+                        color="var(--purple)"
                         IconComp={IconFaceId}
                         label="自動ロック"
                         sub="未設定"
@@ -11106,7 +11106,7 @@ export function SettingsTab({ s, onReset }) {
                     />
                     {/* SNSシェア（匿名化）（Toggle） */}
                     <ListRow
-                        color="#21d99b"
+                        color="var(--green)"
                         IconComp={IconShare}
                         label="SNSシェア（匿名化）"
                         sub="スクショ時に自動で情報を保護"
@@ -11118,7 +11118,7 @@ export function SettingsTab({ s, onReset }) {
                                     // TODO: 将来、スクショ取得時のホール名/台番号マスキング処理と連動
                                     showToast(v ? "SNSシェアの匿名化をオンにしました" : "SNSシェアの匿名化をオフにしました");
                                 }}
-                                color="#21d99b"
+                                color="var(--green)"
                             />
                         }
                     />
@@ -11209,14 +11209,14 @@ export function SettingsTab({ s, onReset }) {
                 <SectionLabelV2 label="サポート" />
                 <SectionCard>
                     <ListRow
-                        color="#38bdf8"
+                        color="var(--blue)"
                         IconComp={IconChat}
                         label="お問い合わせ"
                         sub="サポート / 不具合報告"
                         onPress={() => showToast("サポートページは準備中です", "warn")}
                     />
                     <ListRow
-                        color="#c084fc"
+                        color="var(--purple)"
                         IconComp={IconDoc}
                         label="利用規約・プライバシー"
                         sub="利用規約 / プライバシーポリシー"
@@ -11240,9 +11240,9 @@ export function SettingsTab({ s, onReset }) {
                         }}>🎰</div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 15, fontWeight: 800, color: C.text, lineHeight: 1.2 }}>パチトラッカー</div>
-                            <div style={{ fontSize: 10.5, color: "#6f8aae", marginTop: 2, fontFamily: mono }}>Version 1.0.0 (2025.7.1)</div>
+                            <div style={{ fontSize: 10.5, color: "var(--sub)", marginTop: 2, fontFamily: mono }}>Version 1.0.0 (2025.7.1)</div>
                             <div style={{
-                                fontSize: 10.5, color: "#7da4cf", marginTop: 4, lineHeight: 1.3,
+                                fontSize: 10.5, color: "var(--sub-hi)", marginTop: 4, lineHeight: 1.3,
                                 overflow: "hidden", textOverflow: "ellipsis",
                                 display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
                             }}>パチンコデータをもっと賢く、もっと楽しく。</div>
@@ -11255,8 +11255,8 @@ export function SettingsTab({ s, onReset }) {
                             display: "flex", alignItems: "center", gap: 4,
                             flexShrink: 0,
                         }}>
-                            <span style={{ fontSize: 10, color: "#21d99b", fontWeight: 700 }}>最新版</span>
-                            <span style={{ fontSize: 10, color: "#21d99b" }}>✓</span>
+                            <span style={{ fontSize: 10, color: "var(--green)", fontWeight: 700 }}>最新版</span>
+                            <span style={{ fontSize: 10, color: "var(--green)" }}>✓</span>
                         </div>
                     </div>
                     {/* アップデート履歴 */}
@@ -11271,9 +11271,9 @@ export function SettingsTab({ s, onReset }) {
                     }}>
                         <div style={{ textAlign: "left" }}>
                             <div style={{ fontSize: 12.5, color: C.text, fontWeight: 600 }}>アップデート履歴</div>
-                            <div style={{ fontSize: 10, color: "#6f8aae", marginTop: 2 }}>リリースノートを見る</div>
+                            <div style={{ fontSize: 10, color: "var(--sub)", marginTop: 2 }}>リリースノートを見る</div>
                         </div>
-                        <span style={{ fontSize: 14, color: "#5e7ba0" }}>›</span>
+                        <span style={{ fontSize: 14, color: "var(--sub)" }}>›</span>
                     </button>
                 </div>
 

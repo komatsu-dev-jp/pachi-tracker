@@ -23,25 +23,26 @@ import { evDecision } from "../decision/evDecision";
 // - ダミー値・モック値は使用しない（記録が無ければ空状態を表示）
 // =====================================================
 
-// 固定パレット（ダーク前提）
+// パレットはテーマ変数（CSS カスタムプロパティ）に連動させる。
+// ライト/ダークの切り替えは index.css の :root / [data-theme] が担う。
 const P = {
-    bgGrad: "linear-gradient(180deg, #08111A 0%, #020713 100%)",
-    card: "#0F1A2B",
-    cardAlt: "#0A1320",
-    cardSub: "#0B1424",
-    border: "#1F2937",
-    borderHi: "#26334A",
-    blue: "#00A6FF",
-    cyan: "#7DD3FC",
-    green: "#22C55E",
-    yellow: "#F59E0B",
-    red: "#EF4444",
-    purple: "#8B5CF6",
-    text: "#E5E7EB",
-    textHi: "#F8FAFC",
-    sub: "#94A3B8",
-    subDim: "#64748B",
-    glowBlue: "0 0 24px color-mix(in srgb, #00A6FF 18%, transparent)",
+    bgGrad: "var(--bg)",
+    card: "var(--surface)",
+    cardAlt: "var(--surface-alt)",
+    cardSub: "var(--surface-hi)",
+    border: "var(--border)",
+    borderHi: "var(--border-hi)",
+    blue: "var(--blue)",
+    cyan: "var(--teal)",
+    green: "var(--green)",
+    yellow: "var(--yellow)",
+    red: "var(--red)",
+    purple: "var(--purple)",
+    text: "var(--text)",
+    textHi: "var(--text)",
+    sub: "var(--sub-hi)",
+    subDim: "var(--sub)",
+    glowBlue: "0 0 24px color-mix(in srgb, var(--blue) 18%, transparent)",
 };
 
 // 機種アイコンの色（機種名から決定的に算出）
@@ -127,7 +128,7 @@ const IconPencil = ({ color = P.sub, size = 14 }) => (
         <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
     </svg>
 );
-const IconSparkle = ({ color = "#FBBF24", size = 14 }) => (
+const IconSparkle = ({ color = "var(--yellow)", size = 14 }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M12 2 L14 9 L21 11 L14 13 L12 20 L10 13 L3 11 L10 9 Z" fill={color} fillOpacity="0.85" />
     </svg>
@@ -237,7 +238,7 @@ function Header({ onBell, hasUnread, greeting }) {
                         width: 44,
                         height: 44,
                         borderRadius: "50%",
-                        background: "color-mix(in srgb, #0F1A2B 86%, transparent)",
+                        background: "color-mix(in srgb, var(--surface) 86%, transparent)",
                         border: `1px solid ${P.border}`,
                         display: "flex",
                         alignItems: "center",
@@ -256,7 +257,7 @@ function Header({ onBell, hasUnread, greeting }) {
                             height: 9,
                             borderRadius: "50%",
                             background: P.blue,
-                            boxShadow: "0 0 8px #00A6FF",
+                            boxShadow: "0 0 8px var(--blue)",
                             border: `1.5px solid ${P.card}`,
                         }} />
                     )}
@@ -377,7 +378,7 @@ function TodaySummaryCard({ hasData, todayEv, todayActual, hasActual, dayDiff, c
                         {showConf ? `${confPct}%` : "—"}
                     </span>
                 </div>
-                <div style={{ position: "relative", height: 7, borderRadius: 999, background: "#16243A", overflow: "hidden" }}>
+                <div style={{ position: "relative", height: 7, borderRadius: 999, background: "var(--surface-alt)", overflow: "hidden" }}>
                     <div style={{
                         position: "absolute", left: 0, top: 0, bottom: 0,
                         width: `${showConf ? confPct : 0}%`,
@@ -441,8 +442,8 @@ function ActionButtons({ onRecord, onSelect, onAnalysis }) {
                             width: 40,
                             height: 40,
                             borderRadius: "50%",
-                            background: "color-mix(in srgb, #00A6FF 14%, transparent)",
-                            border: `1px solid color-mix(in srgb, #00A6FF 30%, ${P.border})`,
+                            background: "color-mix(in srgb, var(--blue) 14%, transparent)",
+                            border: `1px solid color-mix(in srgb, var(--blue) 30%, ${P.border})`,
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
@@ -468,14 +469,14 @@ function MonthProgressCard({ ev, target, onEdit }) {
     const achieved = safeTarget > 0 && safeEv >= safeTarget;
     const remain = Math.max(0, safeTarget - safeEv);
     const barFill = achieved
-        ? "linear-gradient(90deg, #F59E0B, #FBBF24)"
+        ? "linear-gradient(90deg, var(--orange), var(--yellow))"
         : `linear-gradient(90deg, ${P.blue}, ${P.cyan})`;
     return (
         <div style={{
             ...cardBase,
             ...sectionGap,
-            border: achieved ? `1px solid color-mix(in srgb, #FBBF24 50%, ${P.border})` : `1px solid ${P.border}`,
-            boxShadow: achieved ? "0 0 16px color-mix(in srgb, #FBBF24 16%, transparent)" : "none",
+            border: achieved ? `1px solid color-mix(in srgb, var(--yellow) 50%, ${P.border})` : `1px solid ${P.border}`,
+            boxShadow: achieved ? "0 0 16px color-mix(in srgb, var(--yellow) 16%, transparent)" : "none",
         }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                 <span style={{ fontSize: 14, fontWeight: 700, color: P.textHi, fontFamily: font }}>今月の進捗</span>
@@ -490,7 +491,7 @@ function MonthProgressCard({ ev, target, onEdit }) {
                         minHeight: 32,
                         padding: "4px 8px",
                         borderRadius: 8,
-                        background: "color-mix(in srgb, #00A6FF 12%, transparent)",
+                        background: "color-mix(in srgb, var(--blue) 12%, transparent)",
                         border: `1px solid ${P.border}`,
                         color: P.cyan,
                         fontSize: 10.5,
@@ -507,17 +508,17 @@ function MonthProgressCard({ ev, target, onEdit }) {
             <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 8 }}>
                 <div>
                     <div style={{ fontSize: 11, color: P.sub, fontFamily: font }}>期待値累計</div>
-                    <div style={{ ...numStyle(28, achieved ? "#FBBF24" : P.blue), marginTop: 2 }}>
+                    <div style={{ ...numStyle(28, achieved ? "var(--yellow)" : P.blue), marginTop: 2 }}>
                         {fmtSigned(safeEv)}<span style={{ fontSize: 14, fontWeight: 800, marginLeft: 2 }}>円</span>
                     </div>
                 </div>
                 <div style={{ textAlign: "right" }}>
                     <div style={{ fontSize: 10.5, color: P.sub, fontFamily: font }}>達成率</div>
-                    <div style={{ ...numStyle(20, achieved ? "#FBBF24" : P.cyan), marginTop: 2 }}>{rate}%</div>
+                    <div style={{ ...numStyle(20, achieved ? "var(--yellow)" : P.cyan), marginTop: 2 }}>{rate}%</div>
                 </div>
             </div>
 
-            <div style={{ position: "relative", height: 8, borderRadius: 999, background: "#16243A", marginTop: 12, overflow: "hidden" }}>
+            <div style={{ position: "relative", height: 8, borderRadius: 999, background: "var(--surface-alt)", marginTop: 12, overflow: "hidden" }}>
                 <div style={{
                     position: "absolute", left: 0, top: 0, bottom: 0,
                     width: `${rate}%`,
@@ -530,8 +531,8 @@ function MonthProgressCard({ ev, target, onEdit }) {
 
             <div style={{ marginTop: 8 }}>
                 {achieved ? (
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 800, color: "#FBBF24", fontFamily: font }}>
-                        <IconSparkle color="#FBBF24" size={12} />
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 800, color: "var(--yellow)", fontFamily: font }}>
+                        <IconSparkle color="var(--yellow)" size={12} />
                         今月の目標を達成しました！
                     </span>
                 ) : safeTarget > 0 ? (
@@ -578,7 +579,7 @@ function RecommendCard({ rec, onSelect }) {
                 alignItems: "center",
                 gap: 12,
                 border: `1px solid ${P.borderHi}`,
-                background: "linear-gradient(180deg, #10243A 0%, #0A1320 100%)",
+                background: "linear-gradient(180deg, var(--surface-hi) 0%, var(--surface) 100%)",
             }}>
                 <div style={{
                     flex: "0 0 auto",
@@ -639,8 +640,8 @@ function SelectButton({ onClick }) {
                 minHeight: 44,
                 padding: "0 14px",
                 borderRadius: 12,
-                background: "color-mix(in srgb, #00A6FF 14%, transparent)",
-                border: `1px solid color-mix(in srgb, #00A6FF 36%, ${P.border})`,
+                background: "color-mix(in srgb, var(--blue) 14%, transparent)",
+                border: `1px solid color-mix(in srgb, var(--blue) 36%, ${P.border})`,
                 color: P.cyan,
                 fontSize: 12,
                 fontWeight: 700,
@@ -699,7 +700,7 @@ function MonthlyTargetEditor({ current, onClose, onSave }) {
                 style={{
                     width: "100%",
                     maxWidth: 480,
-                    background: "#0F1A2B",
+                    background: "var(--surface)",
                     borderTop: `1px solid ${P.borderHi}`,
                     borderRadius: "20px 20px 0 0",
                     padding: "18px 16px calc(20px + env(safe-area-inset-bottom))",
@@ -727,7 +728,7 @@ function MonthlyTargetEditor({ current, onClose, onSave }) {
                             flex: 1,
                             minHeight: 48,
                             padding: "10px 14px",
-                            background: "#0B1424",
+                            background: "var(--surface-hi)",
                             border: `1px solid ${P.borderHi}`,
                             borderRadius: 12,
                             color: P.textHi,
@@ -757,8 +758,8 @@ function MonthlyTargetEditor({ current, onClose, onSave }) {
                                     borderRadius: 10,
                                     border: active ? `1px solid ${P.blue}` : `1px solid ${P.border}`,
                                     background: active
-                                        ? "color-mix(in srgb, #00A6FF 22%, transparent)"
-                                        : "#0B1424",
+                                        ? "color-mix(in srgb, var(--blue) 22%, transparent)"
+                                        : "var(--surface-hi)",
                                     color: active ? P.cyan : P.text,
                                     fontSize: 12,
                                     fontWeight: 700,
@@ -801,7 +802,7 @@ function MonthlyTargetEditor({ current, onClose, onSave }) {
                             borderRadius: 12,
                             background: `linear-gradient(135deg, ${P.blue}, ${P.cyan})`,
                             border: "none",
-                            color: "#03101F",
+                            color: "#fff",
                             fontSize: 14,
                             fontWeight: 800,
                             fontFamily: font,
@@ -837,7 +838,7 @@ function HunterRankCard({ rank, streakDays, sessionsCount, onOpen }) {
                     display: "flex",
                     alignItems: "center",
                     gap: 12,
-                    background: "linear-gradient(180deg, #0F1A2B 0%, #0A1320 100%)",
+                    background: "linear-gradient(180deg, var(--surface) 0%, var(--surface) 100%)",
                     border: `1px solid ${P.borderHi}`,
                     boxShadow: P.glowBlue,
                     cursor: onOpen ? "pointer" : "default",
@@ -851,7 +852,7 @@ function HunterRankCard({ rank, streakDays, sessionsCount, onOpen }) {
                         pointerEvents: "none",
                     }}>
                         <div style={{ fontSize: 8, color: P.text, fontWeight: 700, fontFamily: font, lineHeight: 1, marginTop: -2 }}>LV</div>
-                        <div style={{ fontSize: 19, color: "#FBBF24", fontWeight: 900, fontFamily: font, lineHeight: 1, textShadow: "0 1px 2px rgba(0,0,0,0.6)" }}>{level}</div>
+                        <div style={{ fontSize: 19, color: "var(--yellow)", fontWeight: 900, fontFamily: font, lineHeight: 1, textShadow: "0 1px 2px rgba(0,0,0,0.6)" }}>{level}</div>
                     </div>
                 </div>
 
@@ -860,7 +861,7 @@ function HunterRankCard({ rank, streakDays, sessionsCount, onOpen }) {
                     <div style={{ fontSize: 15, fontWeight: 800, color: P.textHi, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
                         {fmt(totalXp)} <span style={{ fontSize: 11, fontWeight: 700, color: P.sub }}>EXP</span>
                     </div>
-                    <div style={{ position: "relative", height: 6, borderRadius: 999, background: "#16243A", marginTop: 6, overflow: "hidden" }}>
+                    <div style={{ position: "relative", height: 6, borderRadius: 999, background: "var(--surface-alt)", marginTop: 6, overflow: "hidden" }}>
                         <div style={{
                             position: "absolute", left: 0, top: 0, bottom: 0,
                             width: `${rate}%`,
@@ -949,7 +950,7 @@ function BadgeCard({ label, sub, color, unlocked, glyph }) {
         </div>
     );
 }
-function BadgeIcon({ color = "#FBBF24", glyph = "★", unlocked = true }) {
+function BadgeIcon({ color = "var(--yellow)", glyph = "★", unlocked = true }) {
     const reactId = useId();
     const id = `bg-${reactId.replace(/[:]/g, "")}`;
     return (
@@ -962,7 +963,7 @@ function BadgeIcon({ color = "#FBBF24", glyph = "★", unlocked = true }) {
                 </radialGradient>
             </defs>
             <circle cx="32" cy="32" r="28" fill={`url(#${id})`} />
-            <circle cx="32" cy="32" r="20" fill={`color-mix(in srgb, ${color} 18%, #0A1320)`}
+            <circle cx="32" cy="32" r="20" fill={`color-mix(in srgb, ${color} 18%, var(--surface))`}
                 stroke={color} strokeWidth="1.5" strokeOpacity={unlocked ? 0.9 : 0.4} />
             <text x="32" y="40"
                 fontSize="22"
@@ -1191,7 +1192,7 @@ export default function HomeDashboard({ S }) {
                 id,
                 label: m.short || def?.label || id,
                 sub: m.sub || def?.description || "",
-                color: def?.color || "#FBBF24",
+                color: def?.color || "var(--yellow)",
                 glyph: m.glyph || def?.icon || "★",
                 unlocked: unlockedSet.has(id),
             };
