@@ -9,6 +9,7 @@ import { VerdictBadge } from "./decision/VerdictBadge";
 import { KeyMetrics } from "./decision/KeyMetrics";
 import { ReasonList } from "./decision/ReasonList";
 import { RecentEventList } from "./decision/RecentEventList";
+import MachineSpecWorkspace from "./machines/MachineSpecWorkspace";
 
 /* ================================================================
    Simple SVG Line Chart component
@@ -8648,6 +8649,7 @@ export function SettingsTab({ s, onReset }) {
     const [selected, setSelected] = useState(null);
     const [editingMachine, setEditingMachine] = useState(null);
     const [showMachineForm, setShowMachineForm] = useState(false);
+    const [showEvidenceMachineUi, setShowEvidenceMachineUi] = useState(false);
     const results = searchMachines(query, s.customMachines);
 
     // 店舗管理用のstate
@@ -10234,6 +10236,10 @@ export function SettingsTab({ s, onReset }) {
         );
     }
 
+    if (showEvidenceMachineUi) {
+        return <MachineSpecWorkspace onBack={() => setShowEvidenceMachineUi(false)} />;
+    }
+
     // Machine form view (新規登録/編集)
     if (showMachineForm) {
         return (
@@ -10367,6 +10373,21 @@ export function SettingsTab({ s, onReset }) {
                         }}
                     />
                 </div>
+
+                <button className="b" onClick={() => setShowEvidenceMachineUi(true)} style={{
+                    width: "100%", textAlign: "left", background: "linear-gradient(135deg, rgba(0,128,128,0.28), rgba(34,211,238,0.14))",
+                    border: "1px solid rgba(34,211,238,0.45)", borderRadius: 12, padding: "14px 16px",
+                    color: C.text, fontFamily: font, marginBottom: 12, cursor: "pointer",
+                    boxShadow: "0 12px 28px rgba(0,0,0,0.18)",
+                }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                        <div>
+                            <div style={{ fontSize: 15, fontWeight: 850, marginBottom: 4 }}>P-EVIDENCE詳細登録UI</div>
+                            <div style={{ fontSize: 11, color: C.sub, lineHeight: 1.5 }}>出玉・ヘソ振分・列マッピングをまとめて確認</div>
+                        </div>
+                        <span style={{ fontSize: 24, color: "#22d3ee", fontWeight: 800 }}>›</span>
+                    </div>
+                </button>
 
                 {/* CSV インポート/エクスポート */}
                 <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>

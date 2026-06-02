@@ -157,11 +157,11 @@ function CheckMark({ status = "ok" }) {
   );
 }
 
-function DetailScreen({ onEdit }) {
+function DetailScreen({ onEdit, onBack }) {
   return (
     <section className="machine-spec-workspace machine-detail-screen" aria-label="機種詳細">
       <header className="ms-detail-header">
-        <button type="button" className="ms-icon-button" aria-label="戻る">
+        <button type="button" className="ms-icon-button" aria-label="戻る" onClick={onBack}>
           <Icon name="back" />
         </button>
         <div className="ms-detail-title-block">
@@ -310,11 +310,11 @@ function Toggle({ checked }) {
   );
 }
 
-function RegisterScreen({ onSave }) {
+function RegisterScreen({ onSave, onBack }) {
   return (
     <section className="machine-spec-workspace machine-register-screen" aria-label="機種スペック登録">
       <header className="ms-register-header">
-        <button type="button" className="ms-register-back" aria-label="戻る" onClick={onSave}>
+        <button type="button" className="ms-register-back" aria-label="戻る" onClick={onBack}>
           <Icon name="back" />
         </button>
         <div className="ms-register-title">
@@ -440,12 +440,12 @@ function RegisterScreen({ onSave }) {
   );
 }
 
-export default function MachineSpecWorkspace() {
+export default function MachineSpecWorkspace({ onBack }) {
   const [screen, setScreen] = useState("detail");
 
   if (screen === "register") {
-    return <RegisterScreen onSave={() => setScreen("detail")} />;
+    return <RegisterScreen onSave={() => setScreen("detail")} onBack={() => setScreen("detail")} />;
   }
 
-  return <DetailScreen onEdit={() => setScreen("register")} />;
+  return <DetailScreen onEdit={() => setScreen("register")} onBack={onBack} />;
 }
