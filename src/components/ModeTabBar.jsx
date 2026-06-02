@@ -63,7 +63,6 @@ const SettingsIcon = ({ active }) => {
 // FAB の `left: 50%` は viewport 中央 X (= window.innerWidth / 2) と一致する。
 const LEFT_TABS = [
   { id: "home",   label: "ホーム", IconC: HomeIcon },
-  { id: "scout",  label: "偵察",   IconC: ScoutIcon },
   { id: "select", label: "台選び", IconC: SelectIcon },
 ];
 const RIGHT_TABS = [
@@ -137,7 +136,7 @@ export default function ModeTabBar({ currentMode, onChange }) {
         zIndex: 100,
       }}
     >
-      {/* 左セクション: ホーム / 偵察 / 台選び（3 タブ等幅） */}
+      {/* 左セクション: ホーム / 台選び（2 タブ等幅） */}
       <div style={{ display: "flex", flex: 1, alignItems: "stretch" }}>
         {LEFT_TABS.map(renderTab)}
       </div>
