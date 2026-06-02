@@ -17,10 +17,10 @@
 
 .ms-detail-header {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) auto;
-  gap: 12px;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: start;
-  padding: 16px 28px 10px;
+  padding: 12px 18px 8px;
 }
 
 .ms-icon-button,
@@ -41,8 +41,8 @@
 }
 
 .ms-icon-button {
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   display: grid;
   place-items: center;
   color: #f8fafc;
@@ -52,7 +52,7 @@
 .ms-detail-title-block h1,
 .ms-register-title h1 {
   margin: 0;
-  font-size: 28px;
+  font-size: 22px;
   line-height: 1.08;
   font-weight: 900;
   letter-spacing: 0;
@@ -60,33 +60,33 @@
 
 .ms-detail-actions {
   display: flex;
-  gap: 16px;
+  gap: 10px;
 }
 
 .ms-header-action {
-  min-width: 50px;
-  min-height: 56px;
+  min-width: 42px;
+  min-height: 46px;
   display: grid;
   justify-items: center;
   gap: 4px;
   color: #f8fafc;
   background: transparent;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 800;
 }
 
 .ms-header-action svg {
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
 }
 
 .ms-pill {
   display: inline-flex;
   align-items: center;
-  min-height: 26px;
-  padding: 4px 10px;
+  min-height: 22px;
+  padding: 3px 8px;
   border-radius: 7px;
-  font-size: 13px;
+  font-size: 11px;
   line-height: 1;
   font-weight: 800;
   white-space: nowrap;
@@ -124,7 +124,7 @@
 }
 
 .ms-detail-content {
-  padding: 8px 28px calc(96px + env(safe-area-inset-bottom));
+  padding: 8px 16px calc(86px + env(safe-area-inset-bottom));
 }
 
 .ms-hero-panel,
@@ -136,14 +136,14 @@
 }
 
 .ms-hero-panel {
-  padding: 24px 24px 20px;
-  border-radius: 16px;
+  padding: 18px;
+  border-radius: 14px;
   margin-bottom: 10px;
 }
 
 .ms-hero-panel h2 {
   margin: 0 0 8px;
-  font-size: 32px;
+  font-size: 24px;
   line-height: 1.12;
   font-weight: 950;
   letter-spacing: 0;
@@ -152,7 +152,7 @@
 .ms-hero-panel p {
   margin: 0 0 14px;
   color: #a3adc2;
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 700;
 }
 
@@ -160,7 +160,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .ms-updated {
@@ -168,13 +168,13 @@
   align-items: center;
   gap: 8px;
   color: #9ca3af;
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 700;
 }
 
 .ms-updated svg {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
 }
 
 .ms-metric-grid {
@@ -185,25 +185,25 @@
 }
 
 .ms-metric-card {
-  min-height: 122px;
-  border-radius: 14px;
+  min-height: 92px;
+  border-radius: 12px;
   display: grid;
   place-items: center;
   align-content: center;
-  gap: 8px;
-  padding: 14px 8px;
+  gap: 6px;
+  padding: 12px 8px;
   text-align: center;
 }
 
 .ms-metric-label {
   color: #a3adc2;
-  font-size: 18px;
+  font-size: 13px;
   line-height: 1.1;
   font-weight: 700;
 }
 
 .ms-metric-value {
-  font-size: 34px;
+  font-size: 26px;
   line-height: 1;
   font-weight: 950;
   font-variant-numeric: tabular-nums;
@@ -211,7 +211,7 @@
 
 .ms-metric-sub {
   color: #22c55e;
-  font-size: 17px;
+  font-size: 12px;
   font-weight: 900;
   line-height: 1;
 }
@@ -223,8 +223,8 @@
 .ms-metric-value.orange { color: #fb923c; }
 
 .ms-panel {
-  border-radius: 14px;
-  padding: 18px 24px;
+  border-radius: 12px;
+  padding: 14px 16px;
   margin-bottom: 10px;
 }
 
@@ -233,7 +233,7 @@
 .ms-preview h2 {
   margin: 0;
   color: #f8fafc;
-  font-size: 26px;
+  font-size: 18px;
   line-height: 1.15;
   font-weight: 950;
   letter-spacing: 0;
@@ -241,8 +241,8 @@
 
 .ms-allocation-box {
   margin-top: 10px;
-  padding: 14px 18px;
-  border-radius: 14px;
+  padding: 12px;
+  border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.11);
   background: rgba(4, 9, 17, 0.54);
 }
@@ -256,7 +256,7 @@
 }
 
 .ms-allocation-head strong {
-  font-size: 19px;
+  font-size: 15px;
   font-weight: 900;
 }
 
@@ -270,14 +270,14 @@
 
 .ms-chip-row span,
 .ms-chip-row strong {
-  min-height: 44px;
+  min-height: 36px;
   display: inline-flex;
   align-items: center;
-  padding: 0 20px;
+  padding: 0 14px;
   border-radius: 8px;
   background: rgba(30, 41, 59, 0.76);
   color: #e5e7eb;
-  font-size: 19px;
+  font-size: 14px;
   font-weight: 900;
 }
 
@@ -293,7 +293,7 @@
   flex-wrap: wrap;
   gap: 8px;
   color: #cbd5e1;
-  font-size: 18px;
+  font-size: 13px;
   font-weight: 800;
 }
 
@@ -302,13 +302,13 @@
 }
 
 .ms-ghost-button {
-  min-height: 44px;
-  padding: 0 18px;
+  min-height: 36px;
+  padding: 0 14px;
   border-radius: 8px;
   border: 1px solid rgba(148, 163, 184, 0.6);
   background: rgba(15, 23, 42, 0.42);
   color: #38bdf8;
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 900;
 }
 
@@ -316,7 +316,7 @@
   margin-top: 12px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 20px;
+  gap: 8px 14px;
 }
 
 .ms-mapping-item,
@@ -324,21 +324,21 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 36px;
+  min-height: 32px;
   color: #e2e8f0;
-  font-size: 18px;
+  font-size: 13px;
   font-weight: 800;
 }
 
 .ms-col {
-  min-width: 28px;
+  min-width: 22px;
   color: #cbd5e1;
   text-align: center;
 }
 
 .ms-check {
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   flex: 0 0 auto;
   display: inline-grid;
@@ -348,8 +348,8 @@
 }
 
 .ms-check svg {
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
 }
 
 .ms-check-ok {
@@ -372,7 +372,7 @@
 }
 
 .ms-validation-item {
-  padding: 12px;
+  padding: 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -383,19 +383,19 @@
 .ms-detail-bottom-actions {
   display: grid;
   grid-template-columns: minmax(0, 0.42fr) minmax(0, 0.58fr);
-  gap: 14px;
+  gap: 10px;
   padding: 4px 4px 8px;
 }
 
 .ms-secondary-cta,
 .ms-primary-cta {
-  min-height: 64px;
+  min-height: 50px;
   border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  font-size: 22px;
+  font-size: 15px;
   font-weight: 950;
 }
 
@@ -412,18 +412,20 @@
 }
 
 .ms-chevron {
-  font-size: 38px;
+  font-size: 28px;
   line-height: 1;
 }
 
 .machine-register-screen {
-  --register-border: #dce2ea;
-  --register-text: #111827;
-  --register-muted: #6b7280;
+  --register-border: rgba(148, 163, 184, 0.18);
+  --register-text: #f8fafc;
+  --register-muted: #94a3b8;
   position: relative;
   min-height: 100%;
   color: var(--register-text);
-  background: #f8fafc;
+  background:
+    radial-gradient(circle at 30% 0%, rgba(45, 212, 191, 0.14), transparent 26%),
+    linear-gradient(180deg, #030712 0%, #05070d 48%, #02040a 100%);
 }
 
 body:has(.machine-register-screen) nav {
@@ -431,22 +433,23 @@ body:has(.machine-register-screen) nav {
 }
 
 .ms-register-header {
-  min-height: 112px;
+  min-height: 86px;
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-  padding: 18px 24px;
+  gap: 10px;
+  padding: 12px 18px;
   color: #fff;
   background:
-    radial-gradient(circle at 12% -20%, rgba(45, 212, 191, 0.46), transparent 34%),
-    linear-gradient(135deg, #006b72 0%, #00454d 100%);
-  box-shadow: 0 6px 18px rgba(0, 69, 77, 0.24);
+    radial-gradient(circle at 12% -20%, rgba(45, 212, 191, 0.2), transparent 34%),
+    linear-gradient(135deg, rgba(0, 69, 77, 0.52), rgba(3, 7, 18, 0.82));
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.22);
 }
 
 .ms-register-back {
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   display: grid;
   place-items: center;
   background: transparent;
@@ -458,18 +461,18 @@ body:has(.machine-register-screen) nav {
 }
 
 .ms-import-button {
-  min-height: 48px;
+  min-height: 42px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
   color: #fff;
   background: transparent;
-  font-size: 18px;
+  font-size: 13px;
   font-weight: 900;
 }
 
 .ms-register-content {
-  padding: 14px 24px 160px;
+  padding: 12px 16px 138px;
 }
 
 .ms-stepper {
@@ -477,60 +480,60 @@ body:has(.machine-register-screen) nav {
   grid-template-columns: auto 1fr auto 1fr auto 1fr auto;
   align-items: center;
   gap: 10px;
-  margin: 6px 0 18px;
+  margin: 4px 0 12px;
 }
 
 .ms-step {
   display: flex;
   align-items: center;
-  gap: 10px;
-  color: #6b7280;
+  gap: 8px;
+  color: #94a3b8;
 }
 
 .ms-step span {
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: #9ca3af;
+  background: #64748b;
   color: #fff;
-  font-size: 18px;
+  font-size: 13px;
   font-weight: 900;
 }
 
 .ms-step strong {
-  font-size: 18px;
+  font-size: 13px;
   font-weight: 900;
 }
 
 .ms-step.active {
-  color: #006b72;
+  color: #2dd4bf;
 }
 
 .ms-step.active span {
-  background: #006b72;
+  background: #0f766e;
 }
 
 .ms-step-line {
-  height: 2px;
-  background: #c7ccd4;
+  height: 1px;
+  background: rgba(148, 163, 184, 0.34);
 }
 
 .ms-register-card,
 .ms-preview {
   margin-bottom: 12px;
-  padding: 18px 20px;
+  padding: 14px 16px;
   border: 1px solid var(--register-border);
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(17, 24, 39, 0.74), rgba(8, 13, 22, 0.84));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .ms-register-card h2,
 .ms-preview h2 {
   color: var(--register-text);
-  font-size: 24px;
+  font-size: 18px;
 }
 
 .ms-card-head {
@@ -538,7 +541,7 @@ body:has(.machine-register-screen) nav {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .ms-card-head h2 {
@@ -551,14 +554,15 @@ body:has(.machine-register-screen) nav {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px 20px;
-  font-size: 20px;
+  color: #e2e8f0;
+  font-size: 13px;
   line-height: 1.45;
 }
 
 .ms-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 18px;
+  gap: 12px 14px;
 }
 
 .ms-field {
@@ -568,10 +572,10 @@ body:has(.machine-register-screen) nav {
 }
 
 .ms-field span {
-  font-size: 17px;
+  font-size: 12px;
   line-height: 1.2;
   font-weight: 800;
-  color: #111827;
+  color: #a3adc2;
 }
 
 .ms-field div {
@@ -583,51 +587,51 @@ body:has(.machine-register-screen) nav {
 
 .ms-field input {
   width: 100%;
-  min-height: 56px;
-  border: 1.5px solid #cfd6df;
+  min-height: 44px;
+  border: 1px solid rgba(148, 163, 184, 0.36);
   border-radius: 8px;
-  padding: 0 16px;
-  color: #111827;
-  background: #fff;
-  font-size: 22px !important;
+  padding: 0 12px;
+  color: #f8fafc;
+  background: rgba(2, 6, 14, 0.66);
+  font-size: 15px !important;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   outline: none;
 }
 
 .ms-field em {
-  color: #111827;
+  color: #cbd5e1;
   font-style: normal;
-  font-size: 20px;
+  font-size: 13px;
   font-weight: 900;
 }
 
 .ms-field.compact span {
-  font-size: 14px;
+  font-size: 11px;
 }
 
 .ms-field.compact input {
-  min-height: 46px;
-  font-size: 20px !important;
+  min-height: 38px;
+  font-size: 14px !important;
 }
 
 .ms-info-note {
   margin-top: 14px;
-  min-height: 48px;
+  min-height: 40px;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
   border-radius: 8px;
-  color: #1565c0;
-  background: #e8f2ff;
-  font-size: 17px;
+  color: #93c5fd;
+  background: rgba(37, 99, 235, 0.14);
+  font-size: 12px;
   font-weight: 900;
 }
 
 .ms-info-note span {
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   display: grid;
   place-items: center;
   border: 2px solid currentColor;
@@ -635,14 +639,14 @@ body:has(.machine-register-screen) nav {
 }
 
 .ms-small-icon {
-  width: 44px;
-  height: 44px;
+  width: 38px;
+  height: 38px;
   display: grid;
   place-items: center;
   border-radius: 50%;
-  color: #0f172a;
-  border: 1px solid #cfd6df;
-  background: #fff;
+  color: #e2e8f0;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  background: rgba(15, 23, 42, 0.64);
 }
 
 .ms-heso-list {
@@ -653,23 +657,23 @@ body:has(.machine-register-screen) nav {
 
 .ms-heso-row {
   position: relative;
-  min-height: 84px;
+  min-height: 74px;
   display: grid;
   grid-template-columns: 34px 86px 1fr 1fr auto 40px;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: 10px;
+  padding: 10px;
 }
 
 .ms-heso-row > strong {
-  color: #111827;
-  font-size: 22px;
+  color: #f8fafc;
+  font-size: 15px;
   white-space: nowrap;
 }
 
 .ms-grip {
-  color: #4b5563;
-  font-size: 24px;
+  color: #94a3b8;
+  font-size: 20px;
   letter-spacing: -6px;
   transform: rotate(90deg);
 }
@@ -679,24 +683,24 @@ body:has(.machine-register-screen) nav {
   justify-items: center;
   gap: 6px;
   min-width: 86px;
-  color: #111827;
-  font-size: 14px;
+  color: #cbd5e1;
+  font-size: 11px;
   font-weight: 900;
 }
 
 .ms-toggle {
-  width: 62px;
-  height: 34px;
+  width: 52px;
+  height: 30px;
   border: 0;
   border-radius: 999px;
-  background: #d8dde4;
+  background: #475569;
   padding: 3px;
 }
 
 .ms-toggle span {
   display: block;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.22);
@@ -712,7 +716,7 @@ body:has(.machine-register-screen) nav {
 
 .ms-trash {
   width: 40px;
-  height: 44px;
+  height: 40px;
   display: grid;
   place-items: center;
   color: #ef4444;
@@ -734,16 +738,16 @@ body:has(.machine-register-screen) nav {
   grid-template-columns: repeat(4, 1fr);
   padding: 3px;
   border-radius: 8px;
-  background: #edf0f4;
+  background: rgba(15, 23, 42, 0.92);
 }
 
 .ms-segmented button {
-  min-height: 44px;
+  min-height: 38px;
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: #1f2937;
-  font-size: 17px;
+  color: #cbd5e1;
+  font-size: 13px;
   font-weight: 800;
 }
 
@@ -759,16 +763,16 @@ body:has(.machine-register-screen) nav {
 }
 
 .ms-map-pill {
-  min-height: 50px;
+  min-height: 42px;
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 0 12px;
-  border: 1px solid #dbe1e8;
+  border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 8px;
-  background: #fff;
-  color: #111827;
-  font-size: 18px;
+  background: rgba(2, 6, 14, 0.48);
+  color: #e2e8f0;
+  font-size: 13px;
 }
 
 .ms-map-pill span {
@@ -783,8 +787,8 @@ body:has(.machine-register-screen) nav {
 .ms-scroll-hint {
   margin-top: 10px;
   text-align: center;
-  color: #4b5563;
-  font-size: 16px;
+  color: #94a3b8;
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -803,7 +807,7 @@ body:has(.machine-register-screen) nav {
 
 .ms-preview > div:first-child span {
   color: var(--register-muted);
-  font-size: 16px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -814,14 +818,14 @@ body:has(.machine-register-screen) nav {
 }
 
 .ms-preview-strip span {
-  min-height: 44px;
+  min-height: 38px;
   display: inline-flex;
   align-items: center;
   padding: 0 18px;
   border-radius: 8px;
-  background: #f1f5f9;
-  color: #111827;
-  font-size: 18px;
+  background: rgba(15, 23, 42, 0.84);
+  color: #e2e8f0;
+  font-size: 13px;
   white-space: nowrap;
 }
 
@@ -833,12 +837,12 @@ body:has(.machine-register-screen) nav {
   width: min(100%, 480px);
   transform: translateX(-50%);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 112px 152px;
+  grid-template-columns: minmax(0, 1fr) 92px 122px;
   align-items: center;
   gap: 12px;
-  padding: 16px 24px calc(16px + env(safe-area-inset-bottom));
-  border-top: 1px solid #dbe1e8;
-  background: rgba(255, 255, 255, 0.94);
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(3, 7, 18, 0.94);
   backdrop-filter: blur(20px);
 }
 
@@ -852,14 +856,14 @@ body:has(.machine-register-screen) nav {
 .ms-save-status strong {
   display: block;
   color: #16a34a;
-  font-size: 18px;
+  font-size: 13px;
   font-weight: 950;
 }
 
 .ms-save-status span {
   display: block;
   color: #6b7280;
-  font-size: 14px;
+  font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
@@ -868,9 +872,9 @@ body:has(.machine-register-screen) nav {
 
 .ms-sync-button,
 .ms-save-button {
-  min-height: 58px;
+  min-height: 46px;
   border-radius: 8px;
-  font-size: 19px;
+  font-size: 14px;
   font-weight: 950;
 }
 
@@ -879,9 +883,9 @@ body:has(.machine-register-screen) nav {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: #083344;
-  border: 1px solid #cbd5e1;
-  background: #fff;
+  color: #e0f2fe;
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  background: rgba(15, 23, 42, 0.8);
 }
 
 .ms-save-button {
@@ -892,14 +896,14 @@ body:has(.machine-register-screen) nav {
 
 @media (max-width: 430px) {
   .ms-detail-header {
-    padding-left: 22px;
-    padding-right: 22px;
-    grid-template-columns: 42px minmax(0, 1fr) auto;
+    padding-left: 16px;
+    padding-right: 16px;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
   }
 
   .ms-detail-title-block h1,
   .ms-register-title h1 {
-    font-size: 25px;
+    font-size: 22px;
   }
 
   .ms-detail-actions {
@@ -907,37 +911,37 @@ body:has(.machine-register-screen) nav {
   }
 
   .ms-detail-content {
-    padding-left: 20px;
-    padding-right: 20px;
+    padding-left: 14px;
+    padding-right: 14px;
   }
 
   .ms-hero-panel h2 {
-    font-size: 28px;
+    font-size: 23px;
   }
 
   .ms-hero-panel p,
   .ms-metric-label {
-    font-size: 16px;
+    font-size: 13px;
   }
 
   .ms-metric-value {
-    font-size: 30px;
+    font-size: 25px;
   }
 
   .ms-panel h2,
   .ms-register-card h2,
   .ms-preview h2 {
-    font-size: 22px;
+    font-size: 18px;
   }
 
   .ms-register-header,
   .ms-register-content {
-    padding-left: 18px;
-    padding-right: 18px;
+    padding-left: 14px;
+    padding-right: 14px;
   }
 
   .ms-step strong {
-    font-size: 16px;
+    font-size: 12px;
   }
 
   .ms-heso-row {
@@ -951,8 +955,8 @@ body:has(.machine-register-screen) nav {
   }
 
   .ms-save-bar {
-    grid-template-columns: minmax(0, 1fr) 92px 126px;
-    padding-left: 18px;
-    padding-right: 18px;
+    grid-template-columns: minmax(0, 1fr) 82px 112px;
+    padding-left: 12px;
+    padding-right: 12px;
   }
 }
