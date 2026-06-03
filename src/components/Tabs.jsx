@@ -2048,8 +2048,111 @@ export function RotTab({ rows, setRows, S, ev }) {
                                 }}>{filteredMachines.length}機種</div>
                             </div>
 
-                            {/* 検索バー (上部) */}
-                            <div style={{ padding: "0 16px 12px" }}>
+                            {/* フィルターチップ (横スクロール) */}
+                            <div style={{
+                                display: "flex", gap: 8,
+                                overflowX: "auto",
+                                padding: "4px 16px 12px",
+                                scrollbarWidth: "none",
+                                WebkitOverflowScrolling: "touch",
+                            }}>
+                                {[
+                                    { id: "all", label: "全て" },
+                                    { id: "スマパチ", label: "スマパチ" },
+                                    { id: "ハイミドル", label: "ハイミドル" },
+                                    { id: "ミドル", label: "ミドル" },
+                                    { id: "ライトミドル", label: "ライトミドル" },
+                                    { id: "甘デジ", label: "甘デジ" },
+                                ].map(chip => {
+                                    const active = pickerFilter === chip.id;
+                                    return (
+                                        <button
+                                            key={chip.id}
+                                            className="b"
+                                            onClick={() => setPickerFilter(chip.id)}
+                                            style={{
+                                                flexShrink: 0,
+                                                background: active ? C.blue : "var(--surface-hi)",
+                                                color: active ? "#fff" : C.text,
+                                                border: "none",
+                                                borderRadius: 999,
+                                                padding: "8px 16px",
+                                                fontSize: 13, fontWeight: 600,
+                                                fontFamily: font,
+                                                cursor: "pointer",
+                                                transition: "background 0.15s",
+                                                whiteSpace: "nowrap",
+                                            }}
+                                        >
+                                            {chip.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {/* 機種リスト (スクロール) */}
+                            <div style={{ flex: 1, overflowY: "auto", paddingBottom: 12 }}>
+                                {filteredMachines.map((m, i) => {
+                                    const typeColors = {
+                                        "スマパチ": "#f7971e",
+                                        "ハイミドル": "#ef473a",
+                                        "ミドル": "#2f6fed",
+                                        "ライトミドル": "#20e3b2",
+                                        "甘デジ": "#16a34a",
+                                    };
+                                    const iconColor = typeColors[m.type] || C.sub;
+                                    const iconLabel = (m.type || "").slice(0, 2);
+                                    return (
+                                        <button
+                                            key={m.id || `${m.name}-${i}`}
+                                            className="b"
+                                            onClick={() => {
+                                                setSetupMachineName(m.name);
+                                                S.setSynthDenom(m.synthProb);
+                                                if (m.spec1R) S.setSpec1R(m.spec1R);
+                                                if (m.specAvgTotalRounds) S.setSpecAvgRounds(m.specAvgTotalRounds);
+                                                if (m.specSapo != null) S.setSpecSapo(m.specSapo);
+                                                setShowMachinePicker(false);
+                                                setMachineQuery("");
+                                            }}
+                                            style={{
+                                                width: "100%",
+                                                display: "flex", alignItems: "center", gap: 14,
+                                                padding: "14px 16px",
+                                                background: "transparent",
+                                                border: "none",
+                                                borderBottom: `1px solid ${C.border}`,
+                                                textAlign: "left",
+                                                cursor: "pointer",
+                                                fontFamily: font,
+                                            }}
+                                        >
+                                            <div style={{
+                                                width: 44, height: 44, flexShrink: 0,
+                                                borderRadius: 10,
+                                                background: iconColor,
+                                                display: "flex", alignItems: "center", justifyContent: "center",
+                                                color: "#fff", fontSize: 13, fontWeight: 800,
+                                                fontFamily: font,
+                                            }}>{iconLabel}</div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontSize: 15, fontWeight: 700, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.name}</div>
+                                                <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>
+                                                    {m.maker || ""}{m.maker && (m.prob || m.synthProb) ? "  " : ""}{m.prob || (m.synthProb ? `1/${m.synthProb}` : "")}
+                                                </div>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                                {filteredMachines.length === 0 && (
+                                    <div style={{ padding: "40px 20px", textAlign: "center", color: C.sub, fontSize: 13 }}>
+                                        該当する機種がありません
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* 検索バー (下部固定) */}
+                            <div style={{ padding: "12px 16px calc(12px + env(safe-area-inset-bottom))", borderTop: `1px solid ${C.border}`, background: C.surface }}>
                                 <div style={{ position: "relative" }}>
                                     <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: C.sub, display: "flex" }}>
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2061,7 +2164,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                                         type="text"
                                         value={machineQuery}
                                         onChange={e => setMachineQuery(e.target.value)}
-                                        placeholder="機種名・メーカーで検索..."
+                                        placeholder="機種名・メーカーで検索"
                                         style={{
                                             width: "100%", boxSizing: "border-box",
                                             background: "var(--surface-hi)",
@@ -2075,50 +2178,6 @@ export function RotTab({ rows, setRows, S, ev }) {
                                         }}
                                     />
                                 </div>
-                            </div>
-
-                            {/* 機種リスト (スクロール) */}
-                            <div style={{ flex: 1, overflowY: "auto", paddingBottom: 12 }}>
-                                {filteredMachines.map((m, i) => (
-                                    <button
-                                        key={m.id || `${m.name}-${i}`}
-                                        className="b"
-                                        onClick={() => {
-                                            setSetupMachineName(m.name);
-                                            S.setSynthDenom(m.synthProb);
-                                            if (m.spec1R) S.setSpec1R(m.spec1R);
-                                            if (m.specAvgTotalRounds) S.setSpecAvgRounds(m.specAvgTotalRounds);
-                                            if (m.specSapo != null) S.setSpecSapo(m.specSapo);
-                                            setShowMachinePicker(false);
-                                            setMachineQuery("");
-                                        }}
-                                        style={{
-                                            width: "100%",
-                                            display: "flex", alignItems: "center", justifyContent: "space-between",
-                                            padding: "14px 16px",
-                                            background: "transparent",
-                                            border: "none",
-                                            borderBottom: `1px solid ${C.border}`,
-                                            textAlign: "left",
-                                            cursor: "pointer",
-                                            fontFamily: font,
-                                        }}
-                                    >
-                                        <div style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
-                                            <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3 }}>{m.name}</div>
-                                            <div style={{ fontSize: 10, color: C.sub }}>{m.maker || "-"} | {m.type || "-"}</div>
-                                        </div>
-                                        <div style={{ textAlign: "right", flexShrink: 0 }}>
-                                            <div style={{ fontSize: 14, fontWeight: 800, color: C.yellow, fontFamily: mono }}>{m.prob || `1/${m.synthProb}`}</div>
-                                            <div style={{ fontSize: 9, color: C.sub }}>1R: {f(m.spec1R)}玉</div>
-                                        </div>
-                                    </button>
-                                ))}
-                                {filteredMachines.length === 0 && (
-                                    <div style={{ padding: "40px 20px", textAlign: "center", color: C.sub, fontSize: 13 }}>
-                                        該当する機種がありません
-                                    </div>
-                                )}
                             </div>
                         </div>
                     </div>
@@ -8587,11 +8646,13 @@ export function SettingsTab({ s, onReset }) {
     const [confirming, setConfirming] = useState(false);
     const [showMachineSearch, setShowMachineSearch] = useState(false);
     const [query, setQuery] = useState("");
+    const [machineFilter, setMachineFilter] = useState("all");
     const [selected, setSelected] = useState(null);
     const [editingMachine, setEditingMachine] = useState(null);
     const [showMachineForm, setShowMachineForm] = useState(false);
     const [showEvidenceMachineUi, setShowEvidenceMachineUi] = useState(false);
-    const results = searchMachines(query, s.customMachines);
+    const allResults = searchMachines(query, s.customMachines);
+    const results = machineFilter === "all" ? allResults : allResults.filter(m => m.type === machineFilter);
 
     // 店舗管理用のstate
     const [showStoreSearch, setShowStoreSearch] = useState(false);
@@ -10300,88 +10361,154 @@ export function SettingsTab({ s, onReset }) {
 
     // Machine search view
     if (showMachineSearch) {
+        const settingsTypeColors = {
+            "スマパチ": "#f7971e",
+            "ハイミドル": "#ef473a",
+            "ミドル": "#2f6fed",
+            "ライトミドル": "#20e3b2",
+            "甘デジ": "#16a34a",
+        };
         return (
-            <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
-                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                    <button className="b" onClick={() => { setShowMachineSearch(false); setQuery(""); }} style={{
-                        background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
-                        color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600
-                    }}>← 設定に戻る</button>
-                    <button className="b" onClick={() => openMachineForm()} style={{
-                        background: C.blue, border: "none", borderRadius: 8,
-                        color: "#fff", fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 700
-                    }}>+ 機種を登録</button>
-                </div>
-
-                <div style={{ marginBottom: 12 }}>
-                    <input
-                        type="text"
-                        value={query}
-                        onChange={e => setQuery(e.target.value)}
-                        placeholder="機種名・メーカーで検索..."
-                        style={{
-                            width: "100%", boxSizing: "border-box", background: C.surface, border: `1px solid ${C.border}`,
-                            borderRadius: 10, padding: "12px 14px", fontSize: 14, color: C.text, fontFamily: font,
-                            outline: "none",
-                        }}
-                    />
-                </div>
-
-                <button className="b" onClick={() => setShowEvidenceMachineUi(true)} style={{
-                    width: "100%", textAlign: "left", background: "linear-gradient(135deg, rgba(0,128,128,0.28), rgba(34,211,238,0.14))",
-                    border: "1px solid rgba(34,211,238,0.45)", borderRadius: 12, padding: "14px 16px",
-                    color: C.text, fontFamily: font, marginBottom: 12, cursor: "pointer",
-                    boxShadow: "0 12px 28px rgba(0,0,0,0.18)",
-                }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-                        <div>
-                            <div style={{ fontSize: 15, fontWeight: 850, marginBottom: 4 }}>P-EVIDENCE詳細登録UI</div>
-                            <div style={{ fontSize: 11, color: C.sub, lineHeight: 1.5 }}>出玉・ヘソ振分・列マッピングをまとめて確認</div>
-                        </div>
-                        <span style={{ fontSize: 24, color: "#22d3ee", fontWeight: 800 }}>›</span>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                {/* ヘッダー */}
+                <div style={{ padding: "12px 14px 8px", flexShrink: 0 }}>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                        <button className="b" onClick={() => { setShowMachineSearch(false); setQuery(""); setMachineFilter("all"); }} style={{
+                            background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                            color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600
+                        }}>← 設定に戻る</button>
+                        <button className="b" onClick={() => openMachineForm()} style={{
+                            background: C.blue, border: "none", borderRadius: 8,
+                            color: "#fff", fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 700
+                        }}>+ 機種を登録</button>
                     </div>
-                </button>
 
-                {/* CSV インポート/エクスポート */}
-                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                    <button className="b" onClick={exportMachinesCSV} style={{
-                        flex: 1, background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
-                        color: C.text, fontSize: 11, padding: "8px 12px", fontFamily: font, fontWeight: 600
-                    }}>CSVエクスポート</button>
-                    <label style={{
-                        flex: 1, background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
-                        color: C.text, fontSize: 11, padding: "8px 12px", fontFamily: font, fontWeight: 600,
-                        textAlign: "center", cursor: "pointer"
+                    {/* P-EVIDENCE バナー */}
+                    <button className="b" onClick={() => setShowEvidenceMachineUi(true)} style={{
+                        width: "100%", textAlign: "left", background: "linear-gradient(135deg, rgba(0,128,128,0.28), rgba(34,211,238,0.14))",
+                        border: "1px solid rgba(34,211,238,0.45)", borderRadius: 12, padding: "14px 16px",
+                        color: C.text, fontFamily: font, marginBottom: 8, cursor: "pointer",
+                        boxShadow: "0 12px 28px rgba(0,0,0,0.18)", boxSizing: "border-box",
                     }}>
-                        CSVインポート
-                        <input type="file" accept=".csv,.txt,text/csv,text/plain" onChange={importMachinesCSV} style={{ display: "none" }} />
-                    </label>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                            <div>
+                                <div style={{ fontSize: 15, fontWeight: 850, marginBottom: 4 }}>P-EVIDENCE詳細登録UI</div>
+                                <div style={{ fontSize: 11, color: C.sub, lineHeight: 1.5 }}>出玉・ヘソ振分・列マッピングをまとめて確認</div>
+                            </div>
+                            <span style={{ fontSize: 24, color: "#22d3ee", fontWeight: 800 }}>›</span>
+                        </div>
+                    </button>
+
+                    {/* CSV インポート/エクスポート */}
+                    <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                        <button className="b" onClick={exportMachinesCSV} style={{
+                            flex: 1, background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                            color: C.text, fontSize: 11, padding: "8px 12px", fontFamily: font, fontWeight: 600
+                        }}>CSVエクスポート</button>
+                        <label style={{
+                            flex: 1, background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                            color: C.text, fontSize: 11, padding: "8px 12px", fontFamily: font, fontWeight: 600,
+                            textAlign: "center", cursor: "pointer"
+                        }}>
+                            CSVインポート
+                            <input type="file" accept=".csv,.txt,text/csv,text/plain" onChange={importMachinesCSV} style={{ display: "none" }} />
+                        </label>
+                    </div>
                 </div>
 
-                {results.length === 0 ? (
-                    <div style={{ textAlign: "center", color: C.sub, padding: "40px 16px", fontSize: 12 }}>該当する機種がありません</div>
-                ) : (
-                    results.map((m, i) => (
-                        <button key={m.isCustom ? `custom-${m.id}` : `db-${i}`} className="b" onClick={() => setSelected(m)} style={{
-                            width: "100%", background: i % 2 === 0 ? "transparent" : "transparent",
-                            border: "none", borderBottom: `1px solid ${C.border}`, padding: "14px 16px",
-                            display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer",
-                            textAlign: "left",
-                        }}>
-                            <div>
-                                <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3, display: "flex", alignItems: "center", gap: 6 }}>
-                                    {m.name}
-                                    {m.isCustom && <span style={{ fontSize: 9, background: C.teal, color: "#fff", padding: "2px 6px", borderRadius: 4, fontWeight: 600 }}>カスタム</span>}
-                                </div>
-                                <div style={{ fontSize: 10, color: C.sub }}>{m.maker || "-"} | {m.type || "-"}</div>
-                            </div>
-                            <div style={{ textAlign: "right" }}>
-                                <div style={{ fontSize: 14, fontWeight: 800, color: C.yellow, fontFamily: mono }}>{m.prob || `1/${m.synthProb}`}</div>
-                                <div style={{ fontSize: 9, color: C.sub }}>1R: {f(m.spec1R)}玉</div>
-                            </div>
-                        </button>
-                    ))
-                )}
+                {/* フィルターチップ */}
+                <div style={{
+                    display: "flex", gap: 8, overflowX: "auto",
+                    padding: "4px 14px 12px", scrollbarWidth: "none",
+                    WebkitOverflowScrolling: "touch", flexShrink: 0,
+                }}>
+                    {[
+                        { id: "all", label: "全て" },
+                        { id: "スマパチ", label: "スマパチ" },
+                        { id: "ハイミドル", label: "ハイミドル" },
+                        { id: "ミドル", label: "ミドル" },
+                        { id: "ライトミドル", label: "ライトミドル" },
+                        { id: "甘デジ", label: "甘デジ" },
+                    ].map(chip => {
+                        const active = machineFilter === chip.id;
+                        return (
+                            <button
+                                key={chip.id}
+                                className="b"
+                                onClick={() => setMachineFilter(chip.id)}
+                                style={{
+                                    flexShrink: 0,
+                                    background: active ? C.blue : "var(--surface-hi)",
+                                    color: active ? "#fff" : C.text,
+                                    border: "none", borderRadius: 999,
+                                    padding: "8px 16px", fontSize: 13, fontWeight: 600,
+                                    fontFamily: font, cursor: "pointer",
+                                    transition: "background 0.15s", whiteSpace: "nowrap",
+                                }}
+                            >{chip.label}</button>
+                        );
+                    })}
+                </div>
+
+                {/* 機種リスト (スクロール) */}
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                    {results.length === 0 ? (
+                        <div style={{ textAlign: "center", color: C.sub, padding: "40px 16px", fontSize: 12 }}>該当する機種がありません</div>
+                    ) : (
+                        results.map((m, i) => {
+                            const iconColor = settingsTypeColors[m.type] || C.sub;
+                            const iconLabel = (m.type || "").slice(0, 2);
+                            return (
+                                <button key={m.isCustom ? `custom-${m.id}` : `db-${i}`} className="b" onClick={() => setSelected(m)} style={{
+                                    width: "100%", background: "transparent",
+                                    border: "none", borderBottom: `1px solid ${C.border}`, padding: "14px 16px",
+                                    display: "flex", alignItems: "center", gap: 14, cursor: "pointer", textAlign: "left",
+                                    fontFamily: font,
+                                }}>
+                                    <div style={{
+                                        width: 44, height: 44, flexShrink: 0, borderRadius: 10,
+                                        background: iconColor,
+                                        display: "flex", alignItems: "center", justifyContent: "center",
+                                        color: "#fff", fontSize: 13, fontWeight: 800, fontFamily: font,
+                                    }}>{iconLabel}</div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: 15, fontWeight: 700, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 2, display: "flex", alignItems: "center", gap: 6 }}>
+                                            {m.name}
+                                            {m.isCustom && <span style={{ fontSize: 9, background: C.teal, color: "#fff", padding: "2px 6px", borderRadius: 4, fontWeight: 600, flexShrink: 0 }}>カスタム</span>}
+                                        </div>
+                                        <div style={{ fontSize: 12, color: C.sub }}>
+                                            {m.maker || ""}{m.maker && (m.prob || m.synthProb) ? "  " : ""}{m.prob || (m.synthProb ? `1/${m.synthProb}` : "")}
+                                        </div>
+                                    </div>
+                                </button>
+                            );
+                        })
+                    )}
+                </div>
+
+                {/* 検索バー (下部固定) */}
+                <div style={{ padding: "12px 14px calc(80px + env(safe-area-inset-bottom))", borderTop: `1px solid ${C.border}`, background: C.surface, flexShrink: 0 }}>
+                    <div style={{ position: "relative" }}>
+                        <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: C.sub, display: "flex" }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="11" cy="11" r="7" />
+                                <path d="m21 21-4.3-4.3" />
+                            </svg>
+                        </span>
+                        <input
+                            type="text"
+                            value={query}
+                            onChange={e => setQuery(e.target.value)}
+                            placeholder="機種名・メーカーで検索..."
+                            style={{
+                                width: "100%", boxSizing: "border-box",
+                                background: "var(--surface-hi)", border: "none",
+                                borderRadius: 12, padding: "12px 14px 12px 40px",
+                                fontSize: 14, color: C.text, fontFamily: font, outline: "none",
+                            }}
+                        />
+                    </div>
+                </div>
             </div>
         );
     }
