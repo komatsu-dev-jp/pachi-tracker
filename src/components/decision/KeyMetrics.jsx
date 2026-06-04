@@ -70,10 +70,10 @@ export function KeyMetrics({ ev, currentBalls, ballsLabel = "持ち玉", playMod
         />
         <MetricCard
           label="ボーダー差"
-          value={bDiffC !== 0 ? sp(bDiffC, 1) : "—"}
+          value={start1KC > 0 && bDiffC !== 0 ? sp(bDiffC, 1) : "—"}
           unit="回/K"
           baseHint="(基準 +0.5超え)"
-          accent={sc(bDiffC) === C.sub ? C.green : sc(bDiffC)}
+          accent={start1KC > 0 ? (sc(bDiffC) === C.sub ? C.green : sc(bDiffC)) : C.sub}
         />
       </div>
       {/* 下段：予測回転率 / 総投資 / 持ち玉 / 実質投資 */}
