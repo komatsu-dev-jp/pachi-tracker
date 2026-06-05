@@ -2209,17 +2209,30 @@ export function RotTab({ rows, setRows, S, ev }) {
         const lastDataIdx = rows.findLastIndex(r => r.type === "data");
         if (lastDataIdx < 0) return;
         S.pushSnapshot();
-        // 削除対象行が貯玉消費行なら、消費した貯玉を残高に差し戻す
-        // （記録追加時に setCurrentChodama で減算しているため、削除時は同量を加算してセットで取り消す）
         const target = rows[lastDataIdx];
+        // 貯玉消費行の場合：消費した貯玉を残高に差し戻す
         if (target && target.mode === "chodama" && (target.ballsConsumed || 0) > 0) {
-            const ballsToRestore = target.ballsConsumed || 0;
-            S.setCurrentChodama((p) => Math.max(0, p + ballsToRestore));
+            S.setCurrentChodama((p) => Math.max(0, p + (target.ballsConsumed || 0)));
         }
+        // 持ち玉消費行の場合：消費した持ち玉を残高に差し戻す
+        if (target && target.mode === "mochi" && (target.ballsConsumed || 0) > 0) {
+            S.setCurrentMochiBalls((p) => Math.max(0, p + (target.ballsConsumed || 0)));
+        }
+        // 対応する sesLog エントリ（最後の回転入力イベント）を削除して行動ログと同期
+        S.setSesLog((prev) => {
+            const isRotEntry = (type) => type && (/決定$/.test(type) || /消費$/.test(type));
+            for (let i = prev.length - 1; i >= 0; i--) {
+                if (isRotEntry(prev[i]?.type)) {
+                    return prev.filter((_, idx) => idx !== i);
+                }
+            }
+            return prev;
+        });
         setRows(r => r.filter((_, i) => i !== lastDataIdx));
         setInputError("");
     };
     const hasDataRow = rows.some(r => r.type === "data");
+    const lastDataRow = hasDataRow ? [...rows].reverse().find(r => r.type === "data") : null;
 
     // セッション開始後：データ表示とコントロール
     return (
@@ -2462,6 +2475,30 @@ export function RotTab({ rows, setRows, S, ev }) {
                             sesLog={sesLog}
                             anchorId="record-recent-events"
                         />
+
+                        {/* 3.5 直前の入力を削除（誤入力取消ボタン） */}
+                        {hasDataRow && (
+                            <button
+                                className="b"
+                                type="button"
+                                onClick={handleDeleteLastData}
+                                style={{
+                                    width: "100%", minHeight: 44, borderRadius: 10,
+                                    background: `color-mix(in srgb, ${C.red} 8%, transparent)`,
+                                    border: `1px solid color-mix(in srgb, ${C.red} 25%, transparent)`,
+                                    color: C.red, fontSize: 13, fontWeight: 600, fontFamily: font,
+                                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                                }}
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <polyline points="3 6 5 6 21 6" />
+                                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                                    <path d="M10 11v6M14 11v6" />
+                                    <path d="M9 6V4h6v2" />
+                                </svg>
+                                直前の入力を削除{lastDataRow?.thisRot != null ? `（+${lastDataRow.thisRot}回転）` : ""}
+                            </button>
+                        )}
 
                         {/* 4. 判定の根拠（要約） */}
                         <ReasonList
