@@ -188,6 +188,8 @@ export default function App() {
   const [chodamaReplayLimit, setChodamaReplayLimit] = useLS("pt_chodamaReplayLimit", 2500);
   const [chodamaUsedToday, setChodamaUsedToday] = useLS("pt_chodamaUsedToday", 0);
   const [chodamaLastDate, setChodamaLastDate] = useLS("pt_chodamaLastDate", "");
+  // 貯玉入出金履歴（手動の預入/引出/調整のジャーナル。残高の真実源は stores[].chodama）
+  const [chodamaLog, setChodamaLog] = useLS("pt_chodamaLog", []);
 
   // セッション中のリアルタイム玉数
   const [currentMochiBalls, setCurrentMochiBalls] = useLS("pt_currentMochiBalls", 0);
@@ -670,6 +672,7 @@ export default function App() {
     includeChodamaInBalance, setIncludeChodamaInBalance,
     chodamaReplayLimit, setChodamaReplayLimit,
     chodamaUsedToday, setChodamaUsedToday,
+    chodamaLog, setChodamaLog,
     // セッション関連
     sessionStarted, setSessionStarted,
     startGameCount, setStartGameCount,

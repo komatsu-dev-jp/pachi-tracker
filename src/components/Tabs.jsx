@@ -8038,7 +8038,11 @@ export function CalendarTab({ S, onReset }) {
                 const timer = setTimeout(() => {
                     setEditStore(String(target.storeName || ""));
                     setEditMachineNum(String(target.machineNum || ""));
-                    setEditInvest(target.investYen || "");
+                    // 投資額は実践記録（回転数データ）から算出した値を初期表示する。
+                    // makeArchive が保存した stats.rawInvest = deriveFromRows の現金投資累計。
+                    // 算出値が無い古いアーカイブは従来の保存値 investYen をフォールバック表示。
+                    const derivedInvest = Math.round(target.stats?.rawInvest || 0);
+                    setEditInvest(derivedInvest > 0 ? derivedInvest : (target.investYen || ""));
                     setEditRecovery(target.recoveryYen || "");
                     setShowEditStoreDD(false);
                 }, 0);
@@ -8190,6 +8194,9 @@ export function CalendarTab({ S, onReset }) {
                             <div>
                                 <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>投資額</div>
                                 <NI v={editInvest} set={setEditInvest} w="100%" center ph="10000" />
+                                {Math.round(a.stats?.rawInvest || 0) > 0 && (
+                                    <div style={{ fontSize: 9, color: C.sub, marginTop: 4 }}>実践記録から自動反映</div>
+                                )}
                             </div>
                             <div>
                                 <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>回収額</div>
@@ -8709,6 +8716,13 @@ export function SettingsTab({ s, onReset }) {
     const [showGameSettingsView, setShowGameSettingsView] = useState(false);
     const [showMachineSpecView, setShowMachineSpecView] = useState(false);
     const [showChodamaView, setShowChodamaView] = useState(false);
+    const [showChodamaDataView, setShowChodamaDataView] = useState(false);
+    // 貯玉データ画面の入出金フォーム
+    const [chodamaFormStoreId, setChodamaFormStoreId] = useState("");
+    const [chodamaFormType, setChodamaFormType] = useState("deposit"); // deposit | withdraw | adjust
+    const [chodamaFormBalls, setChodamaFormBalls] = useState("");
+    const [chodamaFormDate, setChodamaFormDate] = useState(() => new Date().toISOString().slice(0, 10));
+    const [chodamaFormMemo, setChodamaFormMemo] = useState("");
     const [showBackupView, setShowBackupView] = useState(false);
     const [showAdvancedView, setShowAdvancedView] = useState(false);
 
@@ -9480,7 +9494,7 @@ export function SettingsTab({ s, onReset }) {
             "pt_selectedStoreId","pt_storeName","pt_machineNum","pt_machineName","pt_investYen","pt_recoveryYen",
             "pt_stores","pt_customMachines","pt_archives","pt_theme","pt_accentColor","pt_highContrast",
             "pt_colorBlind","pt_appLock","pt_appPin",
-            "pt_monthlyEvTarget"];
+            "pt_monthlyEvTarget","pt_chodamaLog"];
         try { await flushAll(); } catch { /* 続行 */ }
         const data = {};
         keys.forEach(k => {
@@ -10895,6 +10909,179 @@ export function SettingsTab({ s, onReset }) {
         );
     }
 
+    // ── 貯玉データサブビュー（店舗別残高 + 入出金履歴） ──
+    if (showChodamaDataView) {
+        const storeObjs = (s.stores || []).filter(st => typeof st === "object" && st.name);
+        const logEntries = [...(s.chodamaLog || [])].sort(
+            (a, b) => (b.date || "").localeCompare(a.date || "") || (b.id || 0) - (a.id || 0)
+        );
+        const typeLabel = { deposit: "預入", withdraw: "引出", adjust: "調整" };
+        const typeColor = { deposit: C.green, withdraw: C.red, adjust: C.blue };
+        const fieldStyle = {
+            width: "100%", boxSizing: "border-box", background: C.bg,
+            border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "12px",
+            fontSize: 16, color: C.text, fontFamily: font, outline: "none", minHeight: 44,
+        };
+
+        const recordChodama = () => {
+            const store = storeObjs.find(st => String(st.id) === String(chodamaFormStoreId));
+            const ballsNum = Math.round(Number(chodamaFormBalls) || 0);
+            if (!store) { showToast("店舗を選択してください", "warn"); return; }
+            if (ballsNum <= 0) { showToast("玉数を入力してください", "warn"); return; }
+            const before = Number(store.chodama) || 0;
+            let after = before;
+            if (chodamaFormType === "deposit") after = before + ballsNum;
+            else if (chodamaFormType === "withdraw") after = Math.max(0, before - ballsNum);
+            else after = ballsNum; // adjust = 残高を絶対値でセット
+            s.setStores(prev => prev.map(st =>
+                (typeof st === "object" && st.id === store.id) ? { ...st, chodama: after } : st
+            ));
+            const entry = {
+                id: Date.now(),
+                date: chodamaFormDate || new Date().toISOString().slice(0, 10),
+                storeId: store.id,
+                storeName: store.name,
+                type: chodamaFormType,
+                balls: ballsNum,
+                balanceBefore: before,
+                balanceAfter: after,
+                memo: chodamaFormMemo || "",
+            };
+            s.setChodamaLog(prev => [entry, ...(prev || [])]);
+            setChodamaFormBalls("");
+            setChodamaFormMemo("");
+            showToast(`「${store.name}」に記録しました（残高 ${f(after)}玉）`);
+        };
+
+        const deleteLog = (id) => {
+            s.setChodamaLog(prev => (prev || []).filter(e => e.id !== id));
+            showToast("履歴を削除しました（残高は変わりません）", "warn");
+        };
+
+        return (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <style>{`.settings-row:last-child{border-bottom:none!important}`}</style>
+                <SubHeader title="貯玉データ" onBack={() => setShowChodamaDataView(false)} />
+                <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(84px + env(safe-area-inset-bottom))" }}>
+
+                    {/* 店舗別 貯玉残高 */}
+                    <SectionLabel label="店舗別 貯玉残高" />
+                    <Section>
+                        {storeObjs.length === 0 ? (
+                            <div style={{ padding: "16px", fontSize: 13, color: C.sub, lineHeight: 1.6 }}>
+                                登録された店舗がありません。「データ管理 → 店舗検索・登録」で店舗を追加してください。
+                            </div>
+                        ) : (
+                            storeObjs.map((st) => (
+                                <Row
+                                    key={st.id}
+                                    IconComp={IconDiamond}
+                                    iconColor={C.purple}
+                                    label={st.name}
+                                    sub="タップで下のフォームに選択"
+                                    onPress={() => setChodamaFormStoreId(String(st.id))}
+                                    right={<span style={{ fontSize: 15, fontWeight: 800, color: C.purple, fontFamily: mono }}>{f(Number(st.chodama) || 0)} 玉</span>}
+                                />
+                            ))
+                        )}
+                    </Section>
+
+                    {/* 入出金を記録 */}
+                    <SectionLabel label="入出金を記録" />
+                    <Section>
+                        <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+                            <div>
+                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 600 }}>店舗</div>
+                                <select value={chodamaFormStoreId} onChange={(e) => setChodamaFormStoreId(e.target.value)} style={fieldStyle}>
+                                    <option value="">店舗を選択</option>
+                                    {storeObjs.map((st) => (
+                                        <option key={st.id} value={String(st.id)}>{st.name}（{f(Number(st.chodama) || 0)}玉）</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 600 }}>種別</div>
+                                <div style={{ display: "flex", gap: 8 }}>
+                                    {[
+                                        { id: "deposit", label: "預入 (+)" },
+                                        { id: "withdraw", label: "引出 (−)" },
+                                        { id: "adjust", label: "調整 (=)" },
+                                    ].map(({ id, label }) => {
+                                        const active = chodamaFormType === id;
+                                        return (
+                                            <button key={id} className="b" onClick={() => setChodamaFormType(id)} style={{
+                                                flex: 1, minHeight: 44, borderRadius: 8, cursor: "pointer",
+                                                border: active ? `2px solid ${typeColor[id]}` : `1px solid ${C.border}`,
+                                                background: active ? `${typeColor[id]}22` : C.surfaceHi,
+                                                color: active ? typeColor[id] : C.text, fontSize: 13, fontWeight: active ? 700 : 500,
+                                                fontFamily: font, WebkitTapHighlightColor: "transparent",
+                                            }}>{label}</button>
+                                        );
+                                    })}
+                                </div>
+                                <div style={{ fontSize: 10, color: C.sub, marginTop: 4 }}>
+                                    {chodamaFormType === "adjust" ? "調整: 入力した玉数を残高にそのままセットします" : chodamaFormType === "withdraw" ? "引出: 残高から差し引きます" : "預入: 残高に加算します"}
+                                </div>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                <div>
+                                    <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 600 }}>玉数</div>
+                                    <NI v={chodamaFormBalls} set={setChodamaFormBalls} w="100%" center ph="2500" />
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 600 }}>日付</div>
+                                    <input type="date" value={chodamaFormDate} onChange={(e) => setChodamaFormDate(e.target.value)} style={fieldStyle} />
+                                </div>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 600 }}>メモ（任意）</div>
+                                <input type="text" value={chodamaFormMemo} onChange={(e) => setChodamaFormMemo(e.target.value)} placeholder="例: 全部交換 / 持ち越し" style={fieldStyle} />
+                            </div>
+                            <Btn label="記録する" onClick={recordChodama} primary fs={15} />
+                        </div>
+                    </Section>
+
+                    {/* 入出金履歴 */}
+                    <SectionLabel label="入出金履歴" />
+                    <Section>
+                        {logEntries.length === 0 ? (
+                            <div style={{ padding: "16px", fontSize: 13, color: C.sub, lineHeight: 1.6 }}>
+                                まだ履歴がありません。上のフォームから記録してください。
+                            </div>
+                        ) : (
+                            logEntries.map((e) => (
+                                <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderBottom: `1px solid ${C.border}` }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                            <span style={{ fontSize: 10, fontWeight: 700, color: typeColor[e.type] || C.subHi, background: `${typeColor[e.type] || C.sub}22`, borderRadius: 4, padding: "2px 6px" }}>{typeLabel[e.type] || e.type}</span>
+                                            <span style={{ fontSize: 14, color: C.text, fontWeight: 600 }}>{e.storeName}</span>
+                                        </div>
+                                        <div style={{ fontSize: 11, color: C.sub, marginTop: 3 }}>
+                                            {e.date}・残高 {f(e.balanceAfter)}玉{e.memo ? `・${e.memo}` : ""}
+                                        </div>
+                                    </div>
+                                    <div style={{ textAlign: "right", flexShrink: 0 }}>
+                                        <div style={{ fontSize: 15, fontWeight: 800, fontFamily: mono, color: typeColor[e.type] || C.text }}>
+                                            {e.type === "adjust" ? "=" : e.type === "withdraw" ? "−" : "+"}{f(e.balls)}
+                                        </div>
+                                    </div>
+                                    <button className="b" onClick={() => deleteLog(e.id)} style={{
+                                        background: "transparent", border: "none", color: C.sub, fontSize: 18,
+                                        width: 36, height: 36, cursor: "pointer", flexShrink: 0,
+                                    }}>✕</button>
+                                </div>
+                            ))
+                        )}
+                        <div style={{ padding: "12px 16px", fontSize: 10, color: C.sub, lineHeight: 1.6 }}>
+                            ※ 残高の真実源は店舗ごとの貯玉です。履歴の削除は残高に影響しません。
+                        </div>
+                    </Section>
+                </div>
+                <ToastPortal />
+            </div>
+        );
+    }
+
     // ── バックアップサブビュー ──
     if (showBackupView) {
         return (
@@ -11150,6 +11337,7 @@ export function SettingsTab({ s, onReset }) {
                             { color: "var(--blue)", icon: IconExchange,   label: "レート・交換率",         sub: `${Math.round((s.exRate || 250) / 10)}玉 / ${exLabelShort}`,                 onPress: () => setShowGameSettingsView(true) },
                             { color: "var(--red)", icon: IconTarget,     label: "機種スペック",           sub: `${s.synthDenom || 319.6} / ${borderShort}`,                                 onPress: () => setShowMachineSpecView(true) },
                             { color: "var(--green)", icon: IconCoin,       label: "貯玉設定",               sub: s.includeChodamaInBalance ? "収支に含める / 再プレイ上限あり" : "収支に含めない", onPress: () => setShowChodamaView(true) },
+                            { color: "var(--teal)", icon: IconDiamond,     label: "貯玉データ",             sub: "店舗別残高 / 入出金履歴",                                                     onPress: () => setShowChodamaDataView(true) },
                             { color: "var(--purple)", icon: IconCalculator, label: "詳細設定（上級者向け）", sub: "削り補正 / 持玉比率 など",                                                    onPress: () => setShowAdvancedView(true) },
                         ];
                         return items.map((it, i) => (
