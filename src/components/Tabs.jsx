@@ -8344,6 +8344,15 @@ export function CalendarTab({ S, onReset }) {
         if (actual > -HEAT_BIG) return "#7f1d1d";  // 薄赤 → 暗赤
         return "#ffffff";                          // 濃赤 → 白
     };
+    // KPI数値を画面幅に収めるための圧縮フォーマット（±1.5万 / ±8,000）
+    const cpK = (n) => {
+        if (n == null || !isFinite(n) || isNaN(n)) return "—";
+        const abs = Math.abs(n);
+        const sign = n > 0 ? "+" : n < 0 ? "-" : "";
+        if (abs >= 100000) return sign + f(abs / 10000, 0) + "万";
+        if (abs >= 10000) return sign + f(abs / 10000, 1) + "万";
+        return sp(n);
+    };
 
     // ── Calendar View ──
     return (
@@ -8365,32 +8374,30 @@ export function CalendarTab({ S, onReset }) {
                 }}>›</button>
             </div>
 
-            {/* ① KPIカード（6指標を横1行・数値24px・画面に収まらなければ横スクロール） */}
+            {/* ① KPIカード（6指標を横1行グリッド・画面幅内に収まる） */}
             <div style={{
-                display: "flex",
+                display: "grid", gridTemplateColumns: "repeat(6, 1fr)",
                 background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14,
-                overflowX: "auto", overflowY: "hidden", marginBottom: 10, boxShadow: "var(--card-shadow)",
-                WebkitOverflowScrolling: "touch",
+                marginBottom: 10, boxShadow: "var(--card-shadow)",
             }}>
                 {[
-                    { label: "月間収支", val: monthKpi.hasActual ? sp(Math.round(monthKpi.pl)) : "—", unit: monthKpi.hasActual ? "円" : "", col: monthKpi.hasActual ? sc(monthKpi.pl) : C.sub },
-                    { label: "EV（期待値）", val: monthKpi.ev !== 0 ? sp(Math.round(monthKpi.ev)) : "—", unit: monthKpi.ev !== 0 ? "円" : "", col: monthKpi.ev !== 0 ? sc(monthKpi.ev) : C.sub },
+                    { label: "月収支", val: monthKpi.hasActual ? cpK(Math.round(monthKpi.pl)) : "—", unit: monthKpi.hasActual ? "円" : "", col: monthKpi.hasActual ? sc(monthKpi.pl) : C.sub },
+                    { label: "EV", val: monthKpi.ev !== 0 ? cpK(Math.round(monthKpi.ev)) : "—", unit: monthKpi.ev !== 0 ? "円" : "", col: monthKpi.ev !== 0 ? sc(monthKpi.ev) : C.sub },
                     { label: "ROI", val: monthKpi.roi != null ? f(monthKpi.roi, 0) : "—", unit: monthKpi.roi != null ? "%" : "", col: monthKpi.roi == null ? C.sub : monthKpi.roi >= 100 ? C.green : C.red },
                     { label: "稼働時間", val: monthKpi.hours > 0 ? f(monthKpi.hours, 1) : "—", unit: monthKpi.hours > 0 ? "h" : "", col: C.text },
-                    { label: "時給", val: monthKpi.wage != null ? sp(monthKpi.wage) : "—", unit: monthKpi.wage != null ? "円/h" : "", col: monthKpi.wage != null ? sc(monthKpi.wage) : C.sub },
+                    { label: "時給", val: monthKpi.wage != null ? cpK(monthKpi.wage) : "—", unit: monthKpi.wage != null ? "円/h" : "", col: monthKpi.wage != null ? sc(monthKpi.wage) : C.sub },
                     { label: "勝率", val: monthKpi.winRate != null ? f(monthKpi.winRate, 0) : "—", unit: monthKpi.winRate != null ? "%" : "", col: monthKpi.winRate == null ? C.sub : monthKpi.winRate >= 50 ? C.green : C.red, sub: monthKpi.realCount > 0 ? `(${monthKpi.winCount}/${monthKpi.realCount})` : "" },
                 ].map((k, i) => (
                     <div key={k.label} style={{
-                        flex: "1 0 auto", minWidth: 104,
-                        padding: "11px 12px 10px", textAlign: "center",
+                        padding: "9px 3px 8px", textAlign: "center",
                         borderLeft: i === 0 ? "none" : `1px solid ${C.border}`,
                     }}>
-                        <div style={{ fontSize: 11, color: C.sub, fontWeight: 700, marginBottom: 5, whiteSpace: "nowrap" }}>{k.label}</div>
-                        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 2, whiteSpace: "nowrap" }}>
-                            <span style={{ fontSize: 24, fontWeight: 900, color: k.col, fontFamily: font, fontVariantNumeric: "tabular-nums", letterSpacing: "-1px", lineHeight: 1 }}>{k.val}</span>
-                            {k.unit && <span style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>{k.unit}</span>}
+                        <div style={{ fontSize: 9, color: C.sub, fontWeight: 700, marginBottom: 4 }}>{k.label}</div>
+                        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 1 }}>
+                            <span style={{ fontSize: 15, fontWeight: 900, color: k.col, fontFamily: font, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.5px", lineHeight: 1 }}>{k.val}</span>
+                            {k.unit && <span style={{ fontSize: 9, color: C.sub, fontWeight: 600 }}>{k.unit}</span>}
                         </div>
-                        {k.sub && <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginTop: 3, fontVariantNumeric: "tabular-nums" }}>{k.sub}</div>}
+                        {k.sub && <div style={{ fontSize: 9, color: C.sub, fontWeight: 600, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{k.sub}</div>}
                     </div>
                 ))}
             </div>
