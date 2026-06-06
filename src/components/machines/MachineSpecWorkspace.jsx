@@ -20,6 +20,9 @@ const fallbackMachine = {
     { id: "ヘソ2", payout: "1500", ratio: "40", rush: true },
     { id: "ヘソ3", payout: "0", ratio: "0", rush: false },
   ],
+  rush: [
+    { id: "RUSH1", payout: "1500", ratio: "100" },
+  ],
 };
 
 function formatNumber(value, fallback = "—") {
@@ -71,6 +74,19 @@ function normalizeMachine(data) {
       }))
     : fallbackMachine.heso;
 
+  // 特図2・RUSH（確変中）の出玉振分。機種マスタに rushDist 配列があれば採用し、
+  // なければ RUSH平均出玉を 100% の単一振分として初期表示する（後から編集・追加可能）。
+  const rushAvgNum = Number(data.rushAvgPayout);
+  const rush = Array.isArray(data.rushDist) && data.rushDist.length > 0
+    ? data.rushDist.slice(0, 4).map((row, index) => ({
+        id: `RUSH${index + 1}`,
+        payout: String(row.payout ?? 0),
+        ratio: String(row.rate ?? 0),
+      }))
+    : Number.isFinite(rushAvgNum) && rushAvgNum > 0
+      ? [{ id: "RUSH1", payout: String(rushAvgNum), ratio: "100" }]
+      : fallbackMachine.rush;
+
   return {
     name: data.name || fallbackMachine.name,
     meta: `${maker} | ${type}${prizeText}`,
@@ -100,6 +116,7 @@ function normalizeMachine(data) {
       "0.5",
     ],
     heso,
+    rush,
     roundDist: data.roundDist || fallbackMachine.roundDist || "1500発 100%",
     rushDist: data.rushDist || fallbackMachine.rushDist || "1500発 100%",
   };
@@ -345,11 +362,15 @@ function DetailScreen({ machine, synced, onToggleSync, onEdit, onBack, primaryAc
             <div className="ms-divider" />
             <div className="ms-allocation-head">
               <strong>特図2・RUSH</strong>
-              <Pill tone="orange">確変ループ</Pill>
+              <Pill tone="orange">比率合計 {sumRatio(machine.rush || [])}%</Pill>
             </div>
             <div className="ms-chip-row">
-              <span>{machine.rushAvg}発</span>
-              <strong>100%</strong>
+              {(machine.rush || []).map((row) => (
+                <React.Fragment key={row.id}>
+                  <span>{formatNumber(row.payout, "0")}発</span>
+                  <strong>{row.ratio}%</strong>
+                </React.Fragment>
+              ))}
             </div>
             <div className="ms-summary-line">
               ヘソ平均出玉 <b>{machine.hesoAvg}</b>
@@ -483,6 +504,11 @@ function RegisterScreen({ machine, onSave, onBack }) {
       ratio: plainNum(row.ratio),
       rush: !!row.rush,
     })),
+    rush: (machine.rush || []).map((row, index) => ({
+      key: `rinit-${index}`,
+      payout: plainNum(row.payout),
+      ratio: plainNum(row.ratio),
+    })),
   }));
 
   const setField = (key, val) => setForm((f) => ({ ...f, [key]: val }));
@@ -494,6 +520,14 @@ function RegisterScreen({ machine, onSave, onBack }) {
       heso: [...f.heso, { key: `add-${(idRef.current += 1)}`, payout: "0", ratio: "0", rush: false }],
     }));
   const removeHeso = (key) => setForm((f) => ({ ...f, heso: f.heso.filter((h) => h.key !== key) }));
+  const patchRush = (key, patch) =>
+    setForm((f) => ({ ...f, rush: f.rush.map((h) => (h.key === key ? { ...h, ...patch } : h)) }));
+  const addRush = () =>
+    setForm((f) => ({
+      ...f,
+      rush: [...f.rush, { key: `radd-${(idRef.current += 1)}`, payout: "0", ratio: "0" }],
+    }));
+  const removeRush = (key) => setForm((f) => ({ ...f, rush: f.rush.filter((h) => h.key !== key) }));
 
   const refByStep = { 基本: basicRef, 出玉: payoutRef, 振分: hesoRef, 検証: mapRef };
   const goStep = (step) => {
@@ -503,10 +537,12 @@ function RegisterScreen({ machine, onSave, onBack }) {
 
   const ratioSum = sumRatio(form.heso);
   const ratioOk = ratioSum === 100;
+  const rushRatioSum = sumRatio(form.rush);
+  const rushRatioOk = rushRatioSum === 100;
   const emptyRequired = [form.avgPayout, form.rushEntry, form.rushContinue].filter(
     (v) => plainNum(v) === ""
   ).length;
-  const errorCount = emptyRequired + (ratioOk ? 0 : 1);
+  const errorCount = emptyRequired + (ratioOk ? 0 : 1) + (rushRatioOk ? 0 : 1);
 
   const previewTsv = machine.tsv.map((cell, i) => {
     if (i === 5) return plainNum(form.avgPayout) || cell;
@@ -529,6 +565,11 @@ function RegisterScreen({ machine, onSave, onBack }) {
         payout: plainNum(h.payout) || "0",
         ratio: plainNum(h.ratio) || "0",
         rush: h.rush,
+      })),
+      rush: form.rush.map((h, i) => ({
+        id: `RUSH${i + 1}`,
+        payout: plainNum(h.payout) || "0",
+        ratio: plainNum(h.ratio) || "0",
       })),
       tsv: previewTsv,
     };
@@ -640,7 +681,7 @@ function RegisterScreen({ machine, onSave, onBack }) {
         <section className="ms-register-card" ref={hesoRef}>
           <div className="ms-card-head">
             <h2>
-              特図1・ヘソ振分{" "}
+              特図1・ヘソ振分（初当たり）{" "}
               <Pill tone={ratioOk ? "success" : "orange"}>比率合計 {ratioSum}%</Pill>
             </h2>
             <button type="button" className="ms-small-icon" aria-label="ヘソ振分を追加" onClick={addHeso}>
@@ -672,6 +713,44 @@ function RegisterScreen({ machine, onSave, onBack }) {
                 </div>
               ))
             )}
+          </div>
+        </section>
+
+        <section className="ms-register-card">
+          <div className="ms-card-head">
+            <h2>
+              特図2・RUSH振分（確変中）{" "}
+              <Pill tone={rushRatioOk ? "success" : "orange"}>比率合計 {rushRatioSum}%</Pill>
+            </h2>
+            <button type="button" className="ms-small-icon" aria-label="RUSH振分を追加" onClick={addRush}>
+              <Icon name="plus" />
+            </button>
+          </div>
+          <div className="ms-heso-list">
+            {form.rush.length === 0 ? (
+              <div className="ms-heso-empty">「＋」で振分を追加してください</div>
+            ) : (
+              form.rush.map((row, index) => (
+                <div className="ms-heso-row" key={row.key}>
+                  <div className="ms-heso-top">
+                    <span className="ms-grip" aria-hidden>⋮⋮</span>
+                    <strong>RUSH{index + 1}</strong>
+                    <button type="button" className="ms-trash" aria-label={`RUSH${index + 1}を削除`} onClick={() => removeRush(row.key)}>
+                      <Icon name="trash" />
+                    </button>
+                  </div>
+                  <div className="ms-heso-inputs">
+                    <Field compact label="出玉" value={row.payout} unit="発" onChange={(v) => patchRush(row.key, { payout: v })} />
+                    <Field compact label="比率" value={row.ratio} unit="%" onChange={(v) => patchRush(row.key, { ratio: v })} />
+                  </div>
+                  {index < form.rush.length - 1 && <div className="ms-row-line" />}
+                </div>
+              ))
+            )}
+          </div>
+          <div className="ms-info-note">
+            <span>i</span>
+            <strong>確変(RUSH)中の大当たり出玉と比率を設定します</strong>
           </div>
         </section>
 
