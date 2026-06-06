@@ -363,33 +363,6 @@ const jackpotTone = {
     purple: { main: "var(--purple)", soft: "rgba(192,132,252,0.16)", glow: "rgba(192,132,252,0.32)" },
 };
 
-function FlowStatusCard({ title, subtitle, tone = "green", badge = "現在のチェーン", metrics = [] }) {
-    const t = jackpotTone[tone] || jackpotTone.green;
-    return (
-        <div className="jp-flow-status" style={{ "--jp-main": t.main, "--jp-soft": t.soft, "--jp-glow": t.glow }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
-                <div>
-                    <div className="jp-flow-badge">{badge}</div>
-                    <div className="jp-flow-title">{title}</div>
-                    <div className="jp-flow-subtitle">{subtitle}</div>
-                </div>
-                <div className="jp-flow-orb">{title.slice(0, 1)}</div>
-            </div>
-            {metrics.length > 0 && (
-                <div className="jp-flow-metrics">
-                    {metrics.map((m) => (
-                        <div className="jp-flow-metric" key={m.label}>
-                            <div>{m.label}</div>
-                            <strong style={{ color: m.color || t.main }}>{m.value}</strong>
-                            {m.unit && <span>{m.unit}</span>}
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-}
-
 function FlowValueCard({ label, value, unit, tone = "blue", hint }) {
     const t = jackpotTone[tone] || jackpotTone.blue;
     return (
@@ -414,20 +387,6 @@ function FlowChoiceButton({ children, tone = "blue", style = {}, ...props }) {
             {children}
         </button>
     );
-}
-
-function chainPrototypeVerdict(chain) {
-    // 将来P-EVIDENCE連携予定: 既存のチェーン集計値だけで安全に仮表示する。
-    if (!chain) return { label: "実測待ち", tone: "blue", sub: "初当たり後にチェーンを開始" };
-    if (!chain.completed) {
-        return chain.hits.length > 0
-            ? { label: "ラッシュ中", tone: "green", sub: "入力しながら答え合わせ中" }
-            : { label: "基準値固定中", tone: "blue", sub: "開始上皿玉を基準として保存" };
-    }
-    if (!chain.summary || chain.summary.totalSapoRot <= 0) return { label: "データ不足", tone: "yellow", sub: "サポ回転の記録が不足" };
-    if ((chain.summary.sapoPerRot || 0) > 0.5) return { label: "良好", tone: "green", sub: "実測値はプラス方向" };
-    if ((chain.summary.sapoPerRot || 0) < -0.8) return { label: "下振れ注意", tone: "red", sub: "サポ中の減りを確認" };
-    return { label: "要確認", tone: "orange", sub: "終了後に判定を確認" };
 }
 
 function effectiveEv(ev = {}) {
@@ -844,6 +803,8 @@ export function RotTab({ rows, setRows, S, ev }) {
     const longPressTimerRef = useRef(null);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [deleteTargetId, setDeleteTargetId] = useState(null);
+    // 大当たり履歴タブ: 詳細履歴の展開トグル（既定は折り畳み＝モックの簡易表示）
+    const [showAllHistory, setShowAllHistory] = useState(false);
 
     // 連打ロック（同フレームの二度押し抑止）
     const endLockRef = useRef(false);
@@ -2913,183 +2874,194 @@ export function RotTab({ rows, setRows, S, ev }) {
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                     <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
                         <div>
-                                {/* ヒーローカード（3項目）: 現在持玉 / 現在評価 / 1Rあたりの出球 */}
+                                {/* HUDストリップ（持玉 / 評価 / 1Rあたり）+ RUSH継続中バナー + スタッツグリッド */}
                                 {(() => {
                                     const heroEvNet = ev && Number.isFinite(ev.netGain) ? ev.netGain : 0;
                                     const heroAvg1R = ev && Number.isFinite(ev.avg1R) ? ev.avg1R : 0;
                                     const heroMochi = S.currentMochiBalls || 0;
-                                    // 最新チェーンの純増を「持玉の増減」仮表示として利用
-                                    const lastChainGain = lastChain && lastChain.completed && lastChain.summary
-                                        ? Math.round(lastChain.summary.netGain || 0)
-                                        : 0;
-                                    // 評価ラベル（プロトタイプ用マッピング）
+                                    const totalHits = ev && Number.isFinite(ev.totalHits) ? ev.totalHits : 0;
+                                    const totalRoundsAll = ev && Number.isFinite(ev.totalRounds) ? ev.totalRounds : 0;
+                                    const totalRotAll = ev && Number.isFinite(ev.netRot) ? ev.netRot : 0;
+                                    const avgRpHit = ev && Number.isFinite(ev.avgRoundsPerHit) ? ev.avgRoundsPerHit : 0;
+                                    const firstHitCount = jpLog.length;
+                                    // 評価ラベル（プロトタイプ用マッピング・既存しきい値を踏襲）
                                     const verdictCfg = heroEvNet > 1500
-                                        ? { label: "圧倒", emoji: "🤩", color: C.green }
+                                        ? { label: "圧倒", color: C.green }
                                         : heroEvNet > 300
-                                            ? { label: "優勢", emoji: "😊", color: C.green }
+                                            ? { label: "優勢", color: C.green }
                                             : heroEvNet > -300
-                                                ? { label: "互角", emoji: "😐", color: C.yellow }
-                                                : { label: "不利", emoji: "😟", color: C.red };
-                                    // 1R 出球の星評価（暫定しきい値）
-                                    let stars = 0, starLabel = "—";
-                                    if (heroAvg1R >= 150) { stars = 5; starLabel = "神級"; }
-                                    else if (heroAvg1R >= 140) { stars = 4; starLabel = "優秀"; }
-                                    else if (heroAvg1R >= 130) { stars = 3; starLabel = "良好"; }
-                                    else if (heroAvg1R >= 120) { stars = 2; starLabel = "普通"; }
-                                    else if (heroAvg1R > 0) { stars = 1; starLabel = "厳しい"; }
+                                                ? { label: "互角", color: C.yellow }
+                                                : { label: "不利", color: C.red };
+                                    const statCells = [
+                                        { label: "累計大当たり", val: f(totalHits), unit: "回", col: C.text },
+                                        { label: "総R数", val: f(totalRoundsAll), unit: "回", col: C.text },
+                                        { label: "平均出玉/R", val: heroAvg1R > 0 ? f(Math.round(heroAvg1R)) : "—", unit: "玉/R", col: C.orange },
+                                        { label: "総回転", val: f(totalRotAll), unit: "回", col: C.orange },
+                                        { label: "総R数/回", val: avgRpHit > 0 ? f(avgRpHit, 2) : "—", unit: "回", col: C.text },
+                                        { label: "初当たり", val: f(firstHitCount), unit: "回", col: C.purple },
+                                    ];
                                     return (
                                         <>
-                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
-                                                {/* 現在持玉 */}
-                                                <div style={{
-                                                    background: `linear-gradient(160deg, color-mix(in srgb, ${C.green} 14%, var(--surface)) 0%, var(--surface) 100%)`,
-                                                    border: `1px solid color-mix(in srgb, ${C.green} 38%, ${C.border})`,
-                                                    borderRadius: 14, padding: "10px 8px 6px",
-                                                    boxShadow: `0 0 18px color-mix(in srgb, ${C.green} 18%, transparent)`,
-                                                    display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center",
-                                                    minHeight: 158,
-                                                }}>
-                                                    <div style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, color: C.sub, fontWeight: 700 }}>
-                                                        <span>現在持玉</span>
-                                                        <span style={{ fontSize: 10, opacity: 0.7 }}>?</span>
-                                                    </div>
-                                                    <div style={{ fontSize: 22, fontWeight: 900, color: C.green, fontFamily: mono, lineHeight: 1.1, marginTop: 6 }}>
+                                            {/* HUDストリップ */}
+                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", marginBottom: 10 }}>
+                                                <div style={{ textAlign: "center", padding: "2px 4px" }}>
+                                                    <div style={{ fontSize: 11, color: C.sub, fontWeight: 700, fontFamily: font }}>持玉</div>
+                                                    <div style={{ fontSize: 20, fontWeight: 900, color: C.green, fontFamily: mono, lineHeight: 1.2, marginTop: 2 }}>
                                                         {f(heroMochi)}<span style={{ fontSize: 11, marginLeft: 1, fontFamily: font, color: C.green, opacity: 0.85 }}>玉</span>
                                                     </div>
-                                                    {lastChainGain !== 0 && (
-                                                        <div style={{
-                                                            marginTop: 3, fontSize: 12, fontWeight: 800,
-                                                            color: lastChainGain > 0 ? C.green : C.red, fontFamily: mono,
-                                                        }}>
-                                                            {sp(lastChainGain)}<span style={{ fontSize: 10, fontFamily: font, opacity: 0.85, marginLeft: 1 }}>玉</span>
-                                                        </div>
-                                                    )}
                                                 </div>
-                                                {/* 現在評価 */}
-                                                <div style={{
-                                                    background: `linear-gradient(160deg, color-mix(in srgb, ${verdictCfg.color} 14%, var(--surface)) 0%, var(--surface) 100%)`,
-                                                    border: `1px solid color-mix(in srgb, ${verdictCfg.color} 38%, ${C.border})`,
-                                                    borderRadius: 14, padding: "10px 8px 6px",
-                                                    boxShadow: `0 0 18px color-mix(in srgb, ${verdictCfg.color} 18%, transparent)`,
-                                                    display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center",
-                                                    minHeight: 158,
-                                                }}>
-                                                    <div style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, color: C.sub, fontWeight: 700 }}>
-                                                        <span>現在評価</span>
-                                                        <span style={{ fontSize: 10, opacity: 0.7 }}>?</span>
+                                                <div style={{ textAlign: "center", padding: "2px 4px", borderLeft: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>
+                                                    <div style={{ fontSize: 11, color: C.sub, fontWeight: 700, fontFamily: font }}>評価</div>
+                                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, marginTop: 2 }}>
+                                                        <span style={{ fontSize: 20, fontWeight: 900, color: verdictCfg.color, fontFamily: font, lineHeight: 1.2 }}>{verdictCfg.label}</span>
+                                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={verdictCfg.color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                                                            <polyline points="3 17 9 11 13 15 21 7" />
+                                                            <polyline points="14 7 21 7 21 14" />
+                                                        </svg>
                                                     </div>
-                                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, marginTop: 4 }}>
-                                                        <span style={{ fontSize: 26, lineHeight: 1 }}>{verdictCfg.emoji}</span>
-                                                        <span style={{ fontSize: 22, fontWeight: 900, color: verdictCfg.color, fontFamily: font, lineHeight: 1.1 }}>
-                                                            {verdictCfg.label}
-                                                        </span>
-                                                    </div>
-                                                    <div style={{ fontSize: 13, fontWeight: 800, color: sc(heroEvNet), fontFamily: mono, marginTop: 3 }}>
-                                                        {sp(Math.round(heroEvNet))}<span style={{ fontSize: 10, fontFamily: font, opacity: 0.85, marginLeft: 1 }}>玉</span>
-                                                    </div>
-                                                    <div style={{ fontSize: 9, color: C.sub, fontFamily: font, marginTop: 1 }}>（理論ベース）</div>
                                                 </div>
-                                                {/* 1Rあたりの出球 */}
-                                                <div style={{
-                                                    background: `linear-gradient(160deg, color-mix(in srgb, ${C.orange} 14%, var(--surface)) 0%, var(--surface) 100%)`,
-                                                    border: `1px solid color-mix(in srgb, ${C.orange} 38%, ${C.border})`,
-                                                    borderRadius: 14, padding: "10px 8px 6px",
-                                                    boxShadow: `0 0 18px color-mix(in srgb, ${C.orange} 18%, transparent)`,
-                                                    display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center",
-                                                    minHeight: 158,
-                                                }}>
-                                                    <div style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, color: C.sub, fontWeight: 700 }}>
-                                                        <span>1Rあたりの出球</span>
-                                                        <span style={{ fontSize: 10, opacity: 0.7 }}>?</span>
+                                                <div style={{ textAlign: "center", padding: "2px 4px" }}>
+                                                    <div style={{ fontSize: 11, color: C.sub, fontWeight: 700, fontFamily: font }}>1Rあたり</div>
+                                                    <div style={{ fontSize: 20, fontWeight: 900, color: C.orange, fontFamily: mono, lineHeight: 1.2, marginTop: 2 }}>
+                                                        {heroAvg1R > 0 ? f(Math.round(heroAvg1R)) : "—"}<span style={{ fontSize: 11, marginLeft: 1, fontFamily: font, color: C.orange, opacity: 0.85 }}>玉</span>
                                                     </div>
-                                                    <div style={{ fontSize: 20, fontWeight: 900, color: C.orange, fontFamily: mono, lineHeight: 1.1, marginTop: 6 }}>
-                                                        {heroAvg1R > 0 ? `約${f(Math.round(heroAvg1R))}` : "—"}<span style={{ fontSize: 11, marginLeft: 1, fontFamily: font, color: C.orange, opacity: 0.85 }}>玉/R</span>
-                                                    </div>
-                                                    {stars > 0 && (
-                                                        <div style={{
-                                                            marginTop: 4, fontSize: 10, fontWeight: 800,
-                                                            color: C.orange, fontFamily: font,
-                                                            border: `1px solid color-mix(in srgb, ${C.orange} 40%, transparent)`,
-                                                            padding: "1px 8px", borderRadius: 999,
-                                                            letterSpacing: 1,
-                                                        }}>
-                                                            {"★".repeat(stars)}{"☆".repeat(5 - stars)} {starLabel}
-                                                        </div>
-                                                    )}
                                                 </div>
                                             </div>
-                                            {/* 詳細を表示 トグル（将来連携予定: 折り畳みで詳細チャートを展開） */}
-                                            <details style={{ marginBottom: 12 }}>
-                                                <summary style={{
-                                                    listStyle: "none", cursor: "pointer",
-                                                    display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                                                    fontSize: 12, color: C.sub, fontWeight: 700, fontFamily: font,
-                                                    padding: "8px 0",
-                                                }}>
-                                                    <span style={{ fontSize: 10 }}>▼</span>
-                                                    <span>詳細を表示</span>
-                                                </summary>
-                                                <div style={{ fontSize: 11, color: C.sub, padding: "0 4px 4px", textAlign: "center" }}>
-                                                    詳細チャートは今後追加予定です。
+
+                                            {/* RUSH継続中バナー */}
+                                            {isChainActive && (
+                                                <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "2px 0 12px" }}>
+                                                    <div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, transparent, color-mix(in srgb, ${C.green} 70%, transparent))` }} />
+                                                    <span style={{ fontSize: 13, fontWeight: 900, color: C.green, letterSpacing: 2, fontFamily: font, textShadow: `0 0 12px color-mix(in srgb, ${C.green} 50%, transparent)` }}>RUSH継続中</span>
+                                                    <div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, color-mix(in srgb, ${C.green} 70%, transparent), transparent)` }} />
                                                 </div>
-                                            </details>
+                                            )}
+
+                                            {/* スタッツグリッド（3×2） */}
+                                            <div style={{
+                                                background: `linear-gradient(160deg, color-mix(in srgb, ${C.green} 8%, var(--surface)) 0%, var(--surface) 100%)`,
+                                                border: `1px solid color-mix(in srgb, ${C.green} 26%, ${C.border})`,
+                                                borderRadius: 16, padding: "14px 6px", marginBottom: 12,
+                                                boxShadow: `0 0 18px color-mix(in srgb, ${C.green} 12%, transparent)`,
+                                            }}>
+                                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", rowGap: 14 }}>
+                                                    {statCells.map((c, i) => (
+                                                        <div key={c.label} style={{ textAlign: "center", padding: "0 2px", borderRight: (i % 3 !== 2) ? `1px solid ${C.border}` : "none" }}>
+                                                            <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, fontFamily: font, marginBottom: 4 }}>{c.label}</div>
+                                                            <div style={{ fontSize: 17, fontWeight: 900, color: c.col, fontFamily: mono, lineHeight: 1 }}>
+                                                                {c.val}<span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>{c.unit}</span>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
                                         </>
                                     );
                                 })()}
 
-                                {/* 連チャン中バナー */}
+                                {/* アクションボタン（当たりを追加 / 単発完了 / RUSH終了）*/}
                                 {isChainActive && (
-                                    (() => {
-                                        const verdict = chainPrototypeVerdict(lastChain);
-                                        const totalRounds = (lastChain.hits || []).reduce((s, h) => s + (h.rounds || 0), 0);
-                                        const totalSapoRot = (lastChain.hits || []).reduce((s, h) => s + (h.elecSapoRot || 0), 0);
-                                        return (
-                                            <div style={{ marginBottom: 12 }}>
-                                                <FlowStatusCard
-                                                    title={verdict.label}
-                                                    subtitle={lastChain.hits.length === 0 ? "開始上皿玉を基準として固定中" : verdict.sub}
-                                                    tone={verdict.tone}
-                                                    badge={lastChain.hits.length === 0 ? "基準値固定中" : "現在のチェーン"}
-                                                    metrics={[
-                                                        { label: "総R数", value: totalRounds || "0", unit: "R", color: C.orange },
-                                                        { label: "開始前の玉数", value: f(lastChain.trayBalls || 0), unit: "玉", color: C.yellow },
-                                                        { label: "総サポ回転", value: f(totalSapoRot), unit: "回転", color: C.teal },
-                                                    ]}
-                                                />
-                                            </div>
-                                        );
-                                    })()
+                                    <div style={{ marginBottom: 14 }}>
+                                        <button className="b" onClick={openChainWizard} style={{
+                                            width: "100%", minHeight: 58, marginBottom: 8,
+                                            borderRadius: 16, fontWeight: 900, fontSize: 17, fontFamily: font,
+                                            background: "linear-gradient(135deg, #1d4ed8, #3b82f6)", border: "none", color: "#fff",
+                                            boxShadow: "0 6px 22px rgba(59,130,246,0.42)",
+                                            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                                        }}>
+                                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
+                                                <line x1="12" y1="5" x2="12" y2="19" />
+                                                <line x1="5" y1="12" x2="19" y2="12" />
+                                            </svg>
+                                            当たりを追加
+                                        </button>
+                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                            <button className="b" onClick={openDirectSingleEnd} disabled={lastChain.hits.length === 0} style={{
+                                                minHeight: 50, borderRadius: 14, fontWeight: 800, fontSize: 14, fontFamily: font,
+                                                background: "var(--surface-hi)", border: `1px solid ${C.border}`, color: C.text,
+                                                opacity: lastChain.hits.length === 0 ? 0.45 : 1,
+                                                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                                            }}>
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+                                                    <line x1="4" y1="22" x2="4" y2="15" />
+                                                </svg>
+                                                単発完了
+                                            </button>
+                                            <button className="b" onClick={handleChainEnd} style={{
+                                                minHeight: 50, borderRadius: 14, fontWeight: 800, fontSize: 14, fontFamily: font,
+                                                background: "linear-gradient(135deg, #ea580c, #f59e0b)", border: "none", color: "#fff",
+                                                boxShadow: "0 4px 16px rgba(245,158,11,0.34)",
+                                                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                                            }}>
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                                                    <line x1="6" y1="6" x2="18" y2="18" />
+                                                    <line x1="18" y1="6" x2="6" y2="18" />
+                                                </svg>
+                                                RUSH終了
+                                            </button>
+                                        </div>
+                                    </div>
                                 )}
 
-                                {/* アクションボタン */}
-                                {isChainActive ? (
-                                    <div style={{ position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: "calc(64px + env(safe-area-inset-bottom))", zIndex: 80, width: "calc(100% - 28px)", maxWidth: 452, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, padding: 8, borderRadius: 18, background: "color-mix(in srgb, var(--bg) 86%, transparent)", border: `1px solid ${C.border}`, backdropFilter: "blur(18px)", boxShadow: "0 -14px 36px rgba(0,0,0,0.42)" }}>
-                                        <button className="b" onClick={openChainWizard} style={{
-                                            padding: "16px 0", borderRadius: 14, fontWeight: 800, fontSize: 14,
-                                            background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", color: "#fff",
-                                            boxShadow: "0 0 18px rgba(34,197,94,0.32)"
-                                        }}>当たりを追加</button>
-                                        <button className="b" onClick={openDirectSingleEnd} disabled={lastChain.hits.length === 0} style={{
-                                            padding: "16px 0", borderRadius: 14, fontWeight: 800, fontSize: 14,
-                                            background: lastChain.hits.length === 0 ? "rgba(99,102,241,0.3)" : "#4f46e5",
-                                            border: "none", color: "#fff",
-                                            boxShadow: lastChain.hits.length === 0 ? "none" : "0 4px 16px rgba(99,102,241,0.4)",
-                                            opacity: lastChain.hits.length === 0 ? 0.5 : 1
-                                        }}>単発終了</button>
-                                        <button className="b" onClick={handleChainEnd} style={{
-                                            padding: "16px 0", borderRadius: 14, fontWeight: 800, fontSize: 14,
-                                            background: "linear-gradient(135deg, #ea580c, #f59e0b)", border: "none", color: "#fff",
-                                            boxShadow: "0 0 18px rgba(245,158,11,0.30)"
-                                        }}>ラッシュ終了へ</button>
-                                    </div>
-                                ) : null /* 空状態メッセージはヒーローカードに置き換え済み */}
+                                {/* 大当たり履歴ヘッダー + 履歴をすべて見る */}
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 2, marginBottom: 10 }}>
+                                    <span style={{ fontSize: 13, fontWeight: 800, color: C.text, fontFamily: font }}>
+                                        大当たり履歴 <span style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>(最新20件)</span>
+                                    </span>
+                                    <button type="button" className="b" onClick={() => setShowAllHistory(v => !v)} style={{
+                                        background: "transparent", border: "none", color: C.blue,
+                                        fontSize: 12, fontWeight: 700, fontFamily: font, padding: "4px 2px",
+                                        display: "flex", alignItems: "center", gap: 3, cursor: "pointer",
+                                    }}>
+                                        履歴をすべて見る
+                                        <span style={{ fontSize: 13 }}>{showAllHistory ? "▾" : "›"}</span>
+                                    </button>
+                                </div>
 
-                                {/* 実測サマリー */}
+                                {/* 大当たりタイムライン（最新20件・横並びチップ／折り返し対応で横スクロールなし）*/}
+                                {(() => {
+                                    const allHits = jpLog.flatMap(ch => (ch.hits || []).map(h => ({
+                                        rounds: h.rounds || 0, time: h.time, mult: h.mult || 1, rawRounds: h.rawRounds,
+                                    })));
+                                    const timelineHits = allHits.slice(-20);
+                                    if (timelineHits.length === 0) {
+                                        return (
+                                            <div style={{ textAlign: "center", color: C.sub, padding: "22px 16px", fontSize: 12, fontFamily: font, marginBottom: 14 }}>
+                                                まだ大当たりがありません
+                                            </div>
+                                        );
+                                    }
+                                    return (
+                                        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", gap: 6, marginBottom: 14, padding: "4px 0" }}>
+                                            {timelineHits.map((h, i) => (
+                                                <React.Fragment key={i}>
+                                                    {i > 0 && (
+                                                        <span style={{ alignSelf: "center", width: 8, height: 2, borderRadius: 2, background: C.border, marginTop: -8 }} />
+                                                    )}
+                                                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                                                        <div style={{
+                                                            minWidth: 38, padding: "6px 9px", borderRadius: 999,
+                                                            background: "linear-gradient(135deg, #1d4ed8, #3b82f6)",
+                                                            color: "#fff", fontWeight: 900, fontSize: 13, fontFamily: mono,
+                                                            textAlign: "center", boxShadow: "0 2px 8px rgba(59,130,246,0.32)",
+                                                        }}>
+                                                            {h.rounds}<span style={{ fontSize: 9, fontFamily: font, opacity: 0.9 }}>R</span>
+                                                        </div>
+                                                        {h.time && <span style={{ fontSize: 8, color: C.sub, fontFamily: mono }}>{h.time}</span>}
+                                                    </div>
+                                                </React.Fragment>
+                                            ))}
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* サマリー（総R数 / 平均R数 / 大当たり / 初当たり）*/}
                                 <div style={{ margin: "0 0 16px", background: `linear-gradient(135deg, var(--surface), var(--surface-alt))`, border: `1px solid color-mix(in srgb, ${C.teal} 32%, ${C.border})`, borderRadius: 18, overflow: "hidden", boxShadow: `0 0 22px color-mix(in srgb, ${C.teal} 14%, transparent)` }}>
                                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
                                         {[
-                                            { label: "平均出玉/当", val: ev.avgNetGainPerHit > 0 ? f(ev.avgNetGainPerHit, 0) : "—", unit: "玉", col: C.green },
-                                            { label: "平均R数/当", val: ev.avgRoundsPerHit > 0 ? f(ev.avgRoundsPerHit, 1) : "—", unit: "R", col: C.blue },
+                                            { label: "総R数", val: ev.totalRounds > 0 ? f(ev.totalRounds) : "0", unit: "回", col: C.orange },
+                                            { label: "平均R数", val: ev.avgRoundsPerHit > 0 ? f(ev.avgRoundsPerHit, 2) : "—", unit: "回", col: C.blue },
                                             { label: "大当たり", val: ev.totalHits > 0 ? String(ev.totalHits) : "0", unit: "回", col: C.purple },
                                             { label: "初当たり", val: jpLog.length > 0 ? jpLog.length.toString() : "0", unit: "回", col: C.green },
                                         ].map(({ label, val, unit, col }, idx) => (
@@ -3102,6 +3074,8 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     </div>
                                 </div>
 
+                                {/* 詳細履歴（「履歴をすべて見る」で展開）— 既存のチェーン詳細・編集・削除を温存 */}
+                                {showAllHistory && (<>
                                 {/* History — Chain Cards */}
                                 {jpLog.length === 0 ? (
                                     <div style={{ textAlign: "center", color: C.sub, padding: "40px 16px", fontSize: 12 }}>履歴がありません</div>
@@ -3331,6 +3305,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     </svg>
                                     最新履歴を削除
                                 </button>
+                                </>)}
                         </div>
                     </div>
 
