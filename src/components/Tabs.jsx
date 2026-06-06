@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import ReactDOM from "react-dom";
 import { C, f, sc, sp, tsNow, font, mono } from "../constants";
 import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./Atoms";
-import { machineDB, searchMachines } from "../machineDB";
+import { machineDB, searchMachines, deriveSpecForMachine } from "../machineDB";
 import { getSync, set as persistSet, flushAll } from "../persistence";
 import { evDecision } from "./decision/evDecision";
 import { VerdictBadge } from "./decision/VerdictBadge";
@@ -2109,9 +2109,11 @@ export function RotTab({ rows, setRows, S, ev }) {
                                             onClick={() => {
                                                 setSetupMachineName(m.name);
                                                 S.setSynthDenom(m.synthProb);
-                                                if (m.spec1R) S.setSpec1R(m.spec1R);
-                                                if (m.specAvgTotalRounds) S.setSpecAvgRounds(m.specAvgTotalRounds);
-                                                if (m.specSapo != null) S.setSpecSapo(m.specSapo);
+                                                // 新形式（border1K のみ）の機種も border1K から等価スペックを逆算して反映する
+                                                const spec = deriveSpecForMachine(m);
+                                                if (spec.spec1R != null) S.setSpec1R(spec.spec1R);
+                                                if (spec.specAvgRounds != null) S.setSpecAvgRounds(spec.specAvgRounds);
+                                                if (spec.specSapo != null) S.setSpecSapo(spec.specSapo);
                                                 setShowMachinePicker(false);
                                                 setMachineQuery("");
                                             }}
@@ -9481,9 +9483,11 @@ export function SettingsTab({ s, onReset }) {
 
     const applyMachine = (m) => {
         s.setSynthDenom(m.synthProb);
-        if (m.spec1R) s.setSpec1R(m.spec1R);
-        if (m.specAvgTotalRounds) s.setSpecAvgRounds(m.specAvgTotalRounds);
-        if (m.specSapo != null) s.setSpecSapo(m.specSapo);
+        // 新形式（border1K のみ）の機種も border1K から等価スペックを逆算して反映する
+        const spec = deriveSpecForMachine(m);
+        if (spec.spec1R != null) s.setSpec1R(spec.spec1R);
+        if (spec.specAvgRounds != null) s.setSpecAvgRounds(spec.specAvgRounds);
+        if (spec.specSapo != null) s.setSpecSapo(spec.specSapo);
         if (m.name) s.setMachineName(m.name);
         setSelected(null);
         setShowMachineSearch(false);

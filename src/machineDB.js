@@ -1175,6 +1175,29 @@ export const machineDB = [
   },
 ];
 
+// 機種に設定するスペック値を決定する（applyMachine / 稼働開始セットアップ共通）。
+// 旧形式（spec1R / specAvgTotalRounds / specSapo を持つ機種）はその値をそのまま返す。
+// 新形式（border1K のみを持つ機種）は、理論ボーダー＝border1K を再現する
+// 「等価スペック値」を逆算して返す。
+//   logic.js の理論ボーダー = synthDenom×1000 / ((spec1R×specAvgRounds+specSapo)×exchP)
+//   exchP=4（4円等価。border1K は 4円等価ボーダー）として border1K に一致させると
+//     spec1R×specAvgRounds+specSapo = synthDenom×1000 / (border1K×4) = synthDenom×250 / border1K
+//   spec1R は基準値140で固定し、差分は平均総R(specAvgRounds)へ寄せる（specSapo=0）。
+//   ※ ここで返す specAvgRounds は「公式ボーダーを再現するための等価R数」であり、
+//     実機のラウンド数そのものとは限らない（exRate 非等価でも logic 側で再換算される）。
+export function deriveSpecForMachine(m) {
+  if (m && m.spec1R) {
+    return { spec1R: m.spec1R, specAvgRounds: m.specAvgTotalRounds, specSapo: m.specSapo };
+  }
+  if (m && m.border1K > 0 && m.synthProb > 0) {
+    const spec1R = 140;
+    const avgNetGain = (m.synthProb * 250) / m.border1K; // = synthDenom×1000 / (border1K×4)
+    const specAvgRounds = Math.round((avgNetGain / spec1R) * 100) / 100;
+    return { spec1R, specAvgRounds, specSapo: 0 };
+  }
+  return { spec1R: undefined, specAvgRounds: undefined, specSapo: undefined };
+}
+
 // 機種検索（カスタム機種も含む）
 export function searchMachines(query, customMachines = []) {
   const allMachines = [...(customMachines || []).map(m => ({ ...m, isCustom: true })), ...machineDB];
