@@ -7826,37 +7826,6 @@ export function CalendarTab({ S, onReset }) {
         setDelConfirm(null);
     };
 
-    // Helper: create archive object (all values must be JSON-serializable)
-    const makeArchive = () => {
-        const autoInvest = S.ev?.rawInvest || 0;
-        const now = new Date();
-        // Extract only numeric stats to avoid serialization issues
-        const safeStats = S.ev ? Object.fromEntries(
-            Object.entries(S.ev).filter(([, v]) => typeof v === "number" || typeof v === "string")
-        ) : {};
-        return {
-            id: now.getTime(),
-            date: now.toISOString().slice(0, 10),
-            time: now.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
-            rotRows: JSON.parse(JSON.stringify(S.rotRows || [])),
-            jpLog: JSON.parse(JSON.stringify(S.jpLog || [])),
-            sesLog: JSON.parse(JSON.stringify(S.sesLog || [])),
-            settings: { rentBalls: S.rentBalls, exRate: S.exRate, synthDenom: S.synthDenom, rotPerHour: S.rotPerHour, border: S.border, ballVal: S.ballVal },
-            stats: safeStats,
-            totalTrayBalls: S.totalTrayBalls || 0,
-            startRot: S.startRot || 0,
-            storeName: String(S.storeName || ""),
-            machineNum: String(S.machineNum || ""),
-            investYen: Number(S.investYen) || autoInvest || 0,
-            recoveryYen: Number(S.recoveryYen) || 0,
-            machineName: String(S.machineName || `1/${S.synthDenom}`),
-            initialChodama: S.initialChodama || 0,
-            finalChodama: S.currentChodama || 0,
-            chodamaNetBalls: (S.currentChodama || 0) - (S.initialChodama || 0),
-            chodamaYen: Math.round((S.ev?.chodamaKCount || 0) * 1000 * (S.exRate || 250) / (S.rentBalls || 250)),
-        };
-    };
-
     const textInput = (val, set, placeholder, opts = {}) => (
         <input type={opts.type || "text"} inputMode={opts.inputMode || undefined} pattern={opts.pattern || undefined}
             value={val || ""} onChange={e => set(e.target.value)} placeholder={placeholder}
@@ -8622,25 +8591,6 @@ export function CalendarTab({ S, onReset }) {
                             )}
                         </div>
 
-                        {/* Save current session as new entry (compact) */}
-                        {hasCurrentSession && (
-                            <div style={{ marginBottom: 10, padding: "10px 12px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, boxShadow: "var(--card-shadow)" }}>
-                                <div style={{ fontSize: 11, fontWeight: 700, color: C.blue, marginBottom: 6 }}>現在のセッションを保存</div>
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                                    <Btn label="保存" onClick={() => {
-                                        const a = makeArchive();
-                                        a.date = selectedDate;
-                                        S.setArchives(prev => [...prev, a]);
-                                    }} primary fs={12} />
-                                    <Btn label="保存+リセット" onClick={() => {
-                                        const a = makeArchive();
-                                        a.date = selectedDate;
-                                        S.setArchives(prev => [...prev, a]);
-                                        onReset();
-                                    }} bg={C.orange} fg="#fff" bd="none" fs={12} />
-                                </div>
-                            </div>
-                        )}
 
                         {/* Archive entries — swipeable summary cards */}
                         {dateArchives.length > 0 ? dateArchives.map(a => (
