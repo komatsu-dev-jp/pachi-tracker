@@ -16,12 +16,12 @@ const fallbackMachine = {
   rushAvg: "1,500",
   tsv: ["P大海物語5 MTE2", "319.6", "17.36", "3", "14.0", "1350", "13000", "0.5"],
   heso: [
-    { id: "ヘソ1", payout: "1500", ratio: "60", rush: true },
-    { id: "ヘソ2", payout: "1500", ratio: "40", rush: true },
-    { id: "ヘソ3", payout: "0", ratio: "0", rush: false },
+    { id: "ヘソ1", payout: "1500", ratio: "60", rounds: "10", rush: true },
+    { id: "ヘソ2", payout: "1500", ratio: "40", rounds: "10", rush: true },
+    { id: "ヘソ3", payout: "0", ratio: "0", rounds: "", rush: false },
   ],
   rush: [
-    { id: "RUSH1", payout: "1500", ratio: "100" },
+    { id: "RUSH1", payout: "1500", ratio: "100", rounds: "10" },
   ],
 };
 
@@ -38,6 +38,30 @@ function plainNum(value) {
 
 function sumRatio(heso) {
   return heso.reduce((sum, row) => sum + (Number(plainNum(row.ratio)) || 0), 0);
+}
+
+// ラウンド振分文字列をパースする。"4R:50%, 10R:50%" → [{ rounds:"4", rate:"50" }, ...]
+// 記録フロー（getMachineRounds / getMachineRushRounds）が読む roundDist / rushDist と同じ表記。
+function parseDist(str) {
+  if (typeof str !== "string" || !str.trim()) return [];
+  return str
+    .split(/[,、/|]/)
+    .map((part) => {
+      const r = part.match(/(\d+)\s*R/i);
+      if (!r) return null;
+      const p = part.match(/(\d+)\s*%/);
+      return { rounds: r[1], rate: p ? p[1] : "" };
+    })
+    .filter(Boolean);
+}
+
+// 振分の各行から roundDist / rushDist 文字列を生成する（R数が入力された行のみ対象）。
+// 記録フローの R数プリセット抽出（roundDist.match(/(\d+)R/g)）に合致する表記で出力する。
+function buildDist(rows) {
+  return rows
+    .filter((row) => plainNum(row.rounds) !== "")
+    .map((row) => `${plainNum(row.rounds)}R:${plainNum(row.ratio) || "0"}%`)
+    .join(", ");
 }
 
 function formatProbability(data) {
@@ -65,26 +89,34 @@ function normalizeMachine(data) {
   const type = data.type || "タイプ未設定";
   const prize = Number(data.prize);
   const prizeText = Number.isFinite(prize) && prize > 0 ? ` | ${prize}個賞球` : "";
-  const heso = Array.isArray(data.hesoDist) && data.hesoDist.length > 0
-    ? data.hesoDist.slice(0, 3).map((row, index) => ({
+  // ラウンド振分文字列（初当たり=roundDist / 確変中=rushDist）を行に取り込む。
+  // hesoDist と roundDist は機種マスタ上は独立配列のため、件数が一致するときのみ行へ対応付ける。
+  const hesoSrc = Array.isArray(data.hesoDist) ? data.hesoDist.slice(0, 3) : [];
+  const roundEntries = parseDist(data.roundDist);
+  const heso = hesoSrc.length > 0
+    ? hesoSrc.map((row, index) => ({
         id: `ヘソ${index + 1}`,
         payout: String(row.payout ?? 0),
         ratio: String(row.rate ?? 0),
+        rounds: roundEntries.length === hesoSrc.length ? (roundEntries[index]?.rounds || "") : "",
         rush: Number(row.rate) > 0,
       }))
     : fallbackMachine.heso;
 
   // 特図2・RUSH（確変中）の出玉振分。機種マスタに rushDist 配列があれば採用し、
   // なければ RUSH平均出玉を 100% の単一振分として初期表示する（後から編集・追加可能）。
+  // R数は rushDist 文字列があれば取り込む。
   const rushAvgNum = Number(data.rushAvgPayout);
+  const rushRoundEntries = parseDist(typeof data.rushDist === "string" ? data.rushDist : "");
   const rush = Array.isArray(data.rushDist) && data.rushDist.length > 0
     ? data.rushDist.slice(0, 4).map((row, index) => ({
         id: `RUSH${index + 1}`,
         payout: String(row.payout ?? 0),
         ratio: String(row.rate ?? 0),
+        rounds: String(row.rounds ?? ""),
       }))
     : Number.isFinite(rushAvgNum) && rushAvgNum > 0
-      ? [{ id: "RUSH1", payout: String(rushAvgNum), ratio: "100" }]
+      ? [{ id: "RUSH1", payout: String(rushAvgNum), ratio: "100", rounds: rushRoundEntries[0]?.rounds || "" }]
       : fallbackMachine.rush;
 
   return {
@@ -354,7 +386,7 @@ function DetailScreen({ machine, synced, onToggleSync, onEdit, onBack, primaryAc
             <div className="ms-chip-row">
               {machine.heso.map((row) => (
                 <React.Fragment key={row.id}>
-                  <span>{formatNumber(row.payout, "0")}発</span>
+                  <span>{row.rounds ? `${row.rounds}R ` : ""}{formatNumber(row.payout, "0")}発</span>
                   <strong>{row.ratio}%</strong>
                 </React.Fragment>
               ))}
@@ -367,7 +399,7 @@ function DetailScreen({ machine, synced, onToggleSync, onEdit, onBack, primaryAc
             <div className="ms-chip-row">
               {(machine.rush || []).map((row) => (
                 <React.Fragment key={row.id}>
-                  <span>{formatNumber(row.payout, "0")}発</span>
+                  <span>{row.rounds ? `${row.rounds}R ` : ""}{formatNumber(row.payout, "0")}発</span>
                   <strong>{row.ratio}%</strong>
                 </React.Fragment>
               ))}
@@ -502,12 +534,14 @@ function RegisterScreen({ machine, onSave, onBack }) {
       key: `init-${index}`,
       payout: plainNum(row.payout),
       ratio: plainNum(row.ratio),
+      rounds: plainNum(row.rounds),
       rush: !!row.rush,
     })),
     rush: (machine.rush || []).map((row, index) => ({
       key: `rinit-${index}`,
       payout: plainNum(row.payout),
       ratio: plainNum(row.ratio),
+      rounds: plainNum(row.rounds),
     })),
   }));
 
@@ -517,7 +551,7 @@ function RegisterScreen({ machine, onSave, onBack }) {
   const addHeso = () =>
     setForm((f) => ({
       ...f,
-      heso: [...f.heso, { key: `add-${(idRef.current += 1)}`, payout: "0", ratio: "0", rush: false }],
+      heso: [...f.heso, { key: `add-${(idRef.current += 1)}`, payout: "0", ratio: "0", rounds: "", rush: false }],
     }));
   const removeHeso = (key) => setForm((f) => ({ ...f, heso: f.heso.filter((h) => h.key !== key) }));
   const patchRush = (key, patch) =>
@@ -525,7 +559,7 @@ function RegisterScreen({ machine, onSave, onBack }) {
   const addRush = () =>
     setForm((f) => ({
       ...f,
-      rush: [...f.rush, { key: `radd-${(idRef.current += 1)}`, payout: "0", ratio: "0" }],
+      rush: [...f.rush, { key: `radd-${(idRef.current += 1)}`, payout: "0", ratio: "0", rounds: "" }],
     }));
   const removeRush = (key) => setForm((f) => ({ ...f, rush: f.rush.filter((h) => h.key !== key) }));
 
@@ -564,13 +598,18 @@ function RegisterScreen({ machine, onSave, onBack }) {
         id: `ヘソ${i + 1}`,
         payout: plainNum(h.payout) || "0",
         ratio: plainNum(h.ratio) || "0",
+        rounds: plainNum(h.rounds),
         rush: h.rush,
       })),
       rush: form.rush.map((h, i) => ({
         id: `RUSH${i + 1}`,
         payout: plainNum(h.payout) || "0",
         ratio: plainNum(h.ratio) || "0",
+        rounds: plainNum(h.rounds),
       })),
+      // R数が入力されていれば記録フロー用の roundDist / rushDist を再生成（未入力なら従来値を維持）
+      roundDist: buildDist(form.heso) || machine.roundDist,
+      rushDist: buildDist(form.rush) || machine.rushDist,
       tsv: previewTsv,
     };
     onSave(updated);
@@ -705,7 +744,8 @@ function RegisterScreen({ machine, onSave, onBack }) {
                       <Icon name="trash" />
                     </button>
                   </div>
-                  <div className="ms-heso-inputs">
+                  <div className="ms-heso-inputs cols3">
+                    <Field compact label="R数" value={row.rounds} unit="R" onChange={(v) => patchHeso(row.key, { rounds: v })} />
                     <Field compact label="出玉" value={row.payout} unit="発" onChange={(v) => patchHeso(row.key, { payout: v })} />
                     <Field compact label="比率" value={row.ratio} unit="%" onChange={(v) => patchHeso(row.key, { ratio: v })} />
                   </div>
@@ -713,6 +753,10 @@ function RegisterScreen({ machine, onSave, onBack }) {
                 </div>
               ))
             )}
+          </div>
+          <div className="ms-info-note">
+            <span>i</span>
+            <strong>R数は大当たり後のラウンド入力プリセットに連動します</strong>
           </div>
         </section>
 
@@ -739,7 +783,8 @@ function RegisterScreen({ machine, onSave, onBack }) {
                       <Icon name="trash" />
                     </button>
                   </div>
-                  <div className="ms-heso-inputs">
+                  <div className="ms-heso-inputs cols3">
+                    <Field compact label="R数" value={row.rounds} unit="R" onChange={(v) => patchRush(row.key, { rounds: v })} />
                     <Field compact label="出玉" value={row.payout} unit="発" onChange={(v) => patchRush(row.key, { payout: v })} />
                     <Field compact label="比率" value={row.ratio} unit="%" onChange={(v) => patchRush(row.key, { ratio: v })} />
                   </div>
@@ -750,7 +795,7 @@ function RegisterScreen({ machine, onSave, onBack }) {
           </div>
           <div className="ms-info-note">
             <span>i</span>
-            <strong>確変(RUSH)中の大当たり出玉と比率を設定します</strong>
+            <strong>R数・出玉・比率を設定（R数は連チャン入力プリセットに連動）</strong>
           </div>
         </section>
 
