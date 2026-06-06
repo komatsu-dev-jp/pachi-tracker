@@ -33,7 +33,9 @@
 .ms-secondary-cta,
 .ms-primary-cta,
 .ms-sync-button,
-.ms-save-button {
+.ms-save-button,
+.ms-step,
+.ms-collapse {
   appearance: none;
   border: 0;
   cursor: pointer;
@@ -487,6 +489,8 @@ body:has(.machine-register-screen) nav {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 0;
+  background: transparent;
   color: #94a3b8;
 }
 
@@ -548,6 +552,18 @@ body:has(.machine-register-screen) nav {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.ms-collapse {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: transparent;
+  color: #cbd5e1;
+  font-size: 18px;
+  font-weight: 900;
 }
 
 .ms-basic-grid {
@@ -657,18 +673,36 @@ body:has(.machine-register-screen) nav {
 
 .ms-heso-row {
   position: relative;
-  min-height: 74px;
-  display: grid;
-  grid-template-columns: 34px 86px 1fr 1fr auto 40px;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
+  display: block;
+  padding: 12px 10px;
 }
 
-.ms-heso-row > strong {
+.ms-heso-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.ms-heso-top > strong {
+  flex: 1;
   color: #f8fafc;
   font-size: 15px;
   white-space: nowrap;
+}
+
+.ms-heso-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.ms-heso-empty {
+  padding: 18px 12px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .ms-grip {
@@ -679,10 +713,9 @@ body:has(.machine-register-screen) nav {
 }
 
 .ms-rush-toggle {
-  display: grid;
-  justify-items: center;
-  gap: 6px;
-  min-width: 86px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: #cbd5e1;
   font-size: 11px;
   font-weight: 900;
@@ -942,16 +975,6 @@ body:has(.machine-register-screen) nav {
 
   .ms-step strong {
     font-size: 12px;
-  }
-
-  .ms-heso-row {
-    grid-template-columns: 28px 70px 1fr 1fr;
-    gap: 8px;
-  }
-
-  .ms-rush-toggle,
-  .ms-trash {
-    display: none;
   }
 
   .ms-save-bar {

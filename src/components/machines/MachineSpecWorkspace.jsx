@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import "./MachineSpecWorkspace.css";
 
 const fallbackMachine = {
@@ -26,6 +26,15 @@ function formatNumber(value, fallback = "—") {
   const num = Number(value);
   if (!Number.isFinite(num) || num <= 0) return fallback;
   return num.toLocaleString("ja-JP", { maximumFractionDigits: 2 });
+}
+
+// 表示用の整形済み文字列（"1,350" / "60%" など）から入力欄に渡す素の数値文字列を取り出す
+function plainNum(value) {
+  return String(value ?? "").replace(/[^0-9.-]/g, "");
+}
+
+function sumRatio(heso) {
+  return heso.reduce((sum, row) => sum + (Number(plainNum(row.ratio)) || 0), 0);
 }
 
 function formatProbability(data) {
@@ -79,6 +88,7 @@ function normalizeMachine(data) {
     rushContinue: Number(data.rushContinueRate) > 0 ? `${data.rushContinueRate}%` : fallbackMachine.rushContinue,
     hesoAvg: formatNumber(data.hesoAvgPayout, fallbackMachine.hesoAvg),
     rushAvg: formatNumber(data.rushAvgPayout, fallbackMachine.rushAvg),
+    synced: false,
     tsv: [
       data.name || fallbackMachine.name,
       String(data.synthProb || "").replace(/^1\//, "") || fallbackMachine.tsv[1],
@@ -95,6 +105,7 @@ function normalizeMachine(data) {
   };
 }
 
+// 詳細画面の列マッピング一覧（全列）
 const mappingItems = [
   ["A", "機種名"],
   ["B", "確率"],
@@ -105,6 +116,32 @@ const mappingItems = [
   ["M", "RUSH平均"],
   ["Q〜V", "ヘソ振分"],
 ];
+
+// 登録画面のセグメント別 列グループ（タブ切替で表示を絞り込む）
+const mappingGroups = {
+  必須: [
+    ["A", "機種名"],
+    ["B", "確率"],
+    ["C", "ボーダー"],
+    ["D", "賞球"],
+    ["F", "平均出玉"],
+    ["L", "ヘソ平均"],
+  ],
+  出玉: [
+    ["F", "平均出玉"],
+    ["L", "ヘソ平均"],
+    ["M", "RUSH平均"],
+    ["G", "標準偏差"],
+  ],
+  MC: [
+    ["N", "RUSH突入率"],
+    ["O", "RUSH継続率"],
+  ],
+  振分: [
+    ["Q〜V", "ヘソ振分"],
+  ],
+};
+const segmentKeys = ["必須", "出玉", "MC", "振分"];
 
 const validationItems = [
   ["ok", "比率合計 100%"],
@@ -230,7 +267,22 @@ function CheckMark({ status = "ok" }) {
   );
 }
 
-function DetailScreen({ machine, onEdit, onBack, primaryActionLabel, onPrimaryAction }) {
+function DetailScreen({ machine, synced, onToggleSync, onEdit, onBack, primaryActionLabel, onPrimaryAction }) {
+  const [tsvCopied, setTsvCopied] = useState(false);
+
+  const copyTsv = async () => {
+    const text = machine.tsv.join("\t");
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      }
+      setTsvCopied(true);
+      setTimeout(() => setTsvCopied(false), 1500);
+    } catch {
+      // クリップボード非対応環境では何もしない
+    }
+  };
+
   return (
     <section className="machine-spec-workspace machine-detail-screen" aria-label="機種詳細">
       <header className="ms-detail-header">
@@ -239,11 +291,13 @@ function DetailScreen({ machine, onEdit, onBack, primaryActionLabel, onPrimaryAc
         </button>
         <div className="ms-detail-title-block">
           <h1>機種詳細</h1>
-          <Pill tone="success">登録済み・P-EVIDENCE同期OK</Pill>
+          <Pill tone={synced ? "success" : "sync"}>
+            {synced ? "登録済み・P-EVIDENCE同期OK" : "登録済み・P-EVIDENCE未同期"}
+          </Pill>
         </div>
         <div className="ms-detail-actions">
           <ActionButton icon="edit" label="編集" onClick={onEdit} />
-          <ActionButton icon="sync" label="同期" />
+          <ActionButton icon="sync" label={synced ? "同期済" : "同期"} onClick={onToggleSync} />
         </div>
       </header>
 
@@ -278,7 +332,7 @@ function DetailScreen({ machine, onEdit, onBack, primaryActionLabel, onPrimaryAc
           <div className="ms-allocation-box">
             <div className="ms-allocation-head">
               <strong>特図1・ヘソ</strong>
-              <Pill tone="success">比率合計 100%</Pill>
+              <Pill tone="success">比率合計 {sumRatio(machine.heso)}%</Pill>
             </div>
             <div className="ms-chip-row">
               {machine.heso.map((row) => (
@@ -308,7 +362,9 @@ function DetailScreen({ machine, onEdit, onBack, primaryActionLabel, onPrimaryAc
         <section className="ms-panel">
           <div className="ms-panel-title-row">
             <h2>P-EVIDENCE登録内容</h2>
-            <button type="button" className="ms-ghost-button">TSV確認</button>
+            <button type="button" className="ms-ghost-button" onClick={copyTsv}>
+              {tsvCopied ? "コピーしました" : "TSV確認"}
+            </button>
           </div>
           <div className="ms-mapping-grid-detail">
             {mappingItems.map(([col, label]) => (
@@ -348,16 +404,20 @@ function DetailScreen({ machine, onEdit, onBack, primaryActionLabel, onPrimaryAc
   );
 }
 
-function Stepper() {
+function Stepper({ active, onStep }) {
   const steps = ["基本", "出玉", "振分", "検証"];
   return (
     <div className="ms-stepper" aria-label="登録ステップ">
       {steps.map((step, index) => (
         <React.Fragment key={step}>
-          <div className={`ms-step ${index === 1 ? "active" : ""}`}>
+          <button
+            type="button"
+            className={`ms-step ${active === step ? "active" : ""}`}
+            onClick={() => onStep(step)}
+          >
             <span>{index + 1}</span>
             <strong>{step}</strong>
-          </div>
+          </button>
           {index < steps.length - 1 && <div className="ms-step-line" />}
         </React.Fragment>
       ))}
@@ -365,27 +425,136 @@ function Stepper() {
   );
 }
 
-function Field({ label, value, unit, compact }) {
+function Field({ label, value, unit, compact, onChange }) {
   return (
     <label className={`ms-field ${compact ? "compact" : ""}`}>
       <span>{label}</span>
       <div>
-        <input type="text" inputMode="decimal" defaultValue={value} aria-label={label} />
+        <input
+          type="text"
+          inputMode="decimal"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          aria-label={label}
+        />
         {unit && <em>{unit}</em>}
       </div>
     </label>
   );
 }
 
-function Toggle({ checked }) {
+function Toggle({ checked, onChange }) {
   return (
-    <button type="button" className={`ms-toggle ${checked ? "checked" : ""}`} aria-label="RUSH突入">
+    <button
+      type="button"
+      className={`ms-toggle ${checked ? "checked" : ""}`}
+      aria-label="RUSH突入"
+      aria-pressed={checked}
+      onClick={onChange}
+    >
       <span />
     </button>
   );
 }
 
 function RegisterScreen({ machine, onSave, onBack }) {
+  const fileRef = useRef(null);
+  const idRef = useRef(0);
+  const basicRef = useRef(null);
+  const payoutRef = useRef(null);
+  const hesoRef = useRef(null);
+  const mapRef = useRef(null);
+
+  const [activeStep, setActiveStep] = useState("出玉");
+  const [activeSeg, setActiveSeg] = useState("必須");
+  const [openBasic, setOpenBasic] = useState(true);
+  const [openPayout, setOpenPayout] = useState(true);
+  const [form, setForm] = useState(() => ({
+    avgPayout: plainNum(machine.avgPayout),
+    hesoAvg: plainNum(machine.hesoAvg),
+    rushAvg: plainNum(machine.rushAvg),
+    rushEntry: plainNum(machine.rushEntry),
+    rushContinue: plainNum(machine.rushContinue),
+    stdDev: plainNum(machine.stdDev),
+    synced: !!machine.synced,
+    heso: machine.heso.map((row, index) => ({
+      key: `init-${index}`,
+      payout: plainNum(row.payout),
+      ratio: plainNum(row.ratio),
+      rush: !!row.rush,
+    })),
+  }));
+
+  const setField = (key, val) => setForm((f) => ({ ...f, [key]: val }));
+  const patchHeso = (key, patch) =>
+    setForm((f) => ({ ...f, heso: f.heso.map((h) => (h.key === key ? { ...h, ...patch } : h)) }));
+  const addHeso = () =>
+    setForm((f) => ({
+      ...f,
+      heso: [...f.heso, { key: `add-${(idRef.current += 1)}`, payout: "0", ratio: "0", rush: false }],
+    }));
+  const removeHeso = (key) => setForm((f) => ({ ...f, heso: f.heso.filter((h) => h.key !== key) }));
+
+  const refByStep = { 基本: basicRef, 出玉: payoutRef, 振分: hesoRef, 検証: mapRef };
+  const goStep = (step) => {
+    setActiveStep(step);
+    refByStep[step]?.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const ratioSum = sumRatio(form.heso);
+  const ratioOk = ratioSum === 100;
+  const emptyRequired = [form.avgPayout, form.rushEntry, form.rushContinue].filter(
+    (v) => plainNum(v) === ""
+  ).length;
+  const errorCount = emptyRequired + (ratioOk ? 0 : 1);
+
+  const previewTsv = machine.tsv.map((cell, i) => {
+    if (i === 5) return plainNum(form.avgPayout) || cell;
+    if (i === 6) return plainNum(form.stdDev) || cell;
+    return cell;
+  });
+
+  const handleSave = () => {
+    const updated = {
+      ...machine,
+      avgPayout: form.avgPayout ? formatNumber(form.avgPayout, machine.avgPayout) : machine.avgPayout,
+      hesoAvg: form.hesoAvg ? formatNumber(form.hesoAvg, machine.hesoAvg) : machine.hesoAvg,
+      rushAvg: form.rushAvg ? formatNumber(form.rushAvg, machine.rushAvg) : machine.rushAvg,
+      rushEntry: form.rushEntry ? `${form.rushEntry}%` : machine.rushEntry,
+      rushContinue: form.rushContinue ? `${form.rushContinue}%` : machine.rushContinue,
+      stdDev: form.stdDev ? formatNumber(form.stdDev, machine.stdDev) : machine.stdDev,
+      synced: form.synced,
+      heso: form.heso.map((h, i) => ({
+        id: `ヘソ${i + 1}`,
+        payout: plainNum(h.payout) || "0",
+        ratio: plainNum(h.ratio) || "0",
+        rush: h.rush,
+      })),
+      tsv: previewTsv,
+    };
+    onSave(updated);
+  };
+
+  const handleImportClick = () => fileRef.current?.click();
+  const handleImportFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result || "");
+      const firstLine = text.split(/\r?\n/).find((l) => l.trim().length > 0) || "";
+      const cells = firstLine.split(/\t|,/).map((c) => c.trim());
+      // TSV列順（機種名/確率/ボーダー/賞球/単価/平均出玉/標準偏差）に従い数値欄へ反映
+      setForm((f) => ({
+        ...f,
+        avgPayout: plainNum(cells[5]) || f.avgPayout,
+        stdDev: plainNum(cells[6]) || f.stdDev,
+      }));
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
   return (
     <section className="machine-spec-workspace machine-register-screen" aria-label="機種スペック登録">
       <header className="ms-register-header">
@@ -394,86 +563,134 @@ function RegisterScreen({ machine, onSave, onBack }) {
         </button>
         <div className="ms-register-title">
           <h1>機種スペック登録</h1>
-          <Pill tone="sync">P-EVIDENCE未同期</Pill>
+          <Pill tone={form.synced ? "success" : "sync"}>
+            {form.synced ? "P-EVIDENCE同期済み" : "P-EVIDENCE未同期"}
+          </Pill>
         </div>
-        <button type="button" className="ms-import-button">
+        <button type="button" className="ms-import-button" onClick={handleImportClick}>
           <Icon name="excel" />
           <span>インポート</span>
         </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".tsv,.csv,.txt,text/tab-separated-values,text/csv,text/plain"
+          onChange={handleImportFile}
+          style={{ display: "none" }}
+        />
       </header>
 
       <div className="ms-register-content">
-        <Stepper />
+        <Stepper active={activeStep} onStep={goStep} />
 
-        <section className="ms-register-card">
+        <section className="ms-register-card" ref={basicRef}>
           <div className="ms-card-head">
             <h2>基本情報</h2>
-            <span>⌄</span>
+            <button
+              type="button"
+              className="ms-collapse"
+              aria-label={openBasic ? "基本情報を閉じる" : "基本情報を開く"}
+              aria-expanded={openBasic}
+              onClick={() => setOpenBasic((v) => !v)}
+            >
+              {openBasic ? "⌃" : "⌄"}
+            </button>
           </div>
-          <div className="ms-basic-grid">
-            <p>機種名： <b>{machine.name}</b></p>
-            <p>タイプ： <b>P</b></p>
-            <p>確率： <b>{machine.probability}</b></p>
-            <p>ボーダー： <b>{machine.border}</b></p>
-          </div>
+          {openBasic && (
+            <div className="ms-basic-grid">
+              <p>機種名： <b>{machine.name}</b></p>
+              <p>タイプ： <b>P</b></p>
+              <p>確率： <b>{machine.probability}</b></p>
+              <p>ボーダー： <b>{machine.border}</b></p>
+            </div>
+          )}
         </section>
 
-        <section className="ms-register-card">
+        <section className="ms-register-card" ref={payoutRef}>
           <div className="ms-card-head">
             <h2>出玉・RUSH設計 <Pill tone="blue">自動計算</Pill></h2>
-            <span>⌃</span>
+            <button
+              type="button"
+              className="ms-collapse"
+              aria-label={openPayout ? "出玉設計を閉じる" : "出玉設計を開く"}
+              aria-expanded={openPayout}
+              onClick={() => setOpenPayout((v) => !v)}
+            >
+              {openPayout ? "⌃" : "⌄"}
+            </button>
           </div>
-          <div className="ms-form-grid">
-            <Field label="1大当り平均出玉（削り込み）" value="1350" unit="発" />
-            <Field label="ヘソ平均出玉(自動)" value="1500" unit="発" />
-            <Field label="RUSH平均出玉" value="1500" unit="発" />
-            <Field label="RUSH突入率" value="60" unit="%" />
-            <Field label="RUSH継続率" value="75" unit="%" />
-            <Field label="標準偏差" value="13000" unit="発" />
-          </div>
-          <div className="ms-info-note">
-            <span>i</span>
-            <strong>1500発表示 → 1400/1430削り込みで管理</strong>
-          </div>
+          {openPayout && (
+            <>
+              <div className="ms-form-grid">
+                <Field label="1大当り平均出玉（削り込み）" value={form.avgPayout} unit="発" onChange={(v) => setField("avgPayout", v)} />
+                <Field label="ヘソ平均出玉(自動)" value={form.hesoAvg} unit="発" onChange={(v) => setField("hesoAvg", v)} />
+                <Field label="RUSH平均出玉" value={form.rushAvg} unit="発" onChange={(v) => setField("rushAvg", v)} />
+                <Field label="RUSH突入率" value={form.rushEntry} unit="%" onChange={(v) => setField("rushEntry", v)} />
+                <Field label="RUSH継続率" value={form.rushContinue} unit="%" onChange={(v) => setField("rushContinue", v)} />
+                <Field label="標準偏差" value={form.stdDev} unit="発" onChange={(v) => setField("stdDev", v)} />
+              </div>
+              <div className="ms-info-note">
+                <span>i</span>
+                <strong>1500発表示 → 1400/1430削り込みで管理</strong>
+              </div>
+            </>
+          )}
         </section>
 
-        <section className="ms-register-card">
+        <section className="ms-register-card" ref={hesoRef}>
           <div className="ms-card-head">
-            <h2>特図1・ヘソ振分 <Pill tone="success">比率合計 100%</Pill></h2>
-            <button type="button" className="ms-small-icon" aria-label="ヘソ振分を追加">
+            <h2>
+              特図1・ヘソ振分{" "}
+              <Pill tone={ratioOk ? "success" : "orange"}>比率合計 {ratioSum}%</Pill>
+            </h2>
+            <button type="button" className="ms-small-icon" aria-label="ヘソ振分を追加" onClick={addHeso}>
               <Icon name="plus" />
             </button>
           </div>
           <div className="ms-heso-list">
-            {machine.heso.map((row, index) => (
-              <div className="ms-heso-row" key={row.id}>
-                <span className="ms-grip">⋮⋮</span>
-                <strong>{row.id}</strong>
-                <Field compact label="出玉" value={row.payout} unit="発" />
-                <Field compact label="比率" value={row.ratio} unit="%" />
-                <div className="ms-rush-toggle">
-                  <span>RUSH突入</span>
-                  <Toggle checked={row.rush} />
+            {form.heso.length === 0 ? (
+              <div className="ms-heso-empty">「＋」で振分を追加してください</div>
+            ) : (
+              form.heso.map((row, index) => (
+                <div className="ms-heso-row" key={row.key}>
+                  <div className="ms-heso-top">
+                    <span className="ms-grip" aria-hidden>⋮⋮</span>
+                    <strong>ヘソ{index + 1}</strong>
+                    <div className="ms-rush-toggle">
+                      <span>RUSH突入</span>
+                      <Toggle checked={row.rush} onChange={() => patchHeso(row.key, { rush: !row.rush })} />
+                    </div>
+                    <button type="button" className="ms-trash" aria-label={`ヘソ${index + 1}を削除`} onClick={() => removeHeso(row.key)}>
+                      <Icon name="trash" />
+                    </button>
+                  </div>
+                  <div className="ms-heso-inputs">
+                    <Field compact label="出玉" value={row.payout} unit="発" onChange={(v) => patchHeso(row.key, { payout: v })} />
+                    <Field compact label="比率" value={row.ratio} unit="%" onChange={(v) => patchHeso(row.key, { ratio: v })} />
+                  </div>
+                  {index < form.heso.length - 1 && <div className="ms-row-line" />}
                 </div>
-                <button type="button" className="ms-trash" aria-label={`${row.id}を削除`}>
-                  <Icon name="trash" />
-                </button>
-                {index < machine.heso.length - 1 && <div className="ms-row-line" />}
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </section>
 
-        <section className="ms-register-card">
+        <section className="ms-register-card" ref={mapRef}>
           <h2>P-EVIDENCE列マッピング</h2>
           <div className="ms-segmented">
-            <button type="button" className="active">必須</button>
-            <button type="button">出玉</button>
-            <button type="button">MC</button>
-            <button type="button">振分</button>
+            {segmentKeys.map((seg) => (
+              <button
+                key={seg}
+                type="button"
+                className={activeSeg === seg ? "active" : ""}
+                onClick={() => setActiveSeg(seg)}
+              >
+                {seg}
+              </button>
+            ))}
           </div>
           <div className="ms-mapping-grid-register">
-            {mappingItems.slice(0, 6).map(([col, label]) => (
+            {mappingGroups[activeSeg].map(([col, label]) => (
               <div key={`${col}-${label}`} className="ms-map-pill">
                 <CheckMark />
                 <span>{col}</span>
@@ -481,7 +698,7 @@ function RegisterScreen({ machine, onSave, onBack }) {
               </div>
             ))}
           </div>
-          <div className="ms-scroll-hint">← 横にスクロールできます →</div>
+          <div className="ms-scroll-hint">タブで列グループを切り替えできます</div>
         </section>
 
         <section className="ms-preview">
@@ -490,8 +707,8 @@ function RegisterScreen({ machine, onSave, onBack }) {
             <span>1行目のプレビュー</span>
           </div>
           <div className="ms-preview-strip">
-            {machine.tsv.map((cell) => (
-              <span key={cell}>{cell}</span>
+            {previewTsv.map((cell, i) => (
+              <span key={`${i}-${cell}`}>{cell}</span>
             ))}
           </div>
         </section>
@@ -499,17 +716,21 @@ function RegisterScreen({ machine, onSave, onBack }) {
 
       <div className="ms-save-bar">
         <div className="ms-save-status">
-          <CheckMark />
+          <CheckMark status={errorCount === 0 ? "ok" : "warn"} />
           <div>
-            <strong>保存可能・エラー0</strong>
-            <span>必須項目はすべて入力済みです</span>
+            <strong>{errorCount === 0 ? "保存可能・エラー0" : `要確認・エラー${errorCount}`}</strong>
+            <span>{errorCount === 0 ? "必須項目はすべて入力済みです" : "比率合計100%・必須項目を確認してください"}</span>
           </div>
         </div>
-        <button type="button" className="ms-sync-button">
+        <button
+          type="button"
+          className="ms-sync-button"
+          onClick={() => setField("synced", !form.synced)}
+        >
           <Icon name="sync" />
-          <span>同期</span>
+          <span>{form.synced ? "同期済" : "同期"}</span>
         </button>
-        <button type="button" className="ms-save-button" onClick={onSave}>登録する</button>
+        <button type="button" className="ms-save-button" onClick={handleSave}>登録する</button>
       </div>
     </section>
   );
@@ -522,15 +743,28 @@ export default function MachineSpecWorkspace({
   onPrimaryAction,
 }) {
   const [screen, setScreen] = useState("detail");
-  const machine = normalizeMachine(machineData);
+  const [model, setModel] = useState(() => normalizeMachine(machineData));
+
+  const toggleSync = () => setModel((m) => ({ ...m, synced: !m.synced }));
 
   if (screen === "register") {
-    return <RegisterScreen machine={machine} onSave={() => setScreen("detail")} onBack={() => setScreen("detail")} />;
+    return (
+      <RegisterScreen
+        machine={model}
+        onSave={(updated) => {
+          setModel(updated);
+          setScreen("detail");
+        }}
+        onBack={() => setScreen("detail")}
+      />
+    );
   }
 
   return (
     <DetailScreen
-      machine={machine}
+      machine={model}
+      synced={!!model.synced}
+      onToggleSync={toggleSync}
       onEdit={() => setScreen("register")}
       onBack={onBack}
       primaryActionLabel={primaryActionLabel}
