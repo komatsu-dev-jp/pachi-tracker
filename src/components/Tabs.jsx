@@ -10479,7 +10479,7 @@ export function SettingsTab({ s, onReset }) {
                 </div>
 
                 {/* 検索バー (下部固定) */}
-                <div style={{ padding: "12px 14px calc(80px + env(safe-area-inset-bottom))", borderTop: `1px solid ${C.border}`, background: C.surface, flexShrink: 0 }}>
+                <div style={{ padding: "12px 14px calc(12px + env(safe-area-inset-bottom))", borderTop: `1px solid ${C.border}`, background: C.surface, flexShrink: 0 }}>
                     <div style={{ position: "relative" }}>
                         <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: C.sub, display: "flex" }}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
