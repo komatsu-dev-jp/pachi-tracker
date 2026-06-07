@@ -3,6 +3,7 @@ import ReactDOM from "react-dom";
 import { C, f, sc, sp, tsNow, font, mono } from "../constants";
 import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./Atoms";
 import { machineDB, searchMachines, deriveSpecForMachine } from "../machineDB";
+import { EHIME_STORES } from "../data/ehimeStores";
 import { getSync, set as persistSet, flushAll } from "../persistence";
 import { evDecision } from "./decision/evDecision";
 import { VerdictBadge } from "./decision/VerdictBadge";
@@ -8638,12 +8639,15 @@ export function SettingsTab({ s, onReset }) {
     const [selectedStore, setSelectedStore] = useState(null);
     const [editingStore, setEditingStore] = useState(null);
     const [showStoreForm, setShowStoreForm] = useState(false);
-    const [nearbyRadius, setNearbyRadius] = useState(3000);
-    const [nearbyStores, setNearbyStores] = useState([]);
-    const [nearbyLoading, setNearbyLoading] = useState(false);
-    const [nearbyStatus, setNearbyStatus] = useState("");
-    const [nearbyError, setNearbyError] = useState("");
-    const [nearbySearched, setNearbySearched] = useState(false);
+    // 店舗詳細のインライン編集（会員カード残高 / 貯玉入出金）
+    const [cardEditOpen, setCardEditOpen] = useState(false);
+    const [cardEditNumber, setCardEditNumber] = useState("");
+    const [cardEditChodama, setCardEditChodama] = useState(0);
+    const [cardEditPrepaid, setCardEditPrepaid] = useState(0);
+    const [cardEditDeposit, setCardEditDeposit] = useState(0);
+    const [chodamaMoveOpen, setChodamaMoveOpen] = useState(null); // "deposit" | "withdraw" | null
+    const [chodamaMoveBalls, setChodamaMoveBalls] = useState("");
+    const [showChodamaHistory, setShowChodamaHistory] = useState(false);
 
     // サブ画面ナビゲーション
     const [showAppearanceView, setShowAppearanceView] = useState(false);
@@ -8702,15 +8706,19 @@ export function SettingsTab({ s, onReset }) {
     };
     const [formData, setFormData] = useState(emptyMachine);
 
+    // 会員カードの初期値（created=作成済み有無 / number=カード番号 / prepaid=残高プリペ円 / deposit=入金残高円）
+    const emptyMemberCard = { created: false, number: "", prepaid: 0, deposit: 0 };
+    const normalizeMemberCard = (mc) => ({ ...emptyMemberCard, ...(mc || {}) });
+
     // 店舗フォームの初期値（rentBalls/exRateはフォーム内では面値=玉/100円で扱う）
-    const emptyStore = { name: "", address: "", rentBalls: 25, exRate: 25, memo: "", chodama: 0 };
+    const emptyStore = { name: "", address: "", rentBalls: 25, exRate: 25, memo: "", chodama: 0, chodamaMax: 0, memberCard: { ...emptyMemberCard } };
     const [storeFormData, setStoreFormData] = useState(emptyStore);
 
-    // 店舗データの正規化（旧形式の文字列配列を新形式のオブジェクト配列に変換）+ chodamaフィールドの追加
+    // 店舗データの正規化（旧形式の文字列配列を新形式のオブジェクト配列に変換）+ chodama/会員カードフィールドの補完
     const normalizedStores = (s.stores || []).map(st =>
         typeof st === "string"
-            ? { id: Date.now() + Math.random(), name: st, address: "", rentBalls: 250, exRate: 250, memo: "", chodama: 0 }
-            : { ...st, chodama: st.chodama || 0 }
+            ? { id: Date.now() + Math.random(), name: st, address: "", rentBalls: 250, exRate: 250, memo: "", chodama: 0, chodamaMax: 0, memberCard: { ...emptyMemberCard } }
+            : { ...st, chodama: st.chodama || 0, chodamaMax: st.chodamaMax || 0, memberCard: normalizeMemberCard(st.memberCard) }
     );
 
     // 店舗検索
@@ -8721,258 +8729,103 @@ export function SettingsTab({ s, onReset }) {
         )
         : normalizedStores;
 
-    const distanceLabel = (meters) => {
-        const n = Number(meters);
-        if (!Number.isFinite(n)) return "";
-        return n >= 1000 ? `${(n / 1000).toFixed(1)}km` : `${Math.round(n)}m`;
-    };
+    // 店名の正規化（重複判定用）
+    const normStoreName = (name) => String(name || "").trim().replace(/\s+/g, "").toLowerCase();
+    // 既に登録済みの店舗か（店名一致で判定）
+    const isStoreRegistered = (name) => normalizedStores.some(st => normStoreName(st.name) === normStoreName(name));
 
-    const formatOsmAddress = (tags = {}) => {
-        if (tags["addr:full"]) return tags["addr:full"];
-        const parts = [
-            tags["addr:province"],
-            tags["addr:city"],
-            tags["addr:ward"],
-            tags["addr:suburb"],
-            tags["addr:neighbourhood"],
-            tags["addr:quarter"],
-            tags["addr:street"],
-            tags["addr:block_number"],
-            tags["addr:housenumber"],
-        ].filter(Boolean);
-        return parts.join("");
-    };
+    // 愛媛県マスタの候補を絞り込み（検索ボックス連動）
+    const ehimeCandidates = (() => {
+        const q = storeQuery.trim().toLowerCase();
+        const list = q
+            ? EHIME_STORES.filter(e => e.name.toLowerCase().includes(q) || e.address.toLowerCase().includes(q))
+            : EHIME_STORES;
+        return list;
+    })();
 
-    const calcDistanceMeters = (aLat, aLon, bLat, bLon) => {
-        const toRad = (v) => (v * Math.PI) / 180;
-        const R = 6371000;
-        const dLat = toRad(bLat - aLat);
-        const dLon = toRad(bLon - aLon);
-        const lat1 = toRad(aLat);
-        const lat2 = toRad(bLat);
-        const h = Math.sin(dLat / 2) ** 2 +
-            Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-        return 2 * R * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-    };
-
-    const normalizeStoreName = (name) => String(name || "").trim().replace(/\s+/g, "").toLowerCase();
-
-    const timeoutError = (message = "timeout") => {
-        const err = new Error(message);
-        err.code = "APP_TIMEOUT";
-        return err;
-    };
-
-    const withTimeout = (promise, timeoutMs, message) => new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(timeoutError(message)), timeoutMs);
-        promise
-            .then(resolve, reject)
-            .finally(() => clearTimeout(timer));
-    });
-
-    const fetchWithAbortTimeout = async (url, options = {}, timeoutMs = 12000) => {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
-        try {
-            return await fetch(url, { ...options, signal: controller.signal });
-        } finally {
-            clearTimeout(timer);
-        }
-    };
-
-    const nearbyBounds = (lat, lon, radiusM) => {
-        const latDelta = radiusM / 111320;
-        const lonDelta = radiusM / (111320 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
-        return {
-            north: lat + latDelta,
-            south: lat - latDelta,
-            east: lon + lonDelta,
-            west: lon - lonDelta,
-        };
-    };
-
-    const isLikelyPachinkoStore = (name) => {
-        const text = normalizeStoreName(name);
-        return /パチンコ|ぱちんこ|pachinko|スロット|slot|パーラー|マルハン|ダイナム|キコーナ|楽園|pia|d'?station|やすだ|123|nikko/.test(text);
-    };
-
-    const uniqueNearbyRows = (rows) => {
-        const seen = new Set();
-        return rows
-            .filter(Boolean)
-            .filter(row => row.name && Number.isFinite(Number(row.lat)) && Number.isFinite(Number(row.lon)))
-            .filter(row => {
-                const key = `${normalizeStoreName(row.name)}|${row.address || `${Number(row.lat).toFixed(5)},${Number(row.lon).toFixed(5)}`}`;
-                if (seen.has(key)) return false;
-                seen.add(key);
-                return true;
-            })
-            .sort((a, b) => a.distanceM - b.distanceM)
-            .slice(0, 20);
-    };
-
-    const isRegisteredNearbyStore = (candidate) => normalizedStores.some(st => {
-        const sameName = normalizeStoreName(st.name) && normalizeStoreName(st.name) === normalizeStoreName(candidate.name);
-        const sameAddress = st.address && candidate.address && String(st.address).trim() === String(candidate.address).trim();
-        return sameName || sameAddress;
-    });
-
-    const fetchNearbyPachinkoStores = async () => {
-        if (nearbyLoading) return;
-        if (!navigator.geolocation) {
-            setNearbyError("この端末では現在地を取得できません。");
-            return;
-        }
-        setNearbyLoading(true);
-        setNearbyStatus("現在地を取得しています...");
-        setNearbyError("");
-        setNearbyStores([]);
-        setNearbySearched(true);
-        try {
-            const pos = await withTimeout(new Promise((resolve, reject) => {
-                navigator.geolocation.getCurrentPosition(resolve, reject, {
-                    enableHighAccuracy: true,
-                    timeout: 12000,
-                    maximumAge: 300000,
-                });
-            }), 15000, "geo-timeout");
-            const lat = pos.coords.latitude;
-            const lon = pos.coords.longitude;
-            setNearbyStatus("地図データを検索しています...");
-            const namePattern = "パチンコ|ぱちんこ|PACHINKO|スロット|SLOT|パーラー|マルハン|ダイナム|キコーナ|楽園|PIA|Dステーション|D'?STATION";
-            const query = `
-                [out:json][timeout:25];
-                (
-                  node(around:${nearbyRadius},${lat},${lon})["gambling"="pachinko"];
-                  way(around:${nearbyRadius},${lat},${lon})["gambling"="pachinko"];
-                  relation(around:${nearbyRadius},${lat},${lon})["gambling"="pachinko"];
-                  node(around:${nearbyRadius},${lat},${lon})["name"~"${namePattern}",i];
-                  way(around:${nearbyRadius},${lat},${lon})["name"~"${namePattern}",i];
-                  relation(around:${nearbyRadius},${lat},${lon})["name"~"${namePattern}",i];
-                );
-                out center tags 30;
-            `;
-            const overpassRows = async () => {
-                const endpoints = [
-                    "https://overpass-api.de/api/interpreter",
-                    "https://overpass.kumi.systems/api/interpreter",
-                ];
-                let data = null;
-                for (const endpoint of endpoints) {
-                    try {
-                        const res = await fetchWithAbortTimeout(endpoint, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-                            body: `data=${encodeURIComponent(query)}`,
-                        }, 12000);
-                        if (!res.ok) continue;
-                        data = await res.json();
-                        break;
-                    } catch {
-                        data = null;
-                    }
-                }
-                return (data?.elements || []).map(el => {
-                    const tags = el.tags || {};
-                    const rowLat = Number(el.lat ?? el.center?.lat);
-                    const rowLon = Number(el.lon ?? el.center?.lon);
-                    const name = tags["name:ja"] || tags.name || "";
-                    if (!name || !Number.isFinite(rowLat) || !Number.isFinite(rowLon)) return null;
-                    const distanceM = Math.round(calcDistanceMeters(lat, lon, rowLat, rowLon));
-                    return {
-                        id: `nearby-overpass-${el.type}-${el.id}`,
-                        name,
-                        address: formatOsmAddress(tags),
-                        lat: rowLat,
-                        lon: rowLon,
-                        distanceM,
-                        rentBalls: 250,
-                        exRate: 250,
-                        memo: `周辺検索から追加（${distanceLabel(distanceM)}）`,
-                        chodama: 0,
-                        osmType: el.type,
-                        osmId: el.id,
-                        source: "overpass",
-                    };
-                });
-            };
-
-            const nominatimRows = async () => {
-                const bounds = nearbyBounds(lat, lon, nearbyRadius);
-                const viewbox = `${bounds.west},${bounds.north},${bounds.east},${bounds.south}`;
-                const terms = ["パチンコ", "スロット", "pachinko", "パーラー"];
-                const lists = await Promise.all(terms.map(async term => {
-                    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=jp&limit=20&bounded=1&viewbox=${encodeURIComponent(viewbox)}&q=${encodeURIComponent(term)}`;
-                    try {
-                        const res = await fetchWithAbortTimeout(url, {
-                            headers: { "Accept": "application/json" },
-                        }, 9000);
-                        if (!res.ok) return [];
-                        return await res.json();
-                    } catch {
-                        return [];
-                    }
-                }));
-                return lists.flat().map(item => {
-                    const rowLat = Number(item.lat);
-                    const rowLon = Number(item.lon);
-                    const name = item.name || item.display_name?.split(",")[0] || "";
-                    if (!name || !Number.isFinite(rowLat) || !Number.isFinite(rowLon)) return null;
-                    const distanceM = Math.round(calcDistanceMeters(lat, lon, rowLat, rowLon));
-                    if (distanceM > nearbyRadius + 200) return null;
-                    if (!isLikelyPachinkoStore(`${name} ${item.display_name || ""}`)) return null;
-                    return {
-                        id: `nearby-nominatim-${item.osm_type}-${item.osm_id}`,
-                        name,
-                        address: item.display_name || "",
-                        lat: rowLat,
-                        lon: rowLon,
-                        distanceM,
-                        rentBalls: 250,
-                        exRate: 250,
-                        memo: `周辺検索から追加（${distanceLabel(distanceM)}）`,
-                        chodama: 0,
-                        osmType: item.osm_type,
-                        osmId: item.osm_id,
-                        source: "nominatim",
-                    };
-                });
-            };
-
-            const results = await Promise.allSettled([overpassRows(), nominatimRows()]);
-            const rows = uniqueNearbyRows(results.flatMap(r => r.status === "fulfilled" ? r.value : []));
-            setNearbyStores(rows);
-            if (rows.length === 0) {
-                setNearbyError("地図データ上に候補が見つかりませんでした。5kmに広げるか、店舗名検索で登録してください。");
-            }
-        } catch (e) {
-            const code = e && typeof e === "object" ? e.code : null;
-            if (code === 1) setNearbyError("位置情報の許可が必要です。ブラウザの設定で現在地を許可してください。");
-            else if (code === 2) setNearbyError("現在地を取得できませんでした。電波状況を確認してください。");
-            else if (code === 3 || code === "APP_TIMEOUT") setNearbyError("検索がタイムアウトしました。距離を1kmにするか、少し時間をおいて再検索してください。");
-            else if (e?.name === "AbortError") setNearbyError("地図データの応答が遅いため中断しました。少し時間をおいて再検索してください。");
-            else setNearbyError("周辺検索に失敗しました。時間をおいて再検索してください。");
-        } finally {
-            setNearbyLoading(false);
-            setNearbyStatus("");
-        }
-    };
-
-    const addNearbyStore = (store) => {
-        if (isRegisteredNearbyStore(store)) {
+    // 愛媛県マスタの店舗を登録（既定の貸玉/交換率で追加。後から店舗ごとに編集可能）
+    const addEhimeStore = (entry) => {
+        if (isStoreRegistered(entry.name)) {
             showToast("この店舗はすでに登録されています", "warn");
             return;
         }
         const storeData = {
-            ...store,
             id: Date.now() + Math.random(),
-            rentBalls: store.rentBalls || 250,
-            exRate: store.exRate || 250,
-            chodama: store.chodama || 0,
+            name: entry.name,
+            address: entry.address || "",
+            rentBalls: 250,
+            exRate: 250,
+            memo: "",
+            chodama: 0,
+            chodamaMax: 0,
+            memberCard: { ...emptyMemberCard },
         };
         s.setStores(prev => [...prev.filter(st => typeof st === "object"), storeData]);
-        setSelectedStore(storeData);
-        showToast(`「${store.name}」を登録しました`);
+        showToast(`「${entry.name}」を登録しました`);
+    };
+
+    // 愛媛県マスタの未登録店舗をまとめて登録
+    const addAllEhimeStores = () => {
+        const toAdd = EHIME_STORES.filter(e => !isStoreRegistered(e.name));
+        if (toAdd.length === 0) {
+            showToast("追加できる新しい店舗はありません", "warn");
+            return;
+        }
+        let seed = Date.now();
+        const newStores = toAdd.map(entry => ({
+            id: (seed++) + Math.random(),
+            name: entry.name,
+            address: entry.address || "",
+            rentBalls: 250,
+            exRate: 250,
+            memo: "",
+            chodama: 0,
+            chodamaMax: 0,
+            memberCard: { ...emptyMemberCard },
+        }));
+        s.setStores(prev => [...prev.filter(st => typeof st === "object"), ...newStores]);
+        showToast(`愛媛県の${newStores.length}店舗を登録しました`);
+    };
+
+    // 店舗フィールドの部分更新（一覧と選択中の詳細を同時に反映）
+    const patchStore = (id, patch) => {
+        const applyPatch = (st) => ({ ...st, ...(typeof patch === "function" ? patch(st) : patch) });
+        s.setStores(prev => prev.map(st => (typeof st === "object" && st.id === id) ? applyPatch(st) : st));
+        setSelectedStore(prev => (prev && prev.id === id) ? applyPatch(prev) : prev);
+    };
+
+    // 会員カードフィールドの部分更新
+    const patchMemberCard = (store, patch) => {
+        patchStore(store.id, (st) => ({ memberCard: { ...normalizeMemberCard(st.memberCard), ...patch } }));
+    };
+
+    // 貯玉の入出金（残高の真実源は store.chodama、履歴は chodamaLog に追記）
+    // type: "deposit"(預入/+) | "withdraw"(引出/−) | "adjust"(調整/=)
+    const adjustStoreChodama = (store, type, balls, memo = "") => {
+        const amount = Math.max(0, Math.round(Number(balls) || 0));
+        if (type !== "adjust" && amount <= 0) {
+            showToast("玉数を入力してください", "warn");
+            return false;
+        }
+        const before = store.chodama || 0;
+        let after;
+        if (type === "deposit") after = before + amount;
+        else if (type === "withdraw") after = Math.max(0, before - amount);
+        else after = amount; // adjust = 絶対値セット
+        patchStore(store.id, { chodama: after });
+        const entry = {
+            id: Date.now() + Math.random(),
+            date: new Date().toISOString().slice(0, 10),
+            storeId: store.id,
+            storeName: store.name,
+            type,
+            balls: amount, // 既存の貯玉データ画面と統一：balls は正の絶対値、符号は type から導出
+            balanceBefore: before,
+            balanceAfter: after,
+            memo,
+        };
+        s.setChodamaLog(prev => [entry, ...prev]);
+        return true;
     };
 
     // 機種登録フォームを開く
@@ -9061,6 +8914,8 @@ export function SettingsTab({ s, onReset }) {
             rentBalls: Math.round((parseFloat(storeFormData.rentBalls) || 25) * 10),
             exRate: Math.round((parseFloat(storeFormData.exRate) || 25) * 10),
             chodama: parseInt(storeFormData.chodama) || 0,
+            chodamaMax: parseInt(storeFormData.chodamaMax) || 0,
+            memberCard: normalizeMemberCard(storeFormData.memberCard),
         };
         if (editingStore) {
             s.setStores(prev => prev.map(st => (typeof st === "object" && st.id === editingStore.id) ? storeData : st));
@@ -9702,56 +9557,293 @@ export function SettingsTab({ s, onReset }) {
 
     // Store detail view
     if (selectedStore) {
+        const st = selectedStore;
+        const faceRent = Math.round((st.rentBalls || 250) / 10);
+        const faceEx = Math.round((st.exRate || 250) / 10);
+        const yenPerBall = faceRent > 0 ? 100 / faceRent : 0;        // 1玉あたりの貸玉単価（円）
+        const rentLabel = `${Number.isInteger(yenPerBall) ? yenPerBall : yenPerBall.toFixed(1)}円パチンコ`;
+        const exYenPerBall = faceEx > 0 ? 100 / faceEx : 0;          // 1玉あたりの換金額（円）
+        const chodamaBalls = st.chodama || 0;
+        const chodamaYen = Math.round(chodamaBalls * exYenPerBall);
+        const mc = normalizeMemberCard(st.memberCard);
+        const maxBalls = st.chodamaMax || 0;
+        const usagePct = maxBalls > 0 ? Math.min(100, Math.round((chodamaBalls / maxBalls) * 100)) : 0;
+        const tile = { background: "rgba(0,0,0,0.2)", borderRadius: 12, padding: "12px 8px", textAlign: "center" };
+        const tileLabel = { fontSize: 10, color: C.sub, marginBottom: 5 };
+        const tileBig = { fontSize: 17, fontWeight: 800, fontFamily: mono };
+        const tileSub = { fontSize: 9, color: C.sub, marginTop: 3 };
+        const cardHistory = (s.chodamaLog || []).filter(l => l.storeId === st.id);
         return (
             <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
-                <button className="b" onClick={() => setSelectedStore(null)} style={{
-                    background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
-                    color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600, marginBottom: 12
-                }}>← 一覧に戻る</button>
+                {/* ヘッダー操作 */}
+                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                    <button className="b" onClick={() => { setSelectedStore(null); setCardEditOpen(false); setChodamaMoveOpen(null); setShowChodamaHistory(false); }} style={{
+                        background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                        color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600
+                    }}>← 一覧に戻る</button>
+                    <button className="b" onClick={() => { setSelectedStore(null); openStoreForm(); }} style={{
+                        background: C.blue, border: "none", borderRadius: 8,
+                        color: "#fff", fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 700
+                    }}>＋ 店舗を登録</button>
+                </div>
 
+                {/* ① 店舗ヘッダーカード */}
                 <Card style={{ padding: 16, marginBottom: 12 }}>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: C.text, marginBottom: 4 }}>{selectedStore.name}</div>
-                    {selectedStore.address && <div style={{ fontSize: 11, color: C.sub, marginBottom: 12 }}>{selectedStore.address}</div>}
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 14 }}>
+                        <div style={{ width: 40, height: 40, borderRadius: 12, background: `${C.blue}22`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: C.blue }}>
+                            <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 9 4.5 4h15L21 9" /><path d="M3 9v11h18V9" /><path d="M3 9c0 2 1.5 3 3 3s3-1 3-3c0 2 1.5 3 3 3s3-1 3-3c0 2 1.5 3 3 3s3-1 3-3" /><path d="M9 20v-6h6v6" />
+                            </svg>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 17, fontWeight: 800, color: C.text, lineHeight: 1.2 }}>{st.name}</div>
+                            {st.address && <div style={{ fontSize: 11, color: C.sub, marginTop: 3 }}>{st.address}</div>}
+                        </div>
+                        <button className="b" onClick={() => { setSelectedStore(null); openStoreForm(st); }} style={{
+                            flexShrink: 0, background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                            color: C.subHi, fontSize: 11, padding: "6px 12px", fontFamily: font, fontWeight: 700
+                        }}>編集</button>
+                    </div>
 
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
-                        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
-                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>貸玉</div>
-                            <div style={{ fontSize: 18, fontWeight: 800, color: C.yellow, fontFamily: mono }}>{Math.round((selectedStore.rentBalls || 250) / 10)}</div>
-                            <div style={{ fontSize: 9, color: C.sub }}>玉/100円</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: maxBalls > 0 || st.memo ? 14 : 0 }}>
+                        <div style={tile}>
+                            <div style={tileLabel}>貸玉</div>
+                            <div style={{ ...tileBig, color: C.yellow, fontSize: 14 }}>{rentLabel}</div>
+                            <div style={tileSub}>100円/{faceRent}玉</div>
                         </div>
-                        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
-                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>交換</div>
-                            <div style={{ fontSize: 18, fontWeight: 800, color: C.teal, fontFamily: mono }}>{Math.round((selectedStore.exRate || 250) / 10)}</div>
-                            <div style={{ fontSize: 9, color: C.sub }}>玉/100円</div>
+                        <div style={tile}>
+                            <div style={tileLabel}>交換率</div>
+                            <div style={{ ...tileBig, color: C.teal }}>{faceEx}玉</div>
+                            <div style={tileSub}>100円あたり</div>
                         </div>
-                        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 12, textAlign: "center" }}>
-                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>貯玉残高</div>
-                            <div style={{ fontSize: 18, fontWeight: 800, color: C.purple, fontFamily: mono }}>{f(selectedStore.chodama || 0)}</div>
-                            <div style={{ fontSize: 9, color: C.sub }}>玉</div>
+                        <div style={tile}>
+                            <div style={tileLabel}>玉単価</div>
+                            <div style={{ ...tileBig, color: C.green }}>{exYenPerBall ? exYenPerBall.toFixed(2) : "—"}円</div>
+                            <div style={tileSub}>1玉の換金額</div>
                         </div>
                     </div>
 
-                    {selectedStore.memo && (
-                        <div style={{ background: "rgba(0,0,0,0.15)", borderRadius: 10, padding: 12, marginBottom: 12 }}>
+                    {maxBalls > 0 && (
+                        <div style={{ background: "rgba(0,0,0,0.15)", borderRadius: 12, padding: "10px 12px", marginBottom: st.memo ? 10 : 0 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                                <span style={{ fontSize: 10, color: C.sub }}>貯玉上限</span>
+                                <span style={{ fontSize: 14, fontWeight: 800, color: C.purple, fontFamily: mono }}>{f(maxBalls)}玉</span>
+                            </div>
+                            <div style={{ height: 6, borderRadius: 999, background: C.borderHi, overflow: "hidden" }}>
+                                <div style={{ width: `${usagePct}%`, height: "100%", background: usagePct >= 90 ? C.red : C.purple, borderRadius: 999 }} />
+                            </div>
+                            <div style={{ fontSize: 9, color: C.sub, marginTop: 5 }}>上限に対して {usagePct}%（貯玉残高 {f(chodamaBalls)}玉）</div>
+                        </div>
+                    )}
+
+                    {st.memo && (
+                        <div style={{ background: "rgba(0,0,0,0.15)", borderRadius: 12, padding: "10px 12px" }}>
                             <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>メモ</div>
-                            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>{selectedStore.memo}</div>
+                            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>{st.memo}</div>
                         </div>
                     )}
                 </Card>
 
-                <Btn label="この店舗の設定を反映" onClick={() => applyStore(selectedStore)} bg={C.blue} fg="#fff" bd="none" />
+                {/* ② 会員カード情報 */}
+                <Card style={{ padding: 16, marginBottom: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>会員カード情報</div>
+                        <span style={{
+                            fontSize: 10, fontWeight: 800, padding: "3px 10px", borderRadius: 999,
+                            background: mc.created ? `${C.green}22` : C.surfaceHi,
+                            color: mc.created ? C.green : C.sub,
+                            border: `1px solid ${mc.created ? `${C.green}55` : C.borderHi}`,
+                        }}>{mc.created ? "作成済み" : "未作成"}</span>
+                    </div>
 
-                <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-                    <Btn label="編集" onClick={() => { setSelectedStore(null); openStoreForm(selectedStore); }} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
-                    {confirmingDeleteStore === selectedStore.id ? (
+                    {mc.created ? (
                         <>
-                            <Btn label="本当に削除" onClick={() => deleteStore(selectedStore)} bg={C.red} fg="#fff" bd="none" />
-                            <Btn label="キャンセル" onClick={() => setConfirmingDeleteStore(null)} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
+                            <div style={{ background: "rgba(0,0,0,0.15)", borderRadius: 12, padding: "10px 12px", marginBottom: 10 }}>
+                                <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>カード番号</div>
+                                <div style={{ fontSize: 15, fontWeight: 700, color: C.text, fontFamily: mono, letterSpacing: 1 }}>{mc.number || "—— —— —— ——"}</div>
+                            </div>
+
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+                                <div style={tile}>
+                                    <div style={tileLabel}>貯玉残高</div>
+                                    <div style={{ ...tileBig, color: C.purple, fontSize: 15 }}>{f(chodamaBalls)}</div>
+                                    <div style={tileSub}>玉</div>
+                                </div>
+                                <div style={tile}>
+                                    <div style={tileLabel}>残高プリペ</div>
+                                    <div style={{ ...tileBig, color: C.blue, fontSize: 15 }}>{f(mc.prepaid)}</div>
+                                    <div style={tileSub}>円</div>
+                                </div>
+                                <div style={tile}>
+                                    <div style={tileLabel}>入金残高</div>
+                                    <div style={{ ...tileBig, color: C.teal, fontSize: 15 }}>{f(mc.deposit)}</div>
+                                    <div style={tileSub}>円</div>
+                                </div>
+                            </div>
+
+                            {cardEditOpen ? (
+                                <div style={{ background: "rgba(0,0,0,0.18)", borderRadius: 12, padding: 12, marginBottom: 4 }}>
+                                    <div style={{ fontSize: 11, color: C.subHi, fontWeight: 700, marginBottom: 10 }}>残高を更新</div>
+                                    <div style={{ marginBottom: 10 }}>
+                                        <div style={{ fontSize: 10, color: C.sub, marginBottom: 4 }}>カード番号</div>
+                                        <input type="text" value={cardEditNumber} onChange={e => setCardEditNumber(e.target.value)}
+                                            placeholder="1234 5678 9012 3456"
+                                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "9px 11px", fontSize: 14, color: C.text, fontFamily: mono, outline: "none" }} />
+                                    </div>
+                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+                                        <div>
+                                            <div style={{ fontSize: 10, color: C.sub, marginBottom: 4 }}>貯玉残高(玉)</div>
+                                            <input type="text" inputMode="numeric" pattern="[0-9]*" value={cardEditChodama} onChange={e => setCardEditChodama(e.target.value)}
+                                                style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "9px 8px", fontSize: 14, color: C.text, fontFamily: mono, outline: "none", textAlign: "right" }} />
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: 10, color: C.sub, marginBottom: 4 }}>残高プリペ(円)</div>
+                                            <input type="text" inputMode="numeric" pattern="[0-9]*" value={cardEditPrepaid} onChange={e => setCardEditPrepaid(e.target.value)}
+                                                style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "9px 8px", fontSize: 14, color: C.text, fontFamily: mono, outline: "none", textAlign: "right" }} />
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: 10, color: C.sub, marginBottom: 4 }}>入金残高(円)</div>
+                                            <input type="text" inputMode="numeric" pattern="[0-9]*" value={cardEditDeposit} onChange={e => setCardEditDeposit(e.target.value)}
+                                                style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "9px 8px", fontSize: 14, color: C.text, fontFamily: mono, outline: "none", textAlign: "right" }} />
+                                        </div>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 8 }}>
+                                        <Btn label="保存" small onClick={() => {
+                                            patchStore(st.id, (cur) => ({
+                                                chodama: parseInt(cardEditChodama) || 0,
+                                                memberCard: { ...normalizeMemberCard(cur.memberCard), number: cardEditNumber.trim(), prepaid: parseInt(cardEditPrepaid) || 0, deposit: parseInt(cardEditDeposit) || 0 },
+                                            }));
+                                            setCardEditOpen(false);
+                                            showToast("会員カード残高を更新しました");
+                                        }} bg={C.blue} fg="#fff" bd="none" />
+                                        <Btn label="キャンセル" small onClick={() => setCardEditOpen(false)} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
+                                    </div>
+                                </div>
+                            ) : (
+                                <div style={{ display: "flex", gap: 8 }}>
+                                    <Btn label="残高を更新" small onClick={() => {
+                                        setCardEditNumber(mc.number || "");
+                                        setCardEditChodama(chodamaBalls);
+                                        setCardEditPrepaid(mc.prepaid || 0);
+                                        setCardEditDeposit(mc.deposit || 0);
+                                        setCardEditOpen(true);
+                                    }} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
+                                    <Btn label="履歴を見る" small onClick={() => setShowChodamaHistory(v => !v)} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
+                                    <Btn label="カード削除" small onClick={() => {
+                                        patchMemberCard(st, { ...emptyMemberCard });
+                                        showToast("会員カードを削除しました", "warn");
+                                    }} bg="rgba(180,60,60,0.18)" fg={C.red} bd={`${C.red}40`} />
+                                </div>
+                            )}
+
+                            {showChodamaHistory && (
+                                <div style={{ marginTop: 12, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+                                    <div style={{ fontSize: 11, color: C.subHi, fontWeight: 700, marginBottom: 8 }}>貯玉 入出金履歴</div>
+                                    {cardHistory.length === 0 ? (
+                                        <div style={{ fontSize: 11, color: C.sub, textAlign: "center", padding: "12px 0" }}>履歴はありません</div>
+                                    ) : cardHistory.slice(0, 20).map(l => (
+                                        <div key={l.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+                                            <div>
+                                                <span style={{ fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 6, marginRight: 8, background: l.type === "deposit" ? `${C.green}22` : l.type === "withdraw" ? `${C.red}22` : `${C.yellow}22`, color: l.type === "deposit" ? C.green : l.type === "withdraw" ? C.red : C.yellow }}>
+                                                    {l.type === "deposit" ? "預入" : l.type === "withdraw" ? "引出" : "調整"}
+                                                </span>
+                                                <span style={{ fontSize: 10, color: C.sub }}>{l.date}</span>
+                                            </div>
+                                            <div style={{ textAlign: "right" }}>
+                                                <div style={{ fontSize: 13, fontWeight: 800, color: l.type === "deposit" ? C.green : l.type === "withdraw" ? C.red : C.subHi, fontFamily: mono }}>
+                                                    {l.type === "adjust" ? "=" : l.type === "withdraw" ? "−" : "+"}{f(l.balls)}玉
+                                                </div>
+                                                <div style={{ fontSize: 9, color: C.sub }}>残 {f(l.balanceAfter)}玉</div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </>
                     ) : (
-                        <Btn label="削除" onClick={() => setConfirmingDeleteStore(selectedStore.id)} bg="rgba(180,60,60,0.2)" fg={C.red} bd={C.red + "40"} />
+                        <div>
+                            <div style={{ fontSize: 12, color: C.sub, lineHeight: 1.6, marginBottom: 12 }}>この店舗の会員カードはまだ作成されていません。作成すると貯玉残高・プリペ残高・入金残高を管理できます。</div>
+                            <Btn label="会員カードを作成" onClick={() => {
+                                patchMemberCard(st, { created: true });
+                                setCardEditNumber("");
+                                setCardEditChodama(chodamaBalls);
+                                setCardEditPrepaid(0);
+                                setCardEditDeposit(0);
+                                setCardEditOpen(true);
+                                showToast("会員カードを作成しました");
+                            }} bg={C.green} fg="#06120d" bd="none" />
+                        </div>
                     )}
-                </div>
+                </Card>
+
+                {/* ③ 貯玉・精算管理 */}
+                <Card style={{ padding: 16, marginBottom: 12 }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 12 }}>貯玉・精算管理</div>
+
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(0,0,0,0.15)", borderRadius: 12, padding: "12px 14px", marginBottom: 10 }}>
+                        <div>
+                            <div style={{ fontSize: 10, color: C.sub, marginBottom: 4 }}>貯玉残高</div>
+                            <div style={{ fontSize: 9, color: C.sub }}>{f(chodamaYen)}円相当（{exYenPerBall ? exYenPerBall.toFixed(2) : "—"}円/玉）</div>
+                        </div>
+                        <div style={{ fontSize: 24, fontWeight: 800, color: C.purple, fontFamily: mono }}>{f(chodamaBalls)}<span style={{ fontSize: 12, color: C.sub, marginLeft: 3 }}>玉</span></div>
+                    </div>
+
+                    {chodamaMoveOpen ? (
+                        <div style={{ background: "rgba(0,0,0,0.18)", borderRadius: 12, padding: 12 }}>
+                            <div style={{ fontSize: 11, color: C.subHi, fontWeight: 700, marginBottom: 10 }}>{chodamaMoveOpen === "deposit" ? "貯玉に入れる（預入 +）" : "貯玉から出す（引出 −）"}</div>
+                            <div style={{ marginBottom: 12 }}>
+                                <div style={{ fontSize: 10, color: C.sub, marginBottom: 4 }}>玉数</div>
+                                <input type="text" inputMode="numeric" pattern="[0-9]*" value={chodamaMoveBalls} onChange={e => setChodamaMoveBalls(e.target.value)}
+                                    style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 10, padding: "12px 14px", fontSize: 20, fontWeight: 700, color: C.text, fontFamily: mono, outline: "none", textAlign: "center" }} />
+                            </div>
+                            <div style={{ display: "flex", gap: 8 }}>
+                                <Btn label="記録する" small onClick={() => {
+                                    const ok = adjustStoreChodama(st, chodamaMoveOpen, chodamaMoveBalls, "");
+                                    if (ok) { setChodamaMoveOpen(null); setChodamaMoveBalls(""); showToast(chodamaMoveOpen === "deposit" ? "貯玉に入れました" : "貯玉から出しました"); }
+                                }} bg={chodamaMoveOpen === "deposit" ? C.green : C.orange} fg="#06120d" bd="none" />
+                                <Btn label="キャンセル" small onClick={() => { setChodamaMoveOpen(null); setChodamaMoveBalls(""); }} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
+                            </div>
+                        </div>
+                    ) : (
+                        <div style={{ display: "flex", gap: 8 }}>
+                            <Btn label="貯玉に入れる" onClick={() => { setChodamaMoveOpen("deposit"); setChodamaMoveBalls(""); }} bg={C.green} fg="#06120d" bd="none" />
+                            <Btn label="貯玉から出す" onClick={() => { setChodamaMoveOpen("withdraw"); setChodamaMoveBalls(""); }} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
+                        </div>
+                    )}
+                </Card>
+
+                {/* ④ 交換率・貸玉情報 */}
+                <Card style={{ padding: 16, marginBottom: 12 }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 12 }}>交換率・貸玉情報</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+                        <div style={tile}>
+                            <div style={tileLabel}>貸玉</div>
+                            <div style={{ ...tileBig, color: C.yellow, fontSize: 14 }}>{rentLabel}</div>
+                        </div>
+                        <div style={tile}>
+                            <div style={tileLabel}>交換率</div>
+                            <div style={{ ...tileBig, color: C.teal }}>{faceEx}玉</div>
+                        </div>
+                        <div style={tile}>
+                            <div style={tileLabel}>玉単価</div>
+                            <div style={{ ...tileBig, color: C.green }}>{exYenPerBall ? exYenPerBall.toFixed(2) : "—"}円</div>
+                        </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                        <Btn label="この店舗の設定を反映" onClick={() => applyStore(st)} bg={C.blue} fg="#fff" bd="none" />
+                        <Btn label="交換率・貸玉情報を編集" onClick={() => { setSelectedStore(null); openStoreForm(st); }} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
+                    </div>
+                </Card>
+
+                {/* ⑤ 店舗削除 */}
+                {confirmingDeleteStore === st.id ? (
+                    <div style={{ display: "flex", gap: 10 }}>
+                        <Btn label="本当に削除する" onClick={() => deleteStore(st)} bg={C.red} fg="#fff" bd="none" />
+                        <Btn label="キャンセル" onClick={() => setConfirmingDeleteStore(null)} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
+                    </div>
+                ) : (
+                    <Btn label="この店舗を削除する" onClick={() => setConfirmingDeleteStore(st.id)} bg="rgba(180,60,60,0.14)" fg={C.red} bd={`${C.red}40`} />
+                )}
             </div>
         );
     }
@@ -9835,15 +9927,50 @@ export function SettingsTab({ s, onReset }) {
                         </div>
                     </div>
 
-                    {/* 貯玉残高 */}
-                    <div style={{ marginBottom: 12 }}>
-                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貯玉残高（玉）</div>
-                        <input type="text" inputMode="numeric" pattern="[0-9]*"
-                            value={storeFormData.chodama === "" ? "" : String(storeFormData.chodama || 0)}
-                            onChange={e => setStoreFormData({ ...storeFormData, chodama: e.target.value })}
-                            onBlur={() => setStoreFormData(p => ({ ...p, chodama: parseInt(p.chodama) || 0 }))}
-                            placeholder="0"
-                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                    {/* 貯玉残高・貯玉上限 */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                        <div>
+                            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貯玉残高（玉）</div>
+                            <input type="text" inputMode="numeric" pattern="[0-9]*"
+                                value={storeFormData.chodama === "" ? "" : String(storeFormData.chodama || 0)}
+                                onChange={e => setStoreFormData({ ...storeFormData, chodama: e.target.value })}
+                                onBlur={() => setStoreFormData(p => ({ ...p, chodama: parseInt(p.chodama) || 0 }))}
+                                placeholder="0"
+                                style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                        </div>
+                        <div>
+                            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貯玉上限（玉）</div>
+                            <input type="text" inputMode="numeric" pattern="[0-9]*"
+                                value={storeFormData.chodamaMax === "" ? "" : String(storeFormData.chodamaMax || 0)}
+                                onChange={e => setStoreFormData({ ...storeFormData, chodamaMax: e.target.value })}
+                                onBlur={() => setStoreFormData(p => ({ ...p, chodamaMax: parseInt(p.chodamaMax) || 0 }))}
+                                placeholder="0"
+                                style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                        </div>
+                    </div>
+
+                    {/* 会員カード */}
+                    <div style={{ marginBottom: 12, background: "rgba(0,0,0,0.12)", borderRadius: 10, padding: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: (storeFormData.memberCard?.created) ? 10 : 0 }}>
+                            <span style={{ fontSize: 12, color: C.text, fontWeight: 700 }}>会員カードを作成済み</span>
+                            <button className="b" onClick={() => setStoreFormData(p => ({ ...p, memberCard: { ...normalizeMemberCard(p.memberCard), created: !p.memberCard?.created } }))}
+                                style={{
+                                    width: 48, height: 28, borderRadius: 999, border: "none", cursor: "pointer", position: "relative",
+                                    background: storeFormData.memberCard?.created ? C.green : C.borderHi, transition: "background 0.2s",
+                                }}>
+                                <span style={{ position: "absolute", top: 3, left: storeFormData.memberCard?.created ? 23 : 3, width: 22, height: 22, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
+                            </button>
+                        </div>
+                        {storeFormData.memberCard?.created && (
+                            <div>
+                                <div style={{ fontSize: 10, color: C.sub, marginBottom: 4 }}>カード番号</div>
+                                <input type="text" value={storeFormData.memberCard?.number || ""}
+                                    onChange={e => setStoreFormData(p => ({ ...p, memberCard: { ...normalizeMemberCard(p.memberCard), number: e.target.value } }))}
+                                    placeholder="1234 5678 9012 3456"
+                                    style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: mono, outline: "none" }} />
+                                <div style={{ fontSize: 9, color: C.sub, marginTop: 6 }}>プリペ残高・入金残高・貯玉残高は登録後、店舗詳細の「残高を更新」から管理できます。</div>
+                            </div>
+                        )}
                     </div>
 
                     {/* メモ */}
@@ -9892,97 +10019,30 @@ export function SettingsTab({ s, onReset }) {
 
                 <Card style={{ padding: 14, marginBottom: 12 }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
-                        <div>
-                            <div style={{ fontSize: 13, color: C.text, fontWeight: 800 }}>周辺のパチンコ店</div>
-                            <div style={{ fontSize: 10, color: C.sub, marginTop: 3 }}>現在地から地図データ上の候補を検索します</div>
+                        <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 13, color: C.text, fontWeight: 800 }}>愛媛県のパチンコ店</div>
+                            <div style={{ fontSize: 10, color: C.sub, marginTop: 3 }}>内蔵リストから店舗を登録できます（全{EHIME_STORES.length}件）</div>
                         </div>
                         <button
                             className="b"
-                            onClick={fetchNearbyPachinkoStores}
-                            disabled={nearbyLoading}
+                            onClick={addAllEhimeStores}
                             style={{
-                                flexShrink: 0,
-                                background: nearbyLoading ? C.surfaceHi : C.blue,
-                                border: nearbyLoading ? `1px solid ${C.borderHi}` : "none",
-                                borderRadius: 8,
-                                color: nearbyLoading ? C.sub : "#fff",
-                                fontSize: 11,
-                                padding: "8px 12px",
-                                fontFamily: font,
-                                fontWeight: 800,
-                                cursor: nearbyLoading ? "default" : "pointer",
+                                flexShrink: 0, background: C.blue, border: "none", borderRadius: 8,
+                                color: "#fff", fontSize: 11, padding: "8px 12px", fontFamily: font, fontWeight: 800, cursor: "pointer",
                             }}
                         >
-                            {nearbyLoading ? "検索中..." : "現在地から検索"}
+                            すべて登録
                         </button>
                     </div>
 
-                    {nearbyLoading && (
-                        <div style={{
-                            background: "rgba(10,132,255,0.10)",
-                            border: "1px solid rgba(10,132,255,0.28)",
-                            color: C.blue,
-                            borderRadius: 8,
-                            padding: "8px 10px",
-                            fontSize: 11,
-                            lineHeight: 1.5,
-                            marginBottom: 10,
-                        }}>
-                            {nearbyStatus || "検索しています..."} 15秒ほどで戻らない場合は自動で中断します。
-                        </div>
-                    )}
-
-                    <div style={{ display: "flex", gap: 6, marginBottom: nearbyError || nearbyStores.length > 0 ? 10 : 0 }}>
-                        {[
-                            { label: "1km", value: 1000 },
-                            { label: "3km", value: 3000 },
-                            { label: "5km", value: 5000 },
-                        ].map(opt => {
-                            const active = nearbyRadius === opt.value;
-                            return (
-                                <button
-                                    key={opt.value}
-                                    className="b"
-                                    onClick={() => setNearbyRadius(opt.value)}
-                                    style={{
-                                        background: active ? `${C.blue}22` : C.surfaceHi,
-                                        border: `1px solid ${active ? C.blue : C.borderHi}`,
-                                        borderRadius: 999,
-                                        color: active ? C.blue : C.sub,
-                                        fontSize: 10,
-                                        padding: "5px 10px",
-                                        fontFamily: font,
-                                        fontWeight: active ? 800 : 600,
-                                    }}
-                                >
-                                    {opt.label}
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    {nearbyError && (
-                        <div style={{
-                            background: nearbyStores.length > 0 ? "rgba(234,179,8,0.12)" : "rgba(239,68,68,0.12)",
-                            border: `1px solid ${nearbyStores.length > 0 ? "rgba(234,179,8,0.35)" : "rgba(239,68,68,0.35)"}`,
-                            color: nearbyStores.length > 0 ? C.yellow : C.red,
-                            borderRadius: 8,
-                            padding: "8px 10px",
-                            fontSize: 11,
-                            lineHeight: 1.5,
-                            marginBottom: nearbyStores.length > 0 ? 10 : 0,
-                        }}>
-                            {nearbyError}
-                        </div>
-                    )}
-
-                    {nearbyStores.length > 0 && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                            {nearbyStores.map(store => {
-                                const registered = isRegisteredNearbyStore(store);
-                                const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${store.name} ${store.address || ""}`.trim())}`;
+                    {ehimeCandidates.length === 0 ? (
+                        <div style={{ fontSize: 11, color: C.sub, textAlign: "center", padding: "16px 0" }}>該当する候補がありません</div>
+                    ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflowY: "auto" }}>
+                            {ehimeCandidates.map(entry => {
+                                const registered = isStoreRegistered(entry.name);
                                 return (
-                                    <div key={store.id} style={{
+                                    <div key={entry.name} style={{
                                         background: "var(--surface-hi)",
                                         border: `1px solid ${registered ? "rgba(34,197,94,0.35)" : C.border}`,
                                         borderRadius: 10,
@@ -9993,31 +10053,16 @@ export function SettingsTab({ s, onReset }) {
                                         alignItems: "center",
                                     }}>
                                         <div style={{ minWidth: 0 }}>
-                                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                                                <span style={{ fontSize: 13, color: C.text, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                                    {store.name}
-                                                </span>
-                                                <span style={{ fontSize: 10, color: C.blue, fontFamily: mono, flexShrink: 0 }}>
-                                                    {distanceLabel(store.distanceM)}
-                                                </span>
+                                            <div style={{ fontSize: 13, color: C.text, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                {entry.name}
                                             </div>
-                                            {store.address && (
-                                                <div style={{ fontSize: 10, color: C.sub, lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                                    {store.address}
-                                                </div>
-                                            )}
-                                            <a
-                                                href={mapUrl}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                style={{ display: "inline-block", marginTop: 5, color: C.subHi, fontSize: 10, textDecoration: "none" }}
-                                            >
-                                                地図で開く
-                                            </a>
+                                            <div style={{ fontSize: 10, color: C.sub, lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                {entry.address}
+                                            </div>
                                         </div>
                                         <button
                                             className="b"
-                                            onClick={() => addNearbyStore(store)}
+                                            onClick={() => addEhimeStore(entry)}
                                             disabled={registered}
                                             style={{
                                                 background: registered ? "rgba(34,197,94,0.10)" : C.green,
@@ -10025,7 +10070,7 @@ export function SettingsTab({ s, onReset }) {
                                                 borderRadius: 8,
                                                 color: registered ? C.green : "#06120d",
                                                 fontSize: 11,
-                                                padding: "8px 10px",
+                                                padding: "8px 12px",
                                                 fontFamily: font,
                                                 fontWeight: 800,
                                                 whiteSpace: "nowrap",
@@ -10039,11 +10084,9 @@ export function SettingsTab({ s, onReset }) {
                         </div>
                     )}
 
-                    {!nearbySearched && nearbyStores.length === 0 && (
-                        <div style={{ fontSize: 10, color: C.sub, lineHeight: 1.6 }}>
-                            初回のみブラウザの位置情報許可が必要です。候補は OpenStreetMap の公開データから取得します。
-                        </div>
-                    )}
+                    <div style={{ fontSize: 9, color: C.sub, lineHeight: 1.6, marginTop: 10 }}>
+                        内蔵リストは主要チェーン・有名店を中心とした初期候補です（住所は市町村単位）。不足する店舗は「＋ 店舗を登録」またはCSVインポートで追加できます。各店の貸玉・交換率は登録後に編集してください。
+                    </div>
                 </Card>
 
                 {/* CSV インポート/エクスポート */}
@@ -10073,7 +10116,10 @@ export function SettingsTab({ s, onReset }) {
                             textAlign: "left",
                         }}>
                             <div>
-                                <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3 }}>{st.name}</div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                                    <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{st.name}</span>
+                                    {st.memberCard?.created && <span style={{ fontSize: 9, fontWeight: 800, color: C.green, background: `${C.green}22`, border: `1px solid ${C.green}55`, borderRadius: 6, padding: "1px 6px" }}>会員</span>}
+                                </div>
                                 {st.address && <div style={{ fontSize: 10, color: C.sub }}>{st.address}</div>}
                             </div>
                             <div style={{ textAlign: "right" }}>
