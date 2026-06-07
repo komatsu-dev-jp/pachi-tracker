@@ -1478,6 +1478,7 @@ export function RotTab({ rows, setRows, S, ev }) {
         // セッション開始
         S.setStartRot(val);
         S.setSessionStarted(true);
+        S.setSessionStartDate(new Date().toISOString().slice(0, 10));
         setRows((r) => [...r, { type: "start", cumRot: val, mode: startPlayMode, mochiBalls: 0, chodamaBalls: initialChodama }]);
         S.pushLog({ type: "スタート", time: tsNow(), rot: val });
 
@@ -2698,7 +2699,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     onClick={() => {
                                         setShowEventMenu(false);
                                         if (window.confirm("この台の実戦を終了し、結果をアーカイブに保存しますか？")) {
-                                            S.handleMoveTable();
+                                            S.handleEndSession();
                                         }
                                     }}
                                 >
