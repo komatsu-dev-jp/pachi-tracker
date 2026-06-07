@@ -8643,10 +8643,10 @@ export function SettingsTab({ s, onReset }) {
     const [cardEditOpen, setCardEditOpen] = useState(false);
     const [cardEditNumber, setCardEditNumber] = useState("");
     const [cardEditChodama, setCardEditChodama] = useState(0);
-    const [cardEditPrepaid, setCardEditPrepaid] = useState(0);
     const [cardEditDeposit, setCardEditDeposit] = useState(0);
     const [chodamaMoveOpen, setChodamaMoveOpen] = useState(null); // "deposit" | "withdraw" | null
     const [chodamaMoveBalls, setChodamaMoveBalls] = useState("");
+    const [chodamaMoveMemo, setChodamaMoveMemo] = useState("");
     const [showChodamaHistory, setShowChodamaHistory] = useState(false);
 
     // サブ画面ナビゲーション
@@ -8706,19 +8706,20 @@ export function SettingsTab({ s, onReset }) {
     };
     const [formData, setFormData] = useState(emptyMachine);
 
-    // 会員カードの初期値（created=作成済み有無 / number=カード番号 / prepaid=残高プリペ円 / deposit=入金残高円）
-    const emptyMemberCard = { created: false, number: "", prepaid: 0, deposit: 0 };
+    // 会員カードの初期値（created=作成済み有無 / number=カード番号 / deposit=入金残高円）
+    const emptyMemberCard = { created: false, number: "", deposit: 0 };
     const normalizeMemberCard = (mc) => ({ ...emptyMemberCard, ...(mc || {}) });
 
     // 店舗フォームの初期値（rentBalls/exRateはフォーム内では面値=玉/100円で扱う）
-    const emptyStore = { name: "", address: "", rentBalls: 25, exRate: 25, memo: "", chodama: 0, chodamaMax: 0, memberCard: { ...emptyMemberCard } };
+    // lastVisit=最終来店(表示用テキスト) / replayBalls=店内再プレイ玉数 / todaySettle=本日精算予定玉数（いずれも任意・既定0/空）
+    const emptyStore = { name: "", address: "", rentBalls: 25, exRate: 25, memo: "", chodama: 0, chodamaMax: 0, lastVisit: "", replayBalls: 0, todaySettle: 0, memberCard: { ...emptyMemberCard } };
     const [storeFormData, setStoreFormData] = useState(emptyStore);
 
     // 店舗データの正規化（旧形式の文字列配列を新形式のオブジェクト配列に変換）+ chodama/会員カードフィールドの補完
     const normalizedStores = (s.stores || []).map(st =>
         typeof st === "string"
-            ? { id: Date.now() + Math.random(), name: st, address: "", rentBalls: 250, exRate: 250, memo: "", chodama: 0, chodamaMax: 0, memberCard: { ...emptyMemberCard } }
-            : { ...st, chodama: st.chodama || 0, chodamaMax: st.chodamaMax || 0, memberCard: normalizeMemberCard(st.memberCard) }
+            ? { id: Date.now() + Math.random(), name: st, address: "", rentBalls: 250, exRate: 250, memo: "", chodama: 0, chodamaMax: 0, lastVisit: "", replayBalls: 0, todaySettle: 0, memberCard: { ...emptyMemberCard } }
+            : { ...st, chodama: st.chodama || 0, chodamaMax: st.chodamaMax || 0, lastVisit: st.lastVisit || "", replayBalls: st.replayBalls || 0, todaySettle: st.todaySettle || 0, memberCard: normalizeMemberCard(st.memberCard) }
     );
 
     // 店舗検索
@@ -8915,6 +8916,9 @@ export function SettingsTab({ s, onReset }) {
             exRate: Math.round((parseFloat(storeFormData.exRate) || 25) * 10),
             chodama: parseInt(storeFormData.chodama) || 0,
             chodamaMax: parseInt(storeFormData.chodamaMax) || 0,
+            lastVisit: (storeFormData.lastVisit || "").trim(),
+            replayBalls: parseInt(storeFormData.replayBalls) || 0,
+            todaySettle: parseInt(storeFormData.todaySettle) || 0,
             memberCard: normalizeMemberCard(storeFormData.memberCard),
         };
         if (editingStore) {
@@ -9568,111 +9572,121 @@ export function SettingsTab({ s, onReset }) {
         const mc = normalizeMemberCard(st.memberCard);
         const maxBalls = st.chodamaMax || 0;
         const usagePct = maxBalls > 0 ? Math.min(100, Math.round((chodamaBalls / maxBalls) * 100)) : 0;
-        const tile = { background: "rgba(0,0,0,0.2)", borderRadius: 12, padding: "12px 8px", textAlign: "center" };
-        const tileLabel = { fontSize: 10, color: C.sub, marginBottom: 5 };
-        const tileBig = { fontSize: 17, fontWeight: 800, fontFamily: mono };
-        const tileSub = { fontSize: 9, color: C.sub, marginTop: 3 };
+        const replayBalls = st.replayBalls || 0;
+        const todaySettle = st.todaySettle || 0;
         const cardHistory = (s.chodamaLog || []).filter(l => l.storeId === st.id);
+        // Bloomberg風スタイル（KPIタイル／情報ボックス／カード枠）
+        const tile = { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 6px", textAlign: "center" };
+        const tileLabel = { fontSize: 10, color: C.sub, marginBottom: 6, fontWeight: 600 };
+        const tileBig = { fontSize: 16, fontWeight: 800, fontFamily: mono };
+        const tileSub = { fontSize: 9, color: C.sub, marginTop: 4 };
+        const infoBox = { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px" };
+        const infoLabel = { fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 };
+        const cardSt = { padding: 18, marginBottom: 14, border: `1px solid ${C.border}`, borderRadius: 18 };
+        const secTitle = { fontSize: 11, fontWeight: 800, color: C.subHi, letterSpacing: 0.8 };
         return (
             <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
-                {/* ヘッダー操作 */}
-                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                {/* ヘッダー操作（戻る / 店舗を登録） */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
                     <button className="b" onClick={() => { setSelectedStore(null); setCardEditOpen(false); setChodamaMoveOpen(null); setShowChodamaHistory(false); }} style={{
-                        background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
-                        color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600
+                        background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 10,
+                        color: C.text, fontSize: 12, padding: "9px 14px", fontFamily: font, fontWeight: 600
                     }}>← 一覧に戻る</button>
+                    <div style={{ flex: 1 }} />
                     <button className="b" onClick={() => { setSelectedStore(null); openStoreForm(); }} style={{
-                        background: C.blue, border: "none", borderRadius: 8,
-                        color: "#fff", fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 700
+                        background: C.blue, border: "none", borderRadius: 10,
+                        color: "#fff", fontSize: 12, padding: "9px 16px", fontFamily: font, fontWeight: 800,
+                        boxShadow: `0 4px 14px ${C.blue}44`,
                     }}>＋ 店舗を登録</button>
                 </div>
 
-                {/* ① 店舗ヘッダーカード */}
-                <Card style={{ padding: 16, marginBottom: 12 }}>
-                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 14 }}>
-                        <div style={{ width: 40, height: 40, borderRadius: 12, background: `${C.blue}22`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: C.blue }}>
-                            <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                {/* ① 店舗サマリーカード */}
+                <Card style={cardSt}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 16 }}>
+                        <div style={{ width: 44, height: 44, borderRadius: 14, background: `${C.blue}22`, border: `1px solid ${C.blue}44`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: C.blue }}>
+                            <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M3 9 4.5 4h15L21 9" /><path d="M3 9v11h18V9" /><path d="M3 9c0 2 1.5 3 3 3s3-1 3-3c0 2 1.5 3 3 3s3-1 3-3c0 2 1.5 3 3 3s3-1 3-3" /><path d="M9 20v-6h6v6" />
                             </svg>
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 17, fontWeight: 800, color: C.text, lineHeight: 1.2 }}>{st.name}</div>
-                            {st.address && <div style={{ fontSize: 11, color: C.sub, marginTop: 3 }}>{st.address}</div>}
+                            <div style={{ fontSize: 18, fontWeight: 800, color: C.text, lineHeight: 1.25 }}>{st.name}</div>
+                            {st.address && <div style={{ fontSize: 11, color: C.sub, marginTop: 4 }}>{st.address}</div>}
                         </div>
                         <button className="b" onClick={() => { setSelectedStore(null); openStoreForm(st); }} style={{
-                            flexShrink: 0, background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
-                            color: C.subHi, fontSize: 11, padding: "6px 12px", fontFamily: font, fontWeight: 700
+                            flexShrink: 0, background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 10,
+                            color: C.subHi, fontSize: 11, padding: "7px 14px", fontFamily: font, fontWeight: 700
                         }}>編集</button>
                     </div>
 
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: maxBalls > 0 || st.memo ? 14 : 0 }}>
-                        <div style={tile}>
-                            <div style={tileLabel}>貸玉</div>
-                            <div style={{ ...tileBig, color: C.yellow, fontSize: 14 }}>{rentLabel}</div>
-                            <div style={tileSub}>100円/{faceRent}玉</div>
-                        </div>
+                    {/* KPI 3列: 交換率 / 貸玉 / 換金レート */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
                         <div style={tile}>
                             <div style={tileLabel}>交換率</div>
-                            <div style={{ ...tileBig, color: C.teal }}>{faceEx}玉</div>
-                            <div style={tileSub}>100円あたり</div>
+                            <div style={{ ...tileBig, color: C.teal }}>{exYenPerBall ? exYenPerBall.toFixed(2) : "—"}円</div>
+                            <div style={tileSub}>{faceEx}玉交換</div>
                         </div>
                         <div style={tile}>
-                            <div style={tileLabel}>玉単価</div>
-                            <div style={{ ...tileBig, color: C.green }}>{exYenPerBall ? exYenPerBall.toFixed(2) : "—"}円</div>
-                            <div style={tileSub}>1玉の換金額</div>
+                            <div style={tileLabel}>貸玉</div>
+                            <div style={{ ...tileBig, color: C.yellow, fontSize: 13 }}>{rentLabel}</div>
+                            <div style={tileSub}>{faceRent}玉/100円</div>
+                        </div>
+                        <div style={tile}>
+                            <div style={tileLabel}>換金レート</div>
+                            <div style={{ ...tileBig, color: C.green }}>{faceEx}玉</div>
+                            <div style={tileSub}>= 100円</div>
                         </div>
                     </div>
 
                     {maxBalls > 0 && (
-                        <div style={{ background: "rgba(0,0,0,0.15)", borderRadius: 12, padding: "10px 12px", marginBottom: st.memo ? 10 : 0 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
-                                <span style={{ fontSize: 10, color: C.sub }}>貯玉上限</span>
-                                <span style={{ fontSize: 14, fontWeight: 800, color: C.purple, fontFamily: mono }}>{f(maxBalls)}玉</span>
+                        <div style={{ ...infoBox, marginBottom: 8 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 7 }}>
+                                <span style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>貯玉上限</span>
+                                <span style={{ fontSize: 15, fontWeight: 800, color: C.purple, fontFamily: mono }}>{f(maxBalls)}玉</span>
                             </div>
-                            <div style={{ height: 6, borderRadius: 999, background: C.borderHi, overflow: "hidden" }}>
+                            <div style={{ height: 7, borderRadius: 999, background: C.borderHi, overflow: "hidden" }}>
                                 <div style={{ width: `${usagePct}%`, height: "100%", background: usagePct >= 90 ? C.red : C.purple, borderRadius: 999 }} />
                             </div>
-                            <div style={{ fontSize: 9, color: C.sub, marginTop: 5 }}>上限に対して {usagePct}%（貯玉残高 {f(chodamaBalls)}玉）</div>
+                            <div style={{ fontSize: 9, color: C.sub, marginTop: 6 }}>上限に対して {usagePct}%（貯玉残高 {f(chodamaBalls)}玉）</div>
                         </div>
                     )}
 
-                    {st.memo && (
-                        <div style={{ background: "rgba(0,0,0,0.15)", borderRadius: 12, padding: "10px 12px" }}>
-                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>メモ</div>
-                            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>{st.memo}</div>
+                    {/* 最終来店 / メモ */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        <div style={infoBox}>
+                            <div style={infoLabel}>最終来店</div>
+                            <div style={{ fontSize: 12, color: st.lastVisit ? C.text : C.sub, fontWeight: 700, fontFamily: mono }}>{st.lastVisit || "—"}</div>
                         </div>
-                    )}
+                        <div style={infoBox}>
+                            <div style={infoLabel}>メモ</div>
+                            <div style={{ fontSize: 12, color: st.memo ? C.text : C.sub, lineHeight: 1.5 }}>{st.memo || "—"}</div>
+                        </div>
+                    </div>
                 </Card>
 
                 {/* ② 会員カード情報 */}
-                <Card style={{ padding: 16, marginBottom: 12 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>会員カード情報</div>
+                <Card style={cardSt}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                        <div style={secTitle}>会員カード情報</div>
                         <span style={{
-                            fontSize: 10, fontWeight: 800, padding: "3px 10px", borderRadius: 999,
+                            fontSize: 10, fontWeight: 800, padding: "4px 12px", borderRadius: 999,
                             background: mc.created ? `${C.green}22` : C.surfaceHi,
                             color: mc.created ? C.green : C.sub,
                             border: `1px solid ${mc.created ? `${C.green}55` : C.borderHi}`,
-                        }}>{mc.created ? "作成済み" : "未作成"}</span>
+                        }}>{mc.created ? "● 作成済み" : "未作成"}</span>
                     </div>
 
                     {mc.created ? (
                         <>
-                            <div style={{ background: "rgba(0,0,0,0.15)", borderRadius: 12, padding: "10px 12px", marginBottom: 10 }}>
-                                <div style={{ fontSize: 9, color: C.sub, marginBottom: 4 }}>カード番号</div>
-                                <div style={{ fontSize: 15, fontWeight: 700, color: C.text, fontFamily: mono, letterSpacing: 1 }}>{mc.number || "—— —— —— ——"}</div>
+                            <div style={{ ...infoBox, marginBottom: 10 }}>
+                                <div style={infoLabel}>カード番号</div>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: C.text, fontFamily: mono, letterSpacing: 1.5 }}>{mc.number || "—— —— —— ——"}</div>
                             </div>
 
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
                                 <div style={tile}>
                                     <div style={tileLabel}>貯玉残高</div>
                                     <div style={{ ...tileBig, color: C.purple, fontSize: 15 }}>{f(chodamaBalls)}</div>
                                     <div style={tileSub}>玉</div>
-                                </div>
-                                <div style={tile}>
-                                    <div style={tileLabel}>残高プリペ</div>
-                                    <div style={{ ...tileBig, color: C.blue, fontSize: 15 }}>{f(mc.prepaid)}</div>
-                                    <div style={tileSub}>円</div>
                                 </div>
                                 <div style={tile}>
                                     <div style={tileLabel}>入金残高</div>
@@ -9690,15 +9704,10 @@ export function SettingsTab({ s, onReset }) {
                                             placeholder="1234 5678 9012 3456"
                                             style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "9px 11px", fontSize: 14, color: C.text, fontFamily: mono, outline: "none" }} />
                                     </div>
-                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
                                         <div>
                                             <div style={{ fontSize: 10, color: C.sub, marginBottom: 4 }}>貯玉残高(玉)</div>
                                             <input type="text" inputMode="numeric" pattern="[0-9]*" value={cardEditChodama} onChange={e => setCardEditChodama(e.target.value)}
-                                                style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "9px 8px", fontSize: 14, color: C.text, fontFamily: mono, outline: "none", textAlign: "right" }} />
-                                        </div>
-                                        <div>
-                                            <div style={{ fontSize: 10, color: C.sub, marginBottom: 4 }}>残高プリペ(円)</div>
-                                            <input type="text" inputMode="numeric" pattern="[0-9]*" value={cardEditPrepaid} onChange={e => setCardEditPrepaid(e.target.value)}
                                                 style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "9px 8px", fontSize: 14, color: C.text, fontFamily: mono, outline: "none", textAlign: "right" }} />
                                         </div>
                                         <div>
@@ -9711,7 +9720,7 @@ export function SettingsTab({ s, onReset }) {
                                         <Btn label="保存" small onClick={() => {
                                             patchStore(st.id, (cur) => ({
                                                 chodama: parseInt(cardEditChodama) || 0,
-                                                memberCard: { ...normalizeMemberCard(cur.memberCard), number: cardEditNumber.trim(), prepaid: parseInt(cardEditPrepaid) || 0, deposit: parseInt(cardEditDeposit) || 0 },
+                                                memberCard: { ...normalizeMemberCard(cur.memberCard), number: cardEditNumber.trim(), deposit: parseInt(cardEditDeposit) || 0 },
                                             }));
                                             setCardEditOpen(false);
                                             showToast("会員カード残高を更新しました");
@@ -9724,7 +9733,6 @@ export function SettingsTab({ s, onReset }) {
                                     <Btn label="残高を更新" small onClick={() => {
                                         setCardEditNumber(mc.number || "");
                                         setCardEditChodama(chodamaBalls);
-                                        setCardEditPrepaid(mc.prepaid || 0);
                                         setCardEditDeposit(mc.deposit || 0);
                                         setCardEditOpen(true);
                                     }} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
@@ -9762,12 +9770,11 @@ export function SettingsTab({ s, onReset }) {
                         </>
                     ) : (
                         <div>
-                            <div style={{ fontSize: 12, color: C.sub, lineHeight: 1.6, marginBottom: 12 }}>この店舗の会員カードはまだ作成されていません。作成すると貯玉残高・プリペ残高・入金残高を管理できます。</div>
+                            <div style={{ fontSize: 12, color: C.sub, lineHeight: 1.6, marginBottom: 12 }}>この店舗の会員カードはまだ作成されていません。作成すると貯玉残高・入金残高を管理できます。</div>
                             <Btn label="会員カードを作成" onClick={() => {
                                 patchMemberCard(st, { created: true });
                                 setCardEditNumber("");
                                 setCardEditChodama(chodamaBalls);
-                                setCardEditPrepaid(0);
                                 setCardEditDeposit(0);
                                 setCardEditOpen(true);
                                 showToast("会員カードを作成しました");
@@ -9777,52 +9784,71 @@ export function SettingsTab({ s, onReset }) {
                 </Card>
 
                 {/* ③ 貯玉・精算管理 */}
-                <Card style={{ padding: 16, marginBottom: 12 }}>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 12 }}>貯玉・精算管理</div>
+                <Card style={cardSt}>
+                    <div style={{ ...secTitle, marginBottom: 14 }}>貯玉・精算管理</div>
 
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(0,0,0,0.15)", borderRadius: 12, padding: "12px 14px", marginBottom: 10 }}>
-                        <div>
-                            <div style={{ fontSize: 10, color: C.sub, marginBottom: 4 }}>貯玉残高</div>
-                            <div style={{ fontSize: 9, color: C.sub }}>{f(chodamaYen)}円相当（{exYenPerBall ? exYenPerBall.toFixed(2) : "—"}円/玉）</div>
+                    {/* KPI 3列: 店内貯玉 / 店内再プレイ / 本日精算予定 */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+                        <div style={tile}>
+                            <div style={tileLabel}>店内貯玉</div>
+                            <div style={{ ...tileBig, color: C.purple }}>{f(chodamaBalls)}</div>
+                            <div style={tileSub}>約{f(chodamaYen)}円</div>
                         </div>
-                        <div style={{ fontSize: 24, fontWeight: 800, color: C.purple, fontFamily: mono }}>{f(chodamaBalls)}<span style={{ fontSize: 12, color: C.sub, marginLeft: 3 }}>玉</span></div>
+                        <div style={tile}>
+                            <div style={tileLabel}>店内再プレイ</div>
+                            <div style={{ ...tileBig, color: C.blue }}>{f(replayBalls)}</div>
+                            <div style={tileSub}>玉</div>
+                        </div>
+                        <div style={tile}>
+                            <div style={tileLabel}>本日精算予定</div>
+                            <div style={{ ...tileBig, color: C.yellow }}>{f(todaySettle)}</div>
+                            <div style={tileSub}>玉</div>
+                        </div>
                     </div>
 
                     {chodamaMoveOpen ? (
-                        <div style={{ background: "rgba(0,0,0,0.18)", borderRadius: 12, padding: 12 }}>
-                            <div style={{ fontSize: 11, color: C.subHi, fontWeight: 700, marginBottom: 10 }}>{chodamaMoveOpen === "deposit" ? "貯玉に入れる（預入 +）" : "貯玉から出す（引出 −）"}</div>
-                            <div style={{ marginBottom: 12 }}>
-                                <div style={{ fontSize: 10, color: C.sub, marginBottom: 4 }}>玉数</div>
+                        <div style={{ ...infoBox, borderColor: chodamaMoveOpen === "deposit" ? `${C.green}55` : `${C.orange}55`, padding: 14 }}>
+                            <div style={{ fontSize: 11, color: chodamaMoveOpen === "deposit" ? C.green : C.orange, fontWeight: 800, marginBottom: 12 }}>{chodamaMoveOpen === "deposit" ? "貯玉に入れる（預入 ＋）" : "貯玉から使う（引出 −）"}</div>
+                            <div style={{ marginBottom: 10 }}>
+                                <div style={{ fontSize: 10, color: C.sub, marginBottom: 5 }}>玉数</div>
                                 <input type="text" inputMode="numeric" pattern="[0-9]*" value={chodamaMoveBalls} onChange={e => setChodamaMoveBalls(e.target.value)}
-                                    style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 10, padding: "12px 14px", fontSize: 20, fontWeight: 700, color: C.text, fontFamily: mono, outline: "none", textAlign: "center" }} />
+                                    placeholder="0"
+                                    style={{ width: "100%", boxSizing: "border-box", background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 10, padding: "12px 14px", fontSize: 22, fontWeight: 800, color: C.text, fontFamily: mono, outline: "none", textAlign: "center" }} />
+                            </div>
+                            <div style={{ marginBottom: 12 }}>
+                                <div style={{ fontSize: 10, color: C.sub, marginBottom: 5 }}>メモ（任意）</div>
+                                <input type="text" value={chodamaMoveMemo} onChange={e => setChodamaMoveMemo(e.target.value)}
+                                    placeholder="例: 当日精算分"
+                                    style={{ width: "100%", boxSizing: "border-box", background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, color: C.text, fontFamily: font, outline: "none" }} />
                             </div>
                             <div style={{ display: "flex", gap: 8 }}>
-                                <Btn label="記録する" small onClick={() => {
-                                    const ok = adjustStoreChodama(st, chodamaMoveOpen, chodamaMoveBalls, "");
-                                    if (ok) { setChodamaMoveOpen(null); setChodamaMoveBalls(""); showToast(chodamaMoveOpen === "deposit" ? "貯玉に入れました" : "貯玉から出しました"); }
+                                <Btn label="キャンセル" small onClick={() => { setChodamaMoveOpen(null); setChodamaMoveBalls(""); setChodamaMoveMemo(""); }} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
+                                <Btn label={chodamaMoveOpen === "deposit" ? "入れる" : "使う"} small onClick={() => {
+                                    const ok = adjustStoreChodama(st, chodamaMoveOpen, chodamaMoveBalls, chodamaMoveMemo.trim());
+                                    if (ok) { setChodamaMoveOpen(null); setChodamaMoveBalls(""); setChodamaMoveMemo(""); showToast(chodamaMoveOpen === "deposit" ? "貯玉に入れました" : "貯玉から使いました"); }
                                 }} bg={chodamaMoveOpen === "deposit" ? C.green : C.orange} fg="#06120d" bd="none" />
-                                <Btn label="キャンセル" small onClick={() => { setChodamaMoveOpen(null); setChodamaMoveBalls(""); }} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
                             </div>
                         </div>
                     ) : (
                         <div style={{ display: "flex", gap: 8 }}>
-                            <Btn label="貯玉に入れる" onClick={() => { setChodamaMoveOpen("deposit"); setChodamaMoveBalls(""); }} bg={C.green} fg="#06120d" bd="none" />
-                            <Btn label="貯玉から出す" onClick={() => { setChodamaMoveOpen("withdraw"); setChodamaMoveBalls(""); }} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
+                            <Btn label="貯玉に入れる" onClick={() => { setChodamaMoveOpen("deposit"); setChodamaMoveBalls(""); setChodamaMoveMemo(""); }} bg={C.green} fg="#06120d" bd="none" />
+                            <Btn label="貯玉から使う" onClick={() => { setChodamaMoveOpen("withdraw"); setChodamaMoveBalls(""); setChodamaMoveMemo(""); }} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
                         </div>
                     )}
                 </Card>
 
                 {/* ④ 交換率・貸玉情報 */}
-                <Card style={{ padding: 16, marginBottom: 12 }}>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 12 }}>交換率・貸玉情報</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+                <Card style={cardSt}>
+                    <div style={{ ...secTitle, marginBottom: 14 }}>交換率・貸玉情報</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
                         <div style={tile}>
-                            <div style={tileLabel}>貸玉</div>
-                            <div style={{ ...tileBig, color: C.yellow, fontSize: 14 }}>{rentLabel}</div>
+                            <div style={tileLabel}>貸玉単価</div>
+                            <div style={{ ...tileBig, color: C.yellow }}>{yenPerBall ? (Number.isInteger(yenPerBall) ? yenPerBall : yenPerBall.toFixed(1)) : "—"}円</div>
                         </div>
                         <div style={tile}>
                             <div style={tileLabel}>交換率</div>
                             <div style={{ ...tileBig, color: C.teal }}>{faceEx}玉</div>
+                            <div style={tileSub}>/100円</div>
                         </div>
                         <div style={tile}>
                             <div style={tileLabel}>玉単価</div>
@@ -9831,19 +9857,23 @@ export function SettingsTab({ s, onReset }) {
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
                         <Btn label="この店舗の設定を反映" onClick={() => applyStore(st)} bg={C.blue} fg="#fff" bd="none" />
-                        <Btn label="交換率・貸玉情報を編集" onClick={() => { setSelectedStore(null); openStoreForm(st); }} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
+                        <Btn label="編集" small onClick={() => { setSelectedStore(null); openStoreForm(st); }} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
                     </div>
                 </Card>
 
-                {/* ⑤ 店舗削除 */}
-                {confirmingDeleteStore === st.id ? (
-                    <div style={{ display: "flex", gap: 10 }}>
-                        <Btn label="本当に削除する" onClick={() => deleteStore(st)} bg={C.red} fg="#fff" bd="none" />
-                        <Btn label="キャンセル" onClick={() => setConfirmingDeleteStore(null)} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
-                    </div>
-                ) : (
-                    <Btn label="この店舗を削除する" onClick={() => setConfirmingDeleteStore(st.id)} bg="rgba(180,60,60,0.14)" fg={C.red} bd={`${C.red}40`} />
-                )}
+                {/* ⑤ 店舗削除（危険操作・独立カード） */}
+                <Card style={{ padding: 16, marginBottom: 12, border: `1px solid ${C.red}33`, borderRadius: 18, background: "rgba(180,60,60,0.06)" }}>
+                    <div style={{ fontSize: 11, color: C.red, fontWeight: 800, letterSpacing: 0.8, marginBottom: 6 }}>危険な操作</div>
+                    <div style={{ fontSize: 11, color: C.sub, lineHeight: 1.5, marginBottom: 12 }}>この店舗の全データ（貯玉残高・会員カード・設定）を削除します。元に戻せません。</div>
+                    {confirmingDeleteStore === st.id ? (
+                        <div style={{ display: "flex", gap: 10 }}>
+                            <Btn label="キャンセル" onClick={() => setConfirmingDeleteStore(null)} bg={C.surfaceHi} fg={C.text} bd={C.borderHi} />
+                            <Btn label="本当に削除する" onClick={() => deleteStore(st)} bg={C.red} fg="#fff" bd="none" />
+                        </div>
+                    ) : (
+                        <Btn label="この店舗を削除する" onClick={() => setConfirmingDeleteStore(st.id)} bg="rgba(180,60,60,0.14)" fg={C.red} bd={`${C.red}40`} />
+                    )}
+                </Card>
             </div>
         );
     }
@@ -9949,6 +9979,37 @@ export function SettingsTab({ s, onReset }) {
                         </div>
                     </div>
 
+                    {/* 店内再プレイ・本日精算予定 */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                        <div>
+                            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>店内再プレイ（玉）</div>
+                            <input type="text" inputMode="numeric" pattern="[0-9]*"
+                                value={storeFormData.replayBalls === "" ? "" : String(storeFormData.replayBalls || 0)}
+                                onChange={e => setStoreFormData({ ...storeFormData, replayBalls: e.target.value })}
+                                onBlur={() => setStoreFormData(p => ({ ...p, replayBalls: parseInt(p.replayBalls) || 0 }))}
+                                placeholder="0"
+                                style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                        </div>
+                        <div>
+                            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>本日精算予定（玉）</div>
+                            <input type="text" inputMode="numeric" pattern="[0-9]*"
+                                value={storeFormData.todaySettle === "" ? "" : String(storeFormData.todaySettle || 0)}
+                                onChange={e => setStoreFormData({ ...storeFormData, todaySettle: e.target.value })}
+                                onBlur={() => setStoreFormData(p => ({ ...p, todaySettle: parseInt(p.todaySettle) || 0 }))}
+                                placeholder="0"
+                                style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                        </div>
+                    </div>
+
+                    {/* 最終来店 */}
+                    <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>最終来店（任意）</div>
+                        <input type="text" value={storeFormData.lastVisit || ""}
+                            onChange={e => setStoreFormData({ ...storeFormData, lastVisit: e.target.value })}
+                            placeholder="例: 2025/05/24 22:30"
+                            style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                    </div>
+
                     {/* 会員カード */}
                     <div style={{ marginBottom: 12, background: "rgba(0,0,0,0.12)", borderRadius: 10, padding: 12 }}>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: (storeFormData.memberCard?.created) ? 10 : 0 }}>
@@ -9968,7 +10029,7 @@ export function SettingsTab({ s, onReset }) {
                                     onChange={e => setStoreFormData(p => ({ ...p, memberCard: { ...normalizeMemberCard(p.memberCard), number: e.target.value } }))}
                                     placeholder="1234 5678 9012 3456"
                                     style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: mono, outline: "none" }} />
-                                <div style={{ fontSize: 9, color: C.sub, marginTop: 6 }}>プリペ残高・入金残高・貯玉残高は登録後、店舗詳細の「残高を更新」から管理できます。</div>
+                                <div style={{ fontSize: 9, color: C.sub, marginTop: 6 }}>入金残高・貯玉残高は登録後、店舗詳細の「残高を更新」から管理できます。</div>
                             </div>
                         )}
                     </div>
