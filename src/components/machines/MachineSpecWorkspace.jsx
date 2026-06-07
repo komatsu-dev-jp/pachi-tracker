@@ -1,158 +1,13 @@
 import React, { useRef, useState } from "react";
 import "./MachineSpecWorkspace.css";
-
-const fallbackMachine = {
-  name: "P大海物語5 MTE2",
-  meta: "三洋 | ハイミドル | 3個賞球",
-  tags: ["海シリーズ", "m_master連携", "削り込み適用"],
-  updatedAt: "2026/06/02 18:42",
-  probability: "1/319.6",
-  border: "17.36",
-  avgPayout: "1,350",
-  stdDev: "13,000",
-  rushEntry: "60%",
-  rushContinue: "75%",
-  hesoAvg: "1,500",
-  rushAvg: "1,500",
-  tsv: ["P大海物語5 MTE2", "319.6", "17.36", "3", "14.0", "1350", "13000", "0.5"],
-  heso: [
-    { id: "ヘソ1", payout: "1500", ratio: "60", rounds: "10", rush: true },
-    { id: "ヘソ2", payout: "1500", ratio: "40", rounds: "10", rush: true },
-    { id: "ヘソ3", payout: "0", ratio: "0", rounds: "", rush: false },
-  ],
-  rush: [
-    { id: "RUSH1", payout: "1500", ratio: "100", rounds: "10" },
-  ],
-};
-
-function formatNumber(value, fallback = "—") {
-  const num = Number(value);
-  if (!Number.isFinite(num) || num <= 0) return fallback;
-  return num.toLocaleString("ja-JP", { maximumFractionDigits: 2 });
-}
-
-// 表示用の整形済み文字列（"1,350" / "60%" など）から入力欄に渡す素の数値文字列を取り出す
-function plainNum(value) {
-  return String(value ?? "").replace(/[^0-9.-]/g, "");
-}
-
-function sumRatio(heso) {
-  return heso.reduce((sum, row) => sum + (Number(plainNum(row.ratio)) || 0), 0);
-}
-
-// ラウンド振分文字列をパースする。"4R:50%, 10R:50%" → [{ rounds:"4", rate:"50" }, ...]
-// 記録フロー（getMachineRounds / getMachineRushRounds）が読む roundDist / rushDist と同じ表記。
-function parseDist(str) {
-  if (typeof str !== "string" || !str.trim()) return [];
-  return str
-    .split(/[,、/|]/)
-    .map((part) => {
-      const r = part.match(/(\d+)\s*R/i);
-      if (!r) return null;
-      const p = part.match(/(\d+)\s*%/);
-      return { rounds: r[1], rate: p ? p[1] : "" };
-    })
-    .filter(Boolean);
-}
-
-// 振分の各行から roundDist / rushDist 文字列を生成する（R数が入力された行のみ対象）。
-// 記録フローの R数プリセット抽出（roundDist.match(/(\d+)R/g)）に合致する表記で出力する。
-function buildDist(rows) {
-  return rows
-    .filter((row) => plainNum(row.rounds) !== "")
-    .map((row) => `${plainNum(row.rounds)}R:${plainNum(row.ratio) || "0"}%`)
-    .join(", ");
-}
-
-function formatProbability(data) {
-  if (data?.prob) return data.prob;
-  const synthProb = Number(data?.synthProb);
-  if (Number.isFinite(synthProb) && synthProb > 0) return `1/${synthProb}`;
-  return fallbackMachine.probability;
-}
-
-function formatBorder(data) {
-  if (data?.border && typeof data.border === "object") {
-    const preferred = data.border["4.00"] || data.border["4"] || data.border["等価"];
-    if (preferred) return formatNumber(preferred);
-    const first = Object.values(data.border).find((value) => Number(value) > 0);
-    if (first) return formatNumber(first);
-  }
-  if (data?.border) return formatNumber(data.border);
-  return fallbackMachine.border;
-}
-
-function normalizeMachine(data) {
-  if (!data) return fallbackMachine;
-
-  const maker = data.maker || "メーカー未設定";
-  const type = data.type || "タイプ未設定";
-  const prize = Number(data.prize);
-  const prizeText = Number.isFinite(prize) && prize > 0 ? ` | ${prize}個賞球` : "";
-  // ラウンド振分文字列（初当たり=roundDist / 確変中=rushDist）を行に取り込む。
-  // hesoDist と roundDist は機種マスタ上は独立配列のため、件数が一致するときのみ行へ対応付ける。
-  const hesoSrc = Array.isArray(data.hesoDist) ? data.hesoDist.slice(0, 3) : [];
-  const roundEntries = parseDist(data.roundDist);
-  const heso = hesoSrc.length > 0
-    ? hesoSrc.map((row, index) => ({
-        id: `ヘソ${index + 1}`,
-        payout: String(row.payout ?? 0),
-        ratio: String(row.rate ?? 0),
-        rounds: roundEntries.length === hesoSrc.length ? (roundEntries[index]?.rounds || "") : "",
-        rush: Number(row.rate) > 0,
-      }))
-    : fallbackMachine.heso;
-
-  // 特図2・RUSH（確変中）の出玉振分。機種マスタに rushDist 配列があれば採用し、
-  // なければ RUSH平均出玉を 100% の単一振分として初期表示する（後から編集・追加可能）。
-  // R数は rushDist 文字列があれば取り込む。
-  const rushAvgNum = Number(data.rushAvgPayout);
-  const rushRoundEntries = parseDist(typeof data.rushDist === "string" ? data.rushDist : "");
-  const rush = Array.isArray(data.rushDist) && data.rushDist.length > 0
-    ? data.rushDist.slice(0, 4).map((row, index) => ({
-        id: `RUSH${index + 1}`,
-        payout: String(row.payout ?? 0),
-        ratio: String(row.rate ?? 0),
-        rounds: String(row.rounds ?? ""),
-      }))
-    : Number.isFinite(rushAvgNum) && rushAvgNum > 0
-      ? [{ id: "RUSH1", payout: String(rushAvgNum), ratio: "100", rounds: rushRoundEntries[0]?.rounds || "" }]
-      : fallbackMachine.rush;
-
-  return {
-    name: data.name || fallbackMachine.name,
-    meta: `${maker} | ${type}${prizeText}`,
-    tags: [
-      data.name?.includes("海") ? "海シリーズ" : "機種検索連携",
-      "m_master連携",
-      "削り込み適用",
-    ],
-    updatedAt: fallbackMachine.updatedAt,
-    probability: formatProbability(data),
-    border: formatBorder(data),
-    avgPayout: formatNumber(data.avgPayoutPerHit, fallbackMachine.avgPayout),
-    stdDev: formatNumber(data.stdDev, fallbackMachine.stdDev),
-    rushEntry: Number(data.rushEntryRate) > 0 ? `${data.rushEntryRate}%` : fallbackMachine.rushEntry,
-    rushContinue: Number(data.rushContinueRate) > 0 ? `${data.rushContinueRate}%` : fallbackMachine.rushContinue,
-    hesoAvg: formatNumber(data.hesoAvgPayout, fallbackMachine.hesoAvg),
-    rushAvg: formatNumber(data.rushAvgPayout, fallbackMachine.rushAvg),
-    synced: false,
-    tsv: [
-      data.name || fallbackMachine.name,
-      String(data.synthProb || "").replace(/^1\//, "") || fallbackMachine.tsv[1],
-      formatBorder(data),
-      String(data.prize || ""),
-      String(data.unitCost || ""),
-      String(data.avgPayoutPerHit || ""),
-      String(data.stdDev || ""),
-      "0.5",
-    ],
-    heso,
-    rush,
-    roundDist: data.roundDist || fallbackMachine.roundDist || "1500発 100%",
-    rushDist: data.rushDist || fallbackMachine.rushDist || "1500発 100%",
-  };
-}
+import {
+  formatNumber,
+  plainNum,
+  sumRatio,
+  buildDist,
+  normalizeMachine,
+  buildMachineOverride,
+} from "./machineSpecModel";
 
 // 詳細画面の列マッピング一覧（全列）
 const mappingItems = [
@@ -865,6 +720,7 @@ export default function MachineSpecWorkspace({
   machineData,
   primaryActionLabel = "営業シミュレーションへ",
   onPrimaryAction,
+  onPersist,
 }) {
   const [screen, setScreen] = useState("detail");
   const [model, setModel] = useState(() => normalizeMachine(machineData));
@@ -878,6 +734,9 @@ export default function MachineSpecWorkspace({
         onSave={(updated) => {
           setModel(updated);
           setScreen("detail");
+          // 編集結果をカスタム機種として永続化（記録フローの roundDist/rushDist へ連携）。
+          // onPersist 未指定（P-EVIDENCE デモ）の場合は従来どおりローカルのみ。
+          if (onPersist) onPersist(buildMachineOverride(machineData, updated));
         }}
         onBack={() => setScreen("detail")}
       />

@@ -9018,6 +9018,23 @@ export function SettingsTab({ s, onReset }) {
         showToast(`「${machine.name}」を削除しました`);
     };
 
+    // 機種スペック画面（MachineSpecWorkspace）の編集結果をカスタム機種として保存する。
+    // 同名（または同id）のカスタムがあれば id を保ったまま置換、無ければ追記（重複を作らない）。
+    // ビルトイン機種を編集した場合も「同名カスタム」を作ることで searchMachines が先頭で拾い上書きする。
+    const persistMachineOverride = (rec) => {
+        if (!rec || !rec.name) return;
+        s.setCustomMachines(prev => {
+            const i = prev.findIndex(m => m.id === rec.id || m.name === rec.name);
+            if (i >= 0) {
+                const next = [...prev];
+                next[i] = { ...rec, id: prev[i].id };
+                return next;
+            }
+            return [...prev, rec];
+        });
+        showToast(`「${rec.name}」のスペックを保存しました`);
+    };
+
     // 店舗登録フォームを開く
     const openStoreForm = (store = null) => {
         if (store) {
@@ -10078,6 +10095,7 @@ export function SettingsTab({ s, onReset }) {
                 onBack={() => setSelected(null)}
                 primaryActionLabel="この機種の確率を設定に反映"
                 onPrimaryAction={() => applyMachine(selected)}
+                onPersist={persistMachineOverride}
             />
         );
     }
