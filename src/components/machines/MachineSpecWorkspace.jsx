@@ -1,109 +1,13 @@
 import React, { useRef, useState } from "react";
 import "./MachineSpecWorkspace.css";
-
-const fallbackMachine = {
-  name: "P大海物語5 MTE2",
-  meta: "三洋 | ハイミドル | 3個賞球",
-  tags: ["海シリーズ", "m_master連携", "削り込み適用"],
-  updatedAt: "2026/06/02 18:42",
-  probability: "1/319.6",
-  border: "17.36",
-  avgPayout: "1,350",
-  stdDev: "13,000",
-  rushEntry: "60%",
-  rushContinue: "75%",
-  hesoAvg: "1,500",
-  rushAvg: "1,500",
-  tsv: ["P大海物語5 MTE2", "319.6", "17.36", "3", "14.0", "1350", "13000", "0.5"],
-  heso: [
-    { id: "ヘソ1", payout: "1500", ratio: "60", rush: true },
-    { id: "ヘソ2", payout: "1500", ratio: "40", rush: true },
-    { id: "ヘソ3", payout: "0", ratio: "0", rush: false },
-  ],
-};
-
-function formatNumber(value, fallback = "—") {
-  const num = Number(value);
-  if (!Number.isFinite(num) || num <= 0) return fallback;
-  return num.toLocaleString("ja-JP", { maximumFractionDigits: 2 });
-}
-
-// 表示用の整形済み文字列（"1,350" / "60%" など）から入力欄に渡す素の数値文字列を取り出す
-function plainNum(value) {
-  return String(value ?? "").replace(/[^0-9.-]/g, "");
-}
-
-function sumRatio(heso) {
-  return heso.reduce((sum, row) => sum + (Number(plainNum(row.ratio)) || 0), 0);
-}
-
-function formatProbability(data) {
-  if (data?.prob) return data.prob;
-  const synthProb = Number(data?.synthProb);
-  if (Number.isFinite(synthProb) && synthProb > 0) return `1/${synthProb}`;
-  return fallbackMachine.probability;
-}
-
-function formatBorder(data) {
-  if (data?.border && typeof data.border === "object") {
-    const preferred = data.border["4.00"] || data.border["4"] || data.border["等価"];
-    if (preferred) return formatNumber(preferred);
-    const first = Object.values(data.border).find((value) => Number(value) > 0);
-    if (first) return formatNumber(first);
-  }
-  if (data?.border) return formatNumber(data.border);
-  return fallbackMachine.border;
-}
-
-function normalizeMachine(data) {
-  if (!data) return fallbackMachine;
-
-  const maker = data.maker || "メーカー未設定";
-  const type = data.type || "タイプ未設定";
-  const prize = Number(data.prize);
-  const prizeText = Number.isFinite(prize) && prize > 0 ? ` | ${prize}個賞球` : "";
-  const heso = Array.isArray(data.hesoDist) && data.hesoDist.length > 0
-    ? data.hesoDist.slice(0, 3).map((row, index) => ({
-        id: `ヘソ${index + 1}`,
-        payout: String(row.payout ?? 0),
-        ratio: String(row.rate ?? 0),
-        rush: Number(row.rate) > 0,
-      }))
-    : fallbackMachine.heso;
-
-  return {
-    name: data.name || fallbackMachine.name,
-    meta: `${maker} | ${type}${prizeText}`,
-    tags: [
-      data.name?.includes("海") ? "海シリーズ" : "機種検索連携",
-      "m_master連携",
-      "削り込み適用",
-    ],
-    updatedAt: fallbackMachine.updatedAt,
-    probability: formatProbability(data),
-    border: formatBorder(data),
-    avgPayout: formatNumber(data.avgPayoutPerHit, fallbackMachine.avgPayout),
-    stdDev: formatNumber(data.stdDev, fallbackMachine.stdDev),
-    rushEntry: Number(data.rushEntryRate) > 0 ? `${data.rushEntryRate}%` : fallbackMachine.rushEntry,
-    rushContinue: Number(data.rushContinueRate) > 0 ? `${data.rushContinueRate}%` : fallbackMachine.rushContinue,
-    hesoAvg: formatNumber(data.hesoAvgPayout, fallbackMachine.hesoAvg),
-    rushAvg: formatNumber(data.rushAvgPayout, fallbackMachine.rushAvg),
-    synced: false,
-    tsv: [
-      data.name || fallbackMachine.name,
-      String(data.synthProb || "").replace(/^1\//, "") || fallbackMachine.tsv[1],
-      formatBorder(data),
-      String(data.prize || ""),
-      String(data.unitCost || ""),
-      String(data.avgPayoutPerHit || ""),
-      String(data.stdDev || ""),
-      "0.5",
-    ],
-    heso,
-    roundDist: data.roundDist || fallbackMachine.roundDist || "1500発 100%",
-    rushDist: data.rushDist || fallbackMachine.rushDist || "1500発 100%",
-  };
-}
+import {
+  formatNumber,
+  plainNum,
+  sumRatio,
+  buildDist,
+  normalizeMachine,
+  buildMachineOverride,
+} from "./machineSpecModel";
 
 // 詳細画面の列マッピング一覧（全列）
 const mappingItems = [
@@ -337,7 +241,7 @@ function DetailScreen({ machine, synced, onToggleSync, onEdit, onBack, primaryAc
             <div className="ms-chip-row">
               {machine.heso.map((row) => (
                 <React.Fragment key={row.id}>
-                  <span>{formatNumber(row.payout, "0")}発</span>
+                  <span>{row.rounds ? `${row.rounds}R ` : ""}{formatNumber(row.payout, "0")}発</span>
                   <strong>{row.ratio}%</strong>
                 </React.Fragment>
               ))}
@@ -345,11 +249,15 @@ function DetailScreen({ machine, synced, onToggleSync, onEdit, onBack, primaryAc
             <div className="ms-divider" />
             <div className="ms-allocation-head">
               <strong>特図2・RUSH</strong>
-              <Pill tone="orange">確変ループ</Pill>
+              <Pill tone="orange">比率合計 {sumRatio(machine.rush || [])}%</Pill>
             </div>
             <div className="ms-chip-row">
-              <span>{machine.rushAvg}発</span>
-              <strong>100%</strong>
+              {(machine.rush || []).map((row) => (
+                <React.Fragment key={row.id}>
+                  <span>{row.rounds ? `${row.rounds}R ` : ""}{formatNumber(row.payout, "0")}発</span>
+                  <strong>{row.ratio}%</strong>
+                </React.Fragment>
+              ))}
             </div>
             <div className="ms-summary-line">
               ヘソ平均出玉 <b>{machine.hesoAvg}</b>
@@ -481,7 +389,14 @@ function RegisterScreen({ machine, onSave, onBack }) {
       key: `init-${index}`,
       payout: plainNum(row.payout),
       ratio: plainNum(row.ratio),
+      rounds: plainNum(row.rounds),
       rush: !!row.rush,
+    })),
+    rush: (machine.rush || []).map((row, index) => ({
+      key: `rinit-${index}`,
+      payout: plainNum(row.payout),
+      ratio: plainNum(row.ratio),
+      rounds: plainNum(row.rounds),
     })),
   }));
 
@@ -491,9 +406,17 @@ function RegisterScreen({ machine, onSave, onBack }) {
   const addHeso = () =>
     setForm((f) => ({
       ...f,
-      heso: [...f.heso, { key: `add-${(idRef.current += 1)}`, payout: "0", ratio: "0", rush: false }],
+      heso: [...f.heso, { key: `add-${(idRef.current += 1)}`, payout: "0", ratio: "0", rounds: "", rush: false }],
     }));
   const removeHeso = (key) => setForm((f) => ({ ...f, heso: f.heso.filter((h) => h.key !== key) }));
+  const patchRush = (key, patch) =>
+    setForm((f) => ({ ...f, rush: f.rush.map((h) => (h.key === key ? { ...h, ...patch } : h)) }));
+  const addRush = () =>
+    setForm((f) => ({
+      ...f,
+      rush: [...f.rush, { key: `radd-${(idRef.current += 1)}`, payout: "0", ratio: "0", rounds: "" }],
+    }));
+  const removeRush = (key) => setForm((f) => ({ ...f, rush: f.rush.filter((h) => h.key !== key) }));
 
   const refByStep = { 基本: basicRef, 出玉: payoutRef, 振分: hesoRef, 検証: mapRef };
   const goStep = (step) => {
@@ -503,10 +426,12 @@ function RegisterScreen({ machine, onSave, onBack }) {
 
   const ratioSum = sumRatio(form.heso);
   const ratioOk = ratioSum === 100;
+  const rushRatioSum = sumRatio(form.rush);
+  const rushRatioOk = rushRatioSum === 100;
   const emptyRequired = [form.avgPayout, form.rushEntry, form.rushContinue].filter(
     (v) => plainNum(v) === ""
   ).length;
-  const errorCount = emptyRequired + (ratioOk ? 0 : 1);
+  const errorCount = emptyRequired + (ratioOk ? 0 : 1) + (rushRatioOk ? 0 : 1);
 
   const previewTsv = machine.tsv.map((cell, i) => {
     if (i === 5) return plainNum(form.avgPayout) || cell;
@@ -528,8 +453,18 @@ function RegisterScreen({ machine, onSave, onBack }) {
         id: `ヘソ${i + 1}`,
         payout: plainNum(h.payout) || "0",
         ratio: plainNum(h.ratio) || "0",
+        rounds: plainNum(h.rounds),
         rush: h.rush,
       })),
+      rush: form.rush.map((h, i) => ({
+        id: `RUSH${i + 1}`,
+        payout: plainNum(h.payout) || "0",
+        ratio: plainNum(h.ratio) || "0",
+        rounds: plainNum(h.rounds),
+      })),
+      // R数が入力されていれば記録フロー用の roundDist / rushDist を再生成（未入力なら従来値を維持）
+      roundDist: buildDist(form.heso) || machine.roundDist,
+      rushDist: buildDist(form.rush) || machine.rushDist,
       tsv: previewTsv,
     };
     onSave(updated);
@@ -640,7 +575,7 @@ function RegisterScreen({ machine, onSave, onBack }) {
         <section className="ms-register-card" ref={hesoRef}>
           <div className="ms-card-head">
             <h2>
-              特図1・ヘソ振分{" "}
+              特図1・ヘソ振分（初当たり）{" "}
               <Pill tone={ratioOk ? "success" : "orange"}>比率合計 {ratioSum}%</Pill>
             </h2>
             <button type="button" className="ms-small-icon" aria-label="ヘソ振分を追加" onClick={addHeso}>
@@ -664,7 +599,8 @@ function RegisterScreen({ machine, onSave, onBack }) {
                       <Icon name="trash" />
                     </button>
                   </div>
-                  <div className="ms-heso-inputs">
+                  <div className="ms-heso-inputs cols3">
+                    <Field compact label="R数" value={row.rounds} unit="R" onChange={(v) => patchHeso(row.key, { rounds: v })} />
                     <Field compact label="出玉" value={row.payout} unit="発" onChange={(v) => patchHeso(row.key, { payout: v })} />
                     <Field compact label="比率" value={row.ratio} unit="%" onChange={(v) => patchHeso(row.key, { ratio: v })} />
                   </div>
@@ -672,6 +608,49 @@ function RegisterScreen({ machine, onSave, onBack }) {
                 </div>
               ))
             )}
+          </div>
+          <div className="ms-info-note">
+            <span>i</span>
+            <strong>R数は大当たり後のラウンド入力プリセットに連動します</strong>
+          </div>
+        </section>
+
+        <section className="ms-register-card">
+          <div className="ms-card-head">
+            <h2>
+              特図2・RUSH振分（確変中）{" "}
+              <Pill tone={rushRatioOk ? "success" : "orange"}>比率合計 {rushRatioSum}%</Pill>
+            </h2>
+            <button type="button" className="ms-small-icon" aria-label="RUSH振分を追加" onClick={addRush}>
+              <Icon name="plus" />
+            </button>
+          </div>
+          <div className="ms-heso-list">
+            {form.rush.length === 0 ? (
+              <div className="ms-heso-empty">「＋」で振分を追加してください</div>
+            ) : (
+              form.rush.map((row, index) => (
+                <div className="ms-heso-row" key={row.key}>
+                  <div className="ms-heso-top">
+                    <span className="ms-grip" aria-hidden>⋮⋮</span>
+                    <strong>RUSH{index + 1}</strong>
+                    <button type="button" className="ms-trash" aria-label={`RUSH${index + 1}を削除`} onClick={() => removeRush(row.key)}>
+                      <Icon name="trash" />
+                    </button>
+                  </div>
+                  <div className="ms-heso-inputs cols3">
+                    <Field compact label="R数" value={row.rounds} unit="R" onChange={(v) => patchRush(row.key, { rounds: v })} />
+                    <Field compact label="出玉" value={row.payout} unit="発" onChange={(v) => patchRush(row.key, { payout: v })} />
+                    <Field compact label="比率" value={row.ratio} unit="%" onChange={(v) => patchRush(row.key, { ratio: v })} />
+                  </div>
+                  {index < form.rush.length - 1 && <div className="ms-row-line" />}
+                </div>
+              ))
+            )}
+          </div>
+          <div className="ms-info-note">
+            <span>i</span>
+            <strong>R数・出玉・比率を設定（R数は連チャン入力プリセットに連動）</strong>
           </div>
         </section>
 
@@ -741,6 +720,7 @@ export default function MachineSpecWorkspace({
   machineData,
   primaryActionLabel = "営業シミュレーションへ",
   onPrimaryAction,
+  onPersist,
 }) {
   const [screen, setScreen] = useState("detail");
   const [model, setModel] = useState(() => normalizeMachine(machineData));
@@ -754,6 +734,9 @@ export default function MachineSpecWorkspace({
         onSave={(updated) => {
           setModel(updated);
           setScreen("detail");
+          // 編集結果をカスタム機種として永続化（記録フローの roundDist/rushDist へ連携）。
+          // onPersist 未指定（P-EVIDENCE デモ）の場合は従来どおりローカルのみ。
+          if (onPersist) onPersist(buildMachineOverride(machineData, updated));
         }}
         onBack={() => setScreen("detail")}
       />
