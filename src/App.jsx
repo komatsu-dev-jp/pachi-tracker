@@ -547,6 +547,9 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 実戦終了の精算シート（投資・回収の自動算出値を編集して確定）
+  const [endSheet, setEndSheet] = useState(null);
+
   // 起動時：前回の持ち玉が日付を跨いで残っていれば「貯玉化」を促す（持越し検知）
   const [carryOverPrompt, setCarryOverPrompt] = useState(null);
   useEffect(() => {
@@ -645,8 +648,8 @@ export default function App() {
   };
 
   // 現在のセッションをアーカイブへ保存（台移動=isMove:true / 実戦終了=isMove:false）。
-  // 記録が空なら保存しない。共通化して台移動・実戦終了で挙動を分けない。
-  const archiveCurrentSession = (isMove) => {
+  // 記録が空なら保存しない。settlement={investYen,recoveryYen} を渡すと収支を記録（実戦終了の精算）。
+  const archiveCurrentSession = (isMove, settlement = null) => {
     if (rotRows.length === 0 && jpLog.length === 0) return false;
     const now = new Date();
     const safeStats = ev ? Object.fromEntries(
@@ -665,8 +668,8 @@ export default function App() {
       startRot: startRot || 0,
       storeName: String(storeName || ""),
       machineNum: String(machineNum || ""),
-      investYen: Number(investYen) || 0,
-      recoveryYen: Number(recoveryYen) || 0,
+      investYen: settlement ? (Number(settlement.investYen) || 0) : (Number(investYen) || 0),
+      recoveryYen: settlement ? (Number(settlement.recoveryYen) || 0) : (Number(recoveryYen) || 0),
       machineName: String(machineName || `1/${synthDenom}`),
       initialChodama: initialChodama || 0,
       finalChodama: currentChodama || 0,
@@ -726,23 +729,48 @@ export default function App() {
     setCurrentMode("record");
   };
 
-  // 実戦終了: アーカイブ保存し、残った持ち玉があれば貯玉化を確認してからリセット。
-  const handleEndSession = () => {
-    archiveCurrentSession(false);
-    let extraChodama = 0;
+  // 実戦終了：精算シートを開く。投資額・回収額を自動算出して初期表示する。
+  // 投資額 = ev.rawInvest（実践記録の現金投資累計）、回収額 = 残り持ち玉 × 玉単価。
+  const openEndSession = () => {
     const heldMochi = Math.round(currentMochiBalls || 0);
-    if (selectedStoreId && heldMochi > 0) {
-      const store = (stores || []).find(st => typeof st === "object" && st.id === selectedStoreId);
-      if (store && window.confirm(
-        `残っている持ち玉 ${heldMochi.toLocaleString()}玉 を「${store.name}」の貯玉として保存しますか？\n\n保存しない場合は現金精算として扱います。`
-      )) {
-        extraChodama = heldMochi;
-        logMochiToChodama(selectedStoreId, heldMochi, currentChodama || 0);
+    const ballYen = Number(ballVal) > 0 ? Number(ballVal) : (exRate > 0 ? 1000 / exRate : 0);
+    const store = (stores || []).find(st => typeof st === "object" && st.id === selectedStoreId);
+    setEndSheet({
+      invest: Math.round(ev?.rawInvest || 0),
+      heldMochi,
+      ballYen,
+      cashYen: Math.round(heldMochi * ballYen),
+      chodama: Math.round(currentChodama || 0),
+      storeId: selectedStoreId || null,
+      storeName: store?.name || "",
+    });
+  };
+
+  // 精算シートの確定：method="cash"（現金精算）|"chodama"（貯玉化）。
+  // invest/recovery は編集後の確定値（円）。
+  const confirmEndSession = ({ method, invest, recovery }) => {
+    const investVal = Math.max(0, Math.round(Number(invest) || 0));
+    const sheet = endSheet || {};
+    let recoveryVal;
+    let extraChodama = 0;
+    if (method === "chodama") {
+      // 持ち玉を貯玉化：現金回収は0、持ち玉を店舗の貯玉へ加算
+      recoveryVal = 0;
+      if (sheet.storeId && sheet.heldMochi > 0) {
+        extraChodama = sheet.heldMochi;
+        logMochiToChodama(sheet.storeId, sheet.heldMochi, currentChodama || 0);
       }
+    } else {
+      recoveryVal = Math.max(0, Math.round(Number(recovery) || 0));
     }
+    archiveCurrentSession(false, { investYen: investVal, recoveryYen: recoveryVal });
     resetAll(extraChodama);
+    setEndSheet(null);
     setCurrentMode("record");
   };
+
+  // 後方互換：従来の handleEndSession 名でも精算シートを開く
+  const handleEndSession = openEndSession;
 
   const S = {
     rentBalls, setRentBalls, exRate, setExRate, synthDenom, setSynthDenom,
@@ -963,6 +991,108 @@ export default function App() {
           onDiscard={carryOverDiscard}
         />
       )}
+
+      {endSheet && (
+        <EndSessionSheet
+          sheet={endSheet}
+          onConfirm={confirmEndSession}
+          onCancel={() => setEndSheet(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// 実戦終了の精算シート：投資額・回収額（持ち玉の現金換算）を自動表示し、編集して確定する。
+function EndSessionSheet({ sheet, onConfirm, onCancel }) {
+  const hasStore = !!sheet.storeId;
+  const [method, setMethod] = useState("cash"); // "cash" 現金精算 | "chodama" 貯玉化
+  const [invest, setInvest] = useState(String(sheet.invest || 0));
+  const [recovery, setRecovery] = useState(String(sheet.cashYen || 0));
+  const investNum = Math.max(0, Math.round(Number(invest) || 0));
+  const recoveryNum = method === "chodama" ? 0 : Math.max(0, Math.round(Number(recovery) || 0));
+  const pl = recoveryNum - investNum;
+  const fmt = (n) => (n || 0).toLocaleString();
+  const inputStyle = {
+    width: "100%", boxSizing: "border-box", background: C.bg, color: C.text,
+    border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px",
+    fontSize: 17, fontWeight: 700, fontFamily: font, textAlign: "right", outline: "none",
+  };
+  const tab = (active) => ({
+    flex: 1, height: 46, borderRadius: 10, fontSize: 13, fontWeight: 700, fontFamily: font, cursor: "pointer",
+    border: `1px solid ${active ? C.blue : C.border}`,
+    background: active ? C.blue : "transparent",
+    color: active ? "#fff" : C.sub,
+  });
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 200,
+      background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)",
+      display: "flex", flexDirection: "column", justifyContent: "flex-end",
+    }}>
+      <div style={{
+        background: C.surface, color: C.text, fontFamily: font,
+        borderTop: `1px solid ${C.border}`,
+        borderTopLeftRadius: 16, borderTopRightRadius: 16,
+        padding: "20px 20px calc(20px + env(safe-area-inset-bottom))",
+        maxWidth: 480, margin: "0 auto", width: "100%",
+      }}>
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>実戦終了・精算</div>
+        <div style={{ fontSize: 12, color: C.sub, lineHeight: 1.6, marginBottom: 16 }}>
+          残った持ち玉 <b style={{ color: C.text }}>{fmt(sheet.heldMochi)}玉</b>
+          （現金換算 約¥{fmt(sheet.cashYen)}）。精算方法を選んで保存します。
+        </div>
+
+        {/* 精算方法の選択（貯玉化は店舗選択時のみ） */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          <button onClick={() => setMethod("cash")} style={tab(method === "cash")}>現金で精算</button>
+          {hasStore && (
+            <button onClick={() => setMethod("chodama")} style={tab(method === "chodama")}>貯玉として保存</button>
+          )}
+        </div>
+
+        {/* 投資額（自動：実践記録から） */}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 5 }}>投資額（円）</div>
+          <input type="text" inputMode="numeric" pattern="[0-9]*" value={invest}
+            onChange={(e) => setInvest(e.target.value.replace(/[^0-9]/g, ""))} style={inputStyle} />
+        </div>
+
+        {/* 回収額（現金精算時のみ・自動：持ち玉×玉単価） */}
+        {method === "cash" ? (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, color: C.sub, marginBottom: 5 }}>回収額（円・持ち玉の現金化）</div>
+            <input type="text" inputMode="numeric" pattern="[0-9]*" value={recovery}
+              onChange={(e) => setRecovery(e.target.value.replace(/[^0-9]/g, ""))} style={inputStyle} />
+          </div>
+        ) : (
+          <div style={{ marginBottom: 12, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px" }}>
+            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貯玉として保存</div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>「{sheet.storeName}」へ +{fmt(sheet.heldMochi)}玉</div>
+          </div>
+        )}
+
+        {/* 収支プレビュー */}
+        <div style={{
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10,
+          padding: "12px 14px", marginBottom: 16,
+        }}>
+          <span style={{ fontSize: 12, color: C.sub }}>収支（回収 − 投資）</span>
+          <span style={{ fontSize: 20, fontWeight: 800, fontFamily: font, color: pl > 0 ? C.green : pl < 0 ? C.red : C.text }}>
+            {pl > 0 ? "+" : ""}{fmt(pl)}円
+          </span>
+        </div>
+
+        <button onClick={() => onConfirm({ method, invest: investNum, recovery: recoveryNum })}
+          style={{ width: "100%", height: 60, borderRadius: 12, fontSize: 15, fontWeight: 700, fontFamily: font, border: "none", background: C.blue, color: "#fff", cursor: "pointer" }}>
+          実戦終了して保存
+        </button>
+        <button onClick={onCancel}
+          style={{ width: "100%", height: 52, marginTop: 8, borderRadius: 12, fontSize: 14, fontWeight: 700, fontFamily: font, border: `1px solid ${C.border}`, background: C.surface, color: C.text, cursor: "pointer" }}>
+          キャンセル
+        </button>
+      </div>
     </div>
   );
 }

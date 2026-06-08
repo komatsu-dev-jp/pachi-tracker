@@ -2698,9 +2698,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     type="button"
                                     onClick={() => {
                                         setShowEventMenu(false);
-                                        if (window.confirm("この台の実戦を終了し、結果をアーカイブに保存しますか？")) {
-                                            S.handleEndSession();
-                                        }
+                                        S.handleEndSession();
                                     }}
                                 >
                                     <span className="event-menu__item-icon" style={{ "--em-color": C.red }}>
