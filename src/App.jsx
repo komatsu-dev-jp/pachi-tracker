@@ -201,6 +201,11 @@ export default function App() {
   const [initialMochiBalls, setInitialMochiBalls] = useLS("pt_initialMochiBalls", 0);
   const [initialChodama, setInitialChodama] = useLS("pt_initialChodama", 0);
   const [selectedStoreId, setSelectedStoreId] = useLS("pt_selectedStoreId", null);
+  // 台移動で現在の台へ持ち込んだ持ち玉の円換算額（コストベース按分の原資）。
+  // 台移動時に「直前の台の持ち出し玉×玉単価」をセット、resetAll で 0 に戻す。
+  const [carriedInYen, setCarriedInYen] = useLS("pt_carriedInYen", 0);
+  // セッション開始日（持ち玉の日付跨ぎ検知に使用。YYYY-MM-DD。未稼働時は ""）
+  const [sessionStartDate, setSessionStartDate] = useLS("pt_sessionStartDate", "");
 
   // 時短/大当たり終了後のスタート入力プロンプト表示フラグ
   const [showStartPrompt, setShowStartPrompt] = useState(false);
@@ -545,6 +550,43 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 実戦終了の精算シート（投資・回収の自動算出値を編集して確定）
+  const [endSheet, setEndSheet] = useState(null);
+
+  // 起動時：前回の持ち玉が日付を跨いで残っていれば「貯玉化」を促す（持越し検知）
+  const [carryOverPrompt, setCarryOverPrompt] = useState(null);
+  useEffect(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const held = Math.round(currentMochiBalls || 0);
+    if (held > 0 && sessionStartDate && sessionStartDate !== today) {
+      const store = (stores || []).find(st => typeof st === "object" && st.id === selectedStoreId);
+      setCarryOverPrompt({ balls: held, storeId: selectedStoreId || null, storeName: store?.name || "" });
+    }
+    // 起動時に一度だけ判定
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 持越し持ち玉を貯玉化して保存（店舗あり時）→ セッション終了
+  const carryOverToChodama = () => {
+    if (carryOverPrompt?.storeId && carryOverPrompt.balls > 0) {
+      logMochiToChodama(carryOverPrompt.storeId, carryOverPrompt.balls, currentChodama || 0);
+      resetAll(carryOverPrompt.balls);
+    } else {
+      resetAll();
+    }
+    setCarryOverPrompt(null);
+  };
+  // 持ち玉のまま今日のセッションとして続行（日付を今日に更新して再表示を防ぐ）
+  const carryOverContinue = () => {
+    setSessionStartDate(new Date().toISOString().slice(0, 10));
+    setCarryOverPrompt(null);
+  };
+  // 持ち玉を破棄（現金精算済みとして扱い）→ セッション終了
+  const carryOverDiscard = () => {
+    resetAll();
+    setCarryOverPrompt(null);
+  };
+
   // ライフサイクル: バックグラウンド送り / 終了直前に最新状態を atomic 保存
   useEffect(() => {
     const onHide = () => {
@@ -567,17 +609,20 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionStarted]);
 
-  const resetAll = () => {
+  const resetAll = (extraChodamaToStore = 0) => {
     // セッション終了直前の atomic スナップショット（reset 前に確保）
     try { takeSnapshotImmediate("session:end", getUndoSnapshot()); } catch { /* ignore */ }
     // セッション終了前に選択中の店舗の貯玉残高を自動更新
+    // extraChodamaToStore: 終了時に「持ち玉を貯玉化」して上乗せする玉数（既定0）
     if (selectedStoreId) {
+      const finalChodama = (currentChodama || 0) + (Math.max(0, Math.round(Number(extraChodamaToStore) || 0)));
       setStores(prev => prev.map(st =>
         typeof st === "object" && st.id === selectedStoreId
-          ? { ...st, chodama: currentChodama }
+          ? { ...st, chodama: finalChodama }
           : st
       ));
     }
+    setSessionStartDate("");
     setJpLog([]);
     setSesLog([]);
     setRotRows([]);
@@ -595,6 +640,7 @@ export default function App() {
     setInitialChodama(0);
     setCurrentMochiBalls(0);
     setCurrentChodama(0);
+    setCarriedInYen(0);
     // Phase 6 XPトリガー用カウンタもセッション一緒にリセット（次のセッションは 0 から数え直す）
     setHunterCounters((prev) => ({
       countedHits: 0,
@@ -605,42 +651,137 @@ export default function App() {
     setSelectedStoreId(null);
   };
 
-  // 台移動: 現在のデータを自動保存して新台へ
+  // 現在のセッションをアーカイブへ保存（台移動=isMove:true / 実戦終了=isMove:false）。
+  // 記録が空なら保存しない。settlement={investYen,recoveryYen} を渡すと収支を記録（実戦終了の精算）。
+  const archiveCurrentSession = (isMove, settlement = null) => {
+    if (rotRows.length === 0 && jpLog.length === 0) return false;
+    const now = new Date();
+    const safeStats = ev ? Object.fromEntries(
+      Object.entries(ev).filter(([, v]) => typeof v === "number" || typeof v === "string")
+    ) : {};
+    const archive = {
+      id: now.getTime(),
+      date: now.toISOString().slice(0, 10),
+      time: now.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
+      rotRows: JSON.parse(JSON.stringify(rotRows)),
+      jpLog: JSON.parse(JSON.stringify(jpLog)),
+      sesLog: JSON.parse(JSON.stringify(sesLog)),
+      settings: { rentBalls, exRate, synthDenom, rotPerHour, border, ballVal },
+      stats: safeStats,
+      totalTrayBalls: totalTrayBalls || 0,
+      startRot: startRot || 0,
+      storeName: String(storeName || ""),
+      storeId: selectedStoreId || null,
+      machineNum: String(machineNum || ""),
+      investYen: settlement ? (Number(settlement.investYen) || 0) : (Number(investYen) || 0),
+      recoveryYen: settlement ? (Number(settlement.recoveryYen) || 0) : (Number(recoveryYen) || 0),
+      // 台移動で持ち込んだ持ち玉の円換算（投資額に含まれる内数。アーカイブ編集の自動初期値で使用）
+      carriedInYen: settlement ? (Number(settlement.carriedInYen) || 0) : 0,
+      machineName: String(machineName || `1/${synthDenom}`),
+      initialChodama: initialChodama || 0,
+      finalChodama: currentChodama || 0,
+      chodamaNetBalls: (currentChodama || 0) - (initialChodama || 0),
+      chodamaYen: Math.round((ev?.chodamaKCount || 0) * 1000 * (exRate || 250) / (rentBalls || 250)),
+      isMoveArchive: isMove,
+    };
+    setArchives((prev) => [...prev, archive]);
+    // ハンターランク: 実戦アーカイブ確定で XP 加算（Phase 6：レベルアップ検出付き）
+    grantXp(XP_SESSION_COMPLETE, "セッション完了");
+    return true;
+  };
+
+  // 持ち玉を選択店舗の貯玉へ上乗せした履歴を chodamaLog に追記（残高自体は呼び出し側で更新）。
+  const logMochiToChodama = (storeId, balls, before) => {
+    const amount = Math.max(0, Math.round(Number(balls) || 0));
+    if (!storeId || amount <= 0) return;
+    const store = (stores || []).find(st => typeof st === "object" && st.id === storeId);
+    const beforeBal = Math.max(0, Math.round(Number(before) || 0));
+    setChodamaLog((prev) => [{
+      id: Date.now() + Math.random(),
+      date: new Date().toISOString().slice(0, 10),
+      storeId,
+      storeName: store?.name || "",
+      type: "deposit",
+      balls: amount,
+      balanceBefore: beforeBal,
+      balanceAfter: beforeBal + amount,
+      memo: "持ち玉を貯玉化",
+    }, ...prev]);
+  };
+
+  // 台移動: 現在のデータを自動保存し、持ち玉・貯玉・店舗・レートを引き継いで新台へ。
+  // ※同日内の台移動は玉箱を持って移動する＝持ち玉で続行できるようにする。
+  // 収支按分（コストベース）: この台の投資 = 持ち込んだ持ち玉(carriedInYen) + この台の現金投資(rawInvest)、
+  //   回収 = 持ち出す持ち玉の円換算。次台の carriedInYen には今回の持ち出し額をセット（相殺で合計は正確）。
   const handleMoveTable = () => {
-    if (rotRows.length > 0 || jpLog.length > 0) {
-      const now = new Date();
-      const safeStats = ev ? Object.fromEntries(
-        Object.entries(ev).filter(([, v]) => typeof v === "number" || typeof v === "string")
-      ) : {};
-      const archive = {
-        id: now.getTime(),
-        date: now.toISOString().slice(0, 10),
-        time: now.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
-        rotRows: JSON.parse(JSON.stringify(rotRows)),
-        jpLog: JSON.parse(JSON.stringify(jpLog)),
-        sesLog: JSON.parse(JSON.stringify(sesLog)),
-        settings: { rentBalls, exRate, synthDenom, rotPerHour, border, ballVal },
-        stats: safeStats,
-        totalTrayBalls: totalTrayBalls || 0,
-        startRot: startRot || 0,
-        storeName: String(storeName || ""),
-        machineNum: String(machineNum || ""),
-        investYen: Number(investYen) || 0,
-        recoveryYen: Number(recoveryYen) || 0,
-        machineName: String(machineName || `1/${synthDenom}`),
-        initialChodama: initialChodama || 0,
-        finalChodama: currentChodama || 0,
-        chodamaNetBalls: (currentChodama || 0) - (initialChodama || 0),
-        chodamaYen: Math.round((ev?.chodamaKCount || 0) * 1000 * (exRate || 250) / (rentBalls || 250)),
-        isMoveArchive: true,
-      };
-      setArchives((prev) => [...prev, archive]);
-      // ハンターランク: 実戦アーカイブ確定で XP 加算（Phase 6：レベルアップ検出付き）
-      grantXp(XP_SESSION_COMPLETE, "セッション完了");
-    }
-    resetAll();
+    const carriedMochi = currentMochiBalls || 0;
+    const carriedChodama = currentChodama || 0;
+    const ballYen = Number(ballVal) > 0 ? Number(ballVal) : (exRate > 0 ? 1000 / exRate : 0);
+    const carriedOutYen = Math.round(carriedMochi * ballYen); // この台の回収（持ち出し玉の価値）
+    const machineInvest = Math.round(Number(carriedInYen) || 0) + Math.round(ev?.rawInvest || 0);
+    archiveCurrentSession(true, { investYen: machineInvest, recoveryYen: carriedOutYen, carriedInYen });
+    const carriedMode = playMode; // 直前のモード（持ち玉/貯玉/現金）を引き継ぐ
+    try { takeSnapshotImmediate("table:move", getUndoSnapshot()); } catch { /* ignore */ }
+    // 記録のみクリア（玉資産・店舗・レートは保持）
+    setJpLog([]);
+    setSesLog([{ type: "台移動", time: tsNow(), rot: 0 }]);
+    setStartRot(0);
+    setStartGameCount(0);
+    setInvestYen(0);
+    setRecoveryYen(0);
+    setTotalTrayBalls(0);
+    setMachineNum("");
+    setMachineName("");
+    // 引き継いだ玉数を新台の初期値として設定（収支の基準にする）
+    setInitialMochiBalls(carriedMochi);
+    setInitialChodama(carriedChodama);
+    // 次台のコストベース：今回の持ち出し額を「持ち込みコスト」として引き継ぐ
+    setCarriedInYen(carriedOutYen);
+    // 新台のスタート行を引き継ぎ資産で再シード
+    setRotRows([{ type: "start", cumRot: 0, mode: carriedMode, mochiBalls: carriedMochi, chodamaBalls: carriedChodama }]);
+    setSessionStarted(true);
     setCurrentMode("record");
   };
+
+  // 実戦終了：精算シートを開く。投資額・回収額を自動算出して初期表示する。
+  // 投資額 = ev.rawInvest（実践記録の現金投資累計）、回収額 = 残り持ち玉 × 玉単価。
+  const openEndSession = () => {
+    const heldMochi = Math.round(currentMochiBalls || 0);
+    const ballYen = Number(ballVal) > 0 ? Number(ballVal) : (exRate > 0 ? 1000 / exRate : 0);
+    const store = (stores || []).find(st => typeof st === "object" && st.id === selectedStoreId);
+    setEndSheet({
+      // 投資額 = この台の現金投資 + 台移動で持ち込んだ持ち玉コスト（按分）
+      invest: Math.round(ev?.rawInvest || 0) + Math.round(Number(carriedInYen) || 0),
+      heldMochi,
+      ballYen,
+      cashYen: Math.round(heldMochi * ballYen),
+      chodama: Math.round(currentChodama || 0),
+      storeId: selectedStoreId || null,
+      storeName: store?.name || "",
+    });
+  };
+
+  // 精算シートの確定：method="cash"（現金精算）|"chodama"（貯玉化）。
+  // invest/recovery は編集後の確定値（円）。貯玉化でも持ち玉の現金換算額を回収額として
+  // 記録する（その日の収支は現金精算と同じ＝貯玉価値も収支に反映。後日の貯玉消費コストと相殺）。
+  const confirmEndSession = ({ method, invest, recovery }) => {
+    const investVal = Math.max(0, Math.round(Number(invest) || 0));
+    const recoveryVal = Math.max(0, Math.round(Number(recovery) || 0));
+    const sheet = endSheet || {};
+    let extraChodama = 0;
+    if (method === "chodama" && sheet.storeId && sheet.heldMochi > 0) {
+      // 持ち玉を店舗の貯玉残高へ加算（資産として保存）
+      extraChodama = sheet.heldMochi;
+      logMochiToChodama(sheet.storeId, sheet.heldMochi, currentChodama || 0);
+    }
+    archiveCurrentSession(false, { investYen: investVal, recoveryYen: recoveryVal, carriedInYen });
+    resetAll(extraChodama);
+    setEndSheet(null);
+    setCurrentMode("record");
+  };
+
+  // 後方互換：従来の handleEndSession 名でも精算シートを開く
+  const handleEndSession = openEndSession;
 
   const S = {
     rentBalls, setRentBalls, exRate, setExRate, synthDenom, setSynthDenom,
@@ -660,7 +801,7 @@ export default function App() {
     customMachines, setCustomMachines,
     archives, setArchives,
     monthlyEvTarget, setMonthlyEvTarget,
-    ev, handleMoveTable,
+    ev, handleMoveTable, handleEndSession,
     theme, setTheme,
     // 外観
     accentColor, setAccentColor, colorThemes: COLOR_THEMES,
@@ -679,6 +820,7 @@ export default function App() {
     initialMochiBalls, setInitialMochiBalls,
     initialChodama, setInitialChodama,
     selectedStoreId, setSelectedStoreId,
+    sessionStartDate, setSessionStartDate,
     // リアルタイム玉数
     currentMochiBalls, setCurrentMochiBalls,
     currentChodama, setCurrentChodama,
@@ -791,6 +933,7 @@ export default function App() {
                 setInitialChodama(currentChodama || 0);
                 setPlayMode(startPlayMode);
                 setSessionStarted(true);
+                setSessionStartDate(new Date().toISOString().slice(0, 10));
                 setRotRows((prev) => (
                   prev.length > 0
                     ? prev
@@ -850,6 +993,155 @@ export default function App() {
           }}
         />
       )}
+
+      {carryOverPrompt && (
+        <CarryOverSheet
+          prompt={carryOverPrompt}
+          onStore={carryOverToChodama}
+          onContinue={carryOverContinue}
+          onDiscard={carryOverDiscard}
+        />
+      )}
+
+      {endSheet && (
+        <EndSessionSheet
+          sheet={endSheet}
+          onConfirm={confirmEndSession}
+          onCancel={() => setEndSheet(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// 実戦終了の精算シート：投資額・回収額（持ち玉の現金換算）を自動表示し、編集して確定する。
+function EndSessionSheet({ sheet, onConfirm, onCancel }) {
+  const hasStore = !!sheet.storeId;
+  const [method, setMethod] = useState("cash"); // "cash" 現金精算 | "chodama" 貯玉化
+  const [invest, setInvest] = useState(String(sheet.invest || 0));
+  const [recovery, setRecovery] = useState(String(sheet.cashYen || 0));
+  const investNum = Math.max(0, Math.round(Number(invest) || 0));
+  // 貯玉化は持ち玉の現金換算額（cashYen）を回収額として扱う＝収支は現金精算と同じ
+  const recoveryNum = method === "chodama"
+    ? Math.max(0, Math.round(Number(sheet.cashYen) || 0))
+    : Math.max(0, Math.round(Number(recovery) || 0));
+  const pl = recoveryNum - investNum;
+  const fmt = (n) => (n || 0).toLocaleString();
+  const inputStyle = {
+    width: "100%", boxSizing: "border-box", background: C.bg, color: C.text,
+    border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px",
+    fontSize: 17, fontWeight: 700, fontFamily: font, textAlign: "right", outline: "none",
+  };
+  const tab = (active) => ({
+    flex: 1, height: 46, borderRadius: 10, fontSize: 13, fontWeight: 700, fontFamily: font, cursor: "pointer",
+    border: `1px solid ${active ? C.blue : C.border}`,
+    background: active ? C.blue : "transparent",
+    color: active ? "#fff" : C.sub,
+  });
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 200,
+      background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)",
+      display: "flex", flexDirection: "column", justifyContent: "flex-end",
+    }}>
+      <div style={{
+        background: C.surface, color: C.text, fontFamily: font,
+        borderTop: `1px solid ${C.border}`,
+        borderTopLeftRadius: 16, borderTopRightRadius: 16,
+        padding: "20px 20px calc(20px + env(safe-area-inset-bottom))",
+        maxWidth: 480, margin: "0 auto", width: "100%",
+      }}>
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>実戦終了・精算</div>
+        <div style={{ fontSize: 12, color: C.sub, lineHeight: 1.6, marginBottom: 16 }}>
+          残った持ち玉 <b style={{ color: C.text }}>{fmt(sheet.heldMochi)}玉</b>
+          （現金換算 約¥{fmt(sheet.cashYen)}）。精算方法を選んで保存します。
+        </div>
+
+        {/* 精算方法の選択（貯玉化は店舗選択時のみ） */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          <button onClick={() => setMethod("cash")} style={tab(method === "cash")}>現金で精算</button>
+          {hasStore && (
+            <button onClick={() => setMethod("chodama")} style={tab(method === "chodama")}>貯玉として保存</button>
+          )}
+        </div>
+
+        {/* 投資額（自動：実践記録から） */}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 5 }}>投資額（円）</div>
+          <input type="text" inputMode="numeric" pattern="[0-9]*" value={invest}
+            onChange={(e) => setInvest(e.target.value.replace(/[^0-9]/g, ""))} style={inputStyle} />
+        </div>
+
+        {/* 回収額（現金精算時のみ・自動：持ち玉×玉単価） */}
+        {method === "cash" ? (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, color: C.sub, marginBottom: 5 }}>回収額（円・持ち玉の現金化）</div>
+            <input type="text" inputMode="numeric" pattern="[0-9]*" value={recovery}
+              onChange={(e) => setRecovery(e.target.value.replace(/[^0-9]/g, ""))} style={inputStyle} />
+          </div>
+        ) : (
+          <div style={{ marginBottom: 12, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px" }}>
+            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貯玉として保存</div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>「{sheet.storeName}」へ +{fmt(sheet.heldMochi)}玉</div>
+            <div style={{ fontSize: 11, color: C.sub, marginTop: 4 }}>貯玉価値 約¥{fmt(sheet.cashYen)} を回収額として収支に計上</div>
+          </div>
+        )}
+
+        {/* 収支プレビュー */}
+        <div style={{
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10,
+          padding: "12px 14px", marginBottom: 16,
+        }}>
+          <span style={{ fontSize: 12, color: C.sub }}>収支（回収 − 投資）</span>
+          <span style={{ fontSize: 20, fontWeight: 800, fontFamily: font, color: pl > 0 ? C.green : pl < 0 ? C.red : C.text }}>
+            {pl > 0 ? "+" : ""}{fmt(pl)}円
+          </span>
+        </div>
+
+        <button onClick={() => onConfirm({ method, invest: investNum, recovery: recoveryNum })}
+          style={{ width: "100%", height: 60, borderRadius: 12, fontSize: 15, fontWeight: 700, fontFamily: font, border: "none", background: C.blue, color: "#fff", cursor: "pointer" }}>
+          実戦終了して保存
+        </button>
+        <button onClick={onCancel}
+          style={{ width: "100%", height: 52, marginTop: 8, borderRadius: 12, fontSize: 14, fontWeight: 700, fontFamily: font, border: `1px solid ${C.border}`, background: C.surface, color: C.text, cursor: "pointer" }}>
+          キャンセル
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// 起動時の持越し持ち玉プロンプト（前日以前の持ち玉が残っている場合に表示）
+function CarryOverSheet({ prompt, onStore, onContinue, onDiscard }) {
+  const balls = (prompt?.balls || 0).toLocaleString();
+  const hasStore = !!prompt?.storeId;
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 200,
+      background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)",
+      display: "flex", flexDirection: "column", justifyContent: "flex-end",
+    }}>
+      <div style={{
+        background: C.surface, color: C.text, fontFamily: font,
+        borderTop: `1px solid ${C.border}`,
+        borderTopLeftRadius: 16, borderTopRightRadius: 16,
+        padding: "20px 20px calc(20px + env(safe-area-inset-bottom))",
+        maxWidth: 480, margin: "0 auto", width: "100%",
+      }}>
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>前回の持ち玉が残っています</div>
+        <div style={{ fontSize: 13, color: C.sub, lineHeight: 1.6, marginBottom: 16 }}>
+          日付を跨いだ持ち玉 <b style={{ color: C.text }}>{balls}玉</b> が残っています。
+          {hasStore
+            ? <>「<b style={{ color: C.text }}>{prompt.storeName}</b>」の貯玉として保存できます。</>
+            : <>店舗が選択されていないため貯玉化はできません。</>}
+        </div>
+        {hasStore && (
+          <button onClick={onStore} style={recoveryBtnStyle("primary")}>貯玉として保存する</button>
+        )}
+        <button onClick={onContinue} style={recoveryBtnStyle("ghost")}>持ち玉のまま続ける</button>
+        <button onClick={onDiscard} style={recoveryBtnStyle("danger")}>精算済み（持ち玉を消す）</button>
+      </div>
     </div>
   );
 }
