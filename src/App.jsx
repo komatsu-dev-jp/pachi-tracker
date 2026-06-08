@@ -713,10 +713,13 @@ export default function App() {
   // ※同日内の台移動は玉箱を持って移動する＝持ち玉で続行できるようにする。
   // 収支按分（コストベース）: この台の投資 = 持ち込んだ持ち玉(carriedInYen) + この台の現金投資(rawInvest)、
   //   回収 = 持ち出す持ち玉の円換算。次台の carriedInYen には今回の持ち出し額をセット（相殺で合計は正確）。
-  const handleMoveTable = () => {
-    const carriedMochi = currentMochiBalls || 0;
+  // mochiOverride: モーダルで修正した「移動前の持ち玉」（未指定なら currentMochiBalls を使用）
+  const handleMoveTable = (mochiOverride) => {
+    const carriedMochi = mochiOverride !== undefined ? Math.max(0, Math.round(mochiOverride)) : (currentMochiBalls || 0);
     const carriedChodama = currentChodama || 0;
-    const ballYen = Number(ballVal) > 0 ? Number(ballVal) : (exRate > 0 ? 1000 / exRate : 0);
+    // ballYen: 選択中の店舗の換金率を優先（グローバルstateのズレを回避）
+    const store = (stores || []).find(st => typeof st === "object" && st.id === selectedStoreId);
+    const ballYen = store?.exRate > 0 ? 1000 / store.exRate : (exRate > 0 ? 1000 / exRate : (Number(ballVal) > 0 ? Number(ballVal) : 4));
     const carriedOutYen = Math.round(carriedMochi * ballYen); // この台の回収（持ち出し玉の価値）
     const machineInvest = Math.round(Number(carriedInYen) || 0) + Math.round(ev?.rawInvest || 0);
     archiveCurrentSession(true, { investYen: machineInvest, recoveryYen: carriedOutYen, carriedInYen });
@@ -735,6 +738,8 @@ export default function App() {
     // 引き継いだ玉数を新台の初期値として設定（収支の基準にする）
     setInitialMochiBalls(carriedMochi);
     setInitialChodama(carriedChodama);
+    // モーダルで修正した玉数を currentMochiBalls にも反映（新台のスタート値と整合）
+    if (mochiOverride !== undefined) setCurrentMochiBalls(carriedMochi);
     // 次台のコストベース：今回の持ち出し額を「持ち込みコスト」として引き継ぐ
     setCarriedInYen(carriedOutYen);
     // 新台のスタート行を引き継ぎ資産で再シード
@@ -747,8 +752,9 @@ export default function App() {
   // 投資額 = ev.rawInvest（実践記録の現金投資累計）、回収額 = 残り持ち玉 × 玉単価。
   const openEndSession = () => {
     const heldMochi = Math.round(currentMochiBalls || 0);
-    const ballYen = Number(ballVal) > 0 ? Number(ballVal) : (exRate > 0 ? 1000 / exRate : 0);
     const store = (stores || []).find(st => typeof st === "object" && st.id === selectedStoreId);
+    // 店舗の換金率を優先（グローバルstateのズレを回避）
+    const ballYen = store?.exRate > 0 ? 1000 / store.exRate : (exRate > 0 ? 1000 / exRate : (Number(ballVal) > 0 ? Number(ballVal) : 4));
     setEndSheet({
       // 投資額 = この台の現金投資 + 台移動で持ち込んだ持ち玉コスト（按分）
       invest: Math.round(ev?.rawInvest || 0) + Math.round(Number(carriedInYen) || 0),
