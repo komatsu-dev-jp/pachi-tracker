@@ -201,6 +201,9 @@ export default function App() {
   const [initialMochiBalls, setInitialMochiBalls] = useLS("pt_initialMochiBalls", 0);
   const [initialChodama, setInitialChodama] = useLS("pt_initialChodama", 0);
   const [selectedStoreId, setSelectedStoreId] = useLS("pt_selectedStoreId", null);
+  // 台移動で現在の台へ持ち込んだ持ち玉の円換算額（コストベース按分の原資）。
+  // 台移動時に「直前の台の持ち出し玉×玉単価」をセット、resetAll で 0 に戻す。
+  const [carriedInYen, setCarriedInYen] = useLS("pt_carriedInYen", 0);
   // セッション開始日（持ち玉の日付跨ぎ検知に使用。YYYY-MM-DD。未稼働時は ""）
   const [sessionStartDate, setSessionStartDate] = useLS("pt_sessionStartDate", "");
 
@@ -637,6 +640,7 @@ export default function App() {
     setInitialChodama(0);
     setCurrentMochiBalls(0);
     setCurrentChodama(0);
+    setCarriedInYen(0);
     // Phase 6 XPトリガー用カウンタもセッション一緒にリセット（次のセッションは 0 から数え直す）
     setHunterCounters((prev) => ({
       countedHits: 0,
@@ -667,9 +671,12 @@ export default function App() {
       totalTrayBalls: totalTrayBalls || 0,
       startRot: startRot || 0,
       storeName: String(storeName || ""),
+      storeId: selectedStoreId || null,
       machineNum: String(machineNum || ""),
       investYen: settlement ? (Number(settlement.investYen) || 0) : (Number(investYen) || 0),
       recoveryYen: settlement ? (Number(settlement.recoveryYen) || 0) : (Number(recoveryYen) || 0),
+      // 台移動で持ち込んだ持ち玉の円換算（投資額に含まれる内数。アーカイブ編集の自動初期値で使用）
+      carriedInYen: settlement ? (Number(settlement.carriedInYen) || 0) : 0,
       machineName: String(machineName || `1/${synthDenom}`),
       initialChodama: initialChodama || 0,
       finalChodama: currentChodama || 0,
@@ -704,10 +711,15 @@ export default function App() {
 
   // 台移動: 現在のデータを自動保存し、持ち玉・貯玉・店舗・レートを引き継いで新台へ。
   // ※同日内の台移動は玉箱を持って移動する＝持ち玉で続行できるようにする。
+  // 収支按分（コストベース）: この台の投資 = 持ち込んだ持ち玉(carriedInYen) + この台の現金投資(rawInvest)、
+  //   回収 = 持ち出す持ち玉の円換算。次台の carriedInYen には今回の持ち出し額をセット（相殺で合計は正確）。
   const handleMoveTable = () => {
-    archiveCurrentSession(true);
     const carriedMochi = currentMochiBalls || 0;
     const carriedChodama = currentChodama || 0;
+    const ballYen = Number(ballVal) > 0 ? Number(ballVal) : (exRate > 0 ? 1000 / exRate : 0);
+    const carriedOutYen = Math.round(carriedMochi * ballYen); // この台の回収（持ち出し玉の価値）
+    const machineInvest = Math.round(Number(carriedInYen) || 0) + Math.round(ev?.rawInvest || 0);
+    archiveCurrentSession(true, { investYen: machineInvest, recoveryYen: carriedOutYen, carriedInYen });
     const carriedMode = playMode; // 直前のモード（持ち玉/貯玉/現金）を引き継ぐ
     try { takeSnapshotImmediate("table:move", getUndoSnapshot()); } catch { /* ignore */ }
     // 記録のみクリア（玉資産・店舗・レートは保持）
@@ -723,6 +735,8 @@ export default function App() {
     // 引き継いだ玉数を新台の初期値として設定（収支の基準にする）
     setInitialMochiBalls(carriedMochi);
     setInitialChodama(carriedChodama);
+    // 次台のコストベース：今回の持ち出し額を「持ち込みコスト」として引き継ぐ
+    setCarriedInYen(carriedOutYen);
     // 新台のスタート行を引き継ぎ資産で再シード
     setRotRows([{ type: "start", cumRot: 0, mode: carriedMode, mochiBalls: carriedMochi, chodamaBalls: carriedChodama }]);
     setSessionStarted(true);
@@ -736,7 +750,8 @@ export default function App() {
     const ballYen = Number(ballVal) > 0 ? Number(ballVal) : (exRate > 0 ? 1000 / exRate : 0);
     const store = (stores || []).find(st => typeof st === "object" && st.id === selectedStoreId);
     setEndSheet({
-      invest: Math.round(ev?.rawInvest || 0),
+      // 投資額 = この台の現金投資 + 台移動で持ち込んだ持ち玉コスト（按分）
+      invest: Math.round(ev?.rawInvest || 0) + Math.round(Number(carriedInYen) || 0),
       heldMochi,
       ballYen,
       cashYen: Math.round(heldMochi * ballYen),
@@ -759,7 +774,7 @@ export default function App() {
       extraChodama = sheet.heldMochi;
       logMochiToChodama(sheet.storeId, sheet.heldMochi, currentChodama || 0);
     }
-    archiveCurrentSession(false, { investYen: investVal, recoveryYen: recoveryVal });
+    archiveCurrentSession(false, { investYen: investVal, recoveryYen: recoveryVal, carriedInYen });
     resetAll(extraChodama);
     setEndSheet(null);
     setCurrentMode("record");

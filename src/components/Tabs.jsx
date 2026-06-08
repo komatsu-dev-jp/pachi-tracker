@@ -7609,6 +7609,7 @@ export function CalendarTab({ S, onReset }) {
     const [editMachineNum, setEditMachineNum] = useState("");
     const [editInvest, setEditInvest] = useState("");
     const [editRecovery, setEditRecovery] = useState("");
+    const [editChodama, setEditChodama] = useState(""); // 貯玉残高（店舗の現在残高を編集）
     const [showEditStoreDD, setShowEditStoreDD] = useState(false);
     // Swipe delete state
     const [swipedId, setSwipedId] = useState(null);
@@ -7986,10 +7987,16 @@ export function CalendarTab({ S, onReset }) {
                     setEditMachineNum(String(target.machineNum || ""));
                     // 投資額は実践記録（回転数データ）から算出した値を初期表示する。
                     // makeArchive が保存した stats.rawInvest = deriveFromRows の現金投資累計。
+                    // 台移動で持ち込んだ持ち玉コスト（carriedInYen）は投資の内数なので加算する。
                     // 算出値が無い古いアーカイブは従来の保存値 investYen をフォールバック表示。
-                    const derivedInvest = Math.round(target.stats?.rawInvest || 0);
+                    const carriedIn = Math.round(target.carriedInYen || 0);
+                    const derivedInvest = Math.round(target.stats?.rawInvest || 0) + carriedIn;
                     setEditInvest(derivedInvest > 0 ? derivedInvest : (target.investYen || ""));
                     setEditRecovery(target.recoveryYen || "");
+                    // 貯玉残高はその店舗の現在残高を初期表示（店舗が特定できる場合のみ）
+                    const tStore = (S.stores || []).find(st => typeof st === "object" &&
+                        (st.id === target.storeId || st.name === target.storeName));
+                    setEditChodama(tStore ? String(Math.round(Number(tStore.chodama) || 0)) : "");
                     setShowEditStoreDD(false);
                 }, 0);
                 return () => clearTimeout(timer);
@@ -8017,6 +8024,29 @@ export function CalendarTab({ S, onReset }) {
                 investYen: Number(editInvest) || 0,
                 recoveryYen: Number(editRecovery) || 0,
             }));
+            // 貯玉残高の編集 → 店舗の現在残高に同期（差分があれば chodamaLog に調整履歴を追記）
+            const editStoreObj = (S.stores || []).find(st => typeof st === "object" &&
+                (st.id === a.storeId || st.name === editStore || st.name === a.storeName));
+            if (editStoreObj && editChodama !== "") {
+                const newBal = Math.max(0, Math.round(Number(editChodama) || 0));
+                const oldBal = Math.round(Number(editStoreObj.chodama) || 0);
+                if (newBal !== oldBal) {
+                    S.setStores(prev => prev.map(st =>
+                        (typeof st === "object" && st.id === editStoreObj.id)
+                            ? { ...st, chodama: newBal } : st));
+                    S.setChodamaLog(prev => [{
+                        id: Date.now() + Math.random(),
+                        date: new Date().toISOString().slice(0, 10),
+                        storeId: editStoreObj.id,
+                        storeName: editStoreObj.name || "",
+                        type: "adjust",
+                        balls: newBal - oldBal,
+                        balanceBefore: oldBal,
+                        balanceAfter: newBal,
+                        memo: "アーカイブから残高調整",
+                    }, ...(prev || [])]);
+                }
+            }
             if (doReset) onReset();
             // 保存後は詳細ビューを閉じてカレンダー一覧に戻す（視覚的フィードバック）
             setSelectedArchiveId(null);
@@ -8140,7 +8170,9 @@ export function CalendarTab({ S, onReset }) {
                             <div>
                                 <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>投資額</div>
                                 <NI v={editInvest} set={setEditInvest} w="100%" center ph="10000" />
-                                {Math.round(a.stats?.rawInvest || 0) > 0 && (
+                                {Math.round(a.carriedInYen || 0) > 0 ? (
+                                    <div style={{ fontSize: 9, color: C.sub, marginTop: 4 }}>引き継ぎ玉 ¥{(Math.round(a.carriedInYen || 0)).toLocaleString()} を含む</div>
+                                ) : Math.round(a.stats?.rawInvest || 0) > 0 && (
                                     <div style={{ fontSize: 9, color: C.sub, marginTop: 4 }}>実践記録から自動反映</div>
                                 )}
                             </div>
@@ -8149,6 +8181,14 @@ export function CalendarTab({ S, onReset }) {
                                 <NI v={editRecovery} set={setEditRecovery} w="100%" center ph="0" />
                             </div>
                         </div>
+                        {/* 貯玉残高：この店舗の現在残高を編集（保存で店舗残高に同期） */}
+                        {(S.stores || []).some(st => typeof st === "object" && (st.id === a.storeId || st.name === a.storeName)) && (
+                            <div style={{ marginBottom: 8 }}>
+                                <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>貯玉残高（玉）</div>
+                                <NI v={editChodama} set={setEditChodama} w="100%" center ph="0" />
+                                <div style={{ fontSize: 9, color: C.sub, marginTop: 4 }}>「{a.storeName || ""}」の現在残高に同期されます</div>
+                            </div>
+                        )}
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                             <Btn label="保存" onClick={() => updateArchive(false)} primary fs={13} />
                             <Btn label="保存してリセット" onClick={() => updateArchive(true)} bg={C.orange} fg="#fff" bd="none" fs={13} />
