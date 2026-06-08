@@ -747,21 +747,17 @@ export default function App() {
   };
 
   // 精算シートの確定：method="cash"（現金精算）|"chodama"（貯玉化）。
-  // invest/recovery は編集後の確定値（円）。
+  // invest/recovery は編集後の確定値（円）。貯玉化でも持ち玉の現金換算額を回収額として
+  // 記録する（その日の収支は現金精算と同じ＝貯玉価値も収支に反映。後日の貯玉消費コストと相殺）。
   const confirmEndSession = ({ method, invest, recovery }) => {
     const investVal = Math.max(0, Math.round(Number(invest) || 0));
+    const recoveryVal = Math.max(0, Math.round(Number(recovery) || 0));
     const sheet = endSheet || {};
-    let recoveryVal;
     let extraChodama = 0;
-    if (method === "chodama") {
-      // 持ち玉を貯玉化：現金回収は0、持ち玉を店舗の貯玉へ加算
-      recoveryVal = 0;
-      if (sheet.storeId && sheet.heldMochi > 0) {
-        extraChodama = sheet.heldMochi;
-        logMochiToChodama(sheet.storeId, sheet.heldMochi, currentChodama || 0);
-      }
-    } else {
-      recoveryVal = Math.max(0, Math.round(Number(recovery) || 0));
+    if (method === "chodama" && sheet.storeId && sheet.heldMochi > 0) {
+      // 持ち玉を店舗の貯玉残高へ加算（資産として保存）
+      extraChodama = sheet.heldMochi;
+      logMochiToChodama(sheet.storeId, sheet.heldMochi, currentChodama || 0);
     }
     archiveCurrentSession(false, { investYen: investVal, recoveryYen: recoveryVal });
     resetAll(extraChodama);
@@ -1010,7 +1006,10 @@ function EndSessionSheet({ sheet, onConfirm, onCancel }) {
   const [invest, setInvest] = useState(String(sheet.invest || 0));
   const [recovery, setRecovery] = useState(String(sheet.cashYen || 0));
   const investNum = Math.max(0, Math.round(Number(invest) || 0));
-  const recoveryNum = method === "chodama" ? 0 : Math.max(0, Math.round(Number(recovery) || 0));
+  // 貯玉化は持ち玉の現金換算額（cashYen）を回収額として扱う＝収支は現金精算と同じ
+  const recoveryNum = method === "chodama"
+    ? Math.max(0, Math.round(Number(sheet.cashYen) || 0))
+    : Math.max(0, Math.round(Number(recovery) || 0));
   const pl = recoveryNum - investNum;
   const fmt = (n) => (n || 0).toLocaleString();
   const inputStyle = {
@@ -1069,6 +1068,7 @@ function EndSessionSheet({ sheet, onConfirm, onCancel }) {
           <div style={{ marginBottom: 12, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px" }}>
             <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貯玉として保存</div>
             <div style={{ fontSize: 14, fontWeight: 700 }}>「{sheet.storeName}」へ +{fmt(sheet.heldMochi)}玉</div>
+            <div style={{ fontSize: 11, color: C.sub, marginTop: 4 }}>貯玉価値 約¥{fmt(sheet.cashYen)} を回収額として収支に計上</div>
           </div>
         )}
 
