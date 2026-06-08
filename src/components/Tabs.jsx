@@ -8775,12 +8775,11 @@ export function SettingsTab({ s, onReset }) {
     const isStoreRegistered = (name) => normalizedStores.some(st => normStoreName(st.name) === normStoreName(name));
 
     // 愛媛県マスタの候補を絞り込み（検索ボックス連動）
+    // 普段は内蔵リストをデータとして保持し画面には出さず、検索時のみ候補を表示する
     const ehimeCandidates = (() => {
         const q = storeQuery.trim().toLowerCase();
-        const list = q
-            ? EHIME_STORES.filter(e => e.name.toLowerCase().includes(q) || e.address.toLowerCase().includes(q))
-            : EHIME_STORES;
-        return list;
+        if (!q) return [];
+        return EHIME_STORES.filter(e => e.name.toLowerCase().includes(q) || e.address.toLowerCase().includes(q));
     })();
 
     // 愛媛県マスタの店舗を登録（既定の貸玉/交換率で追加。後から店舗ごとに編集可能）
@@ -10121,7 +10120,7 @@ export function SettingsTab({ s, onReset }) {
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
                         <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: 13, color: C.text, fontWeight: 800 }}>愛媛県のパチンコ店</div>
-                            <div style={{ fontSize: 10, color: C.sub, marginTop: 3 }}>内蔵リストから店舗を登録できます（全{EHIME_STORES.length}件）</div>
+                            <div style={{ fontSize: 10, color: C.sub, marginTop: 3 }}>検索すると内蔵リストの候補が表示されます（全{EHIME_STORES.length}件）</div>
                         </div>
                         <button
                             className="b"
@@ -10136,7 +10135,9 @@ export function SettingsTab({ s, onReset }) {
                     </div>
 
                     {ehimeCandidates.length === 0 ? (
-                        <div style={{ fontSize: 11, color: C.sub, textAlign: "center", padding: "16px 0" }}>該当する候補がありません</div>
+                        <div style={{ fontSize: 11, color: C.sub, textAlign: "center", padding: "16px 0" }}>
+                            {storeQuery.trim() ? "該当する候補がありません" : "店舗名・住所で検索すると候補が表示されます"}
+                        </div>
                     ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflowY: "auto" }}>
                             {ehimeCandidates.map(entry => {
