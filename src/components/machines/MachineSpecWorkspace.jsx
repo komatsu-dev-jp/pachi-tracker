@@ -7,6 +7,7 @@ import {
   buildDist,
   normalizeMachine,
   buildMachineOverride,
+  buildTsv,
 } from "./machineSpecModel";
 
 // 詳細画面の列マッピング一覧（全列）
@@ -38,8 +39,14 @@ const mappingGroups = {
     ["G", "標準偏差"],
   ],
   MC: [
+    ["H", "初期確率"],
+    ["I", "ムラ係数"],
+    ["J", "空間感応度"],
+    ["K", "レジーム感応度"],
     ["N", "RUSH突入率"],
     ["O", "RUSH継続率"],
+    ["W", "MC期待日当"],
+    ["X", "MC勝率"],
   ],
   振分: [
     ["Q〜V", "ヘソ振分"],
@@ -351,6 +358,22 @@ function Field({ label, value, unit, compact, onChange }) {
   );
 }
 
+function TextField({ label, value, onChange, compact }) {
+  return (
+    <label className={`ms-field ${compact ? "compact" : ""}`}>
+      <span>{label}</span>
+      <div className="single">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          aria-label={label}
+        />
+      </div>
+    </label>
+  );
+}
+
 function Toggle({ checked, onChange }) {
   return (
     <button
@@ -378,12 +401,30 @@ function RegisterScreen({ machine, onSave, onBack }) {
   const [openBasic, setOpenBasic] = useState(true);
   const [openPayout, setOpenPayout] = useState(true);
   const [form, setForm] = useState(() => ({
+    name: machine.name || "",
+    maker: machine.maker || "",
+    type: machine.type || "",
+    synthProb: plainNum(machine.synthProb),
+    chargeProb: plainNum(machine.chargeProb),
+    border1K: plainNum(machine.border1K),
+    prize: plainNum(machine.prize),
+    unitCost: plainNum(machine.unitCost),
+    initialProb: plainNum(machine.initialProb),
+    muraCoef: plainNum(machine.muraCoef),
+    spatialSens: plainNum(machine.spatialSens),
+    regimeSens: plainNum(machine.regimeSens),
+    spec1R: plainNum(machine.spec1R),
+    specAvgTotalRounds: plainNum(machine.specAvgTotalRounds),
+    specSapo: plainNum(machine.specSapo),
     avgPayout: plainNum(machine.avgPayout),
     hesoAvg: plainNum(machine.hesoAvg),
     rushAvg: plainNum(machine.rushAvg),
     rushEntry: plainNum(machine.rushEntry),
     rushContinue: plainNum(machine.rushContinue),
     stdDev: plainNum(machine.stdDev),
+    manualHesoValue: plainNum(machine.manualHesoValue),
+    mcExpectedDaily: plainNum(machine.mcExpectedDaily),
+    mcWinRate: plainNum(machine.mcWinRate),
     synced: !!machine.synced,
     heso: machine.heso.map((row, index) => ({
       key: `init-${index}`,
@@ -428,26 +469,50 @@ function RegisterScreen({ machine, onSave, onBack }) {
   const ratioOk = ratioSum === 100;
   const rushRatioSum = sumRatio(form.rush);
   const rushRatioOk = rushRatioSum === 100;
-  const emptyRequired = [form.avgPayout, form.rushEntry, form.rushContinue].filter(
-    (v) => plainNum(v) === ""
-  ).length;
+  const emptyRequired = [
+    form.name.trim(),
+    plainNum(form.synthProb),
+    plainNum(form.border1K),
+    plainNum(form.avgPayout),
+    plainNum(form.rushEntry),
+    plainNum(form.rushContinue),
+  ].filter((v) => v === "").length;
   const errorCount = emptyRequired + (ratioOk ? 0 : 1) + (rushRatioOk ? 0 : 1);
 
-  const previewTsv = machine.tsv.map((cell, i) => {
-    if (i === 5) return plainNum(form.avgPayout) || cell;
-    if (i === 6) return plainNum(form.stdDev) || cell;
-    return cell;
+  const previewTsv = buildTsv({
+    ...machine,
+    ...form,
   });
 
   const handleSave = () => {
     const updated = {
       ...machine,
+      name: form.name.trim() || machine.name,
+      maker: form.maker.trim(),
+      type: form.type.trim(),
+      synthProb: plainNum(form.synthProb),
+      chargeProb: plainNum(form.chargeProb),
+      probability: plainNum(form.synthProb) ? `1/${plainNum(form.synthProb)}` : machine.probability,
+      border1K: plainNum(form.border1K),
+      border: form.border1K ? formatNumber(form.border1K, machine.border) : machine.border,
+      prize: plainNum(form.prize),
+      unitCost: plainNum(form.unitCost),
+      initialProb: plainNum(form.initialProb),
+      muraCoef: plainNum(form.muraCoef),
+      spatialSens: plainNum(form.spatialSens),
+      regimeSens: plainNum(form.regimeSens),
+      spec1R: plainNum(form.spec1R),
+      specAvgTotalRounds: plainNum(form.specAvgTotalRounds),
+      specSapo: plainNum(form.specSapo),
       avgPayout: form.avgPayout ? formatNumber(form.avgPayout, machine.avgPayout) : machine.avgPayout,
       hesoAvg: form.hesoAvg ? formatNumber(form.hesoAvg, machine.hesoAvg) : machine.hesoAvg,
       rushAvg: form.rushAvg ? formatNumber(form.rushAvg, machine.rushAvg) : machine.rushAvg,
       rushEntry: form.rushEntry ? `${form.rushEntry}%` : machine.rushEntry,
       rushContinue: form.rushContinue ? `${form.rushContinue}%` : machine.rushContinue,
       stdDev: form.stdDev ? formatNumber(form.stdDev, machine.stdDev) : machine.stdDev,
+      manualHesoValue: plainNum(form.manualHesoValue),
+      mcExpectedDaily: plainNum(form.mcExpectedDaily),
+      mcWinRate: plainNum(form.mcWinRate),
       synced: form.synced,
       heso: form.heso.map((h, i) => ({
         id: `ヘソ${i + 1}`,
@@ -465,8 +530,9 @@ function RegisterScreen({ machine, onSave, onBack }) {
       // R数が入力されていれば記録フロー用の roundDist / rushDist を再生成（未入力なら従来値を維持）
       roundDist: buildDist(form.heso) || machine.roundDist,
       rushDist: buildDist(form.rush) || machine.rushDist,
-      tsv: previewTsv,
     };
+    updated.meta = `${updated.maker || "メーカー未設定"} | ${updated.type || "タイプ未設定"}${updated.prize ? ` | ${updated.prize}個賞球` : ""}`;
+    updated.tsv = buildTsv(updated);
     onSave(updated);
   };
 
@@ -482,8 +548,24 @@ function RegisterScreen({ machine, onSave, onBack }) {
       // TSV列順（機種名/確率/ボーダー/賞球/単価/平均出玉/標準偏差）に従い数値欄へ反映
       setForm((f) => ({
         ...f,
+        name: cells[0] || f.name,
+        synthProb: plainNum(cells[1]) || f.synthProb,
+        border1K: plainNum(cells[2]) || f.border1K,
+        prize: plainNum(cells[3]) || f.prize,
+        unitCost: plainNum(cells[4]) || f.unitCost,
         avgPayout: plainNum(cells[5]) || f.avgPayout,
         stdDev: plainNum(cells[6]) || f.stdDev,
+        initialProb: plainNum(cells[7]) || f.initialProb,
+        muraCoef: plainNum(cells[8]) || f.muraCoef,
+        spatialSens: plainNum(cells[9]) || f.spatialSens,
+        regimeSens: plainNum(cells[10]) || f.regimeSens,
+        hesoAvg: plainNum(cells[11]) || f.hesoAvg,
+        rushAvg: plainNum(cells[12]) || f.rushAvg,
+        rushEntry: plainNum(cells[13]) || f.rushEntry,
+        rushContinue: plainNum(cells[14]) || f.rushContinue,
+        manualHesoValue: plainNum(cells[15]) || f.manualHesoValue,
+        mcExpectedDaily: plainNum(cells[22]) || f.mcExpectedDaily,
+        mcWinRate: plainNum(cells[23]) || f.mcWinRate,
       }));
     };
     reader.readAsText(file);
@@ -532,11 +614,15 @@ function RegisterScreen({ machine, onSave, onBack }) {
             </button>
           </div>
           {openBasic && (
-            <div className="ms-basic-grid">
-              <p>機種名： <b>{machine.name}</b></p>
-              <p>タイプ： <b>P</b></p>
-              <p>確率： <b>{machine.probability}</b></p>
-              <p>ボーダー： <b>{machine.border}</b></p>
+            <div className="ms-form-grid">
+              <TextField label="機種名" value={form.name} onChange={(v) => setField("name", v)} />
+              <TextField label="メーカー" value={form.maker} onChange={(v) => setField("maker", v)} />
+              <TextField label="タイプ" value={form.type} onChange={(v) => setField("type", v)} />
+              <Field label="大当り確率" value={form.synthProb} unit="分母" onChange={(v) => setField("synthProb", v)} />
+              <Field label="チャージ確率" value={form.chargeProb} unit="分母" onChange={(v) => setField("chargeProb", v)} />
+              <Field label="ボーダー(1k)" value={form.border1K} unit="回" onChange={(v) => setField("border1K", v)} />
+              <Field label="賞球数" value={form.prize} unit="個" onChange={(v) => setField("prize", v)} />
+              <Field label="回転単価" value={form.unitCost} unit="円" onChange={(v) => setField("unitCost", v)} />
             </div>
           )}
         </section>
@@ -563,6 +649,7 @@ function RegisterScreen({ machine, onSave, onBack }) {
                 <Field label="RUSH突入率" value={form.rushEntry} unit="%" onChange={(v) => setField("rushEntry", v)} />
                 <Field label="RUSH継続率" value={form.rushContinue} unit="%" onChange={(v) => setField("rushContinue", v)} />
                 <Field label="標準偏差" value={form.stdDev} unit="発" onChange={(v) => setField("stdDev", v)} />
+                <Field label="手動入力値(優先)" value={form.manualHesoValue} unit="発" onChange={(v) => setField("manualHesoValue", v)} />
               </div>
               <div className="ms-info-note">
                 <span>i</span>
@@ -570,6 +657,23 @@ function RegisterScreen({ machine, onSave, onBack }) {
               </div>
             </>
           )}
+        </section>
+
+        <section className="ms-register-card">
+          <div className="ms-card-head">
+            <h2>MC・記録フロー補正</h2>
+          </div>
+          <div className="ms-form-grid">
+            <Field label="初期確率" value={form.initialProb} onChange={(v) => setField("initialProb", v)} />
+            <Field label="ムラ係数" value={form.muraCoef} onChange={(v) => setField("muraCoef", v)} />
+            <Field label="空間感応度" value={form.spatialSens} onChange={(v) => setField("spatialSens", v)} />
+            <Field label="レジーム感応度" value={form.regimeSens} onChange={(v) => setField("regimeSens", v)} />
+            <Field label="MC期待日当" value={form.mcExpectedDaily} unit="円" onChange={(v) => setField("mcExpectedDaily", v)} />
+            <Field label="MC勝率" value={form.mcWinRate} unit="%" onChange={(v) => setField("mcWinRate", v)} />
+            <Field label="1R出玉（記録用）" value={form.spec1R} unit="発" onChange={(v) => setField("spec1R", v)} />
+            <Field label="平均総R/初当り" value={form.specAvgTotalRounds} unit="R" onChange={(v) => setField("specAvgTotalRounds", v)} />
+            <Field label="サポ増減" value={form.specSapo} unit="発" onChange={(v) => setField("specSapo", v)} />
+          </div>
         </section>
 
         <section className="ms-register-card" ref={hesoRef}>

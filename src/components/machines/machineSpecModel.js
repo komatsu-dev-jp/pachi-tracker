@@ -37,6 +37,38 @@ export function plainNum(value) {
   return String(value ?? "").replace(/[^0-9.-]/g, "");
 }
 
+function toNum(value) {
+  const n = Number(plainNum(value));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function plainText(value) {
+  return String(value ?? "").trim();
+}
+
+function rawNum(value) {
+  const n = toNum(value);
+  return n > 0 ? String(n) : "";
+}
+
+function rawAnyNum(value) {
+  if (value == null || value === "") return "";
+  const n = toNum(value);
+  return Number.isFinite(n) ? String(n) : "";
+}
+
+function parseProbDenom(data) {
+  const synthProb = Number(data?.synthProb);
+  if (Number.isFinite(synthProb) && synthProb > 0) return synthProb;
+  const prob = String(data?.prob || "");
+  const m = prob.match(/1\s*\/\s*([0-9.]+)/);
+  if (m) {
+    const n = Number(m[1]);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
+}
+
 export function sumRatio(heso) {
   return heso.reduce((sum, row) => sum + (Number(plainNum(row.ratio)) || 0), 0);
 }
@@ -66,21 +98,65 @@ export function buildDist(rows) {
 }
 
 export function formatProbability(data) {
-  if (data?.prob) return data.prob;
-  const synthProb = Number(data?.synthProb);
+  const synthProb = parseProbDenom(data);
   if (Number.isFinite(synthProb) && synthProb > 0) return `1/${synthProb}`;
+  if (data?.prob) return data.prob;
   return fallbackMachine.probability;
 }
 
-export function formatBorder(data) {
+export function getBorder1K(data) {
+  const direct = Number(data?.border1K);
+  if (Number.isFinite(direct) && direct > 0) return direct;
   if (data?.border && typeof data.border === "object") {
-    const preferred = data.border["4.00"] || data.border["4"] || data.border["等価"];
-    if (preferred) return formatNumber(preferred);
-    const first = Object.values(data.border).find((value) => Number(value) > 0);
-    if (first) return formatNumber(first);
+    const preferred = Number(data.border["4.00"] || data.border["4"] || data.border["等価"]);
+    if (Number.isFinite(preferred) && preferred > 0) return preferred;
+    const first = Object.values(data.border).map(Number).find((value) => Number.isFinite(value) && value > 0);
+    if (first) return first;
   }
-  if (data?.border) return formatNumber(data.border);
+  const scalar = Number(data?.border);
+  if (Number.isFinite(scalar) && scalar > 0) return scalar;
+  return 0;
+}
+
+export function formatBorder(data) {
+  const border1K = getBorder1K(data);
+  if (border1K > 0) return formatNumber(border1K);
   return fallbackMachine.border;
+}
+
+function pct(value) {
+  const n = toNum(value);
+  return n > 0 ? `${n}%` : "";
+}
+
+function buildTsv(model) {
+  const heso = model.heso || [];
+  return [
+    model.name || "",
+    plainNum(model.synthProb),
+    plainNum(model.border1K),
+    plainNum(model.prize),
+    plainNum(model.unitCost),
+    plainNum(model.avgPayout),
+    plainNum(model.stdDev),
+    plainNum(model.initialProb),
+    plainNum(model.muraCoef),
+    plainNum(model.spatialSens),
+    plainNum(model.regimeSens),
+    plainNum(model.hesoAvg),
+    plainNum(model.rushAvg),
+    pct(model.rushEntry),
+    pct(model.rushContinue),
+    plainNum(model.manualHesoValue),
+    plainNum(heso[0]?.payout),
+    pct(heso[0]?.ratio),
+    plainNum(heso[1]?.payout),
+    pct(heso[1]?.ratio),
+    plainNum(heso[2]?.payout),
+    pct(heso[2]?.ratio),
+    plainNum(model.mcExpectedDaily),
+    pct(model.mcWinRate),
+  ];
 }
 
 export function normalizeMachine(data) {
@@ -90,6 +166,8 @@ export function normalizeMachine(data) {
   const type = data.type || "タイプ未設定";
   const prize = Number(data.prize);
   const prizeText = Number.isFinite(prize) && prize > 0 ? ` | ${prize}個賞球` : "";
+  const synthProb = parseProbDenom(data);
+  const border1K = getBorder1K(data);
   // ラウンド振分文字列（初当たり=roundDist / 確変中=rushDist）を行に取り込む。
   // hesoDist と roundDist は機種マスタ上は独立配列のため、件数が一致するときのみ行へ対応付ける。
   const hesoSrc = Array.isArray(data.hesoDist) ? data.hesoDist.slice(0, 3) : [];
@@ -120,8 +198,25 @@ export function normalizeMachine(data) {
       ? [{ id: "RUSH1", payout: String(rushAvgNum), ratio: "100", rounds: rushRoundEntries[0]?.rounds || "" }]
       : fallbackMachine.rush;
 
-  return {
+  const model = {
     name: data.name || fallbackMachine.name,
+    maker,
+    type,
+    synthProb: rawNum(synthProb),
+    chargeProb: rawNum(data.chargeProb),
+    border1K: rawNum(border1K),
+    prize: rawNum(data.prize),
+    unitCost: rawAnyNum(data.unitCost),
+    initialProb: rawAnyNum(data.initialProb ?? 0.5),
+    muraCoef: rawAnyNum(data.muraCoef ?? 80000),
+    spatialSens: rawAnyNum(data.spatialSens ?? 1),
+    regimeSens: rawAnyNum(data.regimeSens ?? 1),
+    spec1R: rawAnyNum(data.spec1R),
+    specAvgTotalRounds: rawAnyNum(data.specAvgTotalRounds),
+    specSapo: rawAnyNum(data.specSapo),
+    manualHesoValue: rawAnyNum(data.manualHesoValue),
+    mcExpectedDaily: rawAnyNum(data.mcExpectedDaily),
+    mcWinRate: rawAnyNum(data.mcWinRate),
     meta: `${maker} | ${type}${prizeText}`,
     tags: [
       data.name?.includes("海") ? "海シリーズ" : "機種検索連携",
@@ -153,6 +248,10 @@ export function normalizeMachine(data) {
     roundDist: data.roundDist || fallbackMachine.roundDist || "1500発 100%",
     rushDist: data.rushDist || fallbackMachine.rushDist || "1500発 100%",
   };
+  return {
+    ...model,
+    tsv: buildTsv(model),
+  };
 }
 
 // 文字列化した数値が等しいか（"60" と "60.0"、"" と undefined を吸収して比較）
@@ -170,18 +269,23 @@ function rowsChanged(rows = [], initRows = []) {
   );
 }
 
-// 数値文字列を数値へ（不正は 0）
-function toNum(value) {
-  const n = Number(plainNum(value));
-  return Number.isFinite(n) ? n : 0;
+function textEq(a, b) {
+  return plainText(a) === plainText(b);
+}
+
+function writeTextIfChanged(out, key, value, initValue) {
+  if (!textEq(value, initValue)) out[key] = plainText(value);
+}
+
+function writeNumIfChanged(out, key, value, initValue) {
+  if (!plainEq(value, initValue)) out[key] = toNum(value);
 }
 
 // 編集後の表示モデル（model）を、元データ（rawSource）のスキーマへ書き戻した
 // 保存用カスタム機種レコードを生成する。
 //
 // 矛盾防止の原則:
-//  - 元データの全フィールドを継承し、読み取り専用項目（synthProb/spec/border/prob/prize等）は触らない
-//  - 出玉系の数値は「ユーザーが初期表示から変更した項目」だけ上書きする（fallback 既定値を捏造しない）
+//  - 元データの全フィールドを継承し、ユーザーが編集した項目だけ上書きする（fallback 既定値を捏造しない）
 //  - roundDist/rushDist は行データから再生成し、未入力なら元データの生値にフォールバック（placeholder は使わない）
 //  - hesoDist は元データにあった、または行が変更された場合のみ書き戻す
 export function buildMachineOverride(rawSource, model) {
@@ -192,6 +296,37 @@ export function buildMachineOverride(rawSource, model) {
     isCustom: true,
     name: rawSource?.name ?? model.name,
   };
+
+  writeTextIfChanged(out, "name", model.name, init.name);
+  writeTextIfChanged(out, "maker", model.maker, init.maker);
+  writeTextIfChanged(out, "type", model.type, init.type);
+
+  if (!plainEq(model.synthProb, init.synthProb)) {
+    const synthProb = toNum(model.synthProb);
+    out.synthProb = synthProb;
+    out.prob = synthProb > 0 ? `1/${synthProb}` : "0";
+  }
+  writeNumIfChanged(out, "chargeProb", model.chargeProb, init.chargeProb);
+  if (!plainEq(model.border1K, init.border1K)) {
+    const border1K = toNum(model.border1K);
+    out.border1K = border1K;
+    out.border = {
+      ...(rawSource?.border && typeof rawSource.border === "object" ? rawSource.border : {}),
+      "4.00": border1K,
+    };
+  }
+  writeNumIfChanged(out, "prize", model.prize, init.prize);
+  writeNumIfChanged(out, "unitCost", model.unitCost, init.unitCost);
+  writeNumIfChanged(out, "initialProb", model.initialProb, init.initialProb);
+  writeNumIfChanged(out, "muraCoef", model.muraCoef, init.muraCoef);
+  writeNumIfChanged(out, "spatialSens", model.spatialSens, init.spatialSens);
+  writeNumIfChanged(out, "regimeSens", model.regimeSens, init.regimeSens);
+  writeNumIfChanged(out, "spec1R", model.spec1R, init.spec1R);
+  writeNumIfChanged(out, "specAvgTotalRounds", model.specAvgTotalRounds, init.specAvgTotalRounds);
+  writeNumIfChanged(out, "specSapo", model.specSapo, init.specSapo);
+  writeNumIfChanged(out, "manualHesoValue", model.manualHesoValue, init.manualHesoValue);
+  writeNumIfChanged(out, "mcExpectedDaily", model.mcExpectedDaily, init.mcExpectedDaily);
+  writeNumIfChanged(out, "mcWinRate", model.mcWinRate, init.mcWinRate);
 
   // 振分（ラウンド数）→ 記録フロー用の roundDist / rushDist
   out.roundDist = buildDist(model.heso) || rawSource?.roundDist || "";
@@ -204,13 +339,15 @@ export function buildMachineOverride(rawSource, model) {
       .map((h) => ({ payout: toNum(h.payout), rate: toNum(h.ratio) }));
   }
 
-  // 出玉系数値: 初期表示から変更された項目だけ上書き
-  if (!plainEq(model.avgPayout, init.avgPayout)) out.avgPayoutPerHit = toNum(model.avgPayout);
-  if (!plainEq(model.stdDev, init.stdDev)) out.stdDev = toNum(model.stdDev);
-  if (!plainEq(model.rushEntry, init.rushEntry)) out.rushEntryRate = toNum(model.rushEntry);
-  if (!plainEq(model.rushContinue, init.rushContinue)) out.rushContinueRate = toNum(model.rushContinue);
-  if (!plainEq(model.rushAvg, init.rushAvg)) out.rushAvgPayout = toNum(model.rushAvg);
-  if (!plainEq(model.hesoAvg, init.hesoAvg)) out.hesoAvgPayout = toNum(model.hesoAvg);
+  // P-EVIDENCE 数値: 初期表示から変更された項目だけ上書き
+  writeNumIfChanged(out, "avgPayoutPerHit", model.avgPayout, init.avgPayout);
+  writeNumIfChanged(out, "stdDev", model.stdDev, init.stdDev);
+  writeNumIfChanged(out, "rushEntryRate", model.rushEntry, init.rushEntry);
+  writeNumIfChanged(out, "rushContinueRate", model.rushContinue, init.rushContinue);
+  writeNumIfChanged(out, "rushAvgPayout", model.rushAvg, init.rushAvg);
+  writeNumIfChanged(out, "hesoAvgPayout", model.hesoAvg, init.hesoAvg);
 
   return out;
 }
+
+export { buildTsv };

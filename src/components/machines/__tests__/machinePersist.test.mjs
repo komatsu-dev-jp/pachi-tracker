@@ -132,6 +132,42 @@ check("T5_machineDB不変", () => {
   assert.strictEqual(JSON.stringify(machineDB[0]), before, "machineDB[0] が変更された");
 });
 
+// ── T6: 基本スペック編集がカスタム機種へ保存される ──
+check("T6_基本スペック編集を保存", () => {
+  const src = structuredClone(machineDB[0]);
+  const model = normalizeMachine(src);
+  const edited = {
+    ...model,
+    name: "P大海物語5 MTE2 修正版",
+    maker: "三洋物産",
+    type: "ハイミドル",
+    synthProb: "318.1",
+    border1K: "17.9",
+    prize: "3",
+    unitCost: "12.5",
+    initialProb: "0.55",
+    muraCoef: "50000",
+    spatialSens: "1.2",
+    regimeSens: "0.9",
+    mcExpectedDaily: "1234",
+    mcWinRate: "55.5",
+  };
+  const ov = buildMachineOverride(src, edited);
+  assert.strictEqual(ov.name, "P大海物語5 MTE2 修正版", "name");
+  assert.strictEqual(ov.maker, "三洋物産", "maker");
+  assert.strictEqual(ov.synthProb, 318.1, "synthProb");
+  assert.strictEqual(ov.prob, "1/318.1", "prob");
+  assert.strictEqual(ov.border1K, 17.9, "border1K");
+  assert.strictEqual(ov.border["4.00"], 17.9, "border.4.00");
+  assert.strictEqual(ov.unitCost, 12.5, "unitCost");
+  assert.strictEqual(ov.initialProb, 0.55, "initialProb");
+  assert.strictEqual(ov.muraCoef, 50000, "muraCoef");
+  assert.strictEqual(ov.spatialSens, 1.2, "spatialSens");
+  assert.strictEqual(ov.regimeSens, 0.9, "regimeSens");
+  assert.strictEqual(ov.mcExpectedDaily, 1234, "mcExpectedDaily");
+  assert.strictEqual(ov.mcWinRate, 55.5, "mcWinRate");
+});
+
 console.log(JSON.stringify(out, null, 2));
 console.log(`\n${passed} passed / ${failed} failed`);
 if (failed > 0) process.exit(1);
