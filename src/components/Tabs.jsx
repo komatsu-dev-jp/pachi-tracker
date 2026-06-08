@@ -691,6 +691,7 @@ export function RotTab({ rows, setRows, S, ev }) {
     const [showInputSheet, setShowInputSheet] = useState(false);
     // 旧UIの "jackpot" mode は撤去済み。bottom sheet は常に通常回転入力（count モード）として使用
     const [showMoveModal, setShowMoveModal] = useState(false);
+    const [moveMochiBalls, setMoveMochiBalls] = useState("");
     // 記録モード イベントメニュー（FAB から開く） + 詳細データ折りたたみ
     const [showEventMenu, setShowEventMenu] = useState(false);
     const [showDetailCollapse, setShowDetailCollapse] = useState(false);
@@ -2602,6 +2603,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     type="button"
                                     onClick={() => {
                                         setShowEventMenu(false);
+                                        setMoveMochiBalls(String(S.currentMochiBalls || 0));
                                         setShowMoveModal(true);
                                     }}
                                 >
@@ -4693,12 +4695,17 @@ export function RotTab({ rows, setRows, S, ev }) {
                 <div style={{ position: "fixed", inset: 0, background: "rgba(17,24,39,0.45)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
                     <Card style={{ width: "100%", maxWidth: 320, padding: 20 }}>
                         <SecLabel label="台移動" />
-                        <div style={{ fontSize: 13, color: C.sub, marginBottom: 16, lineHeight: 1.6 }}>
-                            現在のデータを保存して新しい台へ移動します
+                        <div style={{ fontSize: 12, color: C.sub, marginBottom: 12, lineHeight: 1.6 }}>
+                            現在のデータを保存して新しい台へ移動します。<br />
+                            移動で玉を使った場合は持ち玉を修正してください。
+                        </div>
+                        <div style={{ marginBottom: 14 }}>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>移動前の持ち玉（玉）</div>
+                            <NI v={moveMochiBalls} set={setMoveMochiBalls} w="100%" center ph="0" />
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                             <Btn label="キャンセル" onClick={() => setShowMoveModal(false)} />
-                            <Btn label="移動する" onClick={() => { setShowMoveModal(false); S.handleMoveTable(); }} bg={C.purple} fg="#fff" bd="none" />
+                            <Btn label="移動する" onClick={() => { const mochi = Math.max(0, Math.round(Number(moveMochiBalls) || 0)); setShowMoveModal(false); S.handleMoveTable(mochi); }} bg={C.purple} fg="#fff" bd="none" />
                         </div>
                     </Card>
                 </div>
@@ -10852,7 +10859,7 @@ export function SettingsTab({ s, onReset }) {
                                 <div style={{ fontSize: 11, color: C.sub }}>{(100 / ((s.exRate || 250) / 10)).toFixed(2)}円/玉</div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                <NI v={Math.round(s.exRate || 250) / 10} set={(v) => s.setExRate(Math.round(parseFloat(v) * 10))} w={80} center />
+                                <NI v={Math.round(s.exRate || 250) / 10} set={(v) => { const ex = Math.round(parseFloat(v) * 10); s.setExRate(ex); if (ex > 0) s.setBallVal(1000 / ex); }} w={80} center />
                                 <span style={{ fontSize: 11, color: C.sub, minWidth: 40 }}>玉/100円</span>
                             </div>
                         </div>
@@ -10865,7 +10872,7 @@ export function SettingsTab({ s, onReset }) {
                             ].map(({ label, balls, yen }) => {
                                 const isActive = Math.round((s.exRate || 250) / 10) === balls;
                                 return (
-                                    <button key={yen} className="b" onClick={() => s.setExRate(balls * 10)} style={{
+                                    <button key={yen} className="b" onClick={() => { s.setExRate(balls * 10); s.setBallVal(1000 / (balls * 10)); }} style={{
                                         background: isActive ? C.blue : C.surfaceHi,
                                         border: isActive ? "none" : `1px solid ${C.border}`,
                                         borderRadius: 999, color: isActive ? "#fff" : C.subHi,
