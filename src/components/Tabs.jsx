@@ -3,7 +3,6 @@ import ReactDOM from "react-dom";
 import { C, f, sc, sp, tsNow, font, mono } from "../constants";
 import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./Atoms";
 import { machineDB, searchMachines, deriveSpecForMachine } from "../machineDB";
-import { EHIME_STORES } from "../data/ehimeStores";
 import { getSync, set as persistSet, flushAll } from "../persistence";
 import { evDecision } from "./decision/evDecision";
 import { VerdictBadge } from "./decision/VerdictBadge";
@@ -8776,64 +8775,6 @@ export function SettingsTab({ s, onReset }) {
         )
         : normalizedStores;
 
-    // 店名の正規化（重複判定用）
-    const normStoreName = (name) => String(name || "").trim().replace(/\s+/g, "").toLowerCase();
-    // 既に登録済みの店舗か（店名一致で判定）
-    const isStoreRegistered = (name) => normalizedStores.some(st => normStoreName(st.name) === normStoreName(name));
-
-    // 愛媛県マスタの候補を絞り込み（検索ボックス連動）
-    const ehimeCandidates = (() => {
-        const q = storeQuery.trim().toLowerCase();
-        const list = q
-            ? EHIME_STORES.filter(e => e.name.toLowerCase().includes(q) || e.address.toLowerCase().includes(q))
-            : EHIME_STORES;
-        return list;
-    })();
-
-    // 愛媛県マスタの店舗を登録（既定の貸玉/交換率で追加。後から店舗ごとに編集可能）
-    const addEhimeStore = (entry) => {
-        if (isStoreRegistered(entry.name)) {
-            showToast("この店舗はすでに登録されています", "warn");
-            return;
-        }
-        const storeData = {
-            id: Date.now() + Math.random(),
-            name: entry.name,
-            address: entry.address || "",
-            rentBalls: 250,
-            exRate: 250,
-            memo: "",
-            chodama: 0,
-            chodamaMax: 0,
-            memberCard: { ...emptyMemberCard },
-        };
-        s.setStores(prev => [...prev.filter(st => typeof st === "object"), storeData]);
-        showToast(`「${entry.name}」を登録しました`);
-    };
-
-    // 愛媛県マスタの未登録店舗をまとめて登録
-    const addAllEhimeStores = () => {
-        const toAdd = EHIME_STORES.filter(e => !isStoreRegistered(e.name));
-        if (toAdd.length === 0) {
-            showToast("追加できる新しい店舗はありません", "warn");
-            return;
-        }
-        let seed = Date.now();
-        const newStores = toAdd.map(entry => ({
-            id: (seed++) + Math.random(),
-            name: entry.name,
-            address: entry.address || "",
-            rentBalls: 250,
-            exRate: 250,
-            memo: "",
-            chodama: 0,
-            chodamaMax: 0,
-            memberCard: { ...emptyMemberCard },
-        }));
-        s.setStores(prev => [...prev.filter(st => typeof st === "object"), ...newStores]);
-        showToast(`愛媛県の${newStores.length}店舗を登録しました`);
-    };
-
     // 店舗フィールドの部分更新（一覧と選択中の詳細を同時に反映）
     const patchStore = (id, patch) => {
         const applyPatch = (st) => ({ ...st, ...(typeof patch === "function" ? patch(st) : patch) });
@@ -10123,78 +10064,6 @@ export function SettingsTab({ s, onReset }) {
                         }}
                     />
                 </div>
-
-                <Card style={{ padding: 14, marginBottom: 12 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
-                        <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: 13, color: C.text, fontWeight: 800 }}>愛媛県のパチンコ店</div>
-                            <div style={{ fontSize: 10, color: C.sub, marginTop: 3 }}>内蔵リストから店舗を登録できます（全{EHIME_STORES.length}件）</div>
-                        </div>
-                        <button
-                            className="b"
-                            onClick={addAllEhimeStores}
-                            style={{
-                                flexShrink: 0, background: C.blue, border: "none", borderRadius: 8,
-                                color: "#fff", fontSize: 11, padding: "8px 12px", fontFamily: font, fontWeight: 800, cursor: "pointer",
-                            }}
-                        >
-                            すべて登録
-                        </button>
-                    </div>
-
-                    {ehimeCandidates.length === 0 ? (
-                        <div style={{ fontSize: 11, color: C.sub, textAlign: "center", padding: "16px 0" }}>該当する候補がありません</div>
-                    ) : (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflowY: "auto" }}>
-                            {ehimeCandidates.map(entry => {
-                                const registered = isStoreRegistered(entry.name);
-                                return (
-                                    <div key={entry.name} style={{
-                                        background: "var(--surface-hi)",
-                                        border: `1px solid ${registered ? "rgba(34,197,94,0.35)" : C.border}`,
-                                        borderRadius: 10,
-                                        padding: "10px 10px",
-                                        display: "grid",
-                                        gridTemplateColumns: "1fr auto",
-                                        gap: 10,
-                                        alignItems: "center",
-                                    }}>
-                                        <div style={{ minWidth: 0 }}>
-                                            <div style={{ fontSize: 13, color: C.text, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                                {entry.name}
-                                            </div>
-                                            <div style={{ fontSize: 10, color: C.sub, lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                                {entry.address}
-                                            </div>
-                                        </div>
-                                        <button
-                                            className="b"
-                                            onClick={() => addEhimeStore(entry)}
-                                            disabled={registered}
-                                            style={{
-                                                background: registered ? "rgba(34,197,94,0.10)" : C.green,
-                                                border: registered ? "1px solid rgba(34,197,94,0.35)" : "none",
-                                                borderRadius: 8,
-                                                color: registered ? C.green : "#06120d",
-                                                fontSize: 11,
-                                                padding: "8px 12px",
-                                                fontFamily: font,
-                                                fontWeight: 800,
-                                                whiteSpace: "nowrap",
-                                            }}
-                                        >
-                                            {registered ? "登録済" : "追加"}
-                                        </button>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-
-                    <div style={{ fontSize: 9, color: C.sub, lineHeight: 1.6, marginTop: 10 }}>
-                        内蔵リストは主要チェーン・有名店を中心とした初期候補です（住所は市町村単位）。不足する店舗は「＋ 店舗を登録」またはCSVインポートで追加できます。各店の貸玉・交換率は登録後に編集してください。
-                    </div>
-                </Card>
 
                 {/* CSV インポート/エクスポート */}
                 <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
