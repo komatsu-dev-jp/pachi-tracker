@@ -7920,8 +7920,12 @@ export function CalendarTab({ S, onReset }) {
                     </div>
 
                     {/* Right — labeled big P&L */}
+                    {/* 実投資/回収が無い（pl==null）場合は仕事量＝期待値へフォールバックするため、
+                        ラベルを「収支（実績）」ではなく「期待値」に切り替えて両者を明確に区別する */}
                     <div style={{ textAlign: "right", marginLeft: 10, flexShrink: 0 }}>
-                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, letterSpacing: "0.4px", marginBottom: 3 }}>収支</div>
+                        <div style={{ fontSize: 10, color: pl == null ? C.yellow : C.sub, fontWeight: 600, letterSpacing: "0.4px", marginBottom: 3 }}>
+                            {pl != null ? "収支" : "期待値"}
+                        </div>
                         <div style={{
                             fontSize: 24, fontWeight: 800,
                             color: sc(displayPL), fontFamily: font,
