@@ -755,13 +755,21 @@ export default function App() {
     const store = (stores || []).find(st => typeof st === "object" && st.id === selectedStoreId);
     // 店舗の換金率を優先（グローバルstateのズレを回避）
     const ballYen = store?.exRate > 0 ? 1000 / store.exRate : (exRate > 0 ? 1000 / exRate : (Number(ballVal) > 0 ? Number(ballVal) : 4));
+    // 打ち始めに消費した貯玉（再プレイ分）。円換算は archiveCurrentSession と同一式で算出し保存値と一致させる。
+    const chodamaBalls = Math.round((ev?.chodamaKCount || 0) * (rentBalls || 250));
+    const chodamaYen = Math.round((ev?.chodamaKCount || 0) * 1000 * (exRate || 250) / (rentBalls || 250));
     setEndSheet({
-      // 投資額 = この台の現金投資 + 台移動で持ち込んだ持ち玉コスト（按分）
+      // 投資額（現金分）= この台の現金投資 + 台移動で持ち込んだ持ち玉コスト（按分）
       invest: Math.round(ev?.rawInvest || 0) + Math.round(Number(carriedInYen) || 0),
       heldMochi,
       ballYen,
       cashYen: Math.round(heldMochi * ballYen),
       chodama: Math.round(currentChodama || 0),
+      // 打ち始めの残高（開始時の持ち玉・貯玉）と消費した貯玉（玉/円）。収支へは投資と同じくコストとして反映。
+      startMochi: Math.round(initialMochiBalls || 0),
+      startChodama: Math.round(initialChodama || 0),
+      chodamaBalls,
+      chodamaYen,
       storeId: selectedStoreId || null,
       storeName: store?.name || "",
     });
@@ -1031,7 +1039,12 @@ function EndSessionSheet({ sheet, onConfirm, onCancel }) {
   const recoveryNum = method === "chodama"
     ? Math.max(0, Math.round(Number(sheet.cashYen) || 0))
     : Math.max(0, Math.round(Number(recovery) || 0));
-  const pl = recoveryNum - investNum;
+  // 打ち始めに消費した貯玉（円）。投資と同じくコストとして収支へ反映（保存は archiveCurrentSession 側で別途記録）。
+  const chodamaYen = Math.max(0, Math.round(Number(sheet.chodamaYen) || 0));
+  const chodamaBalls = Math.max(0, Math.round(Number(sheet.chodamaBalls) || 0));
+  // 合計投資 = 現金投資 + 貯玉消費。収支 = 回収 − 合計投資。
+  const totalInvest = investNum + chodamaYen;
+  const pl = recoveryNum - totalInvest;
   const fmt = (n) => (n || 0).toLocaleString();
   const inputStyle = {
     width: "100%", boxSizing: "border-box", background: C.bg, color: C.text,
@@ -1071,11 +1084,42 @@ function EndSessionSheet({ sheet, onConfirm, onCancel }) {
           )}
         </div>
 
-        {/* 投資額（自動：実践記録から） */}
+        {/* 打ち始めの残高（開始時の持ち玉・貯玉）。何から打ち始めたかを明示する */}
+        {(sheet.startMochi > 0 || sheet.startChodama > 0) && (
+          <div style={{ marginBottom: 12, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 14px" }}>
+            <div style={{ fontSize: 11, color: C.sub, marginBottom: 6 }}>打ち始めの残高</div>
+            {sheet.startMochi > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: sheet.startChodama > 0 ? 4 : 0 }}>
+                <span style={{ fontSize: 12, color: C.sub }}>持ち玉スタート</span>
+                <span style={{ fontSize: 13, fontWeight: 700, fontFamily: font }}>{fmt(sheet.startMochi)}玉</span>
+              </div>
+            )}
+            {sheet.startChodama > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 12, color: C.sub }}>貯玉スタート</span>
+                <span style={{ fontSize: 13, fontWeight: 700, fontFamily: font, color: C.purple }}>{fmt(sheet.startChodama)}玉</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 投資額（自動：実践記録から）。貯玉消費がある場合は下に内訳と合計投資を表示 */}
         <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 11, color: C.sub, marginBottom: 5 }}>投資額（円）</div>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 5 }}>投資額（現金・円）</div>
           <input type="text" inputMode="numeric" pattern="[0-9]*" value={invest}
             onChange={(e) => setInvest(e.target.value.replace(/[^0-9]/g, ""))} style={inputStyle} />
+          {chodamaYen > 0 && (
+            <div style={{ marginTop: 8, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 14px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontSize: 12, color: C.purple }}>＋ 貯玉消費（投資に加算）</span>
+                <span style={{ fontSize: 13, fontWeight: 700, fontFamily: font, color: C.purple }}>{fmt(chodamaBalls)}玉 → {fmt(chodamaYen)}円</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: `1px solid ${C.border}`, paddingTop: 6 }}>
+                <span style={{ fontSize: 12, color: C.text, fontWeight: 700 }}>合計投資</span>
+                <span style={{ fontSize: 15, fontWeight: 800, fontFamily: font, color: C.red }}>{fmt(totalInvest)}円</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 回収額（現金精算時のみ・自動：持ち玉×玉単価） */}
@@ -1099,7 +1143,7 @@ function EndSessionSheet({ sheet, onConfirm, onCancel }) {
           background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10,
           padding: "12px 14px", marginBottom: 16,
         }}>
-          <span style={{ fontSize: 12, color: C.sub }}>収支（回収 − 投資）</span>
+          <span style={{ fontSize: 12, color: C.sub }}>{chodamaYen > 0 ? "収支（回収 − 投資 − 貯玉）" : "収支（回収 − 投資）"}</span>
           <span style={{ fontSize: 20, fontWeight: 800, fontFamily: font, color: pl > 0 ? C.green : pl < 0 ? C.red : C.text }}>
             {pl > 0 ? "+" : ""}{fmt(pl)}円
           </span>

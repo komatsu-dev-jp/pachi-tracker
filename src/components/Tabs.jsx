@@ -7820,8 +7820,16 @@ export function CalendarTab({ S, onReset }) {
         const st = a.stats || {};
         const invest = a.investYen || 0;
         const recovery = a.recoveryYen || 0;
-        const pl = (invest > 0 || recovery > 0) ? recovery - invest : null;
-        const displayPL = pl != null ? pl : (st.workAmount || 0);
+        // 貯玉消費（確定時に保存済み）: 円換算額と消費玉数。実収支では投資と同じくコストとして差し引く
+        //   （analysisSelectors の getActualPL + getChodamaPL と同一の式。保存構造・logic.js は不変）
+        const chodamaYen = a.chodamaYen || 0;
+        const chodamaConsumedBalls = a.chodamaNetBalls < 0 ? -a.chodamaNetBalls : 0;
+        // 実収支 =（回収 − 投資）− 貯玉消費分。現金 or 貯玉いずれかの実データがある時のみ確定
+        const hasActual = invest > 0 || recovery > 0 || chodamaYen > 0;
+        const realPL = (recovery - invest) - chodamaYen;
+        const workAmount = st.workAmount || 0;
+        // 実データが無い場合のみ期待値（仕事量）へフォールバック
+        const displayPL = hasActual ? realPL : workAmount;
         const rph = a.settings?.rotPerHour || S.rotPerHour || 200;
         const hours = st.netRot > 0 && rph > 0
             ? (st.netRot / rph).toFixed(1)
@@ -7903,7 +7911,7 @@ export function CalendarTab({ S, onReset }) {
                                     時給 {f(hourlyWage)}<span className="unit" style={{ marginLeft: 1, opacity: 0.75 }}>/h</span>
                                 </span>
                             )}
-                            {(a.chodamaYen || 0) > 0 && (
+                            {chodamaConsumedBalls > 0 && (
                                 <span style={{
                                     display: "inline-flex", alignItems: "center", gap: 3,
                                     padding: "3px 8px",
@@ -7913,18 +7921,18 @@ export function CalendarTab({ S, onReset }) {
                                     color: C.purple,
                                     border: "1px solid rgba(192, 132, 252, 0.25)",
                                 }}>
-                                    💎 貯玉 ¥{f(a.chodamaYen)}
+                                    💎 貯玉 {f(chodamaConsumedBalls)}玉
                                 </span>
                             )}
                         </div>
                     </div>
 
                     {/* Right — labeled big P&L */}
-                    {/* 実投資/回収が無い（pl==null）場合は仕事量＝期待値へフォールバックするため、
-                        ラベルを「収支（実績）」ではなく「期待値」に切り替えて両者を明確に区別する */}
+                    {/* 実データ（現金 or 貯玉消費）が無い場合は仕事量＝期待値へフォールバックするため、
+                        ラベルを「実収支」ではなく「期待値」に切り替えて両者を明確に区別する */}
                     <div style={{ textAlign: "right", marginLeft: 10, flexShrink: 0 }}>
-                        <div style={{ fontSize: 10, color: pl == null ? C.yellow : C.sub, fontWeight: 600, letterSpacing: "0.4px", marginBottom: 3 }}>
-                            {pl != null ? "収支" : "期待値"}
+                        <div style={{ fontSize: 10, color: hasActual ? C.subHi : C.yellow, fontWeight: 700, letterSpacing: "0.4px", marginBottom: 3 }}>
+                            {hasActual ? "実収支" : "期待値"}
                         </div>
                         <div style={{
                             fontSize: 24, fontWeight: 800,
@@ -7934,6 +7942,9 @@ export function CalendarTab({ S, onReset }) {
                         }}>
                             {sp(displayPL)}<span className="unit">円</span>
                         </div>
+                        {hasActual && chodamaYen > 0 && (
+                            <div style={{ fontSize: 9, color: C.purple, fontWeight: 700, marginTop: 2 }}>貯玉込み</div>
+                        )}
                     </div>
                 </div>
 
@@ -7944,7 +7955,7 @@ export function CalendarTab({ S, onReset }) {
                     margin: "12px 0 10px",
                 }} />
 
-                {/* Row 2: 3-column detail grid with directional icons */}
+                {/* Row 2: 実際のお金の動き 3列（投資 / 貯玉 / 回収）。貯玉は消費玉数（玉）で表示し金額との混同を防ぐ */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr" }}>
                     <div style={{ textAlign: "center", padding: "0 4px" }}>
                         <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, letterSpacing: "0.3px", marginBottom: 3, display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
@@ -7957,6 +7968,20 @@ export function CalendarTab({ S, onReset }) {
                     </div>
                     <div style={{ textAlign: "center", padding: "0 4px", borderLeft: `1px solid ${C.border}` }}>
                         <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, letterSpacing: "0.3px", marginBottom: 3, display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
+                            <span style={{ color: C.purple, fontSize: 11, opacity: 0.75, lineHeight: 1 }}>◆</span>
+                            <span>貯玉</span>
+                        </div>
+                        <div style={{
+                            fontSize: 14, fontWeight: 700,
+                            color: chodamaConsumedBalls > 0 ? C.purple : C.sub,
+                            fontFamily: font, fontVariantNumeric: "tabular-nums",
+                            opacity: chodamaConsumedBalls > 0 ? 1 : 0.5,
+                        }}>
+                            {chodamaConsumedBalls > 0 ? `-${f(chodamaConsumedBalls)}` : "—"}<span className="unit">玉</span>
+                        </div>
+                    </div>
+                    <div style={{ textAlign: "center", padding: "0 4px", borderLeft: `1px solid ${C.border}` }}>
+                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, letterSpacing: "0.3px", marginBottom: 3, display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
                             <span style={{ color: C.green, fontSize: 11, opacity: 0.75, lineHeight: 1 }}>●</span>
                             <span>回収</span>
                         </div>
@@ -7964,20 +7989,21 @@ export function CalendarTab({ S, onReset }) {
                             {f(recovery)}<span className="unit">円</span>
                         </div>
                     </div>
-                    <div style={{ textAlign: "center", padding: "0 4px", borderLeft: `1px solid ${C.border}` }}>
-                        <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, letterSpacing: "0.3px", marginBottom: 3 }}>
-                            期待値
-                        </div>
-                        <div style={{
-                            fontSize: 14, fontWeight: 700,
-                            color: st.workAmount != null && st.workAmount !== 0 ? sc(st.workAmount) : C.sub,
-                            fontFamily: font, fontVariantNumeric: "tabular-nums",
-                            opacity: st.workAmount != null && st.workAmount !== 0 ? 0.92 : 0.5,
-                        }}>
-                            {st.workAmount != null && st.workAmount !== 0 ? sp(Math.round(st.workAmount)) : "—"}<span className="unit">円</span>
-                        </div>
-                    </div>
                 </div>
+
+                {/* 期待値（理論値）— 実収支を表示している時のみ、別枠の黄色帯で「これは理論値」と明示して混同を防ぐ */}
+                {hasActual && workAmount !== 0 && (
+                    <div style={{
+                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                        marginTop: 10, padding: "6px 12px", borderRadius: 9,
+                        background: "rgba(251, 191, 36, 0.08)", border: "1px solid rgba(251, 191, 36, 0.22)",
+                    }}>
+                        <span style={{ fontSize: 11, color: C.yellow, fontWeight: 700 }}>期待値（理論値）</span>
+                        <span style={{ fontSize: 13, color: C.yellow, fontWeight: 800, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
+                            {sp(Math.round(workAmount))}<span className="unit">円</span>
+                        </span>
+                    </div>
+                )}
 
                 {/* Subtle tap indicator — bottom right */}
                 <div style={{ position: "absolute", right: 12, bottom: 6, fontSize: 10, color: C.sub, opacity: 0.35 }}>▶</div>
