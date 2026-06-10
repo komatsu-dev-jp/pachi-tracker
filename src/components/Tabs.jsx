@@ -5,6 +5,7 @@ import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./
 import { machineDB, searchMachines, deriveSpecForMachine } from "../machineDB";
 import { getSync, set as persistSet, flushAll } from "../persistence";
 import { evDecision } from "./decision/evDecision";
+import { confidenceAccuracyLabel } from "./decision/confidenceLabels";
 import { VerdictBadge } from "./decision/VerdictBadge";
 import { KeyMetrics } from "./decision/KeyMetrics";
 import { ReasonList } from "./decision/ReasonList";
@@ -3458,7 +3459,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                 const workHi = Math.round(workMid * 1.37);
                 const endTimeLabel = "未設定";
                 // データ精度ラベル
-                const accuracyLabel = confidence > 0.6 ? "高い" : confidence > 0.3 ? "中" : "低い";
+                const accuracyLabel = confidenceAccuracyLabel(confidence);
                 const accuracyFill = Math.min(1, Math.max(0.08, confidence));
                 // 想定時給 信頼度
                 const wageConfLabel = confidence > 0.5 ? "HIGH" : confidence > 0.3 ? "MID" : "LOW";
