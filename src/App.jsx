@@ -762,6 +762,12 @@ export default function App() {
   // 実戦終了：精算シートを開く。投資額・回収額を自動算出して初期表示する。
   // 投資額 = ev.rawInvest（実践記録の現金投資累計）、回収額 = 残り持ち玉 × 玉単価。
   const openEndSession = () => {
+    // 大当たり記録が途中（completed:false）のまま実戦終了すると出玉が統計から漏れるため確認を挟む。
+    // 未完了チェーンが無い通常時は確認なしで従来どおり精算シートを開く（タップ数増えず）。
+    if ((jpLog || []).some((c) => c && c.completed === false)) {
+      const ok = window.confirm("大当たり記録が入力途中です。\nこのまま実戦を終了しますか？");
+      if (!ok) return;
+    }
     const heldMochi = Math.round(currentMochiBalls || 0);
     const store = (stores || []).find(st => typeof st === "object" && st.id === selectedStoreId);
     // 店舗の換金率を優先（グローバルstateのズレを回避）
@@ -950,8 +956,15 @@ export default function App() {
             S={S}
             onStart={(machine) => {
               if (sessionStarted) {
-                // 実戦中の台選び開始は台移動として扱う（現在の台の記録上書きを防止）
-                const ok = window.confirm("実戦中のセッションがあります。\n現在の台のデータを保存して、台移動としてこの台で続行しますか？");
+                // 実戦中の台選び開始は台移動として扱う（現在の台の記録上書きを防止）。
+                // 既にこの confirm が出るため二重ダイアログは避け、未完了チェーンがある場合は
+                // 文言に注意書きを足して一度の確認で済ませる。
+                const hasOpenChain = (jpLog || []).some((c) => c && c.completed === false);
+                const ok = window.confirm(
+                  hasOpenChain
+                    ? "大当たり記録が入力途中です。\n現在の台のデータを保存して、台移動としてこの台で続行しますか？"
+                    : "実戦中のセッションがあります。\n現在の台のデータを保存して、台移動としてこの台で続行しますか？"
+                );
                 if (!ok) return;
                 handleMoveTable();
                 setMachineNum(String(machine.machineNumber || ""));

@@ -2603,6 +2603,11 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     type="button"
                                     onClick={() => {
                                         setShowEventMenu(false);
+                                        // 大当たり記録が途中（completed:false）のまま台移動すると出玉が統計から漏れるため確認を挟む。
+                                        // 未完了チェーンが無い通常時は確認なしで従来どおり台移動モーダルを開く（タップ数増えず）。
+                                        if ((S.jpLog || []).some((c) => c && c.completed === false)) {
+                                            if (!window.confirm("大当たり記録が入力途中です。\nこのまま台移動しますか？")) return;
+                                        }
                                         setMoveMochiBalls(String(S.currentMochiBalls || 0));
                                         setShowMoveModal(true);
                                     }}
