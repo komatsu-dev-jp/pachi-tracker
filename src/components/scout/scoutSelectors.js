@@ -6,7 +6,7 @@
 // 主要フィールド:
 //   - storeName: 文字列（空文字なら "店舗未登録" 扱い）
 //   - investYen / recoveryYen: 実損益判定用
-//   - stats.workAmount: 期待値の累積に使う
+//   - stats.effectiveWorkAmount: 期待値の累積に使う（上皿補正後。旧データは stats.workAmount にフォールバック）
 //   - date: "YYYY-MM-DD"
 //
 // hasActual の判定は analysisSelectors と揃える（投資 or 回収のどちらかが 0 より大きい）。
@@ -22,6 +22,8 @@ function getActualPL(a) {
 }
 
 function getEvAmount(a) {
+  const ew = a?.stats?.effectiveWorkAmount;
+  if (typeof ew === "number" && isFinite(ew)) return ew;
   const w = a?.stats?.workAmount;
   return typeof w === "number" && isFinite(w) ? w : 0;
 }
