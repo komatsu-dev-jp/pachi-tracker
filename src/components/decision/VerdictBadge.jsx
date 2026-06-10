@@ -1,6 +1,7 @@
 import { C, font, mono } from "../../constants";
+import { confidenceAccuracyLabel } from "./confidenceLabels";
 
-// 試行充足率: 1500回転で 100% （evDecision の calcConfidence と整合）
+// 信頼度（試行充足率）: 1500回転で 100% （evDecision の calcConfidence と整合）
 const STABLE_TARGET_ROT = 1500;
 
 const VERDICT_CONFIG = {
@@ -70,8 +71,8 @@ export function VerdictBadge({ verdict, confidence, netRot }) {
   const dashOffset = RING_CIRCUMFERENCE * (1 - pct / 100);
   const cls = `rec-verdict-card rec-verdict-card--${verdict || "hold"}`;
 
-  // データ精度（試行充足率を 3 段階で言語化）
-  const accuracyLabel = pct >= 70 ? "高い" : pct >= 40 ? "やや低い" : "低い";
+  // データ精度（信頼度を 3 段階で言語化）
+  const accuracyLabel = confidenceAccuracyLabel(confidence);
 
   // 安定まであと: 1500 回転までの残りを表示（既存 ev.netRot を流用、未指定時は非表示）
   const remainRot = (netRot != null) ? Math.max(0, STABLE_TARGET_ROT - netRot) : null;
@@ -80,7 +81,7 @@ export function VerdictBadge({ verdict, confidence, netRot }) {
     <div
       className={cls}
       role="status"
-      aria-label={`判定: ${cfg.main}（${cfg.statusLabel}）試行充足率 ${pct}%`}
+      aria-label={`判定: ${cfg.main}（${cfg.statusLabel}）信頼度 ${pct}%`}
     >
       <div className="rec-verdict-icon" style={{ color: cfg.color }}>
         <VerdictIcon kind={cfg.iconKind} />

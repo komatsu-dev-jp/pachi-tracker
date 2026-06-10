@@ -3,7 +3,6 @@ import ReactDOM from "react-dom";
 import { C, font, mono } from "../constants";
 import {
   NOTIF_LEVEL_UP,
-  NOTIF_XP_GAINED,
   NOTIF_STREAK,
   NOTIF_VERDICT_CHANGE,
   NOTIF_BADGE_UNLOCKED,
@@ -24,7 +23,6 @@ import {
 
 const TYPE_META = {
   [NOTIF_LEVEL_UP]:        { icon: "★", color: "var(--accent)",  label: "ハンターランク" },
-  [NOTIF_XP_GAINED]:       { icon: "+",  color: "var(--teal)",    label: "EXP" },
   [NOTIF_STREAK]:          { icon: "▲", color: "var(--orange)",  label: "連続稼働" },
   [NOTIF_VERDICT_CHANGE]:  { icon: "▸", color: "var(--blue)",    label: "判定変化" },
   [NOTIF_BADGE_UNLOCKED]:  { icon: "✦", color: "var(--purple)",  label: "バッジ" },

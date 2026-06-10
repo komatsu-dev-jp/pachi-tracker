@@ -5,6 +5,7 @@ import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./
 import { machineDB, searchMachines, deriveSpecForMachine } from "../machineDB";
 import { getSync, set as persistSet, flushAll } from "../persistence";
 import { evDecision } from "./decision/evDecision";
+import { confidenceAccuracyLabel } from "./decision/confidenceLabels";
 import { VerdictBadge } from "./decision/VerdictBadge";
 import { KeyMetrics } from "./decision/KeyMetrics";
 import { ReasonList } from "./decision/ReasonList";
@@ -584,7 +585,7 @@ export function DataTab({ ev, jpLog, S }) {
         const points = [];
         let cumEV = 0;
         archives.forEach((a) => {
-            const w = a.stats?.workAmount || 0;
+            const w = a.stats?.effectiveWorkAmount ?? a.stats?.workAmount ?? 0;
             cumEV += w;
             points.push({ label: a.date?.slice(5) || "", value: Math.round(cumEV) });
         });
@@ -2602,6 +2603,11 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     type="button"
                                     onClick={() => {
                                         setShowEventMenu(false);
+                                        // 大当たり記録が途中（completed:false）のまま台移動すると出玉が統計から漏れるため確認を挟む。
+                                        // 未完了チェーンが無い通常時は確認なしで従来どおり台移動モーダルを開く（タップ数増えず）。
+                                        if ((S.jpLog || []).some((c) => c && c.completed === false)) {
+                                            if (!window.confirm("大当たり記録が入力途中です。\nこのまま台移動しますか？")) return;
+                                        }
                                         setMoveMochiBalls(String(S.currentMochiBalls || 0));
                                         setShowMoveModal(true);
                                     }}
@@ -3458,7 +3464,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                 const workHi = Math.round(workMid * 1.37);
                 const endTimeLabel = "未設定";
                 // データ精度ラベル
-                const accuracyLabel = confidence > 0.6 ? "高い" : confidence > 0.3 ? "中" : "低い";
+                const accuracyLabel = confidenceAccuracyLabel(confidence);
                 const accuracyFill = Math.min(1, Math.max(0.08, confidence));
                 // 想定時給 信頼度
                 const wageConfLabel = confidence > 0.5 ? "HIGH" : confidence > 0.3 ? "MID" : "LOW";
@@ -4745,7 +4751,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                 const points = [];
                 let cum = 0;
                 archives.forEach((a) => {
-                    const w = a.stats?.workAmount || 0;
+                    const w = a.stats?.effectiveWorkAmount ?? a.stats?.workAmount ?? 0;
                     cum += w;
                     points.push({ label: a.date?.slice(5) || "", value: Math.round(cum) });
                 });
@@ -7650,7 +7656,7 @@ export function CalendarTab({ S, onReset }) {
                     actual += (a.recoveryYen || 0) - (a.investYen || 0);
                     hasActual = true;
                 }
-                ev += (a.stats?.workAmount || 0);
+                ev += (a.stats?.effectiveWorkAmount ?? a.stats?.workAmount ?? 0);
             });
             totals[date] = { actual, ev, hasActual };
         });
@@ -7696,7 +7702,7 @@ export function CalendarTab({ S, onReset }) {
                 invest += inv; recovery += rec; realCount += 1;
                 if (rec - inv > 0) winCount += 1;
             }
-            ev += Number(a.stats?.workAmount) || 0;
+            ev += Number(a.stats?.effectiveWorkAmount ?? a.stats?.workAmount) || 0;
             const netRot = Number(a.stats?.netRot) || 0;
             const rph = Number(a.settings?.rotPerHour) || 0;
             if (netRot > 0 && rph > 0) workMin += (netRot / rph) * 60;
@@ -7723,7 +7729,7 @@ export function CalendarTab({ S, onReset }) {
             const inv = Number(a.investYen) || 0;
             const rec = Number(a.recoveryYen) || 0;
             if (inv > 0 || rec > 0) { map[d].actual += rec - inv; map[d].hasActual = true; }
-            map[d].ev += Number(a.stats?.workAmount) || 0;
+            map[d].ev += Number(a.stats?.effectiveWorkAmount ?? a.stats?.workAmount) || 0;
             map[d].sessions += 1;
         });
         return Object.values(map)
@@ -7827,7 +7833,7 @@ export function CalendarTab({ S, onReset }) {
         // 実収支 =（回収 − 投資）− 貯玉消費分。現金 or 貯玉いずれかの実データがある時のみ確定
         const hasActual = invest > 0 || recovery > 0 || chodamaYen > 0;
         const realPL = (recovery - invest) - chodamaYen;
-        const workAmount = st.workAmount || 0;
+        const workAmount = st.effectiveWorkAmount ?? st.workAmount ?? 0;
         // 実データが無い場合のみ期待値（仕事量）へフォールバック
         const displayPL = hasActual ? realPL : workAmount;
         const rph = a.settings?.rotPerHour || S.rotPerHour || 200;
@@ -8048,6 +8054,8 @@ export function CalendarTab({ S, onReset }) {
         const a = archives.find(ar => ar.id === selectedArchiveId);
         if (!a) { setSelectedArchiveId(null); return null; }
         const st = a.stats || {};
+        // 期待値（仕事量）は上皿補正後を優先し、旧アーカイブは workAmount にフォールバック
+        const stWork = st.effectiveWorkAmount ?? st.workAmount;
         const pl = (a.investYen > 0 || a.recoveryYen > 0) ? (a.recoveryYen || 0) - (a.investYen || 0) : null;
         const aggKey = `${a.settings?.synthDenom || ""}|${a.machineNum}`;
         const agg = a.machineNum ? machineAggregates[aggKey] : null;
@@ -8121,9 +8129,9 @@ export function CalendarTab({ S, onReset }) {
                                     <div style={{ fontSize: 28, fontWeight: 900, color: sc(pl), fontFamily: mono, lineHeight: 1.1 }}>
                                         {f(pl)}
                                     </div>
-                                ) : st.workAmount != null && st.workAmount !== 0 ? (
-                                    <div style={{ fontSize: 28, fontWeight: 900, color: sc(st.workAmount), fontFamily: mono, lineHeight: 1.1 }}>
-                                        {f(st.workAmount)}
+                                ) : stWork != null && stWork !== 0 ? (
+                                    <div style={{ fontSize: 28, fontWeight: 900, color: sc(stWork), fontFamily: mono, lineHeight: 1.1 }}>
+                                        {f(stWork)}
                                     </div>
                                 ) : null}
                             </div>
@@ -8133,7 +8141,7 @@ export function CalendarTab({ S, onReset }) {
                                 { label: "投資", val: f(a.investYen || 0), col: C.red },
                                 { label: "回収", val: f(a.recoveryYen || 0), col: C.green },
                                 { label: "収支", val: pl != null ? f(pl) : "0", col: pl != null ? sc(pl) : C.subHi },
-                                { label: "仕事量", val: st.workAmount != null && st.workAmount !== 0 ? f(Math.round(st.workAmount)) : "—", col: st.workAmount ? sc(st.workAmount) : C.subHi },
+                                { label: "仕事量", val: stWork != null && stWork !== 0 ? f(Math.round(stWork)) : "—", col: stWork ? sc(stWork) : C.subHi },
                             ].map(({ label, val, col }) => (
                                 <div key={label} style={{ textAlign: "center", background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: "8px 2px" }}>
                                     <div style={{ fontSize: 9, color: C.sub, marginBottom: 3, fontWeight: 600 }}>{label}</div>
@@ -8474,7 +8482,7 @@ export function CalendarTab({ S, onReset }) {
                         const i2 = Number(a.investYen) || 0;
                         const r2 = Number(a.recoveryYen) || 0;
                         if (i2 > 0 || r2 > 0) { inv += i2; rec += r2; hasActual = true; }
-                        ev += Number(a.stats?.workAmount) || 0;
+                        ev += Number(a.stats?.effectiveWorkAmount ?? a.stats?.workAmount) || 0;
                         const nr = Number(a.stats?.netRot) || 0;
                         const rph = Number(a.settings?.rotPerHour) || 0;
                         if (nr > 0 && rph > 0) workMin += (nr / rph) * 60;

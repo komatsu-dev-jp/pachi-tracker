@@ -10,7 +10,7 @@
 //   - chodamaYen, chodamaNetBalls
 //
 // 実損益(actualPL) = recoveryYen - investYen （投資 or 回収が記録されている archive のみ）
-// 期待値(evAmount) = stats.workAmount
+// 期待値(evAmount) = stats.effectiveWorkAmount（上皿補正後。旧データは effectiveWorkAmount 欠落のため stats.workAmount にフォールバック）
 
 const hasActualMoney = (a) =>
   (Number(a?.investYen) || 0) > 0 || (Number(a?.recoveryYen) || 0) > 0;
@@ -21,6 +21,8 @@ export function getActualPL(a) {
 }
 
 export function getEvAmount(a) {
+  const ew = a?.stats?.effectiveWorkAmount;
+  if (typeof ew === "number" && isFinite(ew)) return ew;
   const w = a?.stats?.workAmount;
   return typeof w === "number" && isFinite(w) ? w : 0;
 }

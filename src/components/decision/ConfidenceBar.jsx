@@ -18,7 +18,7 @@ export function ConfidenceBar({ subValues }) {
       }}
     >
       <span style={{ fontSize: 11, fontWeight: 700, color: C.sub, fontFamily: font, letterSpacing: 0.3 }}>
-        試行充足率の内訳
+        信頼度の内訳
       </span>
       <div style={{ display: "flex", gap: 14 }}>
         <span style={{ fontSize: 11, color: C.sub, fontFamily: font }}>
