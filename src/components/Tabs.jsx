@@ -2877,7 +2877,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                         <div>
                                 {/* HUDストリップ（持玉 / 評価 / 1Rあたり）+ RUSH継続中バナー + スタッツグリッド */}
                                 {(() => {
-                                    const heroEvNet = ev && Number.isFinite(ev.netGain) ? ev.netGain : 0;
+                                    const heroEvNet = ev && Number.isFinite(ev.totalNetGain) ? ev.totalNetGain : 0;
                                     const heroAvg1R = ev && Number.isFinite(ev.avg1R) ? ev.avg1R : 0;
                                     const heroMochi = S.currentMochiBalls || 0;
                                     const totalHits = ev && Number.isFinite(ev.totalHits) ? ev.totalHits : 0;
@@ -4805,7 +4805,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                     const chainLen = lastChain && !lastChain.completed ? (lastChain.hits || []).length : 0;
 
                     // 上部ステータス：算出可能な値のみ表示、不明値は「—」
-                    const evNet = ev && Number.isFinite(ev.netGain) ? ev.netGain : 0;
+                    const evNet = ev && Number.isFinite(ev.totalNetGain) ? ev.totalNetGain : 0;
                     const startG1K = ev && Number.isFinite(ev.start1K) ? ev.start1K : 0;
                     const avg1R = ev && Number.isFinite(ev.avg1R) ? ev.avg1R : 0;
 
@@ -5632,7 +5632,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                     }));
 
                     // 期待差玉などの上部HUD用
-                    const evNet = ev && Number.isFinite(ev.netGain) ? ev.netGain : 0;
+                    const evNet = ev && Number.isFinite(ev.totalNetGain) ? ev.totalNetGain : 0;
                     const startG1K = ev && Number.isFinite(ev.start1K) ? ev.start1K : 0;
                     const avg1R = ev && Number.isFinite(ev.avg1R) ? ev.avg1R : 0;
 
