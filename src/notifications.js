@@ -15,7 +15,6 @@
 //   }
 
 export const NOTIF_LEVEL_UP = "level_up";
-export const NOTIF_XP_GAINED = "xp_gained";
 export const NOTIF_STREAK = "streak";
 export const NOTIF_VERDICT_CHANGE = "verdict_change";
 export const NOTIF_BADGE_UNLOCKED = "badge_unlocked";
