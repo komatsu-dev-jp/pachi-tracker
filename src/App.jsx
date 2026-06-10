@@ -50,7 +50,7 @@ const LEGACY_TAB_TO_MODE = {
 
 // verdict ID を日本語ラベルに変換（通知本文用）
 const VERDICT_LABELS = {
-  continue_strong: "続行",
+  continue_strong: "続行（強）",
   continue: "続行",
   hold: "様子見",
   stop: "ヤメ",
@@ -938,6 +938,15 @@ export default function App() {
           <SelectDashboard
             S={S}
             onStart={(machine) => {
+              if (sessionStarted) {
+                // 実戦中の台選び開始は台移動として扱う（現在の台の記録上書きを防止）
+                const ok = window.confirm("実戦中のセッションがあります。\n現在の台のデータを保存して、台移動としてこの台で続行しますか？");
+                if (!ok) return;
+                handleMoveTable();
+                setMachineNum(String(machine.machineNumber || ""));
+                setMachineName(machine.machineName || "");
+                return; // handleMoveTable 内で record へ遷移済み
+              }
               setMachineNum(String(machine.machineNumber || ""));
               setMachineName(machine.machineName || "");
               if (!sessionStarted) {

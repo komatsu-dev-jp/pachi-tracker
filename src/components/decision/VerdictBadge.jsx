@@ -22,7 +22,7 @@ const VERDICT_CONFIG = {
     color: C.blue,
     main: "様子見",
     statusLabel: "データ蓄積中",
-    hint: "このまま打ち続けてOK",
+    hint: "回転数を増やして再判定",
     iconKind: "ekg",
   },
   stop: {
