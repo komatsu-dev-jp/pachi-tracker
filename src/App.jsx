@@ -217,11 +217,22 @@ export default function App() {
   // sessionSubTab が "history" のまま残っていると、初当たり入力モーダルが
   // 自動で開く挙動になっていたため（Tabs.jsx の auto-open useEffect 参照）。
   const handleModeChange = useCallback((nextMode) => {
+    // 実戦中に大当たりチェーンが記録途中（completed:false）のまま
+    // 記録画面から離れようとした場合のみ確認を挟む（誤タップ離脱防止）
+    if (
+      currentMode === "record" &&
+      nextMode !== "record" &&
+      sessionStarted &&
+      (jpLog || []).some((c) => c && c.completed === false)
+    ) {
+      const ok = window.confirm("大当たり記録が入力途中です。\n記録画面から移動しますか？");
+      if (!ok) return;
+    }
     if (nextMode === "record") {
       setSessionSubTab("rot");
     }
     setCurrentMode(nextMode);
-  }, [setCurrentMode]);
+  }, [currentMode, sessionStarted, jpLog, setCurrentMode]);
 
   // Session info
   const [storeName, setStoreName] = useLS("pt_storeName", "");
