@@ -1690,6 +1690,11 @@ export function RotTab({ rows, setRows, S, ev }) {
     const [headerSwipeOffset, setHeaderSwipeOffset] = useState(0);
     const [headerIsAnimating, setHeaderIsAnimating] = useState(false);
 
+    // スワイプハンドラが参照する最新値を保持するref（古いクロージャ参照を防ぐ）。
+    // 毎レンダー代入することで、リスナーを再登録せずに最新のS/sessionSubTabsを参照できる。
+    const swipeDepsRef = useRef({ S, sessionSubTabs });
+    swipeDepsRef.current = { S, sessionSubTabs };
+
     // useEffectでタッチイベントを{ passive: false }で登録
     useEffect(() => {
         const el = swipeAreaRef.current;
@@ -1730,9 +1735,10 @@ export function RotTab({ rows, setRows, S, ev }) {
             e.preventDefault();
             e.stopPropagation();
 
-            const currentIndex = sessionSubTabs.indexOf(S.sessionSubTab);
+            const { S: latestS, sessionSubTabs: latestSubTabs } = swipeDepsRef.current;
+            const currentIndex = latestSubTabs.indexOf(latestS.sessionSubTab);
             const isAtStart = currentIndex === 0 && diffX > 0;
-            const isAtEnd = currentIndex === sessionSubTabs.length - 1 && diffX < 0;
+            const isAtEnd = currentIndex === latestSubTabs.length - 1 && diffX < 0;
             // 1:1追従。端では抵抗をかける
             const resistance = (isAtStart || isAtEnd) ? 0.3 : 1.0;
             state.offset = diffX * resistance;
@@ -1748,17 +1754,18 @@ export function RotTab({ rows, setRows, S, ev }) {
             }
 
             const threshold = 50; // 50px以上スワイプで切り替え
-            const currentIndex = sessionSubTabs.indexOf(S.sessionSubTab);
+            const { S: latestS, sessionSubTabs: latestSubTabs } = swipeDepsRef.current;
+            const currentIndex = latestSubTabs.indexOf(latestS.sessionSubTab);
 
             if (Math.abs(state.offset) > threshold) {
                 if (state.offset > 0 && currentIndex > 0) {
                     setHeaderIsAnimating(true);
-                    S.setSessionSubTab(sessionSubTabs[currentIndex - 1]);
+                    latestS.setSessionSubTab(latestSubTabs[currentIndex - 1]);
                     setHeaderSwipeOffset(0);
                     setTimeout(() => setHeaderIsAnimating(false), 180);
-                } else if (state.offset < 0 && currentIndex < sessionSubTabs.length - 1) {
+                } else if (state.offset < 0 && currentIndex < latestSubTabs.length - 1) {
                     setHeaderIsAnimating(true);
-                    S.setSessionSubTab(sessionSubTabs[currentIndex + 1]);
+                    latestS.setSessionSubTab(latestSubTabs[currentIndex + 1]);
                     setHeaderSwipeOffset(0);
                     setTimeout(() => setHeaderIsAnimating(false), 180);
                 } else {
@@ -1784,7 +1791,9 @@ export function RotTab({ rows, setRows, S, ev }) {
             el.removeEventListener("touchmove", handleTouchMove);
             el.removeEventListener("touchend", handleTouchEnd);
         };
-    }, [headerIsAnimating, S.sessionSubTab]);
+        // S / sessionSubTabs はswipeDepsRef経由で最新値を参照するためdeps不要。
+        // headerIsAnimating はハンドラ内で直接参照するためdepsに残す。
+    }, [headerIsAnimating]);
 
     // セッション未開始：空状態 + 下部ピル形ボタン
     if (!sessionActive) {
