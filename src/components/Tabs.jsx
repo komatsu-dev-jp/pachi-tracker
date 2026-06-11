@@ -580,7 +580,7 @@ export function DataTab({ ev, jpLog, S }) {
     );
 
     // Build cumulative EV graph data from archives + current session
-    const archives = S.archives || [];
+    const archives = useMemo(() => S.archives || [], [S.archives]);
     const evGraphData = useMemo(() => {
         const points = [];
         let cumEV = 0;
@@ -1522,7 +1522,6 @@ export function RotTab({ rows, setRows, S, ev }) {
 
         const hitRot = val;
         const hitThisRot = val - prevCumRot;
-        // eslint-disable-next-line react-hooks/purity -- イベントハンドラ内のID生成、レンダー中には呼ばれない
         const chainId = Date.now();
         const lastInvest = last ? (last.invest || 0) : 0;
 
@@ -7631,7 +7630,7 @@ export function CalendarTab({ S, onReset }) {
     const [showAllStores, setShowAllStores] = useState(false);
     const [showAllHistory, setShowAllHistory] = useState(false);
 
-    const archives = S.archives || [];
+    const archives = useMemo(() => S.archives || [], [S.archives]);
 
     // Group archives by date
     const byDate = useMemo(() => {
@@ -8047,6 +8046,9 @@ export function CalendarTab({ S, onReset }) {
             prevSelectedRef.current = null;
         }
         return undefined;
+        // S.stores はフォーム初期化時点の最新貯玉残高を取得するためのスナップショット参照。
+        // selectedArchiveId 変更時のみ初期化したいため、依存配列には含めない（prevSelectedRef で再初期化を防止済み）。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [archives, selectedArchiveId]);
 
     // ── Detail View for a specific archive ──
