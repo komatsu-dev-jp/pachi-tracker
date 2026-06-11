@@ -12,6 +12,12 @@ import { ReasonList } from "./decision/ReasonList";
 import { RecentEventList } from "./decision/RecentEventList";
 import MachineSpecWorkspace from "./machines/MachineSpecWorkspace";
 
+// 信頼度（試行充足率）: 1500回転で 100% （evDecision の calcConfidence と整合。
+// VerdictBadge.jsx の STABLE_TARGET_ROT と同値・同期すること）
+const STABLE_TARGET_ROT = 1500;
+// 次の判断ライン（再評価チェックポイント）の回転数
+const NEXT_CHECKPOINT_ROT = 300;
+
 /* ================================================================
    Simple SVG Line Chart component
 ================================================================ */
@@ -3451,8 +3457,8 @@ export function RotTab({ rows, setRows, S, ev }) {
                 const jpCount = ev.jpCount || 0;
                 const netRot = ev.netRot || 0;
                 const avg1R = ev.avg1R > 0 ? ev.avg1R : 0;
-                // 信頼度MIDまで（基準1500回転に対する不足分）
-                const remainsToMid = Math.max(0, 1500 - netRot);
+                // 信頼度「中」まで（基準STABLE_TARGET_ROT回転に対する不足分）
+                const remainsToMid = Math.max(0, STABLE_TARGET_ROT - netRot);
                 const evPerRot = Number.isFinite(evEff.evPerRot) ? evEff.evPerRot : 0;
                 const mochiRatio = ev.mochiRatio > 0 ? ev.mochiRatio : 0;
                 const firstHitRateLabel = jpCount > 0 && netRot > 0 ? `1/${f(netRot / jpCount, 1)}` : "—";
@@ -3465,8 +3471,9 @@ export function RotTab({ rows, setRows, S, ev }) {
                 // データ精度ラベル
                 const accuracyLabel = confidenceAccuracyLabel(confidence);
                 const accuracyFill = Math.min(1, Math.max(0.08, confidence));
-                // 想定時給 信頼度
-                const wageConfLabel = confidence > 0.5 ? "HIGH" : confidence > 0.3 ? "MID" : "LOW";
+                // 想定時給 信頼度（バッジ表示用。データ精度ラベル(confidenceAccuracyLabel)とは
+                // 基準値が異なる別概念のため流用せず、日本語の短縮ラベルを個別定義する）
+                const wageConfLabel = confidence > 0.5 ? "高" : confidence > 0.3 ? "中" : "低";
                 // 上振れラベル
                 const sigmaLabel = sigmaVal >= 2 ? "大きく上振れ中" : sigmaVal >= 1 ? "上振れ中" : sigmaVal >= -1 ? "想定通り" : sigmaVal >= -2 ? "下振れ中" : "大きく下振れ中";
 
@@ -3522,8 +3529,8 @@ export function RotTab({ rows, setRows, S, ev }) {
                     confidence < 0.3
                         ? { kind: "warn", text: "まだ初期判定（試行浅）" }
                         : { kind: "ok", text: `信頼度 ${Math.round(confidence * 100)}% で判定継続中` },
-                    netRot < 300
-                        ? { kind: "target", text: `300回転到達で再評価します` }
+                    netRot < NEXT_CHECKPOINT_ROT
+                        ? { kind: "target", text: `${NEXT_CHECKPOINT_ROT}回転到達で再評価します` }
                         : { kind: "target", text: `データ蓄積中（${f(netRot)}回転）` },
                 ];
 
@@ -3709,12 +3716,12 @@ export function RotTab({ rows, setRows, S, ev }) {
                                                 <span style={{ marginLeft: 3 }}>次の判断ライン</span>
                                             </div>
                                             <div style={{ fontSize: 11, color: C.subHi, fontFamily: font, fontWeight: 600, lineHeight: 1.35 }}>
-                                                {netRot < 300 ? "300回転到達で再評価" : "次のチェックポイントへ"}
+                                                {netRot < NEXT_CHECKPOINT_ROT ? `${NEXT_CHECKPOINT_ROT}回転到達で再評価` : "次のチェックポイントへ"}
                                             </div>
                                         </div>
-                                        {/* 信頼度MIDまで */}
+                                        {/* 信頼度「中」まで（confidenceAccuracyLabel の中段階に対応） */}
                                         <div style={subCardStyle()}>
-                                            <div style={subCardLabel()}>信頼度MIDまで</div>
+                                            <div style={subCardLabel()}>信頼度「中」まで</div>
                                             <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
                                                 <span style={{ fontSize: 10, color: C.subHi, fontFamily: font, fontWeight: 600 }}>あと</span>
                                                 <span style={{ fontSize: 15, fontWeight: 800, color: "var(--blue)", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{f(remainsToMid)}</span>
@@ -3773,14 +3780,14 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     <span style={{
                                         marginLeft: "auto",
                                         padding: "2px 8px",
-                                        background: wageConfLabel === "LOW" ? "rgba(255,176,32,0.22)" :
-                                            wageConfLabel === "MID" ? "rgba(10,132,255,0.22)" :
+                                        background: wageConfLabel === "低" ? "rgba(255,176,32,0.22)" :
+                                            wageConfLabel === "中" ? "rgba(10,132,255,0.22)" :
                                                 "rgba(33,217,155,0.22)",
-                                        border: `1px solid ${wageConfLabel === "LOW" ? "rgba(255,176,32,0.55)" :
-                                            wageConfLabel === "MID" ? "rgba(10,132,255,0.55)" :
+                                        border: `1px solid ${wageConfLabel === "低" ? "rgba(255,176,32,0.55)" :
+                                            wageConfLabel === "中" ? "rgba(10,132,255,0.55)" :
                                                 "rgba(33,217,155,0.55)"}`,
-                                        color: wageConfLabel === "LOW" ? "var(--yellow)" :
-                                            wageConfLabel === "MID" ? "var(--blue)" : "var(--green)",
+                                        color: wageConfLabel === "低" ? "var(--yellow)" :
+                                            wageConfLabel === "中" ? "var(--blue)" : "var(--green)",
                                         borderRadius: 5,
                                         fontSize: 10, fontWeight: 800, letterSpacing: 0.6,
                                     }}>{wageConfLabel}</span>
@@ -3788,11 +3795,11 @@ export function RotTab({ rows, setRows, S, ev }) {
                                 <div style={{ padding: "0 14px 6px" }}>
                                     <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
                                         <span style={{
-                                            fontSize: wageConfLabel === "LOW" ? 22 : 28,
+                                            fontSize: wageConfLabel === "低" ? 22 : 28,
                                             fontWeight: 800,
                                             color: wage >= 0 ? "var(--green)" : "var(--red)",
                                             fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums",
-                                            opacity: wageConfLabel === "LOW" ? 0.85 : 1,
+                                            opacity: wageConfLabel === "低" ? 0.85 : 1,
                                         }}>{sp(wage, 0)}</span>
                                         <span style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>円/h</span>
                                     </div>
@@ -4266,7 +4273,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                                 <div style={{ textAlign: "center" }}>
                                     <div style={{ fontSize: 8.5, color: C.sub, fontFamily: font, fontWeight: 600, marginBottom: 1 }}>次の判断</div>
                                     <div style={{ fontSize: 11, fontWeight: 800, color: "var(--blue)", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
-                                        {netRot < 300 ? "300回転" : "継続中"}
+                                        {netRot < NEXT_CHECKPOINT_ROT ? `${NEXT_CHECKPOINT_ROT}回転` : "継続中"}
                                     </div>
                                 </div>
                             </div>
