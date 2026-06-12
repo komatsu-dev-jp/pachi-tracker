@@ -15,6 +15,7 @@ import {
   machineRanking,
   summarize,
 } from "./analysisSelectors";
+import AnalyzerView from "./AnalyzerView";
 
 // 曜日チップの並び（日始まりに合わせる）
 const WEEKDAY_CHIPS = [
@@ -40,6 +41,7 @@ const PERIOD_TABS = [
   { id: "month",    label: "月別" },
   { id: "year",     label: "年別" },
   { id: "all",      label: "通算" },
+  { id: "analyzer", label: "分析+" },
   { id: "calendar", label: "カレンダー" },
 ];
 
@@ -530,6 +532,21 @@ export default function AnalysisDashboard({
           active={filterActive}
         />
 
+        {/* 分析+（詳細分析）: 期間ナビ・サマリーを使わず、専用の集計ビューを表示 */}
+        {periodTab === "analyzer" && (
+          <>
+            <div style={{ textAlign: "center", padding: "0 4px", marginBottom: 12 }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: C.text, fontFamily: font, letterSpacing: 0.2 }}>
+                詳細分析（分析+）
+              </div>
+              <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>
+                回転率推移・ボーダー差分布・店舗/曜日傾向
+              </div>
+            </div>
+            <AnalyzerView archives={archives} extraFilters={extraFilters} />
+          </>
+        )}
+
         {/* 期間ナビ */}
         {periodTab === "month" && (
           <PeriodNav
@@ -561,16 +578,16 @@ export default function AnalysisDashboard({
         )}
 
         {/* 記録ゼロの場合 */}
-        {archives.length === 0 && emptyState("アーカイブがまだありません。実戦記録を保存すると、ここに集計が表示されます。")}
+        {periodTab !== "analyzer" && archives.length === 0 && emptyState("アーカイブがまだありません。実戦記録を保存すると、ここに集計が表示されます。")}
 
         {/* 絞り込みで該当ゼロの場合 */}
-        {archives.length > 0 && summary.sessions === 0 && (
+        {periodTab !== "analyzer" && archives.length > 0 && summary.sessions === 0 && (
           emptyState(filterActive
             ? "指定された条件に一致する記録がありません。絞り込みを変更するかリセットしてください。"
             : "この期間には記録がありません。")
         )}
 
-        {archives.length > 0 && summary.sessions > 0 && (
+        {periodTab !== "analyzer" && archives.length > 0 && summary.sessions > 0 && (
           <>
             {/* 4 サマリーカード */}
             <SummaryCards summary={summary} />
