@@ -9,6 +9,7 @@ import {
 import { getStoreIslands, setStoreIslands } from "./hallMapSelectors";
 import HallMapEditor from "./HallMapEditor";
 import DeltaAnalyzer from "../delta/DeltaAnalyzer";
+import DeltaMapView from "../delta/DeltaMapView";
 
 const FILTERS = [
   { id: "all", label: "全台" },
@@ -519,7 +520,7 @@ function EmptyState() {
   );
 }
 
-function DeltaEntryCard({ onOpen }) {
+function DeltaEntryCard({ onOpen, onOpenMap }) {
   return (
     <Card>
       <div style={{ padding: "14px" }}>
@@ -546,6 +547,24 @@ function DeltaEntryCard({ onOpen }) {
         >
           差玉解析を開く
         </button>
+        <button
+          className="b"
+          onClick={onOpenMap}
+          style={{
+            width: "100%",
+            minHeight: 48,
+            borderRadius: 12,
+            marginTop: 10,
+            border: `1px solid ${C.borderHi}`,
+            background: C.surfaceHi,
+            color: C.text,
+            fontSize: 14,
+            fontWeight: 800,
+            fontFamily: font,
+          }}
+        >
+          保存した解析をマップで見る
+        </button>
       </div>
     </Card>
   );
@@ -560,6 +579,7 @@ function timeLabel(now = new Date()) {
 export default function SelectDashboard({ S, onStart }) {
   const [activeFilter, setActiveFilter] = useState("all");
   const [showDelta, setShowDelta] = useState(false);
+  const [showDeltaMap, setShowDeltaMap] = useState(false);
   const [refreshTick] = useState(0);
   const updatedAt = useMemo(() => {
     void refreshTick;
@@ -597,6 +617,8 @@ export default function SelectDashboard({ S, onStart }) {
   };
 
   // 差玉解析スキャンの保存（pt_deltaScans へ追加。同一 id は置換）。
+  // 読み取り（マップで見る）用に配列を解決する（配列でなければ空扱い）。
+  const deltaScans = Array.isArray(S?.deltaScans) ? S.deltaScans : [];
   const setDeltaScans = S?.setDeltaScans;
   const handleSaveScan = (scan) => {
     if (typeof setDeltaScans !== "function") return;
@@ -614,6 +636,17 @@ export default function SelectDashboard({ S, onStart }) {
         islands={islands}
         onClose={() => setShowDelta(false)}
         onSaveScan={handleSaveScan}
+      />
+    );
+  }
+
+  if (showDeltaMap) {
+    return (
+      <DeltaMapView
+        store={activeStore}
+        islands={islands}
+        scans={deltaScans}
+        onClose={() => setShowDeltaMap(false)}
       />
     );
   }
@@ -644,7 +677,7 @@ export default function SelectDashboard({ S, onStart }) {
           islands={islands}
           onChangeIslands={handleChangeIslands}
         />
-        <DeltaEntryCard onOpen={() => setShowDelta(true)} />
+        <DeltaEntryCard onOpen={() => setShowDelta(true)} onOpenMap={() => setShowDeltaMap(true)} />
       </div>
     </div>
   );

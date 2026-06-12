@@ -66,7 +66,8 @@ async function analyzeImages(images, onProgress) {
 }
 
 // ── 共通ヘッダー（戻る44px） ──
-function TopBar({ title, onBack, right }) {
+// DeltaMapView でも再利用するため export する（UI様式の単一化のみ・ロジック不変）。
+export function TopBar({ title, onBack, right }) {
   return (
     <div style={{
       flexShrink: 0,
