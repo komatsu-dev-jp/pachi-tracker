@@ -244,6 +244,11 @@ export default function App() {
   // Registered stores
   const [stores, setStores] = useLS("pt_stores", []);
 
+  // 台選び：店舗ごとのホールマップ（島配置）編集データ
+  // スキーマ: { [storeId]: Island[] } / Island = { id, name, start, end, machineName }
+  // 台選び専用の独立した設定データ。rotRows（回転数記録）とは無関係に保つ。
+  const [hallMaps, setHallMaps] = useLS("pt_hallMaps", {});
+
   // Custom machines
   const [customMachines, setCustomMachines] = useLS("pt_customMachines", []);
 
@@ -829,6 +834,7 @@ export default function App() {
     storeName, setStoreName, machineNum, setMachineNum, machineName, setMachineName,
     investYen, setInvestYen, recoveryYen, setRecoveryYen,
     stores, setStores,
+    hallMaps, setHallMaps,
     customMachines, setCustomMachines,
     archives, setArchives,
     monthlyEvTarget, setMonthlyEvTarget,

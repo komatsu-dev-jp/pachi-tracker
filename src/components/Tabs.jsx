@@ -10520,26 +10520,41 @@ export function SettingsTab({ s, onReset }) {
                 {/* ヘッダー */}
                 <div style={{ padding: "12px 14px 8px", flexShrink: 0 }}>
                     <div style={{ marginBottom: 12 }}>
-                        <button className="b" onClick={() => { setShowMachineSearch(false); setQuery(""); setMachineFilter("all"); }} style={{
+                        <button className="b" onClick={() => { setShowMachineSearch(false); setQuery(""); setMachineFilter("all"); setConfirmingDeleteMachine(null); }} style={{
                             background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
                             color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600
                         }}>← 設定に戻る</button>
                     </div>
 
+                    {/* 新規機種登録（最優先操作のため目立つ位置に配置） */}
+                    <button className="b" onClick={() => openMachineForm()} style={{
+                        width: "100%", minHeight: 48, background: C.blue, border: "none", borderRadius: 12,
+                        color: "#fff", fontSize: 15, fontWeight: 800, fontFamily: font,
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 8,
+                    }}>
+                        <span style={{ fontSize: 18, lineHeight: 1 }}>＋</span>
+                        <span>新規機種登録</span>
+                    </button>
+
                     {/* CSV インポート/エクスポート */}
-                    <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
                         <button className="b" onClick={exportMachinesCSV} style={{
-                            flex: 1, background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                            flex: 1, minHeight: 44, background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
                             color: C.text, fontSize: 11, padding: "8px 12px", fontFamily: font, fontWeight: 600
                         }}>CSVエクスポート</button>
                         <label style={{
-                            flex: 1, background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
+                            flex: 1, minHeight: 44, boxSizing: "border-box", background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
                             color: C.text, fontSize: 11, padding: "8px 12px", fontFamily: font, fontWeight: 600,
-                            textAlign: "center", cursor: "pointer"
+                            textAlign: "center", cursor: "pointer",
+                            display: "flex", alignItems: "center", justifyContent: "center",
                         }}>
                             CSVインポート
                             <input type="file" accept=".csv,.txt,text/csv,text/plain" onChange={importMachinesCSV} style={{ display: "none" }} />
                         </label>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 4, fontSize: 11, color: C.sub, lineHeight: 1.5, marginBottom: 4 }}>
+                        <InfoIcon size={12} color={C.sub} />
+                        <span>CSVで複数機種を一括登録・保存できます。カスタム機種は一覧から編集・削除できます。</span>
                     </div>
                 </div>
 
@@ -10564,7 +10579,7 @@ export function SettingsTab({ s, onReset }) {
                                 className="b"
                                 onClick={() => setMachineFilter(chip.id)}
                                 style={{
-                                    flexShrink: 0,
+                                    flexShrink: 0, minHeight: 36,
                                     background: active ? C.blue : "var(--surface-hi)",
                                     color: active ? "#fff" : C.text,
                                     border: "none", borderRadius: 999,
@@ -10577,37 +10592,89 @@ export function SettingsTab({ s, onReset }) {
                     })}
                 </div>
 
-                {/* 機種リスト (スクロール) */}
-                <div style={{ flex: 1, overflowY: "auto" }}>
+                {/* 機種リスト (カード形式・スクロール) */}
+                <div style={{ flex: 1, overflowY: "auto", padding: "0 12px 12px" }}>
                     {results.length === 0 ? (
                         <div style={{ textAlign: "center", color: C.sub, padding: "40px 16px", fontSize: 12 }}>該当する機種がありません</div>
                     ) : (
                         results.map((m, i) => {
                             const iconColor = settingsTypeColors[m.type] || C.sub;
                             const iconLabel = (m.type || "").slice(0, 2);
+                            const probText = m.prob || (m.synthProb ? `1/${m.synthProb}` : "—");
+                            const isConfirmingDelete = confirmingDeleteMachine === m.id;
                             return (
-                                <button key={m.isCustom ? `custom-${m.id}` : `db-${i}`} className="b" onClick={() => setSelected(m)} style={{
-                                    width: "100%", background: "transparent",
-                                    border: "none", borderBottom: `1px solid ${C.border}`, padding: "14px 16px",
-                                    display: "flex", alignItems: "center", gap: 14, cursor: "pointer", textAlign: "left",
-                                    fontFamily: font,
+                                <div key={m.isCustom ? `custom-${m.id}` : `db-${i}`} style={{
+                                    background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14,
+                                    marginBottom: 10, overflow: "hidden",
                                 }}>
-                                    <div style={{
-                                        width: 44, height: 44, flexShrink: 0, borderRadius: 10,
-                                        background: iconColor,
-                                        display: "flex", alignItems: "center", justifyContent: "center",
-                                        color: "#fff", fontSize: 13, fontWeight: 800, fontFamily: font,
-                                    }}>{iconLabel}</div>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontSize: 15, fontWeight: 700, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 2, display: "flex", alignItems: "center", gap: 6 }}>
-                                            {m.name}
-                                            {m.isCustom && <span style={{ fontSize: 9, background: C.teal, color: "#fff", padding: "2px 6px", borderRadius: 4, fontWeight: 600, flexShrink: 0 }}>カスタム</span>}
+                                    {/* カード本体（タップで詳細・適用へ） */}
+                                    <button className="b" onClick={() => { setConfirmingDeleteMachine(null); setSelected(m); }} style={{
+                                        width: "100%", background: "transparent",
+                                        border: "none", padding: "14px 16px",
+                                        display: "flex", alignItems: "center", gap: 14, cursor: "pointer", textAlign: "left",
+                                        fontFamily: font, minHeight: 64,
+                                    }}>
+                                        <div style={{
+                                            width: 44, height: 44, flexShrink: 0, borderRadius: 10,
+                                            background: iconColor,
+                                            display: "flex", alignItems: "center", justifyContent: "center",
+                                            color: "#fff", fontSize: 13, fontWeight: 800, fontFamily: font,
+                                        }}>{iconLabel}</div>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontSize: 16, fontWeight: 800, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                                                {m.name}
+                                                {m.isCustom && <span style={{ fontSize: 9, background: C.teal, color: "#fff", padding: "2px 6px", borderRadius: 4, fontWeight: 600, flexShrink: 0 }}>カスタム</span>}
+                                            </div>
+                                            <div style={{ fontSize: 12, color: C.sub, marginBottom: m.maker || m.type ? 4 : 0 }}>
+                                                {m.maker || "メーカー未設定"}{m.type ? ` ・ ${m.type}` : ""}
+                                            </div>
+                                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                                <span style={{ fontSize: 12, fontWeight: 700, color: C.yellow, fontFamily: mono, background: "rgba(0,0,0,0.2)", borderRadius: 6, padding: "2px 8px" }}>
+                                                    確率 {probText}
+                                                </span>
+                                                {m.spec1R != null && (
+                                                    <span style={{ fontSize: 12, fontWeight: 700, color: C.teal, fontFamily: mono, background: "rgba(0,0,0,0.2)", borderRadius: 6, padding: "2px 8px" }}>
+                                                        1R {f(m.spec1R)}発
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
-                                        <div style={{ fontSize: 12, color: C.sub }}>
-                                            {m.maker || ""}{m.maker && (m.prob || m.synthProb) ? "  " : ""}{m.prob || (m.synthProb ? `1/${m.synthProb}` : "")}
+                                        <span style={{ fontSize: 15, color: C.sub, flexShrink: 0, fontWeight: 500 }}>›</span>
+                                    </button>
+
+                                    {/* カスタム機種: 編集・削除を明確に配置（誤タップ防止のため削除は確認付き） */}
+                                    {m.isCustom && (
+                                        <div style={{ display: "flex", gap: 8, padding: "0 12px 12px", borderTop: `1px solid ${C.border}`, marginTop: -1, paddingTop: 10 }}>
+                                            {isConfirmingDelete ? (
+                                                <>
+                                                    <button className="b" onClick={() => deleteMachine(m)} style={{
+                                                        flex: 1, minHeight: 44, background: C.red, border: "none", borderRadius: 10,
+                                                        color: "#fff", fontSize: 13, fontWeight: 700, fontFamily: font,
+                                                    }}>本当に削除する</button>
+                                                    <button className="b" onClick={() => setConfirmingDeleteMachine(null)} style={{
+                                                        flex: 1, minHeight: 44, background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 10,
+                                                        color: C.text, fontSize: 13, fontWeight: 700, fontFamily: font,
+                                                    }}>キャンセル</button>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <button className="b" onClick={() => openMachineForm(m)} style={{
+                                                        flex: 1, minHeight: 44, background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 10,
+                                                        color: C.text, fontSize: 13, fontWeight: 700, fontFamily: font,
+                                                        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                                                    }}>
+                                                        <PencilIcon size={14} color={C.text} />
+                                                        <span>編集</span>
+                                                    </button>
+                                                    <button className="b" onClick={() => setConfirmingDeleteMachine(m.id)} style={{
+                                                        flex: 1, minHeight: 44, background: "rgba(180,60,60,0.12)", border: `1px solid ${C.red}40`, borderRadius: 10,
+                                                        color: C.red, fontSize: 13, fontWeight: 700, fontFamily: font,
+                                                    }}>削除</button>
+                                                </>
+                                            )}
                                         </div>
-                                    </div>
-                                </button>
+                                    )}
+                                </div>
                             );
                         })
                     )}

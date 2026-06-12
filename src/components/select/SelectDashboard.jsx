@@ -6,6 +6,8 @@ import {
   normalizeMachineRows,
   summarizeIsland,
 } from "./selectSelectors";
+import { getStoreIslands, setStoreIslands } from "./hallMapSelectors";
+import HallMapEditor from "./HallMapEditor";
 
 const FILTERS = [
   { id: "all", label: "全台" },
@@ -537,6 +539,29 @@ export default function SelectDashboard({ S, onStart }) {
   const selected = normalized.find((m) => m.id === selectedId) || top[0] || normalized[0] || null;
   const title = selected?.machineName || S?.machineName || "島全体";
 
+  // ユーザー編集式ホールマップ（島配置）。
+  // 編集対象店舗: 選択中の店舗 → 無ければ登録済みの先頭店舗。
+  // データは App.jsx の pt_hallMaps（hallMaps / setHallMaps）に一元保存する。
+  const storesList = S?.stores;
+  const selectedStoreId = S?.selectedStoreId;
+  const hallMaps = S?.hallMaps;
+  const setHallMaps = S?.setHallMaps;
+  const activeStore = useMemo(() => {
+    const list = Array.isArray(storesList) ? storesList : [];
+    const sel = list.find((st) => st && typeof st === "object" && st.id === selectedStoreId);
+    if (sel) return sel;
+    return list.find((st) => st && typeof st === "object") || null;
+  }, [storesList, selectedStoreId]);
+  const storeId = activeStore?.id ?? null;
+  const islands = useMemo(
+    () => getStoreIslands(hallMaps, storeId),
+    [hallMaps, storeId]
+  );
+  const handleChangeIslands = (nextIslands) => {
+    if (storeId == null || typeof setHallMaps !== "function") return;
+    setHallMaps((prev) => setStoreIslands(prev, storeId, nextIslands));
+  };
+
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <Header title={title} summary={summary} updatedAt={updatedAt} />
@@ -557,6 +582,12 @@ export default function SelectDashboard({ S, onStart }) {
             <CandidateList rows={top} selectedId={selectedId} onSelect={setSelectedId} />
           </>
         )}
+        <HallMapEditor
+          storeId={storeId}
+          storeName={activeStore?.name || ""}
+          islands={islands}
+          onChangeIslands={handleChangeIslands}
+        />
       </div>
     </div>
   );

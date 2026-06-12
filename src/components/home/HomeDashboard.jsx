@@ -23,6 +23,22 @@ import { evDecision } from "../decision/evDecision";
 // - ダミー値・モック値は使用しない（記録が無ければ空状態を表示）
 // =====================================================
 
+// ロゴ・タイトルの起動演出（フェードイン＋スケールアップ）を
+// 同一セッション内で1回だけ再生するためのフラグ。
+// localStorage（永続データ）には保存せず、タブを閉じるまで有効な
+// sessionStorage を使用する（保存データ構造には影響しない）。
+const LOGO_INTRO_KEY = "pt_home_logo_intro_played";
+function shouldPlayLogoIntro() {
+    try {
+        if (sessionStorage.getItem(LOGO_INTRO_KEY)) return false;
+        sessionStorage.setItem(LOGO_INTRO_KEY, "1");
+        return true;
+    } catch {
+        // sessionStorage が使えない環境では演出なしにフォールバック
+        return false;
+    }
+}
+
 // パレットはテーマ変数（CSS カスタムプロパティ）に連動させる。
 // ライト/ダークの切り替えは index.css の :root / [data-theme] が担う。
 const P = {
@@ -203,9 +219,14 @@ function SectionHeader({ title, action, onAction }) {
 }
 
 // ===== ① ヘッダー =====
-function Logo() {
+// playIntro: true の場合のみ、ロゴのフェードイン＋スケールアップ演出（1.6秒）を再生する。
+// アニメーションは表示のみで、ボタン等の操作は常に有効（pointer-events を変更しない）。
+function Logo({ playIntro }) {
     return (
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div
+            className={playIntro ? "home-logo-intro" : undefined}
+            style={{ display: "flex", alignItems: "center", gap: 8 }}
+        >
             <div style={{
                 width: 30,
                 height: 30,
@@ -224,11 +245,11 @@ function Logo() {
         </div>
     );
 }
-function Header({ onBell, hasUnread, greeting }) {
+function Header({ onBell, hasUnread, greeting, playLogoIntro }) {
     return (
         <div style={{ padding: "18px 4px 14px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <Logo />
+                <Logo playIntro={playLogoIntro} />
                 <button
                     type="button"
                     onClick={onBell}
@@ -1062,6 +1083,10 @@ function RecentRow({ record, onClick }) {
 // メインコンポーネント
 // =====================================================
 export default function HomeDashboard({ S }) {
+    // ホーム画面タイトルロゴの起動演出：同一セッション内で最初の1回だけ再生する。
+    // useState の遅延初期化により、マウント時に1回だけ判定・フラグ更新を行う。
+    const [playLogoIntro] = useState(() => shouldPlayLogoIntro());
+
     // S からの読み取り値はローカルに展開しておく（React Compiler が useMemo の
     // 依存を正しく推論できるよう、フック内では S.xxx を直接参照しない）
     const archivesRaw = S?.archives;
@@ -1247,7 +1272,7 @@ export default function HomeDashboard({ S }) {
             color: P.text,
         }}>
             {/* ① ヘッダー */}
-            <Header onBell={() => S?.openNotificationPanel?.()} hasUnread={hasUnread} greeting={greeting} />
+            <Header onBell={() => S?.openNotificationPanel?.()} hasUnread={hasUnread} greeting={greeting} playLogoIntro={playLogoIntro} />
 
             {/* ② 本日のサマリー */}
             <TodaySummaryCard
