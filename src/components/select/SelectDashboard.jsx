@@ -8,6 +8,7 @@ import {
 } from "./selectSelectors";
 import { getStoreIslands, setStoreIslands } from "./hallMapSelectors";
 import HallMapEditor from "./HallMapEditor";
+import DeltaAnalyzer from "../delta/DeltaAnalyzer";
 
 const FILTERS = [
   { id: "all", label: "全台" },
@@ -518,6 +519,38 @@ function EmptyState() {
   );
 }
 
+function DeltaEntryCard({ onOpen }) {
+  return (
+    <Card>
+      <div style={{ padding: "14px" }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 4 }}>
+          差玉解析
+        </div>
+        <div style={{ fontSize: 12, color: C.sub, lineHeight: 1.6, marginBottom: 12 }}>
+          出玉グラフの画像から各台の差玉をランク判定
+        </div>
+        <button
+          className="b"
+          onClick={onOpen}
+          style={{
+            width: "100%",
+            minHeight: 48,
+            borderRadius: 12,
+            border: "none",
+            background: C.blue,
+            color: "#fff",
+            fontSize: 15,
+            fontWeight: 900,
+            fontFamily: font,
+          }}
+        >
+          差玉解析を開く
+        </button>
+      </div>
+    </Card>
+  );
+}
+
 function timeLabel(now = new Date()) {
   const hh = String(now.getHours()).padStart(2, "0");
   const mm = String(now.getMinutes()).padStart(2, "0");
@@ -526,6 +559,7 @@ function timeLabel(now = new Date()) {
 
 export default function SelectDashboard({ S, onStart }) {
   const [activeFilter, setActiveFilter] = useState("all");
+  const [showDelta, setShowDelta] = useState(false);
   const [refreshTick] = useState(0);
   const updatedAt = useMemo(() => {
     void refreshTick;
@@ -562,6 +596,28 @@ export default function SelectDashboard({ S, onStart }) {
     setHallMaps((prev) => setStoreIslands(prev, storeId, nextIslands));
   };
 
+  // 差玉解析スキャンの保存（pt_deltaScans へ追加。同一 id は置換）。
+  const setDeltaScans = S?.setDeltaScans;
+  const handleSaveScan = (scan) => {
+    if (typeof setDeltaScans !== "function") return;
+    setDeltaScans((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const without = list.filter((s) => s && s.id !== scan.id);
+      return [...without, scan];
+    });
+  };
+
+  if (showDelta) {
+    return (
+      <DeltaAnalyzer
+        store={activeStore}
+        islands={islands}
+        onClose={() => setShowDelta(false)}
+        onSaveScan={handleSaveScan}
+      />
+    );
+  }
+
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <Header title={title} summary={summary} updatedAt={updatedAt} />
@@ -588,6 +644,7 @@ export default function SelectDashboard({ S, onStart }) {
           islands={islands}
           onChangeIslands={handleChangeIslands}
         />
+        <DeltaEntryCard onOpen={() => setShowDelta(true)} />
       </div>
     </div>
   );
