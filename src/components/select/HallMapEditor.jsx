@@ -315,7 +315,9 @@ export default function HallMapEditor({ storeId, storeName, stores, onChangeStor
   };
 
   return (
-    <Card>
+    // 店舗ピッカーのドロップダウン（position:absolute）がカード境界でクリップされ
+    // 下のカードと重なって見える不具合を防ぐため、overflow を visible にする。
+    <Card style={{ overflow: "visible" }}>
       <div style={{ padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 13, color: C.text, fontWeight: 900, letterSpacing: 0.2 }}>
