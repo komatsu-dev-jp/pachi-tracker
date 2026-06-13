@@ -3,6 +3,7 @@ import ReactDOM from "react-dom";
 import { C, f, sc, sp, tsNow, font, mono } from "../constants";
 import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./Atoms";
 import { machineDB, searchMachines, deriveSpecForMachine } from "../machineDB";
+import { calcPreciseEV } from "../logic";
 import { getSync, set as persistSet, flushAll } from "../persistence";
 import { evDecision } from "./decision/evDecision";
 import { confidenceAccuracyLabel } from "./decision/confidenceLabels";
@@ -746,7 +747,7 @@ export function DataTab({ ev, jpLog, S }) {
 /* ================================================================
    RotTab — 回転数入力 + リアルタイム実測統計パネル（刷新版）
 ================================================================ */
-export function RotTab({ rows, setRows, S, ev }) {
+export function RotTab({ rows, setRows, S, ev, border }) {
     const [input, setInput] = useState("");
     const [inputError, setInputError] = useState("");
     const [showInputSheet, setShowInputSheet] = useState(false);
@@ -789,6 +790,46 @@ export function RotTab({ rows, setRows, S, ev }) {
         }
         return Math.max(0, currentCumRot - startCumRot);
     }, [S.rotRows]);
+
+    // ⑥「ボーダー差・信頼度の推移」用：各 "data" 行までのプレフィックスで calcPreciseEV を再計算し、
+    // その時点の実ボーダー差(回/K)・信頼度(%)・累計回転数を実値で算出する（ダミー乱数は使用しない）。
+    // App.jsx の calcPreciseEV({...}) 呼び出しと同一の引数で、rotRows は slice(0, i+1)、
+    // jpLog はその時点の cumRot 以下に発生したチェーンのみに truncate する（jpCount の過大計上を防ぐ）。
+    const trendSeries = useMemo(() => {
+        const rowsAll = S.rotRows || [];
+        const jpAll = S.jpLog || [];
+        const points = [];
+        for (let i = 0; i < rowsAll.length; i++) {
+            if (rowsAll[i].type !== "data") continue;
+            const cum = rowsAll[i].cumRot || 0;
+            const prefixRows = rowsAll.slice(0, i + 1);
+            // その時点までに発生した大当たりチェーンのみ（hitRot = 発生時の cumRot）
+            const prefixJp = jpAll.filter((c) => (Number(c?.hitRot) || 0) <= cum);
+            const evI = calcPreciseEV({
+                rotRows: prefixRows,
+                startRot: S.startRot,
+                jpLog: prefixJp,
+                rentBalls: S.rentBalls,
+                exRate: S.exRate,
+                synthDenom: S.synthDenom,
+                rotPerHour: S.rotPerHour,
+                totalTrayBalls: S.totalTrayBalls,
+                border,
+                spec1R: S.spec1R,
+                specAvgRounds: S.specAvgRounds,
+                specSapo: S.specSapo,
+                chodamaSettings: { includeChodamaInBalance: S.includeChodamaInBalance },
+            });
+            const bd = effectiveEv(evI).bDiff;
+            const conf = evDecision(evI).confidence;
+            points.push({
+                x: cum,
+                bDiff: Number.isFinite(bd) ? bd : 0,
+                confidence: Number.isFinite(conf) ? conf : 0,
+            });
+        }
+        return points;
+    }, [S.rotRows, S.jpLog, S.startRot, S.rentBalls, S.exRate, S.synthDenom, S.rotPerHour, S.totalTrayBalls, border, S.spec1R, S.specAvgRounds, S.specSapo, S.includeChodamaInBalance]);
 
     // 機種設定 編集モーダル用state
     const [showEditModal, setShowEditModal] = useState(false);
@@ -3513,7 +3554,9 @@ export function RotTab({ rows, setRows, S, ev }) {
                 const currentMochi = Number(S.currentMochiBalls) || 0;
                 const totalInvestActual = ev.rawInvest > 0 ? ev.rawInvest : 0;
                 const actualBalance = Math.round(currentMochi * ballValYenPerBall - totalInvestActual);
-                const diffActVsExp = actualBalance - expectedWork;
+                const diffActVsExp = actualBalance - expectedWork; // σ用（実収支 − 期待値）。σの上振れ/下振れ判定はこの値で維持
+                // 差分表示用：差 = 期待値 − 実収支。正＝欠損（実収支が期待値を下回る）／負＝余剰（上回る）
+                const diffExpVsAct = expectedWork - actualBalance;
                 // σ プロキシ（見た目優先・概算）
                 const sigmaStdEst = Math.max(3500, Math.sqrt(Math.max(ev.netRot || 0, 80)) * 280);
                 const sigmaVal = Math.max(-3, Math.min(3, diffActVsExp / sigmaStdEst));
@@ -3599,7 +3642,9 @@ export function RotTab({ rows, setRows, S, ev }) {
                 ];
 
                 // 折りたたみエリア用 1 行サマリー
-                const workSummary = `期待値 ${sp(expectedWork, 0)}円 / 実収支 ${sp(actualBalance, 0)}円 / 差分 ${sp(diffActVsExp, 0)}円${diffActVsExp > 0 ? "（上振れ）" : diffActVsExp < 0 ? "（下振れ）" : "（想定通り）"}`;
+                // 差分ラベル：期待値 > 実収支 → 欠損 / 期待値 < 実収支 → 余剰 / 0近傍 → 想定通り
+                const diffLabel = diffExpVsAct > 0 ? "欠損" : diffExpVsAct < 0 ? "余剰" : "想定通り";
+                const workSummary = `期待値 ${sp(expectedWork, 0)}円 / 実収支 ${sp(actualBalance, 0)}円 / ${diffExpVsAct === 0 ? "想定通り" : `${diffLabel} ${f(Math.abs(diffExpVsAct), 0)}円`}`;
                 const sigmaSummary = `${sp(sigmaVal, 1)}σ（${sigmaLabel}）`;
                 const trendSummary = `ボーダー差 ${sp(bDiff, 1)} / 信頼度 ${Math.round(confidence * 100)}%`;
                 const statsSummary = `単価 ${sp(evPerRot, 2)}円/回 / 持ち玉比率 ${Math.round(mochiRatio * 1000) / 10}%`;
@@ -3941,7 +3986,7 @@ export function RotTab({ rows, setRows, S, ev }) {
                                     {[
                                         { label: "期待値（積み上げ）", val: expectedWork, color: "var(--green)" },
                                         { label: "実収支（差玉換算）", val: actualBalance, color: "var(--blue)" },
-                                        { label: "差分（実収支 − 期待値）", val: diffActVsExp, color: "var(--yellow)", badge: diffActVsExp > 0 ? "上振れ中" : diffActVsExp < 0 ? "下振れ中" : "想定通り" },
+                                        { label: "差（期待値 − 実収支）", val: diffExpVsAct, color: diffExpVsAct > 0 ? "var(--red)" : diffExpVsAct < 0 ? "var(--green)" : "var(--sub)", badge: diffExpVsAct > 0 ? "欠損" : diffExpVsAct < 0 ? "余剰" : "想定通り" },
                                     ].map((m, idx) => {
                                         return (
                                             <div key={idx} style={{
@@ -3960,9 +4005,9 @@ export function RotTab({ rows, setRows, S, ev }) {
                                                     <div style={{
                                                         alignSelf: "flex-start", marginTop: 4,
                                                         padding: "1px 8px", borderRadius: 999,
-                                                        background: diffActVsExp > 0 ? "rgba(33,217,155,0.18)" : diffActVsExp < 0 ? "rgba(255,176,32,0.18)" : "rgba(107,114,128,0.18)",
+                                                        background: diffExpVsAct > 0 ? "rgba(255,69,58,0.18)" : diffExpVsAct < 0 ? "rgba(33,217,155,0.18)" : "rgba(107,114,128,0.18)",
                                                         fontSize: 9,
-                                                        color: diffActVsExp > 0 ? "var(--green)" : diffActVsExp < 0 ? "var(--yellow)" : "var(--sub)",
+                                                        color: diffExpVsAct > 0 ? "var(--red)" : diffExpVsAct < 0 ? "var(--green)" : "var(--sub)",
                                                         fontWeight: 700, fontFamily: font,
                                                     }}>{m.badge}</div>
                                                 )}
@@ -4059,86 +4104,81 @@ export function RotTab({ rows, setRows, S, ev }) {
                                         </span>
                                     </div>
                                     <div style={{ display: "flex", padding: "0 8px 8px", gap: 6, alignItems: "stretch" }}>
-                                        {/* グラフ本体 */}
+                                        {/* グラフ本体 — 実データ（trendSeries）から描画。2点未満ならフォールバック案内のみ */}
                                         <div style={{ flex: 1, position: "relative" }}>
-                                            <svg viewBox="0 0 280 120" preserveAspectRatio="none" width="100%" height="140" style={{ display: "block" }}>
-                                                {/* グリッド */}
-                                                {[0, 1, 2, 3, 4].map((i) => (
-                                                    <line key={i} x1="22" y1={10 + i * 24} x2="278" y2={10 + i * 24} stroke="var(--border)" strokeWidth="1" />
-                                                ))}
-                                                {/* 左軸 */}
-                                                {[20, 10, 0, -10, -20].map((v, i) => (
-                                                    <text key={v} x="20" y={14 + i * 24} fontSize="7" fill="var(--sub)" textAnchor="end" fontFamily="Inter">{(v > 0 ? "+" : "") + v}</text>
-                                                ))}
-                                                {/* 右軸 */}
-                                                {[100, 75, 50, 25, 0].map((v, i) => (
-                                                    <text key={v} x="280" y={14 + i * 24} fontSize="7" fill="rgba(192,132,252,0.6)" textAnchor="start" fontFamily="Inter">{v}%</text>
-                                                ))}
-                                                {/* ボーダー差ライン（緑実線） */}
-                                                {(() => {
-                                                    const N = 18;
-                                                    let s = 41;
-                                                    const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s % 1000) / 1000; };
-                                                    const vals = [];
-                                                    let cv = -10;
-                                                    for (let i = 0; i < N; i++) {
-                                                        cv += (rnd() - 0.42) * 6;
-                                                        cv = Math.max(-18, Math.min(15, cv));
-                                                        if (i === N - 1) cv = bDiff * 1; // 末尾は現在値
-                                                        vals.push(cv);
-                                                    }
-                                                    const yFor = (v) => 58 - (v / 20) * 48;
-                                                    const xFor = (i) => 22 + (i / (N - 1)) * 254;
-                                                    const d = vals.map((v, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(v)}`).join(" ");
-                                                    const lastX = xFor(N - 1);
-                                                    const lastY = yFor(vals[N - 1]);
-                                                    return (
+                                            {trendSeries.length < 2 ? (
+                                                <div style={{
+                                                    minHeight: 140,
+                                                    display: "flex", flexDirection: "column",
+                                                    alignItems: "center", justifyContent: "center",
+                                                    textAlign: "center", gap: 6, padding: "20px 12px",
+                                                }}>
+                                                    <div style={{ fontSize: 12, color: C.text, fontWeight: 800, fontFamily: font }}>データ蓄積中</div>
+                                                    <div style={{ fontSize: 11, color: C.sub, fontFamily: font, lineHeight: 1.6 }}>回転を入力すると推移が表示されます</div>
+                                                </div>
+                                            ) : (() => {
+                                                // 横軸＝累計回転数。x 範囲は [最初の点の回転数, 最後の点の回転数]。
+                                                const xs = trendSeries.map((p) => p.x);
+                                                const xMin = Math.min(...xs);
+                                                const xMax = Math.max(...xs);
+                                                const xSpan = xMax - xMin;
+                                                const xFor = (cum) => xSpan > 0 ? 22 + ((cum - xMin) / xSpan) * 254 : 22 + 254 / 2;
+                                                // 左軸：ボーダー差 ±20 回/K（クランプして描画）
+                                                const yForB = (v) => 58 - (Math.max(-20, Math.min(20, v)) / 20) * 48;
+                                                // 右軸：信頼度 0〜100%
+                                                const yForC = (v) => 106 - (Math.max(0, Math.min(100, v)) / 100) * 96;
+                                                const lastIdx = trendSeries.length - 1;
+                                                const bPath = trendSeries.map((p, i) => `${i === 0 ? "M" : "L"}${xFor(p.x)},${yForB(p.bDiff)}`).join(" ");
+                                                const cPath = trendSeries.map((p, i) => `${i === 0 ? "M" : "L"}${xFor(p.x)},${yForC(p.confidence * 100)}`).join(" ");
+                                                const bLastX = xFor(trendSeries[lastIdx].x);
+                                                const bLastY = yForB(trendSeries[lastIdx].bDiff);
+                                                const cLastX = xFor(trendSeries[lastIdx].x);
+                                                const cLastY = yForC(trendSeries[lastIdx].confidence * 100);
+                                                // 回転数の目盛り（最小・中央・最大）
+                                                const xTicks = xSpan > 0
+                                                    ? [xMin, Math.round((xMin + xMax) / 2), xMax]
+                                                    : [xMin];
+                                                return (
+                                                    <svg viewBox="0 0 280 120" preserveAspectRatio="none" width="100%" height="140" style={{ display: "block" }}>
+                                                        {/* グリッド */}
+                                                        {[0, 1, 2, 3, 4].map((i) => (
+                                                            <line key={i} x1="22" y1={10 + i * 24} x2="278" y2={10 + i * 24} stroke="var(--border)" strokeWidth="1" />
+                                                        ))}
+                                                        {/* 左軸（ボーダー差 回/K） */}
+                                                        {[20, 10, 0, -10, -20].map((v, i) => (
+                                                            <text key={v} x="20" y={14 + i * 24} fontSize="7" fill="var(--sub)" textAnchor="end" fontFamily="Inter">{(v > 0 ? "+" : "") + v}</text>
+                                                        ))}
+                                                        {/* 右軸（信頼度 %） */}
+                                                        {[100, 75, 50, 25, 0].map((v, i) => (
+                                                            <text key={v} x="280" y={14 + i * 24} fontSize="7" fill="rgba(192,132,252,0.6)" textAnchor="start" fontFamily="Inter">{v}%</text>
+                                                        ))}
+                                                        {/* ボーダー差ライン（緑実線） */}
                                                         <g>
-                                                            <path d={d} stroke="var(--green)" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                                                            {vals.slice(0, -1).map((v, i) => (
-                                                                <circle key={i} cx={xFor(i)} cy={yFor(v)} r="1.8" fill="var(--green)" />
+                                                            <path d={bPath} stroke="var(--green)" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                                                            {trendSeries.slice(0, -1).map((p, i) => (
+                                                                <circle key={i} cx={xFor(p.x)} cy={yForB(p.bDiff)} r="1.8" fill="var(--green)" />
                                                             ))}
                                                             {/* 現在点 — パルス + 発光 */}
-                                                            <circle cx={lastX} cy={lastY} r="4" fill="var(--green)" opacity="0.35" className="data-pulse-ring" />
-                                                            <circle cx={lastX} cy={lastY} r="3" fill="var(--green)" stroke="#fff" strokeWidth="1" />
+                                                            <circle cx={bLastX} cy={bLastY} r="4" fill="var(--green)" opacity="0.35" className="data-pulse-ring" />
+                                                            <circle cx={bLastX} cy={bLastY} r="3" fill="var(--green)" stroke="#fff" strokeWidth="1" />
                                                         </g>
-                                                    );
-                                                })()}
-                                                {/* 信頼度ライン（紫点線） */}
-                                                {(() => {
-                                                    const N = 18;
-                                                    let s = 77;
-                                                    const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s % 1000) / 1000; };
-                                                    const vals = [];
-                                                    let cv = 5;
-                                                    for (let i = 0; i < N; i++) {
-                                                        cv += (rnd() - 0.3) * 7;
-                                                        cv = Math.max(0, Math.min(100, cv));
-                                                        if (i === N - 1) cv = confidence * 100;
-                                                        vals.push(cv);
-                                                    }
-                                                    const yFor = (v) => 106 - (v / 100) * 96;
-                                                    const xFor = (i) => 22 + (i / (N - 1)) * 254;
-                                                    const d = vals.map((v, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(v)}`).join(" ");
-                                                    const lastX = xFor(N - 1);
-                                                    const lastY = yFor(vals[N - 1]);
-                                                    return (
+                                                        {/* 信頼度ライン（紫点線） */}
                                                         <g>
-                                                            <path d={d} stroke="var(--purple)" strokeWidth="1.6" fill="none" strokeDasharray="3 2" strokeLinecap="round" strokeLinejoin="round" />
-                                                            {vals.slice(0, -1).map((v, i) => (
-                                                                <circle key={i} cx={xFor(i)} cy={yFor(v)} r="1.6" fill="var(--purple)" />
+                                                            <path d={cPath} stroke="var(--purple)" strokeWidth="1.6" fill="none" strokeDasharray="3 2" strokeLinecap="round" strokeLinejoin="round" />
+                                                            {trendSeries.slice(0, -1).map((p, i) => (
+                                                                <circle key={i} cx={xFor(p.x)} cy={yForC(p.confidence * 100)} r="1.6" fill="var(--purple)" />
                                                             ))}
                                                             {/* 現在点 — パルス */}
-                                                            <circle cx={lastX} cy={lastY} r="3.5" fill="var(--purple)" opacity="0.35" className="data-pulse-ring" />
-                                                            <circle cx={lastX} cy={lastY} r="2.6" fill="var(--purple)" stroke="#fff" strokeWidth="0.8" />
+                                                            <circle cx={cLastX} cy={cLastY} r="3.5" fill="var(--purple)" opacity="0.35" className="data-pulse-ring" />
+                                                            <circle cx={cLastX} cy={cLastY} r="2.6" fill="var(--purple)" stroke="#fff" strokeWidth="0.8" />
                                                         </g>
-                                                    );
-                                                })()}
-                                                {/* 時刻軸 */}
-                                                {["12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "現在"].map((t, i) => (
-                                                    <text key={t} x={22 + (i / 6) * 254} y="118" fontSize="7" fill={i === 6 ? "var(--text)" : "var(--sub)"} fontWeight={i === 6 ? "700" : "400"} textAnchor="middle" fontFamily="Inter">{t}</text>
-                                                ))}
-                                            </svg>
+                                                        {/* 横軸（回転数目盛り） */}
+                                                        {xTicks.map((t, i) => (
+                                                            <text key={i} x={xFor(t)} y="118" fontSize="7" fill={i === xTicks.length - 1 ? "var(--text)" : "var(--sub)"} fontWeight={i === xTicks.length - 1 ? "700" : "400"} textAnchor="middle" fontFamily="Inter">{f(t)}回転</text>
+                                                        ))}
+                                                    </svg>
+                                                );
+                                            })()}
                                         </div>
                                         {/* 右側現在値 */}
                                         <div style={{
