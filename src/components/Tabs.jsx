@@ -8250,7 +8250,9 @@ export function CalendarTab({ S, onReset }) {
                     </Card>
 
                     {/* Edit form */}
-                    <Card style={{ padding: 14, marginBottom: 8 }}>
+                    {/* 店舗ドロップダウン（position:absolute）がカード境界でクリップされ
+                        下のカードと重なって見える不具合を防ぐため overflow を visible にする */}
+                    <Card style={{ padding: 14, marginBottom: 8, overflow: "visible" }}>
                         <SecLabel label="データ編集" />
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
                             <div>
