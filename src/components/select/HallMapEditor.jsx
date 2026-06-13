@@ -9,7 +9,7 @@
 //             既存の P-EVIDENCE ダミーマップ（SelectDashboard 内 HallMap）には一切触れない。
 // 編集モード: 「編集」ボタンで切替。閲覧モードの既存操作タップ数は増やさない。
 
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { C, font, mono } from "../../constants";
 import { Card } from "../Atoms";
 import {
@@ -232,11 +232,24 @@ function NoStoreNotice() {
 // 編集対象店舗の切り替えピッカー。登録店舗が2件以上のときのみ表示する。
 function StorePicker({ stores, storeId, storeName, onChangeStore }) {
   const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+
+  // 開いている間だけ、外側タップで閉じるリスナーを登録する。
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (e) => {
+      if (rootRef.current && !rootRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [open]);
 
   if (!Array.isArray(stores) || stores.length < 2) return null;
 
   return (
-    <div style={{ position: "relative", flexShrink: 0 }}>
+    <div ref={rootRef} style={{ position: "relative", flexShrink: 0 }}>
       <button
         className="b"
         aria-label="マップ編集の対象店舗を切り替える"

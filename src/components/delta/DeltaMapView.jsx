@@ -370,7 +370,7 @@ export default function DeltaMapView({ store, islands, scans, onClose }) {
   const showCoverage = !noScans && !noIslands;
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 60, background: C.bg, display: "flex", flexDirection: "column", color: C.text, fontFamily: font }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 110, background: C.bg, display: "flex", flexDirection: "column", color: C.text, fontFamily: font }}>
       <TopBar
         title="マップで見る"
         onBack={onClose}

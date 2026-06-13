@@ -1080,7 +1080,7 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 60, background: C.bg, display: "flex", flexDirection: "column", color: C.text, fontFamily: font }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 110, background: C.bg, display: "flex", flexDirection: "column", color: C.text, fontFamily: font }}>
       {toast && (
         <div style={{
           position: "absolute", top: "calc(env(safe-area-inset-top, 0px) + 60px)", left: "50%", transform: "translateX(-50%)",
