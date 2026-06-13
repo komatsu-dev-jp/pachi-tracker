@@ -229,7 +229,74 @@ function NoStoreNotice() {
   );
 }
 
-export default function HallMapEditor({ storeId, storeName, islands, onChangeIslands }) {
+// 編集対象店舗の切り替えピッカー。登録店舗が2件以上のときのみ表示する。
+function StorePicker({ stores, storeId, storeName, onChangeStore }) {
+  const [open, setOpen] = useState(false);
+
+  if (!Array.isArray(stores) || stores.length < 2) return null;
+
+  return (
+    <div style={{ position: "relative", flexShrink: 0 }}>
+      <button
+        className="b"
+        aria-label="マップ編集の対象店舗を切り替える"
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          minHeight: 44, borderRadius: 11, padding: "0 12px",
+          border: `1px solid ${C.borderHi}`,
+          background: C.surfaceHi,
+          color: C.text,
+          fontSize: 12, fontWeight: 800, fontFamily: font,
+          display: "flex", alignItems: "center", gap: 6,
+          maxWidth: 140,
+        }}
+      >
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {storeName || "店舗を選択"}
+        </span>
+        <span style={{ fontSize: 10, color: C.sub, flexShrink: 0 }}>▼</span>
+      </button>
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", right: 0,
+          minWidth: 160, maxWidth: 220, maxHeight: 220, overflowY: "auto",
+          background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 10,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.5)", zIndex: 20,
+        }}>
+          {stores.map((st, i) => {
+            const name = typeof st === "object" ? st.name : st;
+            const id = typeof st === "object" ? st.id : st;
+            const active = id === storeId;
+            return (
+              <button
+                key={st.id || i}
+                className="b"
+                aria-label={`マップ編集対象を${name}に切り替える`}
+                onClick={() => {
+                  setOpen(false);
+                  if (!active) onChangeStore(id);
+                }}
+                style={{
+                  width: "100%", minHeight: 44, boxSizing: "border-box",
+                  background: active ? "color-mix(in srgb, var(--blue) 14%, transparent)" : "transparent",
+                  border: "none", borderBottom: `1px solid ${C.border}`,
+                  color: active ? C.blue : C.text,
+                  fontSize: 13, fontWeight: active ? 900 : 700, fontFamily: font,
+                  textAlign: "left", padding: "0 12px",
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}
+              >
+                {name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function HallMapEditor({ storeId, storeName, stores, onChangeStore, islands, onChangeIslands }) {
   const [editing, setEditing] = useState(false);
 
   // 編集対象の店舗が決まらない場合は案内のみ（編集導線は出さない）。
@@ -258,6 +325,7 @@ export default function HallMapEditor({ storeId, storeName, islands, onChangeIsl
             {storeName || "登録店舗"} ・ {islands.length}島
           </div>
         </div>
+        <StorePicker stores={stores} storeId={storeId} storeName={storeName} onChangeStore={onChangeStore} />
         <button
           className="b"
           aria-label={editing ? "閲覧モードに戻る" : "マップを編集する"}

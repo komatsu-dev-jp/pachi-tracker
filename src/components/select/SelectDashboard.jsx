@@ -615,6 +615,11 @@ export default function SelectDashboard({ S, onStart }) {
     if (storeId == null || typeof setHallMaps !== "function") return;
     setHallMaps((prev) => setStoreIslands(prev, storeId, nextIslands));
   };
+  // マップ編集の対象店舗を切り替える（既存の selectedStoreId を更新するだけ）。
+  const handleChangeStore = (nextStoreId) => {
+    if (typeof S?.setSelectedStoreId !== "function") return;
+    S.setSelectedStoreId(nextStoreId);
+  };
 
   // 差玉解析スキャンの保存（pt_deltaScans へ追加。同一 id は置換）。
   // 読み取り（マップで見る）用に配列を解決する（配列でなければ空扱い）。
@@ -676,6 +681,8 @@ export default function SelectDashboard({ S, onStart }) {
         <HallMapEditor
           storeId={storeId}
           storeName={activeStore?.name || ""}
+          stores={storesList}
+          onChangeStore={handleChangeStore}
           islands={islands}
           onChangeIslands={handleChangeIslands}
         />
