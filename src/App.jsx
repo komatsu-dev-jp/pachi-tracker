@@ -249,6 +249,15 @@ export default function App() {
   // 台選び専用の独立した設定データ。rotRows（回転数記録）とは無関係に保つ。
   const [hallMaps, setHallMaps] = useLS("pt_hallMaps", {});
 
+  // 差玉解析：保存済みスキャン（出玉グラフ画像解析の結果）
+  // スキーマ: Scan[] / Scan = { id, storeId, storeName, date("YYYY-MM-DD"), machineName, rows, createdAt }
+  //   rows[] = { num, val, px, rank, island?, machineName?, normalSpins?, totalStarts? }
+  // 台選び専用の独立データ。rotRows（回転数記録）とは無関係に保つ。
+  const [deltaScans, setDeltaScans] = useLS("pt_deltaScans", []);
+
+  // 差玉解析：AI読み取り用のAnthropic APIキー（任意設定・この端末のみに保存）
+  const [aiApiKey, setAiApiKey] = useLS("pt_aiApiKey", "");
+
   // Custom machines
   const [customMachines, setCustomMachines] = useLS("pt_customMachines", []);
 
@@ -835,6 +844,8 @@ export default function App() {
     investYen, setInvestYen, recoveryYen, setRecoveryYen,
     stores, setStores,
     hallMaps, setHallMaps,
+    deltaScans, setDeltaScans,
+    aiApiKey, setAiApiKey,
     customMachines, setCustomMachines,
     archives, setArchives,
     monthlyEvTarget, setMonthlyEvTarget,
