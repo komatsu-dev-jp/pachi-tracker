@@ -20,6 +20,7 @@ import {
   buildSegmentsNumbers,
   makeScan,
 } from "./deltaSelectors";
+import { readTaiDataImage } from "./aiReader";
 
 const TAP = 44; // 最小タップ領域
 const CTA = 48; // 下部固定CTA高さ
@@ -654,7 +655,7 @@ function ResultsStep({ rows, machineName, onBack, onSave, onOpenImport, saved })
 }
 
 // ════════════ 台データ取り込み ════════════
-function ImportStep({ store, onBack, onMerge }) {
+function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
   const prompt = useMemo(
     () => buildOcrPrompt({ dateText: todaySlash(), storeName: store?.name || "" }),
     [store]
@@ -662,6 +663,53 @@ function ImportStep({ store, onBack, onMerge }) {
   const promptHead = useMemo(() => prompt.split("\n").slice(0, 2).join("\n"), [prompt]);
   const [copied, setCopied] = useState(false);
   const [text, setText] = useState("");
+
+  const hasKey = typeof aiApiKey === "string" && aiApiKey.trim() !== "";
+  const aiFileRef = useRef(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState("");
+  const [aiOk, setAiOk] = useState(false);
+  // APIキー未設定時の導線展開、または設定済み時の変更フォーム表示。
+  const [showKeyForm, setShowKeyForm] = useState(false);
+  const [keyInput, setKeyInput] = useState("");
+
+  // 画像 dataURL を読み込んで AI 読み取りへ渡す。
+  const handleAiFile = (files) => {
+    const file = Array.from(files || []).find((fl) => fl.type.startsWith("image/"));
+    if (!file || aiBusy) return;
+    setAiError("");
+    setAiOk(false);
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const dataUrl = e.target.result;
+      setAiBusy(true);
+      const result = await readTaiDataImage({ apiKey: aiApiKey, dataUrl, prompt });
+      setAiBusy(false);
+      if (result.ok) {
+        setText(result.text);
+        setAiOk(true);
+        setTimeout(() => setAiOk(false), 4000);
+      } else {
+        setAiError(result.message || "読み取りに失敗しました");
+      }
+    };
+    reader.onerror = () => setAiError("画像の読み込みに失敗しました");
+    reader.readAsDataURL(file);
+  };
+
+  const saveKey = () => {
+    if (typeof onChangeAiApiKey === "function") onChangeAiApiKey(keyInput.trim());
+    setKeyInput("");
+    setShowKeyForm(false);
+  };
+  const deleteKey = () => {
+    // 「変更」の隣にあり誤タップで即消えると再設定の手間が大きいため確認を挟む。
+    if (!window.confirm("APIキーを削除しますか？")) return;
+    if (typeof onChangeAiApiKey === "function") onChangeAiApiKey("");
+    setShowKeyForm(false);
+  };
+  // 設定済みキーのマスク表示（先頭7文字＋伏せ字）。
+  const maskedKey = hasKey ? `${aiApiKey.trim().slice(0, 7)}••••` : "";
 
   const parsed = useMemo(() => parseTaiDataText(text), [text]);
   const recognized = parsed.rows.length;
@@ -690,6 +738,135 @@ function ImportStep({ store, onBack, onMerge }) {
         <div style={{ fontSize: 14, color: C.subHi, margin: "4px 2px 12px", fontWeight: 600 }}>
           回転数・大当り回数をグラフ解析に統合します
         </div>
+
+        {/* AI読み取りカード（APIキー設定者向け・ワンタップ自動化） */}
+        <Card style={{ marginBottom: 12 }}>
+          <div style={{ padding: "14px" }}>
+            {hasKey ? (
+              <>
+                <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>
+                  AIでワンタップ読み取り
+                </div>
+                <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>
+                  台データ画像を選ぶと自動でTSV化します
+                </div>
+                <input
+                  ref={aiFileRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  onChange={(e) => { handleAiFile(e.target.files); e.target.value = ""; }}
+                />
+                <button
+                  className="b"
+                  onClick={aiBusy ? undefined : () => aiFileRef.current?.click()}
+                  disabled={aiBusy}
+                  style={{
+                    width: "100%", minHeight: CTA, borderRadius: 12, marginTop: 12,
+                    border: "none",
+                    background: aiBusy ? C.surfaceHi : C.blue,
+                    color: aiBusy ? C.sub : "#fff",
+                    fontSize: 15, fontWeight: 900,
+                  }}
+                >
+                  {aiBusy ? "読み取り中…" : "画像を選んで読み取る"}
+                </button>
+
+                {aiOk && (
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    background: "color-mix(in srgb, var(--green) 14%, transparent)",
+                    border: `1px solid color-mix(in srgb, var(--green) 35%, transparent)`,
+                    borderRadius: 10, padding: "10px 12px", marginTop: 10,
+                    fontSize: 13, color: C.green, fontWeight: 800,
+                  }}>
+                    ✓ 読み取りました。内容を確認して統合してください
+                  </div>
+                )}
+                {aiError && (
+                  <div style={{
+                    display: "flex", alignItems: "flex-start", gap: 8,
+                    background: "color-mix(in srgb, var(--red) 12%, transparent)",
+                    border: `1px solid color-mix(in srgb, var(--red) 35%, transparent)`,
+                    borderRadius: 10, padding: "10px 12px", marginTop: 10,
+                    fontSize: 13, color: C.red, fontWeight: 700, lineHeight: 1.6,
+                  }}>
+                    <span>⚠</span><span>{aiError}</span>
+                  </div>
+                )}
+
+                {/* 送信先の注意書き（端末内解析と混同させない） */}
+                <div style={{
+                  background: "color-mix(in srgb, var(--yellow) 10%, transparent)",
+                  border: `1px solid color-mix(in srgb, var(--yellow) 30%, transparent)`,
+                  borderRadius: 10, padding: "10px 12px", marginTop: 10,
+                  fontSize: 11, color: C.yellow, fontWeight: 700, lineHeight: 1.6,
+                }}>
+                  画像はAnthropic APIに送信されます（APIキーの利用料金が発生します）
+                </div>
+
+                {/* キー設定の変更/削除 */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: C.sub, fontFamily: mono, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    APIキー {maskedKey}
+                  </div>
+                  <button
+                    className="b"
+                    onClick={() => { setShowKeyForm((v) => !v); setKeyInput(""); }}
+                    style={{
+                      minHeight: TAP, minWidth: 64, borderRadius: 10, padding: "0 12px",
+                      border: `1px solid ${C.border}`, background: C.surfaceHi,
+                      color: C.subHi, fontSize: 13, fontWeight: 800,
+                    }}
+                  >
+                    変更
+                  </button>
+                  <button
+                    className="b"
+                    onClick={deleteKey}
+                    style={{
+                      minHeight: TAP, minWidth: 64, borderRadius: 10, padding: "0 12px",
+                      border: `1px solid color-mix(in srgb, var(--red) 40%, transparent)`,
+                      background: "transparent", color: C.red, fontSize: 13, fontWeight: 800,
+                    }}
+                  >
+                    削除
+                  </button>
+                </div>
+                {showKeyForm && (
+                  <ApiKeyForm
+                    value={keyInput}
+                    onChange={setKeyInput}
+                    onSave={saveKey}
+                  />
+                )}
+              </>
+            ) : (
+              <>
+                <button
+                  className="b"
+                  onClick={() => setShowKeyForm((v) => !v)}
+                  style={{
+                    width: "100%", minHeight: TAP, borderRadius: 12,
+                    border: `1px dashed ${C.borderHi}`, background: "transparent",
+                    color: C.subHi, fontSize: 14, fontWeight: 800,
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  }}
+                >
+                  <span style={{ color: C.blue }}>✦</span>
+                  AIワンタップ読み取りを使う（APIキー設定）
+                </button>
+                {showKeyForm && (
+                  <ApiKeyForm
+                    value={keyInput}
+                    onChange={setKeyInput}
+                    onSave={saveKey}
+                  />
+                )}
+              </>
+            )}
+          </div>
+        </Card>
 
         {/* ステップ1 */}
         <Card style={{ marginBottom: 12 }}>
@@ -797,6 +974,48 @@ function ImportStep({ store, onBack, onMerge }) {
   );
 }
 
+// ── APIキー設定フォーム（展開式・この端末のみ保存） ──
+function ApiKeyForm({ value, onChange, onSave }) {
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ fontSize: 12, color: C.sub, marginBottom: 6, fontWeight: 700 }}>APIキー</div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          type="password"
+          value={value}
+          placeholder="sk-ant-…"
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={(e) => { e.target.style.borderColor = C.blue; }}
+          onBlur={(e) => { e.target.style.borderColor = C.borderHi; }}
+          style={{
+            flex: 1, minWidth: 0, minHeight: TAP, boxSizing: "border-box",
+            background: C.surfaceHi, border: `1px solid ${C.borderHi}`,
+            borderRadius: 12, color: C.text, fontFamily: mono,
+            fontSize: 14, padding: "8px 12px", outline: "none",
+          }}
+        />
+        <button
+          className="b"
+          onClick={() => onSave()}
+          disabled={value.trim() === ""}
+          style={{
+            minHeight: TAP, minWidth: 72, borderRadius: 12, padding: "0 16px",
+            border: "none",
+            background: value.trim() === "" ? C.surfaceHi : C.blue,
+            color: value.trim() === "" ? C.sub : "#fff",
+            fontSize: 14, fontWeight: 900,
+          }}
+        >
+          保存
+        </button>
+      </div>
+      <div style={{ fontSize: 11, color: C.sub, marginTop: 8, lineHeight: 1.6, fontWeight: 600 }}>
+        APIキーはこの端末内（localStorage）にのみ保存されます。共有端末では設定しないでください
+      </div>
+    </div>
+  );
+}
+
 function StepBadge({ n }) {
   return (
     <div style={{
@@ -811,7 +1030,7 @@ function StepBadge({ n }) {
 }
 
 // ════════════ ルート ════════════
-export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan }) {
+export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiApiKey, onChangeAiApiKey }) {
   const [step, setStep] = useState("upload");
   const [images, setImages] = useState([]);
   const [slots, setSlots] = useState([]); // ピクセル解析の生スロット
@@ -905,6 +1124,8 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan }) {
           store={store}
           onBack={() => setStep("results")}
           onMerge={handleMerge}
+          aiApiKey={aiApiKey}
+          onChangeAiApiKey={onChangeAiApiKey}
         />
       )}
     </div>

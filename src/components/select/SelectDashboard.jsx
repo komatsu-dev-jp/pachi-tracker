@@ -636,6 +636,8 @@ export default function SelectDashboard({ S, onStart }) {
         islands={islands}
         onClose={() => setShowDelta(false)}
         onSaveScan={handleSaveScan}
+        aiApiKey={typeof S?.aiApiKey === "string" ? S.aiApiKey : ""}
+        onChangeAiApiKey={S?.setAiApiKey}
       />
     );
   }

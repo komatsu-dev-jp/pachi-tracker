@@ -10,6 +10,7 @@ import {
   buildScanIndex,
   buildIslandOverlay,
   coverageOf,
+  buildNumTrend,
 } from "../deltaMapSelectors.js";
 
 // テスト用スキャン生成ヘルパ。
@@ -133,4 +134,75 @@ test("coverageOf: 全島の hit と total を集計", () => {
 test("coverageOf: 空島・非配列は { hit:0, total:0 }", () => {
   assert.deepStrictEqual(coverageOf([], new Map()), { hit: 0, total: 0 });
   assert.deepStrictEqual(coverageOf(null, new Map()), { hit: 0, total: 0 });
+});
+
+// ──────────── buildNumTrend ────────────
+
+test("buildNumTrend: 日付昇順（古い順）で返す", () => {
+  const scans = [
+    scan({ id: "1", storeId: 7, date: "2026-06-10", rows: [row(816, 5000)], createdAt: "b" }),
+    scan({ id: "2", storeId: 7, date: "2026-06-01", rows: [row(816, 1000)], createdAt: "a" }),
+    scan({ id: "3", storeId: 7, date: "2026-06-05", rows: [row(816, -2000)], createdAt: "c" }),
+  ];
+  const trend = buildNumTrend(scans, 7, 816);
+  assert.deepStrictEqual(trend.map((t) => t.date), ["2026-06-01", "2026-06-05", "2026-06-10"]);
+  assert.deepStrictEqual(trend.map((t) => t.val), [1000, -2000, 5000]);
+});
+
+test("buildNumTrend: 同一日付は createdAt が新しい方を優先", () => {
+  const scans = [
+    scan({ id: "1", storeId: 7, date: "2026-06-01", rows: [row(816, 1000)], createdAt: "2026-06-01T09:00:00.000Z" }),
+    scan({ id: "2", storeId: 7, date: "2026-06-01", rows: [row(816, 5000)], createdAt: "2026-06-01T12:00:00.000Z" }),
+  ];
+  const trend = buildNumTrend(scans, 7, 816);
+  assert.strictEqual(trend.length, 1);
+  assert.strictEqual(trend[0].val, 5000);
+});
+
+test("buildNumTrend: 店舗フィルタ（storeId 厳密一致・文字列化照合）", () => {
+  const scans = [
+    scan({ id: "1", storeId: "7", date: "2026-06-01", rows: [row(816, 1000)], createdAt: "a" }),
+    scan({ id: "2", storeId: 9, date: "2026-06-02", rows: [row(816, 2000)], createdAt: "b" }),
+  ];
+  const trend = buildNumTrend(scans, 7, 816);
+  assert.deepStrictEqual(trend.map((t) => t.val), [1000]);
+});
+
+test("buildNumTrend: num の文字列照合（数値 num も拾う）", () => {
+  const scans = [
+    scan({ id: "1", storeId: 7, date: "2026-06-01", rows: [{ num: 816, val: 1234, rank: "C+" }], createdAt: "a" }),
+  ];
+  const trend = buildNumTrend(scans, 7, "816");
+  assert.strictEqual(trend.length, 1);
+  assert.strictEqual(trend[0].val, 1234);
+  assert.strictEqual(trend[0].rank, "C+");
+});
+
+test("buildNumTrend: rank が無ければ getRank(val).rank で導出", () => {
+  const scans = [
+    // rank 無し・val=20000 → "S"。val=-20000 → "F"。
+    scan({ id: "1", storeId: 7, date: "2026-06-01", rows: [{ num: "816", val: 20000 }], createdAt: "a" }),
+    scan({ id: "2", storeId: 7, date: "2026-06-02", rows: [{ num: "816", val: -20000 }], createdAt: "b" }),
+  ];
+  const trend = buildNumTrend(scans, 7, 816);
+  assert.deepStrictEqual(trend.map((t) => t.rank), ["S", "F"]);
+});
+
+test("buildNumTrend: val が数値でない行は除外", () => {
+  const scans = [
+    scan({ id: "1", storeId: 7, date: "2026-06-01", rows: [{ num: "816", val: "abc", rank: "C" }], createdAt: "a" }),
+    scan({ id: "2", storeId: 7, date: "2026-06-02", rows: [{ num: "816", val: 3000, rank: "C+" }], createdAt: "b" }),
+  ];
+  const trend = buildNumTrend(scans, 7, 816);
+  assert.strictEqual(trend.length, 1);
+  assert.strictEqual(trend[0].date, "2026-06-02");
+});
+
+test("buildNumTrend: 該当なし・空入力は空配列", () => {
+  assert.deepStrictEqual(buildNumTrend([], 7, 816), []);
+  assert.deepStrictEqual(buildNumTrend(null, 7, 816), []);
+  const scans = [
+    scan({ id: "1", storeId: 7, date: "2026-06-01", rows: [row(900, 1000)], createdAt: "a" }),
+  ];
+  assert.deepStrictEqual(buildNumTrend(scans, 7, 816), []);
 });

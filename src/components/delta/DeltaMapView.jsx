@@ -7,7 +7,7 @@
 //
 // props: { store, islands, scans, onClose }
 
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { C, f, sp, font, mono } from "../../constants";
 import { Card } from "../Atoms";
 import { getRankTone } from "./deltaEngine";
@@ -17,6 +17,7 @@ import {
   buildScanIndex,
   buildIslandOverlay,
   coverageOf,
+  buildNumTrend,
 } from "./deltaMapSelectors";
 
 const TAP = 44; // 最小タップ領域
@@ -101,8 +102,74 @@ function MapCell({ cell, selected, onSelect }) {
   );
 }
 
+// ── 日をまたいだ差玉推移ミニバー ──
+// trend: [{ date("YYYY-MM-DD"), val, rank }]（日付昇順）。直近最大7日分を横並びで表示。
+// 2日分以上ある場合のみ呼び出す（呼び出し側で制御）。横スクロールなし（flexで幅に収める）。
+const TREND_MAX_DAYS = 7;
+const TREND_BAR_MAX = 60; // バー高さ上限(px)
+
+function TrendSection({ trend, currentDate }) {
+  const days = trend.slice(-TREND_MAX_DAYS);
+  // 表示中データの絶対値最大でスケール（0除算回避のため最低1）。
+  const maxAbs = Math.max(1, ...days.map((d) => Math.abs(d.val)));
+  return (
+    <div style={{ marginTop: 12, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+      <div style={{ fontSize: 12, color: C.subHi, fontWeight: 700, marginBottom: 8 }}>
+        推移
+      </div>
+      <div style={{ display: "flex", gap: 4, alignItems: "stretch" }}>
+        {days.map((d) => {
+          const isCurrent = d.date === currentDate;
+          const isZero = d.val === 0;
+          const h = isZero ? 0 : Math.round((Math.abs(d.val) / maxAbs) * TREND_BAR_MAX);
+          const barColor = isZero ? C.sub : d.val > 0 ? C.green : C.red;
+          return (
+            <div
+              key={d.date}
+              style={{
+                flex: 1, minWidth: 0, display: "flex", flexDirection: "column",
+                alignItems: "center", gap: 3,
+                padding: "4px 2px", borderRadius: 8,
+                border: isCurrent ? `1px solid ${C.blue}` : "1px solid transparent",
+                background: isCurrent ? "color-mix(in srgb, var(--blue) 10%, transparent)" : "transparent",
+              }}
+            >
+              {/* バー描画エリア（高さ固定でベースライン揃え） */}
+              <div style={{
+                height: TREND_BAR_MAX, width: "100%",
+                display: "flex", alignItems: "flex-end", justifyContent: "center",
+              }}>
+                {isZero ? (
+                  <span style={{
+                    width: 8, height: 8, borderRadius: "50%",
+                    background: C.sub, alignSelf: "center",
+                  }} />
+                ) : (
+                  <div style={{
+                    width: "70%", maxWidth: 22, height: Math.max(2, h),
+                    borderRadius: 3, background: barColor,
+                  }} />
+                )}
+              </div>
+              <span style={{
+                fontSize: 11, fontWeight: 800, fontFamily: mono, lineHeight: 1,
+                color: barColor, whiteSpace: "nowrap",
+              }}>
+                {sp(d.val)}
+              </span>
+              <span style={{ fontSize: 10, color: C.sub, fontWeight: 600, lineHeight: 1 }}>
+                {toSlash(d.date)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── 選択中セルの詳細パネル ──
-function DetailPanel({ cell, machineName, onClose }) {
+function DetailPanel({ cell, machineName, onClose, trend, currentDate }) {
   const row = cell.row;
   const hasTai = row && row.normalSpins != null && row.totalStarts != null;
   const tone = row ? getRankTone(row.rank) : null;
@@ -159,16 +226,25 @@ function DetailPanel({ cell, machineName, onClose }) {
           ×
         </button>
       </div>
+      {/* 日をまたいだ差玉推移（2日分以上ある場合のみ） */}
+      {Array.isArray(trend) && trend.length >= 2 && (
+        <TrendSection trend={trend} currentDate={currentDate} />
+      )}
     </div>
   );
 }
 
 // ── 島カード ──
-function IslandCard({ island, scanIndex, selectedNum, onSelect, onCloseDetail, fallbackMachineName }) {
+function IslandCard({ island, scanIndex, selectedNum, onSelect, onCloseDetail, fallbackMachineName, buildTrend, currentDate }) {
   const cells = useMemo(() => buildIslandOverlay(island, scanIndex), [island, scanIndex]);
   const selectedCell = useMemo(
     () => cells.find((c) => c.num === selectedNum) || null,
     [cells, selectedNum]
+  );
+  // 選択中の台が属する島でのみ、その台番号の日またぎ推移を算出する。
+  const trend = useMemo(
+    () => (selectedCell && buildTrend ? buildTrend(selectedCell.num) : []),
+    [selectedCell, buildTrend]
   );
 
   return (
@@ -202,6 +278,8 @@ function IslandCard({ island, scanIndex, selectedNum, onSelect, onCloseDetail, f
             cell={selectedCell}
             machineName={island.machineName || fallbackMachineName || ""}
             onClose={onCloseDetail}
+            trend={trend}
+            currentDate={currentDate}
           />
         )}
       </div>
@@ -264,6 +342,12 @@ export default function DeltaMapView({ store, islands, scans, onClose }) {
   );
 
   const coverage = useMemo(() => coverageOf(islandList, scanIndex), [islandList, scanIndex]);
+
+  // 選択台の日またぎ推移を算出するヘルパ（島カードへ渡す）。
+  const buildTrend = useCallback(
+    (num) => buildNumTrend(scanList, storeId, num),
+    [scanList, storeId]
+  );
 
   // 表示中スキャンの代表機種名（詳細パネルのフォールバック表示用）。
   const machineName = useMemo(() => {
@@ -360,6 +444,8 @@ export default function DeltaMapView({ store, islands, scans, onClose }) {
                 onSelect={selectCell}
                 onCloseDetail={() => setSelectedNum(null)}
                 fallbackMachineName={machineName}
+                buildTrend={buildTrend}
+                currentDate={currentDate}
               />
             ))}
 
