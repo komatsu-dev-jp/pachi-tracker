@@ -10422,7 +10422,11 @@ export function SettingsTab({ s, onReset }) {
                                         <div style={{ flex: 1, minWidth: 0 }}>
                                             <div style={{ fontSize: 16, fontWeight: 800, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
                                                 {m.name}
-                                                {m.isCustom && <span style={{ fontSize: 9, background: C.teal, color: "#fff", padding: "2px 6px", borderRadius: 4, fontWeight: 600, flexShrink: 0 }}>カスタム</span>}
+                                                {m.isCustom && (
+                                                    <span style={{ fontSize: 9, background: m.isOverride ? C.blue : C.teal, color: "#fff", padding: "2px 6px", borderRadius: 4, fontWeight: 600, flexShrink: 0 }}>
+                                                        {m.isOverride ? "編集済み" : "カスタム"}
+                                                    </span>
+                                                )}
                                             </div>
                                             <div style={{ fontSize: 12, color: C.sub, marginBottom: m.maker || m.type ? 4 : 0 }}>
                                                 {m.maker || "メーカー未設定"}{m.type ? ` ・ ${m.type}` : ""}
