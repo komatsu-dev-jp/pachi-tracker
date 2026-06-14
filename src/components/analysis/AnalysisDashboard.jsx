@@ -446,6 +446,27 @@ export default function AnalysisDashboard({
   const [viewMonth, setViewMonth] = useState(defaultMonth);
   const [viewYear,  setViewYear]  = useState(defaultYear);
 
+  // セッション終了直後など、表示中の月／年が「直前まで最新だった期間」のままなら、
+  // 新規アーカイブ追加で最新月／最新年が更新された場合に表示を追従させる。
+  // （手動で過去の月／年へ移動済みの場合は追従しない＝ユーザー操作を尊重）
+  // ※ useEffect ではなく render 中の state 調整パターンを使用
+  //   （React公式が推奨する「前回値との比較によるstate同期」の書き方。
+  //    useRef は render 中に読み書きできないため useState で前回値を保持する）
+  const [prevDefaultMonth, setPrevDefaultMonth] = useState(defaultMonth);
+  if (defaultMonth !== prevDefaultMonth) {
+    if (viewMonth === prevDefaultMonth) {
+      setViewMonth(defaultMonth);
+    }
+    setPrevDefaultMonth(defaultMonth);
+  }
+  const [prevDefaultYear, setPrevDefaultYear] = useState(defaultYear);
+  if (defaultYear !== prevDefaultYear) {
+    if (viewYear === prevDefaultYear) {
+      setViewYear(defaultYear);
+    }
+    setPrevDefaultYear(defaultYear);
+  }
+
   // 月／年ナビ操作
   const shiftMonth = (delta) => {
     const [y, m] = viewMonth.split("-").map(Number);
