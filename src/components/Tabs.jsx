@@ -1467,10 +1467,12 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         const ballsNeeded = rentBalls * (investPace / 1000);
 
         // 貯玉/持ち玉が今回の消費分に満たない場合は現金投資へ自動切替する。
-        // 残高0のまま貯玉モードで打ち続けると「タダ回し」として記録されてしまうため、
+        // 残高0のまま貯玉/持ち玉モードで打ち続けると「タダ回し」として記録されてしまうため、
         // 残玉が尽きた時点で以降の入力を現金投資として扱う（rotRows の mode を cash に倒す）。
         let effMode = S.playMode;
         if (effMode === "chodama" && (S.currentChodama || 0) < ballsNeeded) {
+            effMode = "cash";
+        } else if (effMode === "mochi" && (S.currentMochiBalls || 0) < ballsNeeded) {
             effMode = "cash";
         }
 
