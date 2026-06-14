@@ -1463,20 +1463,38 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         const thisRot = resetInsert ? val : val - prevCumRot;
         const prevInvest = last ? last.invest : 0;
 
+        // 1Kあたりに必要な玉数（持ち玉/貯玉モードでの消費量）
+        const ballsNeeded = rentBalls * (investPace / 1000);
+
+        // 貯玉/持ち玉が今回の消費分に満たない場合は現金投資へ自動切替する。
+        // 残高0のまま貯玉/持ち玉モードで打ち続けると「タダ回し」として記録されてしまうため、
+        // 残玉が尽きた時点で以降の入力を現金投資として扱う（rotRows の mode を cash に倒す）。
+        let effMode = S.playMode;
+        if (effMode === "chodama" && (S.currentChodama || 0) < ballsNeeded) {
+            effMode = "cash";
+        } else if (effMode === "mochi" && (S.currentMochiBalls || 0) < ballsNeeded) {
+            effMode = "cash";
+        }
+
         let newInvest = prevInvest;
         let ballsConsumed = 0;
 
-        if (S.playMode === "cash") {
+        if (effMode === "cash") {
             // 現金モード：投資額を増加
             newInvest = prevInvest + investPace;
-        } else if (S.playMode === "mochi") {
+        } else if (effMode === "mochi") {
             // 持ち玉モード：投資は増えない、持ち玉を減らす
-            ballsConsumed = rentBalls * (investPace / 1000); // 1Kあたりの玉数
+            ballsConsumed = ballsNeeded; // 1Kあたりの玉数
             S.setCurrentMochiBalls((prev) => Math.max(0, prev - ballsConsumed));
-        } else if (S.playMode === "chodama") {
+        } else if (effMode === "chodama") {
             // 貯玉モード：貯玉を消費（現金投資には反映しない）
-            ballsConsumed = rentBalls * (investPace / 1000);
+            ballsConsumed = ballsNeeded;
             S.setCurrentChodama((prev) => Math.max(0, prev - ballsConsumed));
+        }
+
+        // 自動切替が発生したら playMode を現金へ更新し、以降の入力・UI表示にも反映する
+        if (effMode !== S.playMode) {
+            S.setPlayMode(effMode);
         }
 
         // 平均回転数計算 - セッション全体の累積平均（データページの1Kスタートと整合）
@@ -1504,9 +1522,9 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             }
         });
         // 今回の行を追加
-        if (S.playMode === "mochi") {
+        if (effMode === "mochi") {
             mochiK += ballsConsumed / rentBalls;
-        } else if (S.playMode === "chodama") {
+        } else if (effMode === "chodama") {
             chodamaK += ballsConsumed / rentBalls;
         } else {
             cashK += (newInvest - prevInv) / 1000;
@@ -1526,14 +1544,14 @@ export function RotTab({ rows, setRows, S, ev, border }) {
 
             // リセット時のみ追加 start 行を挿入（連打時も冪等）
             const baseRows = resetInsert
-                ? [...r, { type: "start", cumRot: 0, mode: S.playMode, mochiBalls: S.currentMochiBalls, chodamaBalls: S.currentChodama, isPostJackpotStart: true }]
+                ? [...r, { type: "start", cumRot: 0, mode: effMode, mochiBalls: S.currentMochiBalls, chodamaBalls: S.currentChodama, isPostJackpotStart: true }]
                 : r;
 
             // 逆行ガード後・最新 r ベースで thisRot を再計算
             const liveThisRot = resetInsert ? val : Math.max(0, val - livePrevCumRot);
 
             // 投資額: 現金=増、貯玉/持ち玉=据え置き（A-4）
-            const liveNewInvest = (S.playMode === "cash") ? livePrevInvest + investPace : livePrevInvest;
+            const liveNewInvest = (effMode === "cash") ? livePrevInvest + investPace : livePrevInvest;
 
             return [...baseRows, {
                 type: "data",
@@ -1541,19 +1559,19 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                 cumRot: val,
                 avgRot: newAvg,
                 invest: liveNewInvest,
-                mode: S.playMode,
+                mode: effMode,
                 ballsConsumed,
-                mochiBalls: S.playMode === "mochi" ? Math.max(0, S.currentMochiBalls - ballsConsumed) : S.currentMochiBalls,
-                chodamaBalls: S.playMode === "chodama" ? Math.max(0, S.currentChodama - ballsConsumed) : S.currentChodama
+                mochiBalls: effMode === "mochi" ? Math.max(0, S.currentMochiBalls - ballsConsumed) : S.currentMochiBalls,
+                chodamaBalls: effMode === "chodama" ? Math.max(0, S.currentChodama - ballsConsumed) : S.currentChodama
             }];
         });
 
-        const logType = S.playMode === "mochi"
+        const logType = effMode === "mochi"
             ? `持ち玉${ballsConsumed}玉消費`
-            : S.playMode === "chodama"
+            : effMode === "chodama"
             ? `貯玉${ballsConsumed}玉消費`
             : `${investPace >= 1000 ? investPace/1000 + "K" : investPace + "円"}決定`;
-        S.pushLog({ type: logType, time: tsNow(), rot: thisRot, cash: S.playMode === "cash" ? investPace : 0, mode: S.playMode });
+        S.pushLog({ type: logType, time: tsNow(), rot: thisRot, cash: effMode === "cash" ? investPace : 0, mode: effMode });
         setInputHistory((h) => [thisRot, ...h].slice(0, 4));
         setInput("");
         setInputError("");
