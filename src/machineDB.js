@@ -2025,8 +2025,16 @@ export function deriveSpecForMachine(m) {
 }
 
 // 機種検索（カスタム機種も含む）
+// ビルトイン機種を編集して保存した場合、同名のビルトインは一覧に重複表示しない（カスタム側で上書き）。
+// isOverride: ビルトインを編集して上書きしたカスタムか（true）／新規登録したカスタムか（false）
 export function searchMachines(query, customMachines = []) {
-  const allMachines = [...(customMachines || []).map(m => ({ ...m, isCustom: true })), ...machineDB];
+  const customList = customMachines || [];
+  const customNames = new Set(customList.map(m => m.name));
+  const baseMachines = machineDB.filter(m => !customNames.has(m.name));
+  const allMachines = [
+    ...customList.map(m => ({ ...m, isCustom: true, isOverride: machineDB.some(db => db.name === m.name) })),
+    ...baseMachines,
+  ];
   if (!query || query.trim().length === 0) return allMachines;
   const q = query.trim().toLowerCase();
   return allMachines.filter(m =>
