@@ -5005,6 +5005,18 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         setHitInputFocus("pushAmount");
                     };
 
+                    // 先頭ステップ（プッシュ補正額）で「キャンセル」: 入力済みデータがあれば確認してから閉じる
+                    const hasHitInput = (D.pushAmount || 0) > 0 || D.rotCount !== "" || D.trayBalls !== "" || rndN > 0;
+                    const onCancel = () => {
+                        if (hasHitInput && !window.confirm("入力中のデータを破棄して閉じますか？")) return;
+                        onClose();
+                    };
+
+                    // 「戻る」: 1つ前のステップへ。入力済み hitWizardData は保持したまま戻る
+                    const onBack = () => {
+                        if (stepIdx > 0) setFocus(STEPS[stepIdx - 1].id);
+                    };
+
                     // 確変=ラッシュ継続
                     const onContinue = () => {
                         if (endLockRef.current) return;
@@ -5118,15 +5130,27 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                 flexShrink: 0, gap: 8,
                                 borderBottom: `1px solid ${C.border}`,
                             }}>
-                                <button className="b" onClick={onClose} style={{
-                                    background: "transparent", border: "none",
-                                    color: C.text, fontSize: 14, fontWeight: 700, fontFamily: font,
-                                    padding: "6px 8px", minHeight: 36,
-                                    display: "flex", alignItems: "center", gap: 4,
-                                }}>
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                                    閉じる
-                                </button>
+                                {stepIdx > 0 ? (
+                                    <button className="b" type="button" onClick={onBack} style={{
+                                        background: "transparent", border: "none",
+                                        color: C.text, fontSize: 14, fontWeight: 700, fontFamily: font,
+                                        padding: "6px 8px", minHeight: 44, minWidth: 44,
+                                        display: "flex", alignItems: "center", gap: 4,
+                                    }}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                                        戻る
+                                    </button>
+                                ) : (
+                                    <button className="b" type="button" onClick={onCancel} style={{
+                                        background: "transparent", border: "none",
+                                        color: C.red, fontSize: 14, fontWeight: 700, fontFamily: font,
+                                        padding: "6px 8px", minHeight: 44, minWidth: 44,
+                                        display: "flex", alignItems: "center", gap: 4,
+                                    }}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                        キャンセル
+                                    </button>
+                                )}
                                 <span style={{
                                     fontSize: 16, fontWeight: 800,
                                     color: chainLen > 0 ? C.yellow : C.text, fontFamily: font,
@@ -5675,6 +5699,13 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         clearChainWizard();
                     };
 
+                    // 先頭ステップ（サポ回転数）で「キャンセル」: 入力済みデータがあれば確認してから閉じる
+                    const hasChainInput = D.elecSapoRot !== "" || rndN > 0 || D.displayBalls !== "" || D.nextTimingBalls !== "";
+                    const onCancel = () => {
+                        if (hasChainInput && !window.confirm("入力中のデータを破棄して閉じますか？")) return;
+                        onClose();
+                    };
+
                     const validateRequired = () => {
                         if (!requiredOk) {
                             const missing = [];
@@ -5783,6 +5814,17 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         }
                     };
 
+                    // 「戻る」: 1つ前のステップへ。chainWizardData は保持したまま戻る
+                    // 画面 C（chainWizardStep===8）からは画面 B の先頭（サポ回転数）へ戻る
+                    const onBack = () => {
+                        if (chainWizardStep === 8) {
+                            setChainWizardStep(0);
+                            setChainWizardFirstKey(true);
+                            return;
+                        }
+                        if (stepIdx > 0) setFocus(STEPS_B[stepIdx - 1].id);
+                    };
+
                     // サマリー
                     const summaryRows = [
                         { label: "サポ回転数", value: rotN > 0 ? f(rotN) : "--", unit: "回転" },
@@ -5805,15 +5847,27 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                 display: "flex", justifyContent: "space-between", alignItems: "center",
                                 flexShrink: 0, gap: 8,
                             }}>
-                                <button className="b" onClick={onClose} style={{
-                                    background: "transparent", border: "none",
-                                    color: C.text, fontSize: 14, fontWeight: 700, fontFamily: font,
-                                    padding: "6px 8px", minHeight: 36,
-                                    display: "flex", alignItems: "center", gap: 4,
-                                }}>
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                                    閉じる
-                                </button>
+                                {(chainWizardStep === 8 || stepIdx > 0) ? (
+                                    <button className="b" type="button" onClick={onBack} style={{
+                                        background: "transparent", border: "none",
+                                        color: C.text, fontSize: 14, fontWeight: 700, fontFamily: font,
+                                        padding: "6px 8px", minHeight: 44, minWidth: 44,
+                                        display: "flex", alignItems: "center", gap: 4,
+                                    }}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                                        戻る
+                                    </button>
+                                ) : (
+                                    <button className="b" type="button" onClick={onCancel} style={{
+                                        background: "transparent", border: "none",
+                                        color: C.red, fontSize: 14, fontWeight: 700, fontFamily: font,
+                                        padding: "6px 8px", minHeight: 44, minWidth: 44,
+                                        display: "flex", alignItems: "center", gap: 4,
+                                    }}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                                        キャンセル
+                                    </button>
+                                )}
                                 <span style={{
                                     fontSize: 16, fontWeight: 800, color: C.yellow, fontFamily: font,
                                     display: "flex", alignItems: "center", gap: 4,
