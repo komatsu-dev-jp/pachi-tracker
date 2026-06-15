@@ -3035,7 +3035,13 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                 {/* HUDストリップ（持玉 / 評価 / 1Rあたり）+ RUSH継続中バナー + スタッツグリッド */}
                                 {(() => {
                                     const heroEvNet = ev && Number.isFinite(ev.totalNetGain) ? ev.totalNetGain : 0;
-                                    const heroAvg1R = ev && Number.isFinite(ev.avg1R) ? ev.avg1R : 0;
+                                    // 1Rあたり実測平均 = 実測純増(最終持ち玉 − 開始上皿玉) ÷ 総R数。
+                                    // 最終持ち玉を入力済みのチェーンを対象とし、無ければ従来の液晶ベース ev.avg1R にフォールバック。
+                                    const measuredChains = (S.jpLog || []).filter(c => c.completed && c.finalRealBalls !== undefined && c.finalRealBalls !== null);
+                                    const measuredRealNet = measuredChains.reduce((s, c) => s + ((Number(c.finalRealBalls) || 0) - (Number(c.trayBalls) || 0)), 0);
+                                    const measuredRounds = measuredChains.reduce((s, c) => s + (c.summary?.totalRounds || 0), 0);
+                                    const heroAvg1R = measuredRounds > 0 ? measuredRealNet / measuredRounds : (ev && Number.isFinite(ev.avg1R) ? ev.avg1R : 0);
+                                    const hasAvg1R = measuredRounds > 0 || heroAvg1R > 0;
                                     const heroMochi = S.currentMochiBalls || 0;
                                     const totalHits = ev && Number.isFinite(ev.totalHits) ? ev.totalHits : 0;
                                     const totalRoundsAll = ev && Number.isFinite(ev.totalRounds) ? ev.totalRounds : 0;
@@ -3053,7 +3059,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     const statCells = [
                                         { label: "累計大当たり", val: f(totalHits), unit: "回", col: C.text },
                                         { label: "総R数", val: f(totalRoundsAll), unit: "回", col: C.text },
-                                        { label: "平均出玉/R", val: heroAvg1R > 0 ? f(Math.round(heroAvg1R)) : "—", unit: "玉/R", col: C.orange },
+                                        { label: "平均出玉/R", val: hasAvg1R ? f(Math.round(heroAvg1R)) : "—", unit: "玉/R", col: C.orange },
                                         { label: "総回転", val: f(totalRotAll), unit: "回", col: C.orange },
                                         { label: "総R数/回", val: avgRpHit > 0 ? f(avgRpHit, 2) : "—", unit: "回", col: C.text },
                                         { label: "初当たり", val: f(firstHitCount), unit: "回", col: C.purple },
@@ -3081,7 +3087,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                                 <div style={{ textAlign: "center", padding: "2px 4px" }}>
                                                     <div style={{ fontSize: 11, color: C.sub, fontWeight: 700, fontFamily: font }}>1Rあたり</div>
                                                     <div style={{ fontSize: 20, fontWeight: 900, color: C.orange, fontFamily: mono, lineHeight: 1.2, marginTop: 2 }}>
-                                                        {heroAvg1R > 0 ? f(Math.round(heroAvg1R)) : "—"}<span style={{ fontSize: 11, marginLeft: 1, fontFamily: font, color: C.orange, opacity: 0.85 }}>玉</span>
+                                                        {hasAvg1R ? f(Math.round(heroAvg1R)) : "—"}<span style={{ fontSize: 11, marginLeft: 1, fontFamily: font, color: C.orange, opacity: 0.85 }}>玉</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -3242,7 +3248,19 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                 {jpLog.length === 0 ? (
                                     <div style={{ textAlign: "center", color: C.sub, padding: "40px 16px", fontSize: 12 }}>履歴がありません</div>
                                 ) : (
-                                    [...jpLog].reverse().map((chain, ci) => (
+                                    [...jpLog].reverse().map((chain, ci) => {
+                                        // 実測モード: 最終持ち玉を入力済みのチェーンは、各連の個別サポ増減（簡易フローでは未測定のノイズ）を
+                                        // 表示せず、チェーン全体の実測残差に統一する。1R出玉・純増も実測純増ベースで表示する。
+                                        const realFinal = (chain.finalRealBalls !== undefined && chain.finalRealBalls !== null) ? (Number(chain.finalRealBalls) || 0) : null;
+                                        const chainTray = Number(chain.trayBalls) || 0;
+                                        const sumRounds = chain.summary ? (chain.summary.totalRounds || 0) : 0;
+                                        const sumSapoRot = chain.summary ? (chain.summary.totalSapoRot || 0) : 0;
+                                        const isMeasured = realFinal !== null && sumRounds > 0;
+                                        const realNet = isMeasured ? realFinal - chainTray : 0;        // 実測純増
+                                        const measAvg1R = isMeasured ? realNet / sumRounds : 0;        // 1Rあたり実測平均
+                                        const residualSapo = isMeasured ? Math.round(realNet - sumRounds * (Number(S.spec1R) || 140)) : 0;  // サポ増減(実測残差)
+                                        const residualSapoPerRot = isMeasured && sumSapoRot > 0 ? residualSapo / sumSapoRot : 0;
+                                        return (
                                         <Card
                                             key={chain.chainId || ci}
                                             style={{
@@ -3311,13 +3329,21 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                                             </div>
                                                             <div>
                                                                 <div style={{ fontSize: 8, color: C.sub }}>サポ増減</div>
-                                                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(change), fontFamily: mono }}>
-                                                                    {change >= 0 ? "+" : ""}{change}<span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>玉</span>
-                                                                </div>
+                                                                {isMeasured ? (
+                                                                    <div style={{ fontSize: 13, fontWeight: 700, color: C.sub, fontFamily: mono }}>—</div>
+                                                                ) : (
+                                                                    <div style={{ fontSize: 13, fontWeight: 700, color: sc(change), fontFamily: mono }}>
+                                                                        {change >= 0 ? "+" : ""}{change}<span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>玉</span>
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                             <div>
                                                                 <div style={{ fontSize: 8, color: C.sub }}>サポ/回転</div>
-                                                                <div style={{ fontSize: 13, fontWeight: 700, color: sc(perRot), fontFamily: mono }}>{perRot !== 0 ? (perRot >= 0 ? "+" : "") + perRot.toFixed(2) : "—"}</div>
+                                                                {isMeasured ? (
+                                                                    <div style={{ fontSize: 13, fontWeight: 700, color: C.sub, fontFamily: mono }}>—</div>
+                                                                ) : (
+                                                                    <div style={{ fontSize: 13, fontWeight: 700, color: sc(perRot), fontFamily: mono }}>{perRot !== 0 ? (perRot >= 0 ? "+" : "") + perRot.toFixed(2) : "—"}</div>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     </div>
@@ -3330,31 +3356,33 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                                         <div style={{ textAlign: "left" }}>
                                                             <div style={{ fontSize: 8, color: C.sub }}>1R出玉</div>
                                                             <div style={{ fontSize: 14, fontWeight: 800, color: C.teal, fontFamily: mono }}>
-                                                                {f(chain.summary.avg1R, 1)}<span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>玉</span>
+                                                                {f(isMeasured ? measAvg1R : chain.summary.avg1R, 1)}<span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>玉</span>
                                                             </div>
                                                         </div>
                                                         <div style={{ textAlign: "left" }}>
                                                             <div style={{ fontSize: 8, color: C.sub }}>サポ増減/回転</div>
-                                                            <div style={{ fontSize: 14, fontWeight: 800, color: sc(chain.summary.sapoPerRot || 0), fontFamily: mono }}>
-                                                                {chain.summary.totalSapoRot > 0 ? sp(chain.summary.sapoPerRot, 2) : "—"}
-                                                                {chain.summary.totalSapoRot > 0 && <span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>玉/回転</span>}
+                                                            <div style={{ fontSize: 14, fontWeight: 800, color: sc(isMeasured ? residualSapoPerRot : (chain.summary.sapoPerRot || 0)), fontFamily: mono }}>
+                                                                {sumSapoRot > 0 ? sp(isMeasured ? residualSapoPerRot : chain.summary.sapoPerRot, 2) : "—"}
+                                                                {sumSapoRot > 0 && <span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>玉/回転</span>}
                                                             </div>
                                                         </div>
                                                         <div style={{ textAlign: "left" }}>
                                                             <div style={{ fontSize: 8, color: C.sub }}>サポ総増減</div>
-                                                            <div style={{ fontSize: 14, fontWeight: 800, color: sc(chain.summary.sapoDelta), fontFamily: mono }}>
-                                                                {sp(chain.summary.sapoDelta, 0)}<span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>玉</span>
+                                                            <div style={{ fontSize: 14, fontWeight: 800, color: sc(isMeasured ? residualSapo : chain.summary.sapoDelta), fontFamily: mono }}>
+                                                                {sp(isMeasured ? residualSapo : chain.summary.sapoDelta, 0)}<span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>玉</span>
                                                             </div>
                                                         </div>
                                                         <div style={{ textAlign: "left" }}>
                                                             <div style={{ fontSize: 8, color: C.sub }}>純増出玉</div>
                                                             <div style={{ fontSize: 14, fontWeight: 800, color: C.green, fontFamily: mono }}>
-                                                                {f(chain.summary.netGain)}<span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>玉</span>
+                                                                {f(isMeasured ? realNet : chain.summary.netGain)}<span style={{ fontSize: 9, color: C.sub, marginLeft: 1, fontFamily: font }}>玉</span>
                                                             </div>
                                                         </div>
                                                     </div>
                                                     <div style={{ textAlign: "center", fontSize: 9, color: C.sub, fontFamily: mono }}>
-                                                        {f(chain.summary.avg1R, 1)} × {chain.summary.totalRounds}R {(chain.summary.totalSapoChange || chain.summary.sapoDelta) >= 0 ? "+" : ""}{f(chain.summary.totalSapoChange || chain.summary.sapoDelta)} = {f(Math.round(chain.summary.netGain))}
+                                                        {isMeasured
+                                                            ? `実測純増 ${f(realNet)}玉 ÷ ${sumRounds}R = ${f(measAvg1R, 1)}玉/R`
+                                                            : `${f(chain.summary.avg1R, 1)} × ${chain.summary.totalRounds}R ${(chain.summary.totalSapoChange || chain.summary.sapoDelta) >= 0 ? "+" : ""}${f(chain.summary.totalSapoChange || chain.summary.sapoDelta)} = ${f(Math.round(chain.summary.netGain))}`}
                                                     </div>
                                                 </div>
                                             )}
@@ -3384,7 +3412,8 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                                 </button>
                                             )}
                                         </Card>
-                                    ))
+                                        );
+                                    })
                                 )}
                                 {/* 今回の入力まとめ（未確定）— 将来連携予定: 入力中のチェーン値を集約表示 */}
                                 {jpLog.length > 0 && (() => {
