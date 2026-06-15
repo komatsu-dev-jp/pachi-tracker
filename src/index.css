@@ -26,6 +26,11 @@
   --nav-bg: rgba(255, 255, 255, 0.98);
   --card-shadow: 0 1px 2px rgba(17, 24, 39, 0.04), 0 2px 8px rgba(17, 24, 39, 0.05);
   --accent-grad: #2f6fed;
+  /* 設定画面のグラスカード/濃紺サーフェス（ライト） */
+  --settings-bg: linear-gradient(180deg, #f2f3f7 0%, #eaecf2 100%);
+  --glass-bg: linear-gradient(180deg, #ffffff, #f7f9fc);
+  --glass-line: #3f6ea8;
+  --glass-inner: #e9eef6;
 }
 
 /* Dark Theme — モックアップ準拠 ピュアブラック寄り高コントラストパレット
@@ -55,6 +60,42 @@
   --nav-bg: rgba(5, 7, 13, 0.96);
   --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 2px 10px rgba(0, 0, 0, 0.35);
   --accent-grad: #38bdf8;
+  /* 設定画面のグラスカード/濃紺サーフェス（ダーク） */
+  --settings-bg: linear-gradient(180deg, #030714 0%, #06101e 100%);
+  --glass-bg: linear-gradient(180deg, color-mix(in srgb, #0b1a2e 80%, transparent), color-mix(in srgb, #08111e 70%, transparent));
+  --glass-line: #5b8fcf;
+  --glass-inner: #0a1525;
+}
+
+/* ================================================================
+   カレンダータブ（証券端末風）のデザイントークン
+   .cal-terminal をルートに付与してスコープ限定。テーマで切替。
+================================================================ */
+.cal-terminal {
+  --bg-panel: #0C1118;
+  --bg-panel2: #0F1520;
+  --tw-border: #1B2330;
+  --txt: #E8EDF5;
+  --muted: #7E8AA0;
+  --dim: #566073;
+  --plus: #2BE3A6;
+  --minus: #FF5E66;
+  --ev: #4DA3FF;
+  --accent-amber: #FFB02E;
+  --heat-zero: #101722;
+}
+[data-theme="light"] .cal-terminal {
+  --bg-panel: #ffffff;
+  --bg-panel2: #f4f6fa;
+  --tw-border: #e1e5ec;
+  --txt: #111827;
+  --muted: #5a6070;
+  --dim: #9aa1ae;
+  --plus: #15a34a;
+  --minus: #dc2626;
+  --ev: #2f6fed;
+  --accent-amber: #c2740a;
+  --heat-zero: #eef1f5;
 }
 
 * {

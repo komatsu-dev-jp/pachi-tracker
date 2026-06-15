@@ -113,7 +113,7 @@ export default function ModeTabBar({ currentMode, onChange }) {
         background: "color-mix(in srgb, var(--nav-bg) 85%, transparent)",
         backdropFilter: "saturate(180%) blur(24px)",
         WebkitBackdropFilter: "saturate(180%) blur(24px)",
-        borderTop: "1px solid color-mix(in srgb, #5b8fcf 14%, transparent)",
+        borderTop: "1px solid color-mix(in srgb, var(--glass-line) 14%, transparent)",
         display: "flex",
         alignItems: "stretch",
         paddingTop: 6,
