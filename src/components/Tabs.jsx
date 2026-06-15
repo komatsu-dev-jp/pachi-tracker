@@ -3160,6 +3160,9 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                                 RUSH終了
                                             </button>
                                         </div>
+                                        <div style={{ fontSize: 10, color: C.sub, marginTop: 6, textAlign: "center", lineHeight: 1.5 }}>
+                                            時短が切れたら → 当たり1回だけなら「単発完了」／連チャンしたら「RUSH終了」
+                                        </div>
                                     </div>
                                 )}
 
