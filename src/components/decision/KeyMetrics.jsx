@@ -58,14 +58,14 @@ export function KeyMetrics({ ev, currentBalls, ballsLabel = "持ち玉", playMod
           label="補正後EV/K"
           value={ev1KC !== 0 ? sp(ev1KC, 0) : "—"}
           unit="円"
-          baseHint="(基準 +100超え)"
+          baseHint="実質値・基準+100"
           accent={C.yellow}
         />
         <MetricCard
           label="生EV/K"
           value={ev1KRaw !== 0 ? sp(ev1KRaw, 0) : "—"}
           unit="円"
-          baseHint="(基準 +100超え)"
+          baseHint="参考値・補正なし"
           accent={C.blue}
         />
         <MetricCard
