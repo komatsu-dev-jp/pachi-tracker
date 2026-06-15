@@ -94,19 +94,7 @@ function LineChart({ data, width = 320, height = 140, color = "#3b82f6", showZer
 ================================================================ */
 // 等幅フォント（証券端末風）
 const TMONO = '"SF Mono", ui-monospace, "Roboto Mono", Menlo, monospace';
-// カレンダービューのルート div に流し込む CSS カスタムプロパティ
-const TW_VARS = {
-    "--bg-panel": "#0C1118",
-    "--bg-panel2": "#0F1520",
-    "--tw-border": "#1B2330",
-    "--txt": "#E8EDF5",
-    "--muted": "#7E8AA0",
-    "--dim": "#566073",
-    "--plus": "#2BE3A6",
-    "--minus": "#FF5E66",
-    "--ev": "#4DA3FF",
-    "--accent-amber": "#FFB02E",
-};
+// カレンダービューのデザイントークンは index.css の .cal-terminal で定義（テーマ対応）
 // プラス/マイナス色（端末風トークン基準）
 const twSc = (n) => (!isFinite(n) || n === 0 ? "var(--dim)" : n > 0 ? "var(--plus)" : "var(--minus)");
 
@@ -8541,10 +8529,10 @@ export function CalendarTab({ S, onReset }) {
     const HEAT = {
         bigPlus: "rgba(43,227,166,0.35)",  // 大きくプラス
         plus: "rgba(43,227,166,0.18)",     // プラス
-        zero: "#101722",                   // ±0 / 稼働なし
+        zero: "var(--heat-zero)",          // ±0 / 稼働なし
         minus: "rgba(255,94,102,0.18)",    // マイナス
         bigMinus: "rgba(255,94,102,0.35)", // 大きくマイナス
-        none: "#101722",                   // 稼働なし
+        none: "var(--heat-zero)",          // 稼働なし
     };
     const heatBg = (actual, hasActualData) => {
         if (!hasActualData) return HEAT.none;
@@ -8574,9 +8562,9 @@ export function CalendarTab({ S, onReset }) {
         return sp(n);
     };
 
-    // ── Calendar View ── （証券端末風。TW_VARS をルートに流し込みスコープ限定）
+    // ── Calendar View ── （証券端末風。.cal-terminal でトークンをスコープ限定・テーマ対応）
     return (
-        <div style={{ ...TW_VARS, flex: 1, overflowY: "auto", padding: "8px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+        <div className="cal-terminal" style={{ flex: 1, overflowY: "auto", padding: "8px 14px calc(80px + env(safe-area-inset-bottom))" }}>
             {/* 月ナビゲーター（端末風・タップ領域44px） */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 2px 12px" }}>
                 <button className="b" onClick={prevMonth} style={{
@@ -8715,7 +8703,7 @@ export function CalendarTab({ S, onReset }) {
                                 </span>
                             </div>
                             {rows.map((r, i) => (
-                                <div key={r.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "6px 0", borderBottom: i === rows.length - 1 ? "none" : "1px dashed #161e2b" }}>
+                                <div key={r.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "6px 0", borderBottom: i === rows.length - 1 ? "none" : "1px dashed var(--tw-border)" }}>
                                     <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>{r.label}</span>
                                     <span style={{ display: "flex", alignItems: "baseline", gap: 2 }}>
                                         {r.parts.map((p, pi) => (
@@ -11245,12 +11233,12 @@ export function SettingsTab({ s, onReset }) {
         </div>
     );
 
-    // 半透明濃紺カード
+    // 半透明濃紺カード（テーマ対応: index.css の --glass-* を参照）
     const glassCardStyle = {
-        background: "linear-gradient(180deg, color-mix(in srgb, #0b1a2e 80%, transparent), color-mix(in srgb, #08111e 70%, transparent))",
+        background: "var(--glass-bg)",
         backdropFilter: "blur(8px)",
         WebkitBackdropFilter: "blur(8px)",
-        border: "1px solid color-mix(in srgb, #5b8fcf 16%, transparent)",
+        border: "1px solid color-mix(in srgb, var(--glass-line) 16%, transparent)",
         borderRadius: 18,
         overflow: "hidden",
     };
@@ -11275,7 +11263,7 @@ export function SettingsTab({ s, onReset }) {
                 display: "flex", alignItems: "center", gap: 12,
                 padding: "13px 14px", cursor: onPress ? "pointer" : "default",
                 textAlign: "left", WebkitTapHighlightColor: "transparent",
-                borderBottom: isLast ? "none" : "1px solid color-mix(in srgb, #5b8fcf 10%, transparent)",
+                borderBottom: isLast ? "none" : "1px solid color-mix(in srgb, var(--glass-line) 10%, transparent)",
                 minHeight: 60,
             }}>
                 {IconComp && <NeonIconBox color={color} IconComp={IconComp} size={40} />}
@@ -11300,7 +11288,7 @@ export function SettingsTab({ s, onReset }) {
     );
 
     return (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "linear-gradient(180deg, #030714 0%, #06101e 100%)" }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--settings-bg)" }}>
 
             {/* ── ヘッダー（タイトル＋環境プロファイルカード） ── */}
             <div style={{
@@ -11321,7 +11309,7 @@ export function SettingsTab({ s, onReset }) {
                     }}
                     style={{
                         ...glassCardStyle,
-                        border: "1px solid color-mix(in srgb, #5b8fcf 22%, transparent)",
+                        border: "1px solid color-mix(in srgb, var(--glass-line) 22%, transparent)",
                         padding: "10px 12px",
                         display: "flex", alignItems: "center", gap: 10,
                         cursor: "pointer", flexShrink: 0, minWidth: 178, maxWidth: 220,
@@ -11480,8 +11468,8 @@ export function SettingsTab({ s, onReset }) {
                     {pinSetStep !== "idle" && (
                         <div style={{
                             margin: "0 14px 14px", padding: "14px", borderRadius: 12,
-                            background: "color-mix(in srgb, #0a1525 60%, transparent)",
-                            border: "1px solid color-mix(in srgb, #5b8fcf 14%, transparent)",
+                            background: "color-mix(in srgb, var(--glass-inner) 60%, transparent)",
+                            border: "1px solid color-mix(in srgb, var(--glass-line) 14%, transparent)",
                         }}>
                             <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 8 }}>
                                 {pinSetStep === "enter" ? "新しいPINを入力（4桁）" : "PINを再入力して確認"}
@@ -11577,7 +11565,7 @@ export function SettingsTab({ s, onReset }) {
                         <div style={{
                             width: 56, height: 56, borderRadius: 14,
                             background: "linear-gradient(135deg, #1e3a8a 0%, #1e1b4b 100%)",
-                            border: "1px solid color-mix(in srgb, #5b8fcf 26%, transparent)",
+                            border: "1px solid color-mix(in srgb, var(--glass-line) 26%, transparent)",
                             boxShadow: "0 4px 14px rgba(0,0,0,0.45), 0 0 18px color-mix(in srgb, #38bdf8 18%, transparent)",
                             display: "flex", alignItems: "center", justifyContent: "center",
                             fontSize: 28, flexShrink: 0,
@@ -11606,8 +11594,8 @@ export function SettingsTab({ s, onReset }) {
                     {/* アップデート履歴 */}
                     <button className="b" onClick={() => showToast("リリースノートは準備中です", "warn")} style={{
                         marginTop: 12, width: "100%",
-                        background: "color-mix(in srgb, #0a1525 60%, transparent)",
-                        border: "1px solid color-mix(in srgb, #5b8fcf 14%, transparent)",
+                        background: "color-mix(in srgb, var(--glass-inner) 60%, transparent)",
+                        border: "1px solid color-mix(in srgb, var(--glass-line) 14%, transparent)",
                         borderRadius: 12, padding: "11px 14px",
                         display: "flex", alignItems: "center", justifyContent: "space-between",
                         cursor: "pointer", WebkitTapHighlightColor: "transparent",
