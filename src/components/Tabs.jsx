@@ -906,6 +906,8 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     const [editChainOpen, setEditChainOpen] = useState(false);
     const [editChainId, setEditChainId] = useState(null);
     const [editChainHits, setEditChainHits] = useState([]);
+    // チェーン単位の終了データ（時短回数・最終出玉）編集用
+    const [editChainMeta, setEditChainMeta] = useState({ jitanSpins: "", finalBallsAfterJitan: "" });
 
     // 連チャン追加（画面 B / 画面 C）state
     // 仕様書 §3.1 画面 B・C に準拠。`chainWizardStep` は新UIでは `8`（画面 C = 最終実測持ち玉入力）のみ意味を持つ。
@@ -924,10 +926,11 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     // 画面 B から単発終了サブモーダル
     const [chainInputSingleEndOpen, setChainInputSingleEndOpen] = useState(false);
 
-    // 直接単発終了モーダル state
+    // 直接終了モーダル state（単発終了 / RUSH終了 共用。mode で分岐）
     const [directSingleEndOpen, setDirectSingleEndOpen] = useState(false);
     const [directSingleEndStep, setDirectSingleEndStep] = useState(0);
     const [directSingleEndData, setDirectSingleEndData] = useState({ jitanSpins: "", finalBallsAfterJitan: "" });
+    const [directSingleEndMode, setDirectSingleEndMode] = useState("single"); // "single" | "rush"
 
     // データサブタブ - グラフモーダル state
     const [showGraphModal, setShowGraphModal] = useState(false);
@@ -1124,9 +1127,10 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         setTimeout(() => { endLockRef.current = false; }, 0);
     };
 
-    // 直接単発終了を開く
-    const openDirectSingleEnd = () => {
+    // 直接終了モーダルを開く（mode="single": 単発終了 / mode="rush": RUSH終了）
+    const openDirectSingleEnd = (mode = "single") => {
         if (!isChainActive || lastChain.hits.length === 0) return;
+        setDirectSingleEndMode(mode);
         setDirectSingleEndData({ jitanSpins: "", finalBallsAfterJitan: "" });
         setDirectSingleEndStep(0);
         setDirectSingleEndOpen(true);
@@ -1176,14 +1180,18 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         setTimeout(() => { endLockRef.current = false; }, 0);
     };
 
-    // 大当り終了
-    const handleChainEnd = () => {
+    // RUSH終了完了（時短回数・最終出玉を入力してから連チャンを締める）
+    // 旧 handleChainEnd（即時終了・時短/最終出玉入力なし）を置き換え。
+    // openDirectSingleEnd("rush") → 時短回数/最終出玉入力モーダル → 本関数で確定。
+    const handleRushEndComplete = () => {
         if (endLockRef.current) return;
         if (!isChainActive) return;
         const currentHitsCount = lastChain.hits.length;
         if (currentHitsCount === 0) return; // ヒットがない場合は終了できない
         S.pushSnapshot();
         endLockRef.current = true;
+        const jitan = Number(directSingleEndData.jitanSpins) || 0;
+        const finalBalls = Number(directSingleEndData.finalBallsAfterJitan) || 0;
 
         S.setJpLog((prev) => {
             const updated = [...prev];
@@ -1193,24 +1201,31 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             const totalSapoRot = chain.hits.reduce((s, h) => s + (h.elecSapoRot || h.sapoRot || 0), 0);
             const totalSapoChange = chain.hits.reduce((s, h) => s + (h.sapoChange || 0), 0);
             chain.completed = true;
+            chain.jitanSpins = jitan;
+            chain.finalBallsAfterJitan = finalBalls;
+            // 最終出玉を実測した場合は実測持ち玉として記録（logic.js が実測ベース純増に採用）
+            if (finalBalls > 0) chain.finalRealBalls = finalBalls;
             chain.summary = {
                 totalRounds, totalDisplayBalls, totalSapoRot, totalSapoChange,
                 avg1R: totalRounds > 0 ? totalDisplayBalls / totalRounds : 0,
                 sapoDelta: totalSapoChange,
                 sapoPerRot: totalSapoRot > 0 ? totalSapoChange / totalSapoRot : 0,
-                netGain: totalDisplayBalls + totalSapoChange,
+                netGain: finalBalls > 0 ? finalBalls : totalDisplayBalls + totalSapoChange,
             };
-            chain.finalBalls = (chain.trayBalls || 0) + totalDisplayBalls + totalSapoChange;
+            chain.finalBalls = finalBalls > 0 ? finalBalls : (chain.trayBalls || 0) + totalDisplayBalls + totalSapoChange;
             updated[updated.length - 1] = chain;
             return updated;
         });
-        const finalBallsToAdd = (lastChain.trayBalls || 0) +
+        const existingTotal = (lastChain.trayBalls || 0) +
             lastChain.hits.reduce((s, h) => s + (h.displayBalls || 0) + (h.sapoChange || 0), 0);
-        S.setCurrentMochiBalls((prev) => prev + finalBallsToAdd);
+        const addBalls = finalBalls > 0 ? finalBalls : existingTotal;
+        S.setCurrentMochiBalls((prev) => prev + addBalls);
         S.pushLog({ type: "連チャン終了", time: tsNow() });
         S.setPlayMode("mochi");
         S.setSessionSubTab("rot");
         S.setShowStartPrompt(true);
+        setDirectSingleEndOpen(false);
+        setDirectSingleEndData({ jitanSpins: "", finalBallsAfterJitan: "" });
         setTimeout(() => { endLockRef.current = false; }, 0);
     };
 
@@ -1270,6 +1285,13 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             mult: h.mult ?? 1,
             rawRounds: h.rawRounds ?? h.rounds ?? 0,
         }));
+        // チェーン単位の終了データ（時短回数・最終出玉）を編集stateへ
+        // 最終出玉は finalBallsAfterJitan → finalRealBalls → finalBalls の優先で復元
+        const finalRestore = target.finalBallsAfterJitan ?? target.finalRealBalls ?? target.finalBalls ?? 0;
+        setEditChainMeta({
+            jitanSpins: String(target.jitanSpins ?? 0),
+            finalBallsAfterJitan: String(finalRestore),
+        });
         setEditChainId(chainId);
         setEditChainHits(editable);
         setEditChainOpen(true);
@@ -1311,14 +1333,26 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             const totalDisplayBalls = newHits.reduce((s, h) => s + h.displayBalls, 0);
             const totalSapoRot = newHits.reduce((s, h) => s + h.elecSapoRot, 0);
             const totalSapoChange = newHits.reduce((s, h) => s + h.sapoChange, 0);
+            // チェーン単位の終了データ（時短回数・最終出玉）
+            const jitan = Math.max(0, Number(editChainMeta.jitanSpins) || 0);
+            const finalAfter = Math.max(0, Number(editChainMeta.finalBallsAfterJitan) || 0);
+            chain.jitanSpins = jitan;
+            chain.finalBallsAfterJitan = finalAfter;
             chain.summary = {
                 totalRounds, totalDisplayBalls, totalSapoRot, totalSapoChange,
                 avg1R: totalRounds > 0 ? totalDisplayBalls / totalRounds : 0,
                 sapoDelta: totalSapoChange,
                 sapoPerRot: totalSapoRot > 0 ? totalSapoChange / totalSapoRot : 0,
-                netGain: totalDisplayBalls + totalSapoChange,
+                netGain: finalAfter > 0 ? finalAfter : totalDisplayBalls + totalSapoChange,
             };
-            chain.finalBalls = (chain.trayBalls || 0) + totalDisplayBalls + totalSapoChange;
+            // 最終出玉を入力した場合は実測持ち玉として採用（集計・持ち玉ともに実測ベース）
+            if (finalAfter > 0) {
+                chain.finalRealBalls = finalAfter;
+                chain.finalBalls = finalAfter;
+            } else {
+                chain.finalRealBalls = undefined; // 未入力なら液晶ベースに戻す
+                chain.finalBalls = (chain.trayBalls || 0) + totalDisplayBalls + totalSapoChange;
+            }
             newFinalBalls = chain.finalBalls;
             updated[idx] = chain;
             return updated;
@@ -1334,6 +1368,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         setEditChainOpen(false);
         setEditChainId(null);
         setEditChainHits([]);
+        setEditChainMeta({ jitanSpins: "", finalBallsAfterJitan: "" });
     };
     // ========== 大当たり履歴タブ用state ここまで ==========
 
@@ -3099,7 +3134,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                             当たりを追加
                                         </button>
                                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                                            <button className="b" onClick={openDirectSingleEnd} disabled={lastChain.hits.length === 0} style={{
+                                            <button className="b" onClick={() => openDirectSingleEnd("single")} disabled={lastChain.hits.length === 0} style={{
                                                 minHeight: 50, borderRadius: 14, fontWeight: 800, fontSize: 14, fontFamily: font,
                                                 background: "var(--surface-hi)", border: `1px solid ${C.border}`, color: C.text,
                                                 opacity: lastChain.hits.length === 0 ? 0.45 : 1,
@@ -3111,10 +3146,11 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                                 </svg>
                                                 単発完了
                                             </button>
-                                            <button className="b" onClick={handleChainEnd} style={{
+                                            <button className="b" onClick={() => openDirectSingleEnd("rush")} disabled={lastChain.hits.length === 0} style={{
                                                 minHeight: 50, borderRadius: 14, fontWeight: 800, fontSize: 14, fontFamily: font,
                                                 background: "linear-gradient(135deg, #ea580c, #f59e0b)", border: "none", color: "#fff",
                                                 boxShadow: "0 4px 16px rgba(245,158,11,0.34)",
+                                                opacity: lastChain.hits.length === 0 ? 0.45 : 1,
                                                 display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                                             }}>
                                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
@@ -3514,9 +3550,38 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                             </div>
                                         </div>
                                     ))}
+                                    {/* チェーン終了データ（時短回数・最終出玉）*/}
+                                    <div style={{ padding: "10px 0", borderTop: `1px solid ${C.border}`, marginTop: 4 }}>
+                                        <div style={{ fontSize: 11, fontWeight: 700, color: C.orange, marginBottom: 6 }}>連チャン終了データ</div>
+                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                            <label style={{ fontSize: 10, color: C.sub }}>
+                                                時短回数
+                                                <input
+                                                    type="tel" inputMode="numeric"
+                                                    value={editChainMeta.jitanSpins}
+                                                    onChange={e => setEditChainMeta(m => ({ ...m, jitanSpins: e.target.value.replace(/[^0-9]/g, "") }))}
+                                                    className="input-premium"
+                                                    style={{ width: "100%", boxSizing: "border-box", fontFamily: mono, padding: "8px 10px", fontSize: 14, marginTop: 4 }}
+                                                />
+                                            </label>
+                                            <label style={{ fontSize: 10, color: C.sub }}>
+                                                最終出玉
+                                                <input
+                                                    type="tel" inputMode="numeric"
+                                                    value={editChainMeta.finalBallsAfterJitan}
+                                                    onChange={e => setEditChainMeta(m => ({ ...m, finalBallsAfterJitan: e.target.value.replace(/[^0-9]/g, "") }))}
+                                                    className="input-premium"
+                                                    style={{ width: "100%", boxSizing: "border-box", fontFamily: mono, padding: "8px 10px", fontSize: 14, marginTop: 4 }}
+                                                />
+                                            </label>
+                                        </div>
+                                        <div style={{ fontSize: 10, color: C.sub, marginTop: 6, lineHeight: 1.5 }}>
+                                            最終出玉を入力すると実測持ち玉として集計・持ち玉に反映されます。0なら液晶出玉ベースで計算します。
+                                        </div>
+                                    </div>
                                 </div>
                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                                    <Btn label="キャンセル" onClick={() => { setEditChainOpen(false); setEditChainId(null); setEditChainHits([]); }} />
+                                    <Btn label="キャンセル" onClick={() => { setEditChainOpen(false); setEditChainId(null); setEditChainHits([]); setEditChainMeta({ jitanSpins: "", finalBallsAfterJitan: "" }); }} />
                                     <Btn label="保存" onClick={handleEditChainSave} bg={C.blue} fg="#fff" bd="none" />
                                 </div>
                             </Card>
@@ -6409,7 +6474,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                 <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "var(--bg)", zIndex: 9999, display: "flex", flexDirection: "column" }}>
                     <div style={{ padding: "12px 16px", paddingTop: "max(12px, env(safe-area-inset-top))", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, background: "var(--bg)" }}>
                         <button className="b" onClick={() => setDirectSingleEndOpen(false)} style={{ background: "transparent", border: "none", color: C.red, fontSize: 14, fontWeight: 600, padding: 8 }}>キャンセル</button>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>単発終了</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{directSingleEndMode === "rush" ? "RUSH終了" : "単発終了"}</span>
                         <div style={{ width: 70 }} />
                     </div>
                     <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "16px 20px", background: "var(--bg)" }}>
@@ -6449,7 +6514,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             <button className="b" onClick={() => { if (directSingleEndStep === 0) setDirectSingleEndOpen(false); else setDirectSingleEndStep(0); }}
                                 style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "var(--surface-hi)", border: "none", color: C.text }}>{directSingleEndStep === 0 ? "キャンセル" : "戻る"}</button>
                             {directSingleEndStep === 1 ? (
-                                <button className="b" onClick={handleDirectSingleEndComplete} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#16a34a", border: "none", color: "#fff" }}>記録完了</button>
+                                <button className="b" onClick={directSingleEndMode === "rush" ? handleRushEndComplete : handleDirectSingleEndComplete} style={{ padding: "14px 0", borderRadius: 10, fontWeight: 700, fontSize: 15, background: "#16a34a", border: "none", color: "#fff" }}>記録完了</button>
                             ) : (
                                 <button className="b" onClick={() => {
                                     // Step 0 → 1 に進む時に時短終了後出玉を自動プリセット（前ヒットのラウンド終了時持ち玉）
