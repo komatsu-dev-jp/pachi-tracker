@@ -247,6 +247,8 @@ export default function App() {
   // 内蔵店舗リスト（愛媛・松山/伊予エリア）の初回自動登録フラグ。
   // 一度シードしたら true にし、以降は再シードしない（ユーザーが削除しても復活させない）。
   const [storesSeeded, setStoresSeeded] = useLS("pt_storesSeeded", false);
+  // 店舗リスト V2 移行フラグ: P-WORLD正式データへの全置き換えを一度だけ実行する。
+  const [storesMigratedV2, setStoresMigratedV2] = useLS("pt_storesMigratedV2", false);
 
   // 台選び：店舗ごとのホールマップ（島配置）編集データ
   // スキーマ: { [storeId]: Island[] } / Island = { id, name, start, end, machineName }
@@ -357,8 +359,7 @@ export default function App() {
     }
   }, [chodamaLastDate]);
 
-  // 初回のみ: 内蔵店舗リストを登録済み店舗へ自動シード。
-  // 既に店舗が登録済みのユーザー（既存データ）には手を付けない。
+  // 初回のみ: 内蔵店舗リストを登録済み店舗へ自動シード（店舗が空の新規ユーザー向け）。
   // rentBalls/exRate は内部値（面値×10）。4円・等価相当の既定値（250）を入れ、店舗ごとに編集可能。
   useEffect(() => {
     if (storesSeeded) return;
@@ -381,6 +382,30 @@ export default function App() {
     setStores(seeded);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storesSeeded]);
+
+  // V2 移行: 旧データ（誤情報の多かった旧リスト）を持つ既存ユーザーの店舗を
+  // P-WORLD正式データへ全置き換えする（一度だけ実行）。
+  // 貯玉残高・会員カード等は新規登録なのでリセットされる（旧データが不正確なため許容）。
+  useEffect(() => {
+    if (storesMigratedV2) return;
+    setStoresMigratedV2(true);
+    const seeded = EHIME_STORES.map((st, i) => ({
+      id: Date.now() + i,
+      name: st.name,
+      address: st.address,
+      rentBalls: 250,
+      exRate: 250,
+      memo: "",
+      chodama: 0,
+      chodamaMax: 0,
+      lastVisit: "",
+      replayBalls: 0,
+      todaySettle: 0,
+      memberCard: { created: false, number: "", deposit: 0 },
+    }));
+    setStores(seeded);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storesMigratedV2]);
 
   const pushJP = (j) => setJpLog((p) => [...p, j]);
   const pushLog = (e) => setSesLog((p) => [...p, e]);
