@@ -10602,38 +10602,6 @@ export function SettingsTab({ s, onReset }) {
                                         <span style={{ fontSize: 15, color: C.sub, flexShrink: 0, fontWeight: 500 }}>›</span>
                                     </button>
 
-                                    {/* カスタム機種: 編集・削除を明確に配置（誤タップ防止のため削除は確認付き） */}
-                                    {m.isCustom && (
-                                        <div style={{ display: "flex", gap: 8, padding: "0 12px 12px", borderTop: `1px solid ${C.border}`, marginTop: -1, paddingTop: 10 }}>
-                                            {isConfirmingDelete ? (
-                                                <>
-                                                    <button className="b" onClick={() => deleteMachine(m)} style={{
-                                                        flex: 1, minHeight: 44, background: C.red, border: "none", borderRadius: 10,
-                                                        color: "#fff", fontSize: 13, fontWeight: 700, fontFamily: font,
-                                                    }}>本当に削除する</button>
-                                                    <button className="b" onClick={() => setConfirmingDeleteMachine(null)} style={{
-                                                        flex: 1, minHeight: 44, background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 10,
-                                                        color: C.text, fontSize: 13, fontWeight: 700, fontFamily: font,
-                                                    }}>キャンセル</button>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <button className="b" onClick={() => openMachineForm(m)} style={{
-                                                        flex: 1, minHeight: 44, background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 10,
-                                                        color: C.text, fontSize: 13, fontWeight: 700, fontFamily: font,
-                                                        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                                                    }}>
-                                                        <PencilIcon size={14} color={C.text} />
-                                                        <span>編集</span>
-                                                    </button>
-                                                    <button className="b" onClick={() => setConfirmingDeleteMachine(m.id)} style={{
-                                                        flex: 1, minHeight: 44, background: "rgba(180,60,60,0.12)", border: `1px solid ${C.red}40`, borderRadius: 10,
-                                                        color: C.red, fontSize: 13, fontWeight: 700, fontFamily: font,
-                                                    }}>削除</button>
-                                                </>
-                                            )}
-                                        </div>
-                                    )}
                                 </div>
                             );
                         })
