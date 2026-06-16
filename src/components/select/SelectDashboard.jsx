@@ -576,7 +576,42 @@ function timeLabel(now = new Date()) {
   return `${hh}:${mm}`;
 }
 
-export default function SelectDashboard({ S, onStart }) {
+// 戦略マップ画面への導線カード（台選び＝入力・準備、戦略マップ＝判断・出力）
+function StrategyEntryCard({ onOpen }) {
+  if (typeof onOpen !== "function") return null;
+  return (
+    <button
+      className="b"
+      onClick={onOpen}
+      style={{
+        width: "100%",
+        minHeight: 56,
+        marginBottom: 12,
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "12px 16px",
+        borderRadius: 16,
+        border: "1px solid color-mix(in srgb, var(--teal) 38%, var(--border))",
+        background: "linear-gradient(135deg, color-mix(in srgb, var(--teal) 18%, var(--surface)) 0%, var(--surface) 70%)",
+        color: C.text,
+        textAlign: "left",
+        cursor: "pointer",
+      }}
+    >
+      <span style={{ fontSize: 22, lineHeight: 1 }}>🗺️</span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: "block", fontSize: 15, fontWeight: 900, color: C.text }}>戦略マップを開く</span>
+        <span style={{ display: "block", fontSize: 11, color: C.sub, marginTop: 2 }}>
+          島全体を一目で把握して5秒で判断
+        </span>
+      </span>
+      <span style={{ fontSize: 18, color: C.teal, fontWeight: 900 }}>›</span>
+    </button>
+  );
+}
+
+export default function SelectDashboard({ S, onStart, onOpenStrategy }) {
   const [activeFilter, setActiveFilter] = useState("all");
   const [showDelta, setShowDelta] = useState(false);
   const [showDeltaMap, setShowDeltaMap] = useState(false);
@@ -669,6 +704,7 @@ export default function SelectDashboard({ S, onStart }) {
         overflowX: "hidden",
         padding: "0 14px calc(20px + env(safe-area-inset-bottom))",
       }}>
+        <StrategyEntryCard onOpen={onOpenStrategy} />
         {normalized.length === 0 ? (
           <EmptyState />
         ) : (

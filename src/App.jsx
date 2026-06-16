@@ -8,6 +8,7 @@ import HomeDashboard from "./components/home/HomeDashboard";
 import AnalysisDashboard from "./components/analysis/AnalysisDashboard";
 import ScoutDashboard from "./components/scout/ScoutDashboard";
 import SelectDashboard from "./components/select/SelectDashboard";
+import StrategyMapDashboard from "./components/strategy/StrategyMapDashboard";
 import {
   addXpWithLevelUp,
   applyDailyStreak,
@@ -1022,9 +1023,13 @@ export default function App() {
       >
         {currentMode === "home" && <HomeDashboard S={S} />}
         {currentMode === "scout" && <ScoutDashboard S={S} />}
+        {currentMode === "strategy" && (
+          <StrategyMapDashboard S={S} onBack={() => setCurrentMode("select")} />
+        )}
         {currentMode === "select" && (
           <SelectDashboard
             S={S}
+            onOpenStrategy={() => setCurrentMode("strategy")}
             onStart={(machine) => {
               if (sessionStarted) {
                 // 実戦中の台選び開始は台移動として扱う（現在の台の記録上書きを防止）。
