@@ -38,6 +38,7 @@ import {
   NOTIF_VERDICT_CHANGE,
 } from "./notifications";
 import { takeSnapshot, takeSnapshotImmediate, getLatest as getLatestSnapshot } from "./snapshot";
+import EHIME_STORES from "./data/ehimeStores";
 
 // 旧タブ名 → 新モード名 のマッピング
 // Tabs.jsx 内から S.setTab("rot" | "calendar" | "settings") が呼ばれるため、
@@ -243,6 +244,9 @@ export default function App() {
 
   // Registered stores
   const [stores, setStores] = useLS("pt_stores", []);
+  // 内蔵店舗リスト（愛媛・松山/伊予エリア）の初回自動登録フラグ。
+  // 一度シードしたら true にし、以降は再シードしない（ユーザーが削除しても復活させない）。
+  const [storesSeeded, setStoresSeeded] = useLS("pt_storesSeeded", false);
 
   // 台選び：店舗ごとのホールマップ（島配置）編集データ
   // スキーマ: { [storeId]: Island[] } / Island = { id, name, start, end, machineName }
@@ -352,6 +356,31 @@ export default function App() {
       setChodamaLastDate(today);
     }
   }, [chodamaLastDate]);
+
+  // 初回のみ: 内蔵店舗リストを登録済み店舗へ自動シード。
+  // 既に店舗が登録済みのユーザー（既存データ）には手を付けない。
+  // rentBalls/exRate は内部値（面値×10）。4円・等価相当の既定値（250）を入れ、店舗ごとに編集可能。
+  useEffect(() => {
+    if (storesSeeded) return;
+    setStoresSeeded(true);
+    if (Array.isArray(stores) && stores.length > 0) return;
+    const seeded = EHIME_STORES.map((st, i) => ({
+      id: Date.now() + i,
+      name: st.name,
+      address: st.address,
+      rentBalls: 250,
+      exRate: 250,
+      memo: "",
+      chodama: 0,
+      chodamaMax: 0,
+      lastVisit: "",
+      replayBalls: 0,
+      todaySettle: 0,
+      memberCard: { created: false, number: "", deposit: 0 },
+    }));
+    setStores(seeded);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storesSeeded]);
 
   const pushJP = (j) => setJpLog((p) => [...p, j]);
   const pushLog = (e) => setSesLog((p) => [...p, e]);
