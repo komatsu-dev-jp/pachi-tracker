@@ -7,8 +7,10 @@ import ModeTabBar from "./components/ModeTabBar";
 import HomeDashboard from "./components/home/HomeDashboard";
 import AnalysisDashboard from "./components/analysis/AnalysisDashboard";
 import ScoutDashboard from "./components/scout/ScoutDashboard";
-import SelectDashboard from "./components/select/SelectDashboard";
 import StrategyMapDashboard from "./components/strategy/StrategyMapDashboard";
+import DeltaAnalyzer from "./components/delta/DeltaAnalyzer";
+import DeltaMapView from "./components/delta/DeltaMapView";
+import { getStoreIslands } from "./components/select/hallMapSelectors";
 import {
   addXpWithLevelUp,
   applyDailyStreak,
@@ -883,6 +885,26 @@ export default function App() {
   // 後方互換：従来の handleEndSession 名でも精算シートを開く
   const handleEndSession = openEndSession;
 
+  // 差玉解析（ホームの「解析する」から起動）用の店舗・島データ解決。
+  // 旧 SelectDashboard 内のロジックを App.jsx 側へ移設。編集対象店舗は
+  // 選択中の店舗 → 無ければ登録済みの先頭店舗。島配置は pt_hallMaps から導出。
+  const deltaActiveStore = (() => {
+    const list = Array.isArray(stores) ? stores : [];
+    const sel = list.find((st) => st && typeof st === "object" && st.id === selectedStoreId);
+    if (sel) return sel;
+    return list.find((st) => st && typeof st === "object") || null;
+  })();
+  const deltaIslands = getStoreIslands(hallMaps, deltaActiveStore?.id ?? null);
+  // 差玉解析スキャンの保存（pt_deltaScans へ追加。同一 id は置換）。
+  const handleSaveDeltaScan = (scan) => {
+    if (typeof setDeltaScans !== "function") return;
+    setDeltaScans((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const without = list.filter((s) => s && s.id !== scan.id);
+      return [...without, scan];
+    });
+  };
+
   const S = {
     rentBalls, setRentBalls, exRate, setExRate, synthDenom, setSynthDenom,
     rotPerHour, setRotPerHour, border, setBorder, ballVal, setBallVal,
@@ -1023,49 +1045,28 @@ export default function App() {
       >
         {currentMode === "home" && <HomeDashboard S={S} />}
         {currentMode === "scout" && <ScoutDashboard S={S} />}
-        {currentMode === "strategy" && (
-          <StrategyMapDashboard S={S} onBack={() => setCurrentMode("select")} />
+        {/* 台選びタブ＝戦略マップ画面（保護対象・無改変）。
+            旧 select の strategy 値で永続化された状態も同じ画面へフォールバックさせる。 */}
+        {(currentMode === "select" || currentMode === "strategy") && (
+          <StrategyMapDashboard S={S} onBack={() => setCurrentMode("home")} />
         )}
-        {currentMode === "select" && (
-          <SelectDashboard
-            S={S}
-            onOpenStrategy={() => setCurrentMode("strategy")}
-            onStart={(machine) => {
-              if (sessionStarted) {
-                // 実戦中の台選び開始は台移動として扱う（現在の台の記録上書きを防止）。
-                // 既にこの confirm が出るため二重ダイアログは避け、未完了チェーンがある場合は
-                // 文言に注意書きを足して一度の確認で済ませる。
-                const hasOpenChain = (jpLog || []).some((c) => c && c.completed === false);
-                const ok = window.confirm(
-                  hasOpenChain
-                    ? "大当たり記録が入力途中です。\n現在の台のデータを保存して、台移動としてこの台で続行しますか？"
-                    : "実戦中のセッションがあります。\n現在の台のデータを保存して、台移動としてこの台で続行しますか？"
-                );
-                if (!ok) return;
-                handleMoveTable();
-                setMachineNum(String(machine.machineNumber || ""));
-                setMachineName(machine.machineName || "");
-                return; // handleMoveTable 内で record へ遷移済み
-              }
-              setMachineNum(String(machine.machineNumber || ""));
-              setMachineName(machine.machineName || "");
-              if (!sessionStarted) {
-                const startPlayMode = currentChodama > 0 ? "chodama" : playMode;
-                setStartRot(0);
-                setCurrentMochiBalls(0);
-                setInitialChodama(currentChodama || 0);
-                setPlayMode(startPlayMode);
-                setSessionStarted(true);
-                setSessionStartDate(new Date().toISOString().slice(0, 10));
-                setRotRows((prev) => (
-                  prev.length > 0
-                    ? prev
-                    : [{ type: "start", cumRot: 0, mode: startPlayMode, mochiBalls: 0, chodamaBalls: currentChodama || 0 }]
-                ));
-                setSesLog((prev) => [...prev, { type: "スタート", time: tsNow(), rot: 0 }]);
-              }
-              setCurrentMode("record");
-            }}
+        {/* 差玉解析（独立タブにせず、ホームの「解析する」から起動） */}
+        {currentMode === "delta" && (
+          <DeltaAnalyzer
+            store={deltaActiveStore}
+            islands={deltaIslands}
+            onClose={() => setCurrentMode("home")}
+            onSaveScan={handleSaveDeltaScan}
+            aiApiKey={typeof aiApiKey === "string" ? aiApiKey : ""}
+            onChangeAiApiKey={setAiApiKey}
+          />
+        )}
+        {currentMode === "deltaMap" && (
+          <DeltaMapView
+            store={deltaActiveStore}
+            islands={deltaIslands}
+            scans={Array.isArray(deltaScans) ? deltaScans : []}
+            onClose={() => setCurrentMode("home")}
           />
         )}
         {currentMode === "record" && <RotTab border={border} rows={rotRows} setRows={setRotRows} S={S} ev={ev} />}

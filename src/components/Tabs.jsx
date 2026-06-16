@@ -12,6 +12,8 @@ import { KeyMetrics } from "./decision/KeyMetrics";
 import { ReasonList } from "./decision/ReasonList";
 import { RecentEventList } from "./decision/RecentEventList";
 import MachineSpecWorkspace from "./machines/MachineSpecWorkspace";
+import HallMapEditor from "./select/HallMapEditor";
+import { getStoreIslands, setStoreIslands } from "./select/hallMapSelectors";
 
 // 信頼度（試行充足率）: 1500回転で 100% （evDecision の calcConfidence と整合。
 // VerdictBadge.jsx の STABLE_TARGET_ROT と同値・同期すること）
@@ -9027,6 +9029,7 @@ export function SettingsTab({ s, onReset }) {
     const [chodamaFormMemo, setChodamaFormMemo] = useState("");
     const [showBackupView, setShowBackupView] = useState(false);
     const [showAdvancedView, setShowAdvancedView] = useState(false);
+    const [showHallMapView, setShowHallMapView] = useState(false);
 
     // 削除確認
     const [confirmingDeleteMachine, setConfirmingDeleteMachine] = useState(null);
@@ -9085,6 +9088,19 @@ export function SettingsTab({ s, onReset }) {
             ? { id: Date.now() + Math.random(), name: st, address: "", rentBalls: 250, exRate: 250, memo: "", chodama: 0, chodamaMax: 0, lastVisit: "", replayBalls: 0, todaySettle: 0, memberCard: { ...emptyMemberCard } }
             : { ...st, chodama: st.chodama || 0, chodamaMax: st.chodamaMax || 0, lastVisit: st.lastVisit || "", replayBalls: st.replayBalls || 0, todaySettle: st.todaySettle || 0, memberCard: normalizeMemberCard(st.memberCard) }
     );
+
+    // 島マップ管理（設定）用: 編集対象店舗 → 選択中の店舗 → 無ければ先頭。
+    // 島配置は App.jsx の pt_hallMaps（s.hallMaps / s.setHallMaps）に一元保存する。
+    const hallMapStore = normalizedStores.find((st) => st.id === s.selectedStoreId) || normalizedStores[0] || null;
+    const hallMapStoreId = hallMapStore?.id ?? null;
+    const hallMapIslands = getStoreIslands(s.hallMaps, hallMapStoreId);
+    const handleChangeHallMapIslands = (nextIslands) => {
+        if (hallMapStoreId == null || typeof s.setHallMaps !== "function") return;
+        s.setHallMaps((prev) => setStoreIslands(prev, hallMapStoreId, nextIslands));
+    };
+    const handleChangeHallMapStore = (nextStoreId) => {
+        if (typeof s.setSelectedStoreId === "function") s.setSelectedStoreId(nextStoreId);
+    };
 
     // 店舗検索
     const storeResults = storeQuery.trim()
@@ -10557,7 +10573,6 @@ export function SettingsTab({ s, onReset }) {
                             const iconColor = settingsTypeColors[m.type] || C.sub;
                             const iconLabel = (m.type || "").slice(0, 2);
                             const probText = m.prob || (m.synthProb ? `1/${m.synthProb}` : "—");
-                            const isConfirmingDelete = confirmingDeleteMachine === m.id;
                             return (
                                 <div key={m.isCustom ? `custom-${m.id}` : `db-${i}`} style={{
                                     background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14,
@@ -10643,6 +10658,7 @@ export function SettingsTab({ s, onReset }) {
     const IconDiamond = () => (<svg {...svgProps}><path d="M6 3h12l4 6-10 12L2 9z"/><path d="M11 3 8 9h8l-3-6"/><path d="M2 9h20"/></svg>);
     const IconMagnifier = () => (<svg {...svgProps}><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>);
     const IconStore = () => (<svg {...svgProps}><path d="M3 9 4.5 4h15L21 9"/><path d="M3 9v11h18V9"/><path d="M3 9c0 2 1.5 3 3 3s3-1 3-3c0 2 1.5 3 3 3s3-1 3-3c0 2 1.5 3 3 3s3-1 3-3"/><path d="M9 20v-6h6v6"/></svg>);
+    const IconGrid = () => (<svg {...svgProps}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>);
     const IconLock = () => (<svg {...svgProps}><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>);
     const IconKey = () => (<svg {...svgProps}><circle cx="7.5" cy="15.5" r="3.5"/><path d="m10 13 10-10"/><path d="m17 6 3 3"/><path d="m14 9 3 3"/></svg>);
     const IconCloud = () => (<svg {...svgProps}><path d="M17.5 19a4.5 4.5 0 1 0-1.2-8.84A6 6 0 0 0 5.1 13.5 4 4 0 0 0 6 19z"/><path d="M12 12v6"/><path d="m9 15 3-3 3 3"/></svg>);
@@ -11153,6 +11169,27 @@ export function SettingsTab({ s, onReset }) {
         );
     }
 
+    // ── 島マップ管理サブビュー ──
+    // 旧 SelectDashboard 内のホールマップ編集を設定へ移設。常時編集可能（初回セットアップ扱いにしない）。
+    if (showHallMapView) {
+        return (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <SubHeader title="島マップ管理" onBack={() => setShowHallMapView(false)} />
+                <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(84px + env(safe-area-inset-bottom))" }}>
+                    <HallMapEditor
+                        storeId={hallMapStoreId}
+                        storeName={hallMapStore?.name || ""}
+                        stores={s.stores}
+                        onChangeStore={handleChangeHallMapStore}
+                        islands={hallMapIslands}
+                        onChangeIslands={handleChangeHallMapIslands}
+                    />
+                </div>
+                <ToastPortal />
+            </div>
+        );
+    }
+
     // ── バックアップサブビュー ──
     if (showBackupView) {
         return (
@@ -11452,8 +11489,10 @@ export function SettingsTab({ s, onReset }) {
                 <SectionLabelV2 label="データ管理" />
                 <SectionCard>
                     {(() => {
+                        const hallMapIslandCount = Array.isArray(hallMapIslands) ? hallMapIslands.length : 0;
                         const items = [
                             { color: "var(--green)", icon: IconStore,      label: "店舗検索・登録",   sub: `登録店舗: ${(s.stores || []).length}件`,               onPress: () => setShowStoreSearch(true) },
+                            { color: "var(--teal)", icon: IconGrid,       label: "島マップ管理",     sub: hallMapStore ? `${hallMapStore.name || "店舗"} ・ ${hallMapIslandCount}島` : "店舗を登録すると編集できます", onPress: () => setShowHallMapView(true) },
                             { color: "var(--teal)", icon: IconMagnifier,  label: "機種検索・登録",   sub: `カスタム機種: ${(s.customMachines || []).length}件`,  onPress: () => setShowMachineSearch(true) },
                             { color: "var(--blue)", icon: IconCloud,      label: "バックアップ・復元", sub: "JSON全体バックアップ",                                onPress: () => setShowBackupView(true) },
                             { color: "var(--orange)", icon: IconCsv,        label: "収支CSV管理",       sub: "インポート / エクスポート",                            onPress: () => setShowBackupView(true) },

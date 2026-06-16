@@ -3,6 +3,7 @@ import { font } from "../../constants";
 import { BADGES } from "../hunter/badges";
 import { aggregateByDay, getEvAmount, getActualPL, machineRanking } from "../analysis/analysisSelectors";
 import { evDecision } from "../decision/evDecision";
+import { buildStrategyMap } from "../strategy/strategyMapData";
 
 // =====================================================
 // ホーム画面（モックアップ全面刷新版）
@@ -86,6 +87,11 @@ const fmtSigned = (n) => {
     if (n == null || !isFinite(n) || isNaN(n)) return "—";
     const v = Math.round(Number(n));
     return (v >= 0 ? "+" : "") + v.toLocaleString("ja-JP");
+};
+// 回転率など小数1桁表示
+const fmt1 = (n) => {
+    if (n == null || !isFinite(n) || isNaN(n)) return "—";
+    return Number(n).toLocaleString("ja-JP", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 };
 
 // ===== 共通スタイル =====
@@ -1079,6 +1085,174 @@ function RecentRow({ record, onClick }) {
     );
 }
 
+// ===== 戦略マップ：今日の狙い（サマリー4指標 + 本日のTOP3 + 戦略マップ導線） =====
+// 表示データは strategyMapData.buildStrategyMap（仮データ・将来 P-EVIDENCE / 差玉解析連携予定）。
+// タップで台選びタブ（＝戦略マップ画面）へ遷移する。
+const VERDICT_COLOR = {
+    strong: "var(--green)",
+    watch: "var(--yellow)",
+    weak: "var(--red)",
+    nodata: "var(--sub)",
+};
+function StrategyTodayCard({ data, onOpen }) {
+    const kpi = data.kpi;
+    const top3 = (data.top5 || []).slice(0, 3);
+    const metrics = [
+        { label: "推定期待値", value: fmtSigned(kpi.evPerHour), unit: "円/h", color: kpi.evPerHour >= 0 ? P.green : P.red },
+        { label: "予測回転率", value: fmt1(kpi.rot), unit: "/k", color: P.cyan },
+        { label: "候補台数", value: fmt(kpi.candidates), unit: "台", color: P.green },
+        { label: "確信度", value: fmt(kpi.confidence), unit: "%", color: P.yellow },
+    ];
+    return (
+        <div style={sectionGap}>
+            <SectionHeader title="今日の狙い" action="戦略マップへ" onAction={onOpen} />
+            <div style={{ ...cardBase, padding: 14 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+                    {metrics.map((m) => (
+                        <div key={m.label} style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 9.5, color: P.sub, fontWeight: 700, whiteSpace: "nowrap" }}>{m.label}</div>
+                            <div style={{ ...numStyle(16, m.color), marginTop: 5, whiteSpace: "nowrap" }}>{m.value}</div>
+                            <div style={{ fontSize: 8.5, color: P.subDim, fontWeight: 700, marginTop: 1 }}>{m.unit}</div>
+                        </div>
+                    ))}
+                </div>
+
+                <div style={{ fontSize: 11.5, color: P.sub, fontWeight: 700, margin: "16px 0 8px" }}>本日のTOP3</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                    {top3.map((m) => {
+                        const vc = VERDICT_COLOR[m.verdict] || P.sub;
+                        return (
+                            <button
+                                key={m.id}
+                                type="button"
+                                onClick={onOpen}
+                                style={{
+                                    textAlign: "left",
+                                    minWidth: 0,
+                                    background: P.cardAlt,
+                                    border: `1px solid ${P.border}`,
+                                    borderRadius: 12,
+                                    padding: "10px 10px 11px",
+                                    cursor: "pointer",
+                                }}
+                            >
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                    <span style={{ fontSize: 10, fontWeight: 800, color: P.cyan }}>{m.rank}位</span>
+                                    {m.isStar && <span style={{ color: P.yellow, fontSize: 12 }}>★</span>}
+                                </div>
+                                <div style={{ ...numStyle(20, P.textHi), marginTop: 4 }}>{m.num}</div>
+                                <div style={{ display: "flex", alignItems: "baseline", gap: 2, marginTop: 6 }}>
+                                    <span style={{ fontSize: 15, fontWeight: 800, color: vc, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>{fmt1(m.rot)}</span>
+                                    <span style={{ fontSize: 9, color: P.subDim }}>/k</span>
+                                </div>
+                                <div style={{ fontSize: 10, color: P.sub, marginTop: 3 }}>
+                                    確信度 <span style={{ color: vc, fontWeight: 800 }}>{m.confidence}%</span>
+                                </div>
+                            </button>
+                        );
+                    })}
+                </div>
+
+                <button
+                    type="button"
+                    onClick={onOpen}
+                    style={{
+                        width: "100%",
+                        minHeight: 48,
+                        marginTop: 14,
+                        borderRadius: 12,
+                        border: "none",
+                        background: `linear-gradient(135deg, ${P.blue}, ${P.cyan})`,
+                        color: "#fff",
+                        fontSize: 14,
+                        fontWeight: 800,
+                        fontFamily: font,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 6,
+                        cursor: "pointer",
+                        boxShadow: "0 0 14px rgba(0,166,255,0.32)",
+                    }}
+                >
+                    戦略マップを開く
+                    <IconChevron color="#fff" size={16} />
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ===== 差玉解析ステータス（独立タブにせず、ホームから起動） =====
+function DeltaStatusCard({ status, onAnalyze, onViewMap }) {
+    const dotColor = status.hasScans ? P.green : P.subDim;
+    return (
+        <div style={sectionGap}>
+            <SectionHeader title="差玉解析" />
+            <div style={cardBase}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 14 }}>
+                    <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 10, color: P.sub, fontWeight: 700 }}>最終解析</div>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: P.textHi, fontFamily: font, marginTop: 5, whiteSpace: "nowrap" }}>{status.lastLabel}</div>
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 10, color: P.sub, fontWeight: 700 }}>解析済み台数</div>
+                        <div style={{ ...numStyle(18, P.cyan), marginTop: 3 }}>
+                            {fmt(status.machineCount)}<span style={{ fontSize: 11, fontWeight: 700, color: P.subDim, marginLeft: 2 }}>台</span>
+                        </div>
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 10, color: P.sub, fontWeight: 700 }}>状態</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 7 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: "50%", background: dotColor, boxShadow: `0 0 6px ${dotColor}` }} />
+                            <span style={{ fontSize: 12, fontWeight: 800, color: P.textHi }}>{status.stateLabel}</span>
+                        </div>
+                    </div>
+                </div>
+                <button
+                    type="button"
+                    onClick={onAnalyze}
+                    style={{
+                        width: "100%",
+                        minHeight: 48,
+                        borderRadius: 12,
+                        border: "none",
+                        background: P.blue,
+                        color: "#fff",
+                        fontSize: 14,
+                        fontWeight: 800,
+                        fontFamily: font,
+                        cursor: "pointer",
+                    }}
+                >
+                    解析する
+                </button>
+                {status.hasScans && (
+                    <button
+                        type="button"
+                        onClick={onViewMap}
+                        style={{
+                            width: "100%",
+                            minHeight: 44,
+                            marginTop: 10,
+                            borderRadius: 12,
+                            border: `1px solid ${P.borderHi}`,
+                            background: P.cardSub,
+                            color: P.text,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            fontFamily: font,
+                            cursor: "pointer",
+                        }}
+                    >
+                        保存した解析をマップで見る
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+}
+
 // =====================================================
 // メインコンポーネント
 // =====================================================
@@ -1258,10 +1432,44 @@ export default function HomeDashboard({ S }) {
         });
     }, [archives, todayStr, yesterdayStr]);
 
+    // 戦略マップ サマリー・TOP3（仮データ・将来 P-EVIDENCE / 差玉解析連携予定）
+    const playingNum = S?.sessionStarted ? (Number(S?.machineNum) || null) : null;
+    const strategyData = useMemo(() => buildStrategyMap({ playingNum }), [playingNum]);
+
+    // 差玉解析ステータス（保存済みスキャン pt_deltaScans から導出）
+    const deltaScansRaw = S?.deltaScans;
+    const deltaStatus = useMemo(() => {
+        const scans = Array.isArray(deltaScansRaw) ? deltaScansRaw : [];
+        if (scans.length === 0) {
+            return { hasScans: false, lastLabel: "—", machineCount: 0, stateLabel: "未解析" };
+        }
+        const sorted = [...scans].sort((a, b) =>
+            String(b?.createdAt || "").localeCompare(String(a?.createdAt || ""))
+        );
+        const last = sorted[0];
+        const machineCount = scans.reduce((s, sc) => s + (Array.isArray(sc?.rows) ? sc.rows.length : 0), 0);
+        // 日時ラベル: 今日は時刻、それ以外は M/D
+        let lastLabel = "—";
+        const created = String(last?.createdAt || "");
+        const day = String(last?.date || created.slice(0, 10));
+        if (day === todayStr) {
+            lastLabel = created.length >= 16
+                ? `本日 ${new Date(created).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}`
+                : "本日";
+        } else if (day.length >= 10) {
+            lastLabel = `${Number(day.slice(5, 7))}/${Number(day.slice(8, 10))}`;
+        }
+        return { hasScans: true, lastLabel, machineCount, stateLabel: "解析済み" };
+    }, [deltaScansRaw, todayStr]);
+
     // ナビゲーション（S.setTab は未知の値を currentMode へパススルーする）
     const goRecord = () => S?.setTab?.("rot");
     const goSelect = () => S?.setTab?.("select");
     const goAnalysis = () => S?.setTab?.("calendar");
+    // 台選びタブ＝戦略マップ画面 / 差玉解析・保存解析マップ
+    const goStrategy = () => S?.setTab?.("select");
+    const goDelta = () => S?.setTab?.("delta");
+    const goDeltaMap = () => S?.setTab?.("deltaMap");
 
     return (
         <div style={{
@@ -1285,6 +1493,12 @@ export default function HomeDashboard({ S }) {
                 hasConfidence={hasConfidence}
                 onDetail={goAnalysis}
             />
+
+            {/* 今日の狙い（戦略マップ サマリー + 本日のTOP3 + 戦略マップ導線） */}
+            <StrategyTodayCard data={strategyData} onOpen={goStrategy} />
+
+            {/* 差玉解析ステータス（独立タブにせず、ここから起動） */}
+            <DeltaStatusCard status={deltaStatus} onAnalyze={goDelta} onViewMap={goDeltaMap} />
 
             {/* ③ 次のアクション */}
             <ActionButtons onRecord={goRecord} onSelect={goSelect} onAnalysis={goAnalysis} />
