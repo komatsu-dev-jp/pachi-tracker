@@ -4,6 +4,7 @@ import { C, f, sc, sp, tsNow, font, mono } from "../constants";
 import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./Atoms";
 import { machineDB, searchMachines, deriveSpecForMachine } from "../machineDB";
 import { calcPreciseEV } from "../logic";
+import { reconcileSegmentConsumption } from "../ballConsumption";
 import { getSync, set as persistSet, flushAll } from "../persistence";
 import { evDecision } from "./decision/evDecision";
 import { confidenceAccuracyLabel } from "./decision/confidenceLabels";
@@ -1748,6 +1749,22 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     time: tsNow()
                 }];
             });
+        }
+
+        // 貯玉/持ち玉プレーの消費玉を実測（区間開始玉 − 上皿残玉）で確定する。
+        // 打鍵中は 250玉/1K の暫定値で計上しているが、当たり時に判明した
+        // 「開始上皿玉数（= 上皿残玉）」を使って区間の実消費へ置き換える。
+        // 残高に暫定消費を足し戻すと区間開始玉が復元できる（currentBalance + Σ暫定）。
+        // logic.js は不変。ここでは rotRows の ballsConsumed を整えるだけ。
+        if (S.playMode === "chodama" || S.playMode === "mochi") {
+            const currentBalance = S.playMode === "chodama"
+                ? (S.currentChodama || 0)
+                : (S.currentMochiBalls || 0);
+            S.setRotRows((prev) => reconcileSegmentConsumption(prev, {
+                playMode: S.playMode,
+                trayRemaining: tray,
+                currentBalance,
+            }));
         }
 
         S.setJpLog((prev) => {
