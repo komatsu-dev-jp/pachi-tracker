@@ -1733,12 +1733,18 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                 const newInvest = prevInvest + pushAmount;
                 const lastRow = prev[prev.length - 1];
                 const cumRot = lastRow ? (lastRow.cumRot || 0) : 0;
+                // プッシュ補正額は「玉貸し（現金投入）の補正」なので、
+                // 現在の playMode（貯玉/持ち玉）に関わらず必ず現金行として記録する。
+                // mode を playMode のままにすると、貯玉/持ち玉行では invest 差分が
+                // 無視され、deriveFromRows 側の ballsConsumed 未指定フォールバックで
+                // 1K 分の幻の玉消費が計上されてしまい、回転率を大きく狂わせる。
                 return [...prev, {
                     type: "data",
-                    mode: S.playMode,
+                    mode: "cash",
                     cumRot: cumRot,
                     thisRot: 0,
                     invest: newInvest,
+                    ballsConsumed: 0,
                     time: tsNow()
                 }];
             });
