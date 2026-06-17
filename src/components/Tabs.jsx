@@ -4,7 +4,7 @@ import { C, f, sc, sp, tsNow, font, mono } from "../constants";
 import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./Atoms";
 import { machineDB, searchMachines, deriveSpecForMachine } from "../machineDB";
 import { calcPreciseEV } from "../logic";
-import { reconcileSegmentConsumption } from "../ballConsumption";
+import { reconcileSegmentConsumption, clearPushCorrections, estimateSegmentGross, hasPushCorrections } from "../ballConsumption";
 import { getSync, set as persistSet, flushAll } from "../persistence";
 import { evDecision } from "./decision/evDecision";
 import { confidenceAccuracyLabel } from "./decision/confidenceLabels";
@@ -910,7 +910,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     const [editChainId, setEditChainId] = useState(null);
     const [editChainHits, setEditChainHits] = useState([]);
     // チェーン単位の終了データ（時短回数・最終出玉）編集用
-    const [editChainMeta, setEditChainMeta] = useState({ jitanSpins: "", finalBallsAfterJitan: "" });
+    const [editChainMeta, setEditChainMeta] = useState({ jitanSpins: "", finalBallsAfterJitan: "", segStartBalls: "", trayRemaining: "", segMode: "cash", hasPush: false, clearPush: false });
 
     // 連チャン追加（画面 B / 画面 C）state
     // 仕様書 §3.1 画面 B・C に準拠。`chainWizardStep` は新UIでは `8`（画面 C = 最終実測持ち玉入力）のみ意味を持つ。
@@ -1291,9 +1291,22 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         // チェーン単位の終了データ（時短回数・最終出玉）を編集stateへ
         // 最終出玉は finalBallsAfterJitan → finalRealBalls → finalBalls の優先で復元
         const finalRestore = target.finalBallsAfterJitan ?? target.finalRealBalls ?? target.finalBalls ?? 0;
+        // 通常時の玉消費（回転率）修正用の既定値を算出する。
+        // この当たり区間のモードは rotRows の hit 行から判定する。
+        const rotRows = S.rotRows || [];
+        const hitRow = rotRows.find(r => r.type === "hit" && r.chainId === chainId);
+        const segMode = (hitRow && (hitRow.mode === "chodama" || hitRow.mode === "mochi")) ? hitRow.mode : "cash";
+        const rb = S.rentBalls || 250;
+        const gross = segMode !== "cash" ? estimateSegmentGross(rotRows, { playMode: segMode, chainId, rentBalls: rb }) : 0;
+        const hasPush = hasPushCorrections(rotRows, { chainId });
         setEditChainMeta({
             jitanSpins: String(target.jitanSpins ?? 0),
             finalBallsAfterJitan: String(finalRestore),
+            segMode,
+            segStartBalls: segMode !== "cash" && gross > 0 ? String(Math.round(gross)) : "",
+            trayRemaining: String(Math.round(Number(target.trayBalls) || 0)),
+            hasPush,
+            clearPush: false,
         });
         setEditChainId(chainId);
         setEditChainHits(editable);
@@ -1304,12 +1317,23 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         if (!editChainId) { setEditChainOpen(false); return; }
         let oldFinalBalls = 0;
         let newFinalBalls = 0;
+        let oldTray = 0;
+        // 通常時の玉消費（回転率）修正の入力値（貯玉/持ち玉区間のみ）
+        const segMode = editChainMeta.segMode;
+        const isBallSeg = segMode === "chodama" || segMode === "mochi";
+        const newTray = isBallSeg && editChainMeta.trayRemaining !== ""
+            ? Math.max(0, Number(editChainMeta.trayRemaining) || 0) : null;
+        const newSegStart = isBallSeg && editChainMeta.segStartBalls !== ""
+            ? Math.max(0, Number(editChainMeta.segStartBalls) || 0) : null;
         S.setJpLog((prev) => {
             const updated = [...prev];
             const idx = updated.findIndex(c => c.chainId === editChainId);
             if (idx < 0) return prev;
             const chain = { ...updated[idx] };
             oldFinalBalls = chain.finalBalls || 0;
+            oldTray = Number(chain.trayBalls) || 0;
+            // 上皿残玉（開始上皿玉数）を更新（補正後＝実消費の差し引きに使われる）
+            if (newTray != null) chain.trayBalls = newTray;
             // 各 hit を再計算（サポ増減 = 次タイミング玉 - 前回終了玉 - 液晶出玉）
             // displayBalls は既に全連合算済み（buildSingleHit 由来）なので mult を再乗算しない
             const newHits = editChainHits.map(e => {
@@ -1368,10 +1392,32 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                 S.setCurrentMochiBalls((p) => Math.max(0, p + diff));
             }
         }
+
+        // 通常時の玉消費（回転率）の修正: 上皿総玉の同期 + rotRows のグロス書き戻し + プッシュ補正除去
+        if (isBallSeg) {
+            if (newTray != null && newTray !== oldTray) {
+                S.setTotalTrayBalls((p) => Math.max(0, p + (newTray - oldTray)));
+            }
+            S.setRotRows((prev) => {
+                let next = prev;
+                if (newSegStart != null) {
+                    next = reconcileSegmentConsumption(next, {
+                        playMode: segMode,
+                        segmentStartBalls: newSegStart,
+                        chainId: editChainId,
+                    });
+                }
+                if (editChainMeta.clearPush) {
+                    next = clearPushCorrections(next, { chainId: editChainId });
+                }
+                return next;
+            });
+        }
+
         setEditChainOpen(false);
         setEditChainId(null);
         setEditChainHits([]);
-        setEditChainMeta({ jitanSpins: "", finalBallsAfterJitan: "" });
+        setEditChainMeta({ jitanSpins: "", finalBallsAfterJitan: "", segStartBalls: "", trayRemaining: "", segMode: "cash", hasPush: false, clearPush: false });
     };
     // ========== 大当たり履歴タブ用state ここまで ==========
 
@@ -1751,18 +1797,17 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             });
         }
 
-        // 貯玉/持ち玉プレーの消費玉を実測（区間開始玉 − 上皿残玉）で確定する。
-        // 打鍵中は 250玉/1K の暫定値で計上しているが、当たり時に判明した
-        // 「開始上皿玉数（= 上皿残玉）」を使って区間の実消費へ置き換える。
-        // 残高に暫定消費を足し戻すと区間開始玉が復元できる（currentBalance + Σ暫定）。
-        // logic.js は不変。ここでは rotRows の ballsConsumed を整えるだけ。
+        // 貯玉/持ち玉プレーの消費玉を実測（区間開始玉＝グロス）で確定する。
+        // 打鍵中は 250玉/1K の暫定値で計上しているが、区間開始玉（残高 + 暫定消費の
+        // 累計で復元）を各行に書き戻す。上皿残玉の差し引き（実消費化）は
+        // calcPreciseEV 側の trayCorrection（chain.trayBalls）が行うため、ここでは
+        // グロスを入れて二重控除を避ける。logic.js は不変。
         if (S.playMode === "chodama" || S.playMode === "mochi") {
             const currentBalance = S.playMode === "chodama"
                 ? (S.currentChodama || 0)
                 : (S.currentMochiBalls || 0);
             S.setRotRows((prev) => reconcileSegmentConsumption(prev, {
                 playMode: S.playMode,
-                trayRemaining: tray,
                 currentBalance,
             }));
         }
@@ -3636,9 +3681,53 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                             最終出玉を入力すると実測持ち玉として集計・持ち玉に反映されます。0なら液晶出玉ベースで計算します。
                                         </div>
                                     </div>
+                                    {/* 通常時の玉消費（回転率）修正 — 貯玉/持ち玉区間のみ表示 */}
+                                    {(editChainMeta.segMode === "chodama" || editChainMeta.segMode === "mochi") && (
+                                        <div style={{ padding: "10px 0", borderTop: `1px solid ${C.border}`, marginTop: 4 }}>
+                                            <div style={{ fontSize: 11, fontWeight: 700, color: C.purple, marginBottom: 6 }}>
+                                                通常時の玉消費（回転率の修正）
+                                            </div>
+                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                                <label style={{ fontSize: 10, color: C.sub }}>
+                                                    打ち始めの玉数
+                                                    <input
+                                                        type="tel" inputMode="numeric"
+                                                        value={editChainMeta.segStartBalls}
+                                                        onChange={e => setEditChainMeta(m => ({ ...m, segStartBalls: e.target.value.replace(/[^0-9]/g, "") }))}
+                                                        className="input-premium"
+                                                        style={{ width: "100%", boxSizing: "border-box", fontFamily: mono, padding: "8px 10px", fontSize: 14, marginTop: 4 }}
+                                                    />
+                                                </label>
+                                                <label style={{ fontSize: 10, color: C.sub }}>
+                                                    上皿残玉（当たり時）
+                                                    <input
+                                                        type="tel" inputMode="numeric"
+                                                        value={editChainMeta.trayRemaining}
+                                                        onChange={e => setEditChainMeta(m => ({ ...m, trayRemaining: e.target.value.replace(/[^0-9]/g, "") }))}
+                                                        className="input-premium"
+                                                        style={{ width: "100%", boxSizing: "border-box", fontFamily: mono, padding: "8px 10px", fontSize: 14, marginTop: 4 }}
+                                                    />
+                                                </label>
+                                            </div>
+                                            <div style={{ fontSize: 10, color: C.sub, marginTop: 6, lineHeight: 1.5 }}>
+                                                打ち始めの玉数 − 上皿残玉 = 実際に使った玉。これで回転率を正確に計算し直します。
+                                            </div>
+                                            {editChainMeta.hasPush && (
+                                                <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 12, color: C.text, minHeight: 44 }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={editChainMeta.clearPush}
+                                                        onChange={e => setEditChainMeta(m => ({ ...m, clearPush: e.target.checked }))}
+                                                        style={{ width: 20, height: 20 }}
+                                                    />
+                                                    誤って押したプッシュ補正（現金）を取り消す
+                                                </label>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                                    <Btn label="キャンセル" onClick={() => { setEditChainOpen(false); setEditChainId(null); setEditChainHits([]); setEditChainMeta({ jitanSpins: "", finalBallsAfterJitan: "" }); }} />
+                                    <Btn label="キャンセル" onClick={() => { setEditChainOpen(false); setEditChainId(null); setEditChainHits([]); setEditChainMeta({ jitanSpins: "", finalBallsAfterJitan: "", segStartBalls: "", trayRemaining: "", segMode: "cash", hasPush: false, clearPush: false }); }} />
                                     <Btn label="保存" onClick={handleEditChainSave} bg={C.blue} fg="#fff" bd="none" />
                                 </div>
                             </Card>

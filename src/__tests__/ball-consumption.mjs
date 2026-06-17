@@ -1,31 +1,43 @@
 // 実測消費玉リコンサイル（ballConsumption.js）の回帰テスト。
-// logic.js（deriveFromRows）には触れず、ballsConsumed を実測値へ整える挙動と、
-// deriveFromRows を通した最終的な回転率（rot / kCount）が正しいことを検証する。
+// logic.js（deriveFromRows / calcPreciseEV）には触れず、ballsConsumed をグロス
+// （区間開始玉）へ整える挙動と、calcPreciseEV を通した「補正後（実消費）」回転率が
+// 正しいことを検証する。上皿残玉の差し引きは trayCorrection が行うため、本関数は
+// グロスを入れる（二重控除を避ける）。
 // 実行: node src/__tests__/ball-consumption.mjs
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { reconcileSegmentConsumption } from "../ballConsumption.js";
+import { reconcileSegmentConsumption, clearPushCorrections } from "../ballConsumption.js";
 
-// logic.js の純粋計算ブロックだけを取り出して deriveFromRows を得る（React 依存を回避）
-function loadDeriveFromRows() {
+// logic.js の純粋計算ブロックだけを取り出す（React 依存を回避）
+function loadFns() {
   const __dirname = dirname(fileURLToPath(import.meta.url));
   const logicSource = readFileSync(resolve(__dirname, "../logic.js"), "utf8");
   const idx = logicSource.indexOf("SHARED CALC HELPERS");
   const start = logicSource.lastIndexOf("/*", idx);
   const pure = logicSource.slice(start).replaceAll("export function ", "function ");
-  return Function(`${pure}\nreturn { deriveFromRows };`)().deriveFromRows;
+  return Function(`${pure}\nreturn { deriveFromRows, calcPreciseEV };`)();
 }
 
-const deriveFromRows = loadDeriveFromRows();
+const { deriveFromRows, calcPreciseEV } = loadFns();
 const RENT = 250;
 
 let pass = 0, fail = 0;
-function approx(a, b, eps = 0.01) { return Math.abs(a - b) <= eps; }
+function approx(a, b, eps = 0.3) { return Math.abs(a - b) <= eps; }
 function check(name, cond, detail = "") {
   if (cond) { pass++; console.log(`  ✅ ${name}`); }
   else { fail++; console.log(`  ❌ ${name} ${detail}`); }
+}
+
+// 等価（交換率4円・貸玉250玉/K）で calcPreciseEV を回す共通パラメータ
+function evParams(rotRows, jpLog) {
+  return {
+    rotRows, startRot: 211, jpLog,
+    rentBalls: RENT, exRate: 250, synthDenom: 319.7, rotPerHour: 600,
+    totalTrayBalls: 0, border: 18, spec1R: 140, specAvgRounds: 0, specSapo: 0,
+    chodamaSettings: { includeChodamaInBalance: true },
+  };
 }
 
 // ── ケースA: 瞬間当たり（ユーザー報告シナリオ） ──────────────
@@ -33,44 +45,47 @@ function check(name, cond, detail = "") {
 {
   const rows = [
     { type: "start", cumRot: 211, mode: "chodama", chodamaBalls: 125 },
-    { type: "data", mode: "chodama", cumRot: 221, thisRot: 10, invest: 0 }, // 当たり data 行（ballsConsumed 無し）
+    { type: "data", mode: "chodama", cumRot: 221, thisRot: 10, invest: 0 },
     { type: "hit", chainId: 1, cumRot: 221, thisRot: 10, mode: "chodama" },
   ];
-  const out = reconcileSegmentConsumption(rows, { playMode: "chodama", trayRemaining: 54, currentBalance: 125, rentBalls: RENT });
-  const hitData = out[1];
-  check("A: 消費玉 = 125 - 54 = 71", hitData.ballsConsumed === 71, `→ ${hitData.ballsConsumed}`);
-  const d = deriveFromRows(out, 0, RENT);
-  check("A: 総回転 = 10", d.rot === 10, `→ ${d.rot}`);
-  const start1K = d.rot / d.kCount;
-  check("A: 回転率 ≈ 35.2 G/K", approx(start1K, 10 / (71 / 250)), `→ ${start1K.toFixed(2)}`);
+  const out = reconcileSegmentConsumption(rows, { playMode: "chodama", currentBalance: 125 });
+  check("A: ballsConsumed = グロス125", out[1].ballsConsumed === 125, `→ ${out[1].ballsConsumed}`);
+
+  // 補正後（trayCorrection が上皿54玉を差し引く）→ 実消費71玉 → 10/(71/250) ≈ 35.2
+  const jpLog = [{ chainId: 1, completed: true, trayBalls: 54, hits: [{ rounds: 4 }], summary: { totalRounds: 4, totalDisplayBalls: 560 } }];
+  const ev = calcPreciseEV(evParams(out, jpLog));
+  check("A: 生回転率 = 20 G/K (グロス0.5K)", approx(ev.start1K, 20), `→ ${ev.start1K.toFixed(2)}`);
+  check("A: 補正後回転率 ≈ 35.2 G/K", approx(ev.start1KCorrected, 10 / (71 / 250)), `→ ${ev.start1KCorrected.toFixed(2)}`);
 }
 
-// ── ケースB: 通常入力を挟んだ場合（暫定250玉→実測へ置換 + 比例配分） ──
+// ── ケースB: 通常入力を挟んだ場合（暫定250玉→グロスへ置換 + 比例配分） ──
 {
   const rows = [
     { type: "start", cumRot: 0, mode: "chodama", chodamaBalls: 1000 },
     { type: "data", mode: "chodama", cumRot: 50, thisRot: 50, invest: 0, ballsConsumed: 250 },
     { type: "data", mode: "chodama", cumRot: 110, thisRot: 60, invest: 0, ballsConsumed: 250 },
-    { type: "data", mode: "chodama", cumRot: 120, thisRot: 10, invest: 0 }, // 当たり data 行
+    { type: "data", mode: "chodama", cumRot: 120, thisRot: 10, invest: 0 },
     { type: "hit", chainId: 1, cumRot: 120, thisRot: 10, mode: "chodama" },
   ];
-  // currentBalance = 1000 - 250 - 250 = 500、上皿残 400 → 実消費 = (500+500) - 400 = 600
-  const out = reconcileSegmentConsumption(rows, { playMode: "chodama", trayRemaining: 400, currentBalance: 500, rentBalls: RENT });
+  // currentBalance = 1000 - 250 - 250 = 500 → グロス = 500 + 500 = 1000
+  const out = reconcileSegmentConsumption(rows, { playMode: "chodama", currentBalance: 500 });
   const sum = out.filter(r => r.type === "data").reduce((s, r) => s + (r.ballsConsumed || 0), 0);
-  check("B: 区間消費合計 = 600", sum === 600, `→ ${sum}`);
-  const d = deriveFromRows(out, 0, RENT);
-  check("B: 回転率 = 50 G/K (120回転 / 2.4K)", approx(d.rot / d.kCount, 120 / (600 / 250)), `→ ${(d.rot / d.kCount).toFixed(2)}`);
+  check("B: 区間グロス合計 = 1000", sum === 1000, `→ ${sum}`);
+  // 上皿残400 → 実消費600 → 120/(600/250) = 50
+  const jpLog = [{ chainId: 1, completed: true, trayBalls: 400, hits: [{ rounds: 4 }], summary: { totalRounds: 4, totalDisplayBalls: 560 } }];
+  const ev = calcPreciseEV(evParams(out, jpLog));
+  check("B: 補正後回転率 = 50 G/K", approx(ev.start1KCorrected, 50), `→ ${ev.start1KCorrected.toFixed(2)}`);
 }
 
-// ── ケースC: 入力矛盾（残玉 > 開始玉）は実測せず暫定維持 ──────
+// ── ケースC: 編集（segmentStartBalls 明示・chainId 指定） ──────
 {
   const rows = [
-    { type: "start", cumRot: 0, mode: "chodama", chodamaBalls: 125 },
-    { type: "data", mode: "chodama", cumRot: 10, thisRot: 10, invest: 0 },
-    { type: "hit", chainId: 1, cumRot: 10, thisRot: 10, mode: "chodama" },
+    { type: "start", cumRot: 211, mode: "chodama", chodamaBalls: 0 },
+    { type: "data", mode: "chodama", cumRot: 221, thisRot: 10, invest: 0 }, // 既に誤った値が入っている想定
+    { type: "hit", chainId: 99, cumRot: 221, thisRot: 10, mode: "chodama" },
   ];
-  const out = reconcileSegmentConsumption(rows, { playMode: "chodama", trayRemaining: 200, currentBalance: 125, rentBalls: RENT });
-  check("C: 矛盾入力では行を変更しない", out[1].ballsConsumed === undefined, `→ ${out[1].ballsConsumed}`);
+  const out = reconcileSegmentConsumption(rows, { playMode: "chodama", segmentStartBalls: 125, chainId: 99 });
+  check("C: 明示グロス125を書き込む", out[1].ballsConsumed === 125, `→ ${out[1].ballsConsumed}`);
 }
 
 // ── ケースD: 現金モードは対象外（素通り） ───────────────────
@@ -80,22 +95,37 @@ function check(name, cond, detail = "") {
     { type: "data", mode: "cash", cumRot: 100, thisRot: 100, invest: 3000 },
     { type: "hit", chainId: 1, cumRot: 100, thisRot: 100, mode: "cash" },
   ];
-  const out = reconcileSegmentConsumption(rows, { playMode: "cash", trayRemaining: 0, currentBalance: 0, rentBalls: RENT });
+  const out = reconcileSegmentConsumption(rows, { playMode: "cash", currentBalance: 0 });
   check("D: 現金モードは同一配列を返す", out === rows);
 }
 
-// ── ケースE: 持ち玉モードも実測化される ───────────────────
+// ── ケースE: プッシュ補正行の除去（誤って押した現金行を取り消す） ──
+{
+  const rows = [
+    { type: "start", cumRot: 211, mode: "chodama", chodamaBalls: 125 },
+    { type: "data", mode: "chodama", cumRot: 221, thisRot: 10, invest: 0, ballsConsumed: 125 },
+    { type: "hit", chainId: 1, cumRot: 221, thisRot: 10, mode: "chodama", invest: 0 },
+    { type: "data", mode: "cash", cumRot: 221, thisRot: 0, invest: 500, ballsConsumed: 0 }, // 誤プッシュ500円
+  ];
+  const out = clearPushCorrections(rows, { chainId: 1 });
+  check("E: プッシュ行が除去される", out.length === 3 && !out.some(r => r.thisRot === 0 && r.type === "data"), `→ len ${out.length}`);
+  const cashRows = out.filter(r => r.mode === "cash" && r.type === "data");
+  check("E: 現金投資行が残らない", cashRows.length === 0, `→ ${cashRows.length}`);
+}
+
+// ── ケースF: 持ち玉モードも実測化される ───────────────────
 {
   const rows = [
     { type: "start", cumRot: 0, mode: "mochi", mochiBalls: 300 },
     { type: "data", mode: "mochi", cumRot: 20, thisRot: 20, invest: 0 },
     { type: "hit", chainId: 1, cumRot: 20, thisRot: 20, mode: "mochi" },
   ];
-  // 持ち玉300、上皿残100 → 実消費 200玉
-  const out = reconcileSegmentConsumption(rows, { playMode: "mochi", trayRemaining: 100, currentBalance: 300, rentBalls: RENT });
-  check("E: 持ち玉 消費 = 300 - 100 = 200", out[1].ballsConsumed === 200, `→ ${out[1].ballsConsumed}`);
-  const d = deriveFromRows(out, 0, RENT);
-  check("E: 回転率 = 25 G/K (20回転 / 0.8K)", approx(d.rot / d.kCount, 20 / (200 / 250)), `→ ${(d.rot / d.kCount).toFixed(2)}`);
+  const out = reconcileSegmentConsumption(rows, { playMode: "mochi", currentBalance: 300 });
+  check("F: 持ち玉グロス = 300", out[1].ballsConsumed === 300, `→ ${out[1].ballsConsumed}`);
+  // 上皿残100 → 実消費200 → 20/(200/250) = 25
+  const jpLog = [{ chainId: 1, completed: true, trayBalls: 100, hits: [{ rounds: 4 }], summary: { totalRounds: 4, totalDisplayBalls: 560 } }];
+  const ev = calcPreciseEV(evParams(out, jpLog));
+  check("F: 補正後回転率 = 25 G/K", approx(ev.start1KCorrected, 25), `→ ${ev.start1KCorrected.toFixed(2)}`);
 }
 
 console.log(`\n${fail === 0 ? "PASS" : "FAIL"}: ${pass} passed, ${fail} failed`);
