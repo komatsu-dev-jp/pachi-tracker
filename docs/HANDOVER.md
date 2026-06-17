@@ -1413,6 +1413,35 @@ grep -n 'sessionSubTab === "data"' src/components/Tabs.jsx
 # → L3169 で IIFE 開始、ここから 8 セクションが続く
 ```
 
+### 直近の状態サマリー（2026-06-16 時点、戦略マップ中心の構成整理 完了後）
+
+- **作業ブランチ**: `claude/pachi-tracker-strategy-map-28n7y4`（push 済 / PR 未作成）
+- **目的**: 「戦略マップ設計固定プロンプト」に沿って、戦略マップ画面を中心としたアプリ構成へ整理する。**戦略マップ画面（`StrategyMapDashboard.jsx`）は保護対象として完全無改変**。
+- **ユーザー確認済みの方針**:
+  - 台選びタブ＝戦略マップ画面に置き換え（仕様準拠）
+  - 既存ホーム/SelectDashboard の機能は仕様に沿って再配置（推奨）
+- **本ブランチで変更したファイル**:
+  - `src/App.jsx`:
+    - 台選び（`currentMode === "select"`）の描画を `SelectDashboard` → `StrategyMapDashboard` に変更（戦略マップは無改変、`onBack` は `home` へ）。旧 `strategy` 値で永続化された状態も同じ画面へフォールバック。
+    - 差玉解析を独立タブにせず、新モード `delta`（`DeltaAnalyzer`）/ `deltaMap`（`DeltaMapView`）として追加。ホームの「解析する」から起動。
+    - 旧 `SelectDashboard` 内にあった「編集対象店舗の解決・島データ（`getStoreIslands`）・スキャン保存（`pt_deltaScans`）」ロジックを App.jsx 側へ移設（`deltaActiveStore` / `deltaIslands` / `handleSaveDeltaScan`）。
+    - `SelectDashboard` の import を削除（**ファイル自体は温存・未使用**）。旧 select の `onStart`（台選びからの実戦開始）インライン処理は撤去（machines は元々空でセッション開始導線は中央FAB／記録モードへ集約）。
+  - `src/components/home/HomeDashboard.jsx`:
+    - 仕様のホーム要素を追加（既存セクションは削除せず温存）。本日のサマリーの直下に挿入：
+      - **今日の狙い**（戦略サマリー4指標：推定期待値／予測回転率／候補台数／確信度 ＋ 本日のTOP3 ＋「戦略マップを開く」ボタン）。データは `buildStrategyMap`（仮データ・将来 P-EVIDENCE/差玉解析連携予定）。TOP3・ボタンのタップで台選び（戦略マップ）へ。
+      - **差玉解析ステータス**（最終解析／解析済み台数／状態 ＋「解析する」＋「保存した解析をマップで見る」）。`pt_deltaScans` から導出。
+    - 横スクロールは使わず TOP3 は 3 列グリッド（片手・iPhone 16 Pro 幅優先）。
+  - `src/components/Tabs.jsx`（`SettingsTab`）:
+    - データ管理に **島マップ管理** 項目を追加。旧 `SelectDashboard` 内のホールマップ編集（`HallMapEditor`）を設定のサブビューへ移設（常時編集可能・初回セットアップ扱いにしない）。島データは `pt_hallMaps`（`s.hallMaps`/`s.setHallMaps`）に一元保存。
+    - `IconGrid`（島マップ用アイコン）を追加。
+    - **既存の pre-existing lint error 1件を解消**：機種検索結果の未使用変数 `isConfirmingDelete`（assigned but never used）を削除。※ HEAD 時点から存在した dead code で lint ゲートを塞いでいたため、最小限の除去のみ実施（挙動不変）。
+- **データフロー**: 差玉画像追加 → 差玉解析（`delta`）→ `pt_deltaScans` 保存 →（将来）期待値計算 → 戦略マップ更新。現状の戦略マップ表示値は `strategyMapData.js` の仮データ（将来連携予定）。
+- **操作ステップへの影響**: 台選びタブを開く＝戦略マップが即表示（CTA経由の1タップが不要に）。差玉解析・島マップ編集は導線が台選び→ホーム/設定へ移動（タップ数は同等）。
+- **logic.js / 計算式**: **未変更**（`src/logic.js`・`evDecision.js` ともに diff なし）。`node src/__tests__/protected-fns.mjs` 出力が `baseline.json` と完全一致。`evDecision.test.mjs` 5/5 PASS。
+- **package.json**: 変更なし。
+- **lint / build**: `npm run lint` = 0 error（既存 warning 1件のみ：App.jsx の useEffect deps、無関連）。`npm run build` = 成功。
+- **保留・備考**: `SelectDashboard.jsx` / `selectSelectors.js` 等は未使用化したがファイルは温存（将来の P-EVIDENCE 実データ化で再利用余地あり）。戦略マップの表示値は仮データのままで、実データ連携は Phase 5（P-EVIDENCE 移植）後。
+
 ### 直近の状態サマリー（2026-05-22 時点、詳細データタブのモック準拠 全面刷新 完了後）
 
 - **作業ブランチ**: `claude/detail-data-dark-ui-HrRss`（push 済 / PR 未作成）
