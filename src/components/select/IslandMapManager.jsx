@@ -1,15 +1,15 @@
-// 島マップ管理画面（全面リニューアル・見た目優先プロトタイプ）
+// 島マップ管理画面（再設計・島レイアウト管理＝「店舗の島構成を管理する」画面）
 //
-// 旧「島一覧」中心の編集画面を、「この店舗の島構成を俯瞰する」レイアウト管理画面へ再設計する。
-// 戦略マップ（StrategyMapDashboard）と同じ世界観（Bloomberg風・ネオンブルー・ダーク）で自己完結する。
+// 役割分離の方針:
+//   - 本画面（島マップ管理）＝「管理」。店舗の島構成（島名・機種名・台番号範囲・台数・並び）を
+//     登録／編集／俯瞰する。推定回転率・確信度・良台率・密度・強ゾーン・候補台・着席推奨・TOP5
+//     などの分析情報は一切表示しない（それらは戦略マップ画面の役割）。
+//   - 戦略マップ画面＝「分析」。本画面は触れない。
 //
 // データの実体は App.jsx の pt_hallMaps（{ [storeId]: Island[] }、
-// Island = { id, name, start, end, machineName }）。本コンポーネントは
-// hallMapSelectors の純粋関数のみで不変更新し、rotRows（回転数記録）・logic.js には触れない。
-//
-// ⚠️ レイアウト図 / プレビューに表示する「推定回転率・確信度・良台率・密度・強ゾーン」は
-//    islandMapData.js が生成する仮データ（将来連携予定・表示専用）。実体の島配置から
-//    台番号のみを使い、指標は決定論的に生成する。将来 差玉解析 / P-EVIDENCE の実データへ差し替える。
+// Island = { id, name, start, end, machineName }）。本コンポーネントは hallMapSelectors の
+// 純粋関数のみで不変更新し、rotRows（回転数記録）・logic.js には触れない。
+// 世界観は戦略マップと統一（Bloomberg風・ダーク・ネオンブルー）だが、より管理寄りでシンプル。
 
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
@@ -20,7 +20,6 @@ import {
   moveIslandUp,
   moveIslandDown,
 } from "./hallMapSelectors";
-import { buildHallLayout } from "./islandMapData";
 
 // ---- 配色（戦略マップ準拠の固定パレット）----
 const P = {
@@ -32,41 +31,43 @@ const P = {
   text: "#E6EDF6",
   sub: "#64748B",
   subHi: "#94A3B8",
-  green: "#22C55E",
-  yellow: "#EAB308",
   red: "#EF4444",
-  gray: "#64748B",
   cyan: "#06B6D4",
 };
 const RADIUS = 24;
 const FONT = "var(--font-main)";
 const MONO = "var(--font-mono)";
 
-const VERDICT = {
-  strong: { color: P.green, label: "ボーダー超え" },
-  watch: { color: P.yellow, label: "様子見" },
-  weak: { color: P.red, label: "未満" },
-  nodata: { color: P.gray, label: "データ不足" },
-};
+// 島ごとの簡易カラータグ（管理用の識別色のみ。分析的な意味は持たない）。
+const TAG_COLORS = ["#06B6D4", "#3B82F6", "#14B8A6", "#8B5CF6", "#F59E0B", "#EC4899"];
+const tagColor = (i) => TAG_COLORS[i % TAG_COLORS.length];
+
+// レイアウトプレビューで描画する台セルの上限（極端な範囲指定時の保護）。
+const MAX_CELLS = 200;
 
 const TABS = [
-  { id: "layout", label: "レイアウト図" },
   { id: "list", label: "島一覧" },
+  { id: "layout", label: "レイアウト図" },
   { id: "history", label: "変更履歴" },
 ];
 
-function fmt(n, d = 0) {
+function fmt(n) {
   if (n == null || !isFinite(n)) return "—";
-  return Number(n).toLocaleString("ja-JP", { minimumFractionDigits: d, maximumFractionDigits: d });
-}
-function signed(n, d = 0) {
-  if (n == null || !isFinite(n)) return "—";
-  return (n >= 0 ? "+" : "") + fmt(n, d);
+  return Number(n).toLocaleString("ja-JP");
 }
 function nowStamp() {
   const d = new Date();
   const p = (x) => String(x).padStart(2, "0");
   return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+// 島の台番号一覧（[start..end]）。上限で打ち切る。
+function machineNumbers(island) {
+  const start = Number(island?.start) || 0;
+  const total = islandCount(island);
+  const cells = Math.max(0, Math.min(total, MAX_CELLS));
+  const out = [];
+  for (let i = 0; i < cells; i++) out.push(start + i);
+  return out;
 }
 
 // ============================ アイコン ============================
@@ -83,90 +84,59 @@ const HelpIcon = (p) => <Icon {...p}><circle cx="12" cy="12" r="9" /><path d="M9
 const EditIcon = (p) => <Icon {...p}><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></Icon>;
 const StoreIcon = (p) => <Icon {...p}><path d="M3 9l1.5-5h15L21 9" /><path d="M3 9h18v3a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z" /><path d="M5 12v8h14v-8" /></Icon>;
 const TrashIcon = (p) => <Icon {...p}><path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M6 6l1 14h10l1-14" /></Icon>;
-const GridIcon = (p) => <Icon {...p}><rect x="3" y="3" width="7" height="7" rx="1.4" /><rect x="14" y="3" width="7" height="7" rx="1.4" /><rect x="3" y="14" width="7" height="7" rx="1.4" /><rect x="14" y="14" width="7" height="7" rx="1.4" /></Icon>;
-const HashIcon = (p) => <Icon {...p}><path d="M4 9h16" /><path d="M4 15h16" /><path d="M10 3L8 21" /><path d="M16 3l-2 18" /></Icon>;
-const StackIcon = (p) => <Icon {...p}><path d="M12 3l9 5-9 5-9-5 9-5z" /><path d="M3 13l9 5 9-5" /></Icon>;
 const ChevronIcon = (p) => <Icon {...p} d="M9 6l6 6-6 6" />;
 const ClockIcon = (p) => <Icon {...p}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></Icon>;
+const SaveIcon = (p) => <Icon {...p}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><path d="M17 21v-8H7v8" /><path d="M7 3v5h8" /></Icon>;
+const HashIcon = (p) => <Icon {...p}><path d="M4 9h16" /><path d="M4 15h16" /><path d="M10 3L8 21" /><path d="M16 3l-2 18" /></Icon>;
+const StackIcon = (p) => <Icon {...p}><path d="M12 3l9 5-9 5-9-5 9-5z" /><path d="M3 13l9 5 9-5" /></Icon>;
 
 // ============================ 共通枠 ============================
-function Section({ title, accent = P.cyan, sub, right, children }) {
+function Section({ title, sub, accent = P.cyan, children }) {
   return (
     <div style={{ marginTop: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 16px 9px" }}>
         <span style={{ width: 4, height: 14, borderRadius: 2, background: accent }} />
         <span style={{ fontSize: 13.5, fontWeight: 900, color: P.text, letterSpacing: 0.4 }}>{title}</span>
-        {sub && <span style={{ fontSize: 10, color: P.sub, marginLeft: right ? 0 : "auto" }}>{sub}</span>}
-        {right && <span style={{ marginLeft: "auto" }}>{right}</span>}
+        {sub && <span style={{ fontSize: 10, color: P.sub, marginLeft: "auto" }}>{sub}</span>}
       </div>
       {children}
     </div>
   );
 }
 
-// 台セルの背景色（確信度で濃淡）。
-function cellBg(m) {
-  const v = VERDICT[m.verdict];
-  if (m.verdict === "nodata") return "rgba(100,116,139,0.14)";
-  const pct = Math.round(Math.max(0.16, Math.min(0.42, m.confidence / 150)) * 100);
-  return `color-mix(in srgb, ${v.color} ${pct}%, ${P.card})`;
+function pillBtn(extra) {
+  return {
+    height: 40, minWidth: 44, borderRadius: 13, background: P.card, border: `1px solid ${P.line}`,
+    display: "flex", alignItems: "center", justifyContent: "center", gap: 5, cursor: "pointer",
+    color: P.text, fontSize: 12.5, fontWeight: 800, fontFamily: FONT, padding: "0 11px",
+    WebkitTapHighlightColor: "transparent", ...extra,
+  };
 }
+const cyanBtn = {
+  background: "linear-gradient(180deg, #0ea5c4 0%, #06B6D4 100%)", border: "none",
+  color: "#04141a", boxShadow: "0 4px 14px rgba(6,182,212,0.35)",
+};
 
 // ============================ ヘッダー ============================
 function Header({ onBack, onHelp, onCreate }) {
-  const sideBtn = (extra) => ({
-    height: 40,
-    minWidth: 44,
-    borderRadius: 13,
-    background: P.card,
-    border: `1px solid ${P.line}`,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 5,
-    cursor: "pointer",
-    color: P.text,
-    fontSize: 12.5,
-    fontWeight: 800,
-    fontFamily: FONT,
-    padding: "0 11px",
-    WebkitTapHighlightColor: "transparent",
-    ...extra,
-  });
   return (
-    <div
-      style={{
-        position: "sticky",
-        top: 0,
-        zIndex: 20,
-        background: "linear-gradient(180deg, #050A14 82%, rgba(5,10,20,0))",
-        padding: "calc(env(safe-area-inset-top, 0px) + 10px) 14px 10px",
-      }}
-    >
+    <div style={{
+      position: "sticky", top: 0, zIndex: 20,
+      background: "linear-gradient(180deg, #050A14 82%, rgba(5,10,20,0))",
+      padding: "calc(env(safe-area-inset-top, 0px) + 10px) 14px 10px",
+    }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <button className="b" onClick={onBack} aria-label="戻る" style={{ ...sideBtn(), width: 44, padding: 0 }}>
+        <button className="b" onClick={onBack} aria-label="戻る" style={pillBtn({ width: 44, padding: 0 })}>
           <BackIcon />
         </button>
         <div style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
-          <div style={{ fontSize: 17, fontWeight: 900, color: P.text, fontFamily: FONT, letterSpacing: 0.4 }}>
-            島マップ管理
-          </div>
+          <div style={{ fontSize: 17, fontWeight: 900, color: P.text, fontFamily: FONT, letterSpacing: 0.4 }}>島マップ管理</div>
           <div style={{ fontSize: 10, color: P.sub, marginTop: 1 }}>島レイアウト管理</div>
         </div>
-        <button className="b" onClick={onHelp} aria-label="使い方" style={sideBtn()}>
+        <button className="b" onClick={onHelp} aria-label="使い方" style={pillBtn()}>
           <HelpIcon size={17} stroke={P.subHi} /> 使い方
         </button>
-        <button
-          className="b"
-          onClick={onCreate}
-          aria-label="新規作成"
-          style={sideBtn({
-            background: "linear-gradient(180deg, #0ea5c4 0%, #06B6D4 100%)",
-            border: "none",
-            color: "#04141a",
-            boxShadow: "0 4px 14px rgba(6,182,212,0.35)",
-          })}
-        >
+        <button className="b" onClick={onCreate} aria-label="新規作成" style={pillBtn(cyanBtn)}>
           <PlusIcon size={17} stroke="#04141a" /> 新規作成
         </button>
       </div>
@@ -174,59 +144,44 @@ function Header({ onBack, onHelp, onCreate }) {
   );
 }
 
-// ============================ 店舗サマリーカード ============================
+// ============================ 店舗サマリー ============================
 function StorePicker({ stores, storeId, onChangeStore }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
   useEffect(() => {
     if (!open) return;
-    const onDown = (e) => {
-      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
-    };
+    const onDown = (e) => { if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false); };
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
   }, [open]);
   if (!Array.isArray(stores) || stores.length < 2) return null;
   return (
     <div ref={rootRef} style={{ position: "relative", flexShrink: 0 }}>
-      <button
-        className="b"
-        aria-label="店舗を切り替える"
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          minHeight: 36, borderRadius: 11, padding: "0 11px",
-          border: `1px solid ${P.lineHi}`, background: P.cardHi, color: P.subHi,
-          fontSize: 11, fontWeight: 800, fontFamily: FONT,
-          display: "flex", alignItems: "center", gap: 5,
-        }}
-      >
+      <button className="b" aria-label="店舗を切り替える" onClick={() => setOpen((v) => !v)} style={{
+        minHeight: 36, borderRadius: 11, padding: "0 11px", border: `1px solid ${P.lineHi}`,
+        background: P.cardHi, color: P.subHi, fontSize: 11, fontWeight: 800, fontFamily: FONT,
+        display: "flex", alignItems: "center", gap: 5,
+      }}>
         店舗切替 <span style={{ fontSize: 9 }}>▼</span>
       </button>
       {open && (
         <div style={{
-          position: "absolute", top: "calc(100% + 4px)", right: 0,
-          minWidth: 180, maxWidth: 240, maxHeight: 240, overflowY: "auto",
-          background: P.card, border: `1px solid ${P.lineHi}`, borderRadius: 12,
-          boxShadow: "0 12px 30px rgba(0,0,0,0.6)", zIndex: 30,
+          position: "absolute", top: "calc(100% + 4px)", right: 0, minWidth: 180, maxWidth: 240,
+          maxHeight: 240, overflowY: "auto", background: P.card, border: `1px solid ${P.lineHi}`,
+          borderRadius: 12, boxShadow: "0 12px 30px rgba(0,0,0,0.6)", zIndex: 30,
         }}>
           {stores.map((st, i) => {
             const active = st.id === storeId;
             return (
-              <button
-                key={st.id ?? i}
-                className="b"
-                aria-label={`${st.name}に切り替える`}
+              <button key={st.id ?? i} className="b" aria-label={`${st.name}に切り替える`}
                 onClick={() => { setOpen(false); if (!active) onChangeStore(st.id); }}
                 style={{
                   width: "100%", minHeight: 44, boxSizing: "border-box",
-                  background: active ? "rgba(6,182,212,0.14)" : "transparent",
-                  border: "none", borderBottom: `1px solid ${P.line}`,
-                  color: active ? P.cyan : P.text,
-                  fontSize: 13, fontWeight: active ? 900 : 700, fontFamily: FONT,
-                  textAlign: "left", padding: "0 13px",
-                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                }}
-              >
+                  background: active ? "rgba(6,182,212,0.14)" : "transparent", border: "none",
+                  borderBottom: `1px solid ${P.line}`, color: active ? P.cyan : P.text,
+                  fontSize: 13, fontWeight: active ? 900 : 700, fontFamily: FONT, textAlign: "left",
+                  padding: "0 13px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}>
                 {st.name || "（名称未設定）"}
               </button>
             );
@@ -242,15 +197,13 @@ function StoreSummary({ store, stores, onChangeStore, totalIslands, totalMachine
     <div style={{ padding: "8px 14px 0" }}>
       <div style={{ background: P.card, border: `1px solid ${P.line}`, borderRadius: RADIUS, padding: 14 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-          {/* 店舗画像（実画像は未保持のためネオン枠のプレースホルダー・将来連携予定） */}
           <div style={{
-            width: 58, height: 58, flexShrink: 0, borderRadius: 16,
+            width: 54, height: 54, flexShrink: 0, borderRadius: 15,
             background: "linear-gradient(135deg, rgba(6,182,212,0.28), rgba(6,182,212,0.06))",
-            border: "1px solid rgba(6,182,212,0.34)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 0 18px rgba(6,182,212,0.18)",
+            border: "1px solid rgba(6,182,212,0.34)", display: "flex", alignItems: "center",
+            justifyContent: "center", boxShadow: "0 0 18px rgba(6,182,212,0.18)",
           }}>
-            <StoreIcon size={26} stroke={P.cyan} />
+            <StoreIcon size={24} stroke={P.cyan} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -262,31 +215,25 @@ function StoreSummary({ store, stores, onChangeStore, totalIslands, totalMachine
               </div>
               <StorePicker stores={stores} storeId={store?.id} onChangeStore={onChangeStore} />
             </div>
-            <div style={{
-              fontSize: 11.5, color: P.subHi, marginTop: 3,
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            }}>
+            <div style={{ fontSize: 11.5, color: P.subHi, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {store?.address ? store.address : "住所未登録"}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: P.sub, marginTop: 4 }}>
-              <ClockIcon size={12} stroke={P.sub} sw={1.8} />
-              最終更新 {updatedAt || "—"}
+              <ClockIcon size={12} stroke={P.sub} sw={1.8} /> 最終更新 {updatedAt || "—"}
             </div>
           </div>
         </div>
 
-        {/* サマリー指標（総島数・総台数・更新日時） */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1.3fr", gap: 8, marginTop: 13 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 13 }}>
           {[
-            { label: "総島数", value: fmt(totalIslands), unit: "島", color: P.cyan },
-            { label: "総台数", value: fmt(totalMachines), unit: "台", color: P.green },
-            { label: "更新日時", value: updatedAt ? updatedAt.split(" ")[1] || "—" : "—", unit: updatedAt ? updatedAt.split(" ")[0] : "", color: P.subHi, small: true },
+            { label: "総島数", value: fmt(totalIslands), unit: "島" },
+            { label: "総台数", value: fmt(totalMachines), unit: "台" },
           ].map((it) => (
-            <div key={it.label} style={{ background: P.bg, border: `1px solid ${P.line}`, borderRadius: 14, padding: "9px 10px 10px", minWidth: 0 }}>
-              <div style={{ fontSize: 9, color: P.sub, fontWeight: 700, whiteSpace: "nowrap" }}>{it.label}</div>
+            <div key={it.label} style={{ background: P.bg, border: `1px solid ${P.line}`, borderRadius: 14, padding: "10px 12px 11px" }}>
+              <div style={{ fontSize: 9.5, color: P.sub, fontWeight: 700 }}>{it.label}</div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 3, marginTop: 5 }}>
-                <span style={{ fontSize: it.small ? 13 : 20, fontWeight: 900, color: it.color, fontFamily: MONO, letterSpacing: -0.6, whiteSpace: "nowrap" }}>{it.value}</span>
-                {it.unit && <span style={{ fontSize: 9, color: P.sub, fontWeight: 700 }}>{it.unit}</span>}
+                <span style={{ fontSize: 22, fontWeight: 900, color: P.text, fontFamily: MONO, letterSpacing: -0.6 }}>{it.value}</span>
+                <span style={{ fontSize: 10, color: P.sub, fontWeight: 700 }}>{it.unit}</span>
               </div>
             </div>
           ))}
@@ -296,59 +243,41 @@ function StoreSummary({ store, stores, onChangeStore, totalIslands, totalMachine
   );
 }
 
-// ============================ ホール全体プレビュー ============================
-function PreviewIsland({ layout }) {
-  // 簡易表示: 島の判定構成を色帯＋ドットで俯瞰する（編集ではなく俯瞰確認用）。
-  const dotCells = layout.machines.slice(0, 12);
+// ============================ ホール全体プレビュー（俯瞰確認専用） ============================
+function PreviewIsland({ island, index }) {
+  const count = islandCount(island);
+  const color = tagColor(index);
   return (
-    <div style={{
-      flex: "1 0 116px", minWidth: 116, maxWidth: 168,
-      background: P.cardHi, border: `1px solid ${P.line}`, borderRadius: 16, padding: "10px 10px 11px",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4 }}>
-        <span style={{ fontSize: 12, fontWeight: 900, color: P.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {layout.name || "（名称未設定）"}
+    <div style={{ flex: "1 0 132px", minWidth: 132, maxWidth: 180, background: P.cardHi, border: `1px solid ${P.line}`, borderRadius: 16, padding: "11px 12px 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={{ width: 9, height: 9, borderRadius: 3, background: color, boxShadow: `0 0 6px ${color}`, flexShrink: 0 }} />
+        <span style={{ fontSize: 13, fontWeight: 900, color: P.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {island.name || "（名称未設定）"}
         </span>
-        <span style={{ fontSize: 10, color: P.sub, fontFamily: MONO, flexShrink: 0 }}>{layout.count}台</span>
       </div>
-      <div style={{ fontSize: 9, color: P.sub, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {layout.machineName || "機種未設定"}
+      <div style={{ fontSize: 11, color: P.subHi, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {island.machineName || "機種未設定"}
       </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginTop: 8 }}>
-        {dotCells.map((m) => (
-          <span key={m.id} style={{
-            width: 12, height: 12, borderRadius: 4,
-            background: VERDICT[m.verdict].color,
-            opacity: m.verdict === "nodata" ? 0.5 : 0.9,
-            boxShadow: m.verdict === "nodata" ? "none" : `0 0 5px ${VERDICT[m.verdict].color}`,
-          }} />
-        ))}
-        {layout.count > dotCells.length && (
-          <span style={{ fontSize: 9, color: P.sub, alignSelf: "center", fontFamily: MONO }}>+{layout.count - dotCells.length}</span>
-        )}
+      <div style={{ fontSize: 13, fontWeight: 800, color: P.text, fontFamily: MONO, marginTop: 6 }}>
+        {island.start}〜{island.end}
       </div>
-      <div style={{ fontSize: 9, color: P.sub, marginTop: 8, fontFamily: MONO }}>
-        {layout.start}〜{layout.end}
-      </div>
+      <div style={{ fontSize: 11, color: P.sub, marginTop: 2, fontFamily: MONO }}>{count}台</div>
     </div>
   );
 }
 
-function HallPreview({ layouts }) {
+function HallPreview({ islands }) {
   return (
-    <Section title="ホール全体プレビュー" accent={P.cyan} sub="色＝強さ ／ 俯瞰確認用">
-      {layouts.length === 0 ? (
+    <Section title="ホール全体プレビュー" sub="俯瞰確認用">
+      {islands.length === 0 ? (
         <div style={{ padding: "0 14px" }}>
           <div style={{ background: P.card, border: `1px dashed ${P.lineHi}`, borderRadius: 16, padding: "18px 14px", textAlign: "center", color: P.sub, fontSize: 12 }}>
             島が未登録です。「新規作成」から島を追加してください。
           </div>
         </div>
       ) : (
-        <div style={{
-          display: "flex", gap: 8, overflowX: "auto", padding: "0 14px 4px",
-          WebkitOverflowScrolling: "touch", scrollbarWidth: "none",
-        }}>
-          {layouts.map((l) => <PreviewIsland key={l.id} layout={l} />)}
+        <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "0 14px 4px", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
+          {islands.map((isl, i) => <PreviewIsland key={isl.id} island={isl} index={i} />)}
         </div>
       )}
     </Section>
@@ -363,20 +292,13 @@ function TabBar({ active, onChange }) {
         {TABS.map((t) => {
           const on = active === t.id;
           return (
-            <button
-              key={t.id}
-              className="b"
-              onClick={() => onChange(t.id)}
-              aria-current={on ? "true" : undefined}
+            <button key={t.id} className="b" onClick={() => onChange(t.id)} aria-current={on ? "true" : undefined}
               style={{
                 flex: 1, border: "none", borderRadius: 14,
                 background: on ? "linear-gradient(180deg, #0ea5c4 0%, #06B6D4 100%)" : "transparent",
-                color: on ? "#04141a" : P.subHi,
-                fontSize: 13, fontWeight: on ? 900 : 700, fontFamily: FONT, cursor: "pointer",
-                boxShadow: on ? "0 4px 14px rgba(6,182,212,0.35)" : "none",
-                transition: "all 0.2s ease",
-              }}
-            >
+                color: on ? "#04141a" : P.subHi, fontSize: 13, fontWeight: on ? 900 : 700, fontFamily: FONT,
+                cursor: "pointer", boxShadow: on ? "0 4px 14px rgba(6,182,212,0.35)" : "none", transition: "all 0.2s ease",
+              }}>
               {t.label}
             </button>
           );
@@ -386,273 +308,73 @@ function TabBar({ active, onChange }) {
   );
 }
 
-// ============================ 編集パネル（島1件） ============================
-function StepBtn({ label, onClick, disabled }) {
+// 台番号セル（管理用・番号のみ。分析データは表示しない）。
+function NumberCell({ num, color }) {
   return (
-    <button
-      className="b"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={label}
-      style={{
-        minWidth: 44, minHeight: 44, borderRadius: 11, padding: "0 12px",
-        border: `1px solid ${P.lineHi}`, background: P.cardHi,
-        color: disabled ? P.sub : P.text, opacity: disabled ? 0.4 : 1,
-        fontSize: 13, fontWeight: 900, fontFamily: FONT, cursor: disabled ? "default" : "pointer",
-      }}
-    >
-      {label}
-    </button>
+    <div style={{
+      aspectRatio: "1 / 1", minWidth: 0, borderRadius: 8,
+      border: `1px solid ${P.line}`, background: P.bg,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      borderTop: `2px solid ${color}`,
+    }}>
+      <span style={{ fontSize: 12, fontWeight: 800, color: P.subHi, fontFamily: MONO }}>{num}</span>
+    </div>
   );
 }
 
-function FieldInput({ value, onCommit, placeholder, ariaLabel, mono }) {
-  return (
-    <input
-      type="text"
-      defaultValue={value}
-      placeholder={placeholder}
-      aria-label={ariaLabel}
-      onFocus={(e) => { e.target.style.borderColor = P.cyan; }}
-      onBlur={(e) => { e.target.style.borderColor = P.lineHi; onCommit(e.target.value); }}
-      style={{
-        width: "100%", boxSizing: "border-box", minHeight: 44,
-        background: P.bg, border: `1px solid ${P.lineHi}`, borderRadius: 11,
-        color: P.text, fontFamily: mono ? MONO : FONT, fontSize: 15, fontWeight: 700,
-        padding: "8px 12px", outline: "none",
-      }}
-    />
-  );
-}
-
-function IslandEditPanel({ island, index, total, onChange, onRemove, onUp, onDown }) {
+// ============================ 島一覧（メイン） ============================
+function ListCard({ island, index, expanded, onToggle, onEdit }) {
   const count = islandCount(island);
-  const setEnd = (delta) => onChange({ end: Math.max(island.start, island.end + delta) });
-  return (
-    <div style={{ marginTop: 12, borderTop: `1px solid ${P.line}`, paddingTop: 12 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-        <div>
-          <div style={{ fontSize: 10, color: P.sub, fontWeight: 700, marginBottom: 4 }}>島名</div>
-          <FieldInput key={`name-${island.id}`} value={island.name} placeholder="例：1島" ariaLabel="島名" onCommit={(v) => onChange({ name: v })} />
-        </div>
-        <div>
-          <div style={{ fontSize: 10, color: P.sub, fontWeight: 700, marginBottom: 4 }}>機種名</div>
-          <FieldInput key={`mc-${island.id}`} value={island.machineName} placeholder="機種名" ariaLabel="機種名" onCommit={(v) => onChange({ machineName: v })} />
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 8, alignItems: "end", marginTop: 10 }}>
-        <div>
-          <div style={{ fontSize: 10, color: P.sub, fontWeight: 700, marginBottom: 4 }}>開始番号</div>
-          <FieldInput key={`s-${island.start}`} value={island.start} ariaLabel="開始台番号" mono onCommit={(v) => onChange({ start: v })} />
-        </div>
-        <span style={{ fontSize: 15, color: P.sub, fontWeight: 800, paddingBottom: 11 }}>〜</span>
-        <div>
-          <div style={{ fontSize: 10, color: P.sub, fontWeight: 700, marginBottom: 4 }}>終了番号</div>
-          <FieldInput key={`e-${island.end}`} value={island.end} ariaLabel="終了台番号" mono onCommit={(v) => onChange({ end: v })} />
-        </div>
-      </div>
-
-      {/* 台番号追加 / 削除 / 並び替え */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12, alignItems: "center" }}>
-        <StepBtn label="＋ 台番号追加" onClick={() => setEnd(1)} />
-        <StepBtn label="− 台番号削除" onClick={() => setEnd(-1)} disabled={count <= 0} />
-        <div style={{ flex: 1 }} />
-        <StepBtn label="↑" onClick={onUp} disabled={index === 0} />
-        <StepBtn label="↓" onClick={onDown} disabled={index === total - 1} />
-        <button
-          className="b"
-          onClick={onRemove}
-          aria-label="この島を削除"
-          style={{
-            minHeight: 44, borderRadius: 11, padding: "0 14px",
-            border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.12)",
-            color: P.red, fontSize: 13, fontWeight: 900, fontFamily: FONT, display: "flex", alignItems: "center", gap: 6,
-          }}
-        >
-          <TrashIcon size={15} stroke={P.red} sw={2} /> 削除
-        </button>
-      </div>
-      <div style={{ fontSize: 10, color: P.sub, marginTop: 10, fontWeight: 700 }}>
-        現在 {count}台 ・ 編集内容は即保存されます
-      </div>
-    </div>
-  );
-}
-
-// ============================ レイアウト図タブ ============================
-function MachineCell({ m }) {
-  const v = VERDICT[m.verdict];
-  return (
-    <div
-      aria-label={`${m.num}番台 ${v.label} 推定回転率${m.rot} 確信度${m.confidence}%`}
-      style={{
-        position: "relative", aspectRatio: "1 / 1", minWidth: 0, borderRadius: 8,
-        border: `1px solid color-mix(in srgb, ${v.color} 46%, transparent)`,
-        background: cellBg(m), display: "flex", flexDirection: "column",
-        alignItems: "center", justifyContent: "center", padding: 1,
-      }}
-    >
-      <span style={{ fontSize: 8, fontWeight: 700, color: P.subHi, fontFamily: MONO, lineHeight: 1 }}>{m.num}</span>
-      <span style={{ fontSize: 12, fontWeight: 900, color: v.color, fontFamily: MONO, lineHeight: 1.15 }}>
-        {m.verdict === "nodata" ? "—" : fmt(m.rot, 1)}
-      </span>
-      <span style={{ fontSize: 7, fontWeight: 700, color: P.sub, fontFamily: MONO, lineHeight: 1 }}>
-        {m.verdict === "nodata" ? "" : `${m.confidence}%`}
-      </span>
-    </div>
-  );
-}
-
-function LayoutIslandCard({ layout, island, index, total, editing, onToggleEdit, onChange, onRemove, onUp, onDown }) {
-  return (
-    <div style={{ background: P.card, border: `1px solid ${P.line}`, borderRadius: RADIUS, padding: "13px 13px 14px", marginBottom: 12 }}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-            <span style={{ fontSize: 17, fontWeight: 900, color: P.text, fontFamily: FONT }}>{layout.name || "（名称未設定）"}</span>
-            <span style={{ fontSize: 11, color: P.sub, fontFamily: MONO }}>{layout.start}〜{layout.end}</span>
-          </div>
-          <div style={{ fontSize: 11.5, color: P.subHi, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {layout.machineName || "機種未設定"}
-          </div>
-        </div>
-        <button
-          className="b"
-          onClick={onToggleEdit}
-          aria-label={editing ? "編集を終了" : "この島を編集"}
-          style={{
-            flexShrink: 0, minHeight: 40, borderRadius: 12, padding: "0 14px",
-            border: editing ? "none" : `1px solid ${P.lineHi}`,
-            background: editing ? "linear-gradient(180deg, #0ea5c4 0%, #06B6D4 100%)" : P.cardHi,
-            color: editing ? "#04141a" : P.text, fontSize: 12.5, fontWeight: 900, fontFamily: FONT,
-            display: "flex", alignItems: "center", gap: 5,
-            boxShadow: editing ? "0 4px 12px rgba(6,182,212,0.3)" : "none",
-          }}
-        >
-          <EditIcon size={15} stroke={editing ? "#04141a" : P.text} sw={2} /> {editing ? "編集中" : "編集"}
-        </button>
-      </div>
-
-      {/* 良台率 / 密度 */}
-      <div style={{ display: "flex", gap: 16, marginTop: 10, marginBottom: 11 }}>
-        <span style={{ fontSize: 11, color: P.sub }}>良台率 <b style={{ color: P.green, fontFamily: MONO, fontSize: 13 }}>{layout.goodRate}%</b></span>
-        <span style={{ fontSize: 11, color: P.sub }}>密度 <b style={{ color: P.subHi, fontFamily: MONO, fontSize: 13 }}>{signed(layout.evDensity)}</b></span>
-        <span style={{ fontSize: 11, color: P.sub, marginLeft: "auto" }}>{layout.count}台</span>
-      </div>
-
-      {/* 台セル */}
-      {layout.machines.length > 0 ? (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(46px, 1fr))", gap: 5 }}>
-          {layout.machines.map((m) => <MachineCell key={m.id} m={m} />)}
-        </div>
-      ) : (
-        <div style={{ fontSize: 11, color: P.sub, padding: "6px 0" }}>台番号範囲が未設定です。</div>
-      )}
-      {layout.truncated && (
-        <div style={{ fontSize: 9, color: P.sub, marginTop: 6, textAlign: "right" }}>※ 表示は先頭{layout.machines.length}台まで</div>
-      )}
-
-      {/* 強ゾーン */}
-      <div style={{
-        marginTop: 11, fontSize: 11, color: P.subHi, textAlign: "center",
-        background: "rgba(34,197,94,0.10)", border: "1px solid rgba(34,197,94,0.22)",
-        borderRadius: 12, padding: "7px 8px", fontWeight: 700,
-      }}>
-        強ゾーン <span style={{ color: P.green, fontWeight: 900 }}>{layout.strongZone}</span>
-      </div>
-
-      {editing && (
-        <IslandEditPanel
-          island={island}
-          index={index}
-          total={total}
-          onChange={onChange}
-          onRemove={onRemove}
-          onUp={onUp}
-          onDown={onDown}
-        />
-      )}
-    </div>
-  );
-}
-
-function Legend() {
-  const items = [["ボーダー超え", P.green], ["様子見", P.yellow], ["未満", P.red], ["データ不足", P.gray]];
-  return (
-    <div style={{ display: "flex", gap: 12, flexWrap: "wrap", padding: "0 16px 4px" }}>
-      {items.map(([label, color]) => (
-        <span key={label} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10, color: P.subHi }}>
-          <span style={{ width: 9, height: 9, borderRadius: 3, background: color, boxShadow: `0 0 6px ${color}` }} />
-          {label}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-// ============================ 島一覧タブ ============================
-function ListRow({ layout, island, index, total, expanded, editing, onToggleExpand, onToggleEdit, onChange, onRemove, onUp, onDown }) {
+  const color = tagColor(index);
+  const nums = expanded ? machineNumbers(island) : [];
   return (
     <div style={{ background: P.card, border: `1px solid ${expanded ? P.lineHi : P.line}`, borderRadius: 18, marginBottom: 10, overflow: "hidden" }}>
-      <button
-        className="b"
-        onClick={onToggleExpand}
-        aria-label={`${layout.name || "島"}を${expanded ? "閉じる" : "開く"}`}
-        aria-expanded={expanded}
-        style={{
-          width: "100%", minHeight: 60, background: "transparent", border: "none", cursor: "pointer",
-          display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", textAlign: "left",
-          WebkitTapHighlightColor: "transparent",
-        }}
-      >
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 900, color: P.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {layout.name || "（名称未設定）"}
+      <div style={{ display: "flex", alignItems: "stretch" }}>
+        <button className="b" onClick={onToggle} aria-label={`${island.name || "島"}の詳細を${expanded ? "閉じる" : "開く"}`} aria-expanded={expanded}
+          style={{
+            flex: 1, minWidth: 0, background: "transparent", border: "none", cursor: "pointer",
+            display: "flex", alignItems: "center", gap: 10, padding: "12px 4px 12px 14px", textAlign: "left",
+            WebkitTapHighlightColor: "transparent",
+          }}>
+          <span style={{ width: 8, height: 38, borderRadius: 4, background: color, flexShrink: 0, boxShadow: `0 0 8px ${color}55` }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 900, color: P.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {island.name || "（名称未設定）"}
+            </div>
+            <div style={{ fontSize: 11.5, color: P.subHi, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {island.machineName || "機種未設定"}
+            </div>
           </div>
-          <div style={{ fontSize: 11, color: P.sub, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {layout.machineName || "機種未設定"}
+          <div style={{ textAlign: "right", flexShrink: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 900, color: P.text, fontFamily: MONO }}>{island.start}〜{island.end}</div>
+            <div style={{ fontSize: 10, color: P.sub, marginTop: 2, fontWeight: 700 }}>{count}台</div>
           </div>
-        </div>
-        <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 900, color: P.text, fontFamily: MONO }}>{layout.start}〜{layout.end}</div>
-          <div style={{ fontSize: 10, color: P.sub, marginTop: 2, fontWeight: 700 }}>{layout.count}台</div>
-        </div>
-        <span style={{ flexShrink: 0, color: P.sub, transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.2s ease" }}>
-          <ChevronIcon size={18} stroke={P.sub} />
-        </span>
-      </button>
+          <span style={{ flexShrink: 0, color: P.sub, transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.2s ease" }}>
+            <ChevronIcon size={18} stroke={P.sub} />
+          </span>
+        </button>
+        <button className="b" onClick={onEdit} aria-label={`${island.name || "島"}を編集`}
+          style={{
+            flexShrink: 0, alignSelf: "center", margin: "0 12px 0 6px", minHeight: 40, borderRadius: 12, padding: "0 13px",
+            border: `1px solid ${P.lineHi}`, background: P.cardHi, color: P.text, fontSize: 12.5, fontWeight: 900,
+            fontFamily: FONT, display: "flex", alignItems: "center", gap: 5,
+          }}>
+          <EditIcon size={15} stroke={P.text} sw={2} /> 編集
+        </button>
+      </div>
 
       {expanded && (
-        <div style={{ padding: "0 14px 14px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 4 }}>
-            <span style={{ fontSize: 11, color: P.sub }}>
-              良台率 <b style={{ color: P.green, fontFamily: MONO }}>{layout.goodRate}%</b> ・ 密度 <b style={{ color: P.subHi, fontFamily: MONO }}>{signed(layout.evDensity)}</b>
-            </span>
-            <button
-              className="b"
-              onClick={onToggleEdit}
-              aria-label={editing ? "編集を終了" : "レイアウトを編集"}
-              style={{
-                minHeight: 40, borderRadius: 12, padding: "0 14px",
-                border: editing ? "none" : `1px solid ${P.lineHi}`,
-                background: editing ? "linear-gradient(180deg, #0ea5c4 0%, #06B6D4 100%)" : P.cardHi,
-                color: editing ? "#04141a" : P.text, fontSize: 12.5, fontWeight: 900, fontFamily: FONT,
-                display: "flex", alignItems: "center", gap: 5,
-              }}
-            >
-              <EditIcon size={15} stroke={editing ? "#04141a" : P.text} sw={2} /> {editing ? "編集中" : "編集"}
-            </button>
-          </div>
-
-          {!editing && layout.machines.length > 0 && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(44px, 1fr))", gap: 5, marginTop: 8 }}>
-              {layout.machines.map((m) => <MachineCell key={m.id} m={m} />)}
+        <div style={{ padding: "2px 14px 14px" }}>
+          <div style={{ fontSize: 10, color: P.sub, fontWeight: 700, margin: "4px 0 8px" }}>台番号一覧 ・ レイアウトプレビュー</div>
+          {nums.length > 0 ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(44px, 1fr))", gap: 5 }}>
+              {nums.map((n) => <NumberCell key={n} num={n} color={color} />)}
             </div>
+          ) : (
+            <div style={{ fontSize: 11, color: P.sub }}>台番号範囲が未設定です。</div>
           )}
-
-          {editing && (
-            <IslandEditPanel island={island} index={index} total={total} onChange={onChange} onRemove={onRemove} onUp={onUp} onDown={onDown} />
+          {count > nums.length && (
+            <div style={{ fontSize: 9, color: P.sub, marginTop: 6, textAlign: "right" }}>※ 表示は先頭{nums.length}台まで</div>
           )}
         </div>
       )}
@@ -660,7 +382,39 @@ function ListRow({ layout, island, index, total, expanded, editing, onToggleExpa
   );
 }
 
-// ============================ 変更履歴タブ ============================
+// ============================ レイアウト図 ============================
+function LayoutHall({ islands }) {
+  return (
+    <div style={{ padding: "6px 14px 0" }}>
+      <div style={{
+        display: "flex", gap: 8, alignItems: "flex-start", overflowX: "auto",
+        background: "radial-gradient(circle at 50% 0%, rgba(6,182,212,0.07), transparent 60%), #070D1A",
+        border: `1px solid ${P.line}`, borderRadius: 18, padding: "12px 10px",
+        WebkitOverflowScrolling: "touch", scrollbarWidth: "none",
+      }}>
+        {islands.map((isl, i) => {
+          const color = tagColor(i);
+          const nums = machineNumbers(isl);
+          return (
+            <div key={isl.id} style={{ flex: "1 0 150px", minWidth: 150, background: P.cardHi, border: `1px solid ${P.line}`, borderRadius: 14, padding: "9px 9px 10px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 3, background: color, boxShadow: `0 0 6px ${color}`, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, fontWeight: 900, color: P.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{isl.name || "島"}</span>
+                <span style={{ marginLeft: "auto", fontSize: 10, color: P.sub, fontFamily: MONO }}>{islandCount(isl)}台</span>
+              </div>
+              <div style={{ fontSize: 9.5, color: P.sub, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{isl.machineName || "機種未設定"}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 4, marginTop: 8 }}>
+                {nums.map((n) => <NumberCell key={n} num={n} color={color} />)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ============================ 変更履歴 ============================
 function HistoryTab({ entries }) {
   if (!entries.length) {
     return (
@@ -692,38 +446,31 @@ function HistoryTab({ entries }) {
 }
 
 // ============================ クイックアクション ============================
-function QuickActions({ onLayout, onBulkNum, onBulkCount, onReset }) {
+function QuickActions({ onAdd, onBulkNum, onBulkCount, onReset }) {
   const items = [
-    { label: "レイアウト図", sub: "俯瞰確認に戻る", Icon: GridIcon, color: P.cyan, onClick: onLayout },
-    { label: "台番号一括編集", sub: "範囲をまとめて調整", Icon: HashIcon, color: P.cyan, onClick: onBulkNum },
-    { label: "台数一括編集", sub: "台数をまとめて調整", Icon: StackIcon, color: P.cyan, onClick: onBulkCount },
-    { label: "データリセット", sub: "この店舗の島を全削除", Icon: TrashIcon, color: P.red, onClick: onReset, danger: true },
+    { label: "島追加", sub: "新しい島を作成", Icon: PlusIcon, onClick: onAdd },
+    { label: "台番号一括編集", sub: "範囲をまとめて調整", Icon: HashIcon, onClick: onBulkNum },
+    { label: "台数一括編集", sub: "台数をまとめて調整", Icon: StackIcon, onClick: onBulkCount },
+    { label: "データリセット", sub: "この店舗の島を全削除", Icon: TrashIcon, onClick: onReset, danger: true },
   ];
   return (
-    <Section title="クイックアクション" accent={P.cyan}>
+    <Section title="クイックアクション">
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, padding: "0 14px" }}>
         {items.map((it) => (
-          <button
-            key={it.label}
-            className="b"
-            onClick={it.onClick}
-            aria-label={it.label}
+          <button key={it.label} className="b" onClick={it.onClick} aria-label={it.label}
             style={{
               minHeight: 72, textAlign: "left", cursor: "pointer",
               background: it.danger ? "rgba(239,68,68,0.10)" : P.card,
-              border: `1px solid ${it.danger ? "rgba(239,68,68,0.32)" : P.line}`,
-              borderRadius: 18, padding: "12px 13px",
-              display: "flex", flexDirection: "column", gap: 8,
-              WebkitTapHighlightColor: "transparent",
-            }}
-          >
+              border: `1px solid ${it.danger ? "rgba(239,68,68,0.32)" : P.line}`, borderRadius: 18, padding: "12px 13px",
+              display: "flex", flexDirection: "column", gap: 8, WebkitTapHighlightColor: "transparent",
+            }}>
             <span style={{
               width: 34, height: 34, borderRadius: 11,
               background: it.danger ? "rgba(239,68,68,0.16)" : "rgba(6,182,212,0.14)",
               border: `1px solid ${it.danger ? "rgba(239,68,68,0.34)" : "rgba(6,182,212,0.3)"}`,
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              <it.Icon size={18} stroke={it.color} sw={2} />
+              <it.Icon size={18} stroke={it.danger ? P.red : P.cyan} sw={2} />
             </span>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 900, color: it.danger ? P.red : P.text }}>{it.label}</div>
@@ -739,10 +486,10 @@ function QuickActions({ onLayout, onBulkNum, onBulkCount, onReset }) {
 // ============================ 使い方パネル ============================
 function HelpPanel({ onClose }) {
   const lines = [
-    "「レイアウト図」で島ごとの台構成・良台率を俯瞰できます。",
-    "各島の「編集」から台番号範囲・島名・機種名を変更できます。",
-    "「新規作成」で島を追加し、↑↓で並び替えできます。",
-    "編集内容は即保存され、戦略マップへ反映されます。",
+    "「島一覧」で店舗の島構成（島名・機種名・台番号範囲・台数）を管理します。",
+    "島カードをタップすると台番号一覧を確認できます。",
+    "「編集」から島ごとのレイアウトを編集し、「保存」で確定します。",
+    "推定回転率などの分析は戦略マップ画面で確認してください。",
   ];
   return (
     <div style={{ padding: "10px 14px 0" }}>
@@ -764,82 +511,231 @@ function HelpPanel({ onClose }) {
   );
 }
 
+// ============================ 編集画面（別画面） ============================
+function EditField({ label, value, onCommit, placeholder, ariaLabel, mono }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10.5, color: P.sub, fontWeight: 700, marginBottom: 5 }}>{label}</div>
+      <input
+        type="text"
+        defaultValue={value}
+        placeholder={placeholder}
+        aria-label={ariaLabel || label}
+        onFocus={(e) => { e.target.style.borderColor = P.cyan; }}
+        onBlur={(e) => { e.target.style.borderColor = P.lineHi; onCommit(e.target.value); }}
+        style={{
+          width: "100%", boxSizing: "border-box", minHeight: 46, background: P.bg,
+          border: `1px solid ${P.lineHi}`, borderRadius: 12, color: P.text,
+          fontFamily: mono ? MONO : FONT, fontSize: 15, fontWeight: 700, padding: "8px 12px", outline: "none",
+        }}
+      />
+    </div>
+  );
+}
+
+function ToolBtn({ label, onClick, disabled, danger }) {
+  return (
+    <button className="b" onClick={onClick} disabled={disabled} aria-label={label}
+      style={{
+        minHeight: 46, borderRadius: 12, padding: "0 12px",
+        border: `1px solid ${danger ? "rgba(239,68,68,0.4)" : P.lineHi}`,
+        background: danger ? "rgba(239,68,68,0.12)" : P.cardHi,
+        color: disabled ? P.sub : (danger ? P.red : P.text), opacity: disabled ? 0.4 : 1,
+        fontSize: 13, fontWeight: 900, fontFamily: FONT, cursor: disabled ? "default" : "pointer",
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+      }}>
+      {label}
+    </button>
+  );
+}
+
+function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown, onRemove }) {
+  // 下書き編集 → 「保存」で確定（保存後に戦略マップへ反映）。
+  const [draft, setDraft] = useState({
+    name: island.name, machineName: island.machineName, start: island.start, end: island.end,
+  });
+  const [cols, setCols] = useState(6); // レイアウト表示の列数（表示専用・非永続）
+
+  const startN = Math.max(0, Math.round(Number(draft.start) || 0));
+  const endN = Math.max(startN, Math.round(Number(draft.end) || startN));
+  const count = endN - startN + 1;
+  const nums = [];
+  for (let i = 0; i < Math.min(count, MAX_CELLS); i++) nums.push(startN + i);
+  const color = tagColor(index);
+
+  const setEnd = (delta) => setDraft((d) => {
+    const s = Math.max(0, Math.round(Number(d.start) || 0));
+    const e = Math.max(s, Math.round(Number(d.end) || s) + delta);
+    return { ...d, end: e };
+  });
+
+  return (
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", background: P.bg, color: P.text, fontFamily: FONT, overflow: "hidden" }}>
+      <div style={{
+        position: "sticky", top: 0, zIndex: 20, background: "linear-gradient(180deg, #050A14 82%, rgba(5,10,20,0))",
+        padding: "calc(env(safe-area-inset-top, 0px) + 10px) 14px 10px",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button className="b" onClick={onBack} aria-label="キャンセルして戻る" style={pillBtn({ width: 44, padding: 0 })}><BackIcon /></button>
+          <div style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
+            <div style={{ fontSize: 17, fontWeight: 900, color: P.text, letterSpacing: 0.4 }}>島を編集</div>
+            <div style={{ fontSize: 10, color: P.sub, marginTop: 1 }}>レイアウト編集</div>
+          </div>
+          <button className="b" onClick={() => onSave({ ...draft, start: startN, end: endN })} aria-label="保存" style={pillBtn(cyanBtn)}>
+            <SaveIcon size={16} stroke="#04141a" /> 保存
+          </button>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto", paddingBottom: "calc(96px + env(safe-area-inset-bottom))" }}>
+        {/* 基本情報 */}
+        <div style={{ padding: "8px 14px 0" }}>
+          <div style={{ background: P.card, border: `1px solid ${P.line}`, borderRadius: RADIUS, padding: 14, display: "grid", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <EditField label="島名" value={draft.name} placeholder="例：1島" onCommit={(v) => setDraft((d) => ({ ...d, name: v }))} />
+              <EditField label="機種名" value={draft.machineName} placeholder="例：東京喰種" onCommit={(v) => setDraft((d) => ({ ...d, machineName: v }))} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr auto", gap: 10, alignItems: "end" }}>
+              <EditField label="開始番号" value={draft.start} mono onCommit={(v) => setDraft((d) => ({ ...d, start: v }))} />
+              <span style={{ fontSize: 15, color: P.sub, fontWeight: 800, paddingBottom: 12 }}>〜</span>
+              <EditField label="終了番号" value={draft.end} mono onCommit={(v) => setDraft((d) => ({ ...d, end: v }))} />
+              <div style={{ textAlign: "center", paddingBottom: 4 }}>
+                <div style={{ fontSize: 10.5, color: P.sub, fontWeight: 700, marginBottom: 5 }}>台数</div>
+                <div style={{ minHeight: 46, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 900, color: P.cyan, fontFamily: MONO }}>{count}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* レイアウト編集ツール */}
+        <Section title="レイアウト編集">
+          <div style={{ padding: "0 14px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <ToolBtn label="＋ 台追加" onClick={() => setEnd(1)} />
+              <ToolBtn label="− 台削除" onClick={() => setEnd(-1)} disabled={count <= 0} />
+              <ToolBtn label="＋ 行追加" onClick={() => setEnd(cols)} />
+              <ToolBtn label="＋ 列追加" onClick={() => setCols((c) => Math.min(10, c + 1))} />
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <div style={{ flex: 1 }}><ToolBtn label="↑ 上へ並び替え" onClick={onMoveUp} disabled={index === 0} /></div>
+              <div style={{ flex: 1 }}><ToolBtn label="↓ 下へ並び替え" onClick={onMoveDown} disabled={index === total - 1} /></div>
+            </div>
+            <div style={{ fontSize: 10, color: P.sub, marginTop: 8, lineHeight: 1.6 }}>
+              ※「列追加」は表示レイアウトの列数のみ変更します（保存対象外）。台数・並びは保存されます。
+            </div>
+
+            {/* レイアウトプレビュー */}
+            <div style={{ background: P.card, border: `1px solid ${P.line}`, borderRadius: 16, padding: 12, marginTop: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <span style={{ fontSize: 11, color: P.subHi, fontWeight: 700 }}>レイアウトプレビュー</span>
+                <span style={{ fontSize: 10, color: P.sub, fontFamily: MONO }}>{cols}列</span>
+              </div>
+              {nums.length > 0 ? (
+                <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 5 }}>
+                  {nums.map((n) => <NumberCell key={n} num={n} color={color} />)}
+                </div>
+              ) : (
+                <div style={{ fontSize: 11, color: P.sub }}>台番号範囲が未設定です。</div>
+              )}
+              {count > nums.length && (
+                <div style={{ fontSize: 9, color: P.sub, marginTop: 6, textAlign: "right" }}>※ 表示は先頭{nums.length}台まで</div>
+              )}
+            </div>
+          </div>
+        </Section>
+
+        {/* 島削除 */}
+        <div style={{ padding: "18px 14px 0" }}>
+          <ToolBtn label="この島を削除" onClick={onRemove} danger />
+        </div>
+        <div style={{ padding: "14px 18px 6px", fontSize: 11, color: P.sub, lineHeight: 1.8 }}>
+          「保存」で変更を確定します。保存後、戦略マップへ即反映されます。
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ============================ 本体 ============================
 export default function IslandMapManager({ store, stores, onChangeStore, islands, onChangeIslands, onBack }) {
-  const [tab, setTab] = useState("layout");
-  const [editingId, setEditingId] = useState(null);
+  const [tab, setTab] = useState("list"); // 管理画面のため初期表示は島一覧
+  const [editId, setEditId] = useState(null); // 編集画面で編集中の島ID（別画面）
   const [expandedId, setExpandedId] = useState(null);
   const [showHelp, setShowHelp] = useState(false);
   const [history, setHistory] = useState([]); // セッション内の変更履歴（恒久保存は将来連携予定）
 
-  const hall = useMemo(() => buildHallLayout(islands), [islands]);
-  const updatedAt = history[0]?.at || (store?.lastVisit || "");
+  const totalIslands = islands.length;
+  const totalMachines = useMemo(() => islands.reduce((a, isl) => a + islandCount(isl), 0), [islands]);
+  const updatedAt = history[0]?.at || store?.lastVisit || "";
 
-  // 変更履歴へ1件追記する（このセッション内のみ・端末をまたがない）。
-  const logChange = (summary) => {
+  const logChange = (summary) =>
     setHistory((prev) => [{ id: Date.now() + Math.random(), at: nowStamp(), summary, user: "あなた" }, ...prev].slice(0, 50));
-  };
 
-  const commit = (next, summary) => {
-    onChangeIslands(next);
-    if (summary) logChange(summary);
-  };
-
-  const patchIsland = (island, patch) => {
-    const next = updateIsland(islands, island.id, patch);
-    const updated = next.find((x) => x.id === island.id);
-    let summary;
-    if ("name" in patch) summary = `「${updated?.name || "島"}」の名称を変更`;
-    else if ("machineName" in patch) summary = `「${updated?.name || "島"}」の機種名を変更`;
-    else if ("start" in patch || "end" in patch) summary = `「${updated?.name || "島"}」の番号範囲を変更 ${updated?.start}〜${updated?.end}`;
-    commit(next, summary);
-  };
+  const editingIndex = editId != null ? islands.findIndex((x) => x.id === editId) : -1;
+  const editingIsland = editingIndex >= 0 ? islands[editingIndex] : null;
 
   const handleCreate = () => {
     const next = addIsland(islands);
     const created = next[next.length - 1];
-    commit(next, `「${created?.name || "新しい島"}」を追加`);
-    setTab("layout");
-    setEditingId(created?.id ?? null);
-    setExpandedId(created?.id ?? null);
+    onChangeIslands(next);
+    logChange(`「${created?.name || "新しい島"}」を追加`);
+    setEditId(created?.id ?? null); // 別の編集画面へ
   };
 
-  const handleRemove = (island) => {
-    const label = island.name ? `「${island.name}」` : "この島";
+  const handleSave = (patch) => {
+    if (!editingIsland) return;
+    onChangeIslands(updateIsland(islands, editingIsland.id, patch));
+    logChange(`「${patch.name || editingIsland.name || "島"}」を更新 ${patch.start}〜${patch.end}`);
+    setEditId(null);
+  };
+
+  const handleMove = (dir) => {
+    if (!editingIsland) return;
+    const next = dir < 0 ? moveIslandUp(islands, editingIsland.id) : moveIslandDown(islands, editingIsland.id);
+    onChangeIslands(next);
+    logChange(`「${editingIsland.name || "島"}」を${dir < 0 ? "上" : "下"}へ移動`);
+  };
+
+  const handleRemoveEditing = () => {
+    if (!editingIsland) return;
+    const label = editingIsland.name ? `「${editingIsland.name}」` : "この島";
     if (!window.confirm(`${label}を削除しますか？`)) return;
-    commit(removeIsland(islands, island.id), `${label}を削除`);
-    if (editingId === island.id) setEditingId(null);
+    onChangeIslands(removeIsland(islands, editingIsland.id));
+    logChange(`${label}を削除`);
+    setEditId(null);
   };
 
   const handleReset = () => {
     if (!islands.length) return;
     if (!window.confirm("この店舗の島構成をすべて削除しますか？\nこの操作は元に戻せません。")) return;
-    commit([], "全島をリセット");
-    setEditingId(null);
+    onChangeIslands([]);
+    logChange("全島をリセット");
     setExpandedId(null);
   };
 
-  const moveUp = (island) => commit(moveIslandUp(islands, island.id), `「${island.name || "島"}」を上へ移動`);
-  const moveDown = (island) => commit(moveIslandDown(islands, island.id), `「${island.name || "島"}」を下へ移動`);
+  const toggleExpand = (id) => setExpandedId((cur) => (cur === id ? null : id));
+  const openEdit = (id) => setEditId(id);
 
-  const toggleLayoutEdit = (id) => setEditingId((cur) => (cur === id ? null : id));
-  const toggleExpand = (id) => {
-    setExpandedId((cur) => (cur === id ? null : id));
-    setEditingId(null);
-  };
+  // 一括編集の導線: 島一覧へ移動（各島カードの「編集」から調整）。
+  const goManage = () => { setEditId(null); setTab("list"); };
 
-  // 一括編集の導線: 先頭島を編集状態にしてレイアウト/一覧へ誘導する。
-  const startBulkEdit = (targetTab) => {
-    setTab(targetTab);
-    const first = islands[0];
-    if (first) {
-      setEditingId(first.id);
-      setExpandedId(first.id);
-    } else {
-      handleCreate();
-    }
-  };
+  // ── 編集画面（別画面） ──
+  if (editingIsland) {
+    return (
+      <EditScreen
+        island={editingIsland}
+        index={editingIndex}
+        total={islands.length}
+        onBack={() => setEditId(null)}
+        onSave={handleSave}
+        onMoveUp={() => handleMove(-1)}
+        onMoveDown={() => handleMove(1)}
+        onRemove={handleRemoveEditing}
+      />
+    );
+  }
 
+  // ── メイン画面 ──
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", background: P.bg, color: P.text, fontFamily: FONT, overflow: "hidden" }}>
       <Header onBack={onBack} onHelp={() => setShowHelp((v) => !v)} onCreate={handleCreate} />
@@ -847,103 +743,67 @@ export default function IslandMapManager({ store, stores, onChangeStore, islands
       <div style={{ flex: 1, overflowY: "auto", paddingBottom: "calc(96px + env(safe-area-inset-bottom))" }}>
         {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
 
-        {/* 店舗サマリー（画面上部・主役導入） */}
         <StoreSummary
           store={store}
           stores={stores}
           onChangeStore={onChangeStore}
-          totalIslands={hall.totalIslands}
-          totalMachines={hall.totalMachines}
+          totalIslands={totalIslands}
+          totalMachines={totalMachines}
           updatedAt={updatedAt}
         />
 
-        {/* ホール全体プレビュー（この画面の主役・俯瞰確認） */}
-        <HallPreview layouts={hall.layouts} />
+        <HallPreview islands={islands} />
 
-        {/* タブ */}
-        <TabBar active={tab} onChange={(t) => { setTab(t); setEditingId(null); }} />
+        <TabBar active={tab} onChange={setTab} />
 
-        {/* タブ内容 */}
         <div style={{ marginTop: 16 }}>
-          {tab === "layout" && (
-            <>
-              <Legend />
-              <div style={{ padding: "6px 14px 0" }}>
-                {hall.layouts.length === 0 ? (
-                  <div style={{ background: P.card, border: `1px dashed ${P.lineHi}`, borderRadius: 18, padding: "22px 16px", textAlign: "center", color: P.sub, fontSize: 12.5 }}>
-                    島がまだありません。「新規作成」から追加してください。
-                  </div>
-                ) : (
-                  hall.layouts.map((l, i) => {
-                    const island = islands[i];
-                    return (
-                      <LayoutIslandCard
-                        key={l.id}
-                        layout={l}
-                        island={island}
-                        index={i}
-                        total={islands.length}
-                        editing={editingId === l.id}
-                        onToggleEdit={() => toggleLayoutEdit(l.id)}
-                        onChange={(patch) => patchIsland(island, patch)}
-                        onRemove={() => handleRemove(island)}
-                        onUp={() => moveUp(island)}
-                        onDown={() => moveDown(island)}
-                      />
-                    );
-                  })
-                )}
-              </div>
-            </>
-          )}
-
           {tab === "list" && (
             <div style={{ padding: "0 14px" }}>
-              {hall.layouts.length === 0 ? (
+              {islands.length === 0 ? (
                 <div style={{ background: P.card, border: `1px dashed ${P.lineHi}`, borderRadius: 18, padding: "22px 16px", textAlign: "center", color: P.sub, fontSize: 12.5 }}>
                   島がまだありません。「新規作成」から追加してください。
                 </div>
               ) : (
-                hall.layouts.map((l, i) => {
-                  const island = islands[i];
-                  return (
-                    <ListRow
-                      key={l.id}
-                      layout={l}
-                      island={island}
-                      index={i}
-                      total={islands.length}
-                      expanded={expandedId === l.id}
-                      editing={editingId === l.id}
-                      onToggleExpand={() => toggleExpand(l.id)}
-                      onToggleEdit={() => toggleLayoutEdit(l.id)}
-                      onChange={(patch) => patchIsland(island, patch)}
-                      onRemove={() => handleRemove(island)}
-                      onUp={() => moveUp(island)}
-                      onDown={() => moveDown(island)}
-                    />
-                  );
-                })
+                islands.map((isl, i) => (
+                  <ListCard
+                    key={isl.id}
+                    island={isl}
+                    index={i}
+                    expanded={expandedId === isl.id}
+                    onToggle={() => toggleExpand(isl.id)}
+                    onEdit={() => openEdit(isl.id)}
+                  />
+                ))
               )}
             </div>
+          )}
+
+          {tab === "layout" && (
+            islands.length === 0 ? (
+              <div style={{ padding: "0 14px" }}>
+                <div style={{ background: P.card, border: `1px dashed ${P.lineHi}`, borderRadius: 18, padding: "22px 16px", textAlign: "center", color: P.sub, fontSize: 12.5 }}>
+                  島がまだありません。「新規作成」から追加してください。
+                </div>
+              </div>
+            ) : (
+              <LayoutHall islands={islands} />
+            )
           )}
 
           {tab === "history" && <HistoryTab entries={history} />}
         </div>
 
-        {/* クイックアクション */}
         <QuickActions
-          onLayout={() => { setTab("layout"); setEditingId(null); }}
-          onBulkNum={() => startBulkEdit("layout")}
-          onBulkCount={() => startBulkEdit("list")}
+          onAdd={handleCreate}
+          onBulkNum={goManage}
+          onBulkCount={goManage}
           onReset={handleReset}
         />
 
-        {/* 説明文 */}
         <div style={{ padding: "16px 18px 6px" }}>
           <div style={{ fontSize: 11.5, color: P.sub, lineHeight: 1.8 }}>
             島構成の変更はいつでも可能です。<br />
-            編集内容は即座に戦略マップへ反映されます。
+            編集内容を保存すると、戦略マップへ反映されます。
           </div>
         </div>
       </div>
