@@ -12,7 +12,7 @@ import { KeyMetrics } from "./decision/KeyMetrics";
 import { ReasonList } from "./decision/ReasonList";
 import { RecentEventList } from "./decision/RecentEventList";
 import MachineSpecWorkspace from "./machines/MachineSpecWorkspace";
-import HallMapEditor from "./select/HallMapEditor";
+import IslandMapManager from "./select/IslandMapManager";
 import { getStoreIslands, setStoreIslands } from "./select/hallMapSelectors";
 
 // 信頼度（試行充足率）: 1500回転で 100% （evDecision の calcConfidence と整合。
@@ -11169,22 +11169,20 @@ export function SettingsTab({ s, onReset }) {
         );
     }
 
-    // ── 島マップ管理サブビュー ──
-    // 旧 SelectDashboard 内のホールマップ編集を設定へ移設。常時編集可能（初回セットアップ扱いにしない）。
+    // ── 島マップ管理サブビュー（全面リニューアル：島レイアウト管理画面） ──
+    // 旧「島一覧」中心のホールマップ編集を、「この店舗の島構成を俯瞰する」レイアウト管理画面へ再設計。
+    // データの実体は App.jsx の pt_hallMaps（s.hallMaps）。戦略マップと同じ世界観で自己完結する。
     if (showHallMapView) {
         return (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                <SubHeader title="島マップ管理" onBack={() => setShowHallMapView(false)} />
-                <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(84px + env(safe-area-inset-bottom))" }}>
-                    <HallMapEditor
-                        storeId={hallMapStoreId}
-                        storeName={hallMapStore?.name || ""}
-                        stores={s.stores}
-                        onChangeStore={handleChangeHallMapStore}
-                        islands={hallMapIslands}
-                        onChangeIslands={handleChangeHallMapIslands}
-                    />
-                </div>
+                <IslandMapManager
+                    store={hallMapStore}
+                    stores={normalizedStores}
+                    onChangeStore={handleChangeHallMapStore}
+                    islands={hallMapIslands}
+                    onChangeIslands={handleChangeHallMapIslands}
+                    onBack={() => setShowHallMapView(false)}
+                />
                 <ToastPortal />
             </div>
         );
