@@ -27,6 +27,8 @@ import {
 } from "recharts";
 import {
   aggregateByDay,
+  aggregateByMonth,
+  aggregateByYear,
   filterArchives,
   getActualPL,
   getEvAmount,
@@ -35,6 +37,8 @@ import {
   machineRanking,
   summarize,
 } from "./analysisSelectors";
+import { CalendarTab } from "../Tabs";
+import AnalyzerView from "./AnalyzerView";
 
 const PERIOD_TABS = [
   { id: "month", label: "月別" },
@@ -108,8 +112,8 @@ function buildRealDays(archives, month) {
   );
 }
 
-function buildStoreRanking(archives, month) {
-  const rows = filterArchives(archives, { month });
+function buildStoreRanking(archives) {
+  const rows = Array.isArray(archives) ? archives : [];
   const map = new Map();
   rows.forEach((entry) => {
     const name = entry.storeName || "店舗未設定";
@@ -148,6 +152,44 @@ function buildTrend(dayMap, year, month) {
   });
 }
 
+function buildPeriodTrend(archives, periodTab, year, month, dayMap) {
+  if (periodTab === "month") return buildTrend(dayMap, year, month);
+  const source = periodTab === "year"
+    ? aggregateByMonth(archives, String(year))
+    : aggregateByYear(archives);
+  let actual = 0;
+  let ev = 0;
+  return source.map((row) => {
+    actual += row.actualPL || 0;
+    ev += row.evAmount || 0;
+    return {
+      day: periodTab === "year" ? `${Number(row.month.slice(5))}月` : row.year,
+      actual,
+      ev,
+      diff: actual - ev,
+    };
+  });
+}
+
+function buildPeriodRows(archives, periodTab, year) {
+  if (periodTab === "year") {
+    return aggregateByMonth(archives, String(year)).map((row) => ({
+      key: row.month,
+      label: `${Number(row.month.slice(5))}月`,
+      actual: row.actualPL,
+      ev: row.evAmount,
+      days: row.days,
+    }));
+  }
+  return aggregateByYear(archives).map((row) => ({
+    key: row.year,
+    label: `${row.year}年`,
+    actual: row.actualPL,
+    ev: row.evAmount,
+    days: row.days,
+  }));
+}
+
 function SectionTitle({ children, note, action }) {
   return (
     <div className="mb-2 flex items-center justify-between gap-2">
@@ -176,14 +218,14 @@ function ActionButton({ children, onClick, active = false }) {
   );
 }
 
-function SummaryHero({ summary, isDemo }) {
+function SummaryHero({ summary, isDemo, periodWord = "今月" }) {
   const actual = isDemo ? -12130 : summary.totalRealPL;
   const ev = isDemo ? 3120 : summary.evAmount;
   const diff = actual - ev;
   return (
     <section className={`${card} grid min-h-[168px] grid-cols-[1.03fr_.97fr] overflow-hidden`}>
       <div className="border-r border-white/[0.07] p-3.5">
-        <div className={label}>今月の実質収支</div>
+        <div className={label}>{periodWord}の実質収支</div>
         <div className={`mt-1 flex items-end font-mono ${moneyClass(actual)}`}>
           <strong className="text-[34px] font-black leading-none tracking-[-.055em]">{signed(actual)}</strong>
           <span className="mb-0.5 ml-1 text-[10px] font-bold">円</span>
@@ -218,7 +260,7 @@ function SummaryHero({ summary, isDemo }) {
         </div>
         <p className="mt-1 text-[9px] text-[#a0aec0]">素晴らしい期待値稼働！</p>
         <div className="my-3 h-px bg-white/[0.07]" />
-        <div className={label}>今月の称号</div>
+        <div className={label}>{periodWord}の称号</div>
         <div className="mt-1.5 flex items-center gap-2">
           <Trophy className="h-4 w-4 fill-[#FFC83D] text-[#FFC83D]" />
           <strong className="text-[12px] text-white">データ派プレイヤー</strong>
@@ -333,6 +375,35 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay, onShare }) {
   );
 }
 
+function PeriodBreakdownPanel({ periodTab, rows, isDemo }) {
+  const displayRows = rows.length > 0
+    ? rows
+    : isDemo
+      ? [{ key: "demo", label: periodTab === "year" ? "6月" : "2026年", actual: -12130, ev: 3120, days: 7 }]
+      : [];
+  return (
+    <section className={`${card} p-3`}>
+      <SectionTitle note="実収支｜期待値｜稼働日数">
+        {periodTab === "year" ? "月別パフォーマンス" : "年別パフォーマンス"}
+      </SectionTitle>
+      {displayRows.length === 0 ? (
+        <div className="py-10 text-center text-[10px] text-[#8090aa]">対象期間の記録がありません</div>
+      ) : (
+        <div className="grid grid-cols-3 gap-1.5">
+          {displayRows.map((row) => (
+            <div key={row.key} className="rounded-lg border border-white/[0.08] bg-[#0a1528] p-2.5">
+              <div className="text-[10px] font-black text-white">{row.label}</div>
+              <div className={`mt-2 font-mono text-[13px] font-black ${moneyClass(row.actual)}`}>{signed(row.actual)}円</div>
+              <div className="mt-1 font-mono text-[9px] font-bold text-[#16C8FF]">期待値 {signed(row.ev)}円</div>
+              <div className="mt-2 text-[8px] text-[#8090aa]">稼働 {row.days || 0}日</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function TrendPanel({ data }) {
   return (
     <section className={`${card} overflow-hidden`}>
@@ -425,7 +496,7 @@ function StorePanel({ rows }) {
   );
 }
 
-function MonthlySummary({ actual, ev, isDemo, onShare }) {
+function MonthlySummary({ actual, ev, isDemo, onShare, periodWord = "今月" }) {
   const values = isDemo
     ? [
         ["最高収支日", "+9,672円（6/5）", true],
@@ -445,7 +516,7 @@ function MonthlySummary({ actual, ev, isDemo, onShare }) {
       ];
   return (
     <section className={`${card} p-2.5`}>
-      <SectionTitle>今月のサマリー</SectionTitle>
+      <SectionTitle>{periodWord}のサマリー</SectionTitle>
       <div className="grid grid-cols-2 gap-x-4 gap-y-2">
         {values.map(([name, value, positive]) => (
           <div key={name} className="flex items-center justify-between gap-2 text-[7px]">
@@ -506,8 +577,48 @@ function ShareCard({ actual, ev, onClose }) {
   );
 }
 
+function DashboardTop({
+  periodTab,
+  setPeriodTab,
+  filterOpen,
+  setFilterOpen,
+  onShare,
+  showActions = true,
+}) {
+  return (
+    <>
+      <header className="mb-2.5 flex items-center justify-between">
+        <h1 className="text-[16px] font-black tracking-[.02em]">収支分析</h1>
+        {showActions && (
+          <div className="flex gap-1.5">
+            <ActionButton onClick={onShare}><Share2 className="h-3.5 w-3.5" />共有</ActionButton>
+            <ActionButton onClick={() => setFilterOpen((value) => !value)} active={filterOpen}><Filter className="h-3.5 w-3.5" />絞り込み</ActionButton>
+          </div>
+        )}
+      </header>
+      <nav className="mb-2.5 grid h-[42px] grid-cols-5 rounded-[9px] border border-white/[0.08] bg-[#0b1528] p-0.5">
+        {PERIOD_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setPeriodTab(tab.id)}
+            className={`rounded-[7px] text-[10px] font-bold transition ${
+              periodTab === tab.id
+                ? "border border-[#16C8FF] bg-[#0c2743] text-[#16C8FF] shadow-[inset_0_0_18px_rgba(22,200,255,.08),0_0_16px_rgba(22,200,255,.08)]"
+                : "text-[#8491a7]"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+    </>
+  );
+}
+
 export default function AnalysisDashboard({
   S,
+  onReset,
   periodTab: externalPeriodTab,
   onChangePeriodTab,
   filters: externalFilters,
@@ -532,72 +643,106 @@ export default function AnalysisDashboard({
   const year = shownDate.getFullYear();
   const month = shownDate.getMonth() + 1;
   const monthKey = `${year}-${String(month).padStart(2, "0")}`;
-  const filtered = useMemo(() => filterArchives(archives, filters), [archives, filters]);
-  const summary = useMemo(() => summarize(filtered, { month: monthKey }), [filtered, monthKey]);
+  const periodFilters = useMemo(() => {
+    if (periodTab === "month") return { month: monthKey };
+    if (periodTab === "year") return { year: String(year) };
+    return {};
+  }, [monthKey, periodTab, year]);
+  const filtered = useMemo(
+    () => filterArchives(archives, { ...filters, ...periodFilters }),
+    [archives, filters, periodFilters],
+  );
+  const summary = useMemo(() => summarize(filtered), [filtered]);
   const dayMap = useMemo(() => isDemo ? DEMO_DAYS : buildRealDays(filtered, monthKey), [filtered, isDemo, monthKey]);
-  const trend = useMemo(() => isDemo ? DEMO_TREND : buildTrend(dayMap, year, month), [dayMap, isDemo, month, year]);
+  const trend = useMemo(
+    () => isDemo ? DEMO_TREND : buildPeriodTrend(filtered, periodTab, year, month, dayMap),
+    [dayMap, filtered, isDemo, month, periodTab, year],
+  );
+  const periodRows = useMemo(
+    () => buildPeriodRows(filterArchives(archives, filters), periodTab, year),
+    [archives, filters, periodTab, year],
+  );
   const machines = useMemo(() => {
     if (isDemo) return DEMO_MACHINES;
-    return machineRanking(filtered, { month: monthKey, limit: 5 }).map((row) => ({
+    return machineRanking(filtered, { limit: 5 }).map((row) => ({
       ...row,
       hours: "—",
       spin: Number(row.spinRate || 0),
       winRate: row.sessions ? Math.round(((row.actualPL > 0 ? 1 : 0) / row.sessions) * 100) : 0,
     }));
-  }, [filtered, isDemo, monthKey]);
-  const stores = useMemo(() => isDemo ? DEMO_STORES : buildStoreRanking(filtered, monthKey), [filtered, isDemo, monthKey]);
+  }, [filtered, isDemo]);
+  const stores = useMemo(() => isDemo ? DEMO_STORES : buildStoreRanking(filtered), [filtered, isDemo]);
   const storeOptions = useMemo(() => listAvailableStores(archives), [archives]);
   const machineOptions = useMemo(() => listAvailableMachines(archives), [archives]);
   const actual = isDemo ? -12130 : summary.totalRealPL;
   const ev = isDemo ? 3120 : summary.evAmount;
+  const periodWord = periodTab === "month" ? "今月" : periodTab === "year" ? "今年" : "通算";
+  const shiftAmount = periodTab === "year" ? 12 : 1;
+
+  if (periodTab === "calendar") {
+    return (
+      <div className="analytics-terminal min-h-full bg-[#050B18] text-white">
+        <div className="mx-auto w-full max-w-[480px] px-3 pt-3">
+          <DashboardTop periodTab={periodTab} setPeriodTab={setPeriodTab} showActions={false} />
+        </div>
+        <CalendarTab S={S} onReset={onReset} />
+      </div>
+    );
+  }
+
+  if (periodTab === "analyzer") {
+    return (
+      <div className="analytics-terminal min-h-full bg-[#050B18] text-white">
+        <div className="mx-auto w-full max-w-[480px] px-3 pb-24 pt-3">
+          <DashboardTop
+            periodTab={periodTab}
+            setPeriodTab={setPeriodTab}
+            filterOpen={filterOpen}
+            setFilterOpen={setFilterOpen}
+            onShare={() => setShareOpen(true)}
+          />
+          {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
+          <AnalyzerView archives={archives} extraFilters={filters} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="analytics-terminal min-h-full bg-[#050B18] text-white">
       <div className="mx-auto w-full max-w-[480px] px-3 pb-24 pt-3">
-        <header className="mb-2.5 flex items-center justify-between">
-          <h1 className="text-[16px] font-black tracking-[.02em]">収支分析</h1>
-          <div className="flex gap-1.5">
-            <ActionButton onClick={() => setShareOpen(true)}><Share2 className="h-3.5 w-3.5" />共有</ActionButton>
-            <ActionButton onClick={() => setFilterOpen((value) => !value)} active={filterOpen}><Filter className="h-3.5 w-3.5" />絞り込み</ActionButton>
-          </div>
-        </header>
-
-        <nav className="mb-2.5 grid h-[42px] grid-cols-5 rounded-[9px] border border-white/[0.08] bg-[#0b1528] p-0.5">
-          {PERIOD_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setPeriodTab(tab.id)}
-              className={`rounded-[7px] text-[10px] font-bold transition ${
-                periodTab === tab.id
-                  ? "border border-[#16C8FF] bg-[#0c2743] text-[#16C8FF] shadow-[inset_0_0_18px_rgba(22,200,255,.08),0_0_16px_rgba(22,200,255,.08)]"
-                  : "text-[#8491a7]"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
+        <DashboardTop
+          periodTab={periodTab}
+          setPeriodTab={setPeriodTab}
+          filterOpen={filterOpen}
+          setFilterOpen={setFilterOpen}
+          onShare={() => setShareOpen(true)}
+        />
 
         {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
 
         <div className="mb-2.5 flex items-center justify-between">
-          <button type="button" onClick={() => setMonthOffset((value) => value - 1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-[#0b1528] text-[#aab6ca]"><ChevronLeft className="h-4 w-4" /></button>
-          <button type="button" className="flex items-center gap-1 text-[15px] font-black">{year}年{month}月 <ChevronDown className="h-3.5 w-3.5 text-[#7d93b7]" /></button>
-          <button type="button" onClick={() => setMonthOffset((value) => value + 1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-[#0b1528] text-[#aab6ca]"><ChevronRight className="h-4 w-4" /></button>
+          <button type="button" disabled={periodTab === "all"} onClick={() => setMonthOffset((value) => value - shiftAmount)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-[#0b1528] text-[#aab6ca] disabled:opacity-20"><ChevronLeft className="h-4 w-4" /></button>
+          <button type="button" className="flex items-center gap-1 text-[15px] font-black">
+            {periodTab === "month" ? `${year}年${month}月` : periodTab === "year" ? `${year}年` : "通算"}
+            <ChevronDown className="h-3.5 w-3.5 text-[#7d93b7]" />
+          </button>
+          <button type="button" disabled={periodTab === "all"} onClick={() => setMonthOffset((value) => value + shiftAmount)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-[#0b1528] text-[#aab6ca] disabled:opacity-20"><ChevronRight className="h-4 w-4" /></button>
         </div>
 
         <main className="space-y-2">
-          <SummaryHero summary={summary} isDemo={isDemo} />
+          <SummaryHero summary={summary} isDemo={isDemo} periodWord={periodWord} />
           <Kpis summary={summary} isDemo={isDemo} />
-          <CalendarPanel dayMap={dayMap} selectedDay={selectedDay} setSelectedDay={setSelectedDay} onShare={() => setShareOpen(true)} />
+          {periodTab === "month"
+            ? <CalendarPanel dayMap={dayMap} selectedDay={selectedDay} setSelectedDay={setSelectedDay} onShare={() => setShareOpen(true)} />
+            : <PeriodBreakdownPanel periodTab={periodTab} rows={periodRows} isDemo={isDemo} />}
           <div className="grid grid-cols-[.88fr_1.12fr] gap-2">
             <TrendPanel data={trend} />
             <MachinePanel rows={machines} sortMode={sortMode} setSortMode={setSortMode} />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <StorePanel rows={stores} />
-            <MonthlySummary actual={actual} ev={ev} isDemo={isDemo} onShare={() => setShareOpen(true)} />
+            <MonthlySummary actual={actual} ev={ev} isDemo={isDemo} onShare={() => setShareOpen(true)} periodWord={periodWord} />
           </div>
         </main>
       </div>
