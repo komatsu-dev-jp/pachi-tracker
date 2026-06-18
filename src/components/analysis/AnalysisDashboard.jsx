@@ -3,9 +3,6 @@ import { C, f, sc, sp, font, mono } from "../../constants";
 import { Card } from "../Atoms";
 import { CalendarTab } from "../Tabs";
 import {
-  buildDailyChartPoints,
-  buildMonthlyChartPoints,
-  buildYearlyChartPoints,
   getMachineHamariList,
   isFilterActive,
   listAvailableMachines,
@@ -15,6 +12,12 @@ import {
   machineRanking,
   summarize,
 } from "./analysisSelectors";
+import {
+  avgSpinRate,
+  buildCumulativeTrend,
+  buildGrades,
+} from "./analyticsViewSelectors";
+import { CumulativeChart } from "./AnalyticsCharts";
 import AnalyzerView from "./AnalyzerView";
 
 // 曜日チップの並び（日始まりに合わせる）
@@ -36,7 +39,7 @@ const EMPTY_FILTERS = Object.freeze({
   weekdays: [],
 });
 
-// 期間タブ定義
+// 期間タブ定義（現行構成を維持）
 const PERIOD_TABS = [
   { id: "month",    label: "月別" },
   { id: "year",     label: "年別" },
@@ -45,155 +48,199 @@ const PERIOD_TABS = [
   { id: "calendar", label: "カレンダー" },
 ];
 
-// シンプルな SVG ラインチャート（既存 Tabs.jsx 内 LineChart と同等。
-//   ここでは AnalysisDashboard 専用に最低限の機能で再実装する）
-function TrendChart({ points, width = 320, height = 160, color = "#3b82f6" }) {
-  if (!points || points.length === 0) {
-    return (
-      <div style={{ textAlign: "center", padding: "32px 16px", color: C.sub, fontFamily: font, fontSize: 12 }}>
-        この期間には記録がありません
-      </div>
-    );
-  }
-  if (points.length === 1) {
-    const p = points[0];
-    return (
-      <div style={{ textAlign: "center", padding: "24px 16px", color: C.sub, fontFamily: font, fontSize: 12 }}>
-        <div>{p.label}</div>
-        <div style={{
-          fontSize: 22, fontWeight: 800, marginTop: 6,
-          color: sc(p.value), fontFamily: mono, fontVariantNumeric: "tabular-nums",
-        }}>
-          {sp(p.value)}円
-        </div>
-        <div style={{ fontSize: 10, marginTop: 6, opacity: 0.6 }}>記録2件以上でグラフ表示</div>
-      </div>
-    );
-  }
-  const pad = { top: 12, right: 12, bottom: 22, left: 48 };
-  const w = width - pad.left - pad.right;
-  const h = height - pad.top - pad.bottom;
-  const vals = points.map((p) => p.value);
-  const minV = Math.min(...vals, 0);
-  const maxV = Math.max(...vals, 0);
-  const range = maxV - minV || 1;
+const ACCENT = "var(--at-accent)";
 
-  const pts = points.map((p, i) => {
-    const x = pad.left + (i / (points.length - 1)) * w;
-    const y = pad.top + h - ((p.value - minV) / range) * h;
-    return { x, y, ...p };
-  });
-  const pathD = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
-  const zeroY = pad.top + h - ((0 - minV) / range) * h;
-  const yLabels = [maxV, Math.round((maxV + minV) / 2), minV].map((v) => ({
-    v,
-    y: pad.top + h - ((v - minV) / range) * h,
-  }));
-  const xTickIdx = Array.from(
-    new Set([0, Math.floor(points.length / 2), points.length - 1])
-  );
+// ──────────────────────────────────────────────────────────────────────────────
+// ヒーローカード（今月どうだったかが3秒で分かる主役カード）
+// ──────────────────────────────────────────────────────────────────────────────
+function HeroCard({ summary, periodWord }) {
+  const hasActual = summary.hasActual;
+  const mainVal = hasActual ? (summary.hasChodama ? summary.totalRealPL : summary.totalPL) : null;
+  const heroValue = mainVal != null ? Math.round(mainVal) : Math.round(summary.evAmount);
+  const heroLabel = hasActual
+    ? (summary.hasChodama ? `${periodWord}の実質収支` : `${periodWord}の収支`)
+    : `${periodWord}の期待値`;
+  const diff = mainVal != null ? Math.round(mainVal - summary.evAmount) : null;
 
   return (
-    <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ display: "block" }}>
-      {yLabels.map((l, i) => (
-        <g key={i}>
-          <line x1={pad.left} y1={l.y} x2={width - pad.right} y2={l.y}
-            stroke="var(--border)" strokeWidth={1} />
-          <text x={pad.left - 4} y={l.y + 3} textAnchor="end"
-            fill="var(--sub)" fontSize={9} fontFamily="monospace">
-            {Math.abs(l.v) >= 1000 ? (l.v / 1000).toFixed(0) + "k" : l.v.toLocaleString()}
-          </text>
-        </g>
-      ))}
-      {minV < 0 && maxV > 0 && (
-        <line x1={pad.left} y1={zeroY} x2={width - pad.right} y2={zeroY}
-          stroke="var(--border-hi)" strokeWidth={1} strokeDasharray="4,3" />
-      )}
-      <path
-        d={`${pathD} L ${pts[pts.length - 1].x} ${pad.top + h} L ${pts[0].x} ${pad.top + h} Z`}
-        fill="url(#trend-grad)"
-      />
-      <defs>
-        <linearGradient id="trend-grad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.34" />
-          <stop offset="100%" stopColor={color} stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
-      <path d={pathD} fill="none" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
-      {pts.map((p, i) => (
-        <circle key={i} cx={p.x} cy={p.y} r={3.2} fill={color} stroke="rgba(0,0,0,0.45)" strokeWidth={1} />
-      ))}
-      {xTickIdx.map((i) => (
-        <text key={i} x={pts[i].x} y={height - 4} textAnchor="middle" fill="var(--sub)" fontSize={9}>
-          {points[i].label}
-        </text>
-      ))}
-    </svg>
+    <div
+      style={{
+        background: "linear-gradient(160deg, var(--surface) 0%, var(--surface-alt) 100%)",
+        border: `1px solid ${C.border}`,
+        borderRadius: 18,
+        padding: "18px 18px 16px",
+        marginBottom: 12,
+        boxShadow: "var(--card-shadow)",
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      {/* アクセントのトップライン */}
+      <div style={{
+        position: "absolute", top: 0, left: 0, right: 0, height: 2,
+        background: `linear-gradient(90deg, transparent, ${ACCENT}, transparent)`,
+        opacity: 0.7,
+      }} />
+      <div style={{ fontSize: 12, color: C.subHi, fontWeight: 700, letterSpacing: 0.6, marginBottom: 8 }}>
+        {heroLabel}
+      </div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+        <span style={{
+          fontSize: 42, fontWeight: 900, color: sc(heroValue),
+          fontFamily: mono, fontVariantNumeric: "tabular-nums",
+          letterSpacing: "-1.5px", lineHeight: 1,
+        }}>
+          {sp(heroValue)}
+        </span>
+        <span style={{ fontSize: 16, color: C.sub, fontFamily: font, fontWeight: 700 }}>円</span>
+      </div>
+
+      {/* サブ: 期待値 / 期待値との差 */}
+      <div style={{
+        display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 16,
+      }}>
+        <div style={{
+          background: C.surfaceHi, border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px",
+        }}>
+          <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, marginBottom: 5, letterSpacing: 0.4 }}>期待値</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
+            <span style={{ fontSize: 18, fontWeight: 900, color: ACCENT, fontFamily: mono, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.4px" }}>
+              {sp(Math.round(summary.evAmount))}
+            </span>
+            <span style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>円</span>
+          </div>
+        </div>
+        <div style={{
+          background: C.surfaceHi, border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px",
+        }}>
+          <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, marginBottom: 5, letterSpacing: 0.4 }}>期待値との差</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
+            <span style={{
+              fontSize: 18, fontWeight: 900,
+              color: diff == null ? C.sub : sc(diff),
+              fontFamily: mono, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.4px",
+            }}>
+              {diff == null ? "—" : sp(diff)}
+            </span>
+            {diff != null && <span style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>円</span>}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
-// 4 つのサマリーカード（収支 / 回収率 / 稼働日数 / 勝率）
-function SummaryCards({ summary }) {
+// グレードに応じた色（A系=緑、B系=シアン、C系=黄、D=赤）
+function gradeColor(g) {
+  if (g === "—") return C.sub;
+  const head = g[0];
+  if (head === "A") return C.green;
+  if (head === "B") return ACCENT;
+  if (head === "C") return C.yellow;
+  return C.red;
+}
+
+// 期待値ステータス（5枚の評価カード）
+function GradeStatus({ grades }) {
   const items = [
-    {
-      label: "収支",
-      val: summary.hasActual ? sp(summary.totalPL) : "—",
-      unit: summary.hasActual ? "円" : "",
-      col: summary.hasActual ? sc(summary.totalPL) : C.sub,
-    },
-    {
-      label: "回収率",
-      val: summary.recoverRate != null ? f(summary.recoverRate, 1) : "—",
-      unit: summary.recoverRate != null ? "%" : "",
-      col: summary.recoverRate == null
-        ? C.sub
-        : summary.recoverRate >= 100 ? C.green : C.red,
-    },
-    {
-      label: "稼働日数",
-      val: f(summary.days),
-      unit: "日",
-      col: C.text,
-    },
+    { label: "期待値", g: grades.ev },
+    { label: "回転率", g: grades.spin },
+    { label: "店舗選択", g: grades.store },
+    { label: "収支", g: grades.pl },
+    { label: "総合評価", g: grades.total, primary: true },
+  ];
+  return (
+    <Card style={{ marginBottom: 12 }}>
+      <div style={{ padding: "12px 14px 6px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ fontSize: 12, color: C.sub, fontWeight: 700, letterSpacing: 0.4 }}>期待値ステータス</div>
+        <div style={{ fontSize: 9, color: C.sub, opacity: 0.7 }}>評価は目安</div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6, padding: "0 12px 14px" }}>
+        {items.map((it) => {
+          const col = gradeColor(it.g);
+          return (
+            <div
+              key={it.label}
+              style={{
+                background: it.primary ? `color-mix(in srgb, ${col} 14%, var(--surface-hi))` : C.surfaceHi,
+                border: `1px solid ${it.primary ? col : C.border}`,
+                borderRadius: 12,
+                padding: "10px 2px 9px",
+                textAlign: "center",
+                minHeight: 64,
+                display: "flex", flexDirection: "column", justifyContent: "center", gap: 4,
+              }}
+            >
+              <div style={{
+                fontSize: 22, fontWeight: 900, color: col,
+                fontFamily: mono, fontVariantNumeric: "tabular-nums", lineHeight: 1, letterSpacing: "-0.5px",
+              }}>
+                {it.g}
+              </div>
+              <div style={{ fontSize: 9, color: C.sub, fontWeight: 700, lineHeight: 1.1 }}>{it.label}</div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+// 今月サマリー（5カード: 稼働日数 / 勝率 / 平均回転率 / 期待値 / 稼働時間）
+function SummaryGrid({ summary, avgSpin }) {
+  const items = [
+    { label: "稼働日数", val: f(summary.days), unit: "日", col: C.text },
     {
       label: "勝率",
-      val: summary.winRate != null ? f(summary.winRate, 1) : "—",
+      val: summary.winRate != null ? f(summary.winRate, 0) : "—",
       unit: summary.winRate != null ? "%" : "",
-      col: summary.winRate == null
-        ? C.sub
-        : summary.winRate >= 50 ? C.green : C.red,
+      col: summary.winRate == null ? C.sub : summary.winRate >= 50 ? C.green : C.red,
+    },
+    {
+      label: "平均回転率",
+      val: avgSpin != null ? f(avgSpin, 1) : "—",
+      unit: avgSpin != null ? "回/K" : "",
+      col: avgSpin != null ? ACCENT : C.sub,
+    },
+    {
+      label: "期待値",
+      val: sp(Math.round(summary.evAmount)),
+      unit: "円",
+      col: sc(summary.evAmount),
+    },
+    {
+      label: "稼働時間",
+      val: summary.workHours > 0 ? f(summary.workHours, 1) : "—",
+      unit: summary.workHours > 0 ? "h" : "",
+      col: C.text,
     },
   ];
-
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+    <div style={{
+      display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 12,
+    }}>
       {items.map((it) => (
         <div
           key={it.label}
           style={{
             background: C.surface,
             border: `1px solid ${C.border}`,
-            borderRadius: 14,
-            padding: "14px 14px 12px",
+            borderRadius: 13,
+            padding: "12px 10px 10px",
             boxShadow: "var(--card-shadow)",
           }}
         >
-          <div style={{ fontSize: 11, color: C.sub, fontWeight: 700, letterSpacing: 0.4, marginBottom: 6 }}>
+          <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, letterSpacing: 0.3, marginBottom: 6 }}>
             {it.label}
           </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
             <span style={{
-              fontSize: 24, fontWeight: 900, color: it.col,
-              fontFamily: mono, fontVariantNumeric: "tabular-nums",
-              letterSpacing: "-0.5px", lineHeight: 1,
+              fontSize: 19, fontWeight: 900, color: it.col,
+              fontFamily: mono, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.5px", lineHeight: 1,
             }}>
               {it.val}
             </span>
-            {it.unit && (
-              <span style={{ fontSize: 12, color: C.sub, fontFamily: font, fontWeight: 600 }}>
-                {it.unit}
-              </span>
-            )}
+            {it.unit && <span style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>{it.unit}</span>}
           </div>
         </div>
       ))}
@@ -203,7 +250,6 @@ function SummaryCards({ summary }) {
 
 // 実質収支カード（現金収支 + 貯玉消費分 = 実質総収支）
 //   貯玉を消費したセッションが期間内にある場合のみ表示する。
-//   貯玉未使用の期間では非表示となり、従来の収支表示のみとなる。
 function RealBalanceCard({ summary }) {
   const cash = summary.totalPL;          // 現金収支
   const chodama = summary.totalChodamaPL; // 貯玉消費分（コスト = マイナス）
@@ -215,7 +261,6 @@ function RealBalanceCard({ summary }) {
   return (
     <Card style={{ marginBottom: 12 }}>
       <div style={{ padding: "12px 14px 6px", display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{ fontSize: 13 }}>💎</span>
         <div style={{ fontSize: 12, color: C.sub, fontWeight: 700, letterSpacing: 0.4 }}>
           実質収支（貯玉込み）
         </div>
@@ -242,7 +287,6 @@ function RealBalanceCard({ summary }) {
             </div>
           </div>
         ))}
-        {/* 合算（実質総収支） */}
         <div style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
           padding: "10px 0 6px", borderTop: `1px solid ${C.border}`, marginTop: 2,
@@ -257,7 +301,6 @@ function RealBalanceCard({ summary }) {
           </div>
         </div>
       </div>
-      {/* 計算式の注釈 */}
       <div style={{
         padding: "8px 14px 12px", fontSize: 10, color: C.sub, lineHeight: 1.6,
         borderTop: `1px solid ${C.border}`, marginTop: 4,
@@ -278,7 +321,7 @@ function MachineRankList({ rows }) {
       </div>
     );
   }
-  const rankColors = ["#ca8a04", "#94a3b8", "#b45309"]; // 金 / 銀 / 銅（ライト/ダーク両対応の中間トーン）
+  const rankColors = ["#FFC83D", "#A7B6D0", "#FF9F45"];
   return (
     <div>
       {rows.map((r, i) => {
@@ -295,7 +338,6 @@ function MachineRankList({ rows }) {
               borderTop: i === 0 ? "none" : `1px solid ${C.border}`,
             }}
           >
-            {/* 順位バッジ */}
             <div style={{
               width: 26, height: 26, borderRadius: "50%",
               background: i < 3 ? `color-mix(in srgb, ${rankColor} 22%, transparent)` : C.surfaceHi,
@@ -308,7 +350,6 @@ function MachineRankList({ rows }) {
               {i + 1}
             </div>
 
-            {/* 機種名 + サブ情報 */}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{
                 fontSize: 14, fontWeight: 700, color: C.text,
@@ -322,7 +363,6 @@ function MachineRankList({ rows }) {
               </div>
             </div>
 
-            {/* 収支 */}
             <div style={{ textAlign: "right", flexShrink: 0 }}>
               <div style={{
                 fontSize: 15, fontWeight: 800,
@@ -347,7 +387,7 @@ function MachineRankList({ rows }) {
 // 期間ナビ（左右矢印 + 現在の期間表示）
 function PeriodNav({ label, onPrev, onNext, hasPrev, hasNext }) {
   const btnStyle = (disabled) => ({
-    width: 40, height: 40, borderRadius: 12,
+    width: 42, height: 42, borderRadius: 12,
     background: C.surface, border: `1px solid ${C.border}`,
     color: disabled ? C.sub : C.text,
     fontSize: 18, fontWeight: 700, fontFamily: mono,
@@ -362,7 +402,7 @@ function PeriodNav({ label, onPrev, onNext, hasPrev, hasNext }) {
     }}>
       <button className="b" onClick={onPrev} disabled={!hasPrev} style={btnStyle(!hasPrev)}>‹</button>
       <div style={{
-        fontSize: 16, fontWeight: 800, color: C.text, fontFamily: font,
+        fontSize: 17, fontWeight: 800, color: C.text, fontFamily: font,
         letterSpacing: 0.2,
       }}>
         {label}
@@ -400,7 +440,6 @@ export default function AnalysisDashboard({
   const setFilters = onChangeFilters ?? setInnerFilters;
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
 
-  // フィルタ更新ヘルパー
   const updateFilter = (patch) => setFilters({ ...filters, ...patch });
   const resetFilters = () => setFilters({ ...EMPTY_FILTERS });
   const toggleWeekday = (wd) => {
@@ -417,11 +456,9 @@ export default function AnalysisDashboard({
     (Array.isArray(filters.weekdays) && filters.weekdays.length > 0 ? 1 : 0)
   );
 
-  // フィルタ用の選択肢一覧
   const availableStores = useMemo(() => listAvailableStores(archives), [archives]);
   const availableMachines = useMemo(() => listAvailableMachines(archives), [archives]);
 
-  // 集計関数に渡す絞り込み（period 由来の月／年を除いた追加条件）
   const extraFilters = useMemo(() => ({
     storeName: filters.storeName || "",
     machineName: filters.machineName || "",
@@ -430,11 +467,9 @@ export default function AnalysisDashboard({
     weekdays: Array.isArray(filters.weekdays) ? filters.weekdays : [],
   }), [filters]);
 
-  // 利用可能な期間の一覧
   const availableMonths = useMemo(() => listAvailableMonths(archives), [archives]);
   const availableYears  = useMemo(() => listAvailableYears(archives),  [archives]);
 
-  // 現在の表示対象月／年（デフォルトは最新月／最新年。記録ゼロなら現在月／現在年）
   const today = new Date();
   const defaultMonth = availableMonths.length > 0
     ? availableMonths[availableMonths.length - 1]
@@ -446,72 +481,62 @@ export default function AnalysisDashboard({
   const [viewMonth, setViewMonth] = useState(defaultMonth);
   const [viewYear,  setViewYear]  = useState(defaultYear);
 
-  // セッション終了直後など、表示中の月／年が「直前まで最新だった期間」のままなら、
-  // 新規アーカイブ追加で最新月／最新年が更新された場合に表示を追従させる。
-  // （手動で過去の月／年へ移動済みの場合は追従しない＝ユーザー操作を尊重）
-  // ※ useEffect ではなく render 中の state 調整パターンを使用
-  //   （React公式が推奨する「前回値との比較によるstate同期」の書き方。
-  //    useRef は render 中に読み書きできないため useState で前回値を保持する）
+  // 新規アーカイブ追加で最新月/年が更新された場合に表示を追従させる（手動移動後は尊重）
   const [prevDefaultMonth, setPrevDefaultMonth] = useState(defaultMonth);
   if (defaultMonth !== prevDefaultMonth) {
-    if (viewMonth === prevDefaultMonth) {
-      setViewMonth(defaultMonth);
-    }
+    if (viewMonth === prevDefaultMonth) setViewMonth(defaultMonth);
     setPrevDefaultMonth(defaultMonth);
   }
   const [prevDefaultYear, setPrevDefaultYear] = useState(defaultYear);
   if (defaultYear !== prevDefaultYear) {
-    if (viewYear === prevDefaultYear) {
-      setViewYear(defaultYear);
-    }
+    if (viewYear === prevDefaultYear) setViewYear(defaultYear);
     setPrevDefaultYear(defaultYear);
   }
 
-  // 月／年ナビ操作
   const shiftMonth = (delta) => {
     const [y, m] = viewMonth.split("-").map(Number);
     const d = new Date(y, (m - 1) + delta, 1);
     setViewMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
   };
-  const shiftYear = (delta) => {
-    setViewYear(String(Number(viewYear) + delta));
-  };
+  const shiftYear = (delta) => setViewYear(String(Number(viewYear) + delta));
 
-  // 表示用ラベル
   const monthLabel = (() => {
     const [y, m] = viewMonth.split("-").map(Number);
     return `${y}年${m}月`;
   })();
   const yearLabel = `${viewYear}年`;
+  const periodWord = periodTab === "all" ? "通算" : periodTab === "year" ? yearLabel : "今月";
 
-  // タブごとに必要な集計を実行
   const isAll = periodTab === "all";
   const isYear = periodTab === "year";
 
-  const summary = useMemo(() => {
-    if (periodTab === "all") return summarize(archives, { ...extraFilters });
-    if (periodTab === "year") return summarize(archives, { ...extraFilters, year: viewYear });
-    return summarize(archives, { ...extraFilters, month: viewMonth });
-  }, [archives, periodTab, viewMonth, viewYear, extraFilters]);
+  // タブごとの集計オプション
+  const periodOpts = useMemo(() => {
+    if (periodTab === "all") return { ...extraFilters };
+    if (periodTab === "year") return { ...extraFilters, year: viewYear };
+    return { ...extraFilters, month: viewMonth };
+  }, [periodTab, viewMonth, viewYear, extraFilters]);
 
-  const chartPoints = useMemo(() => {
-    if (periodTab === "all") return buildYearlyChartPoints(archives, extraFilters);
-    if (periodTab === "year") return buildMonthlyChartPoints(archives, viewYear, extraFilters);
-    return buildDailyChartPoints(archives, viewMonth, extraFilters);
-  }, [archives, periodTab, viewMonth, viewYear, extraFilters]);
+  const summary = useMemo(() => summarize(archives, periodOpts), [archives, periodOpts]);
 
-  const machineTop = useMemo(() => {
-    if (periodTab === "all") return machineRanking(archives, { ...extraFilters, limit: 5 });
-    if (periodTab === "year") return machineRanking(archives, { ...extraFilters, year: viewYear, limit: 5 });
-    return machineRanking(archives, { ...extraFilters, month: viewMonth, limit: 5 });
-  }, [archives, periodTab, viewMonth, viewYear, extraFilters]);
+  const cumulative = useMemo(
+    () => buildCumulativeTrend(archives, periodTab, viewMonth, viewYear, extraFilters),
+    [archives, periodTab, viewMonth, viewYear, extraFilters]
+  );
+
+  const grades = useMemo(() => buildGrades(archives, periodOpts), [archives, periodOpts]);
+  const avgSpin = useMemo(() => avgSpinRate(archives, periodOpts), [archives, periodOpts]);
+
+  const machineTop = useMemo(
+    () => machineRanking(archives, { ...periodOpts, limit: 5 }),
+    [archives, periodOpts]
+  );
 
   const machineHamariData = useMemo(
     () => getMachineHamariList(archives, extraFilters).slice(0, 5),
     [archives, extraFilters]
   );
 
-  // 期間ナビの可否
   const hasMonthData = availableMonths.length > 0;
   const hasYearData  = availableYears.length > 0;
   const prevAvailableMonth = hasMonthData ? availableMonths[0] : viewMonth;
@@ -519,10 +544,10 @@ export default function AnalysisDashboard({
   const prevAvailableYear  = hasYearData  ? availableYears[0]  : viewYear;
   const nextAvailableYear  = hasYearData  ? availableYears[availableYears.length - 1] : viewYear;
 
-  // カレンダーモードは既存 CalendarTab を埋め込み（絞り込みは適用しない）
+  // カレンダーモードは既存 CalendarTab を埋め込み
   if (periodTab === "calendar") {
     return (
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div className="analytics-terminal" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)" }}>
         <DashboardHeader periodTab={periodTab} onChangeTab={setPeriodTab} />
         <div style={{ flex: 1, overflow: "auto" }}>
           <CalendarTab S={S} onReset={onReset} />
@@ -532,14 +557,13 @@ export default function AnalysisDashboard({
   }
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+    <div className="analytics-terminal" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)" }}>
       <DashboardHeader periodTab={periodTab} onChangeTab={setPeriodTab} />
 
       <div style={{
         flex: 1, overflowY: "auto", overflowX: "hidden",
         padding: "8px 14px calc(20px + env(safe-area-inset-bottom))",
       }}>
-        {/* 絞り込みパネル */}
         <FilterPanel
           open={filterPanelOpen}
           onToggle={() => setFilterPanelOpen((v) => !v)}
@@ -553,19 +577,9 @@ export default function AnalysisDashboard({
           active={filterActive}
         />
 
-        {/* 分析+（詳細分析）: 期間ナビ・サマリーを使わず、専用の集計ビューを表示 */}
+        {/* 分析+（詳細分析）: 期待値分析 / 店舗分析 / 機種分析 */}
         {periodTab === "analyzer" && (
-          <>
-            <div style={{ textAlign: "center", padding: "0 4px", marginBottom: 12 }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: C.text, fontFamily: font, letterSpacing: 0.2 }}>
-                詳細分析（分析+）
-              </div>
-              <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>
-                回転率推移・ボーダー差分布・店舗/曜日傾向
-              </div>
-            </div>
-            <AnalyzerView archives={archives} extraFilters={extraFilters} />
-          </>
+          <AnalyzerView archives={archives} extraFilters={extraFilters} />
         )}
 
         {/* 期間ナビ */}
@@ -598,10 +612,8 @@ export default function AnalysisDashboard({
           </div>
         )}
 
-        {/* 記録ゼロの場合 */}
         {periodTab !== "analyzer" && archives.length === 0 && emptyState("アーカイブがまだありません。実戦記録を保存すると、ここに集計が表示されます。")}
 
-        {/* 絞り込みで該当ゼロの場合 */}
         {periodTab !== "analyzer" && archives.length > 0 && summary.sessions === 0 && (
           emptyState(filterActive
             ? "指定された条件に一致する記録がありません。絞り込みを変更するかリセットしてください。"
@@ -610,21 +622,28 @@ export default function AnalysisDashboard({
 
         {periodTab !== "analyzer" && archives.length > 0 && summary.sessions > 0 && (
           <>
-            {/* 4 サマリーカード */}
-            <SummaryCards summary={summary} />
+            {/* ヒーローカード（主役） */}
+            <HeroCard summary={summary} periodWord={periodWord} />
+
+            {/* 期待値ステータス（5評価カード） */}
+            <GradeStatus grades={grades} />
+
+            {/* 今月サマリー（5カード） */}
+            <SummaryGrid summary={summary} avgSpin={avgSpin} />
 
             {/* 実質収支（貯玉込み）: 期間内に貯玉消費がある場合のみ表示 */}
             {summary.hasChodama && <RealBalanceCard summary={summary} />}
 
-            {/* 収支推移グラフ */}
+            {/* 累積収支推移グラフ（TradingView 風・3本ライン） */}
             <Card>
-              <div style={{ padding: "12px 14px 4px" }}>
+              <div style={{ padding: "12px 14px 4px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ fontSize: 12, color: C.sub, fontWeight: 700, letterSpacing: 0.4 }}>
-                  {isAll ? "年別収支推移" : isYear ? "月別収支推移" : "日別収支推移"}
+                  {isAll ? "年別 累積推移" : isYear ? "月別 累積推移" : "日別 累積推移"}
                 </div>
+                <div style={{ fontSize: 9, color: C.sub, opacity: 0.7 }}>実収支 / 期待値 / 差異</div>
               </div>
-              <div style={{ padding: "0 8px 12px" }}>
-                <TrendChart points={chartPoints} />
+              <div style={{ padding: "4px 8px 12px" }}>
+                <CumulativeChart data={cumulative} />
               </div>
             </Card>
 
@@ -669,9 +688,15 @@ export default function AnalysisDashboard({
 
 function DashboardHeader({ periodTab, onChangeTab }) {
   return (
-    <div style={{ flexShrink: 0, padding: "10px 14px 0" }}>
-      <div style={{ fontSize: 17, fontWeight: 800, color: C.text, fontFamily: font, marginBottom: 10 }}>
-        収支分析
+    <div style={{ flexShrink: 0, padding: "10px 14px 0", background: "var(--bg)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <span style={{
+          width: 8, height: 8, borderRadius: "50%", background: ACCENT,
+          boxShadow: `0 0 8px ${ACCENT}`,
+        }} />
+        <div style={{ fontSize: 17, fontWeight: 800, color: C.text, fontFamily: font, letterSpacing: 0.3 }}>
+          収支分析
+        </div>
       </div>
       <div style={{
         display: "flex", gap: 4,
@@ -687,13 +712,13 @@ function DashboardHeader({ periodTab, onChangeTab }) {
               className="b"
               onClick={() => onChangeTab(t.id)}
               style={{
-                flex: 1, minHeight: 36,
-                background: active ? C.surface : "transparent",
-                border: "none", borderRadius: 9,
-                color: active ? C.blue : C.sub,
+                flex: 1, minHeight: 38,
+                background: active ? `color-mix(in srgb, ${ACCENT} 16%, var(--surface))` : "transparent",
+                border: active ? `1px solid color-mix(in srgb, ${ACCENT} 40%, transparent)` : "1px solid transparent",
+                borderRadius: 9,
+                color: active ? ACCENT : C.sub,
                 fontSize: 12, fontWeight: active ? 800 : 600,
                 fontFamily: font, cursor: "pointer",
-                boxShadow: active ? "0 1px 2px rgba(17,24,39,0.08)" : "none",
                 transition: "background .15s ease, color .15s ease",
               }}
             >
@@ -741,13 +766,12 @@ function FilterPanel({
   return (
     <div style={{
       background: C.surface,
-      border: `1px solid ${active ? C.blue : C.border}`,
+      border: `1px solid ${active ? ACCENT : C.border}`,
       borderRadius: 14,
       marginBottom: 12,
       overflow: "hidden",
       boxShadow: "var(--card-shadow)",
     }}>
-      {/* ヘッダー（タップで開閉） */}
       <button
         className="b"
         onClick={onToggle}
@@ -768,7 +792,7 @@ function FilterPanel({
               display: "inline-flex", alignItems: "center", justifyContent: "center",
               minWidth: 20, height: 20, padding: "0 6px",
               borderRadius: 10,
-              background: C.blue, color: "#fff",
+              background: ACCENT, color: "#04121c",
               fontSize: 11, fontWeight: 800, fontFamily: mono,
             }}>
               {activeCount}
@@ -784,7 +808,6 @@ function FilterPanel({
           display: "flex", flexDirection: "column", gap: 12,
           borderTop: `1px solid ${C.border}`,
         }}>
-          {/* 店舗名 */}
           <div>
             <div style={{ fontSize: 11, color: C.sub, fontWeight: 700, marginBottom: 6, letterSpacing: 0.4 }}>
               店舗名
@@ -806,7 +829,6 @@ function FilterPanel({
             )}
           </div>
 
-          {/* 機種名 */}
           <div>
             <div style={{ fontSize: 11, color: C.sub, fontWeight: 700, marginBottom: 6, letterSpacing: 0.4 }}>
               機種名
@@ -828,7 +850,6 @@ function FilterPanel({
             )}
           </div>
 
-          {/* 期間（カスタム日付範囲） */}
           <div>
             <div style={{ fontSize: 11, color: C.sub, fontWeight: 700, marginBottom: 6, letterSpacing: 0.4 }}>
               期間（カスタム）
@@ -855,7 +876,6 @@ function FilterPanel({
             </div>
           </div>
 
-          {/* 曜日 */}
           <div>
             <div style={{ fontSize: 11, color: C.sub, fontWeight: 700, marginBottom: 6, letterSpacing: 0.4 }}>
               曜日（複数選択可）
@@ -872,8 +892,8 @@ function FilterPanel({
                     style={{
                       minWidth: 44, minHeight: 44,
                       borderRadius: 10,
-                      background: selected ? `color-mix(in srgb, ${C.blue} 24%, ${C.surfaceHi})` : C.surfaceHi,
-                      border: `1px solid ${selected ? C.blue : C.border}`,
+                      background: selected ? `color-mix(in srgb, ${ACCENT} 24%, ${C.surfaceHi})` : C.surfaceHi,
+                      border: `1px solid ${selected ? ACCENT : C.border}`,
                       color: selected ? C.text : accent,
                       fontSize: 14, fontWeight: 800, fontFamily: font,
                       cursor: "pointer",
@@ -887,7 +907,6 @@ function FilterPanel({
             </div>
           </div>
 
-          {/* リセットボタン */}
           <button
             className="b"
             onClick={resetFilters}
@@ -922,7 +941,6 @@ function MachineHamariCard({ rows }) {
         </div>
         <div style={{ fontSize: 10, color: C.sub, opacity: 0.7 }}>大当たりなし回転数</div>
       </div>
-      {/* ヘッダー行 */}
       <div style={{
         display: "grid", gridTemplateColumns: "1fr 56px 60px 68px",
         gap: 4, padding: "0 14px 6px",
@@ -944,7 +962,6 @@ function MachineHamariCard({ rows }) {
             alignItems: "center",
           }}
         >
-          {/* 機種名 */}
           <div style={{
             fontSize: 12, fontWeight: 700, color: C.text,
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
@@ -955,7 +972,6 @@ function MachineHamariCard({ rows }) {
             </div>
           </div>
 
-          {/* トータルハマり */}
           {r.hasData ? (
             <div style={{ textAlign: "right" }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: C.orange, fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
@@ -967,7 +983,6 @@ function MachineHamariCard({ rows }) {
             <div style={{ textAlign: "right", fontSize: 9, color: C.sub }}>データ不足</div>
           )}
 
-          {/* 直近Nセッション */}
           {r.hasData ? (
             <div style={{ textAlign: "right" }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: C.text, fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
@@ -979,7 +994,6 @@ function MachineHamariCard({ rows }) {
             <div style={{ textAlign: "right", fontSize: 9, color: C.sub }}>—</div>
           )}
 
-          {/* 最後の大当たりからの累計 */}
           <div style={{ textAlign: "right" }}>
             <div style={{
               fontSize: 13, fontWeight: 800,
