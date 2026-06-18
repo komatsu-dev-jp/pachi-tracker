@@ -5,20 +5,23 @@ import { listAvailableMachines } from "./analysisSelectors";
 import {
   buildSpinRateTrend,
   buildBorderDiffHistogram,
-  aggregateByStore,
-  aggregateByWeekday,
   HISTOGRAM_MIN_SAMPLE,
 } from "./analyzerSelectors";
+import {
+  buildEvAnalysis,
+  buildSessionCumulative,
+  buildAiComment,
+  storeAnalysis,
+  machineAnalysis,
+} from "./analyticsViewSelectors";
+import { CumulativeChart, MetricCell } from "./AnalyticsCharts";
 
-// パチ analyzer（詳細分析）ビュー
-//   既存「収支分析」タブバー内の一タブとして表示する読み取り専用の分析画面。
-//   集計はすべて analyzerSelectors.js（純粋関数・読み取りのみ）に委譲する。
-//
-//   構成:
-//     1. 機種ごとの回転率/K 推移（折れ線）
-//     2. ボーダー差の分布ヒストグラム（棒グラフ）
-//     3. 店舗別・曜日別の期待値傾向（集計表）
-//   データ不足時は各セクションで「データ不足」と日本語明示する。
+// 分析+（詳細分析）ビュー — 金融端末風に刷新
+//   期待値分析 / 店舗分析 / 機種分析 の3セクションを内部タブで切替える。
+//   集計はすべて純粋関数（analysisSelectors / analyzerSelectors / analyticsViewSelectors）に委譲。
+//   logic.js・計算式・保存データ構造には一切触れない。
+
+const ACCENT = "var(--at-accent)";
 
 const EMPTY = (text) => (
   <div style={{ textAlign: "center", padding: "28px 16px", color: C.sub, fontFamily: font, fontSize: 12, lineHeight: 1.6 }}>
@@ -35,11 +38,47 @@ function SectionLabel({ children, hint }) {
   );
 }
 
+// 内部タブバー（期待値 / 店舗 / 機種）
+function SubTabBar({ tab, setTab }) {
+  const tabs = [
+    { id: "ev", label: "期待値分析" },
+    { id: "store", label: "店舗分析" },
+    { id: "machine", label: "機種分析" },
+  ];
+  return (
+    <div style={{
+      display: "flex", gap: 4, background: C.surfaceHi, borderRadius: 12, padding: 3,
+      border: `1px solid ${C.border}`, marginBottom: 12,
+    }}>
+      {tabs.map((t) => {
+        const active = tab === t.id;
+        return (
+          <button
+            key={t.id}
+            className="b"
+            onClick={() => setTab(t.id)}
+            style={{
+              flex: 1, minHeight: 40,
+              background: active ? `color-mix(in srgb, ${ACCENT} 16%, var(--surface))` : "transparent",
+              border: active ? `1px solid color-mix(in srgb, ${ACCENT} 40%, transparent)` : "1px solid transparent",
+              borderRadius: 9,
+              color: active ? ACCENT : C.sub,
+              fontSize: 12, fontWeight: active ? 800 : 600, fontFamily: font, cursor: "pointer",
+            }}
+          >
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
-// 1. 機種ごとの回転率/K 推移（折れ線）
+// 機種ごとの回転率/K 推移（折れ線）
 // ──────────────────────────────────────────────────────────────────────────────
-function SpinRateTrendChart({ points, width = 320, height = 168 }) {
-  const color = C.teal;
+function SpinRateTrendChart({ points, width = 340, height = 168 }) {
+  const color = ACCENT;
   if (!points || points.length === 0) {
     return EMPTY("該当機種の回転率記録がありません");
   }
@@ -71,10 +110,7 @@ function SpinRateTrendChart({ points, width = 320, height = 168 }) {
     ...p,
   }));
   const pathD = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
-  const yLabels = [maxV, (maxV + minV) / 2, minV].map((v) => ({
-    v,
-    y: pad.top + h - ((v - minV) / range) * h,
-  }));
+  const yLabels = [maxV, (maxV + minV) / 2, minV].map((v) => ({ v, y: pad.top + h - ((v - minV) / range) * h }));
   const xTickIdx = Array.from(new Set([0, Math.floor(points.length / 2), points.length - 1]));
   return (
     <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ display: "block" }}>
@@ -86,10 +122,7 @@ function SpinRateTrendChart({ points, width = 320, height = 168 }) {
           </text>
         </g>
       ))}
-      <path
-        d={`${pathD} L ${pts[pts.length - 1].x} ${pad.top + h} L ${pts[0].x} ${pad.top + h} Z`}
-        fill="url(#spin-grad)"
-      />
+      <path d={`${pathD} L ${pts[pts.length - 1].x} ${pad.top + h} L ${pts[0].x} ${pad.top + h} Z`} fill="url(#spin-grad)" />
       <defs>
         <linearGradient id="spin-grad" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity="0.30" />
@@ -110,9 +143,9 @@ function SpinRateTrendChart({ points, width = 320, height = 168 }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// 2. ボーダー差の分布ヒストグラム（棒グラフ）
+// ボーダー差の分布ヒストグラム（棒グラフ）
 // ──────────────────────────────────────────────────────────────────────────────
-function BorderDiffHistogram({ data, width = 320, height = 170 }) {
+function BorderDiffHistogram({ data, width = 340, height = 170 }) {
   if (!data || data.total === 0) {
     return EMPTY("ボーダー差の記録がありません");
   }
@@ -126,11 +159,9 @@ function BorderDiffHistogram({ data, width = 320, height = 170 }) {
   const maxCount = Math.max(...bins.map((b) => b.count), 1);
   const gap = 2;
   const bw = w / bins.length;
-  // ラベル間引き（密集回避）
   const labelStep = Math.ceil(bins.length / 6);
   return (
     <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ display: "block" }}>
-      {/* y 軸目盛（最大件数） */}
       <text x={pad.left - 4} y={pad.top + 8} textAnchor="end" fill="var(--sub)" fontSize={9} fontFamily="monospace">
         {maxCount}
       </text>
@@ -139,19 +170,10 @@ function BorderDiffHistogram({ data, width = 320, height = 170 }) {
         const bh = (b.count / maxCount) * h;
         const x = pad.left + i * bw;
         const y = pad.top + h - bh;
-        // ボーダー差プラス域=緑、マイナス域=赤
         const fill = b.mid >= 0 ? C.green : C.red;
         return (
           <g key={i}>
-            <rect
-              x={x + gap / 2}
-              y={y}
-              width={Math.max(1, bw - gap)}
-              height={bh}
-              rx={2}
-              fill={fill}
-              opacity={b.count > 0 ? 0.85 : 0}
-            />
+            <rect x={x + gap / 2} y={y} width={Math.max(1, bw - gap)} height={bh} rx={2} fill={fill} opacity={b.count > 0 ? 0.85 : 0} />
             {b.count > 0 && (
               <text x={x + bw / 2} y={y - 3} textAnchor="middle" fill="var(--text)" fontSize={9} fontFamily="monospace">
                 {b.count}
@@ -172,7 +194,6 @@ function BorderDiffHistogram({ data, width = 320, height = 170 }) {
   );
 }
 
-// ヒストグラムのサマリー（平均・最小最大・プラス率）
 function HistogramStats({ data }) {
   if (!data || data.total === 0) return null;
   const cells = [
@@ -196,106 +217,261 @@ function HistogramStats({ data }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// 3. 店舗別・曜日別の期待値傾向（集計表）
+// AIコメント
 // ──────────────────────────────────────────────────────────────────────────────
-function GroupTable({ rows, firstColLabel }) {
-  if (!rows || rows.length === 0) {
-    return EMPTY("データ不足（集計できる記録がありません）");
-  }
+function AiCommentCard({ lines }) {
+  if (!lines || lines.length === 0) return null;
   return (
-    <div>
-      {/* ヘッダー行 */}
-      <div style={{
-        display: "grid", gridTemplateColumns: "1fr 56px 78px 78px",
-        gap: 4, padding: "0 14px 6px", borderBottom: `1px solid ${C.border}`,
-      }}>
-        {[firstColLabel, "件数", "EV合計", "実収支"].map((hh) => (
-          <div key={hh} style={{ fontSize: 9, color: C.sub, fontWeight: 700, textAlign: hh === firstColLabel ? "left" : "right" }}>
-            {hh}
+    <Card>
+      <div style={{ padding: "12px 14px 6px", display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={{ width: 6, height: 6, borderRadius: "50%", background: ACCENT, boxShadow: `0 0 6px ${ACCENT}` }} />
+        <div style={{ fontSize: 12, color: ACCENT, fontWeight: 800, letterSpacing: 0.4 }}>AIコメント</div>
+      </div>
+      <div style={{ padding: "2px 14px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+        {lines.map((t, i) => (
+          <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <span style={{ color: ACCENT, fontSize: 12, lineHeight: 1.6, flexShrink: 0 }}>▸</span>
+            <span style={{ fontSize: 13, color: C.text, fontFamily: font, lineHeight: 1.6 }}>{t}</span>
           </div>
         ))}
       </div>
-      {rows.map((r, i) => (
-        <div
-          key={r.key}
-          style={{
-            display: "grid", gridTemplateColumns: "1fr 56px 78px 78px",
-            gap: 4, padding: "10px 14px", alignItems: "center",
-            borderTop: i === 0 ? "none" : `1px solid ${C.border}`,
-          }}
-        >
-          <div style={{ fontSize: 13, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {r.label}
-          </div>
-          <div style={{ textAlign: "right", fontSize: 13, fontWeight: 700, color: C.text, fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
-            {f(r.sessions)}
-          </div>
-          <div style={{ textAlign: "right", fontSize: 13, fontWeight: 800, color: sc(r.evAmount), fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
-            {sp(Math.round(r.evAmount))}
-          </div>
-          <div style={{ textAlign: "right" }}>
-            {r.hasActual ? (
-              <span style={{ fontSize: 13, fontWeight: 800, color: sc(r.actualPL), fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
-                {sp(Math.round(r.actualPL))}
-              </span>
-            ) : (
-              <span style={{ fontSize: 10, color: C.sub }}>未記録</span>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
+    </Card>
   );
 }
 
-// 内部の小タブ（店舗別 / 曜日別）
-const GROUP_TABS = [
-  { id: "store", label: "店舗別" },
-  { id: "weekday", label: "曜日別" },
-];
+// ──────────────────────────────────────────────────────────────────────────────
+// 期待値分析セクション
+// ──────────────────────────────────────────────────────────────────────────────
+function EvSection({ archives, extraFilters }) {
+  const ev = useMemo(() => buildEvAnalysis(archives, extraFilters), [archives, extraFilters]);
+  const cumulative = useMemo(() => buildSessionCumulative(archives, extraFilters), [archives, extraFilters]);
+  const histogram = useMemo(() => buildBorderDiffHistogram(archives, { ...extraFilters, binSize: 1 }), [archives, extraFilters]);
+  const aiLines = useMemo(() => buildAiComment(archives, extraFilters), [archives, extraFilters]);
 
-export default function AnalyzerView({ archives, extraFilters }) {
-  const list = useMemo(() => archives || [], [archives]);
+  const cells = [
+    { label: "期待値", value: sp(Math.round(ev.ev)), unit: "円", color: ACCENT },
+    { label: "実収支", value: ev.hasActual ? sp(Math.round(ev.actual)) : "—", unit: ev.hasActual ? "円" : "", color: ev.hasActual ? sc(ev.actual) : C.sub },
+    { label: "期待値との差", value: ev.hasActual ? sp(Math.round(ev.diff)) : "—", unit: ev.hasActual ? "円" : "", color: ev.hasActual ? sc(ev.diff) : C.sub },
+    { label: "収束率", value: ev.convergence != null ? f(ev.convergence, 0) : "—", unit: ev.convergence != null ? "%" : "", color: ev.convergence == null ? C.sub : ev.convergence >= 80 ? C.green : ev.convergence >= 40 ? C.yellow : C.red },
+    { label: "期待値/日", value: ev.evPerDay != null ? sp(Math.round(ev.evPerDay)) : "—", unit: "円", color: ACCENT },
+    { label: "実収支/日", value: ev.actualPerDay != null ? sp(Math.round(ev.actualPerDay)) : "—", unit: ev.actualPerDay != null ? "円" : "", color: ev.actualPerDay != null ? sc(ev.actualPerDay) : C.sub },
+    { label: "期待値/時間", value: ev.evPerHour != null ? sp(Math.round(ev.evPerHour)) : "—", unit: ev.evPerHour != null ? "円" : "", color: ACCENT },
+    { label: "実収支/時間", value: ev.actualPerHour != null ? sp(Math.round(ev.actualPerHour)) : "—", unit: ev.actualPerHour != null ? "円" : "", color: ev.actualPerHour != null ? sc(ev.actualPerHour) : C.sub },
+  ];
 
-  // 機種選択（回転率推移用）。既定は記録のある先頭機種。
-  const machines = useMemo(() => listAvailableMachines(list), [list]);
-  const [selectedMachine, setSelectedMachine] = useState("");
-  const effMachine = selectedMachine || machines[0] || "";
+  return (
+    <>
+      {/* 指標グリッド */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+        {cells.map((c) => (
+          <MetricCell key={c.label} label={c.label} value={c.value} unit={c.unit} color={c.color} />
+        ))}
+      </div>
 
-  const trendPoints = useMemo(
-    () => buildSpinRateTrend(list, effMachine, extraFilters),
-    [list, effMachine, extraFilters]
-  );
-
-  const histogram = useMemo(
-    () => buildBorderDiffHistogram(list, { ...extraFilters, binSize: 1 }),
-    [list, extraFilters]
-  );
-
-  const storeRows = useMemo(() => aggregateByStore(list, extraFilters), [list, extraFilters]);
-  const weekdayRows = useMemo(() => aggregateByWeekday(list, extraFilters), [list, extraFilters]);
-
-  const [groupTab, setGroupTab] = useState("store");
-
-  if (list.length === 0) {
-    return (
-      <Card style={{ padding: "32px 16px", textAlign: "center" }}>
-        <div style={{ fontSize: 13, color: C.sub, fontFamily: font, lineHeight: 1.6 }}>
-          アーカイブがまだありません。実戦記録を保存すると、ここに詳細分析が表示されます。
+      {/* 累積推移（3本ライン） */}
+      <Card>
+        <SectionLabel hint="実収支 / 期待値 / 差異">期待値 累積推移</SectionLabel>
+        <div style={{ padding: "4px 8px 12px" }}>
+          <CumulativeChart data={cumulative} />
         </div>
       </Card>
-    );
+
+      {/* ボーダー差の分布 */}
+      <Card>
+        <SectionLabel hint="回転率 − ボーダー">ボーダー差の分布</SectionLabel>
+        <div style={{ padding: "0 8px 4px" }}>
+          <BorderDiffHistogram data={histogram} />
+        </div>
+        <HistogramStats data={histogram} />
+      </Card>
+
+      {/* AIコメント */}
+      <AiCommentCard lines={aiLines} />
+    </>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 店舗分析セクション（ランキング + 店舗強度ヒートマップ）
+// ──────────────────────────────────────────────────────────────────────────────
+function StoreSection({ archives, extraFilters }) {
+  const rows = useMemo(() => storeAnalysis(archives, extraFilters), [archives, extraFilters]);
+  if (rows.length === 0) {
+    return <Card style={{ padding: "32px 16px", textAlign: "center" }}>{EMPTY("店舗の記録がありません")}</Card>;
+  }
+
+  // ヒートマップの色（強度 0〜1 を 赤→黄→緑 に補間）
+  const heatColor = (s) => {
+    if (s == null) return "var(--surface-hi)";
+    if (s >= 0.66) return `color-mix(in srgb, ${C.green} ${40 + s * 50}%, transparent)`;
+    if (s >= 0.33) return `color-mix(in srgb, ${C.yellow} ${40 + s * 40}%, transparent)`;
+    return `color-mix(in srgb, ${C.red} ${40 + (0.5 - s) * 60}%, transparent)`;
+  };
+
+  return (
+    <>
+      {/* ランキング */}
+      <Card>
+        <SectionLabel hint="実収支順">店舗ランキング</SectionLabel>
+        <div style={{
+          display: "grid", gridTemplateColumns: "20px 1fr 52px 56px 56px",
+          gap: 6, padding: "0 14px 6px", borderBottom: `1px solid ${C.border}`,
+        }}>
+          {["#", "店舗", "回転率", "EV", "実収支"].map((hh, i) => (
+            <div key={hh} style={{ fontSize: 9, color: C.sub, fontWeight: 700, textAlign: i === 1 ? "left" : i === 0 ? "center" : "right" }}>{hh}</div>
+          ))}
+        </div>
+        {rows.map((r, i) => (
+          <div key={r.key} style={{
+            display: "grid", gridTemplateColumns: "20px 1fr 52px 56px 56px",
+            gap: 6, padding: "10px 14px", alignItems: "center",
+            borderTop: i === 0 ? "none" : `1px solid ${C.border}`,
+          }}>
+            <div style={{ textAlign: "center", fontSize: 12, fontWeight: 800, color: i < 3 ? ACCENT : C.sub, fontFamily: mono }}>{i + 1}</div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.storeName}</div>
+              <div style={{ fontSize: 9, color: C.sub, marginTop: 1 }}>{r.days}日 ・ {r.sessions}回</div>
+            </div>
+            <div style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: r.spinRate != null ? C.text : C.sub, fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
+              {r.spinRate != null ? f(r.spinRate, 1) : "—"}
+            </div>
+            <div style={{ textAlign: "right", fontSize: 12, fontWeight: 800, color: sc(r.evAmount), fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
+              {sp(Math.round(r.evAmount))}
+            </div>
+            <div style={{ textAlign: "right" }}>
+              {r.hasActual
+                ? <span style={{ fontSize: 12, fontWeight: 800, color: sc(r.actualPL), fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{sp(Math.round(r.actualPL))}</span>
+                : <span style={{ fontSize: 10, color: C.sub }}>未記録</span>}
+            </div>
+          </div>
+        ))}
+      </Card>
+
+      {/* 店舗強度ヒートマップ */}
+      <Card>
+        <SectionLabel hint="緑=強い / 黄=普通 / 赤=弱い">店舗強度マップ</SectionLabel>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(64px, 1fr))", gap: 6, padding: "0 14px 14px" }}>
+          {rows.map((r) => (
+            <div key={r.key} style={{
+              aspectRatio: "1 / 1", borderRadius: 10,
+              background: heatColor(r.strength),
+              border: `1px solid ${C.border}`,
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+              padding: 4, minHeight: 56,
+            }}>
+              <div style={{
+                fontSize: 10, fontWeight: 700, color: C.text, textAlign: "center", lineHeight: 1.1,
+                overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+              }}>
+                {r.storeName}
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 800, color: sc(r.hasActual ? r.actualPL : r.evAmount), fontFamily: mono, marginTop: 3 }}>
+                {sp(Math.round((r.hasActual ? r.actualPL : r.evAmount) / 1000))}k
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 機種分析セクション（並べ替えランキング + 選択機種の回転率推移）
+// ──────────────────────────────────────────────────────────────────────────────
+const MACHINE_SORTS = [
+  { id: "actual", label: "収支順" },
+  { id: "ev", label: "期待値順" },
+  { id: "spin", label: "回転率順" },
+  { id: "hours", label: "稼働時間順" },
+];
+
+function MachineSection({ archives, extraFilters }) {
+  const [sortKey, setSortKey] = useState("actual");
+  const rows = useMemo(() => machineAnalysis(archives, { ...extraFilters, sortKey }), [archives, extraFilters, sortKey]);
+
+  const machines = useMemo(() => listAvailableMachines(archives), [archives]);
+  const [selectedMachine, setSelectedMachine] = useState("");
+  const effMachine = selectedMachine || machines[0] || "";
+  const trendPoints = useMemo(() => buildSpinRateTrend(archives, effMachine, extraFilters), [archives, effMachine, extraFilters]);
+
+  if (rows.length === 0) {
+    return <Card style={{ padding: "32px 16px", textAlign: "center" }}>{EMPTY("機種の記録がありません")}</Card>;
   }
 
   return (
     <>
-      {/* 1. 機種ごとの回転率/K 推移 */}
+      {/* 並べ替え */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+        {MACHINE_SORTS.map((s) => {
+          const active = sortKey === s.id;
+          return (
+            <button
+              key={s.id}
+              className="b"
+              onClick={() => setSortKey(s.id)}
+              style={{
+                flex: "1 1 0", minWidth: 0, minHeight: 40,
+                background: active ? `color-mix(in srgb, ${ACCENT} 18%, var(--surface))` : C.surfaceHi,
+                border: `1px solid ${active ? ACCENT : C.border}`,
+                borderRadius: 10,
+                color: active ? ACCENT : C.sub,
+                fontSize: 11, fontWeight: active ? 800 : 600, fontFamily: font, cursor: "pointer",
+              }}
+            >
+              {s.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ランキング */}
+      <Card>
+        <div style={{
+          display: "grid", gridTemplateColumns: "18px 1fr 44px 40px 52px",
+          gap: 6, padding: "10px 14px 6px", borderBottom: `1px solid ${C.border}`,
+        }}>
+          {["#", "機種", "時間", "回転", "実収支"].map((hh, i) => (
+            <div key={hh} style={{ fontSize: 9, color: C.sub, fontWeight: 700, textAlign: i === 1 ? "left" : i === 0 ? "center" : "right" }}>{hh}</div>
+          ))}
+        </div>
+        {rows.map((r, i) => (
+          <div key={r.key} style={{
+            display: "grid", gridTemplateColumns: "18px 1fr 44px 40px 52px",
+            gap: 6, padding: "10px 14px", alignItems: "center",
+            borderTop: i === 0 ? "none" : `1px solid ${C.border}`,
+          }}>
+            <div style={{ textAlign: "center", fontSize: 12, fontWeight: 800, color: i < 3 ? ACCENT : C.sub, fontFamily: mono }}>{i + 1}</div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.machineName}</div>
+              <div style={{ fontSize: 9, color: C.sub, marginTop: 1 }}>
+                EV {sp(Math.round(r.evAmount))}
+                {r.winRate != null && <> ・ 勝率{f(r.winRate, 0)}%</>}
+              </div>
+            </div>
+            <div style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: r.hours > 0 ? C.text : C.sub, fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
+              {r.hours > 0 ? f(r.hours, 1) : "—"}
+            </div>
+            <div style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: r.spinRate != null ? ACCENT : C.sub, fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
+              {r.spinRate != null ? f(r.spinRate, 1) : "—"}
+            </div>
+            <div style={{ textAlign: "right" }}>
+              {r.hasActual
+                ? <span style={{ fontSize: 12, fontWeight: 800, color: sc(r.actualPL), fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{sp(Math.round(r.actualPL))}</span>
+                : <span style={{ fontSize: 10, color: C.sub }}>未記録</span>}
+            </div>
+          </div>
+        ))}
+        <div style={{ padding: "8px 14px 12px", fontSize: 9, color: C.sub, lineHeight: 1.5, borderTop: `1px solid ${C.border}` }}>
+          時間=稼働時間(h) ／ 回転=平均回転率(回/K) ／ 実収支=回収−投資（記録のあるセッションのみ）
+        </div>
+      </Card>
+
+      {/* 選択機種の回転率推移 */}
       <Card>
         <SectionLabel hint="セッション時系列">機種別 回転率/K 推移</SectionLabel>
         <div style={{ padding: "0 14px 8px" }}>
-          {machines.length === 0 ? (
-            EMPTY("機種名の記録がありません")
-          ) : (
+          {machines.length === 0 ? EMPTY("機種名の記録がありません") : (
             <select
               value={effMachine}
               onChange={(e) => setSelectedMachine(e.target.value)}
@@ -321,53 +497,30 @@ export default function AnalyzerView({ archives, extraFilters }) {
           <SpinRateTrendChart points={trendPoints} />
         </div>
       </Card>
+    </>
+  );
+}
 
-      {/* 2. ボーダー差の分布ヒストグラム */}
-      <Card>
-        <SectionLabel hint="回転率 − ボーダー">ボーダー差の分布</SectionLabel>
-        <div style={{ padding: "0 8px 4px" }}>
-          <BorderDiffHistogram data={histogram} />
-        </div>
-        <HistogramStats data={histogram} />
-      </Card>
+export default function AnalyzerView({ archives, extraFilters }) {
+  const list = useMemo(() => archives || [], [archives]);
+  const [tab, setTab] = useState("ev");
 
-      {/* 3. 店舗別・曜日別の期待値傾向 */}
-      <Card>
-        <SectionLabel hint="EV・実収支・件数">傾向の比較</SectionLabel>
-        <div style={{ padding: "0 14px 10px" }}>
-          <div style={{
-            display: "flex", gap: 4, background: C.surfaceHi, borderRadius: 12, padding: 3, border: `1px solid ${C.border}`,
-          }}>
-            {GROUP_TABS.map((t) => {
-              const active = groupTab === t.id;
-              return (
-                <button
-                  key={t.id}
-                  className="b"
-                  onClick={() => setGroupTab(t.id)}
-                  style={{
-                    flex: 1, minHeight: 44,
-                    background: active ? C.surface : "transparent",
-                    border: "none", borderRadius: 9,
-                    color: active ? C.blue : C.sub,
-                    fontSize: 12, fontWeight: active ? 800 : 600,
-                    fontFamily: font, cursor: "pointer",
-                    boxShadow: active ? "0 1px 2px rgba(17,24,39,0.08)" : "none",
-                  }}
-                >
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        {groupTab === "store"
-          ? <GroupTable rows={storeRows} firstColLabel="店舗" />
-          : <GroupTable rows={weekdayRows} firstColLabel="曜日" />}
-        <div style={{ padding: "8px 14px 12px", fontSize: 9, color: C.sub, lineHeight: 1.5, borderTop: `1px solid ${C.border}` }}>
-          EV合計 = 各セッションの期待値（上皿補正後）の合計 ／ 実収支 = 回収 − 投資（記録のあるセッションのみ）
+  if (list.length === 0) {
+    return (
+      <Card style={{ padding: "32px 16px", textAlign: "center" }}>
+        <div style={{ fontSize: 13, color: C.sub, fontFamily: font, lineHeight: 1.6 }}>
+          アーカイブがまだありません。実戦記録を保存すると、ここに詳細分析が表示されます。
         </div>
       </Card>
+    );
+  }
+
+  return (
+    <>
+      <SubTabBar tab={tab} setTab={setTab} />
+      {tab === "ev" && <EvSection archives={list} extraFilters={extraFilters} />}
+      {tab === "store" && <StoreSection archives={list} extraFilters={extraFilters} />}
+      {tab === "machine" && <MachineSection archives={list} extraFilters={extraFilters} />}
     </>
   );
 }
