@@ -223,49 +223,50 @@ function SummaryHero({ summary, isDemo, periodWord = "今月" }) {
   const ev = isDemo ? 3120 : summary.evAmount;
   const diff = actual - ev;
   return (
-    <section className={`${card} grid min-h-[168px] grid-cols-[1.03fr_.97fr] overflow-hidden`}>
-      <div className="border-r border-white/[0.07] p-3.5">
-        <div className={label}>{periodWord}の実質収支</div>
-        <div className={`mt-1 flex items-end font-mono ${moneyClass(actual)}`}>
-          <strong className="text-[34px] font-black leading-none tracking-[-.055em]">{signed(actual)}</strong>
-          <span className="mb-0.5 ml-1 text-[10px] font-bold">円</span>
+    <section className={`${card} min-h-[280px] overflow-hidden p-4`}>
+      <div className={label}>{periodWord}の実質収支</div>
+      <div className={`mt-1 flex items-end font-mono ${moneyClass(actual)}`}>
+        <strong className="text-[40px] font-black leading-none tracking-[-.055em]">{signed(actual)}</strong>
+        <span className="mb-1 ml-1.5 text-[12px] font-bold">円</span>
+      </div>
+      <div className="mt-3.5 grid grid-cols-2 border-y border-white/[0.08] py-2.5">
+        <div>
+          <div className={label}>期待値</div>
+          <div className="mt-1 font-mono text-[17px] font-black text-[#16C8FF]">{signed(ev)}<span className="text-[9px]">円</span></div>
         </div>
-        <div className="mt-3 grid grid-cols-2 border-y border-white/[0.08] py-2">
-          <div>
-            <div className={label}>期待値</div>
-            <div className="mt-1 font-mono text-[15px] font-black text-[#16C8FF]">{signed(ev)}<span className="text-[8px]">円</span></div>
-          </div>
-          <div className="border-l border-white/[0.08] pl-3">
-            <div className={label}>期待値との差</div>
-            <div className={`mt-1 font-mono text-[15px] font-black ${moneyClass(diff)}`}>{signed(diff)}<span className="text-[8px]">円</span></div>
-          </div>
-        </div>
-        <div className="mt-2.5">
-          <div className="flex items-center justify-between">
-            <span className={label}>収束率（目安）</span>
-            <span className="font-mono text-[12px] font-black text-[#16C8FF]">38%</span>
-          </div>
-          <div className="mt-1.5 h-[5px] overflow-hidden rounded-full bg-[#14213a]">
-            <div className="h-full w-[38%] rounded-full bg-gradient-to-r from-[#16C8FF] to-[#1688ff] shadow-[0_0_12px_#16C8FF]" />
-          </div>
-          <p className="mt-1 text-[8px] text-[#a0aec0]">あと62%で収束ライン</p>
+        <div className="border-l border-white/[0.08] pl-3">
+          <div className={label}>期待値との差</div>
+          <div className={`mt-1 font-mono text-[17px] font-black ${moneyClass(diff)}`}>{signed(diff)}<span className="text-[9px]">円</span></div>
         </div>
       </div>
-      <div className="relative p-3.5">
-        <HelpCircle className="absolute right-3 top-3 h-3.5 w-3.5 text-[#8190a8]" />
-        <div className={label}>期待値ランク</div>
-        <div className="mt-1 flex items-center gap-2">
-          <strong className="text-[36px] font-black leading-none text-[#25D366]">A-</strong>
-          <span className="rounded-full border border-white/10 bg-[#07101f] px-2 py-1 text-[8px] font-black text-white">上位18%</span>
+      <div className="mt-3.5">
+        <div className="flex items-center justify-between">
+          <span className={label}>収束率（目安）</span>
+          <span className="font-mono text-[13px] font-black text-[#16C8FF]">38%</span>
         </div>
-        <p className="mt-1 text-[9px] text-[#a0aec0]">素晴らしい期待値稼働！</p>
-        <div className="my-3 h-px bg-white/[0.07]" />
-        <div className={label}>{periodWord}の称号</div>
-        <div className="mt-1.5 flex items-center gap-2">
-          <Trophy className="h-4 w-4 fill-[#FFC83D] text-[#FFC83D]" />
-          <strong className="text-[12px] text-white">データ派プレイヤー</strong>
+        <div className="mt-1.5 h-[6px] overflow-hidden rounded-full bg-[#14213a]">
+          <div className="h-full w-[38%] rounded-full bg-gradient-to-r from-[#16C8FF] to-[#1688ff] shadow-[0_0_12px_#16C8FF]" />
         </div>
-        <p className="mt-1 text-[8px] leading-[1.45] text-[#a0aec0]">回転率と期待値のバランスが<br />非常に良い月でした！</p>
+        <p className="mt-1 text-[9px] text-[#a0aec0]">あと62%で収束ライン</p>
+      </div>
+      <div className="mt-3.5 grid grid-cols-2 gap-3 border-t border-white/[0.08] pt-3.5">
+        <div className="relative">
+          <HelpCircle className="absolute right-0 top-0 h-3.5 w-3.5 text-[#8190a8]" />
+          <div className={label}>期待値ランク</div>
+          <div className="mt-1 flex items-center gap-2">
+            <strong className="text-[34px] font-black leading-none text-[#25D366]">A-</strong>
+            <span className="rounded-full border border-white/10 bg-[#07101f] px-2 py-1 text-[8px] font-black text-white">上位18%</span>
+          </div>
+          <p className="mt-1 text-[9px] text-[#a0aec0]">素晴らしい期待値稼働！</p>
+        </div>
+        <div className="border-l border-white/[0.08] pl-3">
+          <div className={label}>{periodWord}の称号</div>
+          <div className="mt-1.5 flex items-center gap-2">
+            <Trophy className="h-4 w-4 fill-[#FFC83D] text-[#FFC83D]" />
+            <strong className="text-[13px] text-white">データ派プレイヤー</strong>
+          </div>
+          <p className="mt-1 text-[9px] leading-[1.45] text-[#a0aec0]">回転率と期待値のバランスが非常に良い月でした！</p>
+        </div>
       </div>
     </section>
   );
@@ -280,17 +281,22 @@ function Kpis({ summary, isDemo }) {
     { icon: Clock3, title: "稼働時間", value: isDemo ? "5.1" : (summary.workHours || 0).toFixed(1), unit: "時間" },
   ];
   return (
-    <section className={`${card} grid h-[62px] grid-cols-5 overflow-hidden`}>
+    <section className={`${card} grid grid-cols-2 overflow-hidden`}>
       {values.map((item, index) => (
-        <div key={item.title} className={`flex min-w-0 flex-col items-center justify-center px-1 ${index ? "border-l border-white/[0.08]" : ""}`}>
+        <div
+          key={item.title}
+          className={`flex min-h-[62px] min-w-0 flex-col items-center justify-center px-2 py-3 ${
+            index === values.length - 1 ? "col-span-2" : ""
+          } ${index % 2 === 1 ? "border-l border-white/[0.08]" : ""} ${index >= 2 ? "border-t border-white/[0.08]" : ""}`}
+        >
           <div className="flex items-center gap-1">
-            <item.icon className="h-3 w-3 text-[#5e9df7]" />
-            <span className="truncate text-[7px] text-[#8390a7]">{item.title}</span>
+            <item.icon className="h-3.5 w-3.5 text-[#5e9df7]" />
+            <span className="truncate text-[9px] text-[#8390a7]">{item.title}</span>
           </div>
-          <div className={`mt-1 whitespace-nowrap font-mono text-[14px] font-black ${item.positive ? "text-[#25D366]" : "text-white"}`}>
-            {item.value}<span className="ml-0.5 text-[7px]">{item.unit}</span>
+          <div className={`mt-1.5 whitespace-nowrap font-mono text-[18px] font-black ${item.positive ? "text-[#25D366]" : "text-white"}`}>
+            {item.value}<span className="ml-0.5 text-[9px]">{item.unit}</span>
           </div>
-          {item.sub && <span className="-mt-0.5 text-[7px] text-[#6880a4]">{item.sub}</span>}
+          {item.sub && <span className="mt-0.5 text-[8px] text-[#6880a4]">{item.sub}</span>}
         </div>
       ))}
     </section>
@@ -306,15 +312,15 @@ function CalendarCell({ day, row, selected, onSelect }) {
     <button
       type="button"
       onClick={() => row && onSelect(day)}
-      className={`relative h-[39px] rounded-[5px] border p-1 text-left transition ${heat} ${
+      className={`relative min-h-[58px] rounded-[6px] border p-1 text-left transition ${heat} ${
         selected ? "ring-1 ring-[#16C8FF] shadow-[0_0_14px_rgba(22,200,255,.24)]" : ""
       }`}
     >
-      <span className="absolute left-1 top-0.5 text-[8px] font-bold text-white">{day}</span>
+      <span className="absolute left-1 top-0.5 text-[9px] font-bold text-white">{day}</span>
       {row && (
-        <div className="mt-2 text-center font-mono">
-          <div className={`text-[8px] font-black ${moneyClass(row.actual)}`}>{signed(row.actual)}</div>
-          <div className="text-[7px] font-bold text-[#a8b5c9]">{signed(row.ev)}</div>
+        <div className="mt-4 text-center font-mono">
+          <div className={`text-[9px] font-black ${moneyClass(row.actual)}`}>{signed(row.actual)}</div>
+          <div className="text-[8px] font-bold text-[#a8b5c9]">{signed(row.ev)}</div>
         </div>
       )}
     </button>
@@ -324,52 +330,51 @@ function CalendarCell({ day, row, selected, onSelect }) {
 function DayDetail({ day, row, onShare }) {
   const detail = row || {};
   return (
-    <aside className="border-l border-white/[0.08] bg-[#071326] p-3">
-      <div className="text-[11px] font-black text-white">6月{day}日（木）</div>
-      <div className="mt-1 font-mono text-[17px] font-black text-[#16C8FF]">{signed(detail.actual || 0)}<span className="text-[8px]">円</span></div>
-      <div className="text-[8px] text-[#7f8ca3]">（期待値 <span className="text-[#16C8FF]">{signed(detail.ev || 0)}円</span>）</div>
-      <div className="my-2.5 h-px bg-white/[0.08]" />
-      <dl className="grid grid-cols-[48px_1fr] gap-y-2 text-[8px]">
-        <dt className="text-[#74839b]">店舗</dt><dd className="leading-[1.35] text-[#bdc7d7]">{detail.storeName || "丸之内ヘリオス2000竹原"}</dd>
-        <dt className="text-[#74839b]">機種</dt><dd className="leading-[1.35] text-[#bdc7d7]">{detail.machineName || "スマスロ マギアレコード"}</dd>
-        <dt className="text-[#74839b]">回転率</dt><dd className="font-mono text-[#bdc7d7]">{detail.spinRate || 19.7}回/k</dd>
-        <dt className="text-[#74839b]">稼働時間</dt><dd className="font-mono text-[#bdc7d7]">{detail.hours || 2.1}時間</dd>
-        <dt className="text-[#74839b]">投資</dt><dd className="font-mono text-[#bdc7d7]">{fmt(detail.invest || 1000)}円</dd>
-        <dt className="text-[#74839b]">回収</dt><dd className="font-mono text-[#bdc7d7]">{fmt(detail.recovery || 6406)}円</dd>
+    <section className={`${card} p-3.5`}>
+      <div className="text-[13px] font-black text-white">6月{day}日（木）</div>
+      <div className="mt-1.5 flex items-baseline gap-2">
+        <span className={`font-mono text-[22px] font-black ${moneyClass(detail.actual || 0)}`}>{signed(detail.actual || 0)}<span className="text-[10px]">円</span></span>
+        <span className="text-[9px] text-[#7f8ca3]">期待値 <span className="text-[#16C8FF]">{signed(detail.ev || 0)}円</span></span>
+      </div>
+      <div className="my-3 h-px bg-white/[0.08]" />
+      <dl className="space-y-2.5 text-[10px]">
+        <div className="flex justify-between gap-3"><dt className="shrink-0 text-[#74839b]">店舗</dt><dd className="truncate text-right leading-[1.35] text-[#bdc7d7]">{detail.storeName || "丸之内ヘリオス2000竹原"}</dd></div>
+        <div className="flex justify-between gap-3"><dt className="shrink-0 text-[#74839b]">機種</dt><dd className="truncate text-right leading-[1.35] text-[#bdc7d7]">{detail.machineName || "スマスロ マギアレコード"}</dd></div>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-white/[0.08] pt-2.5">
+          <div className="flex justify-between gap-2"><dt className="text-[#74839b]">回転率</dt><dd className="font-mono text-[#bdc7d7]">{detail.spinRate || 19.7}回/k</dd></div>
+          <div className="flex justify-between gap-2"><dt className="text-[#74839b]">稼働時間</dt><dd className="font-mono text-[#bdc7d7]">{detail.hours || 2.1}時間</dd></div>
+          <div className="flex justify-between gap-2"><dt className="text-[#74839b]">投資</dt><dd className="font-mono text-[#bdc7d7]">{fmt(detail.invest || 1000)}円</dd></div>
+          <div className="flex justify-between gap-2"><dt className="text-[#74839b]">回収</dt><dd className="font-mono text-[#bdc7d7]">{fmt(detail.recovery || 6406)}円</dd></div>
+        </div>
       </dl>
-      <button type="button" onClick={onShare} className="mt-3 h-8 w-full rounded-md border border-[#16C8FF]/70 text-[9px] font-black text-[#16C8FF]">
+      <button type="button" onClick={onShare} className="mt-4 h-11 w-full rounded-md border border-[#16C8FF]/70 text-[11px] font-black text-[#16C8FF]">
         この日の詳細を見る
       </button>
-    </aside>
+    </section>
   );
 }
 
-function CalendarPanel({ dayMap, selectedDay, setSelectedDay, onShare }) {
+function CalendarPanel({ dayMap, selectedDay, setSelectedDay }) {
   const blanks = 1;
   const cells = [...Array(blanks).fill(null), ...Array.from({ length: 30 }, (_, i) => i + 1)];
   return (
-    <section className={`${card} overflow-hidden`}>
-      <div className="grid grid-cols-[1fr_124px]">
-        <div className="p-2.5">
-          <SectionTitle note="実収支｜下段は期待値">日別収支カレンダー</SectionTitle>
-          <div className="mb-1 grid grid-cols-7 text-center text-[8px] text-[#a0aec0]">
-            {["日", "月", "火", "水", "木", "金", "土"].map((day, index) => (
-              <span key={day} className={index === 6 ? "text-[#6ea8ff]" : ""}>{day}</span>
-            ))}
-          </div>
-          <div className="grid grid-cols-7 gap-[3px]">
-            {cells.map((day, index) => day
-              ? <CalendarCell key={day} day={day} row={dayMap[day]} selected={day === selectedDay} onSelect={setSelectedDay} />
-              : <div key={`blank-${index}`} />)}
-          </div>
-          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[7px] text-[#a0aec0]">
-            <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#07563f]" />+10,000以上</span>
-            <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#0b493b]" />+1,000以上</span>
-            <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#26324b]" />-1,000〜+1,000</span>
-            <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#662433]" />-1,000以下</span>
-          </div>
-        </div>
-        <DayDetail day={selectedDay} row={dayMap[selectedDay]} onShare={onShare} />
+    <section className={`${card} overflow-hidden p-3`}>
+      <SectionTitle note="実収支｜下段は期待値">日別収支カレンダー</SectionTitle>
+      <div className="mb-1 grid grid-cols-7 text-center text-[9px] text-[#a0aec0]">
+        {["日", "月", "火", "水", "木", "金", "土"].map((day, index) => (
+          <span key={day} className={index === 6 ? "text-[#6ea8ff]" : ""}>{day}</span>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-[4px]">
+        {cells.map((day, index) => day
+          ? <CalendarCell key={day} day={day} row={dayMap[day]} selected={day === selectedDay} onSelect={setSelectedDay} />
+          : <div key={`blank-${index}`} />)}
+      </div>
+      <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1 text-[8px] text-[#a0aec0]">
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#07563f]" />+10,000以上</span>
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#0b493b]" />+1,000以上</span>
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#26324b]" />-1,000〜+1,000</span>
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#662433]" />-1,000以下</span>
       </div>
     </section>
   );
@@ -409,7 +414,7 @@ function TrendPanel({ data }) {
     <section className={`${card} overflow-hidden`}>
       <div className="p-2.5">
         <SectionTitle>収支・期待値 累積推移</SectionTitle>
-        <div className="h-[132px]">
+        <div className="h-[240px]">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 4, right: 3, bottom: 0, left: -22 }}>
               <CartesianGrid stroke="rgba(255,255,255,.07)" vertical={false} />
@@ -450,11 +455,11 @@ function MachinePanel({ rows, sortMode, setSortMode }) {
       >
         機種ランキング <span className="text-[8px] font-normal text-[#a0aec0]">（{sortMode === "spin" ? "回転率順" : "期待値順"}）</span>
       </SectionTitle>
-      <div className="grid grid-cols-[18px_1fr_35px_34px_42px_42px_25px] gap-1 border-b border-white/[0.08] pb-1 text-right text-[6px] text-[#75839a]">
+      <div className="grid grid-cols-[22px_1fr_38px_38px_50px_50px_32px] gap-1 border-b border-white/[0.08] pb-1.5 text-right text-[8px] text-[#75839a]">
         <span className="text-left">順位</span><span className="text-left">機種名</span><span>時間</span><span>回転率</span><span>期待値</span><span>実収支</span><span>勝率</span>
       </div>
       {sorted.slice(0, 5).map((row, index) => (
-        <div key={row.machineName} className="grid grid-cols-[18px_1fr_35px_34px_42px_42px_25px] items-center gap-1 border-b border-white/[0.06] py-2 text-right font-mono text-[7px]">
+        <div key={row.machineName} className="grid grid-cols-[22px_1fr_38px_38px_50px_50px_32px] items-center gap-1 border-b border-white/[0.06] py-2.5 text-right font-mono text-[9px]">
           <span className={`text-left font-black ${index === 0 ? "text-[#FFC83D]" : index === 1 ? "text-[#c5cedd]" : index === 2 ? "text-[#f08a45]" : "text-white"}`}>{index < 3 ? "♛" : index + 1}</span>
           <span className="truncate text-left font-sans font-bold text-white">{row.machineName}</span>
           <span className="text-[#c0cad9]">{row.hours || "—"}h</span>
@@ -478,11 +483,11 @@ function StorePanel({ rows }) {
       <SectionTitle action={<button className="text-[8px] font-bold text-[#16C8FF]">すべて見る</button>}>
         店舗ランキング <span className="text-[8px] font-normal text-[#a0aec0]">（期待値順）</span>
       </SectionTitle>
-      <div className="grid grid-cols-[18px_1fr_34px_34px_42px_42px_24px] gap-1 border-b border-white/[0.08] pb-1 text-right text-[6px] text-[#75839a]">
+      <div className="grid grid-cols-[22px_1fr_40px_38px_50px_50px_28px] gap-1 border-b border-white/[0.08] pb-1.5 text-right text-[8px] text-[#75839a]">
         <span className="text-left">順位</span><span className="text-left">店舗名</span><span>規模</span><span>回転率</span><span>期待値</span><span>実収支</span><span>日</span>
       </div>
       {rows.slice(0, 5).map((row, index) => (
-        <div key={row.storeName} className="grid grid-cols-[18px_1fr_34px_34px_42px_42px_24px] items-center gap-1 border-b border-white/[0.06] py-2 text-right font-mono text-[7px]">
+        <div key={row.storeName} className="grid grid-cols-[22px_1fr_40px_38px_50px_50px_28px] items-center gap-1 border-b border-white/[0.06] py-2.5 text-right font-mono text-[9px]">
           <span className={`text-left font-black ${index === 0 ? "text-[#FFC83D]" : index === 1 ? "text-[#c5cedd]" : index === 2 ? "text-[#f08a45]" : "text-white"}`}>{index < 3 ? "♛" : index + 1}</span>
           <span className="truncate text-left font-sans font-bold text-white">{row.storeName}</span>
           <span className="font-sans text-[#c0cad9]">{row.size}</span>
@@ -682,7 +687,7 @@ export default function AnalysisDashboard({
   if (periodTab === "calendar") {
     return (
       <div className="analytics-terminal min-h-full bg-[#050B18] text-white">
-        <div className="mx-auto w-full max-w-[480px] px-3 pt-3">
+        <div className="mx-auto w-full max-w-[430px] px-4 pt-3">
           <DashboardTop periodTab={periodTab} setPeriodTab={setPeriodTab} showActions={false} />
         </div>
         <CalendarTab S={S} onReset={onReset} />
@@ -693,7 +698,7 @@ export default function AnalysisDashboard({
   if (periodTab === "analyzer") {
     return (
       <div className="analytics-terminal min-h-full bg-[#050B18] text-white">
-        <div className="mx-auto w-full max-w-[480px] px-3 pb-24 pt-3">
+        <div className="mx-auto w-full max-w-[430px] px-4 pb-[140px] pt-3">
           <DashboardTop
             periodTab={periodTab}
             setPeriodTab={setPeriodTab}
@@ -710,7 +715,7 @@ export default function AnalysisDashboard({
 
   return (
     <div className="analytics-terminal min-h-full bg-[#050B18] text-white">
-      <div className="mx-auto w-full max-w-[480px] px-3 pb-24 pt-3">
+      <div className="mx-auto w-full max-w-[430px] px-4 pb-[140px] pt-3">
         <DashboardTop
           periodTab={periodTab}
           setPeriodTab={setPeriodTab}
@@ -730,20 +735,21 @@ export default function AnalysisDashboard({
           <button type="button" disabled={periodTab === "all"} onClick={() => setMonthOffset((value) => value + shiftAmount)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-[#0b1528] text-[#aab6ca] disabled:opacity-20"><ChevronRight className="h-4 w-4" /></button>
         </div>
 
-        <main className="space-y-2">
+        <main className="space-y-3">
           <SummaryHero summary={summary} isDemo={isDemo} periodWord={periodWord} />
           <Kpis summary={summary} isDemo={isDemo} />
-          {periodTab === "month"
-            ? <CalendarPanel dayMap={dayMap} selectedDay={selectedDay} setSelectedDay={setSelectedDay} onShare={() => setShareOpen(true)} />
-            : <PeriodBreakdownPanel periodTab={periodTab} rows={periodRows} isDemo={isDemo} />}
-          <div className="grid grid-cols-[.88fr_1.12fr] gap-2">
-            <TrendPanel data={trend} />
-            <MachinePanel rows={machines} sortMode={sortMode} setSortMode={setSortMode} />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <StorePanel rows={stores} />
-            <MonthlySummary actual={actual} ev={ev} isDemo={isDemo} onShare={() => setShareOpen(true)} periodWord={periodWord} />
-          </div>
+          {periodTab === "month" ? (
+            <>
+              <CalendarPanel dayMap={dayMap} selectedDay={selectedDay} setSelectedDay={setSelectedDay} />
+              <DayDetail day={selectedDay} row={dayMap[selectedDay]} onShare={() => setShareOpen(true)} />
+            </>
+          ) : (
+            <PeriodBreakdownPanel periodTab={periodTab} rows={periodRows} isDemo={isDemo} />
+          )}
+          <TrendPanel data={trend} />
+          <MachinePanel rows={machines} sortMode={sortMode} setSortMode={setSortMode} />
+          <StorePanel rows={stores} />
+          <MonthlySummary actual={actual} ev={ev} isDemo={isDemo} onShare={() => setShareOpen(true)} periodWord={periodWord} />
         </main>
       </div>
       {shareOpen && <ShareCard actual={actual} ev={ev} onClose={() => setShareOpen(false)} />}
