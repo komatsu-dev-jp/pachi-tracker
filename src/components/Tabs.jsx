@@ -2032,31 +2032,31 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             <div style={{ fontSize: 24, fontWeight: 900, color: C.purple, fontFamily: mono }}>{f(currentStoreData.chodama)}</div>
                         </div>
                     )}
-                </div>
 
-                {/* 下部ピル形ボタン */}
-                <button
-                    className="b"
-                    onClick={() => setShowSetupModal(true)}
-                    style={{
-                        width: "100%",
-                        height: 60,
-                        borderRadius: 30,
-                        background: C.blue,
-                        color: "#fff",
-                        fontSize: 17,
-                        fontWeight: 700,
-                        fontFamily: font,
-                        border: "none",
-                        display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                        boxShadow: "0 8px 24px rgba(47,111,237,0.25)",
-                        cursor: "pointer",
-                        marginBottom: 8,
-                    }}
-                >
-                    <span style={{ fontSize: 22, fontWeight: 400, lineHeight: 1 }}>+</span>
-                    新規稼働
-                </button>
+                    {/* 新規稼働ボタン（説明文の直下に配置） */}
+                    <button
+                        className="b"
+                        onClick={() => setShowSetupModal(true)}
+                        style={{
+                            width: "100%",
+                            height: 60,
+                            borderRadius: 30,
+                            background: C.blue,
+                            color: "#fff",
+                            fontSize: 17,
+                            fontWeight: 700,
+                            fontFamily: font,
+                            border: "none",
+                            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                            boxShadow: "0 8px 24px rgba(47,111,237,0.25)",
+                            cursor: "pointer",
+                            marginTop: 8,
+                        }}
+                    >
+                        <span style={{ fontSize: 22, fontWeight: 400, lineHeight: 1 }}>+</span>
+                        新規稼働
+                    </button>
+                </div>
 
                 {/* セットアップモーダル - プレミアムデザイン */}
                 {showSetupModal && (
