@@ -43,10 +43,11 @@ function findSegmentBounds(rows, chainId) {
 
 // rows: rotRows 全体
 // opts.playMode: "chodama" | "mochi"（この区間のモード）
-// opts.currentBalance: 現在の貯玉/持ち玉残高（区間開始玉の復元用。= 区間開始玉 − 暫定消費の累計）
-// opts.segmentStartBalls: 区間開始玉（グロス）を直接指定する場合（編集UIなど）。優先される。
+// opts.currentBalance: 現在の貯玉/持ち玉残高。暫定消費が無い区間（瞬間当たり等）の
+//   区間開始玉推定にのみ使用。通常入力がある区間では使わない（持ち越し玉の過大計上を防ぐ）。
+// opts.segmentStartBalls: 区間開始玉（グロス）を直接指定する場合（編集UIなど）。最優先。
 // opts.chainId: 対象の当たり（省略時は最新の当たり区間）
-// opts.rentBalls: 貸玉数/1K（自動復元時の過大消費ガードに使用。既定250玉）
+// opts.rentBalls: 貸玉数/1K（瞬間当たり区間の残高推定の上限算出に使用。既定250玉）
 // 返り値: ballsConsumed を更新した新しい rows 配列（条件を満たさない場合は元配列をそのまま返す）
 export function reconcileSegmentConsumption(rows, { playMode, currentBalance, segmentStartBalls, chainId, rentBalls = 250 }) {
     if (!Array.isArray(rows) || rows.length === 0) return rows;
@@ -66,25 +67,28 @@ export function reconcileSegmentConsumption(rows, { playMode, currentBalance, se
 
     const totalRot = segIdxs.reduce((s, i) => s + (Number(rows[i].thisRot) || 0), 0);
 
-    // 区間開始玉（グロス）。明示指定が無ければ残高 + 暫定消費の累計で復元する。
+    // 区間開始玉（グロス）の決定。
+    // assumedSum = この区間で既に計上済みの暫定消費（= 貯玉/持ち玉残高の実減少分）。
     const assumedSum = segIdxs.reduce((s, i) => s + (Number(rows[i].ballsConsumed) || 0), 0);
     const hasExplicitStart = segmentStartBalls != null && segmentStartBalls !== "";
-    let grossStart = hasExplicitStart
-        ? (Number(segmentStartBalls) || 0)
-        : (Number(currentBalance) || 0) + assumedSum;
 
-    // 自動復元時の過大消費ガード（バグ修正）:
-    // currentBalance には「まだ台に投入していない持ち越し玉（大当たり/RUSH 出玉など）」が
-    // 含まれることがある。これを丸ごと当該区間の消費として計上すると、実際には数百玉しか
-    // 使っていなくても実質投資が数万円に膨張する（回転率も極端に低下する）。
-    // 物理的にあり得ない消費＝極端に低い回転率になる場合は、区間の回転数から導く上限で
-    // グロスを頭打ちにする。買い切り（小残高を打ち切る）正当ケースは上限を超えないため無影響。
-    // 「区間開始玉」を明示指定したケース（編集UIの実測入力）は真値として優先し、ガードしない。
-    if (!hasExplicitStart && totalRot > 0) {
+    let grossStart;
+    if (hasExplicitStart) {
+        // 編集UI等での実測入力。真値として最優先（ガードしない）。
+        grossStart = Number(segmentStartBalls) || 0;
+    } else if (assumedSum > 0) {
+        // 通常入力がある区間: 暫定消費（残高の実減少分）をそのまま信頼する。
+        // ここで currentBalance を足すと、まだ台に投入していない持ち越し玉
+        // （大当たり/RUSH 出玉や大きな貯玉残高）まで当該区間の消費として計上され、
+        // 実際は数百玉しか使っていなくても実質投資が数万円に膨張する（バグ）。
+        grossStart = assumedSum;
+    } else {
+        // 暫定消費が無い区間（回転入力前の瞬間当たり等）のみ、残高から区間開始玉を推定する。
+        // 持ち越し玉の混入を防ぐため、回転数から導く上限で頭打ちにする。
         const MIN_PLAUSIBLE_RATE = 5; // 回転率の下限(回/K)。実打ではこれ未満は非現実的
         const rb = Number(rentBalls) || 250;
-        const maxGross = totalRot * (rb / MIN_PLAUSIBLE_RATE); // = 回転数 × 最大玉/回転
-        if (grossStart > maxGross) grossStart = maxGross;
+        const maxGross = totalRot > 0 ? totalRot * (rb / MIN_PLAUSIBLE_RATE) : 0; // 回転数 × 最大玉/回転
+        grossStart = Math.min(Number(currentBalance) || 0, maxGross);
     }
 
     if (!(grossStart > 0) || !(totalRot > 0)) return rows;
