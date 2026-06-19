@@ -58,23 +58,24 @@ function evParams(rotRows, jpLog) {
   check("A: 補正後回転率 ≈ 35.2 G/K", approx(ev.start1KCorrected, 10 / (71 / 250)), `→ ${ev.start1KCorrected.toFixed(2)}`);
 }
 
-// ── ケースB: 通常入力を挟んだ場合（暫定250玉→グロスへ置換 + 比例配分） ──
+// ── ケースB: 通常入力がある区間は暫定消費（残高の実減少）を信頼する ──
+// 貯玉残高が大きくても、持ち越し玉を当該区間の消費に加算しない（過大計上バグの防止）。
 {
   const rows = [
-    { type: "start", cumRot: 0, mode: "chodama", chodamaBalls: 1000 },
+    { type: "start", cumRot: 0, mode: "chodama", chodamaBalls: 5000 },
     { type: "data", mode: "chodama", cumRot: 50, thisRot: 50, invest: 0, ballsConsumed: 250 },
     { type: "data", mode: "chodama", cumRot: 110, thisRot: 60, invest: 0, ballsConsumed: 250 },
-    { type: "data", mode: "chodama", cumRot: 120, thisRot: 10, invest: 0 },
+    { type: "data", mode: "chodama", cumRot: 120, thisRot: 10, invest: 0, ballsConsumed: 250 },
     { type: "hit", chainId: 1, cumRot: 120, thisRot: 10, mode: "chodama" },
   ];
-  // currentBalance = 1000 - 250 - 250 = 500 → グロス = 500 + 500 = 1000
-  const out = reconcileSegmentConsumption(rows, { playMode: "chodama", currentBalance: 500 });
+  // 残高4250玉（持ち越し）が大きくても加算しない → グロス = 暫定750玉
+  const out = reconcileSegmentConsumption(rows, { playMode: "chodama", currentBalance: 4250, rentBalls: RENT });
   const sum = out.filter(r => r.type === "data").reduce((s, r) => s + (r.ballsConsumed || 0), 0);
-  check("B: 区間グロス合計 = 1000", sum === 1000, `→ ${sum}`);
-  // 上皿残400 → 実消費600 → 120/(600/250) = 50
-  const jpLog = [{ chainId: 1, completed: true, trayBalls: 400, hits: [{ rounds: 4 }], summary: { totalRounds: 4, totalDisplayBalls: 560 } }];
-  const ev = calcPreciseEV(evParams(out, jpLog));
-  check("B: 補正後回転率 = 50 G/K", approx(ev.start1KCorrected, 50), `→ ${ev.start1KCorrected.toFixed(2)}`);
+  check("B: 暫定消費を信頼し持ち越し玉を加算しない = 750玉", sum === 750, `→ ${sum}`);
+  // 明示の区間開始玉を入れれば真値で確定（編集UI経路）
+  const out2 = reconcileSegmentConsumption(rows, { playMode: "chodama", segmentStartBalls: 1000, chainId: 1 });
+  const sum2 = out2.filter(r => r.type === "data").reduce((s, r) => s + (r.ballsConsumed || 0), 0);
+  check("B: 明示の区間開始玉=1000で確定", sum2 === 1000, `→ ${sum2}`);
 }
 
 // ── ケースC: 編集（segmentStartBalls 明示・chainId 指定） ──────
@@ -128,11 +129,11 @@ function evParams(rotRows, jpLog) {
   check("F: 補正後回転率 = 25 G/K", approx(ev.start1KCorrected, 25), `→ ${ev.start1KCorrected.toFixed(2)}`);
 }
 
-// ── ケースG: 持ち越し玉（RUSH出玉）の過大消費ガード ───────────
-// 大当たり/RUSH 終了後、持ち玉5000玉を持ち越したまま通常を数回入力（thisRot=3×6=18回転）。
-// 旧挙動: グロス = currentBalance(3500) + 暫定(1500) = 5000玉 を1区間で消費扱い
+// ── ケースG: 持ち越し玉（RUSH出玉）を消費に加算しない ───────────
+// 大当たり/RUSH 終了後、持ち玉5000玉を持ち越したまま通常を6回入力（暫定250玉×6=1500玉）。
+// 旧バグ: グロス = currentBalance(3500) + 暫定(1500) = 5000玉 を1区間で消費扱い
 //        → 実質投資が約2万円に膨張、補正後回転率が0.9に潰れる（ユーザー報告バグ）。
-// 新挙動: 回転数18回 × 上限(rentBalls/5 = 50玉/回転) = 900玉 で頭打ち。
+// 新挙動: 暫定消費1500玉のみを信頼し、持ち越し3500玉は加算しない。
 {
   const rows = [{ type: "start", cumRot: 0, mode: "mochi", mochiBalls: 5000 }];
   let cum = 0;
@@ -140,11 +141,31 @@ function evParams(rotRows, jpLog) {
   rows.push({ type: "hit", chainId: 7, cumRot: cum, thisRot: 0, mode: "mochi" });
   const out = reconcileSegmentConsumption(rows, { playMode: "mochi", currentBalance: 3500, rentBalls: RENT });
   const sum = out.filter(r => r.type === "data").reduce((s, r) => s + (r.ballsConsumed || 0), 0);
-  // 旧挙動なら 5000玉。新挙動は 18回転 × 50玉/回転 = 900玉 で頭打ち。
-  check("G: 持ち越し玉が消費に丸ごと計上されない（旧5000玉→上限900玉）", sum === 900, `→ ${sum}`);
-  // 上限900玉 → 実質投資が等価で約3600円（旧2万円から大幅縮小）
+  // 旧バグなら 5000玉。新挙動は暫定1500玉のまま（持ち越し3500玉を足さない）。
+  check("G: 持ち越し玉を加算せず暫定1500玉を維持（旧5000玉）", sum === 1500, `→ ${sum}`);
+  // 暫定1500玉 → 実質投資が等価で約6000円（旧2万円から大幅縮小）
   const ev = calcPreciseEV(evParams(out, []));
-  check("G: 実質投資が爆発しない（< 5000円）", Math.round(ev.correctedInvestYen) < 5000, `→ ${Math.round(ev.correctedInvestYen)}`);
+  check("G: 実質投資が爆発しない（旧2万円→8000円未満）", Math.round(ev.correctedInvestYen) < 8000, `→ ${Math.round(ev.correctedInvestYen)}`);
+}
+
+// ── ケースH: ユーザー実ログ（貯玉スタート200→+15/+17/+15→250初当たり）──
+// 暫定250玉×3入力=750玉。持ち越し貯玉が大きくても実質投資は約3000円（≒725玉）に収まる。
+{
+  const rows = [
+    { type: "start", cumRot: 200, mode: "chodama", chodamaBalls: 5000 },
+    { type: "data", mode: "chodama", cumRot: 215, thisRot: 15, invest: 0, ballsConsumed: 250 },
+    { type: "data", mode: "chodama", cumRot: 232, thisRot: 17, invest: 0, ballsConsumed: 250 },
+    { type: "data", mode: "chodama", cumRot: 247, thisRot: 15, invest: 0, ballsConsumed: 250 },
+    { type: "data", mode: "chodama", cumRot: 250, thisRot: 3, invest: 0 }, // 初当たり区間（ballsConsumed未設定）
+    { type: "hit", chainId: 1, cumRot: 250, thisRot: 3, mode: "chodama" },
+  ];
+  const out = reconcileSegmentConsumption(rows, { playMode: "chodama", currentBalance: 4250, rentBalls: RENT });
+  const sum = out.filter(r => r.type === "data").reduce((s, r) => s + (r.ballsConsumed || 0), 0);
+  check("H: 消費玉 = 暫定750玉（持ち越し玉を加算しない）", sum === 750, `→ ${sum}`);
+  // 上皿30玉控除後 → 実消費720玉。実質投資は等価で約3000円弱に収まる。
+  const jpLog = [{ chainId: 1, completed: true, trayBalls: 30, hits: [{ rounds: 4 }], summary: { totalRounds: 4, totalDisplayBalls: 560 } }];
+  const ev = calcPreciseEV(evParams(out, jpLog));
+  check("H: 実質投資が3000円弱（< 3500円）", Math.round(ev.correctedInvestYen) < 3500, `→ ${Math.round(ev.correctedInvestYen)}`);
 }
 
 console.log(`\n${fail === 0 ? "PASS" : "FAIL"}: ${pass} passed, ${fail} failed`);
