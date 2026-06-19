@@ -81,7 +81,10 @@ export function reconcileSegmentConsumption(rows, { playMode, currentBalance, se
     // グロスを頭打ちにする。買い切り（小残高を打ち切る）正当ケースは上限を超えないため無影響。
     // 「区間開始玉」を明示指定したケース（編集UIの実測入力）は真値として優先し、ガードしない。
     if (!hasExplicitStart && totalRot > 0) {
-        const MIN_PLAUSIBLE_RATE = 5; // 回転率の下限(回/K)。実打ではこれ未満は非現実的
+        // 回転率の下限(回/K)。貸玉250玉/Kでこれ未満＝1回転あたり16玉超の消費は、
+        // 持ち玉/貯玉の連続入賞では物理的にあり得ない（実機は概ね16〜20回/K＝1回転13〜15玉）。
+        // 旧値5は「1回転50玉消費」を許容し、持ち越し玉混入時に実質投資を過大計上していた。
+        const MIN_PLAUSIBLE_RATE = 16; // 回/K（既存テストのケースF=16.7回/Kは正常値として非クランプ）
         const rb = Number(rentBalls) || 250;
         const maxGross = totalRot * (rb / MIN_PLAUSIBLE_RATE); // = 回転数 × 最大玉/回転
         if (grossStart > maxGross) grossStart = maxGross;
