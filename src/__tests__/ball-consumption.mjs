@@ -128,5 +128,24 @@ function evParams(rotRows, jpLog) {
   check("F: 補正後回転率 = 25 G/K", approx(ev.start1KCorrected, 25), `→ ${ev.start1KCorrected.toFixed(2)}`);
 }
 
+// ── ケースG: 持ち越し玉（RUSH出玉）の過大消費ガード ───────────
+// 大当たり/RUSH 終了後、持ち玉5000玉を持ち越したまま通常を数回入力（thisRot=3×6=18回転）。
+// 旧挙動: グロス = currentBalance(3500) + 暫定(1500) = 5000玉 を1区間で消費扱い
+//        → 実質投資が約2万円に膨張、補正後回転率が0.9に潰れる（ユーザー報告バグ）。
+// 新挙動: 回転数18回 × 上限(rentBalls/5 = 50玉/回転) = 900玉 で頭打ち。
+{
+  const rows = [{ type: "start", cumRot: 0, mode: "mochi", mochiBalls: 5000 }];
+  let cum = 0;
+  for (let k = 0; k < 6; k++) { cum += 3; rows.push({ type: "data", mode: "mochi", cumRot: cum, thisRot: 3, invest: 0, ballsConsumed: 250 }); }
+  rows.push({ type: "hit", chainId: 7, cumRot: cum, thisRot: 0, mode: "mochi" });
+  const out = reconcileSegmentConsumption(rows, { playMode: "mochi", currentBalance: 3500, rentBalls: RENT });
+  const sum = out.filter(r => r.type === "data").reduce((s, r) => s + (r.ballsConsumed || 0), 0);
+  // 旧挙動なら 5000玉。新挙動は 18回転 × 50玉/回転 = 900玉 で頭打ち。
+  check("G: 持ち越し玉が消費に丸ごと計上されない（旧5000玉→上限900玉）", sum === 900, `→ ${sum}`);
+  // 上限900玉 → 実質投資が等価で約3600円（旧2万円から大幅縮小）
+  const ev = calcPreciseEV(evParams(out, []));
+  check("G: 実質投資が爆発しない（< 5000円）", Math.round(ev.correctedInvestYen) < 5000, `→ ${Math.round(ev.correctedInvestYen)}`);
+}
+
 console.log(`\n${fail === 0 ? "PASS" : "FAIL"}: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

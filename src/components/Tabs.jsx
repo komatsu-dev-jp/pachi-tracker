@@ -1802,6 +1802,8 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         // 累計で復元）を各行に書き戻す。上皿残玉の差し引き（実消費化）は
         // calcPreciseEV 側の trayCorrection（chain.trayBalls）が行うため、ここでは
         // グロスを入れて二重控除を避ける。logic.js は不変。
+        // rentBalls を渡すことで、持ち越し玉（RUSH 出玉など）を丸ごと消費計上して
+        // 実質投資が膨張するのを回転数ベースの上限で防ぐ（reconcileSegmentConsumption 内ガード）。
         if (S.playMode === "chodama" || S.playMode === "mochi") {
             const currentBalance = S.playMode === "chodama"
                 ? (S.currentChodama || 0)
@@ -1809,6 +1811,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             S.setRotRows((prev) => reconcileSegmentConsumption(prev, {
                 playMode: S.playMode,
                 currentBalance,
+                rentBalls: S.rentBalls || 250,
             }));
         }
 

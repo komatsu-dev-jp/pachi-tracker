@@ -46,8 +46,9 @@ function findSegmentBounds(rows, chainId) {
 // opts.currentBalance: 現在の貯玉/持ち玉残高（区間開始玉の復元用。= 区間開始玉 − 暫定消費の累計）
 // opts.segmentStartBalls: 区間開始玉（グロス）を直接指定する場合（編集UIなど）。優先される。
 // opts.chainId: 対象の当たり（省略時は最新の当たり区間）
+// opts.rentBalls: 貸玉数/1K（自動復元時の過大消費ガードに使用。既定250玉）
 // 返り値: ballsConsumed を更新した新しい rows 配列（条件を満たさない場合は元配列をそのまま返す）
-export function reconcileSegmentConsumption(rows, { playMode, currentBalance, segmentStartBalls, chainId }) {
+export function reconcileSegmentConsumption(rows, { playMode, currentBalance, segmentStartBalls, chainId, rentBalls = 250 }) {
     if (!Array.isArray(rows) || rows.length === 0) return rows;
     if (playMode !== "chodama" && playMode !== "mochi") return rows;
 
@@ -63,13 +64,29 @@ export function reconcileSegmentConsumption(rows, { playMode, currentBalance, se
     }
     if (segIdxs.length === 0) return rows;
 
+    const totalRot = segIdxs.reduce((s, i) => s + (Number(rows[i].thisRot) || 0), 0);
+
     // 区間開始玉（グロス）。明示指定が無ければ残高 + 暫定消費の累計で復元する。
     const assumedSum = segIdxs.reduce((s, i) => s + (Number(rows[i].ballsConsumed) || 0), 0);
-    const grossStart = (segmentStartBalls != null && segmentStartBalls !== "")
+    const hasExplicitStart = segmentStartBalls != null && segmentStartBalls !== "";
+    let grossStart = hasExplicitStart
         ? (Number(segmentStartBalls) || 0)
         : (Number(currentBalance) || 0) + assumedSum;
 
-    const totalRot = segIdxs.reduce((s, i) => s + (Number(rows[i].thisRot) || 0), 0);
+    // 自動復元時の過大消費ガード（バグ修正）:
+    // currentBalance には「まだ台に投入していない持ち越し玉（大当たり/RUSH 出玉など）」が
+    // 含まれることがある。これを丸ごと当該区間の消費として計上すると、実際には数百玉しか
+    // 使っていなくても実質投資が数万円に膨張する（回転率も極端に低下する）。
+    // 物理的にあり得ない消費＝極端に低い回転率になる場合は、区間の回転数から導く上限で
+    // グロスを頭打ちにする。買い切り（小残高を打ち切る）正当ケースは上限を超えないため無影響。
+    // 「区間開始玉」を明示指定したケース（編集UIの実測入力）は真値として優先し、ガードしない。
+    if (!hasExplicitStart && totalRot > 0) {
+        const MIN_PLAUSIBLE_RATE = 5; // 回転率の下限(回/K)。実打ではこれ未満は非現実的
+        const rb = Number(rentBalls) || 250;
+        const maxGross = totalRot * (rb / MIN_PLAUSIBLE_RATE); // = 回転数 × 最大玉/回転
+        if (grossStart > maxGross) grossStart = maxGross;
+    }
+
     if (!(grossStart > 0) || !(totalRot > 0)) return rows;
 
     // thisRot 比例で配分。最終行に丸め残差を吸収させ、各行は最低1玉とする。
