@@ -93,6 +93,16 @@ const DEMO_TREND = Array.from({ length: 30 }, (_, index) => {
 
 const fmt = (value) => Math.round(Number(value) || 0).toLocaleString("ja-JP");
 const signed = (value) => `${Number(value) > 0 ? "+" : ""}${fmt(value)}`;
+// カレンダーセル用の短縮表記（例: +5,406 → +5.4k）。7列でiPhone幅に収めるための表示専用。
+const shortMoney = (value) => {
+  const n = Math.round(Number(value) || 0);
+  if (Math.abs(n) >= 1000) {
+    const sign = n > 0 ? "+" : "-";
+    return `${sign}${(Math.abs(n) / 1000).toFixed(1)}k`;
+  }
+  return signed(n);
+};
+const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 const moneyClass = (value) => Number(value) >= 0 ? "text-[#25D366]" : "text-[#FF5B6E]";
 const card = "rounded-[10px] border border-white/[0.09] bg-[linear-gradient(145deg,rgba(12,25,47,.98),rgba(5,13,27,.98))] shadow-[0_16px_45px_rgba(0,0,0,.34)]";
 const label = "text-[9px] font-semibold tracking-[.04em] text-[#8090aa]";
@@ -222,24 +232,24 @@ function SummaryHero({ summary, isDemo, heroTitle = "月間収支" }) {
   const diff = actual - ev;
   const days = isDemo ? 7 : (summary.days || 0);
   return (
-    <section className={`${card} overflow-hidden p-4`}>
+    <section className={`${card} overflow-hidden p-3.5`}>
       <div className={label}>{heroTitle}</div>
-      <div className={`mt-1.5 flex items-end font-mono ${moneyClass(actual)}`}>
-        <strong className="text-[48px] font-black leading-none tracking-[-.055em]">{signed(actual)}</strong>
-        <span className="mb-1.5 ml-1.5 text-[16px] font-bold">円</span>
+      <div className={`mt-0.5 flex items-end font-mono ${moneyClass(actual)}`}>
+        <strong className="text-[42px] font-black leading-none tracking-[-.055em]">{signed(actual)}</strong>
+        <span className="mb-1 ml-1.5 text-[15px] font-bold">円</span>
       </div>
-      <div className="mt-4 grid grid-cols-3 border-t border-white/[0.08] pt-3">
+      <div className="mt-3 grid grid-cols-3 border-t border-white/[0.08] pt-2.5">
         <div className="min-w-0">
           <div className={label}>期待値</div>
-          <div className="mt-1 whitespace-nowrap font-mono text-[18px] font-black text-[#16C8FF]">{signed(ev)}<span className="text-[9px]">円</span></div>
+          <div className="mt-0.5 whitespace-nowrap font-mono text-[16px] font-black text-[#16C8FF]">{signed(ev)}<span className="text-[9px]">円</span></div>
         </div>
         <div className="min-w-0 border-l border-white/[0.08] pl-3">
-          <div className={label}>期待値超過</div>
-          <div className={`mt-1 whitespace-nowrap font-mono text-[18px] font-black ${moneyClass(diff)}`}>{signed(diff)}<span className="text-[9px]">円</span></div>
+          <div className={label}>差異</div>
+          <div className={`mt-0.5 whitespace-nowrap font-mono text-[16px] font-black ${moneyClass(diff)}`}>{signed(diff)}<span className="text-[9px]">円</span></div>
         </div>
         <div className="min-w-0 border-l border-white/[0.08] pl-3">
-          <div className={label}>稼働日数</div>
-          <div className="mt-1 whitespace-nowrap font-mono text-[18px] font-black text-white">{days}<span className="text-[9px]">日</span></div>
+          <div className={label}>稼働</div>
+          <div className="mt-0.5 whitespace-nowrap font-mono text-[16px] font-black text-white">{days}<span className="text-[9px]">日</span></div>
         </div>
       </div>
     </section>
@@ -289,43 +299,53 @@ function CalendarCell({ day, row, selected, onSelect }) {
     <button
       type="button"
       onClick={() => row && onSelect(day)}
-      className={`relative min-h-[58px] rounded-[6px] border p-1 text-left transition ${heat} ${
-        selected ? "ring-1 ring-[#16C8FF] shadow-[0_0_14px_rgba(22,200,255,.24)]" : ""
+      className={`relative flex min-h-[58px] flex-col rounded-[10px] border p-1 text-left transition ${heat} ${
+        selected ? "ring-2 ring-[#16C8FF] shadow-[0_0_14px_rgba(22,200,255,.24)]" : ""
       }`}
     >
-      <span className="absolute left-1 top-0.5 text-[9px] font-bold text-white">{day}</span>
+      <span className="text-[12px] font-bold leading-none text-white">{day}</span>
+      {/* 期待値はセル内に常時表示せず、プラス期待値の日だけ小さなドットで示す（詳細は選択日ミニ詳細へ） */}
+      {row?.ev > 0 && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-[#16C8FF]" />}
       {row && (
-        <div className="mt-4 text-center font-mono">
-          <div className={`text-[9px] font-black ${moneyClass(row.actual)}`}>{signed(row.actual)}</div>
-          <div className="text-[8px] font-bold text-[#a8b5c9]">{signed(row.ev)}</div>
+        <div className="mt-auto text-center font-mono">
+          <div className={`text-[12px] font-black leading-tight ${moneyClass(row.actual)}`}>{shortMoney(row.actual)}</div>
         </div>
       )}
     </button>
   );
 }
 
-function DayDetail({ day, row, onShare }) {
+function DayDetail({ dateLabel, row, isDemo }) {
+  const [open, setOpen] = useState(false);
   const detail = row || {};
+  // 本番データには店舗/機種/明細が未連携のため、デモ時のみサンプル値を表示し実データ時は「—」にする（ダミー表示の防止）。
+  const fallback = (value, demoValue) => value ?? (isDemo ? demoValue : "—");
+  const storeName = fallback(detail.storeName, "丸之内ヘリオス2000竹原");
+  const machineName = fallback(detail.machineName, "スマスロ マギアレコード");
   return (
     <section className={`${card} p-3.5`}>
-      <div className="text-[13px] font-black text-white">6月{day}日（木）</div>
-      <div className="mt-1.5 flex items-baseline gap-2">
-        <span className={`font-mono text-[22px] font-black ${moneyClass(detail.actual || 0)}`}>{signed(detail.actual || 0)}<span className="text-[10px]">円</span></span>
-        <span className="text-[9px] text-[#7f8ca3]">期待値 <span className="text-[#16C8FF]">{signed(detail.ev || 0)}円</span></span>
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="text-[13px] font-black text-white">{dateLabel}</div>
+        <div className="text-[9px] text-[#7f8ca3]">期待値 <span className="text-[#16C8FF]">{signed(detail.ev || 0)}円</span></div>
       </div>
-      <div className="my-3 h-px bg-white/[0.08]" />
-      <dl className="space-y-2.5 text-[10px]">
-        <div className="flex justify-between gap-3"><dt className="shrink-0 text-[#74839b]">店舗</dt><dd className="truncate text-right leading-[1.35] text-[#bdc7d7]">{detail.storeName || "丸之内ヘリオス2000竹原"}</dd></div>
-        <div className="flex justify-between gap-3"><dt className="shrink-0 text-[#74839b]">機種</dt><dd className="truncate text-right leading-[1.35] text-[#bdc7d7]">{detail.machineName || "スマスロ マギアレコード"}</dd></div>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-white/[0.08] pt-2.5">
-          <div className="flex justify-between gap-2"><dt className="text-[#74839b]">回転率</dt><dd className="font-mono text-[#bdc7d7]">{detail.spinRate || 19.7}回/k</dd></div>
-          <div className="flex justify-between gap-2"><dt className="text-[#74839b]">稼働時間</dt><dd className="font-mono text-[#bdc7d7]">{detail.hours || 2.1}時間</dd></div>
-          <div className="flex justify-between gap-2"><dt className="text-[#74839b]">投資</dt><dd className="font-mono text-[#bdc7d7]">{fmt(detail.invest || 1000)}円</dd></div>
-          <div className="flex justify-between gap-2"><dt className="text-[#74839b]">回収</dt><dd className="font-mono text-[#bdc7d7]">{fmt(detail.recovery || 6406)}円</dd></div>
-        </div>
-      </dl>
-      <button type="button" onClick={onShare} className="mt-4 h-11 w-full rounded-md border border-[#16C8FF]/70 text-[11px] font-black text-[#16C8FF]">
-        この日の詳細を見る
+      <div className="mt-1 flex items-baseline gap-2">
+        <span className="text-[9px] text-[#7f8ca3]">実収支</span>
+        <span className={`font-mono text-[22px] font-black leading-none ${moneyClass(detail.actual || 0)}`}>{signed(detail.actual || 0)}<span className="text-[10px]">円</span></span>
+      </div>
+      <div className="mt-2 space-y-1 text-[11px] leading-[1.35] text-[#bdc7d7]">
+        <div className="truncate">{storeName}</div>
+        <div className="truncate text-[#9aa6ba]">{machineName}</div>
+      </div>
+      {open && (
+        <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-white/[0.08] pt-3 text-[10px]">
+          <div className="flex justify-between gap-2"><dt className="text-[#74839b]">回転率</dt><dd className="font-mono text-[#bdc7d7]">{fallback(detail.spinRate, 19.7)}{detail.spinRate || isDemo ? "回/k" : ""}</dd></div>
+          <div className="flex justify-between gap-2"><dt className="text-[#74839b]">稼働時間</dt><dd className="font-mono text-[#bdc7d7]">{fallback(detail.hours, 2.1)}{detail.hours || isDemo ? "時間" : ""}</dd></div>
+          <div className="flex justify-between gap-2"><dt className="text-[#74839b]">投資</dt><dd className="font-mono text-[#bdc7d7]">{detail.invest != null || isDemo ? `${fmt(detail.invest ?? 1000)}円` : "—"}</dd></div>
+          <div className="flex justify-between gap-2"><dt className="text-[#74839b]">回収</dt><dd className="font-mono text-[#bdc7d7]">{detail.recovery != null || isDemo ? `${fmt(detail.recovery ?? 6406)}円` : "—"}</dd></div>
+        </dl>
+      )}
+      <button type="button" onClick={() => setOpen((value) => !value)} className="mt-3 h-11 w-full rounded-md border border-[#16C8FF]/70 text-[11px] font-black text-[#16C8FF]">
+        {open ? "閉じる" : "詳細を見る"}
       </button>
     </section>
   );
@@ -336,23 +356,21 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay }) {
   const cells = [...Array(blanks).fill(null), ...Array.from({ length: 30 }, (_, i) => i + 1)];
   return (
     <section className={`${card} overflow-hidden p-3`}>
-      <SectionTitle note="実収支 / 下段は期待値">日別収支カレンダー</SectionTitle>
-      <div className="mb-2 flex flex-wrap gap-x-2 gap-y-1 text-[7px] text-[#a0aec0]">
-        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#06623f]" />+10,000</span>
-        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#0b493b]" />+1,000</span>
-        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#1a2436]" />±999</span>
-        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#3f1722]" />-1,000</span>
-        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#6b1322]" />-10,000</span>
-      </div>
+      <SectionTitle note="日付をタップで詳細を表示">日別収支カレンダー</SectionTitle>
       <div className="mb-1 grid grid-cols-7 text-center text-[9px] text-[#a0aec0]">
-        {["日", "月", "火", "水", "木", "金", "土"].map((day, index) => (
+        {WEEKDAYS.map((day, index) => (
           <span key={day} className={index === 6 ? "text-[#6ea8ff]" : ""}>{day}</span>
         ))}
       </div>
-      <div className="grid grid-cols-7 gap-[4px]">
+      <div className="grid grid-cols-7 gap-[6px]">
         {cells.map((day, index) => day
           ? <CalendarCell key={day} day={day} row={dayMap[day]} selected={day === selectedDay} onSelect={setSelectedDay} />
           : <div key={`blank-${index}`} />)}
+      </div>
+      <div className="mt-2 flex items-center justify-center gap-3 text-[8px] text-[#a0aec0]">
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#0b493b]" />プラス</span>
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#1a2436]" />±0</span>
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#3f1722]" />マイナス</span>
       </div>
     </section>
   );
@@ -470,15 +488,30 @@ function StorePanel({ rows }) {
   );
 }
 
-function ShareCTA({ onShare }) {
+function ShareCTA({ onShare, subtitle = "月間収支カードを作成して共有できます" }) {
   return (
     <section className={`${card} flex items-center justify-between gap-3 p-3.5`}>
       <div className="min-w-0">
         <div className="text-[12px] font-black text-white">SNSで成果をシェアしよう！</div>
-        <p className="mt-0.5 text-[9px] text-[#8090aa]">月間収支カードを作成して共有できます</p>
+        <p className="mt-0.5 text-[9px] text-[#8090aa]">{subtitle}</p>
       </div>
       <button type="button" onClick={onShare} className="flex h-11 shrink-0 items-center gap-1.5 rounded-lg border border-[#16C8FF]/70 bg-[#16C8FF]/10 px-3.5 text-[11px] font-black text-[#16C8FF]">
         <Share2 className="h-4 w-4" /> SNS用カードを作成
+      </button>
+    </section>
+  );
+}
+
+// 月別トップを軽くするための補助分析への導線。グラフ/ランキング/AI分析は分析+タブへ集約。
+function AnalysisLink({ onOpen }) {
+  return (
+    <section className={`${card} flex items-center justify-between gap-3 p-3.5`}>
+      <div className="min-w-0">
+        <div className="text-[12px] font-black text-white">詳しく分析する</div>
+        <p className="mt-0.5 text-[9px] text-[#8090aa]">収支推移・機種別・店舗別を見る</p>
+      </div>
+      <button type="button" onClick={onOpen} className="flex h-11 shrink-0 items-center gap-1 rounded-lg border border-white/15 bg-[#0b1528] px-3.5 text-[11px] font-black text-[#16C8FF]">
+        分析+を見る <ChevronRight className="h-3.5 w-3.5" />
       </button>
     </section>
   );
@@ -630,6 +663,7 @@ export default function AnalysisDashboard({
   const ev = isDemo ? 3120 : summary.evAmount;
   const heroTitle = periodTab === "month" ? "月間収支" : periodTab === "year" ? "年間収支" : "通算収支";
   const shiftAmount = periodTab === "year" ? 12 : 1;
+  const selectedDateLabel = `${month}月${selectedDay}日（${WEEKDAYS[new Date(year, month - 1, selectedDay).getDay()]}）`;
 
   if (periodTab === "calendar") {
     return (
@@ -691,14 +725,18 @@ export default function AnalysisDashboard({
           {periodTab === "month" ? (
             <>
               <CalendarPanel dayMap={dayMap} selectedDay={selectedDay} setSelectedDay={setSelectedDay} />
-              <DayDetail day={selectedDay} row={dayMap[selectedDay]} onShare={() => setShareOpen(true)} />
+              <DayDetail dateLabel={selectedDateLabel} row={dayMap[selectedDay]} isDemo={isDemo} />
+              <ShareCTA onShare={() => setShareOpen(true)} subtitle="月間収支とカレンダーを画像で共有できます" />
+              <AnalysisLink onOpen={() => setPeriodTab("analyzer")} />
             </>
           ) : (
-            <PeriodBreakdownPanel periodTab={periodTab} rows={periodRows} isDemo={isDemo} />
+            <>
+              <PeriodBreakdownPanel periodTab={periodTab} rows={periodRows} isDemo={isDemo} />
+              <TrendPanel data={trend} />
+              <Kpis summary={summary} isDemo={isDemo} />
+              <ShareCTA onShare={() => setShareOpen(true)} />
+            </>
           )}
-          <TrendPanel data={trend} />
-          <Kpis summary={summary} isDemo={isDemo} />
-          <ShareCTA onShare={() => setShareOpen(true)} />
         </main>
       </div>
       {shareOpen && <ShareCard actual={actual} ev={ev} onClose={() => setShareOpen(false)} />}
