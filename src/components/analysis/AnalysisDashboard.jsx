@@ -1,17 +1,15 @@
 import React, { useMemo, useState } from "react";
 import {
-  CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
   Filter,
-  HelpCircle,
   LineChart as LineChartIcon,
   Share2,
   Sparkles,
   Target,
-  Trophy,
+  Wallet,
   X,
 } from "lucide-react";
 import {
@@ -218,54 +216,30 @@ function ActionButton({ children, onClick, active = false }) {
   );
 }
 
-function SummaryHero({ summary, isDemo, periodWord = "今月" }) {
+function SummaryHero({ summary, isDemo, heroTitle = "月間収支" }) {
   const actual = isDemo ? -12130 : summary.totalRealPL;
   const ev = isDemo ? 3120 : summary.evAmount;
   const diff = actual - ev;
+  const days = isDemo ? 7 : (summary.days || 0);
   return (
-    <section className={`${card} min-h-[280px] overflow-hidden p-4`}>
-      <div className={label}>{periodWord}の実質収支</div>
-      <div className={`mt-1 flex items-end font-mono ${moneyClass(actual)}`}>
-        <strong className="text-[40px] font-black leading-none tracking-[-.055em]">{signed(actual)}</strong>
-        <span className="mb-1 ml-1.5 text-[12px] font-bold">円</span>
+    <section className={`${card} overflow-hidden p-4`}>
+      <div className={label}>{heroTitle}</div>
+      <div className={`mt-1.5 flex items-end font-mono ${moneyClass(actual)}`}>
+        <strong className="text-[48px] font-black leading-none tracking-[-.055em]">{signed(actual)}</strong>
+        <span className="mb-1.5 ml-1.5 text-[16px] font-bold">円</span>
       </div>
-      <div className="mt-3.5 grid grid-cols-2 border-y border-white/[0.08] py-2.5">
-        <div>
+      <div className="mt-4 grid grid-cols-3 border-t border-white/[0.08] pt-3">
+        <div className="min-w-0">
           <div className={label}>期待値</div>
-          <div className="mt-1 font-mono text-[17px] font-black text-[#16C8FF]">{signed(ev)}<span className="text-[9px]">円</span></div>
+          <div className="mt-1 whitespace-nowrap font-mono text-[18px] font-black text-[#16C8FF]">{signed(ev)}<span className="text-[9px]">円</span></div>
         </div>
-        <div className="border-l border-white/[0.08] pl-3">
-          <div className={label}>期待値との差</div>
-          <div className={`mt-1 font-mono text-[17px] font-black ${moneyClass(diff)}`}>{signed(diff)}<span className="text-[9px]">円</span></div>
+        <div className="min-w-0 border-l border-white/[0.08] pl-3">
+          <div className={label}>期待値超過</div>
+          <div className={`mt-1 whitespace-nowrap font-mono text-[18px] font-black ${moneyClass(diff)}`}>{signed(diff)}<span className="text-[9px]">円</span></div>
         </div>
-      </div>
-      <div className="mt-3.5">
-        <div className="flex items-center justify-between">
-          <span className={label}>収束率（目安）</span>
-          <span className="font-mono text-[13px] font-black text-[#16C8FF]">38%</span>
-        </div>
-        <div className="mt-1.5 h-[6px] overflow-hidden rounded-full bg-[#14213a]">
-          <div className="h-full w-[38%] rounded-full bg-gradient-to-r from-[#16C8FF] to-[#1688ff] shadow-[0_0_12px_#16C8FF]" />
-        </div>
-        <p className="mt-1 text-[9px] text-[#a0aec0]">あと62%で収束ライン</p>
-      </div>
-      <div className="mt-3.5 grid grid-cols-2 gap-3 border-t border-white/[0.08] pt-3.5">
-        <div className="relative">
-          <HelpCircle className="absolute right-0 top-0 h-3.5 w-3.5 text-[#8190a8]" />
-          <div className={label}>期待値ランク</div>
-          <div className="mt-1 flex items-center gap-2">
-            <strong className="text-[34px] font-black leading-none text-[#25D366]">A-</strong>
-            <span className="rounded-full border border-white/10 bg-[#07101f] px-2 py-1 text-[8px] font-black text-white">上位18%</span>
-          </div>
-          <p className="mt-1 text-[9px] text-[#a0aec0]">素晴らしい期待値稼働！</p>
-        </div>
-        <div className="border-l border-white/[0.08] pl-3">
-          <div className={label}>{periodWord}の称号</div>
-          <div className="mt-1.5 flex items-center gap-2">
-            <Trophy className="h-4 w-4 fill-[#FFC83D] text-[#FFC83D]" />
-            <strong className="text-[13px] text-white">データ派プレイヤー</strong>
-          </div>
-          <p className="mt-1 text-[9px] leading-[1.45] text-[#a0aec0]">回転率と期待値のバランスが非常に良い月でした！</p>
+        <div className="min-w-0 border-l border-white/[0.08] pl-3">
+          <div className={label}>稼働日数</div>
+          <div className="mt-1 whitespace-nowrap font-mono text-[18px] font-black text-white">{days}<span className="text-[9px]">日</span></div>
         </div>
       </div>
     </section>
@@ -273,12 +247,14 @@ function SummaryHero({ summary, isDemo, periodWord = "今月" }) {
 }
 
 function Kpis({ summary, isDemo }) {
+  const workHours = summary.workHours || 0;
+  const hourly = workHours > 0 ? Math.round((summary.totalRealPL || 0) / workHours) : 0;
   const values = [
-    { icon: CalendarDays, title: "稼働日数", value: isDemo ? "7" : summary.days, unit: "日" },
-    { icon: Target, title: "勝率", value: isDemo ? "60" : Math.round(summary.winRate || 0), unit: "%", sub: isDemo ? "(3/5)" : "" },
-    { icon: Sparkles, title: "平均回転率", value: isDemo ? "27.2" : "—", unit: "回/k" },
     { icon: LineChartIcon, title: "期待値", value: isDemo ? "+3,120" : signed(summary.evAmount), unit: "円", positive: true },
-    { icon: Clock3, title: "稼働時間", value: isDemo ? "5.1" : (summary.workHours || 0).toFixed(1), unit: "時間" },
+    { icon: Sparkles, title: "平均回転率", value: isDemo ? "27.2" : "—", unit: "回/k" },
+    { icon: Wallet, title: "時給", value: isDemo ? "-2,378" : (workHours > 0 ? signed(hourly) : "—"), unit: "円/h", positive: isDemo ? false : hourly >= 0 },
+    { icon: Target, title: "勝率", value: isDemo ? "60" : Math.round(summary.winRate || 0), unit: "%", sub: isDemo ? "(3/5)" : "" },
+    { icon: Clock3, title: "稼働時間", value: isDemo ? "5.1" : workHours.toFixed(1), unit: "時間" },
   ];
   return (
     <section className={`${card} grid grid-cols-2 overflow-hidden`}>
@@ -304,10 +280,11 @@ function Kpis({ summary, isDemo }) {
 }
 
 function CalendarCell({ day, row, selected, onSelect }) {
-  let heat = "border-white/10 bg-[#0c1628]";
-  if (row?.actual >= 10000) heat = "border-[#25D366]/45 bg-[#07563f]";
+  let heat = "border-white/10 bg-[#1a2436]";
+  if (row?.actual >= 10000) heat = "border-[#25D366]/50 bg-[#06623f]";
   else if (row?.actual >= 1000) heat = "border-[#25D366]/35 bg-[#0b493b]";
-  else if (row?.actual < -1000) heat = "border-[#FF5B6E]/35 bg-[#4b1e2b]";
+  else if (row?.actual <= -10000) heat = "border-[#FF5B6E]/55 bg-[#6b1322]";
+  else if (row?.actual <= -1000) heat = "border-[#FF5B6E]/35 bg-[#3f1722]";
   return (
     <button
       type="button"
@@ -359,7 +336,14 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay }) {
   const cells = [...Array(blanks).fill(null), ...Array.from({ length: 30 }, (_, i) => i + 1)];
   return (
     <section className={`${card} overflow-hidden p-3`}>
-      <SectionTitle note="実収支｜下段は期待値">日別収支カレンダー</SectionTitle>
+      <SectionTitle note="実収支 / 下段は期待値">日別収支カレンダー</SectionTitle>
+      <div className="mb-2 flex flex-wrap gap-x-2 gap-y-1 text-[7px] text-[#a0aec0]">
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#06623f]" />+10,000</span>
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#0b493b]" />+1,000</span>
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#1a2436]" />±999</span>
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#3f1722]" />-1,000</span>
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#6b1322]" />-10,000</span>
+      </div>
       <div className="mb-1 grid grid-cols-7 text-center text-[9px] text-[#a0aec0]">
         {["日", "月", "火", "水", "木", "金", "土"].map((day, index) => (
           <span key={day} className={index === 6 ? "text-[#6ea8ff]" : ""}>{day}</span>
@@ -369,12 +353,6 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay }) {
         {cells.map((day, index) => day
           ? <CalendarCell key={day} day={day} row={dayMap[day]} selected={day === selectedDay} onSelect={setSelectedDay} />
           : <div key={`blank-${index}`} />)}
-      </div>
-      <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1 text-[8px] text-[#a0aec0]">
-        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#07563f]" />+10,000以上</span>
-        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#0b493b]" />+1,000以上</span>
-        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#26324b]" />-1,000〜+1,000</span>
-        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#662433]" />-1,000以下</span>
       </div>
     </section>
   );
@@ -413,8 +391,8 @@ function TrendPanel({ data }) {
   return (
     <section className={`${card} overflow-hidden`}>
       <div className="p-2.5">
-        <SectionTitle>収支・期待値 累積推移</SectionTitle>
-        <div className="h-[240px]">
+        <SectionTitle>収支推移グラフ</SectionTitle>
+        <div className="h-[220px]">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 4, right: 3, bottom: 0, left: -22 }}>
               <CartesianGrid stroke="rgba(255,255,255,.07)" vertical={false} />
@@ -431,15 +409,6 @@ function TrendPanel({ data }) {
               <Line type="monotone" dataKey="diff" name="差異" stroke="#8794a9" strokeDasharray="4 4" strokeWidth={1.2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
-        </div>
-      </div>
-      <div className="flex items-center gap-2 border-t border-white/[0.08] bg-[#0b1a31] px-3 py-2">
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#6d85aa]/30 bg-[#13223a]">
-          <Sparkles className="h-3.5 w-3.5 text-[#8aa6d2]" />
-        </div>
-        <div>
-          <div className="text-[8px] font-black text-[#16C8FF]">AIからの一言</div>
-          <p className="mt-0.5 text-[7px] leading-[1.45] text-[#c2cbda]">期待値は十分積めています。<br />収支は下振れ傾向ですが、回転率は安定しています。</p>
         </div>
       </div>
     </section>
@@ -501,37 +470,15 @@ function StorePanel({ rows }) {
   );
 }
 
-function MonthlySummary({ actual, ev, isDemo, onShare, periodWord = "今月" }) {
-  const values = isDemo
-    ? [
-        ["最高収支日", "+9,672円（6/5）", true],
-        ["最大下振れ日", "-15,500円（6/14）", false],
-        ["平均収支/日", "-1,733円", false],
-        ["平均期待値/日", "+446円", true],
-        ["時間あたり収支", "-2,379円/h", false],
-        ["時間あたり期待値", "+612円/h", true],
-      ]
-    : [
-        ["実収支", `${signed(actual)}円`, actual >= 0],
-        ["期待値", `${signed(ev)}円`, ev >= 0],
-        ["期待値との差", `${signed(actual - ev)}円`, actual - ev >= 0],
-        ["収束率", `${ev ? Math.round((actual / ev) * 100) : 0}%`, actual >= 0],
-        ["期待値ランク", "A-", true],
-        ["称号", "データ派プレイヤー", true],
-      ];
+function ShareCTA({ onShare }) {
   return (
-    <section className={`${card} p-2.5`}>
-      <SectionTitle>{periodWord}のサマリー</SectionTitle>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-        {values.map(([name, value, positive]) => (
-          <div key={name} className="flex items-center justify-between gap-2 text-[7px]">
-            <span className="text-[#7e8ba2]">{name}</span>
-            <strong className={`whitespace-nowrap font-mono ${positive ? "text-[#25D366]" : "text-[#FF5B6E]"}`}>{value}</strong>
-          </div>
-        ))}
+    <section className={`${card} flex items-center justify-between gap-3 p-3.5`}>
+      <div className="min-w-0">
+        <div className="text-[12px] font-black text-white">SNSで成果をシェアしよう！</div>
+        <p className="mt-0.5 text-[9px] text-[#8090aa]">月間収支カードを作成して共有できます</p>
       </div>
-      <button type="button" onClick={onShare} className="mt-4 flex h-10 w-full scroll-mb-24 items-center justify-center gap-2 rounded-md border border-[#16C8FF]/70 text-[10px] font-black text-[#16C8FF]">
-        <Share2 className="h-3.5 w-3.5" /> SNS用カードを作成
+      <button type="button" onClick={onShare} className="flex h-11 shrink-0 items-center gap-1.5 rounded-lg border border-[#16C8FF]/70 bg-[#16C8FF]/10 px-3.5 text-[11px] font-black text-[#16C8FF]">
+        <Share2 className="h-4 w-4" /> SNS用カードを作成
       </button>
     </section>
   );
@@ -681,7 +628,7 @@ export default function AnalysisDashboard({
   const machineOptions = useMemo(() => listAvailableMachines(archives), [archives]);
   const actual = isDemo ? -12130 : summary.totalRealPL;
   const ev = isDemo ? 3120 : summary.evAmount;
-  const periodWord = periodTab === "month" ? "今月" : periodTab === "year" ? "今年" : "通算";
+  const heroTitle = periodTab === "month" ? "月間収支" : periodTab === "year" ? "年間収支" : "通算収支";
   const shiftAmount = periodTab === "year" ? 12 : 1;
 
   if (periodTab === "calendar") {
@@ -708,6 +655,10 @@ export default function AnalysisDashboard({
           />
           {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
           <AnalyzerView archives={archives} extraFilters={filters} />
+          <div className="mt-3 space-y-3">
+            <MachinePanel rows={machines} sortMode={sortMode} setSortMode={setSortMode} />
+            <StorePanel rows={stores} />
+          </div>
         </div>
       </div>
     );
@@ -736,8 +687,7 @@ export default function AnalysisDashboard({
         </div>
 
         <main className="space-y-3">
-          <SummaryHero summary={summary} isDemo={isDemo} periodWord={periodWord} />
-          <Kpis summary={summary} isDemo={isDemo} />
+          <SummaryHero summary={summary} isDemo={isDemo} heroTitle={heroTitle} />
           {periodTab === "month" ? (
             <>
               <CalendarPanel dayMap={dayMap} selectedDay={selectedDay} setSelectedDay={setSelectedDay} />
@@ -747,9 +697,8 @@ export default function AnalysisDashboard({
             <PeriodBreakdownPanel periodTab={periodTab} rows={periodRows} isDemo={isDemo} />
           )}
           <TrendPanel data={trend} />
-          <MachinePanel rows={machines} sortMode={sortMode} setSortMode={setSortMode} />
-          <StorePanel rows={stores} />
-          <MonthlySummary actual={actual} ev={ev} isDemo={isDemo} onShare={() => setShareOpen(true)} periodWord={periodWord} />
+          <Kpis summary={summary} isDemo={isDemo} />
+          <ShareCTA onShare={() => setShareOpen(true)} />
         </main>
       </div>
       {shareOpen && <ShareCard actual={actual} ev={ev} onClose={() => setShareOpen(false)} />}
