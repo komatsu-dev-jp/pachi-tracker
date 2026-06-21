@@ -292,15 +292,16 @@ function CalendarCell({ day, row, selected, onSelect }) {
     <button
       type="button"
       onClick={() => row && onSelect(day)}
-      className={`relative flex min-h-[56px] flex-col rounded-[10px] border px-0.5 py-1 text-left transition ${heat} ${
+      className={`relative flex min-h-[56px] flex-col overflow-hidden rounded-[10px] border px-0 py-1 text-left transition ${heat} ${
         selected ? "ring-2 ring-[#16C8FF] shadow-[0_0_14px_rgba(22,200,255,.24)]" : ""
       }`}
     >
-      <span className="px-0.5 text-[11px] font-bold leading-none text-white">{day}</span>
-      {/* セル内は日付と実収支のみ（期待値はセルに入れず選択日ミニ詳細へ）。金額は「k」を使わず実額表示。 */}
+      <span className="px-1 text-[11px] font-bold leading-none text-white">{day}</span>
+      {/* セル内は日付と実収支のみ（期待値はセルに入れず選択日ミニ詳細へ）。金額は「k」を使わず実額表示。
+          狭いiPhone幅でも7列に収まるよう小さめ等幅＋tabular-nums＋詰め字で表示する。 */}
       {hasAmount && (
-        <div className="mt-auto text-center font-mono">
-          <div className={`text-[9px] font-black leading-tight tracking-[-.02em] ${moneyClass(row.actual)}`}>{signed(row.actual)}</div>
+        <div className="mt-auto w-full px-0.5 text-center font-mono">
+          <div className={`text-[8px] font-black leading-tight tracking-[-.04em] tabular-nums ${moneyClass(row.actual)}`}>{signed(row.actual)}</div>
         </div>
       )}
     </button>
@@ -347,14 +348,14 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay }) {
   const blanks = 1;
   const cells = [...Array(blanks).fill(null), ...Array.from({ length: 30 }, (_, i) => i + 1)];
   return (
-    <section className={`${card} overflow-hidden p-3`}>
+    <section className={`${card} overflow-hidden p-2.5`}>
       <SectionTitle note="日付をタップで詳細を表示">日別収支カレンダー</SectionTitle>
-      <div className="mb-1 grid grid-cols-7 text-center text-[9px] text-[#a0aec0]">
+      <div className="mb-1 grid grid-cols-7 gap-1 text-center text-[9px] text-[#a0aec0]">
         {WEEKDAYS.map((day, index) => (
           <span key={day} className={index === 6 ? "text-[#6ea8ff]" : ""}>{day}</span>
         ))}
       </div>
-      <div className="grid grid-cols-7 gap-[6px]">
+      <div className="grid grid-cols-7 gap-1">
         {cells.map((day, index) => day
           ? <CalendarCell key={day} day={day} row={dayMap[day]} selected={day === selectedDay} onSelect={setSelectedDay} />
           : <div key={`blank-${index}`} />)}
