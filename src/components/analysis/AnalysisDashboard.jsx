@@ -93,15 +93,6 @@ const DEMO_TREND = Array.from({ length: 30 }, (_, index) => {
 
 const fmt = (value) => Math.round(Number(value) || 0).toLocaleString("ja-JP");
 const signed = (value) => `${Number(value) > 0 ? "+" : ""}${fmt(value)}`;
-// カレンダーセル用の短縮表記（例: +5,406 → +5.4k）。7列でiPhone幅に収めるための表示専用。
-const shortMoney = (value) => {
-  const n = Math.round(Number(value) || 0);
-  if (Math.abs(n) >= 1000) {
-    const sign = n > 0 ? "+" : "-";
-    return `${sign}${(Math.abs(n) / 1000).toFixed(1)}k`;
-  }
-  return signed(n);
-};
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 const moneyClass = (value) => Number(value) >= 0 ? "text-[#25D366]" : "text-[#FF5B6E]";
 const card = "rounded-[10px] border border-white/[0.09] bg-[linear-gradient(145deg,rgba(12,25,47,.98),rgba(5,13,27,.98))] shadow-[0_16px_45px_rgba(0,0,0,.34)]";
@@ -229,7 +220,7 @@ function ActionButton({ children, onClick, active = false }) {
 function SummaryHero({ summary, isDemo, heroTitle = "月間収支" }) {
   const actual = isDemo ? -12130 : summary.totalRealPL;
   const ev = isDemo ? 3120 : summary.evAmount;
-  const diff = actual - ev;
+  const winRate = isDemo ? 60 : Math.round(summary.winRate || 0);
   const days = isDemo ? 7 : (summary.days || 0);
   return (
     <section className={`${card} overflow-hidden p-3.5`}>
@@ -244,11 +235,11 @@ function SummaryHero({ summary, isDemo, heroTitle = "月間収支" }) {
           <div className="mt-0.5 whitespace-nowrap font-mono text-[16px] font-black text-[#16C8FF]">{signed(ev)}<span className="text-[9px]">円</span></div>
         </div>
         <div className="min-w-0 border-l border-white/[0.08] pl-3">
-          <div className={label}>差異</div>
-          <div className={`mt-0.5 whitespace-nowrap font-mono text-[16px] font-black ${moneyClass(diff)}`}>{signed(diff)}<span className="text-[9px]">円</span></div>
+          <div className={label}>勝率</div>
+          <div className="mt-0.5 whitespace-nowrap font-mono text-[16px] font-black text-white">{winRate}<span className="text-[9px]">%</span></div>
         </div>
         <div className="min-w-0 border-l border-white/[0.08] pl-3">
-          <div className={label}>稼働</div>
+          <div className={label}>稼働日数</div>
           <div className="mt-0.5 whitespace-nowrap font-mono text-[16px] font-black text-white">{days}<span className="text-[9px]">日</span></div>
         </div>
       </div>
@@ -295,20 +286,21 @@ function CalendarCell({ day, row, selected, onSelect }) {
   else if (row?.actual >= 1000) heat = "border-[#25D366]/35 bg-[#0b493b]";
   else if (row?.actual <= -10000) heat = "border-[#FF5B6E]/55 bg-[#6b1322]";
   else if (row?.actual <= -1000) heat = "border-[#FF5B6E]/35 bg-[#3f1722]";
+  // 0円の日は金額を表示しない（稼働なし／±0は色のみで把握）。
+  const hasAmount = row && Number(row.actual) !== 0;
   return (
     <button
       type="button"
       onClick={() => row && onSelect(day)}
-      className={`relative flex min-h-[58px] flex-col rounded-[10px] border p-1 text-left transition ${heat} ${
+      className={`relative flex min-h-[56px] flex-col rounded-[10px] border px-0.5 py-1 text-left transition ${heat} ${
         selected ? "ring-2 ring-[#16C8FF] shadow-[0_0_14px_rgba(22,200,255,.24)]" : ""
       }`}
     >
-      <span className="text-[12px] font-bold leading-none text-white">{day}</span>
-      {/* 期待値はセル内に常時表示せず、プラス期待値の日だけ小さなドットで示す（詳細は選択日ミニ詳細へ） */}
-      {row?.ev > 0 && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-[#16C8FF]" />}
-      {row && (
+      <span className="px-0.5 text-[11px] font-bold leading-none text-white">{day}</span>
+      {/* セル内は日付と実収支のみ（期待値はセルに入れず選択日ミニ詳細へ）。金額は「k」を使わず実額表示。 */}
+      {hasAmount && (
         <div className="mt-auto text-center font-mono">
-          <div className={`text-[12px] font-black leading-tight ${moneyClass(row.actual)}`}>{shortMoney(row.actual)}</div>
+          <div className={`text-[9px] font-black leading-tight tracking-[-.02em] ${moneyClass(row.actual)}`}>{signed(row.actual)}</div>
         </div>
       )}
     </button>
@@ -488,15 +480,18 @@ function StorePanel({ rows }) {
   );
 }
 
-function ShareCTA({ onShare, subtitle = "月間収支カードを作成して共有できます" }) {
+function ShareCTA({ onShare, title = "今月の結果を共有", subtitle = "月間収支カードをSNSに投稿できます" }) {
   return (
-    <section className={`${card} flex items-center justify-between gap-3 p-3.5`}>
-      <div className="min-w-0">
-        <div className="text-[12px] font-black text-white">SNSで成果をシェアしよう！</div>
+    <section className={`${card} flex items-center gap-3 p-3.5`}>
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#16C8FF]/40 bg-[#16C8FF]/10">
+        <Share2 className="h-5 w-5 text-[#16C8FF]" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[12px] font-black text-white">{title}</div>
         <p className="mt-0.5 text-[9px] text-[#8090aa]">{subtitle}</p>
       </div>
-      <button type="button" onClick={onShare} className="flex h-11 shrink-0 items-center gap-1.5 rounded-lg border border-[#16C8FF]/70 bg-[#16C8FF]/10 px-3.5 text-[11px] font-black text-[#16C8FF]">
-        <Share2 className="h-4 w-4" /> SNS用カードを作成
+      <button type="button" onClick={onShare} className="h-11 shrink-0 rounded-lg border border-[#16C8FF]/70 bg-[#16C8FF]/10 px-3.5 text-[11px] font-black text-[#16C8FF]">
+        SNSカード作成
       </button>
     </section>
   );
@@ -539,22 +534,70 @@ function FilterPanel({ stores, machines, filters, setFilters, onClose }) {
   );
 }
 
-function ShareCard({ actual, ev, onClose }) {
+// SNS共有用のカード（モーダル）。テキストとレイアウトのみで魅せる上品な明色カード。
+// 機種画像・店舗画像などの著作権素材は使わない。
+function ShareMiniCalendar({ year, month, dayMap }) {
+  const blanks = new Date(year, month - 1, 1).getDay();
+  const count = new Date(year, month, 0).getDate();
+  const cells = [...Array(blanks).fill(null), ...Array.from({ length: count }, (_, i) => i + 1)];
+  const moneyTone = (value) => Number(value) >= 0 ? "text-[#1a8f4c]" : "text-[#d6394c]";
+  const heatTone = (value) => {
+    if (value >= 10000) return "bg-[#d6f3e0]";
+    if (value >= 1000) return "bg-[#e9f7ee]";
+    if (value <= -10000) return "bg-[#fbdfe3]";
+    if (value <= -1000) return "bg-[#fdecee]";
+    return "bg-[#f4f4f2]";
+  };
+  return (
+    <div className="mt-5 grid grid-cols-7 gap-[3px]">
+      {WEEKDAYS.map((day) => (
+        <span key={day} className="pb-0.5 text-center text-[7px] font-bold text-[#9aa3b2]">{day}</span>
+      ))}
+      {cells.map((day, index) => {
+        if (!day) return <div key={`blank-${index}`} />;
+        const row = dayMap[day];
+        const hasAmount = row && Number(row.actual) !== 0;
+        return (
+          <div key={day} className={`flex min-h-[26px] flex-col rounded-[4px] px-0.5 py-0.5 ${row ? heatTone(row.actual) : "bg-[#f6f6f4]"}`}>
+            <span className="text-[7px] font-bold leading-none text-[#5b6475]">{day}</span>
+            {hasAmount && (
+              <span className={`mt-auto text-center font-mono text-[6px] font-black leading-none tracking-[-.02em] ${moneyTone(row.actual)}`}>{signed(row.actual)}</span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ShareCard({ year, month, actual, ev, winRate, days, dayMap, onClose }) {
+  const mainTone = actual >= 0 ? "text-[#1a8f4c]" : "text-[#d6394c]";
   return (
     <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 p-5 backdrop-blur-md" onClick={onClose}>
-      <div className="w-full max-w-[350px]" onClick={(event) => event.stopPropagation()}>
-        <div className="relative overflow-hidden rounded-[24px] border border-[#16C8FF]/35 bg-[radial-gradient(circle_at_top_right,rgba(22,200,255,.18),transparent_45%),linear-gradient(145deg,#0b1930,#040a14)] p-6 shadow-[0_30px_90px_rgba(0,0,0,.65)]">
-          <button type="button" onClick={onClose} className="absolute right-4 top-4 text-[#8090aa]"><X className="h-5 w-5" /></button>
-          <div className="text-[11px] font-black tracking-[.22em] text-[#16C8FF]">PACHI TRACKER</div>
-          <div className="mt-7 text-[13px] font-bold text-[#a0aec0]">2026年6月</div>
-          <div className={`mt-1 font-mono text-[38px] font-black ${moneyClass(actual)}`}>{signed(actual)}円</div>
-          <div className="mt-6 grid grid-cols-2 gap-3">
-            <div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className={label}>期待値</div><strong className="mt-1 block text-[#25D366]">{signed(ev)}円</strong></div>
-            <div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className={label}>期待値ランク</div><strong className="mt-1 block text-[#25D366]">A-</strong></div>
-            <div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className={label}>勝率</div><strong className="mt-1 block text-white">60%</strong></div>
-            <div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className={label}>稼働日数</div><strong className="mt-1 block text-white">7日</strong></div>
+      <div className="w-full max-w-[340px]" onClick={(event) => event.stopPropagation()}>
+        <div className="relative overflow-hidden rounded-[20px] border border-black/[0.06] bg-[#fbfbf9] p-6 text-[#1c2230] shadow-[0_30px_90px_rgba(0,0,0,.55)]">
+          <button type="button" onClick={onClose} className="absolute right-4 top-4 text-[#aab0bd]"><X className="h-5 w-5" /></button>
+          <div className="text-center">
+            <div className="font-serif text-[15px] tracking-[.12em] text-[#2c3444]">{year}年{month}月</div>
+            <div className="mt-4 text-[10px] font-bold tracking-[.24em] text-[#9aa3b2]">実質収支</div>
+            <div className={`mt-1 font-mono text-[34px] font-black tracking-[-.03em] ${mainTone}`}>{signed(actual)}円</div>
           </div>
-          <div className="mt-5 border-t border-white/10 pt-4 text-[15px] font-black text-white">🏆 データ派プレイヤー</div>
+          <div className="mt-5 grid grid-cols-3 rounded-2xl border border-black/[0.06] bg-white py-3">
+            <div className="px-2 text-center">
+              <div className="text-[8px] font-bold tracking-[.06em] text-[#9aa3b2]">期待値</div>
+              <div className="mt-1 font-mono text-[13px] font-black text-[#1a8f4c]">{signed(ev)}<span className="text-[8px]">円</span></div>
+            </div>
+            <div className="border-l border-black/[0.06] px-2 text-center">
+              <div className="text-[8px] font-bold tracking-[.06em] text-[#9aa3b2]">勝率</div>
+              <div className="mt-1 font-mono text-[13px] font-black text-[#2c3444]">{winRate}<span className="text-[8px]">%</span></div>
+            </div>
+            <div className="border-l border-black/[0.06] px-2 text-center">
+              <div className="text-[8px] font-bold tracking-[.06em] text-[#9aa3b2]">稼働</div>
+              <div className="mt-1 font-mono text-[13px] font-black text-[#2c3444]">{days}<span className="text-[8px]">日</span></div>
+            </div>
+          </div>
+          <ShareMiniCalendar year={year} month={month} dayMap={dayMap} />
+          <div className="mt-5 text-center text-[10px] font-black tracking-[.28em] text-[#aab0bd]">PachiTracker</div>
         </div>
         <button type="button" onClick={onClose} className="mt-3 h-11 w-full rounded-xl bg-[#16C8FF] text-[12px] font-black text-[#03101c]">カードを閉じる</button>
       </div>
@@ -661,6 +704,8 @@ export default function AnalysisDashboard({
   const machineOptions = useMemo(() => listAvailableMachines(archives), [archives]);
   const actual = isDemo ? -12130 : summary.totalRealPL;
   const ev = isDemo ? 3120 : summary.evAmount;
+  const winRate = isDemo ? 60 : Math.round(summary.winRate || 0);
+  const days = isDemo ? 7 : (summary.days || 0);
   const heroTitle = periodTab === "month" ? "月間収支" : periodTab === "year" ? "年間収支" : "通算収支";
   const shiftAmount = periodTab === "year" ? 12 : 1;
   const selectedDateLabel = `${month}月${selectedDay}日（${WEEKDAYS[new Date(year, month - 1, selectedDay).getDay()]}）`;
@@ -726,7 +771,7 @@ export default function AnalysisDashboard({
             <>
               <CalendarPanel dayMap={dayMap} selectedDay={selectedDay} setSelectedDay={setSelectedDay} />
               <DayDetail dateLabel={selectedDateLabel} row={dayMap[selectedDay]} isDemo={isDemo} />
-              <ShareCTA onShare={() => setShareOpen(true)} subtitle="月間収支とカレンダーを画像で共有できます" />
+              <ShareCTA onShare={() => setShareOpen(true)} />
               <AnalysisLink onOpen={() => setPeriodTab("analyzer")} />
             </>
           ) : (
@@ -734,12 +779,12 @@ export default function AnalysisDashboard({
               <PeriodBreakdownPanel periodTab={periodTab} rows={periodRows} isDemo={isDemo} />
               <TrendPanel data={trend} />
               <Kpis summary={summary} isDemo={isDemo} />
-              <ShareCTA onShare={() => setShareOpen(true)} />
+              <ShareCTA onShare={() => setShareOpen(true)} title="成果を共有" subtitle="収支カードをSNSに投稿できます" />
             </>
           )}
         </main>
       </div>
-      {shareOpen && <ShareCard actual={actual} ev={ev} onClose={() => setShareOpen(false)} />}
+      {shareOpen && <ShareCard year={year} month={month} actual={actual} ev={ev} winRate={winRate} days={days} dayMap={dayMap} onClose={() => setShareOpen(false)} />}
     </div>
   );
 }
