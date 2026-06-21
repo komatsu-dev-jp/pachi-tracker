@@ -220,14 +220,14 @@ function MonthKpis({ actual, ev, winRate, days }) {
   return (
     <section className="grid grid-cols-4 gap-1.5">
       {items.map((item) => (
-        <div key={item.label} className={`${card} flex min-w-0 flex-col items-center justify-center gap-1 px-1 py-2.5`}>
+        <div key={item.label} className="flex min-w-0 flex-col items-center justify-center gap-1 rounded-[13px] border border-white/[0.09] bg-[linear-gradient(160deg,#11203a,#0a1424)] px-1 py-2.5 shadow-[0_6px_16px_rgba(0,0,0,.28)]">
           <div className="flex min-w-0 items-center gap-1">
-            <item.Icon className="h-3 w-3 shrink-0 text-[#5e9df7]" />
-            <span className="truncate text-[8px] font-semibold tracking-[.02em] text-[#8090aa]">{item.label}</span>
+            <item.Icon className="h-3.5 w-3.5 shrink-0 text-[#5e9df7]" />
+            <span className="truncate text-[9px] font-semibold tracking-[.01em] text-[#8a97ad]">{item.label}</span>
           </div>
           <div className={`whitespace-nowrap font-mono font-black leading-none tracking-[-.04em] tabular-nums ${item.cls}`}>
-            <span className="text-[clamp(13px,3.4vw,15px)]">{item.value}</span>
-            <span className="ml-0.5 text-[8px]">{item.unit}</span>
+            <span className="text-[clamp(14px,4vw,17px)]">{item.value}</span>
+            <span className="ml-0.5 text-[9px]">{item.unit}</span>
           </div>
         </div>
       ))}
@@ -320,17 +320,16 @@ function CalendarCell({ day, row, selected, weekday, onSelect }) {
     <button
       type="button"
       onClick={() => row && onSelect(day)}
-      className={`relative flex aspect-[1/0.92] min-w-0 flex-col overflow-hidden px-0.5 py-0.5 text-left transition ${heat} ${
-        selected ? "z-10 rounded-[4px] ring-2 ring-inset ring-[#16C8FF]" : ""
+      className={`relative flex aspect-[1/0.66] min-w-0 flex-col items-center overflow-hidden px-0.5 pb-0.5 pt-1 transition ${heat} ${
+        selected ? "z-10 rounded-[3px] ring-2 ring-inset ring-[#16C8FF]" : ""
       }`}
     >
-      <span className={`text-[10px] font-bold leading-none ${dayColor}`}>{day}</span>
+      {/* 日付は左上・小さめ。金額は日付のすぐ下に詰めて配置し、縦の無駄を作らない（iPhoneで密に収める）。 */}
+      <span className={`w-full text-left text-[10px] font-bold leading-none ${dayColor}`}>{day}</span>
       {/* セル内は日付と実収支のみ（期待値はセルに入れず選択日ミニ詳細へ）。金額は「k」を使わず実額表示。
           狭いiPhone幅でも7列に収まるよう小さめ等幅＋tabular-nums＋詰め字で表示する。 */}
       {hasAmount && (
-        <div className="mt-auto w-full text-center font-mono">
-          <div className={`text-[8px] font-black leading-tight tracking-[-.05em] tabular-nums ${moneyClass(row.actual)}`}>{signed(row.actual)}</div>
-        </div>
+        <span className={`mt-0.5 w-full text-center font-mono text-[8px] font-black leading-none tracking-[-.05em] tabular-nums ${moneyClass(row.actual)}`}>{signed(row.actual)}</span>
       )}
     </button>
   );
@@ -392,10 +391,10 @@ function DayDetail({ dateLabel, row, isDemo }) {
 
 function CalendarLegend() {
   return (
-    <div className="flex shrink-0 items-center gap-2 text-[8px] text-[#9aa6bb]">
-      <span className="flex items-center gap-1"><i className="inline-block h-2 w-2 rounded-[2px] bg-[#11402f]" />プラス</span>
-      <span className="flex items-center gap-1"><i className="inline-block h-2 w-2 rounded-[2px] bg-[#1a2436]" />±0</span>
-      <span className="flex items-center gap-1"><i className="inline-block h-2 w-2 rounded-[2px] bg-[#3a1620]" />マイナス</span>
+    <div className="flex shrink-0 items-center gap-1.5 text-[8px] text-[#9aa6bb]">
+      <span className="flex items-center gap-0.5"><i className="inline-block h-1.5 w-1.5 rounded-[2px] bg-[#1f7a52]" />プラス</span>
+      <span className="flex items-center gap-0.5"><i className="inline-block h-1.5 w-1.5 rounded-[2px] bg-[#2a3550]" />±0</span>
+      <span className="flex items-center gap-0.5"><i className="inline-block h-1.5 w-1.5 rounded-[2px] bg-[#8a2438]" />マイナス</span>
     </div>
   );
 }
@@ -430,7 +429,7 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay, year, month }) {
               onSelect={setSelectedDay}
             />
           )
-          : <div key={`blank-${index}`} className="aspect-[1/0.92] bg-[#0a1422]" />)}
+          : <div key={`blank-${index}`} className="aspect-[1/0.66] bg-[#0a1422]" />)}
       </div>
     </section>
   );
