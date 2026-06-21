@@ -699,23 +699,26 @@ export default function AnalysisDashboard({
 
   if (periodTab === "calendar") {
     return (
-      <div className="analytics-terminal min-h-full shrink-0 bg-[#050B18] text-white">
-        <div className="mx-auto w-full max-w-[430px] px-4 pt-3">
+      <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[#050B18] text-white">
+        <div className="mx-auto w-full max-w-[430px] shrink-0 px-4 pt-3">
           <DashboardTop periodTab={periodTab} setPeriodTab={setPeriodTab} />
         </div>
-        <CalendarTab S={S} onReset={onReset} />
+        {/* スクロールを画面内に閉じ込める（親mainの高さ依存を避け、下部ナビと重ならない） */}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <CalendarTab S={S} onReset={onReset} />
+        </div>
       </div>
     );
   }
 
   if (periodTab === "analyzer") {
     return (
-      <div className="analytics-terminal min-h-full shrink-0 bg-[#050B18] text-white">
-        <div className="mx-auto w-full max-w-[430px] px-4 pb-[140px] pt-3">
+      <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[#050B18] text-white">
+        <div className="mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-4 pt-3">
           <DashboardTop periodTab={periodTab} setPeriodTab={setPeriodTab} />
-          {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
-          <AnalyzerView archives={archives} extraFilters={filters} />
-          <div className="mt-3 space-y-3">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pb-10">
+            {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
+            <AnalyzerView archives={archives} extraFilters={filters} />
             <MachinePanel rows={machines} sortMode={sortMode} setSortMode={setSortMode} />
             <StorePanel rows={stores} />
           </div>
@@ -725,13 +728,13 @@ export default function AnalysisDashboard({
   }
 
   return (
-    <div className="analytics-terminal min-h-full shrink-0 bg-[#050B18] text-white">
-      <div className="mx-auto w-full max-w-[430px] px-4 pb-[140px] pt-3">
+    <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[#050B18] text-white">
+      <div className="mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-4 pt-3">
         <DashboardTop periodTab={periodTab} setPeriodTab={setPeriodTab} />
 
         {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
 
-        <div className="mb-2.5 flex items-center justify-between">
+        <div className="mb-2.5 flex shrink-0 items-center justify-between">
           <button type="button" disabled={periodTab === "all"} onClick={() => setMonthOffset((value) => value - shiftAmount)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-[#0b1528] text-[#aab6ca] disabled:opacity-20"><ChevronLeft className="h-4 w-4" /></button>
           <button type="button" className="flex items-center gap-1 text-[15px] font-black">
             {periodTab === "month" ? `${year}年${month}月` : periodTab === "year" ? `${year}年` : "通算"}
@@ -740,7 +743,8 @@ export default function AnalysisDashboard({
           <button type="button" disabled={periodTab === "all"} onClick={() => setMonthOffset((value) => value + shiftAmount)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-[#0b1528] text-[#aab6ca] disabled:opacity-20"><ChevronRight className="h-4 w-4" /></button>
         </div>
 
-        <main className="space-y-3">
+        {/* ヒーロー以下を画面内スクロール領域に閉じ込める（下部ナビ非重なり・はみ出し防止） */}
+        <main className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pb-10">
           <SummaryHero summary={summary} isDemo={isDemo} heroTitle={heroTitle} />
           {periodTab === "month" ? (
             <>
