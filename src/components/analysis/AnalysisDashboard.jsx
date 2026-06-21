@@ -605,24 +605,11 @@ function ShareCard({ year, month, actual, ev, winRate, days, dayMap, onClose }) 
   );
 }
 
-function DashboardTop({
-  periodTab,
-  setPeriodTab,
-  filterOpen,
-  setFilterOpen,
-  onShare,
-  showActions = true,
-}) {
+function DashboardTop({ periodTab, setPeriodTab }) {
   return (
     <>
-      <header className="mb-2.5 flex items-center justify-between">
+      <header className="mb-2.5">
         <h1 className="text-[16px] font-black tracking-[.02em]">収支分析</h1>
-        {showActions && (
-          <div className="flex gap-1.5">
-            <ActionButton onClick={onShare}><Share2 className="h-3.5 w-3.5" />共有</ActionButton>
-            <ActionButton onClick={() => setFilterOpen((value) => !value)} active={filterOpen}><Filter className="h-3.5 w-3.5" />絞り込み</ActionButton>
-          </div>
-        )}
       </header>
       <nav className="mb-2.5 grid h-[42px] grid-cols-5 rounded-[9px] border border-white/[0.08] bg-[#0b1528] p-0.5">
         {PERIOD_TABS.map((tab) => (
@@ -712,9 +699,9 @@ export default function AnalysisDashboard({
 
   if (periodTab === "calendar") {
     return (
-      <div className="analytics-terminal min-h-full bg-[#050B18] text-white">
+      <div className="analytics-terminal min-h-full shrink-0 bg-[#050B18] text-white">
         <div className="mx-auto w-full max-w-[430px] px-4 pt-3">
-          <DashboardTop periodTab={periodTab} setPeriodTab={setPeriodTab} showActions={false} />
+          <DashboardTop periodTab={periodTab} setPeriodTab={setPeriodTab} />
         </div>
         <CalendarTab S={S} onReset={onReset} />
       </div>
@@ -723,15 +710,9 @@ export default function AnalysisDashboard({
 
   if (periodTab === "analyzer") {
     return (
-      <div className="analytics-terminal min-h-full bg-[#050B18] text-white">
+      <div className="analytics-terminal min-h-full shrink-0 bg-[#050B18] text-white">
         <div className="mx-auto w-full max-w-[430px] px-4 pb-[140px] pt-3">
-          <DashboardTop
-            periodTab={periodTab}
-            setPeriodTab={setPeriodTab}
-            filterOpen={filterOpen}
-            setFilterOpen={setFilterOpen}
-            onShare={() => setShareOpen(true)}
-          />
+          <DashboardTop periodTab={periodTab} setPeriodTab={setPeriodTab} />
           {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
           <AnalyzerView archives={archives} extraFilters={filters} />
           <div className="mt-3 space-y-3">
@@ -744,15 +725,9 @@ export default function AnalysisDashboard({
   }
 
   return (
-    <div className="analytics-terminal min-h-full bg-[#050B18] text-white">
+    <div className="analytics-terminal min-h-full shrink-0 bg-[#050B18] text-white">
       <div className="mx-auto w-full max-w-[430px] px-4 pb-[140px] pt-3">
-        <DashboardTop
-          periodTab={periodTab}
-          setPeriodTab={setPeriodTab}
-          filterOpen={filterOpen}
-          setFilterOpen={setFilterOpen}
-          onShare={() => setShareOpen(true)}
-        />
+        <DashboardTop periodTab={periodTab} setPeriodTab={setPeriodTab} />
 
         {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
 
