@@ -796,7 +796,8 @@ export default function App() {
   // 収支按分（コストベース）: この台の投資 = 持ち込んだ持ち玉(carriedInYen) + この台の現金投資(rawInvest)、
   //   回収 = 持ち出す持ち玉の円換算。次台の carriedInYen には今回の持ち出し額をセット（相殺で合計は正確）。
   // mochiOverride: モーダルで修正した「移動前の持ち玉」（未指定なら currentMochiBalls を使用）
-  const handleMoveTable = (mochiOverride) => {
+  // dest: 移動先の機種情報 { machineName, machineNum, synthDenom, spec1R, specAvgRounds, specSapo }（任意）
+  const handleMoveTable = (mochiOverride, dest = {}) => {
     const carriedMochi = mochiOverride !== undefined ? Math.max(0, Math.round(mochiOverride)) : (currentMochiBalls || 0);
     const carriedChodama = currentChodama || 0;
     // ballYen: 選択中の店舗の換金率を優先（グローバルstateのズレを回避）
@@ -804,8 +805,13 @@ export default function App() {
     const ballYen = store?.exRate > 0 ? 1000 / store.exRate : (exRate > 0 ? 1000 / exRate : (Number(ballVal) > 0 ? Number(ballVal) : 4));
     const carriedOutYen = Math.round(carriedMochi * ballYen); // この台の回収（持ち出し玉の価値）
     const machineInvest = Math.round(Number(carriedInYen) || 0) + Math.round(ev?.rawInvest || 0);
+    // 旧台のデータを先にアーカイブ（この時点の機種名・スペックは旧台のまま保存する）。
     archiveCurrentSession(true, { investYen: machineInvest, recoveryYen: carriedOutYen, carriedInYen });
-    const carriedMode = playMode; // 直前のモード（持ち玉/貯玉/現金）を引き継ぐ
+    // 玉箱を持っての移動は「持ち玉」で続行する。持ち玉が無ければ貯玉、それも無ければ現金。
+    // ※直前の playMode をそのまま引き継ぐと、貯玉/現金モードのまま移動した際に
+    //   移動先で入力した持ち玉が表示に反映されず「貯玉」として表示されるバグになる。
+    //   持ち込んだ資産からモードを決定して記録画面の持ち玉/貯玉表示を一致させる。
+    const carriedMode = carriedMochi > 0 ? "mochi" : (carriedChodama > 0 ? "chodama" : "cash");
     try { takeSnapshotImmediate("table:move", getUndoSnapshot()); } catch { /* ignore */ }
     // 記録のみクリア（玉資産・店舗・レートは保持）
     setJpLog([]);
@@ -815,13 +821,24 @@ export default function App() {
     setInvestYen(0);
     setRecoveryYen(0);
     setTotalTrayBalls(0);
-    setMachineNum("");
-    setMachineName("");
+    // 移動先の機種情報（移動モーダルで入力）を反映。
+    // 入力した項目のみ上書きし、空欄は直前の台の値を保持する（同じ機種への移動を想定）。
+    const destName = dest.machineName != null ? String(dest.machineName).trim() : "";
+    const destNum = dest.machineNum != null ? String(dest.machineNum).trim() : "";
+    if (destName) setMachineName(destName);
+    if (destNum) setMachineNum(destNum);
+    // 移動先で機種を選択した場合のみスペックを更新（EV計算が新台基準になるように）。
+    if (dest.synthDenom != null) setSynthDenom(dest.synthDenom);
+    if (dest.spec1R != null) setSpec1R(dest.spec1R);
+    if (dest.specAvgRounds != null) setSpecAvgRounds(dest.specAvgRounds);
+    if (dest.specSapo != null) setSpecSapo(dest.specSapo);
     // 引き継いだ玉数を新台の初期値として設定（収支の基準にする）
     setInitialMochiBalls(carriedMochi);
     setInitialChodama(carriedChodama);
-    // モーダルで修正した玉数を currentMochiBalls にも反映（新台のスタート値と整合）
-    if (mochiOverride !== undefined) setCurrentMochiBalls(carriedMochi);
+    // 表示モードを持ち込んだ資産に合わせる（記録画面の持ち玉/貯玉表示が入力と一致するように）
+    setPlayMode(carriedMode);
+    // モーダルで入力した玉数を currentMochiBalls にも反映（新台のスタート値と整合）
+    setCurrentMochiBalls(carriedMochi);
     // 次台のコストベース：今回の持ち出し額を「持ち込みコスト」として引き継ぐ
     setCarriedInYen(carriedOutYen);
     // 新台のスタート行を引き継ぎ資産で再シード

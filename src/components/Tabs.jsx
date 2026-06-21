@@ -745,6 +745,12 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     // 旧UIの "jackpot" mode は撤去済み。bottom sheet は常に通常回転入力（count モード）として使用
     const [showMoveModal, setShowMoveModal] = useState(false);
     const [moveMochiBalls, setMoveMochiBalls] = useState("");
+    // 台移動モーダル：移動先の機種情報の入力state（機種設定の編集モーダルと同じ検索方式）
+    const [moveMachineName, setMoveMachineName] = useState("");
+    const [moveMachineNum, setMoveMachineNum] = useState("");
+    const [moveMachineQuery, setMoveMachineQuery] = useState("");
+    const [moveMachineDD, setMoveMachineDD] = useState(false);
+    const movePickedMachineRef = useRef(null);
     // 記録モード イベントメニュー（FAB から開く） + 詳細データ折りたたみ
     const [showEventMenu, setShowEventMenu] = useState(false);
     const [showDetailCollapse, setShowDetailCollapse] = useState(false);
@@ -1440,6 +1446,12 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         if (!editMachineQuery.trim()) return [];
         return searchMachines(editMachineQuery, S.customMachines).slice(0, 8);
     }, [editMachineQuery, S.customMachines]);
+
+    // 台移動モーダル用の機種検索結果
+    const moveMachineResults = useMemo(() => {
+        if (!moveMachineQuery.trim()) return [];
+        return searchMachines(moveMachineQuery, S.customMachines).slice(0, 8);
+    }, [moveMachineQuery, S.customMachines]);
 
     // 現在の機種からタイプ(ミドル/甘デジ等)を解決
     const currentMachineType = useMemo(() => {
@@ -2833,6 +2845,12 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                             if (!window.confirm("大当たり記録が入力途中です。\nこのまま台移動しますか？")) return;
                                         }
                                         setMoveMochiBalls(String(S.currentMochiBalls || 0));
+                                        // 移動先の機種は未入力からスタート（同じ機種なら入力不要・空のままなら従来どおりクリア）
+                                        setMoveMachineName("");
+                                        setMoveMachineNum("");
+                                        setMoveMachineQuery("");
+                                        setMoveMachineDD(false);
+                                        movePickedMachineRef.current = null;
                                         setShowMoveModal(true);
                                     }}
                                 >
@@ -5032,7 +5050,58 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         <SecLabel label="台移動" />
                         <div style={{ fontSize: 12, color: C.sub, marginBottom: 12, lineHeight: 1.6 }}>
                             現在のデータを保存して新しい台へ移動します。<br />
-                            移動で玉を使った場合は持ち玉を修正してください。
+                            移動先の機種・持ち玉を入力してください。
+                        </div>
+                        {/* 移動先の機種名（検索 / 直接入力。同じ機種なら空のままでOK） */}
+                        <div style={{ marginBottom: 14, position: "relative" }}>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>移動先の機種名</div>
+                            <input
+                                type="text"
+                                value={moveMachineName}
+                                onChange={e => { setMoveMachineName(e.target.value); setMoveMachineQuery(e.target.value); setMoveMachineDD(true); movePickedMachineRef.current = null; }}
+                                onFocus={() => setMoveMachineDD(true)}
+                                placeholder="機種名を検索 / 入力"
+                                style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "12px 14px", fontSize: 16, color: C.text, fontFamily: font, outline: "none" }}
+                            />
+                            {moveMachineDD && moveMachineResults.length > 0 && (
+                                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 10, zIndex: 20, maxHeight: 200, overflowY: "auto", marginTop: 4, boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+                                    {moveMachineResults.map((m, i) => (
+                                        <button key={m.id || i} className="b" onClick={() => {
+                                            setMoveMachineName(m.name);
+                                            const spec = deriveSpecForMachine(m);
+                                            movePickedMachineRef.current = {
+                                                synthDenom: m.synthProb,
+                                                spec1R: spec.spec1R,
+                                                specAvgRounds: spec.specAvgRounds,
+                                                specSapo: spec.specSapo,
+                                            };
+                                            setMoveMachineDD(false);
+                                            setMoveMachineQuery("");
+                                        }} style={{
+                                            width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${C.border}`,
+                                            padding: "12px 14px", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center"
+                                        }}>
+                                            <div>
+                                                <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{m.name}</div>
+                                                <div style={{ fontSize: 10, color: C.sub }}>{m.maker || ""} {m.type ? `| ${m.type}` : ""}</div>
+                                            </div>
+                                            <div style={{ fontSize: 14, fontWeight: 700, color: C.yellow, fontFamily: mono }}>{m.prob || `1/${m.synthProb}`}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        {/* 移動先の台番号 */}
+                        <div style={{ marginBottom: 14 }}>
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>移動先の台番号</div>
+                            <input
+                                type="tel"
+                                inputMode="numeric"
+                                value={moveMachineNum}
+                                onChange={e => setMoveMachineNum(e.target.value)}
+                                placeholder="例: 123"
+                                style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "12px 14px", fontSize: 18, color: C.text, fontFamily: mono, outline: "none", textAlign: "center" }}
+                            />
                         </div>
                         <div style={{ marginBottom: 14 }}>
                             <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>移動前の持ち玉（玉）</div>
@@ -5040,7 +5109,17 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                             <Btn label="キャンセル" onClick={() => setShowMoveModal(false)} />
-                            <Btn label="移動する" onClick={() => { const mochi = Math.max(0, Math.round(Number(moveMochiBalls) || 0)); setShowMoveModal(false); S.handleMoveTable(mochi); }} bg={C.purple} fg="#fff" bd="none" />
+                            <Btn label="移動する" onClick={() => {
+                                const mochi = Math.max(0, Math.round(Number(moveMochiBalls) || 0));
+                                const picked = movePickedMachineRef.current;
+                                const dest = {
+                                    machineName: (moveMachineName || "").trim(),
+                                    machineNum: (moveMachineNum || "").trim(),
+                                    ...(picked || {}),
+                                };
+                                setShowMoveModal(false);
+                                S.handleMoveTable(mochi, dest);
+                            }} bg={C.purple} fg="#fff" bd="none" />
                         </div>
                     </Card>
                 </div>
