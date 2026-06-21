@@ -46,26 +46,16 @@ const PERIOD_TABS = [
   { id: "calendar", label: "カレンダー" },
 ];
 
+// 記録ゼロ時に表示するデモ用の日別収支（モックアップ準拠の表示値）。
+// 本番では archives から実データを生成するため、ここは空状態のプレビュー専用。
 const DEMO_DAYS = {
-  1: { actual: -7000, ev: 1800 },
-  4: { actual: -8000, ev: 1200 },
-  5: { actual: 9672, ev: 2100 },
-  7: { actual: 8596, ev: 2400 },
-  11: { actual: -14000, ev: 900 },
-  14: { actual: -15500, ev: 1900 },
-  15: { actual: 2637, ev: 1700 },
-  16: { actual: -7000, ev: 1300 },
-  17: { actual: 9097, ev: 2200 },
-  18: {
-    actual: 5406,
-    ev: 2615,
-    storeName: "丸之内ヘリオス2000竹原",
-    machineName: "スマスロ マギアレコード",
-    spinRate: 19.7,
-    hours: 2.1,
-    invest: 1000,
-    recovery: 6406,
-  },
+  1: { actual: -2000, ev: 0 },
+  5: { actual: 10000, ev: 0 },
+  14: { actual: -500, ev: 0 },
+  15: { actual: 943, ev: 0 },
+  17: { actual: 6937, ev: 0 },
+  18: { actual: 0, ev: 0 },
+  19: { actual: 3486, ev: 0 },
 };
 
 const DEMO_MACHINES = [
@@ -217,6 +207,34 @@ function ActionButton({ children, onClick, active = false }) {
   );
 }
 
+// モックアップ準拠の4KPIカード（月別トップ用）。
+// 大きな月間収支ヒーローカードに代わり、月間収支・期待値・勝率・稼働日数を
+// 横一列のコンパクトカードで表示し、縦幅を抑える。
+function MonthKpis({ actual, ev, winRate, days }) {
+  const items = [
+    { Icon: Wallet, label: "月間収支", value: signed(actual), unit: "円", cls: moneyClass(actual) },
+    { Icon: LineChartIcon, label: "期待値", value: signed(ev), unit: "円", cls: "text-[#16C8FF]" },
+    { Icon: Target, label: "勝率", value: String(winRate), unit: "%", cls: "text-white" },
+    { Icon: Clock3, label: "稼働日数", value: String(days), unit: "日", cls: "text-white" },
+  ];
+  return (
+    <section className="grid grid-cols-4 gap-1.5">
+      {items.map((item) => (
+        <div key={item.label} className={`${card} flex min-w-0 flex-col items-center justify-center gap-1 px-1 py-2.5`}>
+          <div className="flex min-w-0 items-center gap-1">
+            <item.Icon className="h-3 w-3 shrink-0 text-[#5e9df7]" />
+            <span className="truncate text-[8px] font-semibold tracking-[.02em] text-[#8090aa]">{item.label}</span>
+          </div>
+          <div className={`whitespace-nowrap font-mono font-black leading-none tracking-[-.04em] tabular-nums ${item.cls}`}>
+            <span className="text-[clamp(13px,3.4vw,15px)]">{item.value}</span>
+            <span className="ml-0.5 text-[8px]">{item.unit}</span>
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function SummaryHero({ summary, isDemo, heroTitle = "月間収支" }) {
   const actual = isDemo ? -12130 : summary.totalRealPL;
   const ev = isDemo ? 3120 : summary.evAmount;
@@ -280,28 +298,38 @@ function Kpis({ summary, isDemo }) {
   );
 }
 
-function CalendarCell({ day, row, selected, onSelect }) {
-  let heat = "border-white/10 bg-[#1a2436]";
-  if (row?.actual >= 10000) heat = "border-[#25D366]/50 bg-[#06623f]";
-  else if (row?.actual >= 1000) heat = "border-[#25D366]/35 bg-[#0b493b]";
-  else if (row?.actual <= -10000) heat = "border-[#FF5B6E]/55 bg-[#6b1322]";
-  else if (row?.actual <= -1000) heat = "border-[#FF5B6E]/35 bg-[#3f1722]";
+function CalendarCell({ day, row, selected, weekday, onSelect }) {
+  // 表形式に寄せた控えめなヒートカラー（薄い緑＝プラス / 薄い赤＝マイナス）。
+  let heat = "bg-[#0e1a2e]";
+  const amount = Number(row?.actual);
+  if (amount >= 1000) heat = "bg-[#11402f]";
+  else if (amount > 0) heat = "bg-[#0d2a23]";
+  else if (amount <= -1000) heat = "bg-[#3a1620]";
+  else if (amount < 0) heat = "bg-[#281620]";
+  // 日付の色：日曜は赤系、土曜は青系、選択中はシアン。
+  const dayColor = selected
+    ? "text-[#16C8FF]"
+    : weekday === 0
+      ? "text-[#ff7a8a]"
+      : weekday === 6
+        ? "text-[#6ea8ff]"
+        : "text-[#c4cdde]";
   // 0円の日は金額を表示しない（稼働なし／±0は色のみで把握）。
   const hasAmount = row && Number(row.actual) !== 0;
   return (
     <button
       type="button"
       onClick={() => row && onSelect(day)}
-      className={`relative flex min-h-[56px] flex-col overflow-hidden rounded-[10px] border px-0 py-1 text-left transition ${heat} ${
-        selected ? "ring-2 ring-[#16C8FF] shadow-[0_0_14px_rgba(22,200,255,.24)]" : ""
+      className={`relative flex aspect-[1/0.92] min-w-0 flex-col overflow-hidden px-0.5 py-0.5 text-left transition ${heat} ${
+        selected ? "z-10 rounded-[4px] ring-2 ring-inset ring-[#16C8FF]" : ""
       }`}
     >
-      <span className="px-1 text-[11px] font-bold leading-none text-white">{day}</span>
+      <span className={`text-[10px] font-bold leading-none ${dayColor}`}>{day}</span>
       {/* セル内は日付と実収支のみ（期待値はセルに入れず選択日ミニ詳細へ）。金額は「k」を使わず実額表示。
           狭いiPhone幅でも7列に収まるよう小さめ等幅＋tabular-nums＋詰め字で表示する。 */}
       {hasAmount && (
-        <div className="mt-auto w-full px-0.5 text-center font-mono">
-          <div className={`text-[8px] font-black leading-tight tracking-[-.04em] tabular-nums ${moneyClass(row.actual)}`}>{signed(row.actual)}</div>
+        <div className="mt-auto w-full text-center font-mono">
+          <div className={`text-[8px] font-black leading-tight tracking-[-.05em] tabular-nums ${moneyClass(row.actual)}`}>{signed(row.actual)}</div>
         </div>
       )}
     </button>
@@ -317,20 +345,38 @@ function DayDetail({ dateLabel, row, isDemo }) {
   const machineName = fallback(detail.machineName, "スマスロ マギアレコード");
   return (
     <section className={`${card} p-3.5`}>
-      <div className="flex items-baseline justify-between gap-2">
+      <div className="flex items-center gap-2">
+        {/* 小さなカレンダーアクセント（lucide追加を避け軽量インラインSVGで描画）。 */}
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#16C8FF]/35 bg-[#16C8FF]/10 text-[#16C8FF]">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" />
+            <path d="M16 2v4M8 2v4M3 10h18" />
+          </svg>
+        </span>
         <div className="text-[13px] font-black text-white">{dateLabel}</div>
-        <div className="text-[9px] text-[#7f8ca3]">期待値 <span className="text-[#16C8FF]">{signed(detail.ev || 0)}円</span></div>
       </div>
-      <div className="mt-1 flex items-baseline gap-2">
-        <span className="text-[9px] text-[#7f8ca3]">実収支</span>
-        <span className={`font-mono text-[22px] font-black leading-none ${moneyClass(detail.actual || 0)}`}>{signed(detail.actual || 0)}<span className="text-[10px]">円</span></span>
+      <div className="mt-2.5 grid grid-cols-2 gap-2">
+        <div className="min-w-0 rounded-lg border border-white/[0.07] bg-[#0a1528] px-3 py-2">
+          <div className="text-[9px] text-[#7f8ca3]">実収支</div>
+          <div className={`mt-0.5 whitespace-nowrap font-mono text-[19px] font-black leading-none tabular-nums ${moneyClass(detail.actual || 0)}`}>{signed(detail.actual || 0)}<span className="text-[10px]">円</span></div>
+        </div>
+        <div className="min-w-0 rounded-lg border border-white/[0.07] bg-[#0a1528] px-3 py-2">
+          <div className="text-[9px] text-[#7f8ca3]">期待値</div>
+          <div className="mt-0.5 whitespace-nowrap font-mono text-[19px] font-black leading-none tabular-nums text-[#16C8FF]">{signed(detail.ev || 0)}<span className="text-[10px]">円</span></div>
+        </div>
       </div>
-      <div className="mt-2 space-y-1 text-[11px] leading-[1.35] text-[#bdc7d7]">
-        <div className="truncate">{storeName}</div>
-        <div className="truncate text-[#9aa6ba]">{machineName}</div>
-      </div>
+      {/* メモ入力導線。保存層は未接続のため、現状はタップ導線のプレースホルダー表示（将来連携予定）。 */}
+      <button type="button" className="mt-2 flex h-11 w-full min-w-0 items-center gap-2 rounded-lg border border-white/[0.08] bg-[#0a1528] px-3 text-left">
+        <svg className="shrink-0 text-[#16C8FF]" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+        </svg>
+        <span className="truncate text-[10px] text-[#7f8ca3]">メモを入力（タップして入力）</span>
+      </button>
       {open && (
         <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-white/[0.08] pt-3 text-[10px]">
+          <div className="col-span-2 flex justify-between gap-2"><dt className="text-[#74839b]">店舗</dt><dd className="min-w-0 truncate font-sans text-[#bdc7d7]">{storeName}</dd></div>
+          <div className="col-span-2 flex justify-between gap-2"><dt className="text-[#74839b]">機種</dt><dd className="min-w-0 truncate font-sans text-[#9aa6ba]">{machineName}</dd></div>
           <div className="flex justify-between gap-2"><dt className="text-[#74839b]">回転率</dt><dd className="font-mono text-[#bdc7d7]">{fallback(detail.spinRate, 19.7)}{detail.spinRate || isDemo ? "回/k" : ""}</dd></div>
           <div className="flex justify-between gap-2"><dt className="text-[#74839b]">稼働時間</dt><dd className="font-mono text-[#bdc7d7]">{fallback(detail.hours, 2.1)}{detail.hours || isDemo ? "時間" : ""}</dd></div>
           <div className="flex justify-between gap-2"><dt className="text-[#74839b]">投資</dt><dd className="font-mono text-[#bdc7d7]">{detail.invest != null || isDemo ? `${fmt(detail.invest ?? 1000)}円` : "—"}</dd></div>
@@ -344,26 +390,47 @@ function DayDetail({ dateLabel, row, isDemo }) {
   );
 }
 
-function CalendarPanel({ dayMap, selectedDay, setSelectedDay }) {
-  const blanks = 1;
-  const cells = [...Array(blanks).fill(null), ...Array.from({ length: 30 }, (_, i) => i + 1)];
+function CalendarLegend() {
+  return (
+    <div className="flex shrink-0 items-center gap-2 text-[8px] text-[#9aa6bb]">
+      <span className="flex items-center gap-1"><i className="inline-block h-2 w-2 rounded-[2px] bg-[#11402f]" />プラス</span>
+      <span className="flex items-center gap-1"><i className="inline-block h-2 w-2 rounded-[2px] bg-[#1a2436]" />±0</span>
+      <span className="flex items-center gap-1"><i className="inline-block h-2 w-2 rounded-[2px] bg-[#3a1620]" />マイナス</span>
+    </div>
+  );
+}
+
+function CalendarPanel({ dayMap, selectedDay, setSelectedDay, year, month }) {
+  // 月の初日曜日と日数から正しいグリッドを生成する（固定px・固定30日を避ける）。
+  const blanks = new Date(year, month - 1, 1).getDay();
+  const count = new Date(year, month, 0).getDate();
+  const cells = [...Array(blanks).fill(null), ...Array.from({ length: count }, (_, i) => i + 1)];
   return (
     <section className={`${card} overflow-hidden p-2.5`}>
-      <SectionTitle note="日付をタップで詳細を表示">日別収支カレンダー</SectionTitle>
-      <div className="mb-1 grid grid-cols-7 gap-1 text-center text-[9px] text-[#a0aec0]">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 className="shrink-0 text-[12px] font-black tracking-[.02em] text-white">日別収支</h2>
+        <CalendarLegend />
+      </div>
+      {/* 曜日見出し。日曜は赤系・土曜は青系で表形式に整列させる。 */}
+      <div className="grid grid-cols-7 text-center text-[9px] font-bold text-[#9aa6bb]">
         {WEEKDAYS.map((day, index) => (
-          <span key={day} className={index === 6 ? "text-[#6ea8ff]" : ""}>{day}</span>
+          <span key={day} className={index === 0 ? "text-[#ff7a8a]" : index === 6 ? "text-[#6ea8ff]" : ""}>{day}</span>
         ))}
       </div>
-      <div className="grid grid-cols-7 gap-1">
+      {/* gap-px ＋ 親背景で細い罫線を表現し、表形式に近い整ったカレンダーにする。 */}
+      <div className="mt-1 grid grid-cols-7 gap-px overflow-hidden rounded-[6px] bg-white/[0.06]">
         {cells.map((day, index) => day
-          ? <CalendarCell key={day} day={day} row={dayMap[day]} selected={day === selectedDay} onSelect={setSelectedDay} />
-          : <div key={`blank-${index}`} />)}
-      </div>
-      <div className="mt-2 flex items-center justify-center gap-3 text-[8px] text-[#a0aec0]">
-        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#0b493b]" />プラス</span>
-        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#1a2436]" />±0</span>
-        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#3f1722]" />マイナス</span>
+          ? (
+            <CalendarCell
+              key={day}
+              day={day}
+              row={dayMap[day]}
+              selected={day === selectedDay}
+              weekday={new Date(year, month - 1, day).getDay()}
+              onSelect={setSelectedDay}
+            />
+          )
+          : <div key={`blank-${index}`} className="aspect-[1/0.92] bg-[#0a1422]" />)}
       </div>
     </section>
   );
@@ -690,10 +757,10 @@ export default function AnalysisDashboard({
   const stores = useMemo(() => isDemo ? DEMO_STORES : buildStoreRanking(filtered), [filtered, isDemo]);
   const storeOptions = useMemo(() => listAvailableStores(archives), [archives]);
   const machineOptions = useMemo(() => listAvailableMachines(archives), [archives]);
-  const actual = isDemo ? -12130 : summary.totalRealPL;
-  const ev = isDemo ? 3120 : summary.evAmount;
-  const winRate = isDemo ? 60 : Math.round(summary.winRate || 0);
-  const days = isDemo ? 7 : (summary.days || 0);
+  const actual = isDemo ? -11704 : summary.totalRealPL;
+  const ev = isDemo ? 2934 : summary.evAmount;
+  const winRate = isDemo ? 67 : Math.round(summary.winRate || 0);
+  const days = isDemo ? 8 : (summary.days || 0);
   const heroTitle = periodTab === "month" ? "月間収支" : periodTab === "year" ? "年間収支" : "通算収支";
   const shiftAmount = periodTab === "year" ? 12 : 1;
   const selectedDateLabel = `${month}月${selectedDay}日（${WEEKDAYS[new Date(year, month - 1, selectedDay).getDay()]}）`;
@@ -746,16 +813,18 @@ export default function AnalysisDashboard({
 
         {/* ヒーロー以下を画面内スクロール領域に閉じ込める（下部ナビ非重なり・はみ出し防止） */}
         <main className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pb-10">
-          <SummaryHero summary={summary} isDemo={isDemo} heroTitle={heroTitle} />
           {periodTab === "month" ? (
             <>
-              <CalendarPanel dayMap={dayMap} selectedDay={selectedDay} setSelectedDay={setSelectedDay} />
+              {/* モックアップ準拠：大型ヒーローを廃止し、4KPIカードで縦幅を抑える。 */}
+              <MonthKpis actual={actual} ev={ev} winRate={winRate} days={days} />
+              <CalendarPanel dayMap={dayMap} selectedDay={selectedDay} setSelectedDay={setSelectedDay} year={year} month={month} />
               <DayDetail dateLabel={selectedDateLabel} row={dayMap[selectedDay]} isDemo={isDemo} />
               <ShareCTA onShare={() => setShareOpen(true)} />
               <AnalysisLink onOpen={() => setPeriodTab("analyzer")} />
             </>
           ) : (
             <>
+              <SummaryHero summary={summary} isDemo={isDemo} heroTitle={heroTitle} />
               <PeriodBreakdownPanel periodTab={periodTab} rows={periodRows} isDemo={isDemo} />
               <TrendPanel data={trend} />
               <Kpis summary={summary} isDemo={isDemo} />
