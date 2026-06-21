@@ -691,13 +691,17 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionStarted]);
 
-  const resetAll = (extraChodamaToStore = 0) => {
+  const resetAll = (extraChodamaToStore = 0, { clearStoreChodama = false } = {}) => {
     // セッション終了直前の atomic スナップショット（reset 前に確保）
     try { takeSnapshotImmediate("session:end", getUndoSnapshot()); } catch { /* ignore */ }
     // セッション終了前に選択中の店舗の貯玉残高を自動更新
     // extraChodamaToStore: 終了時に「持ち玉を貯玉化」して上乗せする玉数（既定0）
+    // clearStoreChodama: データリセット時は true。店舗の貯玉残高も 0 にクリアし、
+    //   次回同じ店舗で新規稼働した際に前回の持ち玉（貯玉）が引き継がれないようにする。
     if (selectedStoreId) {
-      const finalChodama = (currentChodama || 0) + (Math.max(0, Math.round(Number(extraChodamaToStore) || 0)));
+      const finalChodama = clearStoreChodama
+        ? 0
+        : (currentChodama || 0) + (Math.max(0, Math.round(Number(extraChodamaToStore) || 0)));
       setStores(prev => prev.map(st =>
         typeof st === "object" && st.id === selectedStoreId
           ? { ...st, chodama: finalChodama }
@@ -1097,7 +1101,7 @@ export default function App() {
             onChangeFilters={setAnalysisFilters}
           />
         )}
-        {currentMode === "settings" && <SettingsTab s={S} onReset={resetAll} />}
+        {currentMode === "settings" && <SettingsTab s={S} onReset={() => resetAll(0, { clearStoreChodama: true })} />}
       </main>
 
       {/* Mode Navigation (5 タブ) */}
