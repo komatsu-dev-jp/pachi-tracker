@@ -1,4 +1,5 @@
 import { C, font, mono, sc, sp, f } from "../../constants";
+import { getPredictedSpinRate } from "./metricSelectors";
 
 function MetricCard({ label, value, unit, baseHint, accent, accentBg = true, accentText }) {
   const accentColor = accent || C.blue;
@@ -47,6 +48,7 @@ export function KeyMetrics({ ev, currentBalls, ballsLabel = "持ち玉", playMod
   const ev1KRaw = ev.ev1K ?? 0;
   const bDiffC = ev.effectiveBDiff ?? ev.bDiffCorrected ?? ev.bDiff ?? 0;
   const start1KC = ev.effectiveStart1K ?? ev.start1KCorrected ?? ev.start1K ?? 0;
+  const predictedSpinRate = getPredictedSpinRate(ev);
   const rawInvest = ev.rawInvest ?? 0;
   const correctedInvest = ev.correctedInvestYen ?? rawInvest;
 
@@ -80,7 +82,7 @@ export function KeyMetrics({ ev, currentBalls, ballsLabel = "持ち玉", playMod
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
         <SubMetricCard
           label="予測回転率"
-          value={start1KC > 0 ? f(start1KC, 1) : "—"}
+          value={predictedSpinRate > 0 ? f(predictedSpinRate, 1) : "—"}
           unit="回/K"
           accent={C.text}
         />
