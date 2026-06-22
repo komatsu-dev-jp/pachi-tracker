@@ -1716,7 +1716,13 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             return false;
         }
 
-        const prevCumRot = last ? last.cumRot : (S.startRot || 0);
+        // 前回の累計回転数: data 行だけでなく全行（start/hit 含む）の最後を基準にする。
+        // 大当たり終了後の「スタート回転数を入力」で追加される start 行
+        // （isPostJackpotStart）を取り込むことで、再スタート後の2回目以降の初当たりが
+        // 直前の大当たりの古い cumRot を引きずって弾かれる問題を防ぐ。
+        // 通常の回転数入力（decide）と同じ基準に揃える。
+        const lastAnyRow = rows[rows.length - 1];
+        const prevCumRot = lastAnyRow ? (lastAnyRow.cumRot || 0) : (S.startRot || 0);
 
         // 3. 逆行チェック（直前の累計回転数以下は不正）
         if (val <= prevCumRot) {
