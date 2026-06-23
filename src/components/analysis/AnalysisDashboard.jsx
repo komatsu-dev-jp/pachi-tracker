@@ -207,32 +207,40 @@ function ActionButton({ children, onClick, active = false }) {
   );
 }
 
-// モックアップ（1枚目）準拠の4KPIカード（月別トップ用）。
-// 月間収支・期待値・勝率・稼働日数を、カラーアイコンチップ＋大きめ数字の
-// 縦長カードで横一列に表示する（1枚目のカードサイズに合わせて拡大）。
+// 月別トップの月間サマリー（カードなし・文字ベースの2列2段レイアウト）。
+// カレンダーを主役にするため、KPIカードを廃止し、薄い罫線で区切った
+// 控えめな要約情報として表示する。上段（月間収支・期待値）を主役、
+// 下段（勝率・稼働日数）を補助情報として一段小さく見せる。
 function MonthKpis({ actual, ev, winRate, days }) {
-  const items = [
-    { Icon: Wallet, label: "月間収支", value: signed(actual), unit: "円", cls: moneyClass(actual), chip: "border-[#FF5B6E]/25 bg-[#FF5B6E]/15 text-[#FF7A8A]" },
-    { Icon: LineChartIcon, label: "期待値", value: signed(ev), unit: "円", cls: "text-[#16C8FF]", chip: "border-[#16C8FF]/25 bg-[#16C8FF]/15 text-[#16C8FF]" },
-    { Icon: Target, label: "勝率", value: String(winRate), unit: "%", cls: "text-white", chip: "border-[#a855f7]/25 bg-[#a855f7]/18 text-[#c084fc]" },
-    { Icon: Clock3, label: "稼働日数", value: String(days), unit: "日", cls: "text-white", chip: "border-[#16C8FF]/25 bg-[#16C8FF]/15 text-[#5fb6ff]" },
-  ];
+  const itemBase = "min-w-0";
+  const divider = "border-l border-white/[0.12] pl-5";
+  const labelCls = "text-[13px] font-semibold tracking-[.01em] text-[#8090aa]";
+  const mainValue = "mt-1 whitespace-nowrap font-mono font-black leading-[1.1] tabular-nums tracking-[-.04em] text-[clamp(22px,6.6vw,28px)]";
+  const subValue = "mt-1 whitespace-nowrap font-mono font-black leading-[1.1] tabular-nums tracking-[-.02em] text-[clamp(18px,5vw,22px)] text-white";
   return (
-    <section className="grid grid-cols-4 gap-1.5">
-      {items.map((item) => (
-        <div key={item.label} className="flex min-w-0 flex-col gap-2 rounded-[14px] border border-white/[0.09] bg-[linear-gradient(160deg,#11203a,#0a1424)] px-2 py-3 shadow-[0_6px_16px_rgba(0,0,0,.28)]">
-          <div className="flex min-w-0 items-center gap-1">
-            <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-[7px] border ${item.chip}`}>
-              <item.Icon className="h-3 w-3" />
-            </span>
-            <span className="truncate text-[10px] font-semibold tracking-[.01em] text-[#9aa7bd]">{item.label}</span>
-          </div>
-          <div className={`whitespace-nowrap font-mono font-black leading-none tracking-[-.05em] tabular-nums ${item.cls}`}>
-            <span className="text-[clamp(14px,4.2vw,18px)]">{item.value}</span>
-            <span className="ml-0.5 text-[10px]">{item.unit}</span>
-          </div>
+    <section className="border-y border-white/[0.14] px-1.5 py-3.5">
+      {/* 上段：月間収支・期待値（主役） */}
+      <div className="grid grid-cols-2">
+        <div className={itemBase}>
+          <div className={labelCls}>月間収支</div>
+          <div className={`${mainValue} ${moneyClass(actual)}`}>{signed(actual)}<span className="ml-0.5 text-[13px] font-bold">円</span></div>
         </div>
-      ))}
+        <div className={`${itemBase} ${divider}`}>
+          <div className={labelCls}>期待値</div>
+          <div className={`${mainValue} text-[#16C8FF]`}>{signed(ev)}<span className="ml-0.5 text-[13px] font-bold">円</span></div>
+        </div>
+      </div>
+      {/* 下段：勝率・稼働日数（補助情報） */}
+      <div className="mt-3 grid grid-cols-2 border-t border-white/[0.1] pt-3">
+        <div className={itemBase}>
+          <div className={labelCls}>勝率</div>
+          <div className={subValue}>{winRate}<span className="ml-0.5 text-[12px] font-bold">%</span></div>
+        </div>
+        <div className={`${itemBase} ${divider}`}>
+          <div className={labelCls}>稼働日数</div>
+          <div className={subValue}>{days}<span className="ml-0.5 text-[12px] font-bold">日</span></div>
+        </div>
+      </div>
     </section>
   );
 }
