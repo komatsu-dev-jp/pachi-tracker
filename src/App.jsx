@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useLS, calcPreciseEV } from "./logic";
 import { useUndoStack } from "./history";
 import { C, font, tsNow } from "./constants";
+import { searchMachines } from "./machineDB";
 import { RotTab, SettingsTab } from "./components/Tabs";
 import ModeTabBar from "./components/ModeTabBar";
 import HomeDashboard from "./components/home/HomeDashboard";
@@ -881,16 +882,54 @@ export default function App() {
       chodamaYen,
       storeId: selectedStoreId || null,
       storeName: store?.name || "",
+      // 機種登録（次回用）判定: 機種名が DB / カスタムの名前集合に無く、スペックが揃っていれば登録候補。
+      machineName: String(machineName || ""),
+      synthDenom,
+      spec1R,
+      specAvgRounds,
+      specSapo,
+      isUnregistered: (() => {
+        const name = String(machineName || "").trim();
+        if (!name) return false;
+        if (!(Number(synthDenom) > 0) || !(Number(spec1R) > 0)) return false;
+        const names = new Set(searchMachines("", customMachines).map((m) => m.name));
+        return !names.has(name);
+      })(),
     });
   };
 
   // 精算シートの確定：method="cash"（現金精算）|"chodama"（貯玉化）。
   // invest/recovery は編集後の確定値（円）。貯玉化でも持ち玉の現金換算額を回収額として
   // 記録する（その日の収支は現金精算と同じ＝貯玉価値も収支に反映。後日の貯玉消費コストと相殺）。
-  const confirmEndSession = ({ method, invest, recovery }) => {
+  const confirmEndSession = ({ method, invest, recovery, registerMachine }) => {
     const investVal = Math.max(0, Math.round(Number(invest) || 0));
     const recoveryVal = Math.max(0, Math.round(Number(recovery) || 0));
     const sheet = endSheet || {};
+    // 未登録機種を次回用にカスタム機種へ登録（resetAll で機種情報がクリアされる前に実行）。
+    // 形式は Tabs の saveMachine / emptyMachine と同一。同名が既にあれば重複登録しない。
+    if (registerMachine && sheet.isUnregistered) {
+      const name = String(sheet.machineName || "").trim();
+      if (name) {
+        setCustomMachines((prev) => {
+          const list = Array.isArray(prev) ? prev : [];
+          if (list.some((m) => String(m.name || "").trim() === name)) return list;
+          return [...list, {
+            id: Date.now(),
+            name,
+            maker: "",
+            type: "",
+            prob: `1/${sheet.synthDenom}`,
+            synthProb: sheet.synthDenom,
+            spec1R: sheet.spec1R,
+            specAvgTotalRounds: sheet.specAvgRounds,
+            specSapo: sheet.specSapo,
+            roundDist: "",
+            rushDist: "",
+            border: { "4.00": 0, "3.57": 0, "3.33": 0, "3.03": 0 },
+          }];
+        });
+      }
+    }
     let extraChodama = 0;
     if (method === "chodama" && sheet.storeId && sheet.heldMochi > 0) {
       // 持ち玉を店舗の貯玉残高へ加算（資産として保存）
@@ -1165,6 +1204,8 @@ function EndSessionSheet({ sheet, onConfirm, onCancel }) {
   const [method, setMethod] = useState("cash"); // "cash" 現金精算 | "chodama" 貯玉化
   const [invest, setInvest] = useState(String(sheet.invest || 0));
   const [recovery, setRecovery] = useState(String(sheet.cashYen || 0));
+  // 未登録機種を次回用に登録するか（未登録機種のときのみ表示・既定オン）
+  const [registerMachine, setRegisterMachine] = useState(true);
   const investNum = Math.max(0, Math.round(Number(invest) || 0));
   // 貯玉化は持ち玉の現金換算額（cashYen）を回収額として扱う＝収支は現金精算と同じ
   const recoveryNum = method === "chodama"
@@ -1280,7 +1321,34 @@ function EndSessionSheet({ sheet, onConfirm, onCancel }) {
           </span>
         </div>
 
-        <button onClick={() => onConfirm({ method, invest: investNum, recovery: recoveryNum })}
+        {/* 未登録機種の登録（次回からピッカー候補に出る）。未登録機種のときだけ表示 */}
+        {sheet.isUnregistered && (
+          <button
+            onClick={() => setRegisterMachine((v) => !v)}
+            style={{
+              width: "100%", minHeight: 52, marginBottom: 12,
+              display: "flex", alignItems: "center", gap: 12,
+              background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10,
+              padding: "10px 14px", cursor: "pointer", textAlign: "left", fontFamily: font,
+            }}
+          >
+            <span style={{
+              width: 24, height: 24, flexShrink: 0, borderRadius: 6,
+              border: `2px solid ${registerMachine ? C.blue : C.border}`,
+              background: registerMachine ? C.blue : "transparent",
+              color: "#fff", fontSize: 15, fontWeight: 800,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>{registerMachine ? "✓" : ""}</span>
+            <span style={{ minWidth: 0 }}>
+              <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: C.text }}>この機種を登録</span>
+              <span style={{ display: "block", fontSize: 11, color: C.sub, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                「{sheet.machineName}」を次回から候補に表示
+              </span>
+            </span>
+          </button>
+        )}
+
+        <button onClick={() => onConfirm({ method, invest: investNum, recovery: recoveryNum, registerMachine: sheet.isUnregistered && registerMachine })}
           style={{ width: "100%", height: 60, borderRadius: 12, fontSize: 15, fontWeight: 700, fontFamily: font, border: "none", background: C.blue, color: "#fff", cursor: "pointer" }}>
           実戦終了して保存
         </button>
