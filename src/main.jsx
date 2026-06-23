@@ -5,127 +5,36 @@ import './index.css'
 import { registerSW } from 'virtual:pwa-register'
 import { awaitReady, flushAll, clearAll } from './persistence'
 
-// Service Workerを登録し、新しいバージョンがあれば更新バナーを表示
-// 既に表示済みのバナーを多重生成しないためのガード
-let updateBannerShown = false
-
-const showUpdateBanner = (onUpdate) => {
-  if (updateBannerShown) return
-  if (document.getElementById('pwa-update-banner')) return
-  updateBannerShown = true
-
-  // スライドアップ・フェードインアニメーションをheadに1回注入
-  if (!document.getElementById('pwa-update-style')) {
-    const style = document.createElement('style')
-    style.id = 'pwa-update-style'
-    style.textContent = `
-      @keyframes pwa-slide-up {
-        from { transform: translateY(100%); opacity: 0; }
-        to   { transform: translateY(0);    opacity: 1; }
-      }
-      @keyframes pwa-fade-in {
-        from { opacity: 0; }
-        to   { opacity: 1; }
-      }
-    `
-    document.head.appendChild(style)
-  }
-
-  const dismiss = () => {
-    banner.remove()
-    updateBannerShown = false
-  }
-
-  const banner = document.createElement('div')
-  banner.id = 'pwa-update-banner'
-  banner.innerHTML = `
-    <div id="pwa-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:198;animation:pwa-fade-in 0.3s ease;"></div>
-    <div id="pwa-update-sheet" style="
-      position:fixed;bottom:0;left:0;right:0;
-      max-width:480px;margin:0 auto;
-      background:var(--surface,#fff);
-      border-top:1px solid var(--border,#eceef2);
-      border-radius:16px 16px 0 0;
-      padding:8px 20px calc(24px + 52px + env(safe-area-inset-bottom));
-      z-index:199;
-      animation:pwa-slide-up 0.35s cubic-bezier(0.32,0.72,0,1);
-      font-family:var(--font-main,sans-serif);
-    ">
-      <div style="width:36px;height:4px;background:var(--border-hi,#d9dce2);border-radius:2px;margin:0 auto 20px;"></div>
-      <div style="display:flex;align-items:center;gap:14px;margin-bottom:4px;">
-        <div style="width:48px;height:48px;flex-shrink:0;border-radius:12px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 19V5M5 12l7-7 7 7"/>
-          </svg>
-        </div>
-        <div>
-          <div style="font-size:16px;font-weight:700;color:var(--text,#111827);">アップデート利用可能</div>
-          <div style="font-size:12px;color:var(--sub,#8b90a0);margin-top:2px;">新しいバージョンが見つかりました</div>
-        </div>
-      </div>
-      <button id="pwa-update-btn" style="
-        display:block;width:100%;height:52px;margin-top:20px;
-        background:var(--blue,#2f6fed);color:#fff;
-        border:none;border-radius:14px;
-        font-size:16px;font-weight:700;
-        font-family:var(--font-main,sans-serif);
-        cursor:pointer;
-      ">今すぐ更新</button>
-      <button id="pwa-dismiss-btn" style="
-        display:block;width:100%;height:44px;margin-top:8px;
-        background:transparent;color:var(--sub,#8b90a0);
-        border:none;border-radius:14px;
-        font-size:14px;font-weight:500;
-        font-family:var(--font-main,sans-serif);
-        cursor:pointer;
-      ">後で</button>
-    </div>
-  `
-  document.body.appendChild(banner)
-
-  document.getElementById('pwa-update-btn').onclick = () => {
-    banner.remove()
-    onUpdate()
-  }
-  document.getElementById('pwa-dismiss-btn').onclick = dismiss
-  document.getElementById('pwa-overlay').onclick = dismiss
-}
-
-const updateSW = registerSW({
-  onNeedRefresh() {
-    showUpdateBanner(() => updateSW(true))
-  },
+// Service Worker を登録（vite.config.js の registerType:'autoUpdate'）。
+// 新しいデプロイを検知したら待機させずに自動でキャッシュを更新・適用する。
+// これまでは更新バナーのタップ待ち（prompt方式）だったため、iOSスタンドアロン
+// PWAでバナーが出ない/タップされないと旧UIが残り「変化しない」状態になっていた。
+// 状態は localStorage(useLS) に永続化されるため、自動リロードでもセッションは復元される。
+registerSW({
+  immediate: true,
   onOfflineReady() {
     console.log('オフラインで使用できます')
   },
   onRegisteredSW(swUrl, registration) {
     if (!registration) return
 
-    const triggerUpdateCheck = () => {
-      // 既に waiting している SW があれば即座にバナー表示（iOSスタンドアロンで
-      // updatefound イベントを取りこぼすケースの保険）
-      if (registration.waiting && navigator.serviceWorker.controller) {
-        showUpdateBanner(() => updateSW(true))
-        return
-      }
-      registration.update().catch(() => { /* ignore */ })
-    }
+    // 新しい SW の有無を確認（autoUpdate のため、見つかれば自動で適用・リロードされる）
+    const checkForUpdate = () => registration.update().catch(() => { /* ignore */ })
 
     // 起動直後に1回チェック（ブラウザ既定の24時間ルールを上書き）
-    triggerUpdateCheck()
+    checkForUpdate()
 
     // 30分ごとにチェック
-    setInterval(triggerUpdateCheck, 30 * 60 * 1000)
+    setInterval(checkForUpdate, 30 * 60 * 1000)
 
     // バックグラウンドからの復帰時にチェック（iOSスタンドアロンPWA対策）
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) triggerUpdateCheck()
+      if (!document.hidden) checkForUpdate()
     })
 
     // ウィンドウフォーカス時にもチェック
-    window.addEventListener('focus', triggerUpdateCheck)
-  },
-  immediate: true
+    window.addEventListener('focus', checkForUpdate)
+  }
 })
 
 class ErrorBoundary extends React.Component {
