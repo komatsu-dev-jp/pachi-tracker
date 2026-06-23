@@ -218,7 +218,7 @@ function MonthKpis({ actual, ev, winRate, days }) {
   const mainValue = "mt-0.5 whitespace-nowrap font-mono font-black leading-[1.1] tabular-nums tracking-[-.04em] text-[clamp(17px,4.8vw,21px)]";
   const subValue = "mt-0.5 whitespace-nowrap font-mono font-black leading-[1.1] tabular-nums tracking-[-.02em] text-[clamp(13px,3.6vw,16px)] text-white";
   return (
-    <section className="border-y border-white/[0.14] py-3">
+    <section className="border-y border-white/[0.14] px-4 py-3">
       {/* 上段：月間収支・期待値（主役） */}
       <div className="grid grid-cols-2">
         <div className={itemBase}>
