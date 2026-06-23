@@ -213,32 +213,32 @@ function ActionButton({ children, onClick, active = false }) {
 // 下段（勝率・稼働日数）を補助情報として一段小さく見せる。
 function MonthKpis({ actual, ev, winRate, days }) {
   const itemBase = "min-w-0";
-  const divider = "border-l border-white/[0.12] pl-5";
-  const labelCls = "text-[13px] font-semibold tracking-[.01em] text-[#8090aa]";
-  const mainValue = "mt-1 whitespace-nowrap font-mono font-black leading-[1.1] tabular-nums tracking-[-.04em] text-[clamp(22px,6.6vw,28px)]";
-  const subValue = "mt-1 whitespace-nowrap font-mono font-black leading-[1.1] tabular-nums tracking-[-.02em] text-[clamp(18px,5vw,22px)] text-white";
+  const divider = "border-l border-white/[0.12] pl-4";
+  const labelCls = "text-[12px] font-semibold tracking-[.01em] text-[#8090aa]";
+  const mainValue = "mt-0.5 whitespace-nowrap font-mono font-black leading-[1.1] tabular-nums tracking-[-.04em] text-[clamp(17px,4.8vw,21px)]";
+  const subValue = "mt-0.5 whitespace-nowrap font-mono font-black leading-[1.1] tabular-nums tracking-[-.02em] text-[clamp(13px,3.6vw,16px)] text-white";
   return (
-    <section className="border-y border-white/[0.14] px-1.5 py-3.5">
+    <section className="border-y border-white/[0.14] py-3">
       {/* 上段：月間収支・期待値（主役） */}
       <div className="grid grid-cols-2">
         <div className={itemBase}>
           <div className={labelCls}>月間収支</div>
-          <div className={`${mainValue} ${moneyClass(actual)}`}>{signed(actual)}<span className="ml-0.5 text-[13px] font-bold">円</span></div>
+          <div className={`${mainValue} ${moneyClass(actual)}`}>{signed(actual)}<span className="ml-0.5 text-[11px] font-bold">円</span></div>
         </div>
         <div className={`${itemBase} ${divider}`}>
           <div className={labelCls}>期待値</div>
-          <div className={`${mainValue} text-[#16C8FF]`}>{signed(ev)}<span className="ml-0.5 text-[13px] font-bold">円</span></div>
+          <div className={`${mainValue} text-[#16C8FF]`}>{signed(ev)}<span className="ml-0.5 text-[11px] font-bold">円</span></div>
         </div>
       </div>
       {/* 下段：勝率・稼働日数（補助情報） */}
-      <div className="mt-3 grid grid-cols-2 border-t border-white/[0.1] pt-3">
+      <div className="mt-2.5 grid grid-cols-2 border-t border-white/[0.1] pt-2.5">
         <div className={itemBase}>
           <div className={labelCls}>勝率</div>
-          <div className={subValue}>{winRate}<span className="ml-0.5 text-[12px] font-bold">%</span></div>
+          <div className={subValue}>{winRate}<span className="ml-0.5 text-[11px] font-bold">%</span></div>
         </div>
         <div className={`${itemBase} ${divider}`}>
           <div className={labelCls}>稼働日数</div>
-          <div className={subValue}>{days}<span className="ml-0.5 text-[12px] font-bold">日</span></div>
+          <div className={subValue}>{days}<span className="ml-0.5 text-[11px] font-bold">日</span></div>
         </div>
       </div>
     </section>
