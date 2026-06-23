@@ -9,7 +9,7 @@ export default defineConfig({
     tailwindcss(),
     react(),
     VitePWA({
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
       includeAssets: ['favicon-32.png', 'icon-192.png', 'icon-512.png'],
       manifest: {
         name: 'パチトラッカー',
@@ -40,7 +40,8 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         cleanupOutdatedCaches: true,
-        clientsClaim: true
+        clientsClaim: true,
+        skipWaiting: true
       }
     })
   ],
