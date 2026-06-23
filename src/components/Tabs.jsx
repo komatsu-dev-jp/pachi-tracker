@@ -1433,6 +1433,11 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     const [setupMachineName, setSetupMachineName] = useState("");
     const [setupStartRot, setSetupStartRot] = useState("");
     const [setupInitialBalls, setSetupInitialBalls] = useState("");
+    // 未登録機種用の任意スペック入力（合成確率 / ボーダー1k・4円等価）。
+    // 入力時のみ deriveSpecForMachine で spec を逆算して適用する（未入力なら既定スペックのまま記録可能）。
+    const [setupSynthDenom, setSetupSynthDenom] = useState("");
+    const [setupBorder1k, setSetupBorder1k] = useState("");
+    const [showSetupSpec, setShowSetupSpec] = useState(false);
 
     // 機種ピッカー: 検索 ∩ タイプフィルター
     const filteredMachines = useMemo(() => {
@@ -1671,6 +1676,21 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         if (setupStore) S.setStoreName(setupStore);
         if (setupMachineNum) S.setMachineNum(setupMachineNum);
         if (setupMachineName) S.setMachineName(setupMachineName);
+        // 未登録機種で任意スペックを入力した場合のみ、合成確率＋ボーダーから記録用スペックを逆算して適用。
+        // （DB機種を選んだ場合はボトムシート選択時に適用済みのためここはスキップ）
+        {
+            const synthNum = Number(String(setupSynthDenom).replace(",", ".").trim());
+            const borderNum = Number(String(setupBorder1k).replace(",", ".").trim());
+            if (Number.isFinite(synthNum) && synthNum > 0) {
+                S.setSynthDenom(synthNum);
+                if (Number.isFinite(borderNum) && borderNum > 0) {
+                    const spec = deriveSpecForMachine({ synthProb: synthNum, border1K: borderNum });
+                    if (spec.spec1R != null) S.setSpec1R(spec.spec1R);
+                    if (spec.specAvgRounds != null) S.setSpecAvgRounds(spec.specAvgRounds);
+                    if (spec.specSapo != null) S.setSpecSapo(spec.specSapo);
+                }
+            }
+        }
         // 新規稼働開始時は貯玉を設定（未入力なら0でリセット）
         const initialChodama = Number(setupInitialBalls) || 0;
         const startPlayMode = initialChodama > 0 ? "chodama" : "cash";
@@ -1694,6 +1714,9 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         setSetupMachineName("");
         setSetupStartRot("");
         setSetupInitialBalls("");
+        setSetupSynthDenom("");
+        setSetupBorder1k("");
+        setShowSetupSpec(false);
     };
 
     // 初当たりボタン → ウィザード開始
@@ -2160,6 +2183,53 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                         <span>{setupMachineName || "機種を選択..."}</span>
                                         <span style={{ color: C.sub, fontSize: 14 }}>›</span>
                                     </button>
+
+                                    {/* スペック（任意）: 未登録機種でも合成確率＋ボーダーを入れれば期待値が即正確になる。
+                                        未入力なら既定スペックのまま記録のみ成立。折りたたみで通常フローのタップ数は据え置き。 */}
+                                    <button
+                                        className="b"
+                                        onClick={() => setShowSetupSpec(v => !v)}
+                                        style={{
+                                            marginTop: 8, minHeight: 44,
+                                            background: "transparent", border: "none",
+                                            color: C.sub, fontSize: 12, fontWeight: 700, fontFamily: font,
+                                            display: "flex", alignItems: "center", gap: 6, cursor: "pointer", padding: "4px 2px",
+                                        }}
+                                    >
+                                        <span style={{ fontSize: 11 }}>{showSetupSpec ? "▼" : "▶"}</span>
+                                        スペック（任意・未登録機種向け）
+                                    </button>
+                                    {showSetupSpec && (
+                                        <div style={{ marginTop: 6 }}>
+                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                                                <div>
+                                                    <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>合成確率 (1/?)</div>
+                                                    <input
+                                                        type="text"
+                                                        inputMode="decimal"
+                                                        value={setupSynthDenom}
+                                                        onChange={e => setSetupSynthDenom(e.target.value)}
+                                                        placeholder="319.6"
+                                                        style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "14px", fontSize: 18, color: C.yellow, fontFamily: mono, outline: "none", textAlign: "center" }}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>ボーダー(1k・4円)</div>
+                                                    <input
+                                                        type="text"
+                                                        inputMode="decimal"
+                                                        value={setupBorder1k}
+                                                        onChange={e => setSetupBorder1k(e.target.value)}
+                                                        placeholder="16.7"
+                                                        style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "14px", fontSize: 18, color: C.teal, fontFamily: mono, outline: "none", textAlign: "center" }}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div style={{ fontSize: 10, color: C.sub, marginTop: 6, lineHeight: 1.5 }}>
+                                                未入力でも記録は可能です（期待値は概算）。後から機種設定でも変更できます。
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* 台番号・開始回転数 */}
@@ -2353,9 +2423,35 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     );
                                 })}
                                 {filteredMachines.length === 0 && (
-                                    <div style={{ padding: "40px 20px", textAlign: "center", color: C.sub, fontSize: 13 }}>
+                                    <div style={{ padding: "32px 20px 16px", textAlign: "center", color: C.sub, fontSize: 13 }}>
                                         該当する機種がありません
                                     </div>
+                                )}
+                                {/* 未登録機種の行き止まり解消: 検索語があれば「そのまま使う」導線を出す。
+                                    機種名だけ確定し、スペックは稼働開始モーダルの任意入力／後の機種設定で補える。 */}
+                                {machineQuery.trim() && (
+                                    <button
+                                        className="b"
+                                        onClick={() => {
+                                            setSetupMachineName(machineQuery.trim());
+                                            setShowMachinePicker(false);
+                                            setMachineQuery("");
+                                            // 未登録機種はスペック入力を促すため任意セクションを開いておく
+                                            setShowSetupSpec(true);
+                                        }}
+                                        style={{
+                                            width: "calc(100% - 32px)", margin: "8px 16px 12px",
+                                            minHeight: 52, borderRadius: 12,
+                                            background: "var(--surface-hi)",
+                                            border: `1px dashed ${C.borderHi}`,
+                                            color: C.text, fontSize: 14, fontWeight: 700, fontFamily: font,
+                                            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                                            cursor: "pointer",
+                                        }}
+                                    >
+                                        <span style={{ fontSize: 18, lineHeight: 1, color: C.blue }}>+</span>
+                                        「{machineQuery.trim()}」を未登録のまま使う
+                                    </button>
                                 )}
                             </div>
 
