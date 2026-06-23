@@ -207,27 +207,29 @@ function ActionButton({ children, onClick, active = false }) {
   );
 }
 
-// モックアップ準拠の4KPIカード（月別トップ用）。
-// 大きな月間収支ヒーローカードに代わり、月間収支・期待値・勝率・稼働日数を
-// 横一列のコンパクトカードで表示し、縦幅を抑える。
+// モックアップ（1枚目）準拠の4KPIカード（月別トップ用）。
+// 月間収支・期待値・勝率・稼働日数を、カラーアイコンチップ＋大きめ数字の
+// 縦長カードで横一列に表示する（1枚目のカードサイズに合わせて拡大）。
 function MonthKpis({ actual, ev, winRate, days }) {
   const items = [
-    { Icon: Wallet, label: "月間収支", value: signed(actual), unit: "円", cls: moneyClass(actual) },
-    { Icon: LineChartIcon, label: "期待値", value: signed(ev), unit: "円", cls: "text-[#16C8FF]" },
-    { Icon: Target, label: "勝率", value: String(winRate), unit: "%", cls: "text-white" },
-    { Icon: Clock3, label: "稼働日数", value: String(days), unit: "日", cls: "text-white" },
+    { Icon: Wallet, label: "月間収支", value: signed(actual), unit: "円", cls: moneyClass(actual), chip: "border-[#FF5B6E]/25 bg-[#FF5B6E]/15 text-[#FF7A8A]" },
+    { Icon: LineChartIcon, label: "期待値", value: signed(ev), unit: "円", cls: "text-[#16C8FF]", chip: "border-[#16C8FF]/25 bg-[#16C8FF]/15 text-[#16C8FF]" },
+    { Icon: Target, label: "勝率", value: String(winRate), unit: "%", cls: "text-white", chip: "border-[#a855f7]/25 bg-[#a855f7]/18 text-[#c084fc]" },
+    { Icon: Clock3, label: "稼働日数", value: String(days), unit: "日", cls: "text-white", chip: "border-[#16C8FF]/25 bg-[#16C8FF]/15 text-[#5fb6ff]" },
   ];
   return (
     <section className="grid grid-cols-4 gap-1.5">
       {items.map((item) => (
-        <div key={item.label} className="flex min-w-0 flex-col items-center justify-center gap-1 rounded-[13px] border border-white/[0.09] bg-[linear-gradient(160deg,#11203a,#0a1424)] px-1 py-2.5 shadow-[0_6px_16px_rgba(0,0,0,.28)]">
+        <div key={item.label} className="flex min-w-0 flex-col gap-2 rounded-[14px] border border-white/[0.09] bg-[linear-gradient(160deg,#11203a,#0a1424)] px-2 py-3 shadow-[0_6px_16px_rgba(0,0,0,.28)]">
           <div className="flex min-w-0 items-center gap-1">
-            <item.Icon className="h-3.5 w-3.5 shrink-0 text-[#5e9df7]" />
-            <span className="truncate text-[9px] font-semibold tracking-[.01em] text-[#8a97ad]">{item.label}</span>
+            <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-[7px] border ${item.chip}`}>
+              <item.Icon className="h-3 w-3" />
+            </span>
+            <span className="truncate text-[10px] font-semibold tracking-[.01em] text-[#9aa7bd]">{item.label}</span>
           </div>
-          <div className={`whitespace-nowrap font-mono font-black leading-none tracking-[-.04em] tabular-nums ${item.cls}`}>
-            <span className="text-[clamp(14px,4vw,17px)]">{item.value}</span>
-            <span className="ml-0.5 text-[9px]">{item.unit}</span>
+          <div className={`whitespace-nowrap font-mono font-black leading-none tracking-[-.05em] tabular-nums ${item.cls}`}>
+            <span className="text-[clamp(14px,4.2vw,18px)]">{item.value}</span>
+            <span className="ml-0.5 text-[10px]">{item.unit}</span>
           </div>
         </div>
       ))}
