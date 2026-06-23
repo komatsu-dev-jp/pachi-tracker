@@ -1044,13 +1044,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     sapoPerRot: totalSapoRot > 0 ? totalSapoChange / totalSapoRot : 0,
                     netGain: totalDisplayBalls + totalSapoChange,
                 };
-                // 実測した最終持ち玉（画面 C の玉箱・カウンター値）があればそれを最終玉数とする。
-                // 簡易入力フローでは液晶出玉(displayBalls)を毎回入力しないため、
-                // 計算値ではなく実測値を採用しないと持ち玉が反映されない。
-                const finalRealVal = finalRealOpts && Number(finalRealOpts.value) > 0 ? Number(finalRealOpts.value) : 0;
-                chain.finalBalls = finalRealVal > 0
-                    ? finalRealVal
-                    : (chain.trayBalls || 0) + totalDisplayBalls + totalSapoChange;
+                chain.finalBalls = (chain.trayBalls || 0) + totalDisplayBalls + totalSapoChange;
                 if (finalRealOpts) {
                     chain.finalRealBalls = finalRealOpts.value;
                     chain.finalRealBallsEdited = finalRealOpts.edited;
@@ -1061,11 +1055,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             const lastChainCopy = jpLog[jpLog.length - 1];
             const existingTotal = (lastChainCopy.trayBalls || 0) +
                 lastChainCopy.hits.reduce((s, h) => s + (h.displayBalls || 0) + (h.sapoChange || 0), 0);
-            // 実測最終持ち玉を優先（兄弟ハンドラ handleRushEndComplete / handleChainWizardSingleEnd と同パターン）
-            const finalRealVal = finalRealOpts && Number(finalRealOpts.value) > 0 ? Number(finalRealOpts.value) : 0;
-            const finalBallsToAdd = finalRealVal > 0
-                ? finalRealVal
-                : existingTotal + disp * multN + (nextTiming - lastOut - disp * multN);
+            const finalBallsToAdd = existingTotal + disp * multN + (nextTiming - lastOut - disp * multN);
             S.setCurrentMochiBalls((prev) => prev + finalBallsToAdd);
             S.pushLog({ type: "連チャン終了", time: tsNow() });
             S.setPlayMode("mochi");

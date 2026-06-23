@@ -207,40 +207,30 @@ function ActionButton({ children, onClick, active = false }) {
   );
 }
 
-// 月別トップの月間サマリー（カードなし・文字ベースの2列2段レイアウト）。
-// カレンダーを主役にするため、KPIカードを廃止し、薄い罫線で区切った
-// 控えめな要約情報として表示する。上段（月間収支・期待値）を主役、
-// 下段（勝率・稼働日数）を補助情報として一段小さく見せる。
+// モックアップ準拠の4KPIカード（月別トップ用）。
+// 大きな月間収支ヒーローカードに代わり、月間収支・期待値・勝率・稼働日数を
+// 横一列のコンパクトカードで表示し、縦幅を抑える。
 function MonthKpis({ actual, ev, winRate, days }) {
-  const itemBase = "min-w-0";
-  const divider = "border-l border-white/[0.12] pl-4";
-  const labelCls = "text-[12px] font-semibold tracking-[.01em] text-[#8090aa]";
-  const mainValue = "mt-0.5 whitespace-nowrap font-mono font-black leading-[1.1] tabular-nums tracking-[-.04em] text-[clamp(17px,4.8vw,21px)]";
-  const subValue = "mt-0.5 whitespace-nowrap font-mono font-black leading-[1.1] tabular-nums tracking-[-.02em] text-[clamp(13px,3.6vw,16px)] text-white";
+  const items = [
+    { Icon: Wallet, label: "月間収支", value: signed(actual), unit: "円", cls: moneyClass(actual) },
+    { Icon: LineChartIcon, label: "期待値", value: signed(ev), unit: "円", cls: "text-[#16C8FF]" },
+    { Icon: Target, label: "勝率", value: String(winRate), unit: "%", cls: "text-white" },
+    { Icon: Clock3, label: "稼働日数", value: String(days), unit: "日", cls: "text-white" },
+  ];
   return (
-    <section className="border-y border-white/[0.14] px-4 py-3">
-      {/* 上段：月間収支・期待値（主役） */}
-      <div className="grid grid-cols-2">
-        <div className={itemBase}>
-          <div className={labelCls}>月間収支</div>
-          <div className={`${mainValue} ${moneyClass(actual)}`}>{signed(actual)}<span className="ml-0.5 text-[11px] font-bold">円</span></div>
+    <section className="grid grid-cols-4 gap-1.5">
+      {items.map((item) => (
+        <div key={item.label} className="flex min-w-0 flex-col items-center justify-center gap-1 rounded-[13px] border border-white/[0.09] bg-[linear-gradient(160deg,#11203a,#0a1424)] px-1 py-2.5 shadow-[0_6px_16px_rgba(0,0,0,.28)]">
+          <div className="flex min-w-0 items-center gap-1">
+            <item.Icon className="h-3.5 w-3.5 shrink-0 text-[#5e9df7]" />
+            <span className="truncate text-[9px] font-semibold tracking-[.01em] text-[#8a97ad]">{item.label}</span>
+          </div>
+          <div className={`whitespace-nowrap font-mono font-black leading-none tracking-[-.04em] tabular-nums ${item.cls}`}>
+            <span className="text-[clamp(14px,4vw,17px)]">{item.value}</span>
+            <span className="ml-0.5 text-[9px]">{item.unit}</span>
+          </div>
         </div>
-        <div className={`${itemBase} ${divider}`}>
-          <div className={labelCls}>期待値</div>
-          <div className={`${mainValue} text-[#16C8FF]`}>{signed(ev)}<span className="ml-0.5 text-[11px] font-bold">円</span></div>
-        </div>
-      </div>
-      {/* 下段：勝率・稼働日数（補助情報） */}
-      <div className="mt-2.5 grid grid-cols-2 border-t border-white/[0.1] pt-2.5">
-        <div className={itemBase}>
-          <div className={labelCls}>勝率</div>
-          <div className={subValue}>{winRate}<span className="ml-0.5 text-[11px] font-bold">%</span></div>
-        </div>
-        <div className={`${itemBase} ${divider}`}>
-          <div className={labelCls}>稼働日数</div>
-          <div className={subValue}>{days}<span className="ml-0.5 text-[11px] font-bold">日</span></div>
-        </div>
-      </div>
+      ))}
     </section>
   );
 }
@@ -323,23 +313,23 @@ function CalendarCell({ day, row, selected, weekday, onSelect }) {
       ? "text-[#ff7a8a]"
       : weekday === 6
         ? "text-[#6ea8ff]"
-        : "text-white";
+        : "text-[#c4cdde]";
   // 0円の日は金額を表示しない（稼働なし／±0は色のみで把握）。
   const hasAmount = row && Number(row.actual) !== 0;
   return (
     <button
       type="button"
       onClick={() => row && onSelect(day)}
-      className={`relative flex aspect-[1/1.12] min-w-0 flex-col items-center justify-start overflow-hidden px-0.5 pb-1 pt-1.5 transition ${heat} ${
+      className={`relative flex aspect-[1/0.66] min-w-0 flex-col items-center overflow-hidden px-0.5 pb-0.5 pt-1 transition ${heat} ${
         selected ? "z-10 rounded-[3px] ring-2 ring-inset ring-[#16C8FF]" : ""
       }`}
     >
-      {/* 1枚目のカレンダー準拠：日付を大きく中央寄せで配置し、金額をその下に表示する（視認性を最優先）。 */}
-      <span className={`w-full text-center text-[19px] font-bold leading-none ${dayColor}`}>{day}</span>
+      {/* 日付は左上・小さめ。金額は日付のすぐ下に詰めて配置し、縦の無駄を作らない（iPhoneで密に収める）。 */}
+      <span className={`w-full text-left text-[10px] font-bold leading-none ${dayColor}`}>{day}</span>
       {/* セル内は日付と実収支のみ（期待値はセルに入れず選択日ミニ詳細へ）。金額は「k」を使わず実額表示。
-          1枚目同様、日付の下に少し大きめの数字で表示する。狭いiPhone幅でも7列に収まるよう詰め字＋tabular-numsで調整。 */}
+          狭いiPhone幅でも7列に収まるよう小さめ等幅＋tabular-nums＋詰め字で表示する。 */}
       {hasAmount && (
-        <span className={`mt-1 w-full text-center text-[10px] font-bold leading-none tracking-[-.03em] tabular-nums ${moneyClass(row.actual)}`}>{signed(row.actual)}</span>
+        <span className={`mt-0.5 w-full text-center font-mono text-[8px] font-black leading-none tracking-[-.05em] tabular-nums ${moneyClass(row.actual)}`}>{signed(row.actual)}</span>
       )}
     </button>
   );
@@ -439,7 +429,7 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay, year, month }) {
               onSelect={setSelectedDay}
             />
           )
-          : <div key={`blank-${index}`} className="aspect-[1/1.12] bg-[#0a1422]" />)}
+          : <div key={`blank-${index}`} className="aspect-[1/0.66] bg-[#0a1422]" />)}
       </div>
     </section>
   );
