@@ -313,23 +313,23 @@ function CalendarCell({ day, row, selected, weekday, onSelect }) {
       ? "text-[#ff7a8a]"
       : weekday === 6
         ? "text-[#6ea8ff]"
-        : "text-[#c4cdde]";
+        : "text-white";
   // 0円の日は金額を表示しない（稼働なし／±0は色のみで把握）。
   const hasAmount = row && Number(row.actual) !== 0;
   return (
     <button
       type="button"
       onClick={() => row && onSelect(day)}
-      className={`relative flex aspect-[1/0.66] min-w-0 flex-col items-center overflow-hidden px-0.5 pb-0.5 pt-1 transition ${heat} ${
+      className={`relative flex aspect-[1/1.12] min-w-0 flex-col items-center justify-start overflow-hidden px-0.5 pb-1 pt-1.5 transition ${heat} ${
         selected ? "z-10 rounded-[3px] ring-2 ring-inset ring-[#16C8FF]" : ""
       }`}
     >
-      {/* 日付は左上・小さめ。金額は日付のすぐ下に詰めて配置し、縦の無駄を作らない（iPhoneで密に収める）。 */}
-      <span className={`w-full text-left text-[10px] font-bold leading-none ${dayColor}`}>{day}</span>
+      {/* 1枚目のカレンダー準拠：日付を大きく中央寄せで配置し、金額をその下に表示する（視認性を最優先）。 */}
+      <span className={`w-full text-center text-[19px] font-bold leading-none ${dayColor}`}>{day}</span>
       {/* セル内は日付と実収支のみ（期待値はセルに入れず選択日ミニ詳細へ）。金額は「k」を使わず実額表示。
-          狭いiPhone幅でも7列に収まるよう小さめ等幅＋tabular-nums＋詰め字で表示する。 */}
+          1枚目同様、日付の下に少し大きめの数字で表示する。狭いiPhone幅でも7列に収まるよう詰め字＋tabular-numsで調整。 */}
       {hasAmount && (
-        <span className={`mt-0.5 w-full text-center font-mono text-[8px] font-black leading-none tracking-[-.05em] tabular-nums ${moneyClass(row.actual)}`}>{signed(row.actual)}</span>
+        <span className={`mt-1 w-full text-center text-[10px] font-bold leading-none tracking-[-.03em] tabular-nums ${moneyClass(row.actual)}`}>{signed(row.actual)}</span>
       )}
     </button>
   );
@@ -429,7 +429,7 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay, year, month }) {
               onSelect={setSelectedDay}
             />
           )
-          : <div key={`blank-${index}`} className="aspect-[1/0.66] bg-[#0a1422]" />)}
+          : <div key={`blank-${index}`} className="aspect-[1/1.12] bg-[#0a1422]" />)}
       </div>
     </section>
   );
