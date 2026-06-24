@@ -8172,10 +8172,16 @@ export function HistoryTab({ jpLog, delJPLast, S, ev }) {
 /* ================================================================
    CalendarTab — カレンダー式記録 + 詳細表示
 ================================================================ */
-export function CalendarTab({ S, onReset }) {
-    const [selectedDate, setSelectedDate] = useState(null);
+export function CalendarTab({ S, onReset, initialDate = null }) {
+    // initialDate（"YYYY-MM-DD" 任意）で初期選択日と表示月を指定できる。
+    // 分析タブの月別「記録を編集」導線から該当日を開くために使用。省略時は従来通り未選択・当月表示。
+    const [selectedDate, setSelectedDate] = useState(initialDate);
     const [selectedArchiveId, setSelectedArchiveId] = useState(null);
     const [viewMonth, setViewMonth] = useState(() => {
+        if (initialDate) {
+            const [y, m] = initialDate.split("-").map(Number);
+            return { year: y, month: m - 1 };
+        }
         const now = new Date();
         return { year: now.getFullYear(), month: now.getMonth() };
     });
