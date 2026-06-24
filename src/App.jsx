@@ -844,6 +844,10 @@ export default function App() {
     setPlayMode(carriedMode);
     // モーダルで入力した玉数を currentMochiBalls にも反映（新台のスタート値と整合）
     setCurrentMochiBalls(carriedMochi);
+    // 貯玉遊技の継続: 残っている貯玉(currentChodama)を次台へ確実に引き継ぐ。
+    // ※この関数は currentChodama をリセットしないが、台移動時の引き継ぎを
+    //   明示するため同値で再設定する（残高は不変・二重計上は起きない）。
+    setCurrentChodama(carriedChodama);
     // 次台のコストベース：今回の持ち出し額を「持ち込みコスト」として引き継ぐ
     setCarriedInYen(carriedOutYen);
     // 新台のスタート行を引き継ぎ資産で再シード
