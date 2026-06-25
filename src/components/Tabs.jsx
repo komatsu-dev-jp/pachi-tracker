@@ -5209,6 +5209,14 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>移動前の持ち玉（玉）</div>
                             <NI v={moveMochiBalls} set={setMoveMochiBalls} w="100%" center ph="0" />
                         </div>
+                        {/* 貯玉遊技中は残りの貯玉を次台へ自動で引き継ぐ旨を明示（入力不要・確認のみ） */}
+                        {Number(S.currentChodama) > 0 && (
+                            <div style={{ marginBottom: 14, padding: "10px 12px", background: C.surfaceHi, borderRadius: 10, border: `1px solid ${C.border}` }}>
+                                <div style={{ fontSize: 11, color: C.purple, fontWeight: 700, lineHeight: 1.5 }}>
+                                    貯玉 {f(S.currentChodama)}玉は次の台へ自動で引き継がれます
+                                </div>
+                            </div>
+                        )}
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                             <Btn label="キャンセル" onClick={() => setShowMoveModal(false)} />
                             <Btn label="移動する" onClick={() => {
