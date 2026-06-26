@@ -236,18 +236,18 @@ function MonthKpis({ actual, ev, diff, winRate, days, hourly }) {
   ];
   return (
     <section>
-      {/* 「月間サマリー」見出しは省略し、6KPIカードのみを表示（視認性優先）。 */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* 「月間サマリー」見出しは省略し、6KPIカードのみを表示（視認性優先・やや小さめ＋余白広め）。 */}
+      <div className="grid grid-cols-2 gap-2.5">
         {items.map((item) => (
-          <div key={item.label} className="flex min-h-[84px] min-w-0 items-center gap-2.5 rounded-[18px] border border-white/[0.09] bg-[linear-gradient(160deg,#11203a,#0a1424)] px-3 py-3 shadow-[0_6px_16px_rgba(0,0,0,.28)]">
-            <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${item.chip}`}>
-              <item.Icon className="h-[22px] w-[22px]" />
+          <div key={item.label} className="flex min-h-[62px] min-w-0 items-center gap-2 rounded-[14px] border border-white/[0.09] bg-[linear-gradient(160deg,#11203a,#0a1424)] px-2.5 py-2.5 shadow-[0_6px_16px_rgba(0,0,0,.28)]">
+            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${item.chip}`}>
+              <item.Icon className="h-[18px] w-[18px]" />
             </span>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[12px] font-semibold tracking-[.01em] text-[#a8b3c7]">{item.label}</div>
-              <div className={`mt-1 whitespace-nowrap font-mono font-black leading-none tracking-[-.03em] tabular-nums ${item.cls}`}>
-                <span className="text-[clamp(16px,4.4vw,20px)]">{item.value}</span>
-                <span className="ml-0.5 text-[10px]">{item.unit}</span>
+              <div className="truncate text-[11px] font-semibold tracking-[.01em] text-[#a8b3c7]">{item.label}</div>
+              <div className={`mt-0.5 whitespace-nowrap font-mono font-black leading-none tracking-[-.03em] tabular-nums ${item.cls}`}>
+                <span className="text-[clamp(14px,3.9vw,18px)]">{item.value}</span>
+                <span className="ml-0.5 text-[9px]">{item.unit}</span>
               </div>
             </div>
           </div>
@@ -688,14 +688,15 @@ function ShareCard({ year, month, actual, ev, winRate, days, dayMap, onClose }) 
 // ハンバーガーを押すとプルダウン（HeaderMenu）で月別/年別/通算/分析+ を切り替える。
 function HeaderBar({ title, menuOpen, onToggleMenu, current, onSelect }) {
   return (
-    <div className="relative z-40 mb-3 flex shrink-0 items-center justify-between gap-2">
-      <h1 className="min-w-0 truncate text-[22px] font-black tracking-[.01em] text-white">{title}</h1>
+    <div className="relative z-40 mb-3 flex h-11 shrink-0 items-center justify-center">
+      {/* 月（期間）ラベルは中央寄せ。ハンバーガーは右端に絶対配置。 */}
+      <h1 className="max-w-[60%] truncate text-center text-[21px] font-black tracking-[.01em] text-white">{title}</h1>
       <button
         type="button"
         onClick={onToggleMenu}
         aria-label="表示メニュー"
         aria-expanded={menuOpen}
-        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition ${
+        className={`absolute right-0 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-xl border transition ${
           menuOpen
             ? "border-[#16C8FF] bg-[#16C8FF]/12 text-[#16C8FF]"
             : "border-white/12 bg-[#0b1528] text-[#aab6ca]"
@@ -905,7 +906,7 @@ export default function AnalysisDashboard({
         {/* 画面内スクロール領域。横スワイプで月送り（縦スクロールは阻害しない）。 */}
         <main onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd} className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-12">
           {/* 月送り時に key が変わり、向きに応じたスライドアニメーションを再生する。 */}
-          <div key={`${periodTab}-${monthOffset}`} className={`month-pane-${slideDir} space-y-4`}>
+          <div key={`${periodTab}-${monthOffset}`} className={`month-pane-${slideDir} space-y-5`}>
             {periodTab === "month" ? (
               <>
                 {/* 6KPIカード（見出しは省略）＋日別ヒートマップ＋選択日詳細。 */}
