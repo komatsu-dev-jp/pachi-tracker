@@ -907,7 +907,7 @@ export default function AnalysisDashboard({
         {/* 画面内スクロール領域。横スワイプで月送り（縦スクロールは阻害しない）。 */}
         <main onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd} className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-12">
           {/* 月送り時に key が変わり、向きに応じたスライドアニメーションを再生する。 */}
-          <div key={`${periodTab}-${monthOffset}`} className={`month-pane-${slideDir} space-y-5`}>
+          <div key={`${periodTab}-${monthOffset}`} className={`month-pane-${slideDir} space-y-6`}>
             {periodTab === "month" ? (
               <>
                 {/* 6KPIカード（見出しは省略）＋日別ヒートマップ＋選択日詳細。 */}
