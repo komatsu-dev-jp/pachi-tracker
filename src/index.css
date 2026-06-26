@@ -212,6 +212,46 @@ input, select, textarea {
   }
 }
 
+/* 分析ページ：月送りのスライド遷移（カレンダーのフリック切替）。
+   高級感のあるイージング（ease-out 系）で横スライド＋わずかな拡縮・フェード。 */
+.month-pane-next {
+  animation: monthPaneNext .36s cubic-bezier(.22, .61, .36, 1) both;
+}
+
+.month-pane-prev {
+  animation: monthPanePrev .36s cubic-bezier(.22, .61, .36, 1) both;
+}
+
+.month-pane-fade {
+  animation: monthPaneFade .3s cubic-bezier(.22, .61, .36, 1) both;
+}
+
+@keyframes monthPaneNext {
+  from { opacity: 0; transform: translateX(30px) scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes monthPanePrev {
+  from { opacity: 0; transform: translateX(-30px) scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes monthPaneFade {
+  from { opacity: 0; transform: translateY(8px) scale(.99); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ヘッダー右端のハンバーガーから開くプルダウンのポップ表示。 */
+.hdr-menu-pop {
+  transform-origin: top right;
+  animation: hdrMenuPop .18s cubic-bezier(.22, .61, .36, 1) both;
+}
+
+@keyframes hdrMenuPop {
+  from { opacity: 0; transform: translateY(-6px) scale(.96); }
+  to { opacity: 1; transform: none; }
+}
+
 /* 詳細データタブ — 現在点パルス（推移グラフ） */
 @keyframes data-pulse {
   0% {

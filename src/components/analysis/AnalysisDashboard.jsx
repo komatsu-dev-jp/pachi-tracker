@@ -1,15 +1,14 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   BarChart3,
   CalendarDays,
   CalendarRange,
-  ChevronDown,
+  Check,
   ChevronLeft,
-  ChevronRight,
   Clock3,
   Filter,
   LineChart as LineChartIcon,
-  Plus,
+  Menu,
   Scale,
   Share2,
   Sigma,
@@ -214,37 +213,42 @@ function ActionButton({ children, onClick, active = false }) {
   );
 }
 
+// KPI値の符号に応じたアイコンチップ配色（プラス＝シアン / マイナス＝レッド）。
+const chipMoney = (value) => Number(value) >= 0
+  ? "border-[#16C8FF]/30 bg-[#16C8FF]/12 text-[#16C8FF]"
+  : "border-[#ff637a]/35 bg-[#ff637a]/12 text-[#ff637a]";
+const CHIP_CYAN = "border-[#16C8FF]/30 bg-[#16C8FF]/12 text-[#16C8FF]";
+const CHIP_BLUE = "border-[#5e9df7]/30 bg-[#5e9df7]/14 text-[#7eb0ff]";
+
 // 6KPIカード（月別トップの「月間サマリー」）。
-// 月収支・期待値・差（実収支−期待値）・勝率・稼働日数・時給を 2列×3段の大きめカードで表示し、
-// スマホ片手操作でも大きな数字で主要指標を即読できるようにする。
+// 月収支・期待値・差（実収支−期待値）・勝率・稼働日数・時給を 2列×3段で表示。
+// 各カードは左に丸背景付きアイコン、右にラベルと値（添付モック準拠の横並び）。
 // 値はすべて既存 summary から算出（hourly は workHours が0の場合 null＝「—」表示）。
 function MonthKpis({ actual, ev, diff, winRate, days, hourly }) {
   const hasHourly = hourly != null;
   const items = [
-    { Icon: Wallet, label: "月収支", value: signed(actual), unit: "円", cls: moneyClass(actual) },
-    { Icon: LineChartIcon, label: "期待値", value: signed(ev), unit: "円", cls: "text-[#16C8FF]" },
-    { Icon: Scale, label: "差", value: signed(diff), unit: "円", cls: moneyClass(diff) },
-    { Icon: Target, label: "勝率", value: String(winRate), unit: "%", cls: "text-white" },
-    { Icon: Clock3, label: "稼働日数", value: String(days), unit: "日", cls: "text-white" },
-    { Icon: Wallet, label: "時給", value: hasHourly ? signed(hourly) : "—", unit: hasHourly ? "円/h" : "", cls: hasHourly ? moneyClass(hourly) : "text-white" },
+    { Icon: Wallet, label: "月収支", value: signed(actual), unit: "円", cls: moneyClass(actual), chip: chipMoney(actual) },
+    { Icon: LineChartIcon, label: "期待値", value: signed(ev), unit: "円", cls: "text-[#16C8FF]", chip: CHIP_CYAN },
+    { Icon: Scale, label: "差", value: signed(diff), unit: "円", cls: moneyClass(diff), chip: chipMoney(diff) },
+    { Icon: Target, label: "勝率", value: String(winRate), unit: "%", cls: "text-white", chip: CHIP_CYAN },
+    { Icon: CalendarDays, label: "稼働日数", value: String(days), unit: "日", cls: "text-white", chip: CHIP_BLUE },
+    { Icon: Clock3, label: "時給", value: hasHourly ? signed(hourly) : "—", unit: hasHourly ? "円/h" : "", cls: hasHourly ? moneyClass(hourly) : "text-white", chip: hasHourly ? chipMoney(hourly) : CHIP_BLUE },
   ];
   return (
     <section>
-      <div className="mb-2.5 flex items-center gap-2">
-        <Wallet className="h-5 w-5 shrink-0 text-[#16C8FF]" />
-        <h2 className="text-[16px] font-black tracking-[.02em] text-white">月間サマリー</h2>
-      </div>
-      {/* スマホ片手操作向けに2列×3段の大きめカード。各値は大きな数字で1画面で即読できるようにする。 */}
-      <div className="grid grid-cols-2 gap-2.5">
+      {/* 「月間サマリー」見出しは省略し、6KPIカードのみを表示（視認性優先）。 */}
+      <div className="grid grid-cols-2 gap-3">
         {items.map((item) => (
-          <div key={item.label} className="flex min-w-0 flex-col gap-2 rounded-[16px] border border-white/[0.09] bg-[linear-gradient(160deg,#11203a,#0a1424)] px-3.5 py-3.5 shadow-[0_6px_16px_rgba(0,0,0,.28)]">
-            <div className="flex min-w-0 items-center gap-1.5">
-              <item.Icon className="h-4 w-4 shrink-0 text-[#5e9df7]" />
-              <span className="truncate text-[12px] font-semibold tracking-[.01em] text-[#8a97ad]">{item.label}</span>
-            </div>
-            <div className={`whitespace-nowrap font-mono font-black leading-none tracking-[-.03em] tabular-nums ${item.cls}`}>
-              <span className="text-[clamp(20px,5.6vw,26px)]">{item.value}</span>
-              <span className="ml-1 text-[11px]">{item.unit}</span>
+          <div key={item.label} className="flex min-h-[84px] min-w-0 items-center gap-2.5 rounded-[18px] border border-white/[0.09] bg-[linear-gradient(160deg,#11203a,#0a1424)] px-3 py-3 shadow-[0_6px_16px_rgba(0,0,0,.28)]">
+            <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${item.chip}`}>
+              <item.Icon className="h-[22px] w-[22px]" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[12px] font-semibold tracking-[.01em] text-[#a8b3c7]">{item.label}</div>
+              <div className={`mt-1 whitespace-nowrap font-mono font-black leading-none tracking-[-.03em] tabular-nums ${item.cls}`}>
+                <span className="text-[clamp(16px,4.4vw,20px)]">{item.value}</span>
+                <span className="ml-0.5 text-[10px]">{item.unit}</span>
+              </div>
             </div>
           </div>
         ))}
@@ -353,17 +357,16 @@ function CalendarCell({ day, row, selected, weekday, onSelect }) {
   );
 }
 
-function DayDetail({ dateLabel, row, isDemo, onEditRecords }) {
-  const [open, setOpen] = useState(false);
+function DayDetail({ dateLabel, row, onEditRecords }) {
   const detail = row || {};
-  // 本番データには店舗/機種/明細が未連携のため、デモ時のみサンプル値を表示し実データ時は「—」にする（ダミー表示の防止）。
-  const fallback = (value, demoValue) => value ?? (isDemo ? demoValue : "—");
-  const storeName = fallback(detail.storeName, "丸之内ヘリオス2000竹原");
-  const machineName = fallback(detail.machineName, "スマスロ マギアレコード");
+  // 機種名/時間/時給は日別集計（dayMap）に含まれないため、未連携時は「-」「0.0h」「0円/h」を表示。
+  const machineName = detail.machineName || "-";
+  const hours = Number(detail.hours) || 0;
+  const hourly = hours > 0 ? Math.round((Number(detail.actual) || 0) / hours) : 0;
   return (
     <section className={`${card} p-4`}>
       <div className="flex items-center gap-2.5">
-        {/* 小さなカレンダーアクセント（lucide追加を避け軽量インラインSVGで描画）。 */}
+        {/* 左上のカレンダーアクセント（lucide追加を避け軽量インラインSVGで描画）。 */}
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#16C8FF]/35 bg-[#16C8FF]/10 text-[#16C8FF]">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="4" width="18" height="18" rx="2" />
@@ -372,47 +375,40 @@ function DayDetail({ dateLabel, row, isDemo, onEditRecords }) {
         </span>
         <div className="text-[16px] font-black text-white">{dateLabel}</div>
       </div>
+      {/* 上段：実収支 / 期待値（2列）。 */}
       <div className="mt-3 grid grid-cols-2 gap-2.5">
         <div className="min-w-0 rounded-xl border border-white/[0.07] bg-[#0a1528] px-3.5 py-3">
-          <div className="text-[11px] text-[#7f8ca3]">実収支</div>
+          <div className="text-[11px] text-[#a8b3c7]">実収支</div>
           <div className={`mt-1 whitespace-nowrap font-mono text-[24px] font-black leading-none tabular-nums ${moneyClass(detail.actual || 0)}`}>{signed(detail.actual || 0)}<span className="ml-0.5 text-[12px]">円</span></div>
         </div>
         <div className="min-w-0 rounded-xl border border-white/[0.07] bg-[#0a1528] px-3.5 py-3">
-          <div className="text-[11px] text-[#7f8ca3]">期待値</div>
+          <div className="text-[11px] text-[#a8b3c7]">期待値</div>
           <div className="mt-1 whitespace-nowrap font-mono text-[24px] font-black leading-none tabular-nums text-[#16C8FF]">{signed(detail.ev || 0)}<span className="ml-0.5 text-[12px]">円</span></div>
         </div>
       </div>
-      {/* メモ入力導線。保存層は未接続のため、現状はタップ導線のプレースホルダー表示（将来連携予定）。 */}
-      <button type="button" className="mt-2.5 flex h-12 w-full min-w-0 items-center gap-2 rounded-xl border border-white/[0.08] bg-[#0a1528] px-3.5 text-left">
-        <svg className="shrink-0 text-[#16C8FF]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {/* 下段：機種名 / 時間 / 時給（3列）。薄い区切り線で上段と分離。 */}
+      <div className="mt-3 grid grid-cols-3 gap-2 border-t border-white/[0.08] pt-3">
+        <div className="min-w-0">
+          <div className="text-[10px] text-[#a8b3c7]">機種名</div>
+          <div className="mt-1 truncate text-[13px] font-bold text-white">{machineName}</div>
+        </div>
+        <div className="min-w-0">
+          <div className="text-[10px] text-[#a8b3c7]">時間</div>
+          <div className="mt-1 whitespace-nowrap font-mono text-[13px] font-bold tabular-nums text-white">{hours.toFixed(1)}h</div>
+        </div>
+        <div className="min-w-0">
+          <div className="text-[10px] text-[#a8b3c7]">時給</div>
+          <div className={`mt-1 whitespace-nowrap font-mono text-[13px] font-bold tabular-nums ${hours > 0 ? moneyClass(hourly) : "text-white"}`}>{hours > 0 ? signed(hourly) : "0"}円/h</div>
+        </div>
+      </div>
+      {/* 記録の編集・削除は既存のカレンダー記録エディタ（CalendarTab）へ該当日で遷移する導線として残置。 */}
+      <button type="button" onClick={onEditRecords} className="mt-3 flex h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-white/[0.12] bg-[#0a1528] text-[12px] font-bold text-[#c4ccda]">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 20h9" />
           <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
         </svg>
-        <span className="truncate text-[12px] text-[#7f8ca3]">メモを入力（タップして入力）</span>
+        記録を編集
       </button>
-      {open && (
-        <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-white/[0.08] pt-3.5 text-[12px]">
-          <div className="col-span-2 flex justify-between gap-2"><dt className="text-[#74839b]">店舗</dt><dd className="min-w-0 truncate font-sans text-[#bdc7d7]">{storeName}</dd></div>
-          <div className="col-span-2 flex justify-between gap-2"><dt className="text-[#74839b]">機種</dt><dd className="min-w-0 truncate font-sans text-[#9aa6ba]">{machineName}</dd></div>
-          <div className="flex justify-between gap-2"><dt className="text-[#74839b]">回転率</dt><dd className="font-mono text-[#bdc7d7]">{fallback(detail.spinRate, 19.7)}{detail.spinRate || isDemo ? "回/k" : ""}</dd></div>
-          <div className="flex justify-between gap-2"><dt className="text-[#74839b]">稼働時間</dt><dd className="font-mono text-[#bdc7d7]">{fallback(detail.hours, 2.1)}{detail.hours || isDemo ? "時間" : ""}</dd></div>
-          <div className="flex justify-between gap-2"><dt className="text-[#74839b]">投資</dt><dd className="font-mono text-[#bdc7d7]">{detail.invest != null || isDemo ? `${fmt(detail.invest ?? 1000)}円` : "—"}</dd></div>
-          <div className="flex justify-between gap-2"><dt className="text-[#74839b]">回収</dt><dd className="font-mono text-[#bdc7d7]">{detail.recovery != null || isDemo ? `${fmt(detail.recovery ?? 6406)}円` : "—"}</dd></div>
-        </dl>
-      )}
-      <div className="mt-3 grid grid-cols-2 gap-2.5">
-        <button type="button" onClick={() => setOpen((value) => !value)} className="h-12 w-full rounded-lg border border-[#16C8FF]/70 text-[13px] font-black text-[#16C8FF]">
-          {open ? "閉じる" : "詳細を見る"}
-        </button>
-        {/* 記録の編集・削除は既存のカレンダー記録エディタ（CalendarTab）へ該当日で遷移する。 */}
-        <button type="button" onClick={onEditRecords} className="flex h-12 w-full items-center justify-center gap-1.5 rounded-lg border border-white/[0.12] bg-[#0a1528] text-[13px] font-black text-[#c4ccda]">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 20h9" />
-            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-          </svg>
-          記録を編集
-        </button>
-      </div>
     </section>
   );
 }
@@ -435,7 +431,10 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay, year, month }) {
   return (
     <section className={`${card} overflow-hidden p-3.5`}>
       <div className="mb-2.5 flex items-center justify-between gap-2">
-        <h2 className="shrink-0 text-[15px] font-black tracking-[.02em] text-white">日別ヒートマップ</h2>
+        <div className="flex shrink-0 items-center gap-2">
+          <CalendarDays className="h-5 w-5 shrink-0 text-[#16C8FF]" />
+          <h2 className="text-[15px] font-black tracking-[.02em] text-white">日別ヒートマップ</h2>
+        </div>
         <CalendarLegend />
       </div>
       {/* 曜日見出し。日曜は赤系・土曜は青系で表形式に整列させる。 */}
@@ -685,66 +684,56 @@ function ShareCard({ year, month, actual, ev, winRate, days, dayMap, onClose }) 
   );
 }
 
-// 右下のフローティング「表示」ボタン。押すと表示メニュー（ボトムシート）を開く。
-// 上部タブを廃した分の表示切替導線を、片手で届く右下に集約する。
-function ViewMenuFab({ onOpen }) {
+// 画面ヘッダー。左に現在の期間/分析ラベル、右端にハンバーガー。
+// ハンバーガーを押すとプルダウン（HeaderMenu）で月別/年別/通算/分析+ を切り替える。
+function HeaderBar({ title, menuOpen, onToggleMenu, current, onSelect }) {
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="absolute bottom-4 right-4 z-30 flex flex-col items-center"
-      aria-label="表示メニューを開く"
-    >
-      <span className="flex h-14 w-14 items-center justify-center rounded-full border border-[#16C8FF]/60 bg-[#16C8FF] text-[#03101c] shadow-[0_10px_28px_rgba(22,200,255,.4)]">
-        <Plus className="h-7 w-7" strokeWidth={2.6} />
-      </span>
-      <span className="mt-1 text-[10px] font-bold text-[#aab6ca]">表示</span>
-    </button>
+    <div className="relative z-40 mb-3 flex shrink-0 items-center justify-between gap-2">
+      <h1 className="min-w-0 truncate text-[22px] font-black tracking-[.01em] text-white">{title}</h1>
+      <button
+        type="button"
+        onClick={onToggleMenu}
+        aria-label="表示メニュー"
+        aria-expanded={menuOpen}
+        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition ${
+          menuOpen
+            ? "border-[#16C8FF] bg-[#16C8FF]/12 text-[#16C8FF]"
+            : "border-white/12 bg-[#0b1528] text-[#aab6ca]"
+        }`}
+      >
+        <Menu className="h-5 w-5" />
+      </button>
+      {menuOpen && <HeaderMenu current={current} onSelect={onSelect} />}
+    </div>
   );
 }
 
-// 表示メニュー（ボトムシート）。月別/年別/通算/分析+ をまとめて切り替える。
-function ViewMenuSheet({ current, onSelect, onClose }) {
+// ハンバーガーから開くプルダウン。月別/年別/通算/分析+ を選んで切り替える。
+function HeaderMenu({ current, onSelect }) {
   return (
-    <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/65 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="w-full max-w-[430px] rounded-t-[24px] border-t border-white/10 bg-[#0b1424] px-4 pb-9 pt-3"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/15" />
-        <div className="mb-4 text-center">
-          <div className="text-[15px] font-black text-[#16C8FF]">表示メニュー</div>
-          <p className="mt-0.5 text-[11px] text-[#8090aa]">期間・分析の切り替え</p>
-        </div>
-        <div className="space-y-2.5">
-          {VIEW_MENU.map((item) => {
-            const active = current === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onSelect(item.id)}
-                className={`flex w-full items-center gap-3 rounded-2xl border px-3.5 py-3.5 text-left transition ${
-                  active
-                    ? "border-[#16C8FF]/60 bg-[#16C8FF]/10"
-                    : "border-white/[0.08] bg-[#0f1a2e]"
-                }`}
-              >
-                <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${active ? "border-[#16C8FF]/50 bg-[#16C8FF]/15 text-[#16C8FF]" : "border-white/10 bg-[#13233e] text-[#5e9df7]"}`}>
-                  <item.Icon className="h-5 w-5" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[14px] font-black text-white">{item.label}</span>
-                  <span className="block text-[11px] text-[#8090aa]">{item.desc}</span>
-                </span>
-                {active
-                  ? <span className="shrink-0 rounded-full bg-[#16C8FF]/15 px-2 py-0.5 text-[10px] font-bold text-[#16C8FF]">表示中</span>
-                  : <ChevronRight className="h-4 w-4 shrink-0 text-[#5b6b86]" />}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+    <div className="hdr-menu-pop absolute right-0 top-[calc(100%+8px)] z-50 w-60 overflow-hidden rounded-2xl border border-white/10 bg-[#0b1424] p-1.5 shadow-[0_18px_50px_rgba(0,0,0,.6)]">
+      {VIEW_MENU.map((item) => {
+        const active = current === item.id;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onSelect(item.id)}
+            className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${
+              active ? "bg-[#16C8FF]/12" : "hover:bg-white/[0.05]"
+            }`}
+          >
+            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${active ? "border-[#16C8FF]/50 bg-[#16C8FF]/15 text-[#16C8FF]" : "border-white/10 bg-[#13233e] text-[#5e9df7]"}`}>
+              <item.Icon className="h-[18px] w-[18px]" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[14px] font-black text-white">{item.label}</span>
+              <span className="block truncate text-[10px] text-[#8090aa]">{item.desc}</span>
+            </span>
+            {active && <Check className="h-4 w-4 shrink-0 text-[#16C8FF]" />}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -772,15 +761,46 @@ export default function AnalysisDashboard({
   const [sortMode, setSortMode] = useState("ev");
   const [shareOpen, setShareOpen] = useState(false);
   const [monthOffset, setMonthOffset] = useState(0);
-  // 表示メニュー（ボトムシート）の開閉。月別/年別/通算/分析+ の切替導線。
+  // ヘッダー右端のハンバーガーから開くプルダウンの開閉。月別/年別/通算/分析+ の切替導線。
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  // 月送り遷移の向き（next=左スワイプ/prev=右スワイプ/fade=メニュー切替）。CSSアニメーション用。
+  const [slideDir, setSlideDir] = useState("fade");
   // 記録エディタ（CalendarTab）を該当日で開くためのサブ画面状態（null=非表示 / "YYYY-MM-DD"）。
   const [recordsDay, setRecordsDay] = useState(null);
+  // スワイプ判定用のタッチ開始座標。
+  const touchRef = useRef({ x: 0, y: 0, active: false });
 
-  // 表示メニューから期間/分析を選択（選択後はメニューを閉じる）。
+  // 表示メニューから期間/分析を選択（選択後はメニューを閉じる。切替はフェード遷移）。
   const handleSelectView = (id) => {
+    setSlideDir("fade");
     setPeriodTab(id);
     setViewMenuOpen(false);
+  };
+
+  // 期間を前後へ送る（カレンダーのフリック/スワイプで月送り）。通算は移動なし。
+  const goPeriod = (delta) => {
+    if (periodTab === "all" || delta === 0) return;
+    const step = periodTab === "year" ? 12 : 1;
+    setSlideDir(delta > 0 ? "next" : "prev");
+    setMonthOffset((value) => value + delta * step);
+  };
+
+  // 横スワイプ（フリック）で月送り。縦スクロールを阻害しないよう横優勢時のみ反応。
+  const onSwipeStart = (event) => {
+    const point = event.touches?.[0];
+    if (!point) return;
+    touchRef.current = { x: point.clientX, y: point.clientY, active: true };
+  };
+  const onSwipeEnd = (event) => {
+    if (!touchRef.current.active) return;
+    touchRef.current.active = false;
+    const point = event.changedTouches?.[0];
+    if (!point) return;
+    const dx = point.clientX - touchRef.current.x;
+    const dy = point.clientY - touchRef.current.y;
+    if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+      goPeriod(dx < 0 ? 1 : -1); // 左スワイプ＝次の月へ / 右スワイプ＝前の月へ
+    }
   };
 
   const baseDate = isDemo ? new Date(2026, 5, 1) : new Date();
@@ -827,7 +847,14 @@ export default function AnalysisDashboard({
   const monthDiff = isDemo ? -14638 : ((summary.totalRealPL || 0) - (summary.evAmount || 0));
   const monthHourly = isDemo ? -1480 : (summary.workHours > 0 ? Math.round((summary.totalRealPL || 0) / summary.workHours) : null);
   const heroTitle = periodTab === "month" ? "月間収支" : periodTab === "year" ? "年間収支" : "通算収支";
-  const shiftAmount = periodTab === "year" ? 12 : 1;
+  // ヘッダー左に出す現在の期間/分析ラベル。
+  const headerTitle = periodTab === "month"
+    ? `${year}年${month}月`
+    : periodTab === "year"
+      ? `${year}年`
+      : periodTab === "all"
+        ? "通算"
+        : "分析+";
   const selectedDateLabel = `${month}月${selectedDay}日（${WEEKDAYS[new Date(year, month - 1, selectedDay).getDay()]}）`;
   const selectedDateStr = `${year}-${String(month).padStart(2, "0")}-${String(selectedDay).padStart(2, "0")}`;
 
@@ -853,19 +880,15 @@ export default function AnalysisDashboard({
     return (
       <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[#050B18] text-white">
         <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-5 pt-4">
-          <div className="mb-3 flex shrink-0 items-center gap-2">
-            <BarChart3 className="h-5 w-5 text-[#16C8FF]" />
-            <h1 className="text-[18px] font-black tracking-[.02em]">分析+</h1>
-          </div>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pb-24">
+          <HeaderBar title={headerTitle} menuOpen={viewMenuOpen} onToggleMenu={() => setViewMenuOpen((value) => !value)} current={periodTab} onSelect={handleSelectView} />
+          {viewMenuOpen && <div className="fixed inset-0 z-30" onClick={() => setViewMenuOpen(false)} />}
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pb-12">
             {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
             <AnalyzerView archives={archives} extraFilters={filters} />
             <MachinePanel rows={machines} sortMode={sortMode} setSortMode={setSortMode} />
             <StorePanel rows={stores} />
           </div>
-          <ViewMenuFab onOpen={() => setViewMenuOpen(true)} />
         </div>
-        {viewMenuOpen && <ViewMenuSheet current={periodTab} onSelect={handleSelectView} onClose={() => setViewMenuOpen(false)} />}
       </div>
     );
   }
@@ -873,41 +896,36 @@ export default function AnalysisDashboard({
   return (
     <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[#050B18] text-white">
       <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-5 pt-4">
-        {/* 期間の切替（月別/年別/通算）は右下の「表示」FAB→メニューに集約。ここでは月/年送りのみ。 */}
-        <div className="mb-3 flex shrink-0 items-center justify-between">
-          <button type="button" disabled={periodTab === "all"} onClick={() => setMonthOffset((value) => value - shiftAmount)} className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-[#0b1528] text-[#aab6ca] disabled:opacity-20"><ChevronLeft className="h-5 w-5" /></button>
-          <button type="button" onClick={() => setViewMenuOpen(true)} className="flex items-center gap-1.5 text-[18px] font-black">
-            {periodTab === "month" ? `${year}年${month}月` : periodTab === "year" ? `${year}年` : "通算"}
-            <ChevronDown className="h-4 w-4 text-[#7d93b7]" />
-          </button>
-          <button type="button" disabled={periodTab === "all"} onClick={() => setMonthOffset((value) => value + shiftAmount)} className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-[#0b1528] text-[#aab6ca] disabled:opacity-20"><ChevronRight className="h-5 w-5" /></button>
-        </div>
+        {/* 期間/分析の切替はヘッダー右端のハンバーガー→プルダウン。月送りはカレンダーのフリック（横スワイプ）。 */}
+        <HeaderBar title={headerTitle} menuOpen={viewMenuOpen} onToggleMenu={() => setViewMenuOpen((value) => !value)} current={periodTab} onSelect={handleSelectView} />
+        {viewMenuOpen && <div className="fixed inset-0 z-30" onClick={() => setViewMenuOpen(false)} />}
 
         {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
 
-        {/* ヒーロー以下を画面内スクロール領域に閉じ込める（下部ナビ非重なり・はみ出し防止） */}
-        <main className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pb-24">
-          {periodTab === "month" ? (
-            <>
-              {/* モックアップ準拠：大型ヒーローを廃止し、6KPIカードで月間サマリーを表示。 */}
-              <MonthKpis actual={actual} ev={ev} diff={monthDiff} winRate={winRate} days={days} hourly={monthHourly} />
-              <CalendarPanel dayMap={dayMap} selectedDay={selectedDay} setSelectedDay={setSelectedDay} year={year} month={month} />
-              <DayDetail dateLabel={selectedDateLabel} row={dayMap[selectedDay]} isDemo={isDemo} onEditRecords={() => setRecordsDay(selectedDateStr)} />
-            </>
-          ) : (
-            <>
-              <SummaryHero summary={summary} isDemo={isDemo} heroTitle={heroTitle} />
-              <PeriodBreakdownPanel periodTab={periodTab} rows={periodRows} isDemo={isDemo} />
-              <TrendPanel data={trend} />
-              <Kpis summary={summary} isDemo={isDemo} />
-              <ShareCTA onShare={() => setShareOpen(true)} title="成果を共有" subtitle="収支カードをSNSに投稿できます" />
-            </>
-          )}
+        {/* 画面内スクロール領域。横スワイプで月送り（縦スクロールは阻害しない）。 */}
+        <main onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd} className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-12">
+          {/* 月送り時に key が変わり、向きに応じたスライドアニメーションを再生する。 */}
+          <div key={`${periodTab}-${monthOffset}`} className={`month-pane-${slideDir} space-y-4`}>
+            {periodTab === "month" ? (
+              <>
+                {/* 6KPIカード（見出しは省略）＋日別ヒートマップ＋選択日詳細。 */}
+                <MonthKpis actual={actual} ev={ev} diff={monthDiff} winRate={winRate} days={days} hourly={monthHourly} />
+                <CalendarPanel dayMap={dayMap} selectedDay={selectedDay} setSelectedDay={setSelectedDay} year={year} month={month} />
+                <DayDetail dateLabel={selectedDateLabel} row={dayMap[selectedDay]} onEditRecords={() => setRecordsDay(selectedDateStr)} />
+              </>
+            ) : (
+              <>
+                <SummaryHero summary={summary} isDemo={isDemo} heroTitle={heroTitle} />
+                <PeriodBreakdownPanel periodTab={periodTab} rows={periodRows} isDemo={isDemo} />
+                <TrendPanel data={trend} />
+                <Kpis summary={summary} isDemo={isDemo} />
+                <ShareCTA onShare={() => setShareOpen(true)} title="成果を共有" subtitle="収支カードをSNSに投稿できます" />
+              </>
+            )}
+          </div>
         </main>
-        <ViewMenuFab onOpen={() => setViewMenuOpen(true)} />
       </div>
       {shareOpen && <ShareCard year={year} month={month} actual={actual} ev={ev} winRate={winRate} days={days} dayMap={dayMap} onClose={() => setShareOpen(false)} />}
-      {viewMenuOpen && <ViewMenuSheet current={periodTab} onSelect={handleSelectView} onClose={() => setViewMenuOpen(false)} />}
     </div>
   );
 }
