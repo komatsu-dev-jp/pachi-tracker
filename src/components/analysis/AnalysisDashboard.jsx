@@ -594,21 +594,6 @@ function ShareCTA({ onShare, title = "今月の結果を共有", subtitle = "月
   );
 }
 
-// 月別トップを軽くするための補助分析への導線。グラフ/ランキング/AI分析は分析+タブへ集約。
-function AnalysisLink({ onOpen }) {
-  return (
-    <section className={`${card} flex items-center justify-between gap-3 p-4`}>
-      <div className="min-w-0">
-        <div className="text-[14px] font-black text-white">詳しく分析する</div>
-        <p className="mt-0.5 text-[11px] text-[#8090aa]">収支推移・機種別・店舗別を見る</p>
-      </div>
-      <button type="button" onClick={onOpen} className="flex h-12 shrink-0 items-center gap-1 rounded-lg border border-white/15 bg-[#0b1528] px-4 text-[13px] font-black text-[#16C8FF]">
-        分析+を見る <ChevronRight className="h-4 w-4" />
-      </button>
-    </section>
-  );
-}
-
 function FilterPanel({ stores, machines, filters, setFilters, onClose }) {
   return (
     <div className={`${card} mb-2 grid gap-2 p-3 sm:grid-cols-2`}>
@@ -896,8 +881,6 @@ export default function AnalysisDashboard({
               <MonthKpis actual={actual} ev={ev} diff={monthDiff} winRate={winRate} days={days} hourly={monthHourly} />
               <CalendarPanel dayMap={dayMap} selectedDay={selectedDay} setSelectedDay={setSelectedDay} year={year} month={month} />
               <DayDetail dateLabel={selectedDateLabel} row={dayMap[selectedDay]} isDemo={isDemo} onEditRecords={() => setRecordsDay(selectedDateStr)} />
-              <ShareCTA onShare={() => setShareOpen(true)} />
-              <AnalysisLink onOpen={() => setPeriodTab("analyzer")} />
             </>
           ) : (
             <>
