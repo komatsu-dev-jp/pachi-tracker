@@ -5,8 +5,10 @@ import {
   CalendarRange,
   Check,
   ChevronLeft,
+  ChevronRight,
   Clock3,
   Filter,
+  Lightbulb,
   LineChart as LineChartIcon,
   Menu,
   Scale,
@@ -219,41 +221,116 @@ const chipMoney = (value) => Number(value) >= 0
   : "border-[#ff637a]/35 bg-[#ff637a]/12 text-[#ff637a]";
 const CHIP_CYAN = "border-[#16C8FF]/30 bg-[#16C8FF]/12 text-[#16C8FF]";
 const CHIP_BLUE = "border-[#5e9df7]/30 bg-[#5e9df7]/14 text-[#7eb0ff]";
+const SPARK_CYAN = "#16C8FF";
+const SPARK_RED = "#ff637a";
+const SPARK_BLUE = "#7eb0ff";
 
-// 6KPIカード（月別トップの「月間サマリー」）。
-// 月収支・期待値・差（実収支−期待値）・勝率・稼働日数・時給を 2列×3段で表示。
-// 各カードは左に丸背景付きアイコン、右にラベルと値（添付モック準拠の横並び）。
+// KPIカード右側の装飾的ミニチャート（既存データから描画）。
+// データ不足時は空のSVG枠を返し、本番でも破綻しない。
+function Sparkline({ data, color }) {
+  const pts = (Array.isArray(data) ? data : []).map(Number).filter(Number.isFinite);
+  const W = 36, H = 22;
+  if (pts.length < 2) return <svg width={W} height={H} aria-hidden="true" />;
+  const min = Math.min(...pts);
+  const max = Math.max(...pts);
+  const range = (max - min) || 1;
+  const step = W / (pts.length - 1);
+  const d = pts.map((v, i) => `${i ? "L" : "M"}${(i * step).toFixed(1)},${(H - 2 - ((v - min) / range) * (H - 4)).toFixed(1)}`).join(" ");
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} fill="none" aria-hidden="true">
+      <path d={d} stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// 勝率用ミニドーナツ（同心円ゲージ）。
+function MiniDonut({ value, color }) {
+  const r = 9;
+  const c = 2 * Math.PI * r;
+  const pct = Math.max(0, Math.min(100, Number(value) || 0)) / 100;
+  return (
+    <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
+      <circle cx="13" cy="13" r={r} stroke="rgba(255,255,255,.14)" strokeWidth="3" fill="none" />
+      <circle cx="13" cy="13" r={r} stroke={color} strokeWidth="3" fill="none" strokeLinecap="round" strokeDasharray={`${(c * pct).toFixed(1)} ${c.toFixed(1)}`} transform="rotate(-90 13 13)" />
+    </svg>
+  );
+}
+
+// 稼働日数用ミニ棒グラフ。
+function MiniBars({ data, color }) {
+  const vals = (Array.isArray(data) ? data : []).map((v) => Math.abs(Number(v) || 0)).slice(-6);
+  const W = 36, H = 22;
+  const max = Math.max(1, ...vals);
+  const slot = vals.length ? W / vals.length : W;
+  const bw = Math.max(2, Math.min(4, slot - 2));
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
+      {vals.map((v, i) => {
+        const bh = Math.max(2, (v / max) * (H - 2));
+        return <rect key={i} x={(i * slot).toFixed(1)} y={(H - bh).toFixed(1)} width={bw} height={bh.toFixed(1)} rx="1" fill={color} />;
+      })}
+    </svg>
+  );
+}
+
+// 6KPIカード（月別トップ）。左にアイコンチップ、中央にラベル＋値、右にミニチャート。
 // 値はすべて既存 summary から算出（hourly は workHours が0の場合 null＝「—」表示）。
-function MonthKpis({ actual, ev, diff, winRate, days, hourly }) {
+// ミニチャートは既存の trend / dayMap から描画する装飾要素（計算ロジックには未介入）。
+function MonthKpis({ actual, ev, diff, winRate, days, hourly, trend, dayMap }) {
   const hasHourly = hourly != null;
+  const aSeries = (trend || []).map((t) => t.actual);
+  const eSeries = (trend || []).map((t) => t.ev);
+  const dSeries = (trend || []).map((t) => t.diff);
+  const barSeries = Object.keys(dayMap || {})
+    .sort((a, b) => Number(a) - Number(b))
+    .map((k) => dayMap[k]?.actual || 0);
   const items = [
-    { Icon: Wallet, label: "月収支", value: signed(actual), unit: "円", cls: moneyClass(actual), chip: chipMoney(actual) },
-    { Icon: LineChartIcon, label: "期待値", value: signed(ev), unit: "円", cls: "text-[#16C8FF]", chip: CHIP_CYAN },
-    { Icon: Scale, label: "差", value: signed(diff), unit: "円", cls: moneyClass(diff), chip: chipMoney(diff) },
-    { Icon: Target, label: "勝率", value: String(winRate), unit: "%", cls: "text-white", chip: CHIP_CYAN },
-    { Icon: CalendarDays, label: "稼働日数", value: String(days), unit: "日", cls: "text-white", chip: CHIP_BLUE },
-    { Icon: Clock3, label: "時給", value: hasHourly ? signed(hourly) : "—", unit: hasHourly ? "円/h" : "", cls: hasHourly ? moneyClass(hourly) : "text-white", chip: hasHourly ? chipMoney(hourly) : CHIP_BLUE },
+    { Icon: Wallet, label: "月収支", value: signed(actual), unit: "円", cls: moneyClass(actual), chip: chipMoney(actual), chart: <Sparkline data={aSeries} color={Number(actual) >= 0 ? SPARK_CYAN : SPARK_RED} /> },
+    { Icon: LineChartIcon, label: "期待値", value: signed(ev), unit: "円", cls: "text-[#16C8FF]", chip: CHIP_CYAN, chart: <Sparkline data={eSeries} color={SPARK_CYAN} /> },
+    { Icon: Scale, label: "差", value: signed(diff), unit: "円", cls: moneyClass(diff), chip: chipMoney(diff), chart: <Sparkline data={dSeries} color={Number(diff) >= 0 ? SPARK_CYAN : SPARK_RED} /> },
+    { Icon: Target, label: "勝率", value: String(winRate), unit: "%", cls: "text-white", chip: CHIP_CYAN, chart: <MiniDonut value={winRate} color={SPARK_CYAN} /> },
+    { Icon: CalendarDays, label: "稼働日数", value: String(days), unit: "日", cls: "text-white", chip: CHIP_BLUE, chart: <MiniBars data={barSeries} color={SPARK_BLUE} /> },
+    { Icon: Clock3, label: "時給", value: hasHourly ? signed(hourly) : "—", unit: hasHourly ? "円/h" : "", cls: hasHourly ? moneyClass(hourly) : "text-white", chip: hasHourly ? chipMoney(hourly) : CHIP_BLUE, chart: <Sparkline data={aSeries} color={hasHourly && Number(hourly) < 0 ? SPARK_RED : SPARK_CYAN} /> },
   ];
   return (
     <section>
-      {/* 「月間サマリー」見出しは省略し、6KPIカードのみを表示（視認性優先・やや小さめ＋余白広め）。 */}
+      {/* 「月間サマリー」見出しは省略。各カードは アイコン＋ラベル/値＋ミニチャート の横並び。 */}
       <div className="grid grid-cols-2 gap-2.5">
         {items.map((item) => (
-          <div key={item.label} className="flex min-h-[62px] min-w-0 items-center gap-2 rounded-[14px] border border-white/[0.09] bg-[linear-gradient(160deg,#11203a,#0a1424)] px-2.5 py-2.5 shadow-[0_6px_16px_rgba(0,0,0,.28)]">
-            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${item.chip}`}>
-              <item.Icon className="h-[18px] w-[18px]" />
+          <div key={item.label} className="flex min-h-[60px] min-w-0 items-center gap-2 rounded-[14px] border border-white/[0.09] bg-[linear-gradient(160deg,#11203a,#0a1424)] px-2.5 py-2.5 shadow-[0_6px_16px_rgba(0,0,0,.28)]">
+            <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${item.chip}`}>
+              <item.Icon className="h-[17px] w-[17px]" />
             </span>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[11px] font-semibold tracking-[.01em] text-[#a8b3c7]">{item.label}</div>
-              <div className={`mt-0.5 whitespace-nowrap font-mono font-black leading-none tracking-[-.03em] tabular-nums ${item.cls}`}>
-                <span className="text-[clamp(14px,3.9vw,18px)]">{item.value}</span>
-                <span className="ml-0.5 text-[9px]">{item.unit}</span>
+              <div className="truncate text-[10px] font-semibold tracking-[.01em] text-[#a8b3c7]">{item.label}</div>
+              <div className={`mt-0.5 whitespace-nowrap font-mono font-black leading-none tracking-[-.04em] tabular-nums ${item.cls}`}>
+                <span className="text-[clamp(13px,3.4vw,15px)]">{item.value}</span>
+                <span className="ml-0.5 text-[8px]">{item.unit}</span>
               </div>
             </div>
+            <div className="shrink-0 opacity-90">{item.chart}</div>
           </div>
         ))}
       </div>
     </section>
+  );
+}
+
+// 月間インサイトのバナー。電球アイコン＋一文の所見＋右シェブロン。
+// 所見テキストは demo（記録ゼロ時のプレビュー）でのみサンプルを表示し、
+// 本番（実データ）では将来連携予定の中立メッセージを出す（ダミー解析の本番常駐を回避）。
+function InsightBanner({ text }) {
+  return (
+    <button type="button" className={`${card} flex w-full items-center gap-3 p-3.5 text-left`}>
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#ffd166]/30 bg-[#ffd166]/10 text-[#ffd166]">
+        <Lightbulb className="h-[18px] w-[18px]" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] font-black text-[#16C8FF]">月間インサイト</div>
+        <p className="mt-0.5 text-[11px] leading-snug text-[#a8b3c7]">{text}</p>
+      </div>
+      <ChevronRight className="h-4 w-4 shrink-0 text-[#5b6b86]" />
+    </button>
   );
 }
 
@@ -321,37 +398,36 @@ function Kpis({ summary, isDemo }) {
 }
 
 function CalendarCell({ day, row, selected, weekday, onSelect }) {
-  // 表形式に寄せた控えめなヒートカラー（薄い緑＝プラス / 薄い赤＝マイナス）。
-  let heat = "bg-[#0e1a2e]";
+  // 角丸の独立セル＋ヒートカラー（緑＝プラス / 赤＝マイナス）。境界線も色味を合わせる。
   const amount = Number(row?.actual);
-  if (amount >= 1000) heat = "bg-[#11402f]";
-  else if (amount > 0) heat = "bg-[#0d2a23]";
-  else if (amount <= -1000) heat = "bg-[#3a1620]";
-  else if (amount < 0) heat = "bg-[#281620]";
-  // 日付の色：日曜は赤系、土曜は青系、選択中はシアン。
+  const hasAmount = row && amount !== 0;
+  let heat = "bg-[#0e1a2e] border-white/[0.05]";
+  if (amount >= 1000) heat = "bg-[#123a2b] border-[#1f7a52]/45";
+  else if (amount > 0) heat = "bg-[#0f2a22] border-[#1f7a52]/30";
+  else if (amount <= -1000) heat = "bg-[#3a1620] border-[#8a2438]/50";
+  else if (amount < 0) heat = "bg-[#281620] border-[#8a2438]/35";
+  // 日付色：稼働日は損益色、未稼働は曜日色（日＝赤 / 土＝青）。選択中は白で強調。
   const dayColor = selected
-    ? "text-[#16C8FF]"
-    : weekday === 0
-      ? "text-[#ff7a8a]"
-      : weekday === 6
-        ? "text-[#6ea8ff]"
-        : "text-[#c4cdde]";
-  // 0円の日は金額を表示しない（稼働なし／±0は色のみで把握）。
-  const hasAmount = row && Number(row.actual) !== 0;
+    ? "text-white"
+    : hasAmount
+      ? (amount >= 0 ? "text-[#3fe0a0]" : "text-[#ff7a8a]")
+      : weekday === 0
+        ? "text-[#ff7a8a]"
+        : weekday === 6
+          ? "text-[#6ea8ff]"
+          : "text-[#c4cdde]";
   return (
     <button
       type="button"
       onClick={() => row && onSelect(day)}
-      className={`relative flex aspect-[1/1] min-w-0 flex-col items-center overflow-hidden px-0.5 pb-1 pt-1.5 transition ${heat} ${
-        selected ? "z-10 rounded-[4px] ring-2 ring-inset ring-[#16C8FF]" : ""
+      className={`relative flex aspect-square min-w-0 flex-col items-start overflow-hidden rounded-[8px] border px-1.5 pb-1 pt-1 transition ${heat} ${
+        selected ? "z-10 border-[#16C8FF] shadow-[0_0_0_1.5px_#16C8FF,0_0_14px_rgba(22,200,255,.55)]" : ""
       }`}
     >
-      {/* 日付は左上。金額は日付の下にゆとりを持って配置（スマホで指で押しやすい正方セル）。 */}
-      <span className={`w-full text-left text-[12px] font-bold leading-none ${dayColor}`}>{day}</span>
-      {/* セル内は日付と実収支のみ（期待値はセルに入れず選択日ミニ詳細へ）。金額は「k」を使わず実額表示。
-          7列に収めるため等幅＋tabular-nums＋詰め字で枠外にはみ出さないようにする。 */}
+      {/* 日付は左上。金額は日付の下に配置（「k」を使わず実額・等幅・詰め字で枠内に収める）。 */}
+      <span className={`text-[11px] font-bold leading-none ${dayColor}`}>{day}</span>
       {hasAmount && (
-        <span className={`mt-auto w-full text-center font-mono text-[9px] font-black leading-none tracking-[-.05em] tabular-nums ${moneyClass(row.actual)}`}>{signed(row.actual)}</span>
+        <span className={`mt-auto w-full text-center font-mono text-[8.5px] font-black leading-none tracking-[-.05em] tabular-nums ${moneyClass(amount)}`}>{signed(amount)}</span>
       )}
     </button>
   );
@@ -359,10 +435,19 @@ function CalendarCell({ day, row, selected, weekday, onSelect }) {
 
 function DayDetail({ dateLabel, row, onEditRecords }) {
   const detail = row || {};
-  // 機種名/時間/時給は日別集計（dayMap）に含まれないため、未連携時は「-」「0.0h」「0円/h」を表示。
-  const machineName = detail.machineName || "-";
+  const actual = Number(detail.actual) || 0;
+  const ev = Number(detail.ev) || 0;
+  const diffVal = actual - ev;
+  // 時給/稼働時間は日別集計（dayMap）に含まれないため、未連携時は 0円/h・「—」を表示。
   const hours = Number(detail.hours) || 0;
-  const hourly = hours > 0 ? Math.round((Number(detail.actual) || 0) / hours) : 0;
+  const hourly = hours > 0 ? Math.round(actual / hours) : 0;
+  const stats = [
+    { label: "実収支", value: `${signed(actual)}円`, cls: moneyClass(actual) },
+    { label: "期待値", value: `${signed(ev)}円`, cls: ev >= 0 ? "text-[#16C8FF]" : "text-[#ff637a]" },
+    { label: "差", value: `${signed(diffVal)}円`, cls: moneyClass(diffVal) },
+    { label: "時給", value: `${hours > 0 ? signed(hourly) : "0"}円/h`, cls: hours > 0 ? moneyClass(hourly) : "text-white" },
+    { label: "稼働時間", value: hours > 0 ? `${hours.toFixed(1)}時間` : "—", cls: "text-white" },
+  ];
   return (
     <section className={`${card} p-4`}>
       <div className="flex items-center gap-2.5">
@@ -373,37 +458,30 @@ function DayDetail({ dateLabel, row, onEditRecords }) {
             <path d="M16 2v4M8 2v4M3 10h18" />
           </svg>
         </span>
-        <div className="text-[16px] font-black text-white">{dateLabel}</div>
+        <div className="text-[15px] font-black text-white">{dateLabel}</div>
+        {/* その日の実収支バッジ。 */}
+        <span className={`ml-1 shrink-0 rounded-full px-2 py-0.5 font-mono text-[11px] font-bold tabular-nums ${actual >= 0 ? "bg-[#1f7a52]/25 text-[#3fe0a0]" : "bg-[#8a2438]/25 text-[#ff7a8a]"}`}>{signed(actual)}円</span>
       </div>
-      {/* 上段：実収支 / 期待値（2列）。 */}
-      <div className="mt-3 grid grid-cols-2 gap-2.5">
-        <div className="min-w-0 rounded-xl border border-white/[0.07] bg-[#0a1528] px-3.5 py-3">
-          <div className="text-[11px] text-[#a8b3c7]">実収支</div>
-          <div className={`mt-1 whitespace-nowrap font-mono text-[24px] font-black leading-none tabular-nums ${moneyClass(detail.actual || 0)}`}>{signed(detail.actual || 0)}<span className="ml-0.5 text-[12px]">円</span></div>
-        </div>
-        <div className="min-w-0 rounded-xl border border-white/[0.07] bg-[#0a1528] px-3.5 py-3">
-          <div className="text-[11px] text-[#a8b3c7]">期待値</div>
-          <div className="mt-1 whitespace-nowrap font-mono text-[24px] font-black leading-none tabular-nums text-[#16C8FF]">{signed(detail.ev || 0)}<span className="ml-0.5 text-[12px]">円</span></div>
-        </div>
+      {/* 実収支 / 期待値 / 差 / 時給 / 稼働時間（5列）。 */}
+      <div className="mt-3 grid grid-cols-5 gap-1.5 border-t border-white/[0.08] pt-3">
+        {stats.map((s) => (
+          <div key={s.label} className="min-w-0">
+            <div className="truncate text-[9px] text-[#8090aa]">{s.label}</div>
+            <div className={`mt-1 whitespace-nowrap font-mono text-[10px] font-black leading-none tracking-[-.04em] tabular-nums ${s.cls}`}>{s.value}</div>
+          </div>
+        ))}
       </div>
-      {/* 下段：機種名 / 時間 / 時給（3列）。薄い区切り線で上段と分離。 */}
-      <div className="mt-3 grid grid-cols-3 gap-2 border-t border-white/[0.08] pt-3">
-        <div className="min-w-0">
-          <div className="text-[10px] text-[#a8b3c7]">機種名</div>
-          <div className="mt-1 truncate text-[13px] font-bold text-white">{machineName}</div>
-        </div>
-        <div className="min-w-0">
-          <div className="text-[10px] text-[#a8b3c7]">時間</div>
-          <div className="mt-1 whitespace-nowrap font-mono text-[13px] font-bold tabular-nums text-white">{hours.toFixed(1)}h</div>
-        </div>
-        <div className="min-w-0">
-          <div className="text-[10px] text-[#a8b3c7]">時給</div>
-          <div className={`mt-1 whitespace-nowrap font-mono text-[13px] font-bold tabular-nums ${hours > 0 ? moneyClass(hourly) : "text-white"}`}>{hours > 0 ? signed(hourly) : "0"}円/h</div>
-        </div>
-      </div>
+      {/* メモ入力導線。保存層は未接続のためタップ導線のプレースホルダー（将来連携予定）。 */}
+      <button type="button" className="mt-3 flex h-11 w-full min-w-0 items-center gap-2 rounded-xl border border-white/[0.08] bg-[#0a1528] px-3.5 text-left">
+        <svg className="shrink-0 text-[#16C8FF]" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+        </svg>
+        <span className="truncate text-[11px] text-[#7f8ca3]">メモを入力（タップして入力）</span>
+      </button>
       {/* 記録の編集・削除は既存のカレンダー記録エディタ（CalendarTab）へ該当日で遷移する導線として残置。 */}
-      <button type="button" onClick={onEditRecords} className="mt-3 flex h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-white/[0.12] bg-[#0a1528] text-[12px] font-bold text-[#c4ccda]">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <button type="button" onClick={onEditRecords} className="mt-2 flex h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-white/[0.10] bg-[#0a1528] text-[11px] font-bold text-[#aab6ca]">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 20h9" />
           <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
         </svg>
@@ -429,7 +507,7 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay, year, month }) {
   const count = new Date(year, month, 0).getDate();
   const cells = [...Array(blanks).fill(null), ...Array.from({ length: count }, (_, i) => i + 1)];
   return (
-    <section className={`${card} overflow-hidden p-3.5`}>
+    <section className={`${card} p-3.5`}>
       {/* 見出し＋凡例。狭い端末では凡例が次行へ折り返し（flex-wrap）、枠外にはみ出さない。 */}
       <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1">
         <div className="flex shrink-0 items-center gap-2">
@@ -438,14 +516,14 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay, year, month }) {
         </div>
         <CalendarLegend />
       </div>
-      {/* 曜日見出し。日曜は赤系・土曜は青系で表形式に整列させる。 */}
-      <div className="grid grid-cols-7 text-center text-[11px] font-bold text-[#9aa6bb]">
+      {/* 曜日見出し。日曜は赤系・土曜は青系。セルと同じ7列・同じ余白で整列。 */}
+      <div className="grid grid-cols-7 gap-1 px-0.5 text-center text-[11px] font-bold text-[#9aa6bb]">
         {WEEKDAYS.map((day, index) => (
           <span key={day} className={index === 0 ? "text-[#ff7a8a]" : index === 6 ? "text-[#6ea8ff]" : ""}>{day}</span>
         ))}
       </div>
-      {/* gap-px ＋ 親背景で細い罫線を表現し、表形式に近い整ったカレンダーにする。 */}
-      <div className="mt-1.5 grid grid-cols-7 gap-px overflow-hidden rounded-[8px] bg-white/[0.06]">
+      {/* 角丸の独立セルを gap で並べる（選択日はシアンのグロー枠）。 */}
+      <div className="mt-1.5 grid grid-cols-7 gap-1">
         {cells.map((day, index) => day
           ? (
             <CalendarCell
@@ -457,7 +535,7 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay, year, month }) {
               onSelect={setSelectedDay}
             />
           )
-          : <div key={`blank-${index}`} className="aspect-[1/1] bg-[#0a1422]" />)}
+          : <div key={`blank-${index}`} className="aspect-square rounded-[8px] bg-white/[0.015]" />)}
       </div>
     </section>
   );
@@ -685,13 +763,33 @@ function ShareCard({ year, month, actual, ev, winRate, days, dayMap, onClose }) 
   );
 }
 
-// 画面ヘッダー。左に現在の期間/分析ラベル、右端にハンバーガー。
+// 画面ヘッダー。左にブランド、中央に期間ラベル＋前後送り（‹ ›）、右端にハンバーガー。
 // ハンバーガーを押すとプルダウン（HeaderMenu）で月別/年別/通算/分析+ を切り替える。
-function HeaderBar({ title, menuOpen, onToggleMenu, current, onSelect }) {
+// onPrev/onNext を渡したときのみ ‹ › を表示（分析+では非表示）。
+function HeaderBar({ title, onPrev, onNext, navDisabled, menuOpen, onToggleMenu, current, onSelect }) {
+  const hasNav = Boolean(onPrev && onNext);
   return (
-    <div className="relative z-40 mb-3 flex h-11 shrink-0 items-center justify-center">
-      {/* 月（期間）ラベルは中央寄せ。ハンバーガーは右端に絶対配置。 */}
-      <h1 className="max-w-[60%] truncate text-center text-[21px] font-black tracking-[.01em] text-white">{title}</h1>
+    <div className="relative z-40 mb-3 flex h-12 shrink-0 items-center">
+      {/* 左：ブランド（既存 ShareCard と同じ PachiTracker 表記） */}
+      <div className="flex min-w-0 flex-col leading-tight">
+        <span className="truncate font-serif text-[15px] font-bold italic tracking-tight text-[#c4ccda]">PachiTracker</span>
+        <span className="truncate text-[9px] text-[#6e7e99]">分析 / 判断支援</span>
+      </div>
+      {/* 中央：期間ラベル＋前後送り（絶対配置で中央寄せ） */}
+      <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-1.5">
+        {hasNav && (
+          <button type="button" onClick={onPrev} disabled={navDisabled} aria-label="前へ" className="flex h-7 w-7 items-center justify-center rounded-lg text-[#aab6ca] disabled:opacity-20">
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+        )}
+        <h1 className="whitespace-nowrap text-[21px] font-black tracking-[.01em] text-white">{title}</h1>
+        {hasNav && (
+          <button type="button" onClick={onNext} disabled={navDisabled} aria-label="次へ" className="flex h-7 w-7 items-center justify-center rounded-lg text-[#aab6ca] disabled:opacity-20">
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        )}
+      </div>
+      {/* 右：ハンバーガー */}
       <button
         type="button"
         onClick={onToggleMenu}
@@ -759,7 +857,7 @@ export default function AnalysisDashboard({
   const filters = externalFilters || internalFilters;
   const setFilters = onChangeFilters || setInternalFilters;
   const [filterOpen, setFilterOpen] = useState(false);
-  const [selectedDay, setSelectedDay] = useState(18);
+  const [selectedDay, setSelectedDay] = useState(19);
   const [sortMode, setSortMode] = useState("ev");
   const [shareOpen, setShareOpen] = useState(false);
   const [monthOffset, setMonthOffset] = useState(0);
@@ -859,6 +957,10 @@ export default function AnalysisDashboard({
         : "分析+";
   const selectedDateLabel = `${month}月${selectedDay}日（${WEEKDAYS[new Date(year, month - 1, selectedDay).getDay()]}）`;
   const selectedDateStr = `${year}-${String(month).padStart(2, "0")}-${String(selectedDay).padStart(2, "0")}`;
+  // 月間インサイト文：demo（記録ゼロ時プレビュー）はサンプル所見、本番は将来連携予定の中立文。
+  const insightText = isDemo
+    ? "中盤のプラスを活かしきれず、後半に失速。序盤の立ち上がり改善が鍵です。"
+    : "記録が増えると今月の傾向が表示されます。";
 
   // 月別の「記録を編集」導線で開く記録エディタのサブ画面（該当日を初期選択）。
   if (recordsDay !== null) {
@@ -898,8 +1000,8 @@ export default function AnalysisDashboard({
   return (
     <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[#050B18] text-white">
       <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-5 pt-4">
-        {/* 期間/分析の切替はヘッダー右端のハンバーガー→プルダウン。月送りはカレンダーのフリック（横スワイプ）。 */}
-        <HeaderBar title={headerTitle} menuOpen={viewMenuOpen} onToggleMenu={() => setViewMenuOpen((value) => !value)} current={periodTab} onSelect={handleSelectView} />
+        {/* 期間ラベル横の ‹ › で月（年別は年）送り。月送りはカレンダーの横スワイプでも可能。分析+の切替はハンバーガー。 */}
+        <HeaderBar title={headerTitle} onPrev={() => goPeriod(-1)} onNext={() => goPeriod(1)} navDisabled={periodTab === "all"} menuOpen={viewMenuOpen} onToggleMenu={() => setViewMenuOpen((value) => !value)} current={periodTab} onSelect={handleSelectView} />
         {viewMenuOpen && <div className="fixed inset-0 z-30" onClick={() => setViewMenuOpen(false)} />}
 
         {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
@@ -907,11 +1009,12 @@ export default function AnalysisDashboard({
         {/* 画面内スクロール領域。横スワイプで月送り（縦スクロールは阻害しない）。 */}
         <main onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd} className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-12">
           {/* 月送り時に key が変わり、向きに応じたスライドアニメーションを再生する。 */}
-          <div key={`${periodTab}-${monthOffset}`} className={`month-pane-${slideDir} space-y-6`}>
+          <div key={`${periodTab}-${monthOffset}`} className={`month-pane-${slideDir} space-y-5`}>
             {periodTab === "month" ? (
               <>
-                {/* 6KPIカード（見出しは省略）＋日別ヒートマップ＋選択日詳細。 */}
-                <MonthKpis actual={actual} ev={ev} diff={monthDiff} winRate={winRate} days={days} hourly={monthHourly} />
+                {/* 6KPIカード（ミニチャート付き）＋月間インサイト＋日別ヒートマップ＋選択日詳細。 */}
+                <MonthKpis actual={actual} ev={ev} diff={monthDiff} winRate={winRate} days={days} hourly={monthHourly} trend={trend} dayMap={dayMap} />
+                <InsightBanner text={insightText} />
                 <CalendarPanel dayMap={dayMap} selectedDay={selectedDay} setSelectedDay={setSelectedDay} year={year} month={month} />
                 <DayDetail dateLabel={selectedDateLabel} row={dayMap[selectedDay]} onEditRecords={() => setRecordsDay(selectedDateStr)} />
               </>
