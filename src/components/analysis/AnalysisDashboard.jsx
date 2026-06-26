@@ -2,14 +2,17 @@ import React, { useMemo, useState } from "react";
 import {
   BarChart3,
   CalendarDays,
+  CalendarRange,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
   Filter,
   LineChart as LineChartIcon,
+  Plus,
   Scale,
   Share2,
+  Sigma,
   Sparkles,
   Target,
   Wallet,
@@ -41,19 +44,14 @@ import {
 import { CalendarTab } from "../Tabs";
 import AnalyzerView from "./AnalyzerView";
 
-// 上位タブは「カレンダー（=月別/年別/通算の親）」と「分析+」の2本立て。
-// カレンダー内の表示単位切替は CAL_SUB_TABS のサブタブで行う。
-const TOP_TABS = [
-  { id: "calendar", label: "カレンダー", Icon: CalendarDays },
-  { id: "analyzer", label: "分析+", Icon: BarChart3 },
+// 表示の切替（月別/年別/通算/分析+）は上部タブを廃し、右下の「表示」FABから
+// ボトムシートメニュー（VIEW_MENU）でまとめて選ぶ。
+const VIEW_MENU = [
+  { id: "month", label: "月別カレンダー", desc: "日別の収支ヒートマップ", Icon: CalendarDays },
+  { id: "year", label: "年別", desc: "月ごとのパフォーマンス", Icon: CalendarRange },
+  { id: "all", label: "通算", desc: "全期間の合計", Icon: Sigma },
+  { id: "analyzer", label: "分析+", desc: "機種・店舗・グラフ分析", Icon: BarChart3 },
 ];
-const CAL_SUB_TABS = [
-  { id: "month", label: "月別" },
-  { id: "year", label: "年別" },
-  { id: "all", label: "通算" },
-];
-// periodTab が月別/年別/通算のいずれかなら「カレンダー」グループ。
-const isCalendarTab = (tab) => tab === "month" || tab === "year" || tab === "all";
 
 // 記録ゼロ時に表示するデモ用の日別収支（モックアップ準拠の表示値）。
 // 本番では archives から実データを生成するため、ここは空状態のプレビュー専用。
@@ -687,62 +685,67 @@ function ShareCard({ year, month, actual, ev, winRate, days, dayMap, onClose }) 
   );
 }
 
-// 上位2タブ（カレンダー / 分析+）。カレンダー押下時は月別を既定表示にする
-// （既にカレンダー群にいる場合は現在のサブタブを維持）。
-function DashboardTop({ periodTab, setPeriodTab }) {
-  const calActive = isCalendarTab(periodTab);
-  const handleTop = (id) => {
-    if (id === "analyzer") setPeriodTab("analyzer");
-    else if (!calActive) setPeriodTab("month");
-  };
+// 右下のフローティング「表示」ボタン。押すと表示メニュー（ボトムシート）を開く。
+// 上部タブを廃した分の表示切替導線を、片手で届く右下に集約する。
+function ViewMenuFab({ onOpen }) {
   return (
-    <>
-      <header className="mb-3">
-        <h1 className="text-[22px] font-black tracking-[.02em]">収支分析</h1>
-      </header>
-      <nav className="mb-3 grid h-[52px] grid-cols-2 gap-1.5 rounded-[12px] border border-white/[0.08] bg-[#0b1528] p-1.5">
-        {TOP_TABS.map((tab) => {
-          const active = tab.id === "analyzer" ? periodTab === "analyzer" : calActive;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => handleTop(tab.id)}
-              className={`flex items-center justify-center gap-2 rounded-[9px] text-[14px] font-bold transition ${
-                active
-                  ? "border border-[#16C8FF] bg-[#0c2743] text-[#16C8FF] shadow-[inset_0_0_18px_rgba(22,200,255,.08),0_0_16px_rgba(22,200,255,.08)]"
-                  : "text-[#8491a7]"
-              }`}
-            >
-              <tab.Icon className="h-5 w-5 shrink-0" />
-              {tab.label}
-            </button>
-          );
-        })}
-      </nav>
-    </>
+    <button
+      type="button"
+      onClick={onOpen}
+      className="absolute bottom-4 right-4 z-30 flex flex-col items-center"
+      aria-label="表示メニューを開く"
+    >
+      <span className="flex h-14 w-14 items-center justify-center rounded-full border border-[#16C8FF]/60 bg-[#16C8FF] text-[#03101c] shadow-[0_10px_28px_rgba(22,200,255,.4)]">
+        <Plus className="h-7 w-7" strokeWidth={2.6} />
+      </span>
+      <span className="mt-1 text-[10px] font-bold text-[#aab6ca]">表示</span>
+    </button>
   );
 }
 
-// カレンダー内の表示単位サブタブ（月別 / 年別 / 通算）。
-function PeriodSubTabs({ periodTab, setPeriodTab }) {
+// 表示メニュー（ボトムシート）。月別/年別/通算/分析+ をまとめて切り替える。
+function ViewMenuSheet({ current, onSelect, onClose }) {
   return (
-    <nav className="mb-3 grid h-[48px] grid-cols-3 gap-1 rounded-[11px] border border-white/[0.08] bg-[#0b1528] p-1">
-      {CAL_SUB_TABS.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          onClick={() => setPeriodTab(tab.id)}
-          className={`rounded-[8px] text-[13px] font-bold transition ${
-            periodTab === tab.id
-              ? "border border-[#16C8FF] bg-[#0c2743] text-[#16C8FF] shadow-[inset_0_0_18px_rgba(22,200,255,.08),0_0_16px_rgba(22,200,255,.08)]"
-              : "text-[#8491a7]"
-          }`}
-        >
-          {tab.label}
-        </button>
-      ))}
-    </nav>
+    <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/65 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="w-full max-w-[430px] rounded-t-[24px] border-t border-white/10 bg-[#0b1424] px-4 pb-9 pt-3"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/15" />
+        <div className="mb-4 text-center">
+          <div className="text-[15px] font-black text-[#16C8FF]">表示メニュー</div>
+          <p className="mt-0.5 text-[11px] text-[#8090aa]">期間・分析の切り替え</p>
+        </div>
+        <div className="space-y-2.5">
+          {VIEW_MENU.map((item) => {
+            const active = current === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onSelect(item.id)}
+                className={`flex w-full items-center gap-3 rounded-2xl border px-3.5 py-3.5 text-left transition ${
+                  active
+                    ? "border-[#16C8FF]/60 bg-[#16C8FF]/10"
+                    : "border-white/[0.08] bg-[#0f1a2e]"
+                }`}
+              >
+                <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${active ? "border-[#16C8FF]/50 bg-[#16C8FF]/15 text-[#16C8FF]" : "border-white/10 bg-[#13233e] text-[#5e9df7]"}`}>
+                  <item.Icon className="h-5 w-5" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[14px] font-black text-white">{item.label}</span>
+                  <span className="block text-[11px] text-[#8090aa]">{item.desc}</span>
+                </span>
+                {active
+                  ? <span className="shrink-0 rounded-full bg-[#16C8FF]/15 px-2 py-0.5 text-[10px] font-bold text-[#16C8FF]">表示中</span>
+                  : <ChevronRight className="h-4 w-4 shrink-0 text-[#5b6b86]" />}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -769,8 +772,16 @@ export default function AnalysisDashboard({
   const [sortMode, setSortMode] = useState("ev");
   const [shareOpen, setShareOpen] = useState(false);
   const [monthOffset, setMonthOffset] = useState(0);
+  // 表示メニュー（ボトムシート）の開閉。月別/年別/通算/分析+ の切替導線。
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
   // 記録エディタ（CalendarTab）を該当日で開くためのサブ画面状態（null=非表示 / "YYYY-MM-DD"）。
   const [recordsDay, setRecordsDay] = useState(null);
+
+  // 表示メニューから期間/分析を選択（選択後はメニューを閉じる）。
+  const handleSelectView = (id) => {
+    setPeriodTab(id);
+    setViewMenuOpen(false);
+  };
 
   const baseDate = isDemo ? new Date(2026, 5, 1) : new Date();
   const shownDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + monthOffset, 1);
@@ -841,40 +852,41 @@ export default function AnalysisDashboard({
   if (periodTab === "analyzer") {
     return (
       <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[#050B18] text-white">
-        <div className="mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-5 pt-4">
-          <DashboardTop periodTab={periodTab} setPeriodTab={setPeriodTab} />
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pb-12">
+        <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-5 pt-4">
+          <div className="mb-3 flex shrink-0 items-center gap-2">
+            <BarChart3 className="h-5 w-5 text-[#16C8FF]" />
+            <h1 className="text-[18px] font-black tracking-[.02em]">分析+</h1>
+          </div>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pb-24">
             {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
             <AnalyzerView archives={archives} extraFilters={filters} />
             <MachinePanel rows={machines} sortMode={sortMode} setSortMode={setSortMode} />
             <StorePanel rows={stores} />
           </div>
+          <ViewMenuFab onOpen={() => setViewMenuOpen(true)} />
         </div>
+        {viewMenuOpen && <ViewMenuSheet current={periodTab} onSelect={handleSelectView} onClose={() => setViewMenuOpen(false)} />}
       </div>
     );
   }
 
   return (
     <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[#050B18] text-white">
-      <div className="mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-5 pt-4">
-        <DashboardTop periodTab={periodTab} setPeriodTab={setPeriodTab} />
-
-        {/* カレンダー内：日付セレクタ → サブタブ（月別/年別/通算）の順で「見ている期間単位」を切替。 */}
+      <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-5 pt-4">
+        {/* 期間の切替（月別/年別/通算）は右下の「表示」FAB→メニューに集約。ここでは月/年送りのみ。 */}
         <div className="mb-3 flex shrink-0 items-center justify-between">
           <button type="button" disabled={periodTab === "all"} onClick={() => setMonthOffset((value) => value - shiftAmount)} className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-[#0b1528] text-[#aab6ca] disabled:opacity-20"><ChevronLeft className="h-5 w-5" /></button>
-          <button type="button" className="flex items-center gap-1.5 text-[18px] font-black">
+          <button type="button" onClick={() => setViewMenuOpen(true)} className="flex items-center gap-1.5 text-[18px] font-black">
             {periodTab === "month" ? `${year}年${month}月` : periodTab === "year" ? `${year}年` : "通算"}
             <ChevronDown className="h-4 w-4 text-[#7d93b7]" />
           </button>
           <button type="button" disabled={periodTab === "all"} onClick={() => setMonthOffset((value) => value + shiftAmount)} className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-[#0b1528] text-[#aab6ca] disabled:opacity-20"><ChevronRight className="h-5 w-5" /></button>
         </div>
 
-        <PeriodSubTabs periodTab={periodTab} setPeriodTab={setPeriodTab} />
-
         {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
 
         {/* ヒーロー以下を画面内スクロール領域に閉じ込める（下部ナビ非重なり・はみ出し防止） */}
-        <main className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pb-12">
+        <main className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pb-24">
           {periodTab === "month" ? (
             <>
               {/* モックアップ準拠：大型ヒーローを廃止し、6KPIカードで月間サマリーを表示。 */}
@@ -892,8 +904,10 @@ export default function AnalysisDashboard({
             </>
           )}
         </main>
+        <ViewMenuFab onOpen={() => setViewMenuOpen(true)} />
       </div>
       {shareOpen && <ShareCard year={year} month={month} actual={actual} ev={ev} winRate={winRate} days={days} dayMap={dayMap} onClose={() => setShareOpen(false)} />}
+      {viewMenuOpen && <ViewMenuSheet current={periodTab} onSelect={handleSelectView} onClose={() => setViewMenuOpen(false)} />}
     </div>
   );
 }
