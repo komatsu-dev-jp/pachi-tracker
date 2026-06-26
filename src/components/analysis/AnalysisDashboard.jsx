@@ -415,10 +415,10 @@ function DayDetail({ dateLabel, row, onEditRecords }) {
 
 function CalendarLegend() {
   return (
-    <div className="flex shrink-0 items-center gap-2 text-[10px] text-[#9aa6bb]">
-      <span className="flex items-center gap-1"><i className="inline-block h-2 w-2 rounded-[2px] bg-[#1f7a52]" />プラス</span>
-      <span className="flex items-center gap-1"><i className="inline-block h-2 w-2 rounded-[2px] bg-[#2a3550]" />±0</span>
-      <span className="flex items-center gap-1"><i className="inline-block h-2 w-2 rounded-[2px] bg-[#8a2438]" />マイナス</span>
+    <div className="ml-auto flex shrink-0 items-center gap-1.5 text-[9px] text-[#9aa6bb]">
+      <span className="flex items-center gap-0.5"><i className="inline-block h-1.5 w-1.5 rounded-[2px] bg-[#1f7a52]" />プラス</span>
+      <span className="flex items-center gap-0.5"><i className="inline-block h-1.5 w-1.5 rounded-[2px] bg-[#2a3550]" />±0</span>
+      <span className="flex items-center gap-0.5"><i className="inline-block h-1.5 w-1.5 rounded-[2px] bg-[#8a2438]" />マイナス</span>
     </div>
   );
 }
@@ -430,10 +430,11 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay, year, month }) {
   const cells = [...Array(blanks).fill(null), ...Array.from({ length: count }, (_, i) => i + 1)];
   return (
     <section className={`${card} overflow-hidden p-3.5`}>
-      <div className="mb-2.5 flex items-center justify-between gap-2">
+      {/* 見出し＋凡例。狭い端末では凡例が次行へ折り返し（flex-wrap）、枠外にはみ出さない。 */}
+      <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1">
         <div className="flex shrink-0 items-center gap-2">
           <CalendarDays className="h-5 w-5 shrink-0 text-[#16C8FF]" />
-          <h2 className="text-[15px] font-black tracking-[.02em] text-white">日別ヒートマップ</h2>
+          <h2 className="text-[14px] font-black tracking-[.02em] text-white">日別ヒートマップ</h2>
         </div>
         <CalendarLegend />
       </div>
