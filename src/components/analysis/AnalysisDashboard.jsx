@@ -4,6 +4,7 @@ import {
   CalendarDays,
   CalendarRange,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
@@ -20,7 +21,10 @@ import {
   X,
 } from "lucide-react";
 import {
+  Bar,
   CartesianGrid,
+  Cell,
+  ComposedChart,
   Legend,
   Line,
   LineChart,
@@ -763,10 +767,67 @@ function ShareCard({ year, month, actual, ev, winRate, days, dayMap, onClose }) 
   );
 }
 
+// 月間サマリー詳細の統計1項目（ラベル＋値のピル）。値が無い項目は「—」。
+function SummaryStat({ label, value, cls = "text-white" }) {
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-lg bg-white/[0.04] px-3 py-2.5">
+      <span className="shrink-0 text-[11px] text-[#8090aa]">{label}</span>
+      <span className={`min-w-0 truncate text-right font-mono text-[14px] font-black tabular-nums ${cls}`}>{value}</span>
+    </div>
+  );
+}
+
+// 月間サマリー詳細シート（ヘッダーの期間ラベルをタップで開く）。
+// 収支グラフ（日別バー＋累計ライン）＋成績＋統計をまとめて表示する全画面オーバーレイ。
+function MonthSummarySheet({ title, chartData, score, stats, onClose }) {
+  return (
+    <div className="analytics-terminal fixed inset-0 z-[250] flex flex-col bg-[#050B18] text-white">
+      <div className="mx-auto flex w-full max-w-[430px] shrink-0 items-center justify-between px-5 pt-4">
+        <h1 className="text-[20px] font-black tracking-[.01em]">{title}</h1>
+        <button type="button" onClick={onClose} aria-label="閉じる" className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/12 bg-[#0b1528] text-[#aab6ca]">
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+      <div className="mx-auto min-h-0 w-full max-w-[430px] flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 py-4 pb-10">
+        {/* 今月の収支グラフ：日別収支バー＋累計収支ライン＋累計期待値ライン。 */}
+        <section className={`${card} overflow-hidden p-3`}>
+          <SectionTitle>今月の収支グラフ</SectionTitle>
+          <div className="h-[210px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={chartData} margin={{ top: 6, right: 4, bottom: 0, left: -18 }}>
+                <CartesianGrid stroke="rgba(255,255,255,.07)" vertical={false} />
+                <XAxis dataKey="day" tick={{ fill: "#8794a9", fontSize: 8 }} tickLine={false} axisLine={false} interval={6} />
+                <YAxis tick={{ fill: "#8794a9", fontSize: 8 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+                <ReferenceLine y={0} stroke="rgba(255,255,255,.2)" />
+                <Tooltip contentStyle={{ background: "#071326", border: "1px solid rgba(255,255,255,.12)", borderRadius: 8, fontSize: 10 }} formatter={(value) => `${signed(value)}円`} />
+                <Legend iconSize={8} wrapperStyle={{ fontSize: 9 }} />
+                <Bar dataKey="daily" name="日別収支" radius={[2, 2, 0, 0]} maxBarSize={12}>
+                  {chartData.map((d, i) => <Cell key={i} fill={d.daily >= 0 ? "#16C8FF" : "#ff637a"} />)}
+                </Bar>
+                <Line type="monotone" dataKey="cum" name="累計収支" stroke="#16C8FF" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="cumEv" name="累計期待値" stroke="#FF9F45" strokeWidth={1.6} strokeDasharray="4 3" dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+        {/* 今月の成績（実質総収支）。 */}
+        <section className={`${card} flex items-center justify-between gap-3 p-4`}>
+          <div className="text-[15px] font-black text-white">今月の成績</div>
+          <div className={`whitespace-nowrap font-mono text-[30px] font-black leading-none tracking-[-.04em] tabular-nums ${moneyClass(score)}`}>{signed(score)}<span className="ml-1 text-[13px]">円</span></div>
+        </section>
+        {/* 統計グリッド（2列）。期待値系は未連携のため「—」表示。 */}
+        <div className="grid grid-cols-2 gap-2">
+          {stats.map((s) => <SummaryStat key={s.label} label={s.label} value={s.value} cls={s.cls} />)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // 画面ヘッダー。左にブランド、中央に期間ラベル＋前後送り（‹ ›）、右端にハンバーガー。
 // ハンバーガーを押すとプルダウン（HeaderMenu）で月別/年別/通算/分析+ を切り替える。
 // onPrev/onNext を渡したときのみ ‹ › を表示（分析+では非表示）。
-function HeaderBar({ title, onPrev, onNext, navDisabled, menuOpen, onToggleMenu, current, onSelect }) {
+function HeaderBar({ title, onPrev, onNext, navDisabled, onTitleTap, menuOpen, onToggleMenu, current, onSelect }) {
   const hasNav = Boolean(onPrev && onNext);
   return (
     <div className="relative z-40 mb-3 flex h-12 shrink-0 items-center">
@@ -775,14 +836,17 @@ function HeaderBar({ title, onPrev, onNext, navDisabled, menuOpen, onToggleMenu,
         <span className="truncate font-serif text-[15px] font-bold italic tracking-tight text-[#c4ccda]">PachiTracker</span>
         <span className="truncate text-[9px] text-[#6e7e99]">分析 / 判断支援</span>
       </div>
-      {/* 中央：期間ラベル＋前後送り（絶対配置で中央寄せ） */}
-      <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-1.5">
+      {/* 中央：期間ラベル（タップで月間サマリー詳細）＋前後送り（絶対配置で中央寄せ） */}
+      <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-1">
         {hasNav && (
           <button type="button" onClick={onPrev} disabled={navDisabled} aria-label="前へ" className="flex h-7 w-7 items-center justify-center rounded-lg text-[#aab6ca] disabled:opacity-20">
             <ChevronLeft className="h-5 w-5" />
           </button>
         )}
-        <h1 className="whitespace-nowrap text-[21px] font-black tracking-[.01em] text-white">{title}</h1>
+        <button type="button" onClick={onTitleTap} className="flex items-center gap-1 rounded-lg px-1.5 py-0.5" aria-label={`${title} の詳細を見る`}>
+          <h1 className="whitespace-nowrap text-[21px] font-black tracking-[.01em] text-white">{title}</h1>
+          {onTitleTap && <ChevronDown className="h-3.5 w-3.5 text-[#7d93b7]" />}
+        </button>
         {hasNav && (
           <button type="button" onClick={onNext} disabled={navDisabled} aria-label="次へ" className="flex h-7 w-7 items-center justify-center rounded-lg text-[#aab6ca] disabled:opacity-20">
             <ChevronRight className="h-5 w-5" />
@@ -863,6 +927,8 @@ export default function AnalysisDashboard({
   const [monthOffset, setMonthOffset] = useState(0);
   // ヘッダー右端のハンバーガーから開くプルダウンの開閉。月別/年別/通算/分析+ の切替導線。
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  // ヘッダーの期間ラベルをタップで開く「月間サマリー詳細」シートの開閉。
+  const [summaryOpen, setSummaryOpen] = useState(false);
   // 月送り遷移の向き（next=左スワイプ/prev=右スワイプ/fade=メニュー切替）。CSSアニメーション用。
   const [slideDir, setSlideDir] = useState("fade");
   // 記録エディタ（CalendarTab）を該当日で開くためのサブ画面状態（null=非表示 / "YYYY-MM-DD"）。
@@ -962,6 +1028,66 @@ export default function AnalysisDashboard({
     ? "中盤のプラスを活かしきれず、後半に失速。序盤の立ち上がり改善が鍵です。"
     : "記録が増えると今月の傾向が表示されます。";
 
+  // 月間サマリー詳細（ヘッダーの月タップで開く）用の集計。
+  // 負数/引分/最高投資/最高回収は既存 selector に無いため filtered から読み取りで算出（logic非変更）。
+  const summaryExtra = useMemo(() => {
+    let losses = 0, draws = 0, maxInvest = 0, maxRecovery = 0;
+    for (const a of filtered) {
+      const pl = getActualPL(a);
+      if (pl != null) { if (pl < 0) losses += 1; else if (pl === 0) draws += 1; }
+      const inv = Number(a?.investYen) || 0;
+      const rec = Number(a?.recoveryYen) || 0;
+      if (inv > maxInvest) maxInvest = inv;
+      if (rec > maxRecovery) maxRecovery = rec;
+    }
+    return { losses, draws, maxInvest, maxRecovery };
+  }, [filtered]);
+  // 収支グラフ用：累計（trend）から日別収支デルタを復元し、日別バー＋累計ラインを描く。
+  const summaryChart = useMemo(() => {
+    const src = trend || [];
+    return src.map((t, i) => {
+      const cum = Number(t.actual) || 0;
+      const prevCum = i > 0 ? (Number(src[i - 1].actual) || 0) : 0;
+      return { day: t.day, daily: cum - prevCum, cum, cumEv: Number(t.ev) || 0 };
+    });
+  }, [trend]);
+  const summaryScore = isDemo ? -3080 : (summary.totalRealPL || 0);
+  const summaryStats = useMemo(() => {
+    const muted = "text-[#6e7e99]";
+    if (isDemo) {
+      return [
+        { label: "回数", value: "16" }, { label: "投資合計", value: "86,500" },
+        { label: "勝数", value: "9" }, { label: "回収合計", value: "10,000" },
+        { label: "負数", value: "7" }, { label: "平均額", value: "-4,781", cls: moneyClass(-4781) },
+        { label: "引分", value: "0" }, { label: "最高投資", value: "14,000" },
+        { label: "勝率", value: "56.2%" }, { label: "最高回収", value: "10,000" },
+        { label: "時間", value: "7.2h" }, { label: "時給", value: "-430/h", cls: moneyClass(-430) },
+        { label: "期待値勝数", value: "—", cls: muted }, { label: "期待値入力", value: "—", cls: muted },
+        { label: "期待値負数", value: "—", cls: muted }, { label: "期待値合計", value: "—", cls: muted },
+        { label: "期待値引分", value: "—", cls: muted }, { label: "期待値平均", value: "—", cls: muted },
+      ];
+    }
+    const real = summary.realSessions || 0;
+    const avg = real > 0 ? Math.round((summary.totalPL || 0) / real) : 0;
+    return [
+      { label: "回数", value: String(summary.sessions || 0) },
+      { label: "投資合計", value: fmt(summary.totalInvest || 0) },
+      { label: "勝数", value: String(summary.winCount || 0) },
+      { label: "回収合計", value: fmt(summary.totalRecovery || 0) },
+      { label: "負数", value: String(summaryExtra.losses) },
+      { label: "平均額", value: signed(avg), cls: moneyClass(avg) },
+      { label: "引分", value: String(summaryExtra.draws) },
+      { label: "最高投資", value: fmt(summaryExtra.maxInvest) },
+      { label: "勝率", value: summary.winRate != null ? `${summary.winRate.toFixed(1)}%` : "—" },
+      { label: "最高回収", value: fmt(summaryExtra.maxRecovery) },
+      { label: "時間", value: `${(summary.workHours || 0).toFixed(1)}h` },
+      { label: "時給", value: summary.wage != null ? `${signed(summary.wage)}/h` : "—", cls: summary.wage != null ? moneyClass(summary.wage) : muted },
+      { label: "期待値勝数", value: "—", cls: muted }, { label: "期待値入力", value: "—", cls: muted },
+      { label: "期待値負数", value: "—", cls: muted }, { label: "期待値合計", value: "—", cls: muted },
+      { label: "期待値引分", value: "—", cls: muted }, { label: "期待値平均", value: "—", cls: muted },
+    ];
+  }, [isDemo, summary, summaryExtra]);
+
   // 月別の「記録を編集」導線で開く記録エディタのサブ画面（該当日を初期選択）。
   if (recordsDay !== null) {
     return (
@@ -1000,8 +1126,8 @@ export default function AnalysisDashboard({
   return (
     <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[#050B18] text-white">
       <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-5 pt-4">
-        {/* 期間ラベル横の ‹ › で月（年別は年）送り。月送りはカレンダーの横スワイプでも可能。分析+の切替はハンバーガー。 */}
-        <HeaderBar title={headerTitle} onPrev={() => goPeriod(-1)} onNext={() => goPeriod(1)} navDisabled={periodTab === "all"} menuOpen={viewMenuOpen} onToggleMenu={() => setViewMenuOpen((value) => !value)} current={periodTab} onSelect={handleSelectView} />
+        {/* 期間ラベル横の ‹ › で月（年別は年）送り。ラベルのタップで月間サマリー詳細を開く。分析+の切替はハンバーガー。 */}
+        <HeaderBar title={headerTitle} onPrev={() => goPeriod(-1)} onNext={() => goPeriod(1)} navDisabled={periodTab === "all"} onTitleTap={periodTab === "month" ? () => setSummaryOpen(true) : undefined} menuOpen={viewMenuOpen} onToggleMenu={() => setViewMenuOpen((value) => !value)} current={periodTab} onSelect={handleSelectView} />
         {viewMenuOpen && <div className="fixed inset-0 z-30" onClick={() => setViewMenuOpen(false)} />}
 
         {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
@@ -1031,6 +1157,7 @@ export default function AnalysisDashboard({
         </main>
       </div>
       {shareOpen && <ShareCard year={year} month={month} actual={actual} ev={ev} winRate={winRate} days={days} dayMap={dayMap} onClose={() => setShareOpen(false)} />}
+      {summaryOpen && <MonthSummarySheet title={`${year}年${month}月`} chartData={summaryChart} score={summaryScore} stats={summaryStats} onClose={() => setSummaryOpen(false)} />}
     </div>
   );
 }
