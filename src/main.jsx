@@ -5,12 +5,30 @@ import './index.css'
 import { registerSW } from 'virtual:pwa-register'
 import { awaitReady, flushAll, clearAll } from './persistence'
 
-// autoUpdate: 新しい SW が見つかると自動で skipWaiting → ページをリロードして最新版を適用。
-// ユーザーがボタンを押す必要はない。リロード後に「更新しました」トーストを短時間表示する。
+// autoUpdate: 新しい SW が見つかると自動で skipWaiting → アクティブ化 → ページ自動リロードで最新版を適用。
+// ユーザーがボタンを押す必要はない。
+//
+// iOS スタンドアロン PWA でのキャッシュ固着対策として、更新検知を多重化している:
+//  1. 起動時・復帰時・フォーカス時・30分ごとに registration.update() で新SWを取りに行く
+//  2. waiting 状態の新SWを見つけたら即 skipWaiting を要求
+//  3. controllerchange（新SWが制御を奪った瞬間）で必ず一度だけ自動リロード
+//     → これで新しいアセット(HTML/JS/CSS)を確実に読み込み直す
+
+// 新SWがページ制御を取得したら一度だけリロード（多重リロード防止ガード付き）
+if ('serviceWorker' in navigator) {
+  let hasReloaded = false
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (hasReloaded) return
+    hasReloaded = true
+    sessionStorage.setItem('pwa-just-updated', '1')
+    window.location.reload()
+  })
+}
+
 const updateSW = registerSW({
   onNeedRefresh() {
-    // VitePWA autoUpdate が自動でリロードするため、ここではフラグを立てるだけ
-    sessionStorage.setItem('pwa-just-updated', '1')
+    // 新しいバージョンが待機状態。skipWaiting を要求 → controllerchange で自動リロードされる
+    updateSW(true)
   },
   onOfflineReady() {
     // オフラインキャッシュ準備完了（ログのみ）
@@ -21,7 +39,6 @@ const updateSW = registerSW({
     const check = () => {
       // waiting SW があれば即時適用（iOS で updatefound を取りこぼすケースの保険）
       if (registration.waiting) {
-        sessionStorage.setItem('pwa-just-updated', '1')
         updateSW(true)
         return
       }
@@ -48,7 +65,7 @@ if (sessionStorage.getItem('pwa-just-updated')) {
   t.textContent = '✓ アプリを最新版に更新しました'
   t.style.cssText = [
     'position:fixed',
-    'top:calc(env(safe-area-inset-top) + 14px)',
+    'top:calc(max(env(safe-area-inset-top), 56px) + 14px)',
     'left:50%',
     'transform:translateX(-50%)',
     'background:#1a6fda',
