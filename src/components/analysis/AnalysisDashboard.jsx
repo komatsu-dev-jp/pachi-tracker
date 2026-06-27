@@ -49,6 +49,22 @@ import {
 import { CalendarTab } from "../Tabs";
 import AnalyzerView from "./AnalyzerView";
 
+// ホーム画面に追加したスタンドアロンPWAかどうかを判定。
+// iOSスタンドアロンの WebKit は env(safe-area-inset-top) が 0 になり、さらに CSS の
+// max()/calc() でのセーフエリア底上げも効かないことがあるため、全画面シートの上部余白は
+// JS判定で固定ピクセルを当てる（ステータスバー/ノッチに被って閉じるボタンが押せない問題の対策）。
+const isStandalonePWA =
+  typeof window !== "undefined" &&
+  (window.matchMedia?.("(display-mode: standalone)")?.matches ||
+    window.navigator?.standalone === true);
+
+// 全画面シートのヘッダー上部パディング。
+// スタンドアロンPWA: Dynamic Island/ノッチを確実に避ける固定値（env/max非依存）。
+// Safariブラウザ: ブラウザUIの下に表示されるため env ベースで十分。
+const SHEET_HEADER_PADDING_TOP = isStandalonePWA
+  ? "64px"
+  : "calc(env(safe-area-inset-top) + 14px)";
+
 // 表示の切替（月別/年別/通算/分析+）は上部タブを廃し、右下の「表示」FABから
 // ボトムシートメニュー（VIEW_MENU）でまとめて選ぶ。
 const VIEW_MENU = [
@@ -782,10 +798,12 @@ function SummaryStat({ label, value, cls = "text-white" }) {
 function MonthSummarySheet({ title, chartData, score, stats, onClose }) {
   return (
     <div className="analytics-terminal fixed inset-0 z-[250] flex flex-col bg-[#050B18] text-white">
-      {/* 端末のステータスバー/ノッチに被らないよう上部セーフエリア分のパディングを確保（戻る/閉じるが押せるように）。
-          iOSスタンドアロンPWA(black-translucent)では env(safe-area-inset-top) が 0 を返すことがあるため、
-          max() で最低 56px を保証し、ステータスバーを必ず避ける。 */}
-      <div className="mx-auto flex w-full max-w-[430px] shrink-0 items-center justify-between px-5 pb-1 pt-[calc(max(env(safe-area-inset-top),56px)_+_14px)]">
+      {/* 端末のステータスバー/ノッチに被らないよう上部余白を確保（戻る/閉じるが押せるように）。
+          iOSスタンドアロンPWAでは env()/max() が効かないことがあるため JS判定の固定値を当てる。 */}
+      <div
+        className="mx-auto flex w-full max-w-[430px] shrink-0 items-center justify-between px-5 pb-1"
+        style={{ paddingTop: SHEET_HEADER_PADDING_TOP }}
+      >
         <h1 className="text-[20px] font-black tracking-[.01em]">{title}</h1>
         <button type="button" onClick={onClose} aria-label="閉じる" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/12 bg-[#0b1528] text-[#aab6ca]">
           <X className="h-5 w-5" />
