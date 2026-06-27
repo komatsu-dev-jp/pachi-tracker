@@ -782,8 +782,10 @@ function SummaryStat({ label, value, cls = "text-white" }) {
 function MonthSummarySheet({ title, chartData, score, stats, onClose }) {
   return (
     <div className="analytics-terminal fixed inset-0 z-[250] flex flex-col bg-[#050B18] text-white">
-      {/* 端末のステータスバー/ノッチに被らないよう上部セーフエリア分のパディングを確保（戻る/閉じるが押せるように）。 */}
-      <div className="mx-auto flex w-full max-w-[430px] shrink-0 items-center justify-between px-5 pb-1 pt-[calc(env(safe-area-inset-top)+14px)]">
+      {/* 端末のステータスバー/ノッチに被らないよう上部セーフエリア分のパディングを確保（戻る/閉じるが押せるように）。
+          iOSスタンドアロンPWA(black-translucent)では env(safe-area-inset-top) が 0 を返すことがあるため、
+          max() で最低 56px を保証し、ステータスバーを必ず避ける。 */}
+      <div className="mx-auto flex w-full max-w-[430px] shrink-0 items-center justify-between px-5 pb-1 pt-[calc(max(env(safe-area-inset-top),56px)_+_14px)]">
         <h1 className="text-[20px] font-black tracking-[.01em]">{title}</h1>
         <button type="button" onClick={onClose} aria-label="閉じる" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/12 bg-[#0b1528] text-[#aab6ca]">
           <X className="h-5 w-5" />
