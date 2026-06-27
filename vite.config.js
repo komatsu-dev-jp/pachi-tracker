@@ -9,7 +9,7 @@ export default defineConfig({
     tailwindcss(),
     react(),
     VitePWA({
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
       includeAssets: ['favicon-32.png', 'icon-192.png', 'icon-512.png'],
       manifest: {
         name: 'パチトラッカー',
