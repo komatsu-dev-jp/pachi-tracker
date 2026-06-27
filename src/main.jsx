@@ -5,30 +5,88 @@ import './index.css'
 import { registerSW } from 'virtual:pwa-register'
 import { awaitReady, flushAll, clearAll } from './persistence'
 
-// autoUpdate: 新しい SW が見つかると自動で skipWaiting → アクティブ化 → ページ自動リロードで最新版を適用。
-// ユーザーがボタンを押す必要はない。
-//
-// iOS スタンドアロン PWA でのキャッシュ固着対策として、更新検知を多重化している:
-//  1. 起動時・復帰時・フォーカス時・30分ごとに registration.update() で新SWを取りに行く
-//  2. waiting 状態の新SWを見つけたら即 skipWaiting を要求
-//  3. controllerchange（新SWが制御を奪った瞬間）で必ず一度だけ自動リロード
-//     → これで新しいアセット(HTML/JS/CSS)を確実に読み込み直す
+// Service Worker を登録し、新しいバージョンがあれば更新バナー（ボトムシート）を表示する。
+// ユーザーが「今すぐ更新」を押すと skipWaiting → リロードで最新版を適用。
+// 多重生成を防ぐためのガード。
+let updateBannerShown = false
 
-// 新SWがページ制御を取得したら一度だけリロード（多重リロード防止ガード付き）
-if ('serviceWorker' in navigator) {
-  let hasReloaded = false
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (hasReloaded) return
-    hasReloaded = true
-    sessionStorage.setItem('pwa-just-updated', '1')
-    window.location.reload()
-  })
+const showUpdateBanner = (onUpdate) => {
+  if (updateBannerShown) return
+  if (document.getElementById('pwa-update-banner')) return
+  updateBannerShown = true
+
+  // スライドアップ・フェードインアニメーションを head に1回注入
+  if (!document.getElementById('pwa-update-style')) {
+    const style = document.createElement('style')
+    style.id = 'pwa-update-style'
+    style.textContent = `
+      @keyframes pwa-slide-up {
+        from { transform: translateY(100%); opacity: 0; }
+        to   { transform: translateY(0);    opacity: 1; }
+      }
+      @keyframes pwa-fade-in { from { opacity: 0; } to { opacity: 1; } }
+    `
+    document.head.appendChild(style)
+  }
+
+  const dismiss = () => {
+    banner.remove()
+    updateBannerShown = false
+  }
+
+  // ダークテーマ固定の配色（アプリのトーンに合わせる）
+  const banner = document.createElement('div')
+  banner.id = 'pwa-update-banner'
+  banner.innerHTML = `
+    <div id="pwa-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9998;animation:pwa-fade-in 0.3s ease;"></div>
+    <div id="pwa-update-sheet" style="
+      position:fixed;bottom:0;left:0;right:0;
+      max-width:480px;margin:0 auto;
+      background:#0b1320;
+      border-top:1px solid rgba(255,255,255,0.10);
+      border-radius:18px 18px 0 0;
+      padding:10px 20px calc(24px + env(safe-area-inset-bottom));
+      z-index:9999;
+      animation:pwa-slide-up 0.35s cubic-bezier(0.32,0.72,0,1);
+      font-family:sans-serif;
+    ">
+      <div style="width:36px;height:4px;background:rgba(255,255,255,0.22);border-radius:2px;margin:0 auto 20px;"></div>
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="width:48px;height:48px;flex-shrink:0;border-radius:12px;background:linear-gradient(135deg,#16C8FF,#6b8bff);display:flex;align-items:center;justify-content:center;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#04101f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 19V5M5 12l7-7 7 7"/>
+          </svg>
+        </div>
+        <div>
+          <div style="font-size:16px;font-weight:800;color:#f1f5fb;">アップデートがあります</div>
+          <div style="font-size:12px;color:#9aa7bd;margin-top:2px;">新しいバージョンが見つかりました</div>
+        </div>
+      </div>
+      <button id="pwa-update-btn" style="
+        display:block;width:100%;height:52px;margin-top:20px;
+        background:#1a6fda;color:#fff;border:none;border-radius:14px;
+        font-size:16px;font-weight:800;font-family:sans-serif;cursor:pointer;
+      ">今すぐ更新</button>
+      <button id="pwa-dismiss-btn" style="
+        display:block;width:100%;height:44px;margin-top:8px;
+        background:transparent;color:#9aa7bd;border:none;border-radius:14px;
+        font-size:14px;font-weight:600;font-family:sans-serif;cursor:pointer;
+      ">後で</button>
+    </div>
+  `
+  document.body.appendChild(banner)
+
+  document.getElementById('pwa-update-btn').onclick = () => {
+    banner.remove()
+    onUpdate()
+  }
+  document.getElementById('pwa-dismiss-btn').onclick = dismiss
+  document.getElementById('pwa-overlay').onclick = dismiss
 }
 
 const updateSW = registerSW({
   onNeedRefresh() {
-    // 新しいバージョンが待機状態。skipWaiting を要求 → controllerchange で自動リロードされる
-    updateSW(true)
+    showUpdateBanner(() => updateSW(true))
   },
   onOfflineReady() {
     // オフラインキャッシュ準備完了（ログのみ）
@@ -37,9 +95,11 @@ const updateSW = registerSW({
     if (!registration) return
 
     const check = () => {
-      // waiting SW があれば即時適用（iOS で updatefound を取りこぼすケースの保険）
+      // waiting 状態の新SWがあればバナー表示（iOS で updatefound を取りこぼすケースの保険）。
+      // navigator.serviceWorker.controller は条件にしない（スタンドアロンPWAで null になり
+      // バナーが出ない不具合の原因だったため）。
       if (registration.waiting) {
-        updateSW(true)
+        showUpdateBanner(() => updateSW(true))
         return
       }
       registration.update().catch(() => {})
@@ -54,34 +114,6 @@ const updateSW = registerSW({
   },
   immediate: true,
 })
-
-// リロード後に「更新しました」トーストを一時表示
-if (sessionStorage.getItem('pwa-just-updated')) {
-  sessionStorage.removeItem('pwa-just-updated')
-  const s = document.createElement('style')
-  s.textContent = '@keyframes _pwa_in{from{opacity:0;transform:translateX(-50%) translateY(-6px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}'
-  document.head.appendChild(s)
-  const t = document.createElement('div')
-  t.textContent = '✓ アプリを最新版に更新しました'
-  t.style.cssText = [
-    'position:fixed',
-    'top:calc(max(env(safe-area-inset-top), 56px) + 14px)',
-    'left:50%',
-    'transform:translateX(-50%)',
-    'background:#1a6fda',
-    'color:#fff',
-    'font-size:13px',
-    'font-weight:700',
-    'padding:9px 18px',
-    'border-radius:100px',
-    'z-index:9999',
-    'white-space:nowrap',
-    'pointer-events:none',
-    'animation:_pwa_in .3s ease both',
-  ].join(';')
-  document.body.appendChild(t)
-  setTimeout(() => t.remove(), 3000)
-}
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
