@@ -11626,8 +11626,27 @@ export function SettingsTab({ s, onReset }) {
         : exRateKey ? `${exRateKey}円`
         : `${yenPerBall.toFixed(2)}円`;
     const borderShort = calcBorder > 0 ? `${f(calcBorder, 1)}/K` : "—";
-    // 環境プロファイル名（将来連携予定: ホール別プロファイルストアと接続）
-    const profileName = s.storeName || "未設定";
+    // 「現在の遊技環境」サマリーカード用の値
+    const storeCount = (s.stores || []).length;
+    // 貯玉残高の合計（店舗オブジェクトの chodama を集計）と「要確認」判定
+    const chodamaTotal = (s.stores || []).reduce(
+        (a, st) => a + (typeof st === "object" ? Number(st.chodama) || 0 : 0), 0
+    );
+    const chodamaUnset = chodamaTotal === 0 && (s.chodamaLog || []).length === 0;
+
+    // 情報アイコン（i）。既存に IconInfo が無いため svgProps を流用した極小コンポーネント
+    const IconInfo = () => (<svg {...svgProps}><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><circle cx="12" cy="8" r="0.6" fill="currentColor"/></svg>);
+
+    // 「要確認」ピル（オレンジ系・小バッジ）
+    const WarnPill = () => (
+        <span style={{
+            display: "inline-flex", alignItems: "center", gap: 4,
+            background: "color-mix(in srgb, var(--orange) 16%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--orange) 34%, transparent)",
+            borderRadius: 999, padding: "3px 9px", flexShrink: 0,
+            fontSize: 10.5, fontWeight: 700, color: "var(--orange)", whiteSpace: "nowrap",
+        }}>⚠ 要確認</span>
+    );
 
     // ネオン系アイコン枠（グラデーション + 内側グロー）
     const NeonIconBox = ({ color, IconComp, size = 44 }) => (
@@ -11700,17 +11719,17 @@ export function SettingsTab({ s, onReset }) {
     return (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--settings-bg)" }}>
 
-            {/* ── ヘッダー（タイトル＋環境プロファイルカード） ── */}
-            <div style={{
-                padding: "calc(env(safe-area-inset-top, 0px) + 14px) 14px 12px",
-                flexShrink: 0,
-                display: "flex", alignItems: "flex-start", gap: 12,
-            }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
+            {/* ── スクロールコンテンツ（ヘッダーも内側に置き、固定せずスクロール追従させる） ── */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "calc(env(safe-area-inset-top, 0px) + 14px) 14px calc(72px + env(safe-area-inset-bottom))" }}>
+
+                {/* ── タイトル ── */}
+                <div style={{ marginBottom: 14 }}>
                     <div style={{ fontSize: 30, fontWeight: 800, color: C.text, fontFamily: font, letterSpacing: -0.6, lineHeight: 1.05 }}>設定</div>
                     <div style={{ fontSize: 11.5, color: "var(--sub)", marginTop: 4, fontFamily: font }}>アプリの各種設定を管理します</div>
                 </div>
-                {/* 環境プロファイルカード（タップで環境プロファイル切替画面へ — 遷移先は将来実装予定。現状は遊技設定サブビューへ） */}
+
+                {/* ── 現在の遊技環境（サマリーカード） ── */}
+                {/* タップで環境プロファイル切替画面へ — 遷移先は将来実装予定。現状は遊技設定サブビューへ */}
                 <button
                     className="b"
                     onClick={() => {
@@ -11719,42 +11738,57 @@ export function SettingsTab({ s, onReset }) {
                     }}
                     style={{
                         ...glassCardStyle,
-                        border: "1px solid color-mix(in srgb, var(--glass-line) 22%, transparent)",
-                        padding: "10px 12px",
-                        display: "flex", alignItems: "center", gap: 10,
-                        cursor: "pointer", flexShrink: 0, minWidth: 178, maxWidth: 220,
-                        WebkitTapHighlightColor: "transparent",
+                        width: "100%", textAlign: "left",
+                        border: "1px solid color-mix(in srgb, var(--glass-line) 18%, transparent)",
+                        padding: "14px", marginBottom: 18,
+                        cursor: "pointer", WebkitTapHighlightColor: "transparent",
                     }}
                 >
-                    <NeonIconBox color="var(--blue)" IconComp={IconGear} size={38} />
-                    <div style={{ flex: 1, minWidth: 0, textAlign: "right" }}>
-                        <div style={{ fontSize: 9.5, color: "var(--sub)", marginBottom: 2, letterSpacing: 0.4 }}>環境プロファイル</div>
-                        <div style={{
-                            fontSize: 13.5, fontWeight: 800, color: C.text, lineHeight: 1.2,
-                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                        }}>{profileName}</div>
-                        <div style={{
-                            fontSize: 10.5, color: "var(--sub-hi)", marginTop: 2, fontFamily: mono,
-                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                        }}>{rateDisplay} / {exLabelShort}</div>
+                    {/* 上段：見出し + 情報アイコン + chevron */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <span style={{ fontSize: 16, fontWeight: 800, color: C.text, lineHeight: 1.2 }}>現在の遊技環境</span>
+                                <span style={{ color: "var(--blue)", display: "inline-flex" }}><IconInfo /></span>
+                            </div>
+                            <div style={{ fontSize: 11, color: "var(--sub)", marginTop: 3 }}>計算精度に関わる設定をまとめて確認</div>
+                        </div>
+                        <span style={{ fontSize: 16, color: "var(--sub)", flexShrink: 0, fontWeight: 400 }}>›</span>
                     </div>
-                    <span style={{ fontSize: 14, color: "var(--sub)", flexShrink: 0 }}>›</span>
+                    {/* 下段：3指標（横スクロール禁止＝flex 等幅） */}
+                    <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                        {[
+                            { label: "交換率", value: `${rateDisplay} / ${exLabelShort}`, warn: false },
+                            { label: "店舗", value: `${storeCount}件`, warn: false },
+                            { label: "貯玉", value: chodamaUnset ? "未設定" : `${f(chodamaTotal)}玉`, warn: chodamaUnset },
+                        ].map((m) => (
+                            <div key={m.label} style={{
+                                flex: 1, minWidth: 0,
+                                background: "color-mix(in srgb, var(--glass-inner) 60%, transparent)",
+                                border: "1px solid color-mix(in srgb, var(--glass-line) 12%, transparent)",
+                                borderRadius: 12, padding: "10px 8px", textAlign: "center",
+                            }}>
+                                <div style={{ fontSize: 10.5, color: "var(--sub)", marginBottom: 4 }}>{m.label}</div>
+                                <div style={{
+                                    fontSize: 14, fontWeight: 800, lineHeight: 1.2,
+                                    color: m.warn ? "var(--orange)" : C.text,
+                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                }}>{m.value}</div>
+                                {m.warn && <div style={{ marginTop: 6, display: "flex", justifyContent: "center" }}><WarnPill /></div>}
+                            </div>
+                        ))}
+                    </div>
                 </button>
-            </div>
 
-            {/* ── スクロールコンテンツ ── */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "6px 14px calc(72px + env(safe-area-inset-bottom))" }}>
-
-                {/* ── 1. 遊技設定（1カラム縦リスト） ── */}
-                <SectionLabelV2 label="遊技設定" />
+                {/* ── 1. 最初に設定する（1カラム縦リスト） ── */}
+                <SectionLabelV2 label="最初に設定する" />
                 <SectionCard>
                     {(() => {
                         const items = [
-                            { color: "var(--blue)", icon: IconExchange,   label: "レート・交換率",         sub: `${Math.round((s.exRate || 250) / 10)}玉 / ${exLabelShort}`,                 onPress: () => setShowGameSettingsView(true) },
-                            { color: "var(--red)", icon: IconTarget,     label: "機種スペック",           sub: `${s.synthDenom || 319.6} / ${borderShort}`,                                 onPress: () => setShowMachineSpecView(true) },
-                            { color: "var(--green)", icon: IconCoin,       label: "貯玉設定",               sub: s.includeChodamaInBalance ? "収支に含める / 再プレイ上限あり" : "収支に含めない", onPress: () => setShowChodamaView(true) },
-                            { color: "var(--teal)", icon: IconDiamond,     label: "貯玉データ",             sub: "店舗別残高 / 入出金履歴",                                                     onPress: () => setShowChodamaDataView(true) },
-                            { color: "var(--purple)", icon: IconCalculator, label: "詳細設定（上級者向け）", sub: "削り補正 / 持玉比率 など",                                                    onPress: () => setShowAdvancedView(true) },
+                            { color: "var(--blue)", icon: IconExchange,   label: "レート・交換率",   sub: `${Math.round((s.exRate || 250) / 10)}玉 / ${exLabelShort}・収支計算に使用`, onPress: () => setShowGameSettingsView(true) },
+                            { color: "var(--green)", icon: IconStore,      label: "店舗検索・登録",   sub: `登録店舗: ${storeCount}件`,                                                   onPress: () => setShowStoreSearch(true) },
+                            { color: "var(--teal)", icon: IconMagnifier,  label: "機種検索・登録",   sub: `カスタム機種: ${(s.customMachines || []).length}件`,                          onPress: () => setShowMachineSearch(true) },
+                            { color: "var(--orange)", icon: IconCoin,       label: "貯玉設定",         sub: s.includeChodamaInBalance ? "収支に含める / 再プレイ上限あり" : "収支に含めない", onPress: () => setShowChodamaView(true), warn: chodamaUnset },
                         ];
                         return items.map((it, i) => (
                             <ListRow
@@ -11765,19 +11799,27 @@ export function SettingsTab({ s, onReset }) {
                                 sub={it.sub}
                                 onPress={it.onPress}
                                 isLast={i === items.length - 1}
+                                right={it.warn ? (
+                                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                                        <WarnPill />
+                                        <span style={{ fontSize: 16, color: "var(--sub)", fontWeight: 400 }}>›</span>
+                                    </span>
+                                ) : undefined}
                             />
                         ));
                     })()}
                 </SectionCard>
 
-                {/* ── 2. 表示・カスタマイズ（1カラム縦リスト） ── */}
-                <SectionLabelV2 label="表示・カスタマイズ" />
+                {/* ── 2. 遊技データ（1カラム縦リスト） ── */}
+                <SectionLabelV2 label="遊技データ" />
                 <SectionCard>
                     {(() => {
+                        const hallMapIslandCount = Array.isArray(hallMapIslands) ? hallMapIslands.length : 0;
                         const items = [
-                            { color: "var(--purple)", icon: IconPaint,      label: "テーマ・カラー・アクセシビリティ", sub: "ダーク / 配色 / フォント", onPress: () => setShowAppearanceView(true) },
-                            { color: "var(--blue)", icon: IconChartBars,  label: "グラフ・表示設定",                 sub: "形式 / 表示項目 / 単位",   onPress: () => showToast("グラフ設定は準備中です", "warn") },
-                            { color: "var(--purple)", icon: IconBell,       label: "通知・サウンド・振動",             sub: "通知 / 効果音 / 振動",     onPress: () => showToast("通知設定は準備中です", "warn") },
+                            { color: "var(--teal)", icon: IconDiamond,     label: "貯玉データ",       sub: "店舗別残高 / 入出金履歴",                                                       onPress: () => setShowChodamaDataView(true) },
+                            { color: "var(--teal)", icon: IconGrid,       label: "店舗レイアウト",   sub: hallMapStore ? `${hallMapStore.name || "店舗"} ・ ${hallMapIslandCount}島` : "店舗を登録すると編集できます", onPress: () => setShowHallMapView(true) },
+                            { color: "var(--red)", icon: IconTarget,     label: "機種スペック設定", sub: `${s.synthDenom || 319.6} / ${borderShort}`,                                     onPress: () => setShowMachineSpecView(true) },
+                            { color: "var(--purple)", icon: IconCalculator, label: "上級設定",         sub: "削り補正 / 持玉比率 など",                                                       onPress: () => setShowAdvancedView(true) },
                         ];
                         return items.map((it, i) => (
                             <ListRow
@@ -11797,13 +11839,9 @@ export function SettingsTab({ s, onReset }) {
                 <SectionLabelV2 label="データ管理" />
                 <SectionCard>
                     {(() => {
-                        const hallMapIslandCount = Array.isArray(hallMapIslands) ? hallMapIslands.length : 0;
                         const items = [
-                            { color: "var(--green)", icon: IconStore,      label: "店舗検索・登録",   sub: `登録店舗: ${(s.stores || []).length}件`,               onPress: () => setShowStoreSearch(true) },
-                            { color: "var(--teal)", icon: IconGrid,       label: "島マップ管理",     sub: hallMapStore ? `${hallMapStore.name || "店舗"} ・ ${hallMapIslandCount}島` : "店舗を登録すると編集できます", onPress: () => setShowHallMapView(true) },
-                            { color: "var(--teal)", icon: IconMagnifier,  label: "機種検索・登録",   sub: `カスタム機種: ${(s.customMachines || []).length}件`,  onPress: () => setShowMachineSearch(true) },
-                            { color: "var(--blue)", icon: IconCloud,      label: "バックアップ・復元", sub: "JSON全体バックアップ",                                onPress: () => setShowBackupView(true) },
-                            { color: "var(--orange)", icon: IconCsv,        label: "収支CSV管理",       sub: "インポート / エクスポート",                            onPress: () => setShowBackupView(true) },
+                            { color: "var(--blue)", icon: IconCloud,      label: "データの保存・復元", sub: "JSON全体バックアップ",                  onPress: () => setShowBackupView(true) },
+                            { color: "var(--purple)", icon: IconCsv,        label: "CSV入出力",         sub: "収支データのインポート / エクスポート",  onPress: () => setShowBackupView(true) },
                         ];
                         return items.map((it, i) => (
                             <ListRow
@@ -11819,7 +11857,30 @@ export function SettingsTab({ s, onReset }) {
                     })()}
                 </SectionCard>
 
-                {/* ── 4. セキュリティ（1カラム縦リスト・4項目） ── */}
+                {/* ── 4. 表示・通知（1カラム縦リスト） ── */}
+                <SectionLabelV2 label="表示・通知" />
+                <SectionCard>
+                    {(() => {
+                        const items = [
+                            { color: "var(--purple)", icon: IconPaint,      label: "テーマ・カラー",     sub: "ダーク / 配色 / フォント", onPress: () => setShowAppearanceView(true) },
+                            { color: "var(--purple)", icon: IconBell,       label: "通知設定",           sub: "日次サマリー / 朝チェック", onPress: () => showToast("通知設定は準備中です", "warn") },
+                            { color: "var(--blue)", icon: IconChartBars,  label: "グラフ・表示設定",   sub: "形式 / 表示項目 / 単位",   onPress: () => showToast("グラフ設定は準備中です", "warn") },
+                        ];
+                        return items.map((it, i) => (
+                            <ListRow
+                                key={it.label}
+                                color={it.color}
+                                IconComp={it.icon}
+                                label={it.label}
+                                sub={it.sub}
+                                onPress={it.onPress}
+                                isLast={i === items.length - 1}
+                            />
+                        ));
+                    })()}
+                </SectionCard>
+
+                {/* ── 5. セキュリティ（1カラム縦リスト・4項目） ── */}
                 <SectionLabelV2 label="セキュリティ" />
                 <SectionCard>
                     {/* アプリロック（Toggle） */}
@@ -11949,7 +12010,7 @@ export function SettingsTab({ s, onReset }) {
                     )}
                 </SectionCard>
 
-                {/* ── 5. サポート（1カラム縦リスト） ── */}
+                {/* ── 6. サポート（1カラム縦リスト） ── */}
                 <SectionLabelV2 label="サポート" />
                 <SectionCard>
                     <ListRow
@@ -11969,7 +12030,7 @@ export function SettingsTab({ s, onReset }) {
                     />
                 </SectionCard>
 
-                {/* ── 6. アプリ情報 ── */}
+                {/* ── 7. アプリ情報 ── */}
                 <SectionLabelV2 label="アプリ情報" />
                 <div style={{ ...glassCardStyle, padding: "14px", marginBottom: 18 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
