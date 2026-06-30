@@ -94,10 +94,14 @@ export function RecentEventList({ jpLog = [], sesLog = [], anchorId }) {
 
   const allEvents = useMemo(() => {
     const list = [];
+    // 登録（保存）順を保持する連番。time が同一分（HH:MM精度）で並んだ際の
+    // タイブレークに使い、新しい登録ほど上に来るようにする。
+    let seq = 0;
 
     (jpLog || []).forEach((chain) => {
       (chain.hits || []).forEach((hit) => {
         list.push({
+          seq: seq++,
           kind: "hit",
           time: hit.time || chain.time || "",
           style: EVENT_STYLES.hit,
@@ -140,6 +144,7 @@ export function RecentEventList({ jpLog = [], sesLog = [], anchorId }) {
         if (e.cash != null && e.cash > 0) chips.push({ label: "投資", val: `${e.cash.toLocaleString("ja-JP")}円` });
       }
       list.push({
+        seq: seq++,
         kind: "ses",
         time: e.time || "",
         style,
@@ -149,7 +154,11 @@ export function RecentEventList({ jpLog = [], sesLog = [], anchorId }) {
       });
     });
 
-    list.sort((a, b) => (a.time < b.time ? 1 : a.time > b.time ? -1 : 0));
+    // 時刻の新しい順。同一時刻（同一分）の場合は登録順の新しい方（seqが大きい方）を上に。
+    list.sort((a, b) => {
+      if (a.time !== b.time) return a.time < b.time ? 1 : -1;
+      return b.seq - a.seq;
+    });
     return list;
   }, [jpLog, sesLog]);
 
