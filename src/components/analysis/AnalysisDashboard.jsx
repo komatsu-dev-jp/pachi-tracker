@@ -328,10 +328,10 @@ function CalendarCell({ day, row, selected, weekday, onSelect }) {
         selected ? "rounded-[10px] bg-white/[0.10]" : ""
       }`}
     >
-      {/* 日付を大きく中央上に。金額は日付の下に控えめに配置（プラス＝緑 / マイナス＝赤）。 */}
+      {/* 日付を大きく中央上に。金額は日付の下に控えめに配置（プラス＝青 / マイナス＝赤）。 */}
       <span className={`text-[19px] font-semibold leading-none ${dayColor}`}>{day}</span>
       {hasAmount && (
-        <span className={`mt-1 w-full text-center font-mono text-[9.5px] font-black leading-none tracking-[-.04em] tabular-nums ${moneyClass(amount)}`}>{signed(amount)}</span>
+        <span className={`mt-1 w-full text-center font-mono text-[9.5px] font-black leading-none tracking-[-.04em] tabular-nums ${amount >= 0 ? "text-[#3a8dff]" : "text-[#FF5B6E]"}`}>{signed(amount)}</span>
       )}
     </button>
   );
