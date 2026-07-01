@@ -315,19 +315,18 @@ function Kpis({ summary, isDemo }) {
 }
 
 function CalendarCell({ day, row, selected, weekday, onSelect }) {
-  // 角丸の独立セル＋ヒートカラー（緑＝プラス / 赤＝マイナス）。境界線も色味を合わせる。
+  // 全セルを均一な細枠でそろえたグリッド。稼働日はごく淡いヒート塗りで損益を示す（うるさくしない）。
   const amount = Number(row?.actual);
   const hasAmount = row && amount !== 0;
-  let heat = "bg-[#0e1a2e] border-white/[0.05]";
-  if (amount >= 1000) heat = "bg-[#123a2b] border-[#1f7a52]/45";
-  else if (amount > 0) heat = "bg-[#0f2a22] border-[#1f7a52]/30";
-  else if (amount <= -1000) heat = "bg-[#3a1620] border-[#8a2438]/50";
-  else if (amount < 0) heat = "bg-[#281620] border-[#8a2438]/35";
-  // 日付色：稼働日は損益色、未稼働は曜日色（日＝赤 / 土＝青）。選択中は白で強調。
+  // ベースは全セル共通の淡い枠。稼働日だけ控えめなヒート塗り＋枠色を重ねる。
+  let heat = "bg-white/[0.015] border-white/[0.06]";
+  if (amount > 0) heat = "bg-[#123a2b]/40 border-[#1f7a52]/30";
+  else if (amount < 0) heat = "bg-[#3a1620]/35 border-[#8a2438]/30";
+  // 日付色：プラス＝緑で強調。マイナスは中立（赤は下段の金額が担う）。未稼働は曜日色（日＝赤 / 土＝青）。
   const dayColor = selected
     ? "text-white"
-    : hasAmount
-      ? (amount >= 0 ? "text-[#3fe0a0]" : "text-[#ff7a8a]")
+    : hasAmount && amount > 0
+      ? "text-[#3fe0a0]"
       : weekday === 0
         ? "text-[#ff7a8a]"
         : weekday === 6
@@ -337,14 +336,14 @@ function CalendarCell({ day, row, selected, weekday, onSelect }) {
     <button
       type="button"
       onClick={() => row && onSelect(day)}
-      className={`relative flex aspect-square min-w-0 flex-col items-start overflow-hidden rounded-[8px] border px-1.5 pb-1 pt-1 transition ${heat} ${
-        selected ? "z-10 border-[#16C8FF] shadow-[0_0_0_1.5px_#16C8FF,0_0_14px_rgba(22,200,255,.55)]" : ""
+      className={`relative flex aspect-square min-w-0 flex-col items-start overflow-hidden rounded-[8px] border px-1.5 pb-1 pt-1.5 transition ${heat} ${
+        selected ? "z-10 border-[#16C8FF] shadow-[0_0_0_1px_#16C8FF]" : ""
       }`}
     >
       {/* 日付は左上。金額は日付の下に配置（「k」を使わず実額・等幅・詰め字で枠内に収める）。 */}
-      <span className={`text-[11px] font-bold leading-none ${dayColor}`}>{day}</span>
+      <span className={`text-[13px] font-bold leading-none ${dayColor}`}>{day}</span>
       {hasAmount && (
-        <span className={`mt-auto w-full text-center font-mono text-[8.5px] font-black leading-none tracking-[-.05em] tabular-nums ${moneyClass(amount)}`}>{signed(amount)}</span>
+        <span className={`mt-auto w-full text-center font-mono text-[9.5px] font-black leading-none tracking-[-.04em] tabular-nums ${moneyClass(amount)}`}>{signed(amount)}</span>
       )}
     </button>
   );
@@ -387,16 +386,6 @@ function DayDetail({ dateLabel, row, onEditRecords }) {
   );
 }
 
-function CalendarLegend() {
-  return (
-    <div className="ml-auto flex shrink-0 items-center gap-1.5 text-[9px] text-[#9aa6bb]">
-      <span className="flex items-center gap-0.5"><i className="inline-block h-1.5 w-1.5 rounded-[2px] bg-[#1f7a52]" />プラス</span>
-      <span className="flex items-center gap-0.5"><i className="inline-block h-1.5 w-1.5 rounded-[2px] bg-[#2a3550]" />±0</span>
-      <span className="flex items-center gap-0.5"><i className="inline-block h-1.5 w-1.5 rounded-[2px] bg-[#8a2438]" />マイナス</span>
-    </div>
-  );
-}
-
 function CalendarPanel({ dayMap, selectedDay, setSelectedDay, year, month }) {
   // 月の初日曜日と日数から正しいグリッドを生成する（固定px・固定30日を避ける）。
   const blanks = new Date(year, month - 1, 1).getDay();
@@ -404,13 +393,10 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay, year, month }) {
   const cells = [...Array(blanks).fill(null), ...Array.from({ length: count }, (_, i) => i + 1)];
   return (
     <section className={`${card} p-3.5`}>
-      {/* 見出し＋凡例。狭い端末では凡例が次行へ折り返し（flex-wrap）、枠外にはみ出さない。 */}
-      <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1">
-        <div className="flex shrink-0 items-center gap-2">
-          <CalendarDays className="h-5 w-5 shrink-0 text-[#16C8FF]" />
-          <h2 className="text-[14px] font-black tracking-[.02em] text-white">日別ヒートマップ</h2>
-        </div>
-        <CalendarLegend />
+      {/* 見出し（凡例は廃止しシンプルに）。 */}
+      <div className="mb-3 flex items-center gap-2">
+        <CalendarDays className="h-5 w-5 shrink-0 text-[#16C8FF]" />
+        <h2 className="text-[14px] font-black tracking-[.02em] text-white">日別収支</h2>
       </div>
       {/* 曜日見出し。日曜は赤系・土曜は青系。セルと同じ7列・同じ余白で整列。 */}
       <div className="grid grid-cols-7 gap-1 px-0.5 text-center text-[11px] font-bold text-[#9aa6bb]">
@@ -431,7 +417,7 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay, year, month }) {
               onSelect={setSelectedDay}
             />
           )
-          : <div key={`blank-${index}`} className="aspect-square rounded-[8px] bg-white/[0.015]" />)}
+          : <div key={`blank-${index}`} className="aspect-square rounded-[8px] border border-white/[0.06] bg-white/[0.015]" />)}
       </div>
     </section>
   );
@@ -1041,7 +1027,7 @@ export default function AnalysisDashboard({
                 <MonthDetailContent chartData={summaryChart} score={summaryScore} stats={summaryStats} />
               ) : (
                 <>
-                  {/* 4指標ストリップ＋日別ヒートマップ＋選択日詳細（モック1）。 */}
+                  {/* 4指標ストリップ＋日別収支カレンダー＋選択日詳細（モック1）。 */}
                   <MonthStatStrip actual={actual} ev={ev} diff={monthDiff} winRate={winRate} />
                   <CalendarPanel dayMap={dayMap} selectedDay={selectedDay} setSelectedDay={setSelectedDay} year={year} month={month} />
                   <DayDetail dateLabel={selectedDateLabel} row={dayMap[selectedDay]} onEditRecords={() => setRecordsDay(selectedDateStr)} />
