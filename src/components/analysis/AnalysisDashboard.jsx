@@ -106,9 +106,9 @@ const DEMO_TREND = (() => {
 const fmt = (value) => Math.round(Number(value) || 0).toLocaleString("ja-JP");
 const signed = (value) => `${Number(value) > 0 ? "+" : ""}${fmt(value)}`;
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
-const moneyClass = (value) => Number(value) >= 0 ? "text-[#25D366]" : "text-[#FF5B6E]";
-const card = "rounded-[14px] border border-white/[0.09] bg-[linear-gradient(145deg,rgba(12,25,47,.98),rgba(5,13,27,.98))] shadow-[0_16px_45px_rgba(0,0,0,.34)]";
-const label = "text-[11px] font-semibold tracking-[.04em] text-[#8090aa]";
+const moneyClass = (value) => Number(value) >= 0 ? "text-[var(--at-pos)]" : "text-[var(--at-neg)]";
+const card = "rounded-[14px] border border-[var(--at-ln-md)] bg-[image:var(--at-card-grad)] shadow-[var(--at-card-shadow2)]";
+const label = "text-[11px] font-semibold tracking-[.04em] text-[var(--at-mut)]";
 
 function buildRealDays(archives, month) {
   return Object.fromEntries(
@@ -205,8 +205,8 @@ function SectionTitle({ children, note, action }) {
   return (
     <div className="mb-2.5 flex items-center justify-between gap-2">
       <div className="min-w-0">
-        <h2 className="text-[15px] font-black tracking-[.02em] text-white">{children}</h2>
-        {note && <p className="mt-0.5 text-[10px] text-[#8090aa]">{note}</p>}
+        <h2 className="text-[15px] font-black tracking-[.02em] text-[var(--at-strong)]">{children}</h2>
+        {note && <p className="mt-0.5 text-[10px] text-[var(--at-mut)]">{note}</p>}
       </div>
       {action}
     </div>
@@ -220,8 +220,8 @@ function ActionButton({ children, onClick, active = false }) {
       onClick={onClick}
       className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[10px] font-bold transition ${
         active
-          ? "border-[#16C8FF] bg-[#16C8FF]/10 text-[#16C8FF] shadow-[0_0_18px_rgba(22,200,255,.12)]"
-          : "border-white/10 bg-[#081224] text-[#c4ccda] hover:border-[#16C8FF]/50"
+          ? "border-[var(--at-cyan)] bg-[var(--at-cyan)]/10 text-[var(--at-cyan)] shadow-[0_0_18px_rgba(22,200,255,.12)]"
+          : "border-[var(--at-ln-md)] bg-[var(--at-chipbg)] text-[var(--at-subtle-hi)] hover:border-[var(--at-cyan)]/50"
       }`}
     >
       {children}
@@ -235,15 +235,15 @@ function ActionButton({ children, onClick, active = false }) {
 function MonthStatStrip({ actual, ev, diff, winRate }) {
   const items = [
     { label: "月収支", value: `${signed(actual)}円`, cls: moneyClass(actual) },
-    { label: "期待値", value: `${signed(ev)}円`, cls: ev >= 0 ? "text-[#16C8FF]" : "text-[#ff637a]" },
+    { label: "期待値", value: `${signed(ev)}円`, cls: ev >= 0 ? "text-[var(--at-cyan)]" : "text-[var(--at-neg)]" },
     { label: "差", value: `${signed(diff)}円`, cls: moneyClass(diff) },
-    { label: "勝率", value: `${winRate}%`, cls: "text-white" },
+    { label: "勝率", value: `${winRate}%`, cls: "text-[var(--at-strong)]" },
   ];
   return (
-    <section className="grid grid-cols-4 border-b border-white/[0.08] pb-4">
+    <section className="grid grid-cols-4 border-b border-[var(--at-ln)] pb-4">
       {items.map((item, index) => (
-        <div key={item.label} className={`min-w-0 px-1 text-center ${index > 0 ? "border-l border-white/[0.08]" : ""}`}>
-          <div className="truncate text-[11px] font-semibold text-[#8090aa]">{item.label}</div>
+        <div key={item.label} className={`min-w-0 px-1 text-center ${index > 0 ? "border-l border-[var(--at-ln)]" : ""}`}>
+          <div className="truncate text-[11px] font-semibold text-[var(--at-mut)]">{item.label}</div>
           {/* 中央寄せ＋nowrap は幅超過時に左端の符号から欠けるため、truncate で右側から省略する */}
           <div className={`mt-1.5 truncate whitespace-nowrap font-mono text-[clamp(11px,3.4vw,18px)] font-black tracking-[-.04em] tabular-nums ${item.cls}`}>{item.value}</div>
         </div>
@@ -264,18 +264,18 @@ function SummaryHero({ summary, isDemo, heroTitle = "月間収支" }) {
         <strong className="text-[42px] font-black leading-none tracking-[-.055em]">{signed(actual)}</strong>
         <span className="mb-1 ml-1.5 text-[15px] font-bold">円</span>
       </div>
-      <div className="mt-3 grid grid-cols-3 border-t border-white/[0.08] pt-2.5">
+      <div className="mt-3 grid grid-cols-3 border-t border-[var(--at-ln)] pt-2.5">
         <div className="min-w-0">
           <div className={label}>期待値</div>
-          <div className="mt-0.5 whitespace-nowrap font-mono text-[16px] font-black text-[#16C8FF]">{signed(ev)}<span className="text-[9px]">円</span></div>
+          <div className="mt-0.5 whitespace-nowrap font-mono text-[16px] font-black text-[var(--at-cyan)]">{signed(ev)}<span className="text-[9px]">円</span></div>
         </div>
-        <div className="min-w-0 border-l border-white/[0.08] pl-3">
+        <div className="min-w-0 border-l border-[var(--at-ln)] pl-3">
           <div className={label}>勝率</div>
-          <div className="mt-0.5 whitespace-nowrap font-mono text-[16px] font-black text-white">{winRate}<span className="text-[9px]">%</span></div>
+          <div className="mt-0.5 whitespace-nowrap font-mono text-[16px] font-black text-[var(--at-strong)]">{winRate}<span className="text-[9px]">%</span></div>
         </div>
-        <div className="min-w-0 border-l border-white/[0.08] pl-3">
+        <div className="min-w-0 border-l border-[var(--at-ln)] pl-3">
           <div className={label}>稼働日数</div>
-          <div className="mt-0.5 whitespace-nowrap font-mono text-[16px] font-black text-white">{days}<span className="text-[9px]">日</span></div>
+          <div className="mt-0.5 whitespace-nowrap font-mono text-[16px] font-black text-[var(--at-strong)]">{days}<span className="text-[9px]">日</span></div>
         </div>
       </div>
     </section>
@@ -299,16 +299,16 @@ function Kpis({ summary, isDemo }) {
           key={item.title}
           className={`flex min-h-[62px] min-w-0 flex-col items-center justify-center px-2 py-3 ${
             index === values.length - 1 ? "col-span-2" : ""
-          } ${index % 2 === 1 ? "border-l border-white/[0.08]" : ""} ${index >= 2 ? "border-t border-white/[0.08]" : ""}`}
+          } ${index % 2 === 1 ? "border-l border-[var(--at-ln)]" : ""} ${index >= 2 ? "border-t border-[var(--at-ln)]" : ""}`}
         >
           <div className="flex items-center gap-1">
-            <item.icon className="h-3.5 w-3.5 text-[#5e9df7]" />
-            <span className="truncate text-[9px] text-[#8390a7]">{item.title}</span>
+            <item.icon className="h-3.5 w-3.5 text-[var(--at-iconblue)]" />
+            <span className="truncate text-[9px] text-[var(--at-mut)]">{item.title}</span>
           </div>
-          <div className={`mt-1.5 max-w-full truncate whitespace-nowrap font-mono text-[18px] font-black ${item.positive ? "text-[#25D366]" : "text-white"}`}>
+          <div className={`mt-1.5 max-w-full truncate whitespace-nowrap font-mono text-[18px] font-black ${item.positive ? "text-[var(--at-pos)]" : "text-[var(--at-strong)]"}`}>
             {item.value}<span className="ml-0.5 text-[9px]">{item.unit}</span>
           </div>
-          {item.sub && <span className="mt-0.5 text-[8px] text-[#6880a4]">{item.sub}</span>}
+          {item.sub && <span className="mt-0.5 text-[8px] text-[var(--at-faint2)]">{item.sub}</span>}
         </div>
       ))}
     </section>
@@ -320,25 +320,25 @@ function CalendarCell({ day, row, selected, weekday, onSelect }) {
   const amount = Number(row?.actual);
   const hasAmount = row && amount !== 0;
   // ベースは全セル共通の淡い枠。稼働日だけ控えめなヒート塗り＋枠色を重ねる。
-  let heat = "bg-white/[0.015] border-white/[0.06]";
-  if (amount > 0) heat = "bg-[#123a2b]/40 border-[#1f7a52]/30";
-  else if (amount < 0) heat = "bg-[#3a1620]/35 border-[#8a2438]/30";
+  let heat = "bg-[var(--at-cellbg)] border-[var(--at-ln-soft)]";
+  if (amount > 0) heat = "bg-[var(--at-heat-p)] border-[var(--at-heat-p-bd)]";
+  else if (amount < 0) heat = "bg-[var(--at-heat-m)] border-[var(--at-heat-m-bd)]";
   // 日付色：プラス＝緑で強調。マイナスは中立（赤は下段の金額が担う）。未稼働は曜日色（日＝赤 / 土＝青）。
   const dayColor = selected
-    ? "text-white"
+    ? "text-[var(--at-strong)]"
     : hasAmount && amount > 0
-      ? "text-[#3fe0a0]"
+      ? "text-[var(--at-pos-hi)]"
       : weekday === 0
-        ? "text-[#ff7a8a]"
+        ? "text-[var(--at-sun)]"
         : weekday === 6
-          ? "text-[#6ea8ff]"
-          : "text-[#c4cdde]";
+          ? "text-[var(--at-sat)]"
+          : "text-[var(--at-subtle-hi)]";
   return (
     <button
       type="button"
       onClick={() => onSelect(day)}
       className={`relative flex aspect-square min-w-0 flex-col items-start overflow-hidden rounded-[8px] border px-1.5 pb-1 pt-1.5 transition ${heat} ${
-        selected ? "z-10 border-[#16C8FF] shadow-[0_0_0_1px_#16C8FF]" : ""
+        selected ? "z-10 border-[var(--at-cyan)] shadow-[0_0_0_1px_var(--at-cyan)]" : ""
       }`}
     >
       {/* 日付は左上。金額は日付の下に配置（「k」を使わず実額・等幅・詰め字で枠内に収める）。 */}
@@ -374,10 +374,10 @@ function DaySessionCard({ archive, onOpen }) {
   const ballVal = Number(archive.settings?.ballVal) || 0;
   const rateLabel = ballVal > 0 ? `${Number.isInteger(ballVal) ? ballVal : ballVal.toFixed(1)}パチ` : "";
   const subLabel = [archive.machineNum ? `${archive.machineNum}番台` : "", rateLabel].filter(Boolean).join(" / ");
-  const evCls = hasEv ? (ev >= 0 ? "text-[#16C8FF]" : "text-[#ff637a]") : "text-[#5c6b84]";
+  const evCls = hasEv ? (ev >= 0 ? "text-[var(--at-cyan)]" : "text-[var(--at-neg)]") : "text-[var(--at-faint)]";
   const middle = [
-    { label: "投資", value: `${fmt(invest)}円`, cls: "text-white" },
-    { label: "回収", value: `${fmt(recovery)}円`, cls: "text-white" },
+    { label: "投資", value: `${fmt(invest)}円`, cls: "text-[var(--at-strong)]" },
+    { label: "回収", value: `${fmt(recovery)}円`, cls: "text-[var(--at-strong)]" },
     { label: "収支", value: `${signed(actual)}円`, cls: moneyClass(actual) },
     { label: "期待値", value: hasEv ? `${signed(ev)}円` : "—", cls: evCls },
   ];
@@ -386,40 +386,40 @@ function DaySessionCard({ archive, onOpen }) {
       {/* 上段: 店舗名（小）/ 機種名（太字）/ 台番号・レート ＋ 右側に期待値・収支・chevron */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          {archive.storeName && <div className="truncate text-[10px] font-semibold text-[#8090aa]">{archive.storeName}</div>}
-          <div className="mt-0.5 text-[15px] font-black leading-snug text-white">{machineName}</div>
-          {subLabel && <div className="mt-1 text-[11px] font-semibold text-[#8090aa]">{subLabel}</div>}
+          {archive.storeName && <div className="truncate text-[10px] font-semibold text-[var(--at-mut)]">{archive.storeName}</div>}
+          <div className="mt-0.5 text-[15px] font-black leading-snug text-[var(--at-strong)]">{machineName}</div>
+          {subLabel && <div className="mt-1 text-[11px] font-semibold text-[var(--at-mut)]">{subLabel}</div>}
         </div>
         <div className="flex shrink-0 items-center gap-2.5">
           <div className="text-right">
-            <div className="text-[10px] font-semibold text-[#8090aa]">期待値</div>
+            <div className="text-[10px] font-semibold text-[var(--at-mut)]">期待値</div>
             <div className={`whitespace-nowrap font-mono text-[17px] font-black tabular-nums ${evCls}`}>
               {hasEv ? signed(ev) : "—"}{hasEv && <span className="text-[9px]">円</span>}
             </div>
           </div>
-          <div className="border-l border-white/[0.08] pl-2.5 text-right">
-            <div className="text-[10px] font-semibold text-[#8090aa]">収支</div>
+          <div className="border-l border-[var(--at-ln)] pl-2.5 text-right">
+            <div className="text-[10px] font-semibold text-[var(--at-mut)]">収支</div>
             <div className={`whitespace-nowrap font-mono text-[17px] font-black tabular-nums ${moneyClass(actual)}`}>
               {signed(actual)}<span className="text-[9px]">円</span>
             </div>
           </div>
-          <ChevronRight className="h-4 w-4 shrink-0 text-[#5c6b84]" />
+          <ChevronRight className="h-4 w-4 shrink-0 text-[var(--at-faint)]" />
         </div>
       </div>
       {/* 中段: 投資 / 回収 / 収支 / 期待値 の4列 */}
-      <div className="mt-3 grid grid-cols-4 gap-1 border-t border-white/[0.08] pt-2.5 text-center">
+      <div className="mt-3 grid grid-cols-4 gap-1 border-t border-[var(--at-ln)] pt-2.5 text-center">
         {middle.map((m) => (
           <div key={m.label} className="min-w-0">
-            <div className="truncate text-[10px] font-semibold text-[#8090aa]">{m.label}</div>
+            <div className="truncate text-[10px] font-semibold text-[var(--at-mut)]">{m.label}</div>
             <div className={`mt-1 truncate whitespace-nowrap font-mono text-[13px] font-black tabular-nums ${m.cls}`}>{m.value}</div>
           </div>
         ))}
       </div>
       {/* 下段: 時間 / 時給 */}
-      <div className="mt-2.5 flex items-center gap-4 border-t border-white/[0.08] pt-2 text-[11px] font-semibold text-[#8090aa]">
-        <span>時間 <span className="font-mono text-[13px] font-black tabular-nums text-white">{hours > 0 ? hours.toFixed(1) : "0.0"}</span>h</span>
-        <span className="border-l border-white/[0.08] pl-4">
-          時給 <span className={`font-mono text-[13px] font-black tabular-nums ${wage !== 0 ? moneyClass(wage) : "text-white"}`}>{wage !== 0 ? signed(wage) : "0"}</span>円/h
+      <div className="mt-2.5 flex items-center gap-4 border-t border-[var(--at-ln)] pt-2 text-[11px] font-semibold text-[var(--at-mut)]">
+        <span>時間 <span className="font-mono text-[13px] font-black tabular-nums text-[var(--at-strong)]">{hours > 0 ? hours.toFixed(1) : "0.0"}</span>h</span>
+        <span className="border-l border-[var(--at-ln)] pl-4">
+          時給 <span className={`font-mono text-[13px] font-black tabular-nums ${wage !== 0 ? moneyClass(wage) : "text-[var(--at-strong)]"}`}>{wage !== 0 ? signed(wage) : "0"}</span>円/h
         </span>
       </div>
     </button>
@@ -435,25 +435,25 @@ function DayDetail({ dateLabel, row, onEditRecords, archives = [] }) {
   const hours = Number(detail.hours) || 0;
   const stats = [
     { label: "実収支", value: `${signed(actual)}円`, cls: moneyClass(actual) },
-    { label: "期待値", value: `${signed(ev)}円`, cls: ev >= 0 ? "text-[#16C8FF]" : "text-[#ff637a]" },
+    { label: "期待値", value: `${signed(ev)}円`, cls: ev >= 0 ? "text-[var(--at-cyan)]" : "text-[var(--at-neg)]" },
     { label: "差", value: `${signed(diffVal)}円`, cls: moneyClass(diffVal) },
-    { label: "稼働時間", value: hours > 0 ? `${hours.toFixed(1)}時間` : "—", cls: "text-white" },
+    { label: "稼働時間", value: hours > 0 ? `${hours.toFixed(1)}時間` : "—", cls: "text-[var(--at-strong)]" },
   ];
   return (
     <section className={`${card} p-4`}>
-      <div className="text-[15px] font-black text-white">{dateLabel}</div>
+      <div className="text-[15px] font-black text-[var(--at-strong)]">{dateLabel}</div>
       {/* 実収支 / 期待値 / 差 / 稼働時間（4列・モック準拠）。 */}
-      <div className="mt-3 grid grid-cols-4 gap-1.5 border-t border-white/[0.08] pt-3">
+      <div className="mt-3 grid grid-cols-4 gap-1.5 border-t border-[var(--at-ln)] pt-3">
         {stats.map((s) => (
           <div key={s.label} className="min-w-0">
-            <div className="truncate text-[10px] text-[#8090aa]">{s.label}</div>
+            <div className="truncate text-[10px] text-[var(--at-mut)]">{s.label}</div>
             <div className={`mt-1.5 whitespace-nowrap font-mono text-[clamp(11px,3.2vw,13px)] font-black leading-none tracking-[-.04em] tabular-nums ${s.cls}`}>{s.value}</div>
           </div>
         ))}
       </div>
       {/* 記録の編集・削除は既存のカレンダー記録エディタ（CalendarTab）へ該当日で遷移する唯一の導線として残置。
           記録のない日は「記録を追加」表記で同じエディタへ遷移し、後から収支を入力できる。 */}
-      <button type="button" onClick={onEditRecords} className="mt-3 flex h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-white/[0.10] bg-[#0a1528] text-[11px] font-bold text-[#aab6ca]">
+      <button type="button" onClick={onEditRecords} className="mt-3 flex h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--at-ln-md)] bg-[var(--at-panel2)] text-[11px] font-bold text-[var(--at-subtle)]">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 20h9" />
           <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
@@ -477,13 +477,13 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay, year, month }) {
     <section className={`${card} p-3.5`}>
       {/* 見出し（凡例は廃止しシンプルに）。 */}
       <div className="mb-3 flex items-center gap-2">
-        <CalendarDays className="h-5 w-5 shrink-0 text-[#16C8FF]" />
-        <h2 className="text-[14px] font-black tracking-[.02em] text-white">日別収支</h2>
+        <CalendarDays className="h-5 w-5 shrink-0 text-[var(--at-cyan)]" />
+        <h2 className="text-[14px] font-black tracking-[.02em] text-[var(--at-strong)]">日別収支</h2>
       </div>
       {/* 曜日見出し。日曜は赤系・土曜は青系。セルと同じ7列・同じ余白で整列。 */}
-      <div className="grid grid-cols-7 gap-1 px-0.5 text-center text-[11px] font-bold text-[#9aa6bb]">
+      <div className="grid grid-cols-7 gap-1 px-0.5 text-center text-[11px] font-bold text-[var(--at-mut3)]">
         {WEEKDAYS.map((day, index) => (
-          <span key={day} className={index === 0 ? "text-[#ff7a8a]" : index === 6 ? "text-[#6ea8ff]" : ""}>{day}</span>
+          <span key={day} className={index === 0 ? "text-[var(--at-sun)]" : index === 6 ? "text-[var(--at-sat)]" : ""}>{day}</span>
         ))}
       </div>
       {/* 角丸の独立セルを gap で並べる（選択日はシアンのグロー枠）。 */}
@@ -499,7 +499,7 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay, year, month }) {
               onSelect={setSelectedDay}
             />
           )
-          : <div key={`blank-${index}`} className="aspect-square rounded-[8px] border border-white/[0.06] bg-white/[0.015]" />)}
+          : <div key={`blank-${index}`} className="aspect-square rounded-[8px] border border-[var(--at-ln-soft)] bg-[var(--at-cellbg)]" />)}
       </div>
     </section>
   );
@@ -517,15 +517,15 @@ function PeriodBreakdownPanel({ periodTab, rows, isDemo }) {
         {periodTab === "year" ? "月別パフォーマンス" : "年別パフォーマンス"}
       </SectionTitle>
       {displayRows.length === 0 ? (
-        <div className="py-10 text-center text-[10px] text-[#8090aa]">対象期間の記録がありません</div>
+        <div className="py-10 text-center text-[10px] text-[var(--at-mut)]">対象期間の記録がありません</div>
       ) : (
         <div className="grid grid-cols-3 gap-1.5">
           {displayRows.map((row) => (
-            <div key={row.key} className="rounded-lg border border-white/[0.08] bg-[#0a1528] p-2.5">
-              <div className="text-[10px] font-black text-white">{row.label}</div>
+            <div key={row.key} className="rounded-lg border border-[var(--at-ln)] bg-[var(--at-panel2)] p-2.5">
+              <div className="text-[10px] font-black text-[var(--at-strong)]">{row.label}</div>
               <div className={`mt-2 font-mono text-[13px] font-black ${moneyClass(row.actual)}`}>{signed(row.actual)}円</div>
-              <div className="mt-1 font-mono text-[9px] font-bold text-[#16C8FF]">期待値 {signed(row.ev)}円</div>
-              <div className="mt-2 text-[8px] text-[#8090aa]">稼働 {row.days || 0}日</div>
+              <div className="mt-1 font-mono text-[9px] font-bold text-[var(--at-cyan)]">期待値 {signed(row.ev)}円</div>
+              <div className="mt-2 text-[8px] text-[var(--at-mut)]">稼働 {row.days || 0}日</div>
             </div>
           ))}
         </div>
@@ -568,27 +568,27 @@ function MachinePanel({ rows, sortMode, setSortMode }) {
   return (
     <section className={`${card} p-2.5`}>
       <SectionTitle
-        action={<button className="text-[8px] font-bold text-[#16C8FF]">すべて見る</button>}
+        action={<button className="text-[8px] font-bold text-[var(--at-cyan)]">すべて見る</button>}
       >
-        機種ランキング <span className="text-[8px] font-normal text-[#a0aec0]">（{sortMode === "spin" ? "回転率順" : "期待値順"}）</span>
+        機種ランキング <span className="text-[8px] font-normal text-[var(--at-mut3)]">（{sortMode === "spin" ? "回転率順" : "期待値順"}）</span>
       </SectionTitle>
-      <div className="grid grid-cols-[22px_1fr_38px_38px_50px_50px_32px] gap-1 border-b border-white/[0.08] pb-1.5 text-right text-[8px] text-[#75839a]">
+      <div className="grid grid-cols-[22px_1fr_38px_38px_50px_50px_32px] gap-1 border-b border-[var(--at-ln)] pb-1.5 text-right text-[8px] text-[var(--at-faint2)]">
         <span className="text-left">順位</span><span className="text-left">機種名</span><span>時間</span><span>回転率</span><span>期待値</span><span>実収支</span><span>勝率</span>
       </div>
       {sorted.slice(0, 5).map((row, index) => (
-        <div key={row.machineName} className="grid grid-cols-[22px_1fr_38px_38px_50px_50px_32px] items-center gap-1 border-b border-white/[0.06] py-2.5 text-right font-mono text-[9px]">
-          <span className={`text-left font-black ${index === 0 ? "text-[#FFC83D]" : index === 1 ? "text-[#c5cedd]" : index === 2 ? "text-[#f08a45]" : "text-white"}`}>{index < 3 ? "♛" : index + 1}</span>
-          <span className="truncate text-left font-sans font-bold text-white">{row.machineName}</span>
-          <span className="text-[#c0cad9]">{row.hours || "—"}h</span>
-          <span className="text-[#c0cad9]">{row.spin || "—"}</span>
-          <span className="font-bold text-[#25D366]">{signed(row.evAmount)}</span>
+        <div key={row.machineName} className="grid grid-cols-[22px_1fr_38px_38px_50px_50px_32px] items-center gap-1 border-b border-[var(--at-ln-soft)] py-2.5 text-right font-mono text-[9px]">
+          <span className={`text-left font-black ${index === 0 ? "text-[var(--at-gold)]" : index === 1 ? "text-[var(--at-subtle-hi)]" : index === 2 ? "text-[var(--at-amber)]" : "text-[var(--at-strong)]"}`}>{index < 3 ? "♛" : index + 1}</span>
+          <span className="truncate text-left font-sans font-bold text-[var(--at-strong)]">{row.machineName}</span>
+          <span className="text-[var(--at-subtle-hi)]">{row.hours || "—"}h</span>
+          <span className="text-[var(--at-subtle-hi)]">{row.spin || "—"}</span>
+          <span className="font-bold text-[var(--at-pos)]">{signed(row.evAmount)}</span>
           <span className={`font-bold ${moneyClass(row.actualPL)}`}>{signed(row.actualPL)}</span>
-          <span className="text-[#c0cad9]">{row.winRate || 0}%</span>
+          <span className="text-[var(--at-subtle-hi)]">{row.winRate || 0}%</span>
         </div>
       ))}
       <div className="mt-2 flex gap-3 text-[7px]">
-        <button type="button" onClick={() => setSortMode("ev")} className={sortMode === "ev" ? "text-[#16C8FF]" : "text-[#8794a9]"}>▶ 期待値順</button>
-        <button type="button" onClick={() => setSortMode("spin")} className={sortMode === "spin" ? "text-[#16C8FF]" : "text-[#8794a9]"}>回転率順</button>
+        <button type="button" onClick={() => setSortMode("ev")} className={sortMode === "ev" ? "text-[var(--at-cyan)]" : "text-[var(--at-mut2)]"}>▶ 期待値順</button>
+        <button type="button" onClick={() => setSortMode("spin")} className={sortMode === "spin" ? "text-[var(--at-cyan)]" : "text-[var(--at-mut2)]"}>回転率順</button>
       </div>
     </section>
   );
@@ -597,21 +597,21 @@ function MachinePanel({ rows, sortMode, setSortMode }) {
 function StorePanel({ rows }) {
   return (
     <section className={`${card} p-2.5`}>
-      <SectionTitle action={<button className="text-[8px] font-bold text-[#16C8FF]">すべて見る</button>}>
-        店舗ランキング <span className="text-[8px] font-normal text-[#a0aec0]">（期待値順）</span>
+      <SectionTitle action={<button className="text-[8px] font-bold text-[var(--at-cyan)]">すべて見る</button>}>
+        店舗ランキング <span className="text-[8px] font-normal text-[var(--at-mut3)]">（期待値順）</span>
       </SectionTitle>
-      <div className="grid grid-cols-[22px_1fr_40px_38px_50px_50px_28px] gap-1 border-b border-white/[0.08] pb-1.5 text-right text-[8px] text-[#75839a]">
+      <div className="grid grid-cols-[22px_1fr_40px_38px_50px_50px_28px] gap-1 border-b border-[var(--at-ln)] pb-1.5 text-right text-[8px] text-[var(--at-faint2)]">
         <span className="text-left">順位</span><span className="text-left">店舗名</span><span>規模</span><span>回転率</span><span>期待値</span><span>実収支</span><span>日</span>
       </div>
       {rows.slice(0, 5).map((row, index) => (
-        <div key={row.storeName} className="grid grid-cols-[22px_1fr_40px_38px_50px_50px_28px] items-center gap-1 border-b border-white/[0.06] py-2.5 text-right font-mono text-[9px]">
-          <span className={`text-left font-black ${index === 0 ? "text-[#FFC83D]" : index === 1 ? "text-[#c5cedd]" : index === 2 ? "text-[#f08a45]" : "text-white"}`}>{index < 3 ? "♛" : index + 1}</span>
-          <span className="truncate text-left font-sans font-bold text-white">{row.storeName}</span>
-          <span className="font-sans text-[#c0cad9]">{row.size}</span>
-          <span className="text-[#c0cad9]">{row.spin?.toFixed?.(1) || row.spin}</span>
+        <div key={row.storeName} className="grid grid-cols-[22px_1fr_40px_38px_50px_50px_28px] items-center gap-1 border-b border-[var(--at-ln-soft)] py-2.5 text-right font-mono text-[9px]">
+          <span className={`text-left font-black ${index === 0 ? "text-[var(--at-gold)]" : index === 1 ? "text-[var(--at-subtle-hi)]" : index === 2 ? "text-[var(--at-amber)]" : "text-[var(--at-strong)]"}`}>{index < 3 ? "♛" : index + 1}</span>
+          <span className="truncate text-left font-sans font-bold text-[var(--at-strong)]">{row.storeName}</span>
+          <span className="font-sans text-[var(--at-subtle-hi)]">{row.size}</span>
+          <span className="text-[var(--at-subtle-hi)]">{row.spin?.toFixed?.(1) || row.spin}</span>
           <span className={`font-bold ${moneyClass(row.ev)}`}>{signed(row.ev)}</span>
           <span className={`font-bold ${moneyClass(row.actual)}`}>{signed(row.actual)}</span>
-          <span className="text-[#c0cad9]">{row.days}</span>
+          <span className="text-[var(--at-subtle-hi)]">{row.days}</span>
         </div>
       ))}
     </section>
@@ -621,14 +621,14 @@ function StorePanel({ rows }) {
 function ShareCTA({ onShare, title = "今月の結果を共有", subtitle = "月間収支カードをSNSに投稿できます" }) {
   return (
     <section className={`${card} flex items-center gap-3 p-4`}>
-      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#16C8FF]/40 bg-[#16C8FF]/10">
-        <Share2 className="h-6 w-6 text-[#16C8FF]" />
+      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[var(--at-cyan)]/40 bg-[var(--at-cyan)]/10">
+        <Share2 className="h-6 w-6 text-[var(--at-cyan)]" />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="text-[14px] font-black text-white">{title}</div>
-        <p className="mt-0.5 text-[11px] text-[#8090aa]">{subtitle}</p>
+        <div className="text-[14px] font-black text-[var(--at-strong)]">{title}</div>
+        <p className="mt-0.5 text-[11px] text-[var(--at-mut)]">{subtitle}</p>
       </div>
-      <button type="button" onClick={onShare} className="h-12 shrink-0 rounded-lg border border-[#16C8FF]/70 bg-[#16C8FF]/10 px-4 text-[13px] font-black text-[#16C8FF]">
+      <button type="button" onClick={onShare} className="h-12 shrink-0 rounded-lg border border-[var(--at-cyan)]/70 bg-[var(--at-cyan)]/10 px-4 text-[13px] font-black text-[var(--at-cyan)]">
         SNSカード作成
       </button>
     </section>
@@ -640,19 +640,19 @@ function FilterPanel({ stores, machines, filters, setFilters, onClose }) {
     <div className={`${card} mb-2 grid gap-2 p-3 sm:grid-cols-2`}>
       <div>
         <label className={label}>店舗</label>
-        <select value={filters.storeName || ""} onChange={(e) => setFilters({ ...filters, storeName: e.target.value })} className="mt-1 h-9 w-full rounded-md border border-white/10 bg-[#071326] px-2 text-[10px] text-white">
+        <select value={filters.storeName || ""} onChange={(e) => setFilters({ ...filters, storeName: e.target.value })} className="mt-1 h-9 w-full rounded-md border border-[var(--at-ln-md)] bg-[var(--at-panel)] px-2 text-[10px] text-[var(--at-strong)]">
           <option value="">すべての店舗</option>
           {stores.map((store) => <option key={store} value={store}>{store}</option>)}
         </select>
       </div>
       <div>
         <label className={label}>機種</label>
-        <select value={filters.machineName || ""} onChange={(e) => setFilters({ ...filters, machineName: e.target.value })} className="mt-1 h-9 w-full rounded-md border border-white/10 bg-[#071326] px-2 text-[10px] text-white">
+        <select value={filters.machineName || ""} onChange={(e) => setFilters({ ...filters, machineName: e.target.value })} className="mt-1 h-9 w-full rounded-md border border-[var(--at-ln-md)] bg-[var(--at-panel)] px-2 text-[10px] text-[var(--at-strong)]">
           <option value="">すべての機種</option>
           {machines.map((machine) => <option key={machine} value={machine}>{machine}</option>)}
         </select>
       </div>
-      <button type="button" onClick={onClose} className="text-left text-[9px] font-bold text-[#16C8FF]">絞り込みを閉じる</button>
+      <button type="button" onClick={onClose} className="text-left text-[9px] font-bold text-[var(--at-cyan)]">絞り込みを閉じる</button>
     </div>
   );
 }
@@ -729,10 +729,10 @@ function ShareCard({ year, month, actual, ev, winRate, days, dayMap, onClose }) 
 }
 
 // 月間サマリー詳細の統計1項目（ラベル＋値のピル）。値が無い項目は「—」。
-function SummaryStat({ label, value, cls = "text-white" }) {
+function SummaryStat({ label, value, cls = "text-[var(--at-strong)]" }) {
   return (
-    <div className="flex items-center justify-between gap-2 rounded-lg bg-white/[0.04] px-3 py-2.5">
-      <span className="shrink-0 text-[11px] text-[#8090aa]">{label}</span>
+    <div className="flex items-center justify-between gap-2 rounded-lg bg-[var(--at-rowbg)] px-3 py-2.5">
+      <span className="shrink-0 text-[11px] text-[var(--at-mut)]">{label}</span>
       <span className={`min-w-0 truncate text-right font-mono text-[14px] font-black tabular-nums ${cls}`}>{value}</span>
     </div>
   );
@@ -767,7 +767,7 @@ function MonthDetailContent({ chartData, score, stats }) {
       </section>
       {/* 今月の成績（実質総収支）。 */}
       <section className={`${card} flex items-center justify-between gap-3 p-4`}>
-        <div className="text-[15px] font-black text-white">今月の成績</div>
+        <div className="text-[15px] font-black text-[var(--at-strong)]">今月の成績</div>
         <div className={`whitespace-nowrap font-mono text-[clamp(20px,7.6vw,30px)] font-black leading-none tracking-[-.04em] tabular-nums ${moneyClass(score)}`}>{signed(score)}<span className="ml-1 text-[13px]">円</span></div>
       </section>
       {/* 統計グリッド（2列）。期待値系は未連携のため「—」表示。 */}
@@ -786,7 +786,7 @@ function HeaderBar({ title, onPrev, onNext, navDisabled, onTitleTap, menuOpen, c
     <div className="relative z-40 mb-3 flex h-12 shrink-0 items-center justify-between">
       {/* 左：前の月（カレンダーのフリックと併存）。 */}
       {hasNav ? (
-        <button type="button" onClick={onPrev} disabled={navDisabled} aria-label="前へ" className="flex h-10 w-10 items-center justify-center rounded-xl text-[#aab6ca] disabled:opacity-20">
+        <button type="button" onClick={onPrev} disabled={navDisabled} aria-label="前へ" className="flex h-10 w-10 items-center justify-center rounded-xl text-[var(--at-subtle)] disabled:opacity-20">
           <ChevronLeft className="h-6 w-6" />
         </button>
       ) : <span className="h-10 w-10 shrink-0" />}
@@ -794,11 +794,11 @@ function HeaderBar({ title, onPrev, onNext, navDisabled, onTitleTap, menuOpen, c
       {/* 中央：期間ラベル（タップで表示切替メニュー）＋次の月（絶対配置で中央寄せ）。 */}
       <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-1">
         <button type="button" onClick={onTitleTap} className="flex items-center gap-1 rounded-lg px-1.5 py-0.5" aria-label={`${title} 表示を切り替える`} aria-expanded={menuOpen}>
-          <h1 className="whitespace-nowrap text-[21px] font-black tracking-[.01em] text-white">{title}</h1>
-          {onTitleTap && <ChevronDown className={`h-3.5 w-3.5 text-[#7d93b7] transition ${menuOpen ? "rotate-180" : ""}`} />}
+          <h1 className="whitespace-nowrap text-[21px] font-black tracking-[.01em] text-[var(--at-strong)]">{title}</h1>
+          {onTitleTap && <ChevronDown className={`h-3.5 w-3.5 text-[var(--at-faint2)] transition ${menuOpen ? "rotate-180" : ""}`} />}
         </button>
         {hasNav && (
-          <button type="button" onClick={onNext} disabled={navDisabled} aria-label="次へ" className="flex h-7 w-7 items-center justify-center rounded-lg text-[#aab6ca] disabled:opacity-20">
+          <button type="button" onClick={onNext} disabled={navDisabled} aria-label="次へ" className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--at-subtle)] disabled:opacity-20">
             <ChevronRight className="h-5 w-5" />
           </button>
         )}
@@ -812,8 +812,8 @@ function HeaderBar({ title, onPrev, onNext, navDisabled, onTitleTap, menuOpen, c
           aria-pressed={detailActive}
           className={`flex h-10 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-[12px] font-bold transition ${
             detailActive
-              ? "border-[#16C8FF] bg-[#16C8FF]/12 text-[#16C8FF] shadow-[0_0_18px_rgba(22,200,255,.18)]"
-              : "border-white/12 bg-[#0b1528] text-[#c4ccda]"
+              ? "border-[var(--at-cyan)] bg-[var(--at-cyan)]/12 text-[var(--at-cyan)] shadow-[0_0_18px_rgba(22,200,255,.18)]"
+              : "border-[var(--at-ln-hi)] bg-[var(--at-panel2)] text-[var(--at-subtle-hi)]"
           }`}
         >
           <BarChart3 className="h-[18px] w-[18px]" />
@@ -829,7 +829,7 @@ function HeaderBar({ title, onPrev, onNext, navDisabled, onTitleTap, menuOpen, c
 // ハンバーガーから開くプルダウン。月別/年別/通算/分析+ を選んで切り替える。
 function HeaderMenu({ current, onSelect }) {
   return (
-    <div className="hdr-menu-pop absolute left-1/2 top-[calc(100%+8px)] z-50 w-60 -translate-x-1/2 overflow-hidden rounded-2xl border border-white/10 bg-[#0b1424] p-1.5 shadow-[0_18px_50px_rgba(0,0,0,.6)]">
+    <div className="hdr-menu-pop absolute left-1/2 top-[calc(100%+8px)] z-50 w-60 -translate-x-1/2 overflow-hidden rounded-2xl border border-[var(--at-ln-md)] bg-[var(--at-menu)] p-1.5 shadow-[var(--at-menu-shadow)]">
       {VIEW_MENU.map((item) => {
         const active = current === item.id;
         return (
@@ -838,17 +838,17 @@ function HeaderMenu({ current, onSelect }) {
             type="button"
             onClick={() => onSelect(item.id)}
             className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${
-              active ? "bg-[#16C8FF]/12" : "hover:bg-white/[0.05]"
+              active ? "bg-[var(--at-cyan)]/12" : "hover:bg-[var(--at-hoverbg)]"
             }`}
           >
-            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${active ? "border-[#16C8FF]/50 bg-[#16C8FF]/15 text-[#16C8FF]" : "border-white/10 bg-[#13233e] text-[#5e9df7]"}`}>
+            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${active ? "border-[var(--at-cyan)]/50 bg-[var(--at-cyan)]/15 text-[var(--at-cyan)]" : "border-[var(--at-ln-md)] bg-[var(--at-panel-hi)] text-[var(--at-iconblue)]"}`}>
               <item.Icon className="h-[18px] w-[18px]" />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-[14px] font-black text-white">{item.label}</span>
-              <span className="block truncate text-[10px] text-[#8090aa]">{item.desc}</span>
+              <span className="block text-[14px] font-black text-[var(--at-strong)]">{item.label}</span>
+              <span className="block truncate text-[10px] text-[var(--at-mut)]">{item.desc}</span>
             </span>
-            {active && <Check className="h-4 w-4 shrink-0 text-[#16C8FF]" />}
+            {active && <Check className="h-4 w-4 shrink-0 text-[var(--at-cyan)]" />}
           </button>
         );
       })}
@@ -1015,7 +1015,7 @@ export default function AnalysisDashboard({
   }, [trend]);
   const summaryScore = isDemo ? -3080 : (summary.totalRealPL || 0);
   const summaryStats = useMemo(() => {
-    const muted = "text-[#6e7e99]";
+    const muted = "text-[var(--at-faint2)]";
     if (isDemo) {
       return [
         { label: "回数", value: "16" }, { label: "投資合計", value: "86,500" },
@@ -1053,9 +1053,9 @@ export default function AnalysisDashboard({
   // 月別の「記録を編集」導線で開く記録エディタのサブ画面（該当日を初期選択）。
   if (recordsDay !== null) {
     return (
-      <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[#050B18] text-white">
+      <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--at-page)] text-[var(--at-strong)]">
         <div className="mx-auto flex w-full max-w-[430px] shrink-0 items-center gap-2 px-5 pt-4">
-          <button type="button" onClick={() => setRecordsDay(null)} className="flex h-9 items-center gap-1 rounded-lg border border-white/10 bg-[#0b1528] px-3 text-[12px] font-bold text-[#aab6ca]">
+          <button type="button" onClick={() => setRecordsDay(null)} className="flex h-9 items-center gap-1 rounded-lg border border-[var(--at-ln-md)] bg-[var(--at-panel2)] px-3 text-[12px] font-bold text-[var(--at-subtle)]">
             <ChevronLeft className="h-4 w-4" />戻る
           </button>
           <h1 className="text-[15px] font-black tracking-[.02em]">記録を編集</h1>
@@ -1071,7 +1071,7 @@ export default function AnalysisDashboard({
 
   if (periodTab === "analyzer") {
     return (
-      <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[#050B18] text-white">
+      <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--at-page)] text-[var(--at-strong)]">
         <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-5 pt-4">
           <HeaderBar title={headerTitle} onTitleTap={() => setViewMenuOpen((value) => !value)} menuOpen={viewMenuOpen} current={periodTab} onSelect={handleSelectView} />
           {viewMenuOpen && <div className="fixed inset-0 z-30" onClick={() => setViewMenuOpen(false)} />}
@@ -1087,7 +1087,7 @@ export default function AnalysisDashboard({
   }
 
   return (
-    <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[#050B18] text-white">
+    <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--at-page)] text-[var(--at-strong)]">
       <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-5 pt-4">
         {/* 左の ‹ ／ 右側の › と中央ラベル横の › で月（年別は年）送り。ラベルのタップで表示切替メニュー。
             右端の「月次詳細」ボタンでカレンダーと収支グラフ＋成績を同一画面で切り替える（月別のみ）。 */}

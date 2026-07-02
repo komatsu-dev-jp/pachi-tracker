@@ -7,21 +7,22 @@ import { buildStrategyMap } from "./strategyMapData";
 // 既存UIコンポーネント（Card / Atoms / Select系）は流用せず、本ファイル内で自己完結する。
 // 表示データは strategyMapData.js の仮データ（将来 P-EVIDENCE / 差玉解析 連携予定）。
 
-// ---- 配色（モック準拠の固定パレット）----
+// ---- 配色（index.css の .strategy-map トークン参照。ダーク値 = 従来のモック準拠固定値）----
+// テーマ（ライト/ダーク）は CSS 変数側で切り替わるため、この参照は不変。
 const P = {
-  bg: "#050A14",
-  card: "#0B1220",
-  cardHi: "#0E1626",
-  line: "rgba(255,255,255,0.08)",
-  lineHi: "rgba(255,255,255,0.14)",
-  text: "#E6EDF6",
-  sub: "#64748B",
-  subHi: "#94A3B8",
-  green: "#22C55E",
-  yellow: "#EAB308",
-  red: "#EF4444",
-  gray: "#64748B",
-  cyan: "#06B6D4",
+  bg: "var(--sm-bg)",
+  card: "var(--sm-card)",
+  cardHi: "var(--sm-card-hi)",
+  line: "var(--sm-line)",
+  lineHi: "var(--sm-line-hi)",
+  text: "var(--sm-text)",
+  sub: "var(--sm-sub)",
+  subHi: "var(--sm-sub-hi)",
+  green: "var(--sm-green)",
+  yellow: "var(--sm-yellow)",
+  red: "var(--sm-red)",
+  gray: "var(--sm-gray)",
+  cyan: "var(--sm-cyan)",
 };
 const RADIUS = 24;
 const FONT = "var(--font-main)";
@@ -55,8 +56,9 @@ function nowHM() {
 
 // ============================ ヘッダー ============================
 function BackIcon() {
+  // SVG 属性は var() を解決できないため、継承される CSS の stroke プロパティで指定する
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={P.text} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" style={{ stroke: P.text }} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M15 18l-6-6 6-6" />
     </svg>
   );
@@ -69,7 +71,7 @@ function Header({ data, updatedAt, onBack }) {
         position: "sticky",
         top: 0,
         zIndex: 20,
-        background: "linear-gradient(180deg, #050A14 78%, rgba(5,10,20,0))",
+        background: "linear-gradient(180deg, var(--sm-bg) 78%, transparent)",
         padding: "12px 14px 10px",
       }}
     >
@@ -144,14 +146,14 @@ function Tabs({ active, onChange }) {
                 flex: 1,
                 border: "none",
                 borderRadius: 14,
-                background: on ? "linear-gradient(180deg, #0ea5c4 0%, #06B6D4 100%)" : "transparent",
-                color: on ? "#04141a" : P.subHi,
+                background: on ? "linear-gradient(180deg, var(--sm-cyan-hi) 0%, var(--sm-cyan) 100%)" : "transparent",
+                color: on ? "var(--sm-on-cyan)" : P.subHi,
                 fontSize: 13,
                 fontWeight: on ? 900 : 700,
                 fontFamily: FONT,
                 cursor: "pointer",
                 transition: "all 0.2s ease",
-                boxShadow: on ? "0 4px 14px rgba(6,182,212,0.35)" : "none",
+                boxShadow: on ? "0 4px 14px color-mix(in srgb, var(--sm-cyan) 35%, transparent)" : "none",
               }}
             >
               {t.label}
@@ -195,7 +197,7 @@ function Top5({ rows, selectedId, onSelect }) {
                 padding: "12px 13px",
                 cursor: "pointer",
                 transition: "all 0.2s ease",
-                boxShadow: on ? "0 0 0 3px rgba(6,182,212,0.18)" : "none",
+                boxShadow: on ? "0 0 0 3px color-mix(in srgb, var(--sm-cyan) 18%, transparent)" : "none",
               }}
             >
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -204,8 +206,8 @@ function Top5({ rows, selectedId, onSelect }) {
                     fontSize: 11,
                     fontWeight: 900,
                     color: P.cyan,
-                    background: "rgba(6,182,212,0.14)",
-                    border: "1px solid rgba(6,182,212,0.34)",
+                    background: "color-mix(in srgb, var(--sm-cyan) 14%, transparent)",
+                    border: "1px solid color-mix(in srgb, var(--sm-cyan) 34%, transparent)",
                     borderRadius: 8,
                     padding: "2px 7px",
                     fontFamily: FONT,
@@ -360,7 +362,7 @@ function FacilityRail({ items, side }) {
 function MachineCell({ m, dim, selected, onSelect }) {
   const v = VERDICT[m.verdict];
   const bg = m.verdict === "nodata"
-    ? "rgba(100,116,139,0.14)"
+    ? "color-mix(in srgb, var(--sm-gray) 14%, transparent)"
     : `color-mix(in srgb, ${v.color} ${Math.round(Math.max(0.16, Math.min(0.42, m.confidence / 150)) * 100)}%, ${P.card})`;
   return (
     <button
@@ -418,7 +420,7 @@ function IslandCard({ island, filter, selectedId, onSelect }) {
             fontSize: 11,
             fontWeight: 900,
             color: P.cyan,
-            background: "rgba(6,182,212,0.14)",
+            background: "color-mix(in srgb, var(--sm-cyan) 14%, transparent)",
             borderRadius: 7,
             padding: "1px 6px",
             fontFamily: MONO,
@@ -442,8 +444,8 @@ function IslandCard({ island, filter, selectedId, onSelect }) {
           fontSize: 8,
           color: P.subHi,
           textAlign: "center",
-          background: "rgba(34,197,94,0.10)",
-          border: "1px solid rgba(34,197,94,0.22)",
+          background: "color-mix(in srgb, var(--sm-green) 10%, transparent)",
+          border: "1px solid color-mix(in srgb, var(--sm-green) 22%, transparent)",
           borderRadius: 7,
           padding: "3px 4px",
         }}
@@ -464,7 +466,7 @@ function HallMap({ data, filter, selectedId, onSelect }) {
             display: "flex",
             gap: 6,
             alignItems: "stretch",
-            background: "radial-gradient(circle at 50% 0%, rgba(6,182,212,0.08), transparent 60%), #070D1A",
+            background: "radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--sm-cyan) 8%, transparent), transparent 60%), var(--sm-map-bg)",
             border: `1px solid ${P.line}`,
             borderRadius: 18,
             padding: "10px 8px",
@@ -617,7 +619,7 @@ export default function StrategyMapDashboard({ S, onBack }) {
   const selected = data.all.find((m) => m.id === selectedId) || data.all.find((m) => m.id === data.leadId) || null;
 
   return (
-    <div style={{ flex: 1, background: P.bg, color: P.text, fontFamily: FONT, paddingBottom: "calc(24px + env(safe-area-inset-bottom))" }}>
+    <div className="strategy-map" style={{ flex: 1, background: P.bg, color: P.text, fontFamily: FONT, paddingBottom: "calc(24px + env(safe-area-inset-bottom))" }}>
       <Header data={data} updatedAt={updatedAt} onBack={onBack} />
       <Tabs active={filter} onChange={setFilter} />
       <Top5 rows={data.top5} selectedId={selectedId} onSelect={setSelectedId} />

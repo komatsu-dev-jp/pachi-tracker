@@ -84,6 +84,12 @@
   --ev: #4DA3FF;
   --accent-amber: #FFB02E;
   --heat-zero: #101722;
+  --heat-plus: rgba(43, 227, 166, 0.18);
+  --heat-plus-big: rgba(43, 227, 166, 0.35);
+  --heat-minus: rgba(255, 94, 102, 0.18);
+  --heat-minus-big: rgba(255, 94, 102, 0.35);
+  --chart-grid: #141b27;
+  --chart-zero: #1B2330;
 }
 [data-theme="light"] .cal-terminal {
   --bg-panel: #ffffff;
@@ -97,6 +103,12 @@
   --ev: #2f6fed;
   --accent-amber: #c2740a;
   --heat-zero: #eef1f5;
+  --heat-plus: rgba(21, 163, 74, 0.16);
+  --heat-plus-big: rgba(21, 163, 74, 0.32);
+  --heat-minus: rgba(220, 38, 38, 0.14);
+  --heat-minus-big: rgba(220, 38, 38, 0.28);
+  --chart-grid: #e2e7ee;
+  --chart-zero: #cfd6df;
 }
 
 /* ================================================================
@@ -104,7 +116,7 @@
    .analytics-terminal をルートに付与してスコープ限定。
    既存の C トークン（--bg / --surface / --green ...）を上書きすることで、
    AnalysisDashboard 配下のコンポーネントが自動的にこの配色を使う。
-   金融端末は常時ダーク基調のため、テーマに関わらず固定（ライト分岐なし）。
+   ダークが基準デザイン。ライトテーマは下の [data-theme="light"] 上書きで対応。
 ================================================================ */
 .analytics-terminal {
   --bg: #050A14;
@@ -130,7 +142,169 @@
   --at-plus: #18E07A;
   --at-minus: #FF5A68;
   --at-glow: 0 0 0 1px rgba(24, 215, 255, 0.18), 0 8px 30px rgba(24, 215, 255, 0.06);
+  /* ---- AnalysisDashboard 直書き色のトークン化（ダーク値 = 従来のハードコード値） ---- */
+  --at-page: #050B18;
+  --at-strong: #ffffff;
+  --at-mut: #8090aa;
+  --at-mut2: #8794a9;
+  --at-mut3: #9aa6bb;
+  --at-subtle: #aab6ca;
+  --at-subtle-hi: #c0cad9;
+  --at-faint: #5c6b84;
+  --at-faint2: #75839a;
+  --at-cyan: #16C8FF;
+  --at-pos: #25D366;
+  --at-pos-hi: #3fe0a0;
+  --at-neg: #ff637a;
+  --at-sun: #ff7a8a;
+  --at-sat: #6ea8ff;
+  --at-gold: #FFC83D;
+  --at-amber: #f08a45;
+  --at-iconblue: #5e9df7;
+  --at-panel: #071326;
+  --at-panel2: #0a1528;
+  --at-panel-hi: #13233e;
+  --at-menu: #0b1424;
+  --at-chipbg: #081224;
+  --at-ln-soft: rgba(255, 255, 255, 0.06);
+  --at-ln: rgba(255, 255, 255, 0.08);
+  --at-ln-md: rgba(255, 255, 255, 0.10);
+  --at-ln-hi: rgba(255, 255, 255, 0.12);
+  --at-cellbg: rgba(255, 255, 255, 0.015);
+  --at-rowbg: rgba(255, 255, 255, 0.04);
+  --at-hoverbg: rgba(255, 255, 255, 0.05);
+  --at-heat-p: rgba(18, 58, 43, 0.4);
+  --at-heat-p-bd: rgba(31, 122, 82, 0.3);
+  --at-heat-m: rgba(58, 22, 32, 0.35);
+  --at-heat-m-bd: rgba(138, 36, 56, 0.3);
+  --at-card-grad: linear-gradient(145deg, rgba(12, 25, 47, .98), rgba(5, 13, 27, .98));
+  --at-card-shadow2: 0 16px 45px rgba(0, 0, 0, .34);
+  --at-menu-shadow: 0 18px 50px rgba(0, 0, 0, .6);
   background: var(--bg);
+}
+
+/* 分析ページ ライトテーマ（レイアウト不変・配色のみ翻訳） */
+[data-theme="light"] .analytics-terminal {
+  --bg: #f2f5f9;
+  --surface: #ffffff;
+  --surface-hi: #f4f6fa;
+  --surface-alt: #eef1f6;
+  --border: rgba(16, 24, 40, 0.10);
+  --border-hi: rgba(16, 24, 40, 0.20);
+  --blue: #0b7fb8;
+  --teal: #0b7fb8;
+  --green: #0f9d51;
+  --red: #dc2626;
+  --yellow: #b8860b;
+  --orange: #c05621;
+  --purple: #7c3aed;
+  --text: #101828;
+  --sub: #667085;
+  --sub-hi: #384252;
+  --card-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 6px 20px rgba(16, 24, 40, 0.08);
+  --accent-grad: #0b7fb8;
+  --at-accent: #0b7fb8;
+  --at-plus: #0f9d51;
+  --at-minus: #dc2626;
+  --at-glow: 0 0 0 1px rgba(11, 127, 184, 0.20), 0 8px 30px rgba(11, 127, 184, 0.08);
+  --at-page: #f2f5f9;
+  --at-strong: #101828;
+  --at-mut: #5b6472;
+  --at-mut2: #5b6472;
+  --at-mut3: #667085;
+  --at-subtle: #4a5568;
+  --at-subtle-hi: #3d4757;
+  --at-faint: #98a1b3;
+  --at-faint2: #7b8494;
+  --at-cyan: #0b7fb8;
+  --at-pos: #0f9d51;
+  --at-pos-hi: #0f9d51;
+  --at-neg: #d92d47;
+  --at-sun: #d9455a;
+  --at-sat: #2f6fed;
+  --at-gold: #b8860b;
+  --at-amber: #c05621;
+  --at-iconblue: #2f6fed;
+  --at-panel: #ffffff;
+  --at-panel2: #e9eef5;
+  --at-panel-hi: #dbe4f0;
+  --at-menu: #ffffff;
+  --at-chipbg: #ffffff;
+  --at-ln-soft: rgba(16, 24, 40, 0.07);
+  --at-ln: rgba(16, 24, 40, 0.10);
+  --at-ln-md: rgba(16, 24, 40, 0.14);
+  --at-ln-hi: rgba(16, 24, 40, 0.18);
+  --at-cellbg: rgba(16, 24, 40, 0.02);
+  --at-rowbg: rgba(16, 24, 40, 0.04);
+  --at-hoverbg: rgba(16, 24, 40, 0.05);
+  --at-heat-p: #d5f2e0;
+  --at-heat-p-bd: #8ed4ab;
+  --at-heat-m: #fbe0e4;
+  --at-heat-m-bd: #eda4b0;
+  --at-card-grad: linear-gradient(145deg, #ffffff, #fbfcfe);
+  --at-card-shadow2: 0 8px 24px rgba(16, 24, 40, 0.08);
+  --at-menu-shadow: 0 18px 50px rgba(16, 24, 40, 0.18);
+}
+
+/* Recharts はチャート内の色を SVG 属性/インライン style で持つため、
+   ライトテーマ時のみ CSS で軸・グリッド・凡例・ツールチップを上書きする */
+[data-theme="light"] .analytics-terminal .recharts-text {
+  fill: #5b6472;
+}
+
+[data-theme="light"] .analytics-terminal .recharts-cartesian-grid line {
+  stroke: rgba(16, 24, 40, 0.08);
+}
+
+[data-theme="light"] .analytics-terminal .recharts-reference-line line {
+  stroke: rgba(16, 24, 40, 0.25);
+}
+
+[data-theme="light"] .analytics-terminal .recharts-default-tooltip {
+  background: #ffffff !important;
+  border-color: rgba(16, 24, 40, 0.15) !important;
+}
+
+/* ================================================================
+   戦略マップ（台選びタブ）デザイントークン
+   StrategyMapDashboard のパレット定数 P が参照する。ダーク値 = 従来の固定値。
+================================================================ */
+.strategy-map {
+  --sm-bg: #050A14;
+  --sm-card: #0B1220;
+  --sm-card-hi: #0E1626;
+  --sm-line: rgba(255, 255, 255, 0.08);
+  --sm-line-hi: rgba(255, 255, 255, 0.14);
+  --sm-text: #E6EDF6;
+  --sm-sub: #64748B;
+  --sm-sub-hi: #94A3B8;
+  --sm-green: #22C55E;
+  --sm-yellow: #EAB308;
+  --sm-red: #EF4444;
+  --sm-gray: #64748B;
+  --sm-cyan: #06B6D4;
+  --sm-cyan-hi: #0ea5c4;
+  --sm-on-cyan: #04141a;
+  --sm-map-bg: #070D1A;
+}
+
+[data-theme="light"] .strategy-map {
+  --sm-bg: #f2f5f9;
+  --sm-card: #ffffff;
+  --sm-card-hi: #eef2f7;
+  --sm-line: rgba(16, 24, 40, 0.10);
+  --sm-line-hi: rgba(16, 24, 40, 0.18);
+  --sm-text: #101828;
+  --sm-sub: #667085;
+  --sm-sub-hi: #475467;
+  --sm-green: #16a34a;
+  --sm-yellow: #b45309;
+  --sm-red: #dc2626;
+  --sm-gray: #98a1b3;
+  --sm-cyan: #0891b2;
+  --sm-cyan-hi: #0e7490;
+  --sm-on-cyan: #ffffff;
+  --sm-map-bg: #e8edf4;
 }
 
 * {

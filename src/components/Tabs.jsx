@@ -139,11 +139,12 @@ function MultiLineChart({ points, width = 340, height = 180 }) {
     const xOf = i => pad.left + (i / (points.length - 1)) * w;
     const yOf = v => pad.top + h - ((v - minV) / range) * h;
     const zeroY = yOf(0);
-    // 系列色は端末風トークン基準（実収支=緑 / EV=青 / 差=破線グレー）
+    // 系列色は端末風トークン基準（実収支=緑 / EV=青 / 差=破線グレー）。
+    // SVG 属性は var() を解決できないため、色は style プロパティで指定してテーマ切替に追従させる。
     const series = [
-        { key: "actual", color: "#2BE3A6", width: 1.5 },
-        { key: "ev", color: "#4DA3FF", width: 1.5 },
-        { key: "diff", color: "#566073", width: 1, dash: "3 3" },
+        { key: "actual", color: "var(--plus)", width: 1.5 },
+        { key: "ev", color: "var(--ev)", width: 1.5 },
+        { key: "diff", color: "var(--dim)", width: 1, dash: "3 3" },
     ];
     const pathOf = key => points.map((p, i) => `${i === 0 ? "M" : "L"} ${xOf(i)} ${yOf(p[key])}`).join(" ");
     const yLabels = [maxV, (maxV + minV) / 2, minV].map(v => ({ v, y: yOf(v) }));
@@ -152,24 +153,24 @@ function MultiLineChart({ points, width = 340, height = 180 }) {
         <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ display: "block" }}>
             {yLabels.map((l, i) => (
                 <g key={i}>
-                    <line x1={pad.left} y1={l.y} x2={width - pad.right} y2={l.y} stroke="#141b27" strokeWidth={1} />
-                    <text x={pad.left - 4} y={l.y + 3} textAnchor="end" fill="#566073" fontSize={9} fontFamily={TMONO}>
+                    <line x1={pad.left} y1={l.y} x2={width - pad.right} y2={l.y} style={{ stroke: "var(--chart-grid)" }} strokeWidth={1} />
+                    <text x={pad.left - 4} y={l.y + 3} textAnchor="end" style={{ fill: "var(--dim)" }} fontSize={9} fontFamily={TMONO}>
                         {Math.abs(l.v) >= 1000 ? (l.v / 1000).toFixed(0) + "k" : Math.round(l.v).toLocaleString()}
                     </text>
                 </g>
             ))}
             {minV < 0 && maxV > 0 && (
-                <line x1={pad.left} y1={zeroY} x2={width - pad.right} y2={zeroY} stroke="#1B2330" strokeWidth={1} strokeDasharray="4,3" />
+                <line x1={pad.left} y1={zeroY} x2={width - pad.right} y2={zeroY} style={{ stroke: "var(--chart-zero)" }} strokeWidth={1} strokeDasharray="4,3" />
             )}
             {series.map(s => (
-                <path key={s.key} d={pathOf(s.key)} fill="none" stroke={s.color} strokeWidth={s.width}
+                <path key={s.key} d={pathOf(s.key)} fill="none" style={{ stroke: s.color }} strokeWidth={s.width}
                     strokeLinecap="round" strokeLinejoin="round" strokeDasharray={s.dash || undefined} />
             ))}
             {series.map(s => points.map((p, i) => (
-                <circle key={`${s.key}-${i}`} cx={xOf(i)} cy={yOf(p[s.key])} r={2.5} fill={s.color} />
+                <circle key={`${s.key}-${i}`} cx={xOf(i)} cy={yOf(p[s.key])} r={2.5} style={{ fill: s.color }} />
             )))}
             {xIdx.map(i => (
-                <text key={i} x={xOf(i)} y={height - 4} textAnchor="middle" fill="#566073" fontSize={9} fontFamily={TMONO}>
+                <text key={i} x={xOf(i)} y={height - 4} textAnchor="middle" style={{ fill: "var(--dim)" }} fontSize={9} fontFamily={TMONO}>
                     {points[i].label}
                 </text>
             ))}
@@ -8988,11 +8989,11 @@ export function CalendarTab({ S, onReset, initialDate = null }) {
     const HEAT_BIG = 20000; // 「大きく」の閾値（円）
     // 凡例・セル背景で参照する代表色（端末風）
     const HEAT = {
-        bigPlus: "rgba(43,227,166,0.35)",  // 大きくプラス
-        plus: "rgba(43,227,166,0.18)",     // プラス
+        bigPlus: "var(--heat-plus-big)",   // 大きくプラス
+        plus: "var(--heat-plus)",          // プラス
         zero: "var(--heat-zero)",          // ±0 / 稼働なし
-        minus: "rgba(255,94,102,0.18)",    // マイナス
-        bigMinus: "rgba(255,94,102,0.35)", // 大きくマイナス
+        minus: "var(--heat-minus)",        // マイナス
+        bigMinus: "var(--heat-minus-big)", // 大きくマイナス
         none: "var(--heat-zero)",          // 稼働なし
     };
     const heatBg = (actual, hasActualData) => {
@@ -9205,9 +9206,9 @@ export function CalendarTab({ S, onReset, initialDate = null }) {
             <div style={{ background: "var(--bg-panel)", border: "1px solid var(--tw-border)", borderRadius: 8, padding: "10px 8px 10px", marginBottom: 10 }}>
                 <div style={{ display: "flex", gap: 14, padding: "0 6px 6px" }}>
                     {[
-                        { c: "#2BE3A6", t: "実収支", dash: false },
-                        { c: "#4DA3FF", t: "EV", dash: false },
-                        { c: "#566073", t: "差", dash: true },
+                        { c: "var(--plus)", t: "実収支", dash: false },
+                        { c: "var(--ev)", t: "EV", dash: false },
+                        { c: "var(--dim)", t: "差", dash: true },
                     ].map(l => (
                         <div key={l.t} style={{ display: "flex", alignItems: "center", gap: 5 }}>
                             <span style={{ width: 16, height: 2, display: "inline-block", background: l.dash ? `repeating-linear-gradient(90deg, ${l.c} 0 3px, transparent 3px 6px)` : l.c }} />
@@ -9231,7 +9232,7 @@ export function CalendarTab({ S, onReset, initialDate = null }) {
                 <>
                     <SectionLabel code="LOG" label="日別履歴" right={`${monthDays.length}日`} />
                     <div style={{ background: "var(--bg-panel)", border: "1px solid var(--tw-border)", borderRadius: 8, padding: "8px 0 4px", marginBottom: 10 }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", padding: "0 14px 6px", borderBottom: "1px solid #131a26" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", padding: "0 14px 6px", borderBottom: "1px solid var(--tw-border)" }}>
                             {["日付", "収支", "EV", "差"].map((h, i) => (
                                 <div key={h} style={{ fontSize: 9, color: "var(--dim)", fontWeight: 700, letterSpacing: ".08em", textAlign: i === 0 ? "left" : "right" }}>{h}</div>
                             ))}
@@ -9241,7 +9242,7 @@ export function CalendarTab({ S, onReset, initialDate = null }) {
                                 width: "100%", display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr",
                                 padding: "10px 14px",
                                 background: selectedDate === d.date ? "rgba(77,163,255,0.08)" : "transparent",
-                                border: "none", borderBottom: "1px solid #131a26",
+                                border: "none", borderBottom: "1px solid var(--tw-border)",
                                 cursor: "pointer", alignItems: "center",
                             }}>
                                 <span style={{ fontSize: 11, color: "var(--dim)", fontWeight: 600, textAlign: "left", fontFamily: TMONO, fontVariantNumeric: "tabular-nums" }}>
