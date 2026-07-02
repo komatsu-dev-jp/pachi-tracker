@@ -244,7 +244,8 @@ function MonthStatStrip({ actual, ev, diff, winRate }) {
       {items.map((item, index) => (
         <div key={item.label} className={`min-w-0 px-1 text-center ${index > 0 ? "border-l border-white/[0.08]" : ""}`}>
           <div className="truncate text-[11px] font-semibold text-[#8090aa]">{item.label}</div>
-          <div className={`mt-1.5 whitespace-nowrap font-mono text-[clamp(14px,4.2vw,18px)] font-black tracking-[-.04em] tabular-nums ${item.cls}`}>{item.value}</div>
+          {/* 中央寄せ＋nowrap は幅超過時に左端の符号から欠けるため、truncate で右側から省略する */}
+          <div className={`mt-1.5 truncate whitespace-nowrap font-mono text-[clamp(11px,3.4vw,18px)] font-black tracking-[-.04em] tabular-nums ${item.cls}`}>{item.value}</div>
         </div>
       ))}
     </section>
@@ -304,7 +305,7 @@ function Kpis({ summary, isDemo }) {
             <item.icon className="h-3.5 w-3.5 text-[#5e9df7]" />
             <span className="truncate text-[9px] text-[#8390a7]">{item.title}</span>
           </div>
-          <div className={`mt-1.5 whitespace-nowrap font-mono text-[18px] font-black ${item.positive ? "text-[#25D366]" : "text-white"}`}>
+          <div className={`mt-1.5 max-w-full truncate whitespace-nowrap font-mono text-[18px] font-black ${item.positive ? "text-[#25D366]" : "text-white"}`}>
             {item.value}<span className="ml-0.5 text-[9px]">{item.unit}</span>
           </div>
           {item.sub && <span className="mt-0.5 text-[8px] text-[#6880a4]">{item.sub}</span>}
@@ -335,7 +336,7 @@ function CalendarCell({ day, row, selected, weekday, onSelect }) {
   return (
     <button
       type="button"
-      onClick={() => row && onSelect(day)}
+      onClick={() => onSelect(day)}
       className={`relative flex aspect-square min-w-0 flex-col items-start overflow-hidden rounded-[8px] border px-1.5 pb-1 pt-1.5 transition ${heat} ${
         selected ? "z-10 border-[#16C8FF] shadow-[0_0_0_1px_#16C8FF]" : ""
       }`}
@@ -349,7 +350,83 @@ function CalendarCell({ day, row, selected, weekday, onSelect }) {
   );
 }
 
-function DayDetail({ dateLabel, row, onEditRecords }) {
+// 日別詳細の実践記録カード（参考画像のレイアウトを analytics-terminal ダークトークンへ翻訳）。
+// 数値は記録エディタ（CalendarTab）の SummaryCard と同一の式:
+//   実収支 =（回収 − 投資）− 貯玉消費円 / 期待値 = stats.effectiveWorkAmount ?? workAmount
+//   時間 = netRot ÷ rotPerHour / 時給 = 実収支 ÷ 時間
+// タップで既存の「記録を編集」導線（記録エディタ遷移）を開く。
+function DaySessionCard({ archive, onOpen }) {
+  const st = archive.stats || {};
+  const invest = Number(archive.investYen) || 0;
+  const recovery = Number(archive.recoveryYen) || 0;
+  const chodamaYen = Number(archive.chodamaYen) || 0;
+  const actual = (recovery - invest) - chodamaYen;
+  const ev = Number(st.effectiveWorkAmount ?? st.workAmount) || 0;
+  const hasEv = ev !== 0;
+  const rph = Number(archive.settings?.rotPerHour) || 0;
+  const netRot = Number(st.netRot) || 0;
+  const hours = netRot > 0 && rph > 0 ? netRot / rph : 0;
+  const wage = hours > 0 ? Math.round(actual / hours) : 0;
+  const denom = archive.settings?.synthDenom;
+  const machineName = archive.machineName && archive.machineName !== `1/${denom}`
+    ? archive.machineName
+    : (archive.machineName || `1/${denom || "—"}`);
+  const ballVal = Number(archive.settings?.ballVal) || 0;
+  const rateLabel = ballVal > 0 ? `${Number.isInteger(ballVal) ? ballVal : ballVal.toFixed(1)}パチ` : "";
+  const subLabel = [archive.machineNum ? `${archive.machineNum}番台` : "", rateLabel].filter(Boolean).join(" / ");
+  const evCls = hasEv ? (ev >= 0 ? "text-[#16C8FF]" : "text-[#ff637a]") : "text-[#5c6b84]";
+  const middle = [
+    { label: "投資", value: `${fmt(invest)}円`, cls: "text-white" },
+    { label: "回収", value: `${fmt(recovery)}円`, cls: "text-white" },
+    { label: "収支", value: `${signed(actual)}円`, cls: moneyClass(actual) },
+    { label: "期待値", value: hasEv ? `${signed(ev)}円` : "—", cls: evCls },
+  ];
+  return (
+    <button type="button" onClick={onOpen} className={`${card} mt-2 block w-full p-3.5 text-left`}>
+      {/* 上段: 店舗名（小）/ 機種名（太字）/ 台番号・レート ＋ 右側に期待値・収支・chevron */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          {archive.storeName && <div className="truncate text-[10px] font-semibold text-[#8090aa]">{archive.storeName}</div>}
+          <div className="mt-0.5 text-[15px] font-black leading-snug text-white">{machineName}</div>
+          {subLabel && <div className="mt-1 text-[11px] font-semibold text-[#8090aa]">{subLabel}</div>}
+        </div>
+        <div className="flex shrink-0 items-center gap-2.5">
+          <div className="text-right">
+            <div className="text-[10px] font-semibold text-[#8090aa]">期待値</div>
+            <div className={`whitespace-nowrap font-mono text-[17px] font-black tabular-nums ${evCls}`}>
+              {hasEv ? signed(ev) : "—"}{hasEv && <span className="text-[9px]">円</span>}
+            </div>
+          </div>
+          <div className="border-l border-white/[0.08] pl-2.5 text-right">
+            <div className="text-[10px] font-semibold text-[#8090aa]">収支</div>
+            <div className={`whitespace-nowrap font-mono text-[17px] font-black tabular-nums ${moneyClass(actual)}`}>
+              {signed(actual)}<span className="text-[9px]">円</span>
+            </div>
+          </div>
+          <ChevronRight className="h-4 w-4 shrink-0 text-[#5c6b84]" />
+        </div>
+      </div>
+      {/* 中段: 投資 / 回収 / 収支 / 期待値 の4列 */}
+      <div className="mt-3 grid grid-cols-4 gap-1 border-t border-white/[0.08] pt-2.5 text-center">
+        {middle.map((m) => (
+          <div key={m.label} className="min-w-0">
+            <div className="truncate text-[10px] font-semibold text-[#8090aa]">{m.label}</div>
+            <div className={`mt-1 truncate whitespace-nowrap font-mono text-[13px] font-black tabular-nums ${m.cls}`}>{m.value}</div>
+          </div>
+        ))}
+      </div>
+      {/* 下段: 時間 / 時給 */}
+      <div className="mt-2.5 flex items-center gap-4 border-t border-white/[0.08] pt-2 text-[11px] font-semibold text-[#8090aa]">
+        <span>時間 <span className="font-mono text-[13px] font-black tabular-nums text-white">{hours > 0 ? hours.toFixed(1) : "0.0"}</span>h</span>
+        <span className="border-l border-white/[0.08] pl-4">
+          時給 <span className={`font-mono text-[13px] font-black tabular-nums ${wage !== 0 ? moneyClass(wage) : "text-white"}`}>{wage !== 0 ? signed(wage) : "0"}</span>円/h
+        </span>
+      </div>
+    </button>
+  );
+}
+
+function DayDetail({ dateLabel, row, onEditRecords, archives = [] }) {
   const detail = row || {};
   const actual = Number(detail.actual) || 0;
   const ev = Number(detail.ev) || 0;
@@ -374,14 +451,19 @@ function DayDetail({ dateLabel, row, onEditRecords }) {
           </div>
         ))}
       </div>
-      {/* 記録の編集・削除は既存のカレンダー記録エディタ（CalendarTab）へ該当日で遷移する唯一の導線として残置。 */}
+      {/* 記録の編集・削除は既存のカレンダー記録エディタ（CalendarTab）へ該当日で遷移する唯一の導線として残置。
+          記録のない日は「記録を追加」表記で同じエディタへ遷移し、後から収支を入力できる。 */}
       <button type="button" onClick={onEditRecords} className="mt-3 flex h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-white/[0.10] bg-[#0a1528] text-[11px] font-bold text-[#aab6ca]">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 20h9" />
           <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
         </svg>
-        記録を編集
+        {row ? "記録を編集" : "記録を追加"}
       </button>
+      {/* この日の実践記録カード（タップで記録エディタへ）。記録がない日は何も表示しない */}
+      {archives.map((a) => (
+        <DaySessionCard key={a.id} archive={a} onOpen={onEditRecords} />
+      ))}
     </section>
   );
 }
@@ -459,10 +541,11 @@ function TrendPanel({ data }) {
         <SectionTitle>収支推移グラフ</SectionTitle>
         <div className="h-[220px]">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 4, right: 3, bottom: 0, left: -22 }}>
+            {/* 負のマージンはY軸ラベルの左端切れ・横はみ出しの原因になるため使わず、YAxis width で余白を管理する */}
+            <LineChart data={data} margin={{ top: 4, right: 3, bottom: 0, left: 0 }}>
               <CartesianGrid stroke="rgba(255,255,255,.07)" vertical={false} />
               <XAxis dataKey="day" tick={{ fill: "#8794a9", fontSize: 7 }} tickLine={false} axisLine={false} interval={6} />
-              <YAxis tick={{ fill: "#8794a9", fontSize: 7 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+              <YAxis width={38} tick={{ fill: "#8794a9", fontSize: 7 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
               <ReferenceLine y={0} stroke="rgba(255,255,255,.18)" />
               <Tooltip
                 contentStyle={{ background: "#071326", border: "1px solid rgba(255,255,255,.12)", borderRadius: 8, fontSize: 9 }}
@@ -665,10 +748,11 @@ function MonthDetailContent({ chartData, score, stats }) {
         <SectionTitle>今月の収支グラフ</SectionTitle>
         <div className="h-[210px]">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData} margin={{ top: 6, right: 4, bottom: 0, left: -18 }}>
+            {/* 負のマージンはY軸ラベルの左端切れ・横はみ出しの原因になるため使わず、YAxis width で余白を管理する */}
+            <ComposedChart data={chartData} margin={{ top: 6, right: 4, bottom: 0, left: 0 }}>
               <CartesianGrid stroke="rgba(255,255,255,.07)" vertical={false} />
               <XAxis dataKey="day" tick={{ fill: "#8794a9", fontSize: 8 }} tickLine={false} axisLine={false} interval={6} />
-              <YAxis tick={{ fill: "#8794a9", fontSize: 8 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+              <YAxis width={38} tick={{ fill: "#8794a9", fontSize: 8 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
               <ReferenceLine y={0} stroke="rgba(255,255,255,.2)" />
               <Tooltip contentStyle={{ background: "#071326", border: "1px solid rgba(255,255,255,.12)", borderRadius: 8, fontSize: 10 }} formatter={(value) => `${signed(value)}円`} />
               <Legend iconSize={8} wrapperStyle={{ fontSize: 9 }} />
@@ -684,7 +768,7 @@ function MonthDetailContent({ chartData, score, stats }) {
       {/* 今月の成績（実質総収支）。 */}
       <section className={`${card} flex items-center justify-between gap-3 p-4`}>
         <div className="text-[15px] font-black text-white">今月の成績</div>
-        <div className={`whitespace-nowrap font-mono text-[30px] font-black leading-none tracking-[-.04em] tabular-nums ${moneyClass(score)}`}>{signed(score)}<span className="ml-1 text-[13px]">円</span></div>
+        <div className={`whitespace-nowrap font-mono text-[clamp(20px,7.6vw,30px)] font-black leading-none tracking-[-.04em] tabular-nums ${moneyClass(score)}`}>{signed(score)}<span className="ml-1 text-[13px]">円</span></div>
       </section>
       {/* 統計グリッド（2列）。期待値系は未連携のため「—」表示。 */}
       <div className="grid grid-cols-2 gap-2">
@@ -900,6 +984,11 @@ export default function AnalysisDashboard({
         : "分析+";
   const selectedDateLabel = `${month}月${selectedDay}日（${WEEKDAYS[new Date(year, month - 1, selectedDay).getDay()]}）`;
   const selectedDateStr = `${year}-${String(month).padStart(2, "0")}-${String(selectedDay).padStart(2, "0")}`;
+  // 選択日の実践記録（日別詳細のカード表示用）。デモ表示中は実カードを出さない。
+  const dayArchives = useMemo(
+    () => (isDemo ? [] : filtered.filter((a) => a.date === selectedDateStr)),
+    [filtered, isDemo, selectedDateStr],
+  );
 
   // 月間サマリー詳細（ヘッダーの月タップで開く）用の集計。
   // 負数/引分/最高投資/最高回収は既存 selector に無いため filtered から読み取りで算出（logic非変更）。
@@ -971,8 +1060,9 @@ export default function AnalysisDashboard({
           </button>
           <h1 className="text-[15px] font-black tracking-[.02em]">記録を編集</h1>
         </div>
-        {/* スクロールを画面内に閉じ込める（親mainの高さ依存を避け、下部ナビと重ならない） */}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        {/* スクロールを画面内に閉じ込める（親mainの高さ依存を避け、下部ナビと重ならない）。
+            overflow-x-hidden 必須: overflow-y のみ指定だと横方向が auto になり、幅超過要素があると画面全体が左へパンしたまま固定される */}
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
           <CalendarTab S={S} onReset={onReset} initialDate={recordsDay} />
         </div>
       </div>
@@ -985,7 +1075,7 @@ export default function AnalysisDashboard({
         <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-5 pt-4">
           <HeaderBar title={headerTitle} onTitleTap={() => setViewMenuOpen((value) => !value)} menuOpen={viewMenuOpen} current={periodTab} onSelect={handleSelectView} />
           {viewMenuOpen && <div className="fixed inset-0 z-30" onClick={() => setViewMenuOpen(false)} />}
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pb-12">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain pb-12">
             {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
             <AnalyzerView archives={archives} extraFilters={filters} />
             <MachinePanel rows={machines} sortMode={sortMode} setSortMode={setSortMode} />
@@ -1018,7 +1108,7 @@ export default function AnalysisDashboard({
         {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
 
         {/* 画面内スクロール領域。横スワイプで月送り（縦スクロールは阻害しない）。 */}
-        <main onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd} className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-12">
+        <main onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pb-12">
           {/* 月送り・表示切替で key が変わり、向きに応じたアニメーションを再生する。 */}
           <div key={`${periodTab}-${monthOffset}-${detailView}`} className={`month-pane-${slideDir} space-y-5`}>
             {periodTab === "month" ? (
@@ -1030,7 +1120,7 @@ export default function AnalysisDashboard({
                   {/* 4指標ストリップ＋日別収支カレンダー＋選択日詳細（モック1）。 */}
                   <MonthStatStrip actual={actual} ev={ev} diff={monthDiff} winRate={winRate} />
                   <CalendarPanel dayMap={dayMap} selectedDay={selectedDay} setSelectedDay={setSelectedDay} year={year} month={month} />
-                  <DayDetail dateLabel={selectedDateLabel} row={dayMap[selectedDay]} onEditRecords={() => setRecordsDay(selectedDateStr)} />
+                  <DayDetail dateLabel={selectedDateLabel} row={dayMap[selectedDay]} archives={dayArchives} onEditRecords={() => setRecordsDay(selectedDateStr)} />
                 </>
               )
             ) : (

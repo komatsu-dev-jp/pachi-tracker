@@ -8209,6 +8209,20 @@ export function CalendarTab({ S, onReset, initialDate = null }) {
     const [showAllMachines, setShowAllMachines] = useState(false);
     const [showAllStores, setShowAllStores] = useState(false);
     const [showAllHistory, setShowAllHistory] = useState(false);
+    // 過去日への手動記録追加フォーム（記録がない日を選択したときに使用）
+    const [addFormOpen, setAddFormOpen] = useState(false);
+    const [addStore, setAddStore] = useState("");
+    const [addMachineName, setAddMachineName] = useState("");
+    const [addMachineNum, setAddMachineNum] = useState("");
+    const [addInvest, setAddInvest] = useState("");
+    const [addRecovery, setAddRecovery] = useState("");
+    const [showAddStoreDD, setShowAddStoreDD] = useState(false);
+
+    // 日付を切り替えたら追加フォームを閉じる（入力途中の値は日付間で持ち越さない）
+    useEffect(() => {
+        setAddFormOpen(false);
+        setShowAddStoreDD(false);
+    }, [selectedDate]);
 
     const archives = useMemo(() => S.archives || [], [S.archives]);
 
@@ -8400,6 +8414,44 @@ export function CalendarTab({ S, onReset, initialDate = null }) {
     );
 
     const storeList = S.stores || [];
+
+    // 手動記録の保存: 記録がない過去日に最小スキーマのアーカイブを追加する。
+    // CSVインポート（isImported）と同型の「後から追加される収支記録」で、
+    // 分析集計は investYen / recoveryYen ベースのため自動で反映される。
+    // rotRows / logic.js の計算フローには一切関与しない。
+    const saveManualArchive = () => {
+        const inv = Math.max(0, Math.round(Number(addInvest) || 0));
+        const rec = Math.max(0, Math.round(Number(addRecovery) || 0));
+        if (!selectedDate || (inv <= 0 && rec <= 0)) return;
+        const storeName = (addStore || "").trim();
+        const storeObj = storeList.find(st => typeof st === "object" && st.name === storeName);
+        S.setArchives(prev => [...prev, {
+            id: Date.now(),
+            date: selectedDate,
+            time: "",
+            storeName,
+            storeId: storeObj?.id ?? null,
+            machineNum: (addMachineNum || "").trim(),
+            machineName: (addMachineName || "").trim(),
+            investYen: inv,
+            recoveryYen: rec,
+            settings: {},
+            stats: {},
+            rotRows: [],
+            jpLog: [],
+            sesLog: [],
+            totalTrayBalls: 0,
+            startRot: 0,
+            isManual: true,
+        }]);
+        setAddFormOpen(false);
+        setShowAddStoreDD(false);
+        setAddStore("");
+        setAddMachineName("");
+        setAddMachineNum("");
+        setAddInvest("");
+        setAddRecovery("");
+    };
     // ── Inline summary card for an archive entry (reference app style) ──
     const SummaryCard = ({ a, onClick }) => {
         const st = a.stats || {};
@@ -8972,8 +9024,9 @@ export function CalendarTab({ S, onReset, initialDate = null }) {
     };
 
     // ── Calendar View ── （証券端末風。.cal-terminal でトークンをスコープ限定・テーマ対応）
+    // overflowX: hidden 必須 — overflowY のみだと横方向が auto になり、幅超過要素で画面が左へパンしたまま固定される
     return (
-        <div className="cal-terminal" style={{ flex: 1, overflowY: "auto", padding: "8px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+        <div className="cal-terminal" style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "8px 14px calc(80px + env(safe-area-inset-bottom))" }}>
             {/* 月ナビゲーター（端末風・タップ領域44px） */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 2px 12px" }}>
                 <button className="b" onClick={prevMonth} style={{
@@ -9282,8 +9335,88 @@ export function CalendarTab({ S, onReset, initialDate = null }) {
                                 </div>
                             </div>
                         )) : !hasCurrentSession && (
-                            <div style={{ textAlign: "center", color: C.sub, fontSize: 12, padding: "20px 0" }}>
-                                この日のデータはありません
+                            <div>
+                                <div style={{ textAlign: "center", color: C.sub, fontSize: 12, padding: "14px 0 10px" }}>
+                                    この日のデータはありません
+                                </div>
+                                {!addFormOpen ? (
+                                    /* 記録がない日も後から収支を追加できる入口（分析カレンダーの「記録を追加」導線の受け皿） */
+                                    <button className="b" onClick={() => setAddFormOpen(true)} style={{
+                                        width: "100%", minHeight: 48, borderRadius: 12,
+                                        background: C.surface, border: `1px dashed ${C.borderHi}`,
+                                        color: C.blue, fontSize: 14, fontWeight: 700, fontFamily: font, cursor: "pointer",
+                                    }}>＋ この日に記録を追加</button>
+                                ) : (
+                                    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 14, overflow: "visible" }}>
+                                        <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 10 }}>この日の記録を追加</div>
+                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                                            <div>
+                                                <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>店舗</div>
+                                                <div style={{ position: "relative" }}>
+                                                    {textInput(addStore, setAddStore, "店舗名")}
+                                                    {storeList.length > 0 && (
+                                                        <button className="b" onClick={() => setShowAddStoreDD(!showAddStoreDD)} style={{
+                                                            position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)",
+                                                            background: "transparent", border: "none", color: C.sub, fontSize: 14, padding: "4px 6px", cursor: "pointer"
+                                                        }}>▼</button>
+                                                    )}
+                                                    {showAddStoreDD && storeList.length > 0 && (
+                                                        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 8, zIndex: 10, maxHeight: 150, overflowY: "auto", marginTop: 2, boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}>
+                                                            {storeList.map((st, i) => {
+                                                                const stName = typeof st === "object" ? st.name : st;
+                                                                return (
+                                                                    <button key={st.id || i} className="b" onClick={() => { setAddStore(stName); setShowAddStoreDD(false); }} style={{
+                                                                        width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${C.border}`,
+                                                                        color: C.text, fontSize: 13, padding: "10px 12px", textAlign: "left", fontFamily: font, cursor: "pointer"
+                                                                    }}>{stName}</button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>台番号</div>
+                                                {textInput(addMachineNum, setAddMachineNum, "台番号", { type: "tel", inputMode: "numeric", pattern: "[0-9]*" })}
+                                            </div>
+                                        </div>
+                                        <div style={{ marginBottom: 8 }}>
+                                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>機種名（任意）</div>
+                                            {textInput(addMachineName, setAddMachineName, "機種名")}
+                                        </div>
+                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+                                            <div>
+                                                <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>投資額</div>
+                                                <NI v={addInvest} set={setAddInvest} w="100%" center ph="10000" />
+                                            </div>
+                                            <div>
+                                                <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>回収額</div>
+                                                <NI v={addRecovery} set={setAddRecovery} w="100%" center ph="0" />
+                                            </div>
+                                        </div>
+                                        {(() => {
+                                            const canSave = (Math.round(Number(addInvest) || 0) > 0) || (Math.round(Number(addRecovery) || 0) > 0);
+                                            return (
+                                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                                    <button className="b" onClick={() => { setAddFormOpen(false); setShowAddStoreDD(false); }} style={{
+                                                        minHeight: 44, borderRadius: 10, background: "transparent",
+                                                        border: `1px solid ${C.border}`, color: C.sub,
+                                                        fontSize: 13, fontWeight: 700, fontFamily: font, cursor: "pointer",
+                                                    }}>キャンセル</button>
+                                                    <button className="b" onClick={saveManualArchive} disabled={!canSave} style={{
+                                                        minHeight: 44, borderRadius: 10,
+                                                        background: canSave ? C.blue : C.surfaceHi, border: "none",
+                                                        color: canSave ? "#fff" : C.sub, opacity: canSave ? 1 : 0.6,
+                                                        fontSize: 13, fontWeight: 700, fontFamily: font, cursor: canSave ? "pointer" : "default",
+                                                    }}>保存</button>
+                                                </div>
+                                            );
+                                        })()}
+                                        <div style={{ fontSize: 9, color: C.sub, marginTop: 8, lineHeight: 1.5 }}>
+                                            投資額か回収額のどちらかを入力すると保存できます
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
