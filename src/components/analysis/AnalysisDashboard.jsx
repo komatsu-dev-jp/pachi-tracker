@@ -350,7 +350,83 @@ function CalendarCell({ day, row, selected, weekday, onSelect }) {
   );
 }
 
-function DayDetail({ dateLabel, row, onEditRecords }) {
+// 日別詳細の実践記録カード（参考画像のレイアウトを analytics-terminal ダークトークンへ翻訳）。
+// 数値は記録エディタ（CalendarTab）の SummaryCard と同一の式:
+//   実収支 =（回収 − 投資）− 貯玉消費円 / 期待値 = stats.effectiveWorkAmount ?? workAmount
+//   時間 = netRot ÷ rotPerHour / 時給 = 実収支 ÷ 時間
+// タップで既存の「記録を編集」導線（記録エディタ遷移）を開く。
+function DaySessionCard({ archive, onOpen }) {
+  const st = archive.stats || {};
+  const invest = Number(archive.investYen) || 0;
+  const recovery = Number(archive.recoveryYen) || 0;
+  const chodamaYen = Number(archive.chodamaYen) || 0;
+  const actual = (recovery - invest) - chodamaYen;
+  const ev = Number(st.effectiveWorkAmount ?? st.workAmount) || 0;
+  const hasEv = ev !== 0;
+  const rph = Number(archive.settings?.rotPerHour) || 0;
+  const netRot = Number(st.netRot) || 0;
+  const hours = netRot > 0 && rph > 0 ? netRot / rph : 0;
+  const wage = hours > 0 ? Math.round(actual / hours) : 0;
+  const denom = archive.settings?.synthDenom;
+  const machineName = archive.machineName && archive.machineName !== `1/${denom}`
+    ? archive.machineName
+    : (archive.machineName || `1/${denom || "—"}`);
+  const ballVal = Number(archive.settings?.ballVal) || 0;
+  const rateLabel = ballVal > 0 ? `${Number.isInteger(ballVal) ? ballVal : ballVal.toFixed(1)}パチ` : "";
+  const subLabel = [archive.machineNum ? `${archive.machineNum}番台` : "", rateLabel].filter(Boolean).join(" / ");
+  const evCls = hasEv ? (ev >= 0 ? "text-[#16C8FF]" : "text-[#ff637a]") : "text-[#5c6b84]";
+  const middle = [
+    { label: "投資", value: `${fmt(invest)}円`, cls: "text-white" },
+    { label: "回収", value: `${fmt(recovery)}円`, cls: "text-white" },
+    { label: "収支", value: `${signed(actual)}円`, cls: moneyClass(actual) },
+    { label: "期待値", value: hasEv ? `${signed(ev)}円` : "—", cls: evCls },
+  ];
+  return (
+    <button type="button" onClick={onOpen} className={`${card} mt-2 block w-full p-3.5 text-left`}>
+      {/* 上段: 店舗名（小）/ 機種名（太字）/ 台番号・レート ＋ 右側に期待値・収支・chevron */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          {archive.storeName && <div className="truncate text-[10px] font-semibold text-[#8090aa]">{archive.storeName}</div>}
+          <div className="mt-0.5 text-[15px] font-black leading-snug text-white">{machineName}</div>
+          {subLabel && <div className="mt-1 text-[11px] font-semibold text-[#8090aa]">{subLabel}</div>}
+        </div>
+        <div className="flex shrink-0 items-center gap-2.5">
+          <div className="text-right">
+            <div className="text-[10px] font-semibold text-[#8090aa]">期待値</div>
+            <div className={`whitespace-nowrap font-mono text-[17px] font-black tabular-nums ${evCls}`}>
+              {hasEv ? signed(ev) : "—"}{hasEv && <span className="text-[9px]">円</span>}
+            </div>
+          </div>
+          <div className="border-l border-white/[0.08] pl-2.5 text-right">
+            <div className="text-[10px] font-semibold text-[#8090aa]">収支</div>
+            <div className={`whitespace-nowrap font-mono text-[17px] font-black tabular-nums ${moneyClass(actual)}`}>
+              {signed(actual)}<span className="text-[9px]">円</span>
+            </div>
+          </div>
+          <ChevronRight className="h-4 w-4 shrink-0 text-[#5c6b84]" />
+        </div>
+      </div>
+      {/* 中段: 投資 / 回収 / 収支 / 期待値 の4列 */}
+      <div className="mt-3 grid grid-cols-4 gap-1 border-t border-white/[0.08] pt-2.5 text-center">
+        {middle.map((m) => (
+          <div key={m.label} className="min-w-0">
+            <div className="truncate text-[10px] font-semibold text-[#8090aa]">{m.label}</div>
+            <div className={`mt-1 truncate whitespace-nowrap font-mono text-[13px] font-black tabular-nums ${m.cls}`}>{m.value}</div>
+          </div>
+        ))}
+      </div>
+      {/* 下段: 時間 / 時給 */}
+      <div className="mt-2.5 flex items-center gap-4 border-t border-white/[0.08] pt-2 text-[11px] font-semibold text-[#8090aa]">
+        <span>時間 <span className="font-mono text-[13px] font-black tabular-nums text-white">{hours > 0 ? hours.toFixed(1) : "0.0"}</span>h</span>
+        <span className="border-l border-white/[0.08] pl-4">
+          時給 <span className={`font-mono text-[13px] font-black tabular-nums ${wage !== 0 ? moneyClass(wage) : "text-white"}`}>{wage !== 0 ? signed(wage) : "0"}</span>円/h
+        </span>
+      </div>
+    </button>
+  );
+}
+
+function DayDetail({ dateLabel, row, onEditRecords, archives = [] }) {
   const detail = row || {};
   const actual = Number(detail.actual) || 0;
   const ev = Number(detail.ev) || 0;
@@ -384,6 +460,10 @@ function DayDetail({ dateLabel, row, onEditRecords }) {
         </svg>
         {row ? "記録を編集" : "記録を追加"}
       </button>
+      {/* この日の実践記録カード（タップで記録エディタへ）。記録がない日は何も表示しない */}
+      {archives.map((a) => (
+        <DaySessionCard key={a.id} archive={a} onOpen={onEditRecords} />
+      ))}
     </section>
   );
 }
@@ -904,6 +984,11 @@ export default function AnalysisDashboard({
         : "分析+";
   const selectedDateLabel = `${month}月${selectedDay}日（${WEEKDAYS[new Date(year, month - 1, selectedDay).getDay()]}）`;
   const selectedDateStr = `${year}-${String(month).padStart(2, "0")}-${String(selectedDay).padStart(2, "0")}`;
+  // 選択日の実践記録（日別詳細のカード表示用）。デモ表示中は実カードを出さない。
+  const dayArchives = useMemo(
+    () => (isDemo ? [] : filtered.filter((a) => a.date === selectedDateStr)),
+    [filtered, isDemo, selectedDateStr],
+  );
 
   // 月間サマリー詳細（ヘッダーの月タップで開く）用の集計。
   // 負数/引分/最高投資/最高回収は既存 selector に無いため filtered から読み取りで算出（logic非変更）。
@@ -1035,7 +1120,7 @@ export default function AnalysisDashboard({
                   {/* 4指標ストリップ＋日別収支カレンダー＋選択日詳細（モック1）。 */}
                   <MonthStatStrip actual={actual} ev={ev} diff={monthDiff} winRate={winRate} />
                   <CalendarPanel dayMap={dayMap} selectedDay={selectedDay} setSelectedDay={setSelectedDay} year={year} month={month} />
-                  <DayDetail dateLabel={selectedDateLabel} row={dayMap[selectedDay]} onEditRecords={() => setRecordsDay(selectedDateStr)} />
+                  <DayDetail dateLabel={selectedDateLabel} row={dayMap[selectedDay]} archives={dayArchives} onEditRecords={() => setRecordsDay(selectedDateStr)} />
                 </>
               )
             ) : (
