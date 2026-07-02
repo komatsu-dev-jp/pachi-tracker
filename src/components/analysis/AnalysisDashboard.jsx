@@ -244,7 +244,8 @@ function MonthStatStrip({ actual, ev, diff, winRate }) {
       {items.map((item, index) => (
         <div key={item.label} className={`min-w-0 px-1 text-center ${index > 0 ? "border-l border-white/[0.08]" : ""}`}>
           <div className="truncate text-[11px] font-semibold text-[#8090aa]">{item.label}</div>
-          <div className={`mt-1.5 whitespace-nowrap font-mono text-[clamp(14px,4.2vw,18px)] font-black tracking-[-.04em] tabular-nums ${item.cls}`}>{item.value}</div>
+          {/* 中央寄せ＋nowrap は幅超過時に左端の符号から欠けるため、truncate で右側から省略する */}
+          <div className={`mt-1.5 truncate whitespace-nowrap font-mono text-[clamp(11px,3.4vw,18px)] font-black tracking-[-.04em] tabular-nums ${item.cls}`}>{item.value}</div>
         </div>
       ))}
     </section>
@@ -304,7 +305,7 @@ function Kpis({ summary, isDemo }) {
             <item.icon className="h-3.5 w-3.5 text-[#5e9df7]" />
             <span className="truncate text-[9px] text-[#8390a7]">{item.title}</span>
           </div>
-          <div className={`mt-1.5 whitespace-nowrap font-mono text-[18px] font-black ${item.positive ? "text-[#25D366]" : "text-white"}`}>
+          <div className={`mt-1.5 max-w-full truncate whitespace-nowrap font-mono text-[18px] font-black ${item.positive ? "text-[#25D366]" : "text-white"}`}>
             {item.value}<span className="ml-0.5 text-[9px]">{item.unit}</span>
           </div>
           {item.sub && <span className="mt-0.5 text-[8px] text-[#6880a4]">{item.sub}</span>}
@@ -335,7 +336,7 @@ function CalendarCell({ day, row, selected, weekday, onSelect }) {
   return (
     <button
       type="button"
-      onClick={() => row && onSelect(day)}
+      onClick={() => onSelect(day)}
       className={`relative flex aspect-square min-w-0 flex-col items-start overflow-hidden rounded-[8px] border px-1.5 pb-1 pt-1.5 transition ${heat} ${
         selected ? "z-10 border-[#16C8FF] shadow-[0_0_0_1px_#16C8FF]" : ""
       }`}
@@ -374,13 +375,14 @@ function DayDetail({ dateLabel, row, onEditRecords }) {
           </div>
         ))}
       </div>
-      {/* 記録の編集・削除は既存のカレンダー記録エディタ（CalendarTab）へ該当日で遷移する唯一の導線として残置。 */}
+      {/* 記録の編集・削除は既存のカレンダー記録エディタ（CalendarTab）へ該当日で遷移する唯一の導線として残置。
+          記録のない日は「記録を追加」表記で同じエディタへ遷移し、後から収支を入力できる。 */}
       <button type="button" onClick={onEditRecords} className="mt-3 flex h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-white/[0.10] bg-[#0a1528] text-[11px] font-bold text-[#aab6ca]">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 20h9" />
           <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
         </svg>
-        記録を編集
+        {row ? "記録を編集" : "記録を追加"}
       </button>
     </section>
   );
@@ -459,10 +461,11 @@ function TrendPanel({ data }) {
         <SectionTitle>収支推移グラフ</SectionTitle>
         <div className="h-[220px]">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 4, right: 3, bottom: 0, left: -22 }}>
+            {/* 負のマージンはY軸ラベルの左端切れ・横はみ出しの原因になるため使わず、YAxis width で余白を管理する */}
+            <LineChart data={data} margin={{ top: 4, right: 3, bottom: 0, left: 0 }}>
               <CartesianGrid stroke="rgba(255,255,255,.07)" vertical={false} />
               <XAxis dataKey="day" tick={{ fill: "#8794a9", fontSize: 7 }} tickLine={false} axisLine={false} interval={6} />
-              <YAxis tick={{ fill: "#8794a9", fontSize: 7 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+              <YAxis width={38} tick={{ fill: "#8794a9", fontSize: 7 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
               <ReferenceLine y={0} stroke="rgba(255,255,255,.18)" />
               <Tooltip
                 contentStyle={{ background: "#071326", border: "1px solid rgba(255,255,255,.12)", borderRadius: 8, fontSize: 9 }}
@@ -665,10 +668,11 @@ function MonthDetailContent({ chartData, score, stats }) {
         <SectionTitle>今月の収支グラフ</SectionTitle>
         <div className="h-[210px]">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData} margin={{ top: 6, right: 4, bottom: 0, left: -18 }}>
+            {/* 負のマージンはY軸ラベルの左端切れ・横はみ出しの原因になるため使わず、YAxis width で余白を管理する */}
+            <ComposedChart data={chartData} margin={{ top: 6, right: 4, bottom: 0, left: 0 }}>
               <CartesianGrid stroke="rgba(255,255,255,.07)" vertical={false} />
               <XAxis dataKey="day" tick={{ fill: "#8794a9", fontSize: 8 }} tickLine={false} axisLine={false} interval={6} />
-              <YAxis tick={{ fill: "#8794a9", fontSize: 8 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+              <YAxis width={38} tick={{ fill: "#8794a9", fontSize: 8 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
               <ReferenceLine y={0} stroke="rgba(255,255,255,.2)" />
               <Tooltip contentStyle={{ background: "#071326", border: "1px solid rgba(255,255,255,.12)", borderRadius: 8, fontSize: 10 }} formatter={(value) => `${signed(value)}円`} />
               <Legend iconSize={8} wrapperStyle={{ fontSize: 9 }} />
@@ -684,7 +688,7 @@ function MonthDetailContent({ chartData, score, stats }) {
       {/* 今月の成績（実質総収支）。 */}
       <section className={`${card} flex items-center justify-between gap-3 p-4`}>
         <div className="text-[15px] font-black text-white">今月の成績</div>
-        <div className={`whitespace-nowrap font-mono text-[30px] font-black leading-none tracking-[-.04em] tabular-nums ${moneyClass(score)}`}>{signed(score)}<span className="ml-1 text-[13px]">円</span></div>
+        <div className={`whitespace-nowrap font-mono text-[clamp(20px,7.6vw,30px)] font-black leading-none tracking-[-.04em] tabular-nums ${moneyClass(score)}`}>{signed(score)}<span className="ml-1 text-[13px]">円</span></div>
       </section>
       {/* 統計グリッド（2列）。期待値系は未連携のため「—」表示。 */}
       <div className="grid grid-cols-2 gap-2">
@@ -971,8 +975,9 @@ export default function AnalysisDashboard({
           </button>
           <h1 className="text-[15px] font-black tracking-[.02em]">記録を編集</h1>
         </div>
-        {/* スクロールを画面内に閉じ込める（親mainの高さ依存を避け、下部ナビと重ならない） */}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        {/* スクロールを画面内に閉じ込める（親mainの高さ依存を避け、下部ナビと重ならない）。
+            overflow-x-hidden 必須: overflow-y のみ指定だと横方向が auto になり、幅超過要素があると画面全体が左へパンしたまま固定される */}
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
           <CalendarTab S={S} onReset={onReset} initialDate={recordsDay} />
         </div>
       </div>
@@ -985,7 +990,7 @@ export default function AnalysisDashboard({
         <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-5 pt-4">
           <HeaderBar title={headerTitle} onTitleTap={() => setViewMenuOpen((value) => !value)} menuOpen={viewMenuOpen} current={periodTab} onSelect={handleSelectView} />
           {viewMenuOpen && <div className="fixed inset-0 z-30" onClick={() => setViewMenuOpen(false)} />}
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pb-12">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain pb-12">
             {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
             <AnalyzerView archives={archives} extraFilters={filters} />
             <MachinePanel rows={machines} sortMode={sortMode} setSortMode={setSortMode} />
@@ -1018,7 +1023,7 @@ export default function AnalysisDashboard({
         {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
 
         {/* 画面内スクロール領域。横スワイプで月送り（縦スクロールは阻害しない）。 */}
-        <main onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd} className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-12">
+        <main onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pb-12">
           {/* 月送り・表示切替で key が変わり、向きに応じたアニメーションを再生する。 */}
           <div key={`${periodTab}-${monthOffset}-${detailView}`} className={`month-pane-${slideDir} space-y-5`}>
             {periodTab === "month" ? (
