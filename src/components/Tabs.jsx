@@ -8940,7 +8940,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                         </div>
 
                         {/* 下部固定の保存CTA（保存で分析へ自動復帰） */}
-                        <div className="sticky bottom-0 -mx-1 bg-[linear-gradient(180deg,transparent,var(--at-page)_38%)] px-1 pb-4 pt-5">
+                        <div className="sticky bottom-0 -mx-1 bg-[linear-gradient(180deg,transparent,var(--at-page)_38%)] px-1 pb-16 pt-5">
                             <button type="button" onClick={() => { applyArchiveEdits(sel, false); if (onDone) onDone(); }}
                                 className="h-[52px] w-full rounded-[13px] bg-[linear-gradient(135deg,var(--at-cyan),var(--at-accent))] text-[15px] font-black tracking-[.04em] text-[var(--at-page)] shadow-[0_10px_30px_rgba(22,200,255,.25)]">
                                 保存する
@@ -8991,7 +8991,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                             </div>
                             <div className="mt-2 text-[9px] text-[var(--at-mut)]">投資・回収のどちらかを入力すると追加できます</div>
                         </div>
-                        <div className="sticky bottom-0 -mx-1 bg-[linear-gradient(180deg,transparent,var(--at-page)_38%)] px-1 pb-4 pt-5">
+                        <div className="sticky bottom-0 -mx-1 bg-[linear-gradient(180deg,transparent,var(--at-page)_38%)] px-1 pb-16 pt-5">
                             <button type="button" disabled={!canAdd} onClick={() => { saveManualArchive(); if (onDone) onDone(); }}
                                 className={`h-[52px] w-full rounded-[13px] text-[15px] font-black tracking-[.04em] ${canAdd
                                     ? "bg-[linear-gradient(135deg,var(--at-cyan),var(--at-accent))] text-[var(--at-page)] shadow-[0_10px_30px_rgba(22,200,255,.25)]"
