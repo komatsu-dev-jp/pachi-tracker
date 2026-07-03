@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import ReactDOM from "react-dom";
 import { C, f, sc, sp, tsNow, font, mono } from "../constants";
+import { archiveWorkMinutes } from "./analysis/analysisSelectors";
 import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./Atoms";
 import { machineDB, searchMachines, deriveSpecForMachine } from "../machineDB";
 import { calcPreciseEV } from "../logic";
@@ -8181,11 +8182,15 @@ export function HistoryTab({ jpLog, delJPLast, S, ev }) {
 /* ================================================================
    CalendarTab — カレンダー式記録 + 詳細表示
 ================================================================ */
-export function CalendarTab({ S, onReset, initialDate = null }) {
+export function CalendarTab({ S, onReset, initialDate = null, focusMode = false, initialArchiveId = null, onDone = null }) {
     // initialDate（"YYYY-MM-DD" 任意）で初期選択日と表示月を指定できる。
     // 分析タブの月別「記録を編集」導線から該当日を開くために使用。省略時は従来通り未選択・当月表示。
+    // focusMode: 分析からの編集導線専用。カレンダー・KPI等の重複表示を出さず、
+    //            該当日の編集/追加シートのみ描画する（2026-07 統合。非 focusMode の挙動は完全従来通り）。
+    // initialArchiveId: focusMode で最初から開く記録の id（分析の記録カードタップで指定）。
+    // onDone: focusMode で保存/追加が完了したときに呼ぶ（分析画面へ自動復帰する導線）。
     const [selectedDate, setSelectedDate] = useState(initialDate);
-    const [selectedArchiveId, setSelectedArchiveId] = useState(null);
+    const [selectedArchiveId, setSelectedArchiveId] = useState(initialArchiveId);
     const [viewMonth, setViewMonth] = useState(() => {
         if (initialDate) {
             const [y, m] = initialDate.split("-").map(Number);
@@ -8202,6 +8207,7 @@ export function CalendarTab({ S, onReset, initialDate = null }) {
     const [editInvest, setEditInvest] = useState("");
     const [editRecovery, setEditRecovery] = useState("");
     const [editChodama, setEditChodama] = useState(""); // 貯玉残高（店舗の現在残高を編集）
+    const [editPlayHours, setEditPlayHours] = useState(""); // 遊技時間（時間・手入力。実践記録が無い記録の稼働時間/時給に使用）
     const [showEditStoreDD, setShowEditStoreDD] = useState(false);
     // Swipe delete state
     const [swipedId, setSwipedId] = useState(null);
@@ -8217,6 +8223,8 @@ export function CalendarTab({ S, onReset, initialDate = null }) {
     const [addMachineNum, setAddMachineNum] = useState("");
     const [addInvest, setAddInvest] = useState("");
     const [addRecovery, setAddRecovery] = useState("");
+    const [addChodama, setAddChodama] = useState("");   // 貯玉残高（店舗へ登録・同期）
+    const [addPlayHours, setAddPlayHours] = useState(""); // 遊技時間（時間・手入力）
     const [showAddStoreDD, setShowAddStoreDD] = useState(false);
 
     // 日付を切り替えたら追加フォームを閉じる（入力途中の値は日付間で持ち越さない）
@@ -8297,9 +8305,8 @@ export function CalendarTab({ S, onReset, initialDate = null }) {
                 if (rec - inv > 0) winCount += 1;
             }
             ev += Number(a.stats?.effectiveWorkAmount ?? a.stats?.workAmount) || 0;
-            const netRot = Number(a.stats?.netRot) || 0;
-            const rph = Number(a.settings?.rotPerHour) || 0;
-            if (netRot > 0 && rph > 0) workMin += (netRot / rph) * 60;
+            // 稼働時間: 実践記録は netRot/rotPerHour、手動記録は遊技時間（playMinutes）
+            workMin += archiveWorkMinutes(a);
         });
         const pl = recovery - invest;
         const hours = workMin / 60;
@@ -8357,9 +8364,7 @@ export function CalendarTab({ S, onReset, initialDate = null }) {
                 const inv = Number(a.investYen) || 0;
                 const rec = Number(a.recoveryYen) || 0;
                 if (inv > 0 || rec > 0) { map[key].pl += rec - inv; map[key].hasActual = true; }
-                const netRot = Number(a.stats?.netRot) || 0;
-                const rph = Number(a.settings?.rotPerHour) || 0;
-                if (netRot > 0 && rph > 0) map[key].workMin += (netRot / rph) * 60;
+                map[key].workMin += archiveWorkMinutes(a);
                 map[key].sessions += 1;
             });
             return Object.values(map)
@@ -8420,22 +8425,74 @@ export function CalendarTab({ S, onReset, initialDate = null }) {
     // CSVインポート（isImported）と同型の「後から追加される収支記録」で、
     // 分析集計は investYen / recoveryYen ベースのため自動で反映される。
     // rotRows / logic.js の計算フローには一切関与しない。
+    // 遊技時間（時間・小数可）→ 分（整数）。空欄や不正値は 0。
+    const playHoursToMinutes = (v) => {
+        const h = Number(v);
+        return v !== "" && isFinite(h) && h > 0 ? Math.round(h * 60) : 0;
+    };
+
+    // 貯玉残高を店舗へ登録・同期する共通処理。未登録の店舗名なら新規店舗として登録する。
+    //   差分があれば chodamaLog に調整履歴を追記。反映先店舗の id を返す（保存できなければ既存 storeId）。
+    //   貯玉は店舗単位の現在残高（＝すべての日で共有）。この設計は既存の店舗編集と同一。
+    const syncChodamaToStore = ({ storeId, storeName, chodamaStr }) => {
+        if (chodamaStr === "" || chodamaStr == null) return storeId ?? null;
+        const name = (storeName || "").trim();
+        const newBal = Math.max(0, Math.round(Number(chodamaStr) || 0));
+        let store = (S.stores || []).find(st => typeof st === "object" &&
+            (st.id === storeId || st.name === name));
+        if (!store) {
+            if (!name) return storeId ?? null; // 店舗名が無いと貯玉の保存先が定まらない
+            // 未登録の店舗を新規登録（既定値はアプリ設定の貸玉/交換率を踏襲）。
+            const newId = Date.now() + Math.random();
+            store = {
+                id: newId, name, address: "",
+                rentBalls: Number(S.rentBalls) || 250, exRate: Number(S.exRate) || 250,
+                memo: "", chodama: newBal, chodamaMax: 0, lastVisit: "",
+                replayBalls: 0, todaySettle: 0,
+                memberCard: { created: false, number: "", deposit: 0 },
+            };
+            S.setStores(prev => [...(prev || []).filter(st => typeof st === "object"), store]);
+            S.setChodamaLog(prev => [{
+                id: Date.now() + Math.random(), date: new Date().toISOString().slice(0, 10),
+                storeId: newId, storeName: name, type: "adjust",
+                balls: newBal, balanceBefore: 0, balanceAfter: newBal, memo: "記録から店舗を新規登録",
+            }, ...(prev || [])]);
+            return newId;
+        }
+        const oldBal = Math.round(Number(store.chodama) || 0);
+        if (newBal !== oldBal) {
+            S.setStores(prev => prev.map(st =>
+                (typeof st === "object" && st.id === store.id) ? { ...st, chodama: newBal } : st));
+            S.setChodamaLog(prev => [{
+                id: Date.now() + Math.random(), date: new Date().toISOString().slice(0, 10),
+                storeId: store.id, storeName: store.name || "", type: "adjust",
+                balls: newBal - oldBal, balanceBefore: oldBal, balanceAfter: newBal, memo: "記録編集から残高調整",
+            }, ...(prev || [])]);
+        }
+        return store.id;
+    };
+
     const saveManualArchive = () => {
         const inv = Math.max(0, Math.round(Number(addInvest) || 0));
         const rec = Math.max(0, Math.round(Number(addRecovery) || 0));
         if (!selectedDate || (inv <= 0 && rec <= 0)) return;
         const storeName = (addStore || "").trim();
         const storeObj = storeList.find(st => typeof st === "object" && st.name === storeName);
+        // 貯玉残高を店舗へ登録・同期し、反映先の店舗 id を記録に紐付ける。
+        const resolvedStoreId = syncChodamaToStore({
+            storeId: storeObj?.id ?? null, storeName, chodamaStr: addChodama,
+        });
         S.setArchives(prev => [...prev, {
             id: Date.now(),
             date: selectedDate,
             time: "",
             storeName,
-            storeId: storeObj?.id ?? null,
+            storeId: resolvedStoreId,
             machineNum: (addMachineNum || "").trim(),
             machineName: (addMachineName || "").trim(),
             investYen: inv,
             recoveryYen: rec,
+            playMinutes: playHoursToMinutes(addPlayHours), // 遊技時間（分）。稼働時間/時給の集計に使用
             settings: {},
             stats: {},
             rotRows: [],
@@ -8452,7 +8509,35 @@ export function CalendarTab({ S, onReset, initialDate = null }) {
         setAddMachineNum("");
         setAddInvest("");
         setAddRecovery("");
+        setAddChodama("");
+        setAddPlayHours("");
     };
+
+    // ── 記録編集の保存（ArchiveDetail と focusMode 編集シートの共通処理） ──
+    //   旧 ArchiveDetail 内 updateArchive を CalendarTab スコープへ持ち上げたもの（処理内容は不変）
+    const applyArchiveEdits = (a, doReset) => {
+        // 貯玉残高を店舗へ登録・同期（未登録の店舗名なら新規登録）。反映先の店舗 id を記録へ紐付ける。
+        const resolvedStoreId = syncChodamaToStore({
+            storeId: a.storeId ?? null,
+            storeName: editStore || a.storeName,
+            chodamaStr: editChodama,
+        });
+        S.setArchives(prev => prev.map(ar => ar.id !== a.id ? ar : {
+            ...ar,
+            storeName: editStore,
+            storeId: resolvedStoreId,
+            machineNum: editMachineNum,
+            investYen: Number(editInvest) || 0,
+            recoveryYen: Number(editRecovery) || 0,
+            playMinutes: playHoursToMinutes(editPlayHours), // 遊技時間（分）。稼働時間/時給に使用
+        }));
+        if (doReset) onReset();
+        // 保存後は詳細ビューを閉じてカレンダー一覧に戻す（視覚的フィードバック）
+        setSelectedArchiveId(null);
+        setExpandedRot(null);
+        setDelConfirm(null);
+    };
+
     // ── Inline summary card for an archive entry (reference app style) ──
     const SummaryCard = ({ a, onClick }) => {
         const st = a.stats || {};
@@ -8468,10 +8553,9 @@ export function CalendarTab({ S, onReset, initialDate = null }) {
         const workAmount = st.effectiveWorkAmount ?? st.workAmount ?? 0;
         // 実データが無い場合のみ期待値（仕事量）へフォールバック
         const displayPL = hasActual ? realPL : workAmount;
-        const rph = a.settings?.rotPerHour || S.rotPerHour || 200;
-        const hours = st.netRot > 0 && rph > 0
-            ? (st.netRot / rph).toFixed(1)
-            : null;
+        // 稼働時間: 実践記録は netRot/rotPerHour、手動記録は遊技時間（playMinutes）
+        const workMin = archiveWorkMinutes(a);
+        const hours = workMin > 0 ? (workMin / 60).toFixed(1) : null;
         const hourlyWage = hours && Number(hours) > 0 && displayPL !== 0
             ? Math.round(displayPL / Number(hours))
             : null;
@@ -8655,8 +8739,11 @@ export function CalendarTab({ S, onReset, initialDate = null }) {
         if (selectedArchiveId && selectedArchiveId !== prevSelectedRef.current) {
             const target = archives.find(ar => ar.id === selectedArchiveId);
             if (target) {
-                prevSelectedRef.current = selectedArchiveId;
                 const timer = setTimeout(() => {
+                    // prevSelectedRef の更新は実際に seed した時点で行う。
+                    // timer 発火前に effect が再実行（クリーンアップ）されても未 seed 扱いになり、
+                    // initialArchiveId でマウント時から選択済みのケース（focusMode）でも確実に初期化される。
+                    prevSelectedRef.current = selectedArchiveId;
                     setEditStore(String(target.storeName || ""));
                     setEditMachineNum(String(target.machineNum || ""));
                     // 投資額は実践記録（回転数データ）から算出した値を初期表示する。
@@ -8671,6 +8758,9 @@ export function CalendarTab({ S, onReset, initialDate = null }) {
                     const tStore = (S.stores || []).find(st => typeof st === "object" &&
                         (st.id === target.storeId || st.name === target.storeName));
                     setEditChodama(tStore ? String(Math.round(Number(tStore.chodama) || 0)) : "");
+                    // 遊技時間: 保存済み playMinutes（分）を時間表記で初期表示（1桁小数、整数はそのまま）
+                    const pm = Number(target.playMinutes) || 0;
+                    setEditPlayHours(pm > 0 ? String(Math.round((pm / 60) * 10) / 10) : "");
                     setShowEditStoreDD(false);
                 }, 0);
                 return () => clearTimeout(timer);
@@ -8684,6 +8774,295 @@ export function CalendarTab({ S, onReset, initialDate = null }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [archives, selectedArchiveId]);
 
+    // focusMode: 対象日の記録に選択を追従させる（削除で消えたら次の記録へ、0件なら追加フォーム表示へ）
+    useEffect(() => {
+        if (!focusMode) return;
+        const list = byDate[initialDate] || [];
+        if (list.length === 0) {
+            if (selectedArchiveId !== null) setSelectedArchiveId(null);
+        } else if (!list.some(ar => ar.id === selectedArchiveId)) {
+            setSelectedArchiveId(list[0].id);
+        }
+    }, [focusMode, byDate, initialDate, selectedArchiveId]);
+
+    // ── 回転数データ / 大当たり履歴（ArchiveDetail と focusMode 編集シートの共通表示。JSXは移設のみ） ──
+    const renderRotHistory = (a) => (a.rotRows && a.rotRows.length > 0) ? (
+        <Card style={{ overflow: "hidden", marginBottom: 8 }}>
+            <SecLabel label={`回転数データ (${a.rotRows.filter(r => r.type === "data").length}K)`} />
+            <div style={{ display: "grid", gridTemplateColumns: "36px 1fr 1fr 1fr 48px 48px", background: "rgba(249,115,22,0.12)", padding: "5px 4px" }}>
+                {["種別", "総回転", "今回", "平均", "投資", "持ち玉"].map(h => (
+                    <div key={h} style={{ textAlign: "center", fontSize: 9, fontWeight: 700, color: C.sub }}>{h}</div>
+                ))}
+            </div>
+            {a.rotRows.map((row, i) => {
+                const isMochi = row.mode === "mochi";
+                const badgeCol = isMochi ? C.orange : row.mode === "chodama" ? C.purple : C.blue;
+                const badge = isMochi ? "持" : row.mode === "chodama" ? "貯" : "現";
+                return (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: "36px 1fr 1fr 1fr 48px 48px", padding: "5px 4px", borderBottom: `1px solid ${C.border}` }}>
+                        <div style={{ textAlign: "center" }}>
+                            <span style={{ fontSize: 8, fontWeight: 700, color: badgeCol, background: badgeCol + "20", borderRadius: 4, padding: "1px 4px" }}>{badge}</span>
+                        </div>
+                        <div style={{ textAlign: "center", fontSize: 11, color: C.subHi, fontFamily: mono }}>{f(row.cumRot)}</div>
+                        <div style={{ textAlign: "center", fontSize: 11, color: C.text, fontFamily: mono }}>{row.type === "start" ? "START" : row.thisRot}</div>
+                        <div style={{ textAlign: "center", fontSize: 11, color: C.text, fontFamily: mono }}>{row.avgRot || "—"}</div>
+                        <div style={{ textAlign: "center", fontSize: 10, color: C.sub, fontFamily: mono }}>{row.mode === "mochi" ? "—" : (row.invest ? f(row.invest) : "—")}</div>
+                        <div style={{ textAlign: "center", fontSize: 10, color: row.mode === "chodama" ? C.purple : C.orange, fontFamily: mono }}>{f(row.mode === "chodama" ? (row.chodamaBalls || 0) : (row.mochiBalls || 0))}</div>
+                    </div>
+                );
+            })}
+        </Card>
+    ) : null;
+    const renderJpHistory = (a) => (a.jpLog && a.jpLog.length > 0) ? (
+        <Card style={{ overflow: "hidden", marginBottom: 8 }}>
+            <SecLabel label={`大当たり履歴 (${a.jpLog.length}回)`} />
+            {a.jpLog.map((chain, ci) => (
+                <div key={chain.chainId || ci} style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: C.blue }}>{ci + 1}回目データ {(chain.hits?.length || 0) <= 1 ? "単発" : (chain.hits?.length || 0) + "連チャン"}</span>
+                        <span style={{ fontSize: 10, color: C.sub, fontFamily: mono }}>{chain.time}</span>
+                    </div>
+                    {chain.hits?.map((hit, hi) => (
+                        <div key={hi} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, padding: "3px 0", borderTop: hi > 0 ? `1px solid ${C.border}` : "none" }}>
+                            <div style={{ fontSize: 10, color: C.sub }}>{hit.hitNumber}連: {hit.rounds}R</div>
+                            {/* 旧データは液晶出玉、簡易フローのデータはサポ回転を表示 */}
+                            <div style={{ fontSize: 10, color: C.yellow, fontFamily: mono }}>{(hit.displayBalls || 0) > 0 ? `液晶${f(hit.displayBalls)}` : ((hit.elecSapoRot || 0) > 0 ? `サポ${f(hit.elecSapoRot)}回` : "—")}</div>
+                            <div style={{ fontSize: 10, color: C.green, fontFamily: mono }}>{(hit.actualBalls || 0) > 0 ? `実${f(hit.actualBalls)}` : "—"}</div>
+                        </div>
+                    ))}
+                    {chain.summary && (
+                        <div style={{ display: "flex", gap: 12, marginTop: 4, paddingTop: 4, borderTop: `1px solid ${C.border}` }}>
+                            <span style={{ fontSize: 10, color: C.teal }}>1R: {f(chain.summary.avg1R, 1)}発</span>
+                            <span style={{ fontSize: 10, color: sc(chain.summary.sapoPerRot || 0) }}>
+                                サポ/回転: {chain.summary.totalSapoRot > 0 ? sp(chain.summary.sapoPerRot, 2) : "—"}
+                            </span>
+                        </div>
+                    )}
+                </div>
+            ))}
+        </Card>
+    ) : null;
+
+    // ── focusMode: 分析からの編集/追加シート（承認モック準拠・カレンダー等の重複表示なし） ──
+    //   対象日の記録は byDate から毎レンダー導出するため、削除後も表示が自動で追従する。
+    if (focusMode) {
+        const dateArchives = byDate[initialDate] || [];
+        const sel = dateArchives.find(ar => ar.id === selectedArchiveId) || dateArchives[0] || null;
+        const cardCls = "rounded-[14px] border border-[var(--at-ln-md)] bg-[image:var(--at-card-grad)] shadow-[var(--at-card-shadow2)]";
+        const labelCls = "text-[10px] font-bold tracking-[.05em] text-[var(--at-mut)]";
+        const inputCls = "mt-1.5 h-12 w-full rounded-[11px] border border-[var(--at-ln-hi)] bg-[var(--at-panel2)] px-3 text-[16px] font-bold text-[var(--at-strong)] outline-none placeholder:text-[var(--at-faint)] focus:border-[var(--at-cyan)] focus:shadow-[0_0_0_1px_var(--at-cyan)]";
+        const numProps = { type: "tel", inputMode: "numeric", pattern: "[0-9]*" };
+        // 遊技時間は小数（例 3.5 時間）を許容するため decimal 入力にする
+        const decProps = { type: "text", inputMode: "decimal" };
+        const yenFmt = (v) => `${v > 0 ? "+" : ""}${Math.round(v).toLocaleString("ja-JP")}`;
+        const plCls = (v) => v >= 0 ? "text-[var(--at-pos)]" : "text-[var(--at-neg)]";
+        const canAdd = (Number(addInvest) || 0) > 0 || (Number(addRecovery) || 0) > 0;
+        const selHasChodamaStore = sel != null && (S.stores || []).some(st => typeof st === "object" && (st.id === sel.storeId || st.name === sel.storeName));
+        const sst = sel?.stats || {};
+        const storeDD = (open, setOpen, setValue) => (open && storeList.length > 0) ? (
+            <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-[150px] overflow-y-auto rounded-[10px] border border-[var(--at-ln-hi)] bg-[var(--at-panel)] shadow-[var(--at-menu-shadow)]">
+                {storeList.map((stItem, i) => {
+                    const nm = typeof stItem === "object" ? stItem.name : stItem;
+                    return (
+                        <button key={stItem.id || i} type="button" onClick={() => { setValue(nm); setOpen(false); }}
+                            className="block w-full border-b border-[var(--at-ln)] px-3 py-2.5 text-left text-[13px] font-bold text-[var(--at-strong)] last:border-b-0">{nm}</button>
+                    );
+                })}
+            </div>
+        ) : null;
+        return (
+            <div className="mx-auto w-full max-w-[430px] px-5 pt-3">
+                {sel ? (
+                    <div className="space-y-3">
+                        {/* この日の記録カード（複数ある日はリスト。タップで編集対象を切替） */}
+                        {dateArchives.map(ar => {
+                            const inv = Number(ar.investYen) || 0;
+                            const rec = Number(ar.recoveryYen) || 0;
+                            const cy = Number(ar.chodamaYen) || 0;
+                            const hasActual = inv > 0 || rec > 0 || cy > 0;
+                            const pl = (rec - inv) - cy;
+                            const arSt = ar.stats || {};
+                            const ev = Number(arSt.effectiveWorkAmount ?? arSt.workAmount) || 0;
+                            const denom = ar.settings?.synthDenom;
+                            const name = ar.machineName && ar.machineName !== `1/${denom}` ? ar.machineName : (ar.machineName || `1/${denom || "—"}`);
+                            const active = ar.id === sel.id;
+                            return (
+                                <button key={ar.id} type="button" onClick={() => { setSelectedArchiveId(ar.id); setDelConfirm(null); }}
+                                    className={`${cardCls} flex min-h-[56px] w-full items-center gap-3 p-3.5 text-left ${active ? "border-[var(--at-cyan)] shadow-[0_0_0_1px_var(--at-cyan)]" : ""}`}>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="truncate text-[14px] font-black text-[var(--at-strong)]">{name}</div>
+                                        <div className="mt-0.5 truncate text-[10.5px] font-bold text-[var(--at-mut)]">
+                                            {[ar.storeName, ar.machineNum ? `${ar.machineNum}番台` : "", ev !== 0 ? `期待値 ${yenFmt(ev)}円` : ""].filter(Boolean).join(" / ") || "詳細未入力"}
+                                        </div>
+                                    </div>
+                                    <div className={`shrink-0 font-mono text-[16px] font-black tabular-nums ${hasActual ? plCls(pl) : "text-[var(--at-faint)]"}`}>
+                                        {hasActual ? `${yenFmt(pl)}円` : "—"}
+                                    </div>
+                                </button>
+                            );
+                        })}
+
+                        {/* 編集フォーム（項目は既存の記録エディタと同一） */}
+                        <div className={`${cardCls} p-4`}>
+                            <div className="flex items-center gap-2 text-[12px] font-black text-[var(--at-subtle-hi)]">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--at-cyan)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                                記録の編集
+                            </div>
+                            <div className="mt-3 grid grid-cols-2 gap-2.5">
+                                <div className="col-span-2">
+                                    <div className={labelCls}>店舗</div>
+                                    <div className="relative">
+                                        <input value={editStore} onChange={e => setEditStore(e.target.value)} placeholder="店舗名" className={inputCls} />
+                                        {storeList.length > 0 && (
+                                            <button type="button" onClick={() => setShowEditStoreDD(v => !v)}
+                                                className="absolute right-0 top-1/2 -translate-y-1/2 px-3 py-3 text-[12px] text-[var(--at-faint)]">▼</button>
+                                        )}
+                                        {storeDD(showEditStoreDD, setShowEditStoreDD, setEditStore)}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className={labelCls}>台番号</div>
+                                    <input {...numProps} value={editMachineNum} onChange={e => setEditMachineNum(e.target.value)} placeholder="台番号" className={inputCls} />
+                                </div>
+                                <div>
+                                    <div className={labelCls}>投資額（円）</div>
+                                    <input {...numProps} value={editInvest} onChange={e => setEditInvest(e.target.value)} placeholder="10000" className={inputCls} />
+                                    {Math.round(sel.carriedInYen || 0) > 0 ? (
+                                        <div className="mt-1 text-[9px] text-[var(--at-mut)]">引き継ぎ玉 ¥{Math.round(sel.carriedInYen || 0).toLocaleString()} を含む</div>
+                                    ) : Math.round(sel.stats?.rawInvest || 0) > 0 && (
+                                        <div className="mt-1 text-[9px] text-[var(--at-mut)]">実践記録から自動反映</div>
+                                    )}
+                                </div>
+                                <div>
+                                    <div className={labelCls}>回収額（円）</div>
+                                    <input {...numProps} value={editRecovery} onChange={e => setEditRecovery(e.target.value)} placeholder="0" className={inputCls} />
+                                </div>
+                                <div>
+                                    <div className={labelCls}>遊技時間（時間）</div>
+                                    <input {...decProps} value={editPlayHours} onChange={e => setEditPlayHours(e.target.value)} placeholder="例 3.5" className={inputCls} />
+                                    {(Number(sel.stats?.netRot) || 0) > 0 && (Number(sel.settings?.rotPerHour) || 0) > 0 && (
+                                        <div className="mt-1 text-[9px] text-[var(--at-mut)]">実践記録の回転数から自動算出中</div>
+                                    )}
+                                </div>
+                                <div>
+                                    <div className={labelCls}>貯玉残高（玉）</div>
+                                    <input {...numProps} value={editChodama} onChange={e => setEditChodama(e.target.value)} placeholder="0" className={inputCls} />
+                                </div>
+                            </div>
+                            <div className="mt-2 text-[9px] text-[var(--at-mut)]">
+                                貯玉残高は{selHasChodamaStore ? `「${sel.storeName || ""}」の現在残高に同期されます` : "店舗の現在残高として登録されます（未登録の店舗は自動で追加）"}
+                            </div>
+                        </div>
+
+                        {/* EV詳細（既存 ArchiveDetail と同じ値の表示） */}
+                        {(sst.start1K > 0 || sst.ev1K || sst.wage) ? (
+                            <div className={`${cardCls} grid grid-cols-3 p-3 text-center`}>
+                                {[
+                                    { l: "1Kスタート", v: sst.start1K > 0 ? `${f(sst.start1K, 1)}回/K` : "—" },
+                                    { l: "期待値/K", v: sst.ev1K ? `${sp(Math.round(sst.ev1K), 0)}円` : "—" },
+                                    { l: "時給", v: sst.wage ? `${f(Math.round(sst.wage))}円/h` : "—" },
+                                ].map(x => (
+                                    <div key={x.l} className="min-w-0">
+                                        <div className="truncate text-[9px] font-bold text-[var(--at-mut)]">{x.l}</div>
+                                        <div className="mt-1 truncate font-mono text-[13px] font-black tabular-nums text-[var(--at-subtle-hi)]">{x.v}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : null}
+
+                        {/* 回転数データ・大当たり履歴（既存表示を残置） */}
+                        {renderRotHistory(sel)}
+                        {renderJpHistory(sel)}
+
+                        {/* 削除（確認付き。削除後もシートに留まり、0件になれば追加フォームへ） */}
+                        <div className={`${cardCls} flex items-center justify-between gap-3 p-3.5`}>
+                            <div className="text-[11px] leading-relaxed text-[var(--at-mut)]">
+                                {delConfirm === sel.id ? "本当に削除しますか？（元に戻せません）" : "この記録を削除します。タップ後に確認が入ります。"}
+                            </div>
+                            {delConfirm === sel.id ? (
+                                <button type="button" onClick={() => { deleteArchive(sel.id); setDelConfirm(null); }}
+                                    className="h-11 shrink-0 rounded-[11px] bg-[var(--at-neg)] px-4 text-[12.5px] font-black text-white">削除確定</button>
+                            ) : (
+                                <button type="button" onClick={() => setDelConfirm(sel.id)}
+                                    className="h-11 shrink-0 rounded-[11px] border border-[var(--at-heat-m-bd)] bg-[var(--at-heat-m)] px-4 text-[12.5px] font-black text-[var(--at-neg)]">記録を削除</button>
+                            )}
+                        </div>
+
+                        {/* 下部固定の保存CTA（保存で分析へ自動復帰） */}
+                        <div className="sticky bottom-0 -mx-1 bg-[linear-gradient(180deg,transparent,var(--at-page)_38%)] px-1 pb-16 pt-5">
+                            <button type="button" onClick={() => { applyArchiveEdits(sel, false); if (onDone) onDone(); }}
+                                className="h-[52px] w-full rounded-[13px] bg-[linear-gradient(135deg,var(--at-cyan),var(--at-accent))] text-[15px] font-black tracking-[.04em] text-[var(--at-page)] shadow-[0_10px_30px_rgba(22,200,255,.25)]">
+                                保存する
+                            </button>
+                            <div className="mt-2 text-center text-[10px] font-bold text-[var(--at-mut)]">保存するとカレンダーに戻り、数値が反映されます</div>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        {/* 記録なしの日: 追加フォームを最初から展開して表示（押し直し不要） */}
+                        <div className={`${cardCls} p-4 text-center`}>
+                            <div className="text-[12px] font-bold text-[var(--at-mut)]">この日のデータはありません</div>
+                            <div className="mt-1.5 text-[10.5px] leading-relaxed text-[var(--at-faint2)]">そのまま入力して、後からこの日の収支を記録できます</div>
+                        </div>
+                        <div className={`${cardCls} p-4`}>
+                            <div className="flex items-center gap-2 text-[12px] font-black text-[var(--at-subtle-hi)]">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--at-cyan)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+                                この日の記録を追加
+                            </div>
+                            <div className="mt-3 grid grid-cols-2 gap-2.5">
+                                <div className="col-span-2">
+                                    <div className={labelCls}>店舗</div>
+                                    <div className="relative">
+                                        <input value={addStore} onChange={e => setAddStore(e.target.value)} placeholder="店舗名" className={inputCls} />
+                                        {storeList.length > 0 && (
+                                            <button type="button" onClick={() => setShowAddStoreDD(v => !v)}
+                                                className="absolute right-0 top-1/2 -translate-y-1/2 px-3 py-3 text-[12px] text-[var(--at-faint)]">▼</button>
+                                        )}
+                                        {storeDD(showAddStoreDD, setShowAddStoreDD, setAddStore)}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className={labelCls}>機種名</div>
+                                    <input value={addMachineName} onChange={e => setAddMachineName(e.target.value)} placeholder="任意" className={inputCls} />
+                                </div>
+                                <div>
+                                    <div className={labelCls}>台番号</div>
+                                    <input {...numProps} value={addMachineNum} onChange={e => setAddMachineNum(e.target.value)} placeholder="任意" className={inputCls} />
+                                </div>
+                                <div>
+                                    <div className={labelCls}>投資額（円）</div>
+                                    <input {...numProps} value={addInvest} onChange={e => setAddInvest(e.target.value)} placeholder="10000" className={inputCls} />
+                                </div>
+                                <div>
+                                    <div className={labelCls}>回収額（円）</div>
+                                    <input {...numProps} value={addRecovery} onChange={e => setAddRecovery(e.target.value)} placeholder="0" className={inputCls} />
+                                </div>
+                                <div>
+                                    <div className={labelCls}>遊技時間（時間）</div>
+                                    <input {...decProps} value={addPlayHours} onChange={e => setAddPlayHours(e.target.value)} placeholder="例 3.5" className={inputCls} />
+                                </div>
+                                <div>
+                                    <div className={labelCls}>貯玉残高（玉）</div>
+                                    <input {...numProps} value={addChodama} onChange={e => setAddChodama(e.target.value)} placeholder="0" className={inputCls} />
+                                </div>
+                            </div>
+                            <div className="mt-2 text-[9px] text-[var(--at-mut)]">投資・回収のどちらかを入力すると追加できます。貯玉残高は店舗の現在残高として登録されます（未登録の店舗は自動で追加）。</div>
+                        </div>
+                        <div className="sticky bottom-0 -mx-1 bg-[linear-gradient(180deg,transparent,var(--at-page)_38%)] px-1 pb-16 pt-5">
+                            <button type="button" disabled={!canAdd} onClick={() => { saveManualArchive(); if (onDone) onDone(); }}
+                                className={`h-[52px] w-full rounded-[13px] text-[15px] font-black tracking-[.04em] ${canAdd
+                                    ? "bg-[linear-gradient(135deg,var(--at-cyan),var(--at-accent))] text-[var(--at-page)] shadow-[0_10px_30px_rgba(22,200,255,.25)]"
+                                    : "border border-[var(--at-ln-md)] bg-[var(--at-panel2)] text-[var(--at-faint)]"}`}>
+                                追加する
+                            </button>
+                            <div className="mt-2 text-center text-[10px] font-bold text-[var(--at-mut)]">追加するとカレンダーに戻り、その日のセルに反映されます</div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    }
+
     // ── Detail View for a specific archive ──
     if (selectedArchiveId) {
         const a = archives.find(ar => ar.id === selectedArchiveId);
@@ -8695,43 +9074,8 @@ export function CalendarTab({ S, onReset, initialDate = null }) {
         const aggKey = `${a.settings?.synthDenom || ""}|${a.machineNum}`;
         const agg = a.machineNum ? machineAggregates[aggKey] : null;
 
-        const updateArchive = (doReset) => {
-            S.setArchives(prev => prev.map(ar => ar.id !== a.id ? ar : {
-                ...ar,
-                storeName: editStore,
-                machineNum: editMachineNum,
-                investYen: Number(editInvest) || 0,
-                recoveryYen: Number(editRecovery) || 0,
-            }));
-            // 貯玉残高の編集 → 店舗の現在残高に同期（差分があれば chodamaLog に調整履歴を追記）
-            const editStoreObj = (S.stores || []).find(st => typeof st === "object" &&
-                (st.id === a.storeId || st.name === editStore || st.name === a.storeName));
-            if (editStoreObj && editChodama !== "") {
-                const newBal = Math.max(0, Math.round(Number(editChodama) || 0));
-                const oldBal = Math.round(Number(editStoreObj.chodama) || 0);
-                if (newBal !== oldBal) {
-                    S.setStores(prev => prev.map(st =>
-                        (typeof st === "object" && st.id === editStoreObj.id)
-                            ? { ...st, chodama: newBal } : st));
-                    S.setChodamaLog(prev => [{
-                        id: Date.now() + Math.random(),
-                        date: new Date().toISOString().slice(0, 10),
-                        storeId: editStoreObj.id,
-                        storeName: editStoreObj.name || "",
-                        type: "adjust",
-                        balls: newBal - oldBal,
-                        balanceBefore: oldBal,
-                        balanceAfter: newBal,
-                        memo: "アーカイブから残高調整",
-                    }, ...(prev || [])]);
-                }
-            }
-            if (doReset) onReset();
-            // 保存後は詳細ビューを閉じてカレンダー一覧に戻す（視覚的フィードバック）
-            setSelectedArchiveId(null);
-            setExpandedRot(null);
-            setDelConfirm(null);
-        };
+        // 保存処理は CalendarTab スコープの applyArchiveEdits に共通化（focusMode 編集シートと共用）
+        const updateArchive = (doReset) => applyArchiveEdits(a, doReset);
 
         return (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -8906,65 +9250,9 @@ export function CalendarTab({ S, onReset, initialDate = null }) {
                         </Card>
                     )}
 
-                    {/* Rotation data */}
-                    {a.rotRows && a.rotRows.length > 0 && (
-                        <Card style={{ overflow: "hidden", marginBottom: 8 }}>
-                            <SecLabel label={`回転数データ (${a.rotRows.filter(r => r.type === "data").length}K)`} />
-                            <div style={{ display: "grid", gridTemplateColumns: "36px 1fr 1fr 1fr 48px 48px", background: "rgba(249,115,22,0.12)", padding: "5px 4px" }}>
-                                {["種別", "総回転", "今回", "平均", "投資", "持ち玉"].map(h => (
-                                    <div key={h} style={{ textAlign: "center", fontSize: 9, fontWeight: 700, color: C.sub }}>{h}</div>
-                                ))}
-                            </div>
-                            {a.rotRows.map((row, i) => {
-                                const isMochi = row.mode === "mochi";
-                                const badgeCol = isMochi ? C.orange : row.mode === "chodama" ? C.purple : C.blue;
-                                const badge = isMochi ? "持" : row.mode === "chodama" ? "貯" : "現";
-                                return (
-                                    <div key={i} style={{ display: "grid", gridTemplateColumns: "36px 1fr 1fr 1fr 48px 48px", padding: "5px 4px", borderBottom: `1px solid ${C.border}` }}>
-                                        <div style={{ textAlign: "center" }}>
-                                            <span style={{ fontSize: 8, fontWeight: 700, color: badgeCol, background: badgeCol + "20", borderRadius: 4, padding: "1px 4px" }}>{badge}</span>
-                                        </div>
-                                        <div style={{ textAlign: "center", fontSize: 11, color: C.subHi, fontFamily: mono }}>{f(row.cumRot)}</div>
-                                        <div style={{ textAlign: "center", fontSize: 11, color: C.text, fontFamily: mono }}>{row.type === "start" ? "START" : row.thisRot}</div>
-                                        <div style={{ textAlign: "center", fontSize: 11, color: C.text, fontFamily: mono }}>{row.avgRot || "—"}</div>
-                                        <div style={{ textAlign: "center", fontSize: 10, color: C.sub, fontFamily: mono }}>{row.mode === "mochi" ? "—" : (row.invest ? f(row.invest) : "—")}</div>
-                                        <div style={{ textAlign: "center", fontSize: 10, color: row.mode === "chodama" ? C.purple : C.orange, fontFamily: mono }}>{f(row.mode === "chodama" ? (row.chodamaBalls || 0) : (row.mochiBalls || 0))}</div>
-                                    </div>
-                                );
-                            })}
-                        </Card>
-                    )}
-
-                    {/* Jackpot history */}
-                    {a.jpLog && a.jpLog.length > 0 && (
-                        <Card style={{ overflow: "hidden", marginBottom: 8 }}>
-                            <SecLabel label={`大当たり履歴 (${a.jpLog.length}回)`} />
-                            {a.jpLog.map((chain, ci) => (
-                                <div key={chain.chainId || ci} style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
-                                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                                        <span style={{ fontSize: 11, fontWeight: 700, color: C.blue }}>{ci + 1}回目データ {(chain.hits?.length || 0) <= 1 ? "単発" : (chain.hits?.length || 0) + "連チャン"}</span>
-                                        <span style={{ fontSize: 10, color: C.sub, fontFamily: mono }}>{chain.time}</span>
-                                    </div>
-                                    {chain.hits?.map((hit, hi) => (
-                                        <div key={hi} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, padding: "3px 0", borderTop: hi > 0 ? `1px solid ${C.border}` : "none" }}>
-                                            <div style={{ fontSize: 10, color: C.sub }}>{hit.hitNumber}連: {hit.rounds}R</div>
-                                            {/* 旧データは液晶出玉、簡易フローのデータはサポ回転を表示 */}
-                                            <div style={{ fontSize: 10, color: C.yellow, fontFamily: mono }}>{(hit.displayBalls || 0) > 0 ? `液晶${f(hit.displayBalls)}` : ((hit.elecSapoRot || 0) > 0 ? `サポ${f(hit.elecSapoRot)}回` : "—")}</div>
-                                            <div style={{ fontSize: 10, color: C.green, fontFamily: mono }}>{(hit.actualBalls || 0) > 0 ? `実${f(hit.actualBalls)}` : "—"}</div>
-                                        </div>
-                                    ))}
-                                    {chain.summary && (
-                                        <div style={{ display: "flex", gap: 12, marginTop: 4, paddingTop: 4, borderTop: `1px solid ${C.border}` }}>
-                                            <span style={{ fontSize: 10, color: C.teal }}>1R: {f(chain.summary.avg1R, 1)}発</span>
-                                            <span style={{ fontSize: 10, color: sc(chain.summary.sapoPerRot || 0) }}>
-                                                サポ/回転: {chain.summary.totalSapoRot > 0 ? sp(chain.summary.sapoPerRot, 2) : "—"}
-                                            </span>
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
-                        </Card>
-                    )}
+                    {/* Rotation data / Jackpot history（focusMode 編集シートと共通レンダラー） */}
+                    {renderRotHistory(a)}
+                    {renderJpHistory(a)}
 
                     {/* Delete button */}
                     <div style={{ textAlign: "center", marginTop: 8, marginBottom: 16 }}>

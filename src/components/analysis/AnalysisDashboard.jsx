@@ -35,6 +35,7 @@ import {
   aggregateByDay,
   aggregateByMonth,
   aggregateByYear,
+  archiveWorkMinutes,
   filterArchives,
   getActualPL,
   getEvAmount,
@@ -118,6 +119,7 @@ function buildRealDays(archives, month) {
         actual: row.hasActual ? row.actualPL : 0,
         ev: row.evAmount,
         date: row.date,
+        hours: (row.workMinutes || 0) / 60,
       },
     ]),
   );
@@ -363,9 +365,8 @@ function DaySessionCard({ archive, onOpen }) {
   const actual = (recovery - invest) - chodamaYen;
   const ev = Number(st.effectiveWorkAmount ?? st.workAmount) || 0;
   const hasEv = ev !== 0;
-  const rph = Number(archive.settings?.rotPerHour) || 0;
-  const netRot = Number(st.netRot) || 0;
-  const hours = netRot > 0 && rph > 0 ? netRot / rph : 0;
+  // 稼働時間: 実践記録は netRot/rotPerHour、手動記録は遊技時間（playMinutes）を使用
+  const hours = archiveWorkMinutes(archive) / 60;
   const wage = hours > 0 ? Math.round(actual / hours) : 0;
   const denom = archive.settings?.synthDenom;
   const machineName = archive.machineName && archive.machineName !== `1/${denom}`
@@ -451,18 +452,18 @@ function DayDetail({ dateLabel, row, onEditRecords, archives = [] }) {
           </div>
         ))}
       </div>
-      {/* 記録の編集・削除は既存のカレンダー記録エディタ（CalendarTab）へ該当日で遷移する唯一の導線として残置。
-          記録のない日は「記録を追加」表記で同じエディタへ遷移し、後から収支を入力できる。 */}
-      <button type="button" onClick={onEditRecords} className="mt-3 flex h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--at-ln-md)] bg-[var(--at-panel2)] text-[11px] font-bold text-[var(--at-subtle)]">
+      {/* 記録の編集・追加はカレンダーなしの編集シート（CalendarTab focusMode）へ直行する。
+          記録のない日は「記録を追加」表記で追加フォームが展開済みのシートを開く。 */}
+      <button type="button" onClick={() => onEditRecords(null)} className="mt-3 flex h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--at-ln-md)] bg-[var(--at-panel2)] text-[11px] font-bold text-[var(--at-subtle)]">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 20h9" />
           <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
         </svg>
         {row ? "記録を編集" : "記録を追加"}
       </button>
-      {/* この日の実践記録カード（タップで記録エディタへ）。記録がない日は何も表示しない */}
+      {/* この日の実践記録カード（タップで該当記録の編集シートへ直行）。記録がない日は何も表示しない */}
       {archives.map((a) => (
-        <DaySessionCard key={a.id} archive={a} onOpen={onEditRecords} />
+        <DaySessionCard key={a.id} archive={a} onOpen={() => onEditRecords(a.id)} />
       ))}
     </section>
   );
@@ -885,7 +886,8 @@ export default function AnalysisDashboard({
   const [detailView, setDetailView] = useState(false);
   // 月送り遷移の向き（next=左スワイプ/prev=右スワイプ/fade=メニュー切替）。CSSアニメーション用。
   const [slideDir, setSlideDir] = useState("fade");
-  // 記録エディタ（CalendarTab）を該当日で開くためのサブ画面状態（null=非表示 / "YYYY-MM-DD"）。
+  // 編集シート（CalendarTab focusMode）を開くためのサブ画面状態。
+  //   null=非表示 / { day: "YYYY-MM-DD", archiveId: number|null }（archiveId 指定時はその記録の編集フォームを直接開く）
   const [recordsDay, setRecordsDay] = useState(null);
   // スワイプ判定用のタッチ開始座標。
   const touchRef = useRef({ x: 0, y: 0, active: false });
@@ -1050,20 +1052,43 @@ export default function AnalysisDashboard({
     ];
   }, [isDemo, summary, summaryExtra]);
 
-  // 月別の「記録を編集」導線で開く記録エディタのサブ画面（該当日を初期選択）。
+  // 月別の「記録を編集/追加」導線で開く編集シートのサブ画面（カレンダーなし・該当記録へ直行）。
   if (recordsDay !== null) {
+    // ヘッダー用の日付ラベルと日計（記録カードと同じ式: (回収−投資)−貯玉消費円）。
+    const sheetDay = recordsDay.day;
+    const sheetArchives = archives.filter((a) => a.date === sheetDay);
+    const [sy, sm, sd] = sheetDay.split("-").map(Number);
+    const sheetLabel = `${sm}月${sd}日（${WEEKDAYS[new Date(sy, sm - 1, sd).getDay()]}）記録を${sheetArchives.length > 0 ? "編集" : "追加"}`;
+    let sheetPL = 0;
+    let sheetHasActual = false;
+    for (const a of sheetArchives) {
+      const inv = Number(a.investYen) || 0;
+      const rec = Number(a.recoveryYen) || 0;
+      const cy = Number(a.chodamaYen) || 0;
+      if (inv > 0 || rec > 0 || cy > 0) {
+        sheetPL += (rec - inv) - cy;
+        sheetHasActual = true;
+      }
+    }
     return (
       <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--at-page)] text-[var(--at-strong)]">
         <div className="mx-auto flex w-full max-w-[430px] shrink-0 items-center gap-2 px-5 pt-4">
-          <button type="button" onClick={() => setRecordsDay(null)} className="flex h-9 items-center gap-1 rounded-lg border border-[var(--at-ln-md)] bg-[var(--at-panel2)] px-3 text-[12px] font-bold text-[var(--at-subtle)]">
+          <button type="button" onClick={() => setRecordsDay(null)} className="flex h-9 shrink-0 items-center gap-1 rounded-lg border border-[var(--at-ln-md)] bg-[var(--at-panel2)] px-3 text-[12px] font-bold text-[var(--at-subtle)]">
             <ChevronLeft className="h-4 w-4" />戻る
           </button>
-          <h1 className="text-[15px] font-black tracking-[.02em]">記録を編集</h1>
+          <h1 className="min-w-0 flex-1 truncate text-[15px] font-black tracking-[.02em]">{sheetLabel}</h1>
+          {sheetHasActual && (
+            <span className={`shrink-0 rounded-full border px-2.5 py-1 font-mono text-[11px] font-black tabular-nums ${sheetPL >= 0
+              ? "border-[var(--at-heat-p-bd)] bg-[var(--at-heat-p)] text-[var(--at-pos)]"
+              : "border-[var(--at-heat-m-bd)] bg-[var(--at-heat-m)] text-[var(--at-neg)]"}`}>
+              日計 {signed(sheetPL)}円
+            </span>
+          )}
         </div>
         {/* スクロールを画面内に閉じ込める（親mainの高さ依存を避け、下部ナビと重ならない）。
             overflow-x-hidden 必須: overflow-y のみ指定だと横方向が auto になり、幅超過要素があると画面全体が左へパンしたまま固定される */}
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
-          <CalendarTab S={S} onReset={onReset} initialDate={recordsDay} />
+          <CalendarTab S={S} onReset={onReset} initialDate={sheetDay} focusMode initialArchiveId={recordsDay.archiveId} onDone={() => setRecordsDay(null)} />
         </div>
       </div>
     );
@@ -1120,7 +1145,7 @@ export default function AnalysisDashboard({
                   {/* 4指標ストリップ＋日別収支カレンダー＋選択日詳細（モック1）。 */}
                   <MonthStatStrip actual={actual} ev={ev} diff={monthDiff} winRate={winRate} />
                   <CalendarPanel dayMap={dayMap} selectedDay={selectedDay} setSelectedDay={setSelectedDay} year={year} month={month} />
-                  <DayDetail dateLabel={selectedDateLabel} row={dayMap[selectedDay]} archives={dayArchives} onEditRecords={() => setRecordsDay(selectedDateStr)} />
+                  <DayDetail dateLabel={selectedDateLabel} row={dayMap[selectedDay]} archives={dayArchives} onEditRecords={(archiveId = null) => setRecordsDay({ day: selectedDateStr, archiveId })} />
                 </>
               )
             ) : (

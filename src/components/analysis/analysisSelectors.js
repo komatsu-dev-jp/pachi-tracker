@@ -27,6 +27,17 @@ export function getEvAmount(a) {
   return typeof w === "number" && isFinite(w) ? w : 0;
 }
 
+// 稼働時間（分）: 実践記録（回転数）があれば netRot ÷ rotPerHour × 60 を優先。
+//   回転数データが無い記録（手動追加など）は手入力の遊技時間 playMinutes をフォールバックに使う。
+//   これにより時間・時給の集計が手動記録でも成立する（既存の実践記録の値は不変）。
+export function archiveWorkMinutes(a) {
+  const netRot = Number(a?.stats?.netRot) || 0;
+  const rph = Number(a?.settings?.rotPerHour) || 0;
+  if (netRot > 0 && rph > 0) return (netRot / rph) * 60;
+  const manual = Number(a?.playMinutes) || 0;
+  return manual > 0 ? manual : 0;
+}
+
 // 貯玉消費分の収支（円）
 //   archive.chodamaYen は確定時に「消費貯玉数 × 交換レート」で円換算済み（App.jsx / Tabs.jsx）。
 //   貯玉を消費すると資産（貯玉）が目減りするため、収支上は現金投資と同じ「コスト」= マイナスで扱う。
@@ -94,13 +105,14 @@ export function aggregateByDay(archives, month, extraFilters = {}) {
   const map = {};
   for (const a of filtered) {
     const d = a.date;
-    if (!map[d]) map[d] = { date: d, actualPL: 0, evAmount: 0, sessions: 0, hasActual: false };
+    if (!map[d]) map[d] = { date: d, actualPL: 0, evAmount: 0, sessions: 0, hasActual: false, workMinutes: 0 };
     const pl = getActualPL(a);
     if (pl != null) {
       map[d].actualPL += pl;
       map[d].hasActual = true;
     }
     map[d].evAmount += getEvAmount(a);
+    map[d].workMinutes += archiveWorkMinutes(a);
     map[d].sessions += 1;
   }
   return Object.values(map).sort((a, b) => a.date.localeCompare(b.date));
@@ -194,12 +206,8 @@ export function summarize(archives, opts = {}) {
     }
     evAmount += getEvAmount(a);
 
-    // 稼働時間: netRot / rotPerHour（時間単位）
-    const netRot = Number(a?.stats?.netRot) || 0;
-    const rph = Number(a?.settings?.rotPerHour) || 0;
-    if (netRot > 0 && rph > 0) {
-      workMinutes += (netRot / rph) * 60;
-    }
+    // 稼働時間: 実践記録は netRot / rotPerHour、手動記録は遊技時間（playMinutes）
+    workMinutes += archiveWorkMinutes(a);
   }
 
   const recoverRate = totalInvest > 0 ? (totalRecovery / totalInvest) * 100 : null;

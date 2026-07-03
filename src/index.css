@@ -1,5 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
+/* Tabs.jsx は 500KB 超のため Tailwind の自動ソース検出から漏れ、
+   Tabs.jsx でしか使わないクラス（編集シートの h-[52px] 等）が生成されない。
+   明示的にスキャン対象へ追加する */
+@source "../src/components/Tabs.jsx";
 
 /* Light Theme (Default) — iOS Clean Palette */
 :root,
