@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import ReactDOM from "react-dom";
 import { C, f, sc, sp, tsNow, font, mono } from "../constants";
+import { archiveWorkMinutes } from "./analysis/analysisSelectors";
 import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./Atoms";
 import { machineDB, searchMachines, deriveSpecForMachine } from "../machineDB";
 import { calcPreciseEV } from "../logic";
@@ -8206,6 +8207,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
     const [editInvest, setEditInvest] = useState("");
     const [editRecovery, setEditRecovery] = useState("");
     const [editChodama, setEditChodama] = useState(""); // 貯玉残高（店舗の現在残高を編集）
+    const [editPlayHours, setEditPlayHours] = useState(""); // 遊技時間（時間・手入力。実践記録が無い記録の稼働時間/時給に使用）
     const [showEditStoreDD, setShowEditStoreDD] = useState(false);
     // Swipe delete state
     const [swipedId, setSwipedId] = useState(null);
@@ -8221,6 +8223,8 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
     const [addMachineNum, setAddMachineNum] = useState("");
     const [addInvest, setAddInvest] = useState("");
     const [addRecovery, setAddRecovery] = useState("");
+    const [addChodama, setAddChodama] = useState("");   // 貯玉残高（店舗へ登録・同期）
+    const [addPlayHours, setAddPlayHours] = useState(""); // 遊技時間（時間・手入力）
     const [showAddStoreDD, setShowAddStoreDD] = useState(false);
 
     // 日付を切り替えたら追加フォームを閉じる（入力途中の値は日付間で持ち越さない）
@@ -8301,9 +8305,8 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                 if (rec - inv > 0) winCount += 1;
             }
             ev += Number(a.stats?.effectiveWorkAmount ?? a.stats?.workAmount) || 0;
-            const netRot = Number(a.stats?.netRot) || 0;
-            const rph = Number(a.settings?.rotPerHour) || 0;
-            if (netRot > 0 && rph > 0) workMin += (netRot / rph) * 60;
+            // 稼働時間: 実践記録は netRot/rotPerHour、手動記録は遊技時間（playMinutes）
+            workMin += archiveWorkMinutes(a);
         });
         const pl = recovery - invest;
         const hours = workMin / 60;
@@ -8361,9 +8364,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                 const inv = Number(a.investYen) || 0;
                 const rec = Number(a.recoveryYen) || 0;
                 if (inv > 0 || rec > 0) { map[key].pl += rec - inv; map[key].hasActual = true; }
-                const netRot = Number(a.stats?.netRot) || 0;
-                const rph = Number(a.settings?.rotPerHour) || 0;
-                if (netRot > 0 && rph > 0) map[key].workMin += (netRot / rph) * 60;
+                map[key].workMin += archiveWorkMinutes(a);
                 map[key].sessions += 1;
             });
             return Object.values(map)
@@ -8424,22 +8425,74 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
     // CSVインポート（isImported）と同型の「後から追加される収支記録」で、
     // 分析集計は investYen / recoveryYen ベースのため自動で反映される。
     // rotRows / logic.js の計算フローには一切関与しない。
+    // 遊技時間（時間・小数可）→ 分（整数）。空欄や不正値は 0。
+    const playHoursToMinutes = (v) => {
+        const h = Number(v);
+        return v !== "" && isFinite(h) && h > 0 ? Math.round(h * 60) : 0;
+    };
+
+    // 貯玉残高を店舗へ登録・同期する共通処理。未登録の店舗名なら新規店舗として登録する。
+    //   差分があれば chodamaLog に調整履歴を追記。反映先店舗の id を返す（保存できなければ既存 storeId）。
+    //   貯玉は店舗単位の現在残高（＝すべての日で共有）。この設計は既存の店舗編集と同一。
+    const syncChodamaToStore = ({ storeId, storeName, chodamaStr }) => {
+        if (chodamaStr === "" || chodamaStr == null) return storeId ?? null;
+        const name = (storeName || "").trim();
+        const newBal = Math.max(0, Math.round(Number(chodamaStr) || 0));
+        let store = (S.stores || []).find(st => typeof st === "object" &&
+            (st.id === storeId || st.name === name));
+        if (!store) {
+            if (!name) return storeId ?? null; // 店舗名が無いと貯玉の保存先が定まらない
+            // 未登録の店舗を新規登録（既定値はアプリ設定の貸玉/交換率を踏襲）。
+            const newId = Date.now() + Math.random();
+            store = {
+                id: newId, name, address: "",
+                rentBalls: Number(S.rentBalls) || 250, exRate: Number(S.exRate) || 250,
+                memo: "", chodama: newBal, chodamaMax: 0, lastVisit: "",
+                replayBalls: 0, todaySettle: 0,
+                memberCard: { created: false, number: "", deposit: 0 },
+            };
+            S.setStores(prev => [...(prev || []).filter(st => typeof st === "object"), store]);
+            S.setChodamaLog(prev => [{
+                id: Date.now() + Math.random(), date: new Date().toISOString().slice(0, 10),
+                storeId: newId, storeName: name, type: "adjust",
+                balls: newBal, balanceBefore: 0, balanceAfter: newBal, memo: "記録から店舗を新規登録",
+            }, ...(prev || [])]);
+            return newId;
+        }
+        const oldBal = Math.round(Number(store.chodama) || 0);
+        if (newBal !== oldBal) {
+            S.setStores(prev => prev.map(st =>
+                (typeof st === "object" && st.id === store.id) ? { ...st, chodama: newBal } : st));
+            S.setChodamaLog(prev => [{
+                id: Date.now() + Math.random(), date: new Date().toISOString().slice(0, 10),
+                storeId: store.id, storeName: store.name || "", type: "adjust",
+                balls: newBal - oldBal, balanceBefore: oldBal, balanceAfter: newBal, memo: "記録編集から残高調整",
+            }, ...(prev || [])]);
+        }
+        return store.id;
+    };
+
     const saveManualArchive = () => {
         const inv = Math.max(0, Math.round(Number(addInvest) || 0));
         const rec = Math.max(0, Math.round(Number(addRecovery) || 0));
         if (!selectedDate || (inv <= 0 && rec <= 0)) return;
         const storeName = (addStore || "").trim();
         const storeObj = storeList.find(st => typeof st === "object" && st.name === storeName);
+        // 貯玉残高を店舗へ登録・同期し、反映先の店舗 id を記録に紐付ける。
+        const resolvedStoreId = syncChodamaToStore({
+            storeId: storeObj?.id ?? null, storeName, chodamaStr: addChodama,
+        });
         S.setArchives(prev => [...prev, {
             id: Date.now(),
             date: selectedDate,
             time: "",
             storeName,
-            storeId: storeObj?.id ?? null,
+            storeId: resolvedStoreId,
             machineNum: (addMachineNum || "").trim(),
             machineName: (addMachineName || "").trim(),
             investYen: inv,
             recoveryYen: rec,
+            playMinutes: playHoursToMinutes(addPlayHours), // 遊技時間（分）。稼働時間/時給の集計に使用
             settings: {},
             stats: {},
             rotRows: [],
@@ -8456,41 +8509,28 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
         setAddMachineNum("");
         setAddInvest("");
         setAddRecovery("");
+        setAddChodama("");
+        setAddPlayHours("");
     };
 
     // ── 記録編集の保存（ArchiveDetail と focusMode 編集シートの共通処理） ──
     //   旧 ArchiveDetail 内 updateArchive を CalendarTab スコープへ持ち上げたもの（処理内容は不変）
     const applyArchiveEdits = (a, doReset) => {
+        // 貯玉残高を店舗へ登録・同期（未登録の店舗名なら新規登録）。反映先の店舗 id を記録へ紐付ける。
+        const resolvedStoreId = syncChodamaToStore({
+            storeId: a.storeId ?? null,
+            storeName: editStore || a.storeName,
+            chodamaStr: editChodama,
+        });
         S.setArchives(prev => prev.map(ar => ar.id !== a.id ? ar : {
             ...ar,
             storeName: editStore,
+            storeId: resolvedStoreId,
             machineNum: editMachineNum,
             investYen: Number(editInvest) || 0,
             recoveryYen: Number(editRecovery) || 0,
+            playMinutes: playHoursToMinutes(editPlayHours), // 遊技時間（分）。稼働時間/時給に使用
         }));
-        // 貯玉残高の編集 → 店舗の現在残高に同期（差分があれば chodamaLog に調整履歴を追記）
-        const editStoreObj = (S.stores || []).find(st => typeof st === "object" &&
-            (st.id === a.storeId || st.name === editStore || st.name === a.storeName));
-        if (editStoreObj && editChodama !== "") {
-            const newBal = Math.max(0, Math.round(Number(editChodama) || 0));
-            const oldBal = Math.round(Number(editStoreObj.chodama) || 0);
-            if (newBal !== oldBal) {
-                S.setStores(prev => prev.map(st =>
-                    (typeof st === "object" && st.id === editStoreObj.id)
-                        ? { ...st, chodama: newBal } : st));
-                S.setChodamaLog(prev => [{
-                    id: Date.now() + Math.random(),
-                    date: new Date().toISOString().slice(0, 10),
-                    storeId: editStoreObj.id,
-                    storeName: editStoreObj.name || "",
-                    type: "adjust",
-                    balls: newBal - oldBal,
-                    balanceBefore: oldBal,
-                    balanceAfter: newBal,
-                    memo: "アーカイブから残高調整",
-                }, ...(prev || [])]);
-            }
-        }
         if (doReset) onReset();
         // 保存後は詳細ビューを閉じてカレンダー一覧に戻す（視覚的フィードバック）
         setSelectedArchiveId(null);
@@ -8513,10 +8553,9 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
         const workAmount = st.effectiveWorkAmount ?? st.workAmount ?? 0;
         // 実データが無い場合のみ期待値（仕事量）へフォールバック
         const displayPL = hasActual ? realPL : workAmount;
-        const rph = a.settings?.rotPerHour || S.rotPerHour || 200;
-        const hours = st.netRot > 0 && rph > 0
-            ? (st.netRot / rph).toFixed(1)
-            : null;
+        // 稼働時間: 実践記録は netRot/rotPerHour、手動記録は遊技時間（playMinutes）
+        const workMin = archiveWorkMinutes(a);
+        const hours = workMin > 0 ? (workMin / 60).toFixed(1) : null;
         const hourlyWage = hours && Number(hours) > 0 && displayPL !== 0
             ? Math.round(displayPL / Number(hours))
             : null;
@@ -8719,6 +8758,9 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                     const tStore = (S.stores || []).find(st => typeof st === "object" &&
                         (st.id === target.storeId || st.name === target.storeName));
                     setEditChodama(tStore ? String(Math.round(Number(tStore.chodama) || 0)) : "");
+                    // 遊技時間: 保存済み playMinutes（分）を時間表記で初期表示（1桁小数、整数はそのまま）
+                    const pm = Number(target.playMinutes) || 0;
+                    setEditPlayHours(pm > 0 ? String(Math.round((pm / 60) * 10) / 10) : "");
                     setShowEditStoreDD(false);
                 }, 0);
                 return () => clearTimeout(timer);
@@ -8810,6 +8852,8 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
         const labelCls = "text-[10px] font-bold tracking-[.05em] text-[var(--at-mut)]";
         const inputCls = "mt-1.5 h-12 w-full rounded-[11px] border border-[var(--at-ln-hi)] bg-[var(--at-panel2)] px-3 text-[16px] font-bold text-[var(--at-strong)] outline-none placeholder:text-[var(--at-faint)] focus:border-[var(--at-cyan)] focus:shadow-[0_0_0_1px_var(--at-cyan)]";
         const numProps = { type: "tel", inputMode: "numeric", pattern: "[0-9]*" };
+        // 遊技時間は小数（例 3.5 時間）を許容するため decimal 入力にする
+        const decProps = { type: "text", inputMode: "decimal" };
         const yenFmt = (v) => `${v > 0 ? "+" : ""}${Math.round(v).toLocaleString("ja-JP")}`;
         const plCls = (v) => v >= 0 ? "text-[var(--at-pos)]" : "text-[var(--at-neg)]";
         const canAdd = (Number(addInvest) || 0) > 0 || (Number(addRecovery) || 0) > 0;
@@ -8880,12 +8924,6 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                                     <div className={labelCls}>台番号</div>
                                     <input {...numProps} value={editMachineNum} onChange={e => setEditMachineNum(e.target.value)} placeholder="台番号" className={inputCls} />
                                 </div>
-                                {selHasChodamaStore && (
-                                    <div>
-                                        <div className={labelCls}>貯玉残高（玉）</div>
-                                        <input {...numProps} value={editChodama} onChange={e => setEditChodama(e.target.value)} placeholder="0" className={inputCls} />
-                                    </div>
-                                )}
                                 <div>
                                     <div className={labelCls}>投資額（円）</div>
                                     <input {...numProps} value={editInvest} onChange={e => setEditInvest(e.target.value)} placeholder="10000" className={inputCls} />
@@ -8899,10 +8937,21 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                                     <div className={labelCls}>回収額（円）</div>
                                     <input {...numProps} value={editRecovery} onChange={e => setEditRecovery(e.target.value)} placeholder="0" className={inputCls} />
                                 </div>
+                                <div>
+                                    <div className={labelCls}>遊技時間（時間）</div>
+                                    <input {...decProps} value={editPlayHours} onChange={e => setEditPlayHours(e.target.value)} placeholder="例 3.5" className={inputCls} />
+                                    {(Number(sel.stats?.netRot) || 0) > 0 && (Number(sel.settings?.rotPerHour) || 0) > 0 && (
+                                        <div className="mt-1 text-[9px] text-[var(--at-mut)]">実践記録の回転数から自動算出中</div>
+                                    )}
+                                </div>
+                                <div>
+                                    <div className={labelCls}>貯玉残高（玉）</div>
+                                    <input {...numProps} value={editChodama} onChange={e => setEditChodama(e.target.value)} placeholder="0" className={inputCls} />
+                                </div>
                             </div>
-                            {selHasChodamaStore && (
-                                <div className="mt-2 text-[9px] text-[var(--at-mut)]">貯玉残高は「{sel.storeName || ""}」の現在残高に同期されます</div>
-                            )}
+                            <div className="mt-2 text-[9px] text-[var(--at-mut)]">
+                                貯玉残高は{selHasChodamaStore ? `「${sel.storeName || ""}」の現在残高に同期されます` : "店舗の現在残高として登録されます（未登録の店舗は自動で追加）"}
+                            </div>
                         </div>
 
                         {/* EV詳細（既存 ArchiveDetail と同じ値の表示） */}
@@ -8988,8 +9037,16 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                                     <div className={labelCls}>回収額（円）</div>
                                     <input {...numProps} value={addRecovery} onChange={e => setAddRecovery(e.target.value)} placeholder="0" className={inputCls} />
                                 </div>
+                                <div>
+                                    <div className={labelCls}>遊技時間（時間）</div>
+                                    <input {...decProps} value={addPlayHours} onChange={e => setAddPlayHours(e.target.value)} placeholder="例 3.5" className={inputCls} />
+                                </div>
+                                <div>
+                                    <div className={labelCls}>貯玉残高（玉）</div>
+                                    <input {...numProps} value={addChodama} onChange={e => setAddChodama(e.target.value)} placeholder="0" className={inputCls} />
+                                </div>
                             </div>
-                            <div className="mt-2 text-[9px] text-[var(--at-mut)]">投資・回収のどちらかを入力すると追加できます</div>
+                            <div className="mt-2 text-[9px] text-[var(--at-mut)]">投資・回収のどちらかを入力すると追加できます。貯玉残高は店舗の現在残高として登録されます（未登録の店舗は自動で追加）。</div>
                         </div>
                         <div className="sticky bottom-0 -mx-1 bg-[linear-gradient(180deg,transparent,var(--at-page)_38%)] px-1 pb-16 pt-5">
                             <button type="button" disabled={!canAdd} onClick={() => { saveManualArchive(); if (onDone) onDone(); }}

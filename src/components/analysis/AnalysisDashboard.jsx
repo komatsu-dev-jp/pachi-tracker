@@ -35,6 +35,7 @@ import {
   aggregateByDay,
   aggregateByMonth,
   aggregateByYear,
+  archiveWorkMinutes,
   filterArchives,
   getActualPL,
   getEvAmount,
@@ -118,6 +119,7 @@ function buildRealDays(archives, month) {
         actual: row.hasActual ? row.actualPL : 0,
         ev: row.evAmount,
         date: row.date,
+        hours: (row.workMinutes || 0) / 60,
       },
     ]),
   );
@@ -363,9 +365,8 @@ function DaySessionCard({ archive, onOpen }) {
   const actual = (recovery - invest) - chodamaYen;
   const ev = Number(st.effectiveWorkAmount ?? st.workAmount) || 0;
   const hasEv = ev !== 0;
-  const rph = Number(archive.settings?.rotPerHour) || 0;
-  const netRot = Number(st.netRot) || 0;
-  const hours = netRot > 0 && rph > 0 ? netRot / rph : 0;
+  // 稼働時間: 実践記録は netRot/rotPerHour、手動記録は遊技時間（playMinutes）を使用
+  const hours = archiveWorkMinutes(archive) / 60;
   const wage = hours > 0 ? Math.round(actual / hours) : 0;
   const denom = archive.settings?.synthDenom;
   const machineName = archive.machineName && archive.machineName !== `1/${denom}`
