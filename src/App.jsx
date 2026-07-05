@@ -818,11 +818,15 @@ export default function App() {
     //   持ち込んだ資産からモードを決定して記録画面の持ち玉/貯玉表示を一致させる。
     const carriedMode = carriedMochi > 0 ? "mochi" : (carriedChodama > 0 ? "chodama" : "cash");
     try { takeSnapshotImmediate("table:move", getUndoSnapshot()); } catch { /* ignore */ }
+    // 移動先の開始回転数（新台の台データ表示値）。未入力なら従来どおり0。
+    // startRot は回転数計算には使われない表示/基準値だが、スタート行の cumRot に
+    // 反映することで最初の回転入力の差分（thisRot）が新台の実回転になる（稼働開始と同じ挙動）。
+    const destStartRot = Math.max(0, Math.round(Number(dest.startRot) || 0));
     // 記録のみクリア（玉資産・店舗・レートは保持）
     setJpLog([]);
-    setSesLog([{ type: "台移動", time: tsNow(), rot: 0 }]);
-    setStartRot(0);
-    setStartGameCount(0);
+    setSesLog([{ type: "台移動", time: tsNow(), rot: destStartRot }]);
+    setStartRot(destStartRot);
+    setStartGameCount(destStartRot);
     setInvestYen(0);
     setRecoveryYen(0);
     setTotalTrayBalls(0);
@@ -850,8 +854,8 @@ export default function App() {
     setCurrentChodama(carriedChodama);
     // 次台のコストベース：今回の持ち出し額を「持ち込みコスト」として引き継ぐ
     setCarriedInYen(carriedOutYen);
-    // 新台のスタート行を引き継ぎ資産で再シード
-    setRotRows([{ type: "start", cumRot: 0, mode: carriedMode, mochiBalls: carriedMochi, chodamaBalls: carriedChodama }]);
+    // 新台のスタート行を引き継ぎ資産で再シード（開始回転数を cumRot の基準にする）
+    setRotRows([{ type: "start", cumRot: destStartRot, mode: carriedMode, mochiBalls: carriedMochi, chodamaBalls: carriedChodama }]);
     setSessionStarted(true);
     setCurrentMode("record");
   };

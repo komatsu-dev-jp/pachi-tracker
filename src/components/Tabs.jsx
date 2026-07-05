@@ -747,11 +747,11 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     // 旧UIの "jackpot" mode は撤去済み。bottom sheet は常に通常回転入力（count モード）として使用
     const [showMoveModal, setShowMoveModal] = useState(false);
     const [moveMochiBalls, setMoveMochiBalls] = useState("");
-    // 台移動モーダル：移動先の機種情報の入力state（機種設定の編集モーダルと同じ検索方式）
+    // 台移動モーダル：移動先の機種情報の入力state（機種名は稼働開始と同じ機種選択画面で選ぶ）
     const [moveMachineName, setMoveMachineName] = useState("");
     const [moveMachineNum, setMoveMachineNum] = useState("");
-    const [moveMachineQuery, setMoveMachineQuery] = useState("");
-    const [moveMachineDD, setMoveMachineDD] = useState(false);
+    // 移動先の開始回転数（新台の台データ表示値。稼働開始時の「開始回転数」と同じ意味）
+    const [moveStartRot, setMoveStartRot] = useState("");
     const movePickedMachineRef = useRef(null);
     // 記録モード イベントメニュー（FAB から開く） + 詳細データ折りたたみ
     const [showEventMenu, setShowEventMenu] = useState(false);
@@ -770,6 +770,8 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     const [machineQuery, setMachineQuery] = useState("");
     const [showMachinePicker, setShowMachinePicker] = useState(false);
     const [pickerFilter, setPickerFilter] = useState("all");
+    // 機種選択ボトムシートの適用先（"setup"=稼働開始モーダル / "move"=台移動モーダル）
+    const [machinePickerFor, setMachinePickerFor] = useState("setup");
     const [summaryCollapsed, setSummaryCollapsed] = useState(true);
     const [showInvestSettings, setShowInvestSettings] = useState(false);
     const tableRef = useRef(null);
@@ -1454,12 +1456,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         return searchMachines(editMachineQuery, S.customMachines).slice(0, 8);
     }, [editMachineQuery, S.customMachines]);
 
-    // 台移動モーダル用の機種検索結果
-    const moveMachineResults = useMemo(() => {
-        if (!moveMachineQuery.trim()) return [];
-        return searchMachines(moveMachineQuery, S.customMachines).slice(0, 8);
-    }, [moveMachineQuery, S.customMachines]);
-
     // 現在の機種からタイプ(ミドル/甘デジ等)を解決
     const currentMachineType = useMemo(() => {
         if (!S.machineName) return "";
@@ -2048,6 +2044,226 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         // headerIsAnimating はハンドラ内で直接参照するためdepsに残す。
     }, [headerIsAnimating]);
 
+    // 機種選択ボトムシート（稼働開始モーダル・台移動モーダルで共用）。
+    // machinePickerFor で適用先を切り替える（"setup"=稼働開始 / "move"=台移動）。
+    const renderMachinePicker = () => showMachinePicker && (
+        <div
+            onClick={() => setShowMachinePicker(false)}
+            style={{
+                position: "fixed", inset: 0,
+                background: "rgba(0,0,0,0.5)",
+                backdropFilter: "blur(4px)",
+                zIndex: 1100,
+                display: "flex", flexDirection: "column", justifyContent: "flex-end",
+            }}
+        >
+            <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                    background: C.surface,
+                    borderTopLeftRadius: 16, borderTopRightRadius: 16,
+                    maxHeight: "85vh",
+                    display: "flex", flexDirection: "column",
+                    animation: "fi 0.25s ease",
+                }}
+            >
+                {/* ヘッダー: キャンセル | 機種を選択 | N機種 */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px 12px" }}>
+                    <button className="b" onClick={() => setShowMachinePicker(false)} style={{
+                        background: "var(--surface-hi)", border: "none",
+                        borderRadius: 999, padding: "8px 14px",
+                        fontSize: 13, fontWeight: 600, color: C.text, fontFamily: font,
+                        cursor: "pointer",
+                    }}>キャンセル</button>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>機種を選択</div>
+                    <div style={{
+                        fontSize: 11, fontWeight: 600, color: C.sub,
+                        background: "var(--surface-hi)",
+                        padding: "6px 12px", borderRadius: 999,
+                        minWidth: 56, textAlign: "center",
+                    }}>{filteredMachines.length}機種</div>
+                </div>
+
+                {/* フィルターチップ (横スクロール) */}
+                <div style={{
+                    display: "flex", gap: 8,
+                    overflowX: "auto",
+                    padding: "4px 16px 12px",
+                    scrollbarWidth: "none",
+                    WebkitOverflowScrolling: "touch",
+                }}>
+                    {[
+                        { id: "all", label: "全て" },
+                        { id: "スマパチ", label: "スマパチ" },
+                        { id: "ハイミドル", label: "ハイミドル" },
+                        { id: "ミドル", label: "ミドル" },
+                        { id: "ライトミドル", label: "ライトミドル" },
+                        { id: "甘デジ", label: "甘デジ" },
+                    ].map(chip => {
+                        const active = pickerFilter === chip.id;
+                        return (
+                            <button
+                                key={chip.id}
+                                className="b"
+                                onClick={() => setPickerFilter(chip.id)}
+                                style={{
+                                    flexShrink: 0,
+                                    background: active ? C.blue : "var(--surface-hi)",
+                                    color: active ? "#fff" : C.text,
+                                    border: "none",
+                                    borderRadius: 999,
+                                    padding: "8px 16px",
+                                    fontSize: 13, fontWeight: 600,
+                                    fontFamily: font,
+                                    cursor: "pointer",
+                                    transition: "background 0.15s",
+                                    whiteSpace: "nowrap",
+                                }}
+                            >
+                                {chip.label}
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {/* 機種リスト (スクロール) */}
+                <div style={{ flex: 1, overflowY: "auto", paddingBottom: 12 }}>
+                    {filteredMachines.map((m, i) => {
+                        const typeColors = {
+                            "スマパチ": "#f7971e",
+                            "ハイミドル": "#ef473a",
+                            "ミドル": "#2f6fed",
+                            "ライトミドル": "#20e3b2",
+                            "甘デジ": "#16a34a",
+                        };
+                        const iconColor = typeColors[m.type] || C.sub;
+                        const iconLabel = (m.type || "").slice(0, 2);
+                        return (
+                            <button
+                                key={m.id || `${m.name}-${i}`}
+                                className="b"
+                                onClick={() => {
+                                    // 新形式（border1K のみ）の機種も border1K から等価スペックを逆算して反映する
+                                    const spec = deriveSpecForMachine(m);
+                                    if (machinePickerFor === "move") {
+                                        // 台移動モーダル：即時にstateを書き換えず、移動確定時に反映するため ref に退避
+                                        setMoveMachineName(m.name);
+                                        movePickedMachineRef.current = {
+                                            synthDenom: m.synthProb,
+                                            spec1R: spec.spec1R,
+                                            specAvgRounds: spec.specAvgRounds,
+                                            specSapo: spec.specSapo,
+                                        };
+                                    } else {
+                                        setSetupMachineName(m.name);
+                                        S.setSynthDenom(m.synthProb);
+                                        if (spec.spec1R != null) S.setSpec1R(spec.spec1R);
+                                        if (spec.specAvgRounds != null) S.setSpecAvgRounds(spec.specAvgRounds);
+                                        if (spec.specSapo != null) S.setSpecSapo(spec.specSapo);
+                                    }
+                                    setShowMachinePicker(false);
+                                    setMachineQuery("");
+                                }}
+                                style={{
+                                    width: "100%",
+                                    display: "flex", alignItems: "center", gap: 14,
+                                    padding: "14px 16px",
+                                    background: "transparent",
+                                    border: "none",
+                                    borderBottom: `1px solid ${C.border}`,
+                                    textAlign: "left",
+                                    cursor: "pointer",
+                                    fontFamily: font,
+                                }}
+                            >
+                                <div style={{
+                                    width: 44, height: 44, flexShrink: 0,
+                                    borderRadius: 10,
+                                    background: iconColor,
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    color: "#fff", fontSize: 13, fontWeight: 800,
+                                    fontFamily: font,
+                                }}>{iconLabel}</div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: 15, fontWeight: 700, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.name}</div>
+                                    <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>
+                                        {m.maker || ""}{m.maker && (m.prob || m.synthProb) ? "  " : ""}{m.prob || (m.synthProb ? `1/${m.synthProb}` : "")}
+                                    </div>
+                                </div>
+                            </button>
+                        );
+                    })}
+                    {filteredMachines.length === 0 && (
+                        <div style={{ padding: "32px 20px 16px", textAlign: "center", color: C.sub, fontSize: 13 }}>
+                            該当する機種がありません
+                        </div>
+                    )}
+                    {/* 未登録機種の行き止まり解消: 検索語があれば「そのまま使う」導線を出す。
+                        機種名だけ確定し、スペックは稼働開始モーダルの任意入力／後の機種設定で補える。 */}
+                    {machineQuery.trim() && (
+                        <button
+                            className="b"
+                            onClick={() => {
+                                if (machinePickerFor === "move") {
+                                    // 台移動：機種名だけ確定（スペックは直前の台の値を保持）
+                                    setMoveMachineName(machineQuery.trim());
+                                    movePickedMachineRef.current = null;
+                                } else {
+                                    setSetupMachineName(machineQuery.trim());
+                                    // 未登録機種はスペック入力を促すため任意セクションを開いておく
+                                    setShowSetupSpec(true);
+                                }
+                                setShowMachinePicker(false);
+                                setMachineQuery("");
+                            }}
+                            style={{
+                                width: "calc(100% - 32px)", margin: "8px 16px 12px",
+                                minHeight: 52, borderRadius: 12,
+                                background: "var(--surface-hi)",
+                                border: `1px dashed ${C.borderHi}`,
+                                color: C.text, fontSize: 14, fontWeight: 700, fontFamily: font,
+                                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                                cursor: "pointer",
+                            }}
+                        >
+                            <span style={{ fontSize: 18, lineHeight: 1, color: C.blue }}>+</span>
+                            「{machineQuery.trim()}」を未登録のまま使う
+                        </button>
+                    )}
+                </div>
+
+                {/* 検索バー (下部固定) */}
+                <div style={{ padding: "12px 16px calc(12px + env(safe-area-inset-bottom))", borderTop: `1px solid ${C.border}`, background: C.surface }}>
+                    <div style={{ position: "relative" }}>
+                        <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: C.sub, display: "flex" }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="11" cy="11" r="7" />
+                                <path d="m21 21-4.3-4.3" />
+                            </svg>
+                        </span>
+                        <input
+                            type="text"
+                            value={machineQuery}
+                            onChange={e => setMachineQuery(e.target.value)}
+                            placeholder="機種名・メーカーで検索"
+                            style={{
+                                width: "100%", boxSizing: "border-box",
+                                background: "var(--surface-hi)",
+                                border: "none",
+                                borderRadius: 12,
+                                padding: "12px 14px 12px 40px",
+                                fontSize: 14,
+                                color: C.text,
+                                fontFamily: font,
+                                outline: "none",
+                            }}
+                        />
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+
     // セッション未開始：空状態 + 下部ピル形ボタン
     if (!sessionActive) {
         return (
@@ -2171,7 +2387,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     <div style={{ fontSize: 10, color: C.sub, marginBottom: 4, fontWeight: 600 }}>機種</div>
                                     <button
                                         className="b"
-                                        onClick={() => { setMachineQuery(""); setPickerFilter("all"); setShowMachinePicker(true); }}
+                                        onClick={() => { setMachineQuery(""); setPickerFilter("all"); setMachinePickerFor("setup"); setShowMachinePicker(true); }}
                                         style={{
                                             width: "100%", boxSizing: "border-box",
                                             background: C.bg, border: `1px solid ${C.borderHi}`,
@@ -2287,207 +2503,8 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     </div>
                 )}
 
-                {/* 機種選択ボトムシート */}
-                {showMachinePicker && (
-                    <div
-                        onClick={() => setShowMachinePicker(false)}
-                        style={{
-                            position: "fixed", inset: 0,
-                            background: "rgba(0,0,0,0.5)",
-                            backdropFilter: "blur(4px)",
-                            zIndex: 1100,
-                            display: "flex", flexDirection: "column", justifyContent: "flex-end",
-                        }}
-                    >
-                        <div
-                            onClick={(e) => e.stopPropagation()}
-                            style={{
-                                background: C.surface,
-                                borderTopLeftRadius: 16, borderTopRightRadius: 16,
-                                maxHeight: "85vh",
-                                display: "flex", flexDirection: "column",
-                                animation: "fi 0.25s ease",
-                            }}
-                        >
-                            {/* ヘッダー: キャンセル | 機種を選択 | N機種 */}
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px 12px" }}>
-                                <button className="b" onClick={() => setShowMachinePicker(false)} style={{
-                                    background: "var(--surface-hi)", border: "none",
-                                    borderRadius: 999, padding: "8px 14px",
-                                    fontSize: 13, fontWeight: 600, color: C.text, fontFamily: font,
-                                    cursor: "pointer",
-                                }}>キャンセル</button>
-                                <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>機種を選択</div>
-                                <div style={{
-                                    fontSize: 11, fontWeight: 600, color: C.sub,
-                                    background: "var(--surface-hi)",
-                                    padding: "6px 12px", borderRadius: 999,
-                                    minWidth: 56, textAlign: "center",
-                                }}>{filteredMachines.length}機種</div>
-                            </div>
-
-                            {/* フィルターチップ (横スクロール) */}
-                            <div style={{
-                                display: "flex", gap: 8,
-                                overflowX: "auto",
-                                padding: "4px 16px 12px",
-                                scrollbarWidth: "none",
-                                WebkitOverflowScrolling: "touch",
-                            }}>
-                                {[
-                                    { id: "all", label: "全て" },
-                                    { id: "スマパチ", label: "スマパチ" },
-                                    { id: "ハイミドル", label: "ハイミドル" },
-                                    { id: "ミドル", label: "ミドル" },
-                                    { id: "ライトミドル", label: "ライトミドル" },
-                                    { id: "甘デジ", label: "甘デジ" },
-                                ].map(chip => {
-                                    const active = pickerFilter === chip.id;
-                                    return (
-                                        <button
-                                            key={chip.id}
-                                            className="b"
-                                            onClick={() => setPickerFilter(chip.id)}
-                                            style={{
-                                                flexShrink: 0,
-                                                background: active ? C.blue : "var(--surface-hi)",
-                                                color: active ? "#fff" : C.text,
-                                                border: "none",
-                                                borderRadius: 999,
-                                                padding: "8px 16px",
-                                                fontSize: 13, fontWeight: 600,
-                                                fontFamily: font,
-                                                cursor: "pointer",
-                                                transition: "background 0.15s",
-                                                whiteSpace: "nowrap",
-                                            }}
-                                        >
-                                            {chip.label}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-
-                            {/* 機種リスト (スクロール) */}
-                            <div style={{ flex: 1, overflowY: "auto", paddingBottom: 12 }}>
-                                {filteredMachines.map((m, i) => {
-                                    const typeColors = {
-                                        "スマパチ": "#f7971e",
-                                        "ハイミドル": "#ef473a",
-                                        "ミドル": "#2f6fed",
-                                        "ライトミドル": "#20e3b2",
-                                        "甘デジ": "#16a34a",
-                                    };
-                                    const iconColor = typeColors[m.type] || C.sub;
-                                    const iconLabel = (m.type || "").slice(0, 2);
-                                    return (
-                                        <button
-                                            key={m.id || `${m.name}-${i}`}
-                                            className="b"
-                                            onClick={() => {
-                                                setSetupMachineName(m.name);
-                                                S.setSynthDenom(m.synthProb);
-                                                // 新形式（border1K のみ）の機種も border1K から等価スペックを逆算して反映する
-                                                const spec = deriveSpecForMachine(m);
-                                                if (spec.spec1R != null) S.setSpec1R(spec.spec1R);
-                                                if (spec.specAvgRounds != null) S.setSpecAvgRounds(spec.specAvgRounds);
-                                                if (spec.specSapo != null) S.setSpecSapo(spec.specSapo);
-                                                setShowMachinePicker(false);
-                                                setMachineQuery("");
-                                            }}
-                                            style={{
-                                                width: "100%",
-                                                display: "flex", alignItems: "center", gap: 14,
-                                                padding: "14px 16px",
-                                                background: "transparent",
-                                                border: "none",
-                                                borderBottom: `1px solid ${C.border}`,
-                                                textAlign: "left",
-                                                cursor: "pointer",
-                                                fontFamily: font,
-                                            }}
-                                        >
-                                            <div style={{
-                                                width: 44, height: 44, flexShrink: 0,
-                                                borderRadius: 10,
-                                                background: iconColor,
-                                                display: "flex", alignItems: "center", justifyContent: "center",
-                                                color: "#fff", fontSize: 13, fontWeight: 800,
-                                                fontFamily: font,
-                                            }}>{iconLabel}</div>
-                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                                <div style={{ fontSize: 15, fontWeight: 700, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.name}</div>
-                                                <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>
-                                                    {m.maker || ""}{m.maker && (m.prob || m.synthProb) ? "  " : ""}{m.prob || (m.synthProb ? `1/${m.synthProb}` : "")}
-                                                </div>
-                                            </div>
-                                        </button>
-                                    );
-                                })}
-                                {filteredMachines.length === 0 && (
-                                    <div style={{ padding: "32px 20px 16px", textAlign: "center", color: C.sub, fontSize: 13 }}>
-                                        該当する機種がありません
-                                    </div>
-                                )}
-                                {/* 未登録機種の行き止まり解消: 検索語があれば「そのまま使う」導線を出す。
-                                    機種名だけ確定し、スペックは稼働開始モーダルの任意入力／後の機種設定で補える。 */}
-                                {machineQuery.trim() && (
-                                    <button
-                                        className="b"
-                                        onClick={() => {
-                                            setSetupMachineName(machineQuery.trim());
-                                            setShowMachinePicker(false);
-                                            setMachineQuery("");
-                                            // 未登録機種はスペック入力を促すため任意セクションを開いておく
-                                            setShowSetupSpec(true);
-                                        }}
-                                        style={{
-                                            width: "calc(100% - 32px)", margin: "8px 16px 12px",
-                                            minHeight: 52, borderRadius: 12,
-                                            background: "var(--surface-hi)",
-                                            border: `1px dashed ${C.borderHi}`,
-                                            color: C.text, fontSize: 14, fontWeight: 700, fontFamily: font,
-                                            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                                            cursor: "pointer",
-                                        }}
-                                    >
-                                        <span style={{ fontSize: 18, lineHeight: 1, color: C.blue }}>+</span>
-                                        「{machineQuery.trim()}」を未登録のまま使う
-                                    </button>
-                                )}
-                            </div>
-
-                            {/* 検索バー (下部固定) */}
-                            <div style={{ padding: "12px 16px calc(12px + env(safe-area-inset-bottom))", borderTop: `1px solid ${C.border}`, background: C.surface }}>
-                                <div style={{ position: "relative" }}>
-                                    <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: C.sub, display: "flex" }}>
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                            <circle cx="11" cy="11" r="7" />
-                                            <path d="m21 21-4.3-4.3" />
-                                        </svg>
-                                    </span>
-                                    <input
-                                        type="text"
-                                        value={machineQuery}
-                                        onChange={e => setMachineQuery(e.target.value)}
-                                        placeholder="機種名・メーカーで検索"
-                                        style={{
-                                            width: "100%", boxSizing: "border-box",
-                                            background: "var(--surface-hi)",
-                                            border: "none",
-                                            borderRadius: 12,
-                                            padding: "12px 14px 12px 40px",
-                                            fontSize: 14,
-                                            color: C.text,
-                                            fontFamily: font,
-                                            outline: "none",
-                                        }}
-                                    />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
+                {/* 機種選択ボトムシート（稼働開始・台移動で共用） */}
+                {renderMachinePicker()}
             </div>
         );
     }
@@ -2952,8 +2969,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                         // 移動先の機種は未入力からスタート（同じ機種なら入力不要・空のままなら従来どおりクリア）
                                         setMoveMachineName("");
                                         setMoveMachineNum("");
-                                        setMoveMachineQuery("");
-                                        setMoveMachineDD(false);
+                                        setMoveStartRot("");
                                         movePickedMachineRef.current = null;
                                         setShowMoveModal(true);
                                     }}
@@ -5156,56 +5172,50 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             現在のデータを保存して新しい台へ移動します。<br />
                             移動先の機種・持ち玉を入力してください。
                         </div>
-                        {/* 移動先の機種名（検索 / 直接入力。同じ機種なら空のままでOK） */}
-                        <div style={{ marginBottom: 14, position: "relative" }}>
-                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>移動先の機種名</div>
-                            <input
-                                type="text"
-                                value={moveMachineName}
-                                onChange={e => { setMoveMachineName(e.target.value); setMoveMachineQuery(e.target.value); setMoveMachineDD(true); movePickedMachineRef.current = null; }}
-                                onFocus={() => setMoveMachineDD(true)}
-                                placeholder="機種名を検索 / 入力"
-                                style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "12px 14px", fontSize: 16, color: C.text, fontFamily: font, outline: "none" }}
-                            />
-                            {moveMachineDD && moveMachineResults.length > 0 && (
-                                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 10, zIndex: 20, maxHeight: 200, overflowY: "auto", marginTop: 4, boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
-                                    {moveMachineResults.map((m, i) => (
-                                        <button key={m.id || i} className="b" onClick={() => {
-                                            setMoveMachineName(m.name);
-                                            const spec = deriveSpecForMachine(m);
-                                            movePickedMachineRef.current = {
-                                                synthDenom: m.synthProb,
-                                                spec1R: spec.spec1R,
-                                                specAvgRounds: spec.specAvgRounds,
-                                                specSapo: spec.specSapo,
-                                            };
-                                            setMoveMachineDD(false);
-                                            setMoveMachineQuery("");
-                                        }} style={{
-                                            width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${C.border}`,
-                                            padding: "12px 14px", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center"
-                                        }}>
-                                            <div>
-                                                <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{m.name}</div>
-                                                <div style={{ fontSize: 10, color: C.sub }}>{m.maker || ""} {m.type ? `| ${m.type}` : ""}</div>
-                                            </div>
-                                            <div style={{ fontSize: 14, fontWeight: 700, color: C.yellow, fontFamily: mono }}>{m.prob || `1/${m.synthProb}`}</div>
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                        {/* 移動先の台番号 */}
+                        {/* 移動先の機種名（稼働開始と同じ機種選択画面で選ぶ。同じ機種なら空のままでOK） */}
                         <div style={{ marginBottom: 14 }}>
-                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>移動先の台番号</div>
-                            <input
-                                type="tel"
-                                inputMode="numeric"
-                                value={moveMachineNum}
-                                onChange={e => setMoveMachineNum(e.target.value)}
-                                placeholder="例: 123"
-                                style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "12px 14px", fontSize: 18, color: C.text, fontFamily: mono, outline: "none", textAlign: "center" }}
-                            />
+                            <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>移動先の機種名</div>
+                            <button
+                                className="b"
+                                onClick={() => { setMachineQuery(""); setPickerFilter("all"); setMachinePickerFor("move"); setShowMachinePicker(true); }}
+                                style={{
+                                    width: "100%", boxSizing: "border-box",
+                                    background: C.bg, border: `2px solid ${C.borderHi}`,
+                                    borderRadius: 12, padding: "12px 14px",
+                                    fontSize: 16, color: moveMachineName ? C.text : C.sub,
+                                    fontFamily: font, textAlign: "left",
+                                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                                    cursor: "pointer",
+                                }}
+                            >
+                                <span>{moveMachineName || "機種を選択..."}</span>
+                                <span style={{ color: C.sub, fontSize: 14 }}>›</span>
+                            </button>
+                        </div>
+                        {/* 移動先の台番号・開始回転数 */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+                            <div>
+                                <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>移動先の台番号</div>
+                                <input
+                                    type="tel"
+                                    inputMode="numeric"
+                                    value={moveMachineNum}
+                                    onChange={e => setMoveMachineNum(e.target.value)}
+                                    placeholder="例: 123"
+                                    style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "12px 14px", fontSize: 18, color: C.text, fontFamily: mono, outline: "none", textAlign: "center" }}
+                                />
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>開始回転数</div>
+                                <input
+                                    type="tel"
+                                    inputMode="numeric"
+                                    value={moveStartRot}
+                                    onChange={e => setMoveStartRot(e.target.value)}
+                                    placeholder="0"
+                                    style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "12px 14px", fontSize: 18, color: C.text, fontFamily: mono, outline: "none", textAlign: "center" }}
+                                />
+                            </div>
                         </div>
                         <div style={{ marginBottom: 14 }}>
                             <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>移動前の持ち玉（玉）</div>
@@ -5227,6 +5237,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                 const dest = {
                                     machineName: (moveMachineName || "").trim(),
                                     machineNum: (moveMachineNum || "").trim(),
+                                    startRot: Math.max(0, Math.round(Number(moveStartRot) || 0)),
                                     ...(picked || {}),
                                 };
                                 setShowMoveModal(false);
@@ -5236,6 +5247,9 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     </Card>
                 </div>
             )}
+
+            {/* 機種選択ボトムシート（台移動モーダルから開く。稼働開始と同じUIを共用） */}
+            {renderMachinePicker()}
 
             {/* 投資ペース設定モーダル */}
             {showInvestSettings && (
