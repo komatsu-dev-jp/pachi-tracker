@@ -1553,13 +1553,16 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         // 1Kあたりに必要な玉数（持ち玉/貯玉モードでの消費量）
         const ballsNeeded = rentBalls * (investPace / 1000);
 
-        // 貯玉/持ち玉が今回の消費分に満たない場合は現金投資へ自動切替する。
-        // 残高0のまま貯玉/持ち玉モードで打ち続けると「タダ回し」として記録されてしまうため、
-        // 残玉が尽きた時点で以降の入力を現金投資として扱う（rotRows の mode を cash に倒す）。
+        // 貯玉/持ち玉モードの消費判定:
+        // - 残玉が1Kぶん(ballsNeeded)に満たなくても、1玉以上あれば今回の入力で端数を使い切る
+        //   （旧実装は即現金切替で端数が残高に取り残され、以降ずっと消化されないバグがあった）
+        // - 残玉0なら現金投資へ自動切替する（「タダ回し」記録の防止）
+        // 端数を使い切った入力の後は playMode を現金へ戻し、以降の入力は現金投資として扱う。
         let effMode = S.playMode;
-        if (effMode === "chodama" && (S.currentChodama || 0) < ballsNeeded) {
-            effMode = "cash";
-        } else if (effMode === "mochi" && (S.currentMochiBalls || 0) < ballsNeeded) {
+        const startBalance = effMode === "chodama" ? (S.currentChodama || 0)
+            : effMode === "mochi" ? (S.currentMochiBalls || 0)
+            : 0;
+        if ((effMode === "chodama" || effMode === "mochi") && startBalance <= 0) {
             effMode = "cash";
         }
 
@@ -1570,18 +1573,21 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             // 現金モード：投資額を増加
             newInvest = prevInvest + investPace;
         } else if (effMode === "mochi") {
-            // 持ち玉モード：投資は増えない、持ち玉を減らす
-            ballsConsumed = ballsNeeded; // 1Kあたりの玉数
+            // 持ち玉モード：投資は増えない、持ち玉を減らす（残玉が1K未満なら全量＝使い切り）
+            ballsConsumed = Math.min(startBalance, ballsNeeded);
             S.setCurrentMochiBalls((prev) => Math.max(0, prev - ballsConsumed));
         } else if (effMode === "chodama") {
-            // 貯玉モード：貯玉を消費（現金投資には反映しない）
-            ballsConsumed = ballsNeeded;
+            // 貯玉モード：貯玉を消費（現金投資には反映しない。残玉が1K未満なら全量＝使い切り）
+            ballsConsumed = Math.min(startBalance, ballsNeeded);
             S.setCurrentChodama((prev) => Math.max(0, prev - ballsConsumed));
         }
 
-        // 自動切替が発生したら playMode を現金へ更新し、以降の入力・UI表示にも反映する
+        // 自動切替（残玉0）が発生したら playMode を現金へ更新し、以降の入力・UI表示にも反映する。
+        // 今回の入力で残玉を使い切った場合も、次の入力からは現金投資に戻す。
         if (effMode !== S.playMode) {
             S.setPlayMode(effMode);
+        } else if (effMode !== "cash" && startBalance - ballsConsumed <= 0) {
+            S.setPlayMode("cash");
         }
 
         // 平均回転数計算 - セッション全体の累積平均（データページの1Kスタートと整合）
@@ -1851,6 +1857,11 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                 playMode: S.playMode,
                 currentBalance,
                 rentBalls: S.rentBalls || 250,
+                // 瞬間当たり区間（回転入力なしで当たった区間）のグロス推定用:
+                // 上皿残玉と想定回転率（理論ボーダー優先、無ければ手動ボーダー）を渡し、
+                // 「実勢レートでの消費 + 上皿残玉」を上限に推定させる（幻の数百玉消費の防止）。
+                trayBalls: tray,
+                expectedRate: (ev && ev.theoreticalBorder > 0) ? ev.theoreticalBorder : (Number(border) > 0 ? Number(border) : 0),
             }));
         }
 
@@ -6010,8 +6021,12 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                 スキップ
                             </button>
                             <button className="b" onClick={() => {
-                                const val = Number(input);
-                                if (val > 0) {
+                                const trimmed = input.trim();
+                                const val = Number(trimmed);
+                                // 大当たり後に台のスタート回数カウンタが0へリセットされる機種があるため、0も有効値として記録する。
+                                // （旧実装は val > 0 のみ記録で、0入力が黙って破棄され、次の1K入力が
+                                //   直前の大当たりの古い累計回転と比較されて「逆行」扱いになる原因だった）
+                                if (trimmed !== "" && Number.isFinite(val) && val >= 0) {
                                     S.setStartRot(val);
                                     setRows((r) => [...r, { type: "start", cumRot: val, mode: S.playMode, mochiBalls: S.currentMochiBalls, chodamaBalls: S.currentChodama, isPostJackpotStart: true }]);
                                     S.pushLog({ type: "大当たり後スタート", time: tsNow(), rot: val });

@@ -168,5 +168,53 @@ function evParams(rotRows, jpLog) {
   check("H: 実質投資が3000円弱（< 3500円）", Math.round(ev.correctedInvestYen) < 3500, `→ ${Math.round(ev.correctedInvestYen)}`);
 }
 
+// ── ケースI: 瞬間当たり × 残高大（ユーザー報告 2026-07-06 / IMG_0208 相当） ──
+// 大当たり後スタート56 → 2回転で即当たり(58)。持ち玉残1490玉・上皿残75玉。
+// 旧バグ: 上限が回転率5回/K（50玉/回転）で 2回転→100玉 の幻消費
+//        → 生回転率5.0回/K・生EV/K -719円（画面表示バグ）。
+// 新挙動: 想定回転率（理論ボーダー等）での消費 + 上皿残玉 = 約104玉 → 補正後回転率≒想定回転率。
+{
+  const rows = [
+    { type: "start", cumRot: 56, mode: "mochi", mochiBalls: 1490, isPostJackpotStart: true },
+    { type: "data", mode: "mochi", cumRot: 58, thisRot: 2, invest: 0 },
+    { type: "hit", chainId: 1, cumRot: 58, thisRot: 2, mode: "mochi" },
+  ];
+  const out = reconcileSegmentConsumption(rows, { playMode: "mochi", currentBalance: 1490, rentBalls: RENT, trayBalls: 75, expectedRate: 17.5 });
+  check("I: 幻の消費が縮小（旧100玉 → 約104玉=消費29+上皿75）", out[1].ballsConsumed === Math.ceil(2 * 250 / 17.5) + 75, `→ ${out[1].ballsConsumed}`);
+  const jpLog = [{ chainId: 1, completed: true, trayBalls: 75, hits: [{ rounds: 3 }], summary: { totalRounds: 3, totalDisplayBalls: 420 } }];
+  const ev = calcPreciseEV(evParams(out, jpLog));
+  check("I: 補正後回転率 ≒ 想定回転率17.5（旧20）", approx(ev.start1KCorrected, 2 / (29 / 250), 0.5), `→ ${ev.start1KCorrected.toFixed(2)}`);
+}
+
+// ── ケースJ: 瞬間当たり × 区間内に現金投資あり（ユーザー報告 2026-07-06 / IMG_0205 相当） ──
+// 貯玉モードのまま19回転で初当たり + プッシュ補正+1000円。上皿残93玉・貯玉残3000玉。
+// 旧バグ: 19回転 × 50玉 = 950玉の幻消費 → 生回転率4.0回/K・実質投資4,428円に膨張。
+// 新挙動: 現金1000円で説明できる回転（≒16回転）を除外 → 残り約3回転分 + 上皿93玉 ≒ 133玉。
+{
+  const rows = [
+    { type: "start", cumRot: 0, mode: "chodama", chodamaBalls: 3000 },
+    { type: "data", mode: "chodama", cumRot: 19, thisRot: 19, invest: 0 },
+    { type: "hit", chainId: 1, cumRot: 19, thisRot: 19, mode: "chodama" },
+    { type: "data", mode: "cash", cumRot: 19, thisRot: 0, invest: 1000, ballsConsumed: 0 }, // プッシュ補正
+  ];
+  const out = reconcileSegmentConsumption(rows, { playMode: "chodama", currentBalance: 3000, rentBalls: RENT, trayBalls: 93, expectedRate: 16.4 });
+  check("J: 現金分の回転を貯玉消費から除外（旧950玉 → 200玉未満）", out[1].ballsConsumed < 200, `→ ${out[1].ballsConsumed}`);
+  const jpLog = [{ chainId: 1, completed: true, trayBalls: 93, hits: [{ rounds: 4 }], summary: { totalRounds: 4, totalDisplayBalls: 560 } }];
+  const ev = calcPreciseEV(evParams(out, jpLog));
+  check("J: 実質投資が膨張しない（旧4,428円 → 2,000円未満）", Math.round(ev.correctedInvestYen) < 2000, `→ ${Math.round(ev.correctedInvestYen)}`);
+  check("J: 生回転率が極端に沈まない（旧4.0 → 10以上）", ev.start1K >= 10, `→ ${ev.start1K.toFixed(2)}`);
+}
+
+// ── ケースK: 残高0の瞬間当たり区間でも deriveFromRows の 250玉フォールバックを防ぐ ──
+{
+  const rows = [
+    { type: "start", cumRot: 0, mode: "mochi", mochiBalls: 0 },
+    { type: "data", mode: "mochi", cumRot: 10, thisRot: 10, invest: 0 },
+    { type: "hit", chainId: 1, cumRot: 10, thisRot: 10, mode: "mochi" },
+  ];
+  const out = reconcileSegmentConsumption(rows, { playMode: "mochi", currentBalance: 0, rentBalls: RENT });
+  check("K: 最低1玉を書き込みフォールバック(250玉)を防止", out !== rows && out[1].ballsConsumed === 1, `→ ${out === rows ? "unchanged" : out[1].ballsConsumed}`);
+}
+
 console.log(`\n${fail === 0 ? "PASS" : "FAIL"}: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
