@@ -41,6 +41,27 @@ function findSegmentBounds(rows, chainId) {
     };
 }
 
+// 瞬間当たり区間（暫定消費なし）の消費推定に使う想定回転率(回/K)。
+// 呼び出し元が expectedRate（理論ボーダー等）を渡さない場合のフォールバック。
+// 実勢の回転率はボーダー前後の 15〜20回/K が中心のため、下限寄りの 15 を採用する。
+const DEFAULT_ASSUMED_RATE = 15;
+
+// 区間ウィンドウ（前の当たり〜次の当たりの手前）で増えた現金投資額を求める。
+// invest は現金 data 行でのみ増える累積値なので、ウィンドウ前後の差分がそのまま
+// 区間内の現金投資（プッシュ補正行を含む）になる。
+function segmentCashYen(rows, { prevHitIdx, nextHitIdx }) {
+    let base = 0;
+    for (let i = prevHitIdx; i >= 0; i--) {
+        if (rows[i].type === "data") { base = Number(rows[i].invest) || 0; break; }
+    }
+    let last = base;
+    const end = Math.min(nextHitIdx, rows.length);
+    for (let i = prevHitIdx + 1; i < end; i++) {
+        if (rows[i].type === "data") last = Number(rows[i].invest) || 0;
+    }
+    return Math.max(0, last - base);
+}
+
 // rows: rotRows 全体
 // opts.playMode: "chodama" | "mochi"（この区間のモード）
 // opts.currentBalance: 現在の貯玉/持ち玉残高。暫定消費が無い区間（瞬間当たり等）の
@@ -48,8 +69,11 @@ function findSegmentBounds(rows, chainId) {
 // opts.segmentStartBalls: 区間開始玉（グロス）を直接指定する場合（編集UIなど）。最優先。
 // opts.chainId: 対象の当たり（省略時は最新の当たり区間）
 // opts.rentBalls: 貸玉数/1K（瞬間当たり区間の残高推定の上限算出に使用。既定250玉）
+// opts.trayBalls: 当たり時点の上皿残玉（画面Aの開始上皿玉）。瞬間当たり区間のグロス推定に使用。
+//   グロス＝実消費＋上皿残玉 のため、残玉ぶんも区間開始玉に含めて推定する（控除は trayCorrection が行う）。
+// opts.expectedRate: 想定回転率(回/K)。理論ボーダー等。未指定時は DEFAULT_ASSUMED_RATE。
 // 返り値: ballsConsumed を更新した新しい rows 配列（条件を満たさない場合は元配列をそのまま返す）
-export function reconcileSegmentConsumption(rows, { playMode, currentBalance, segmentStartBalls, chainId, rentBalls = 250 }) {
+export function reconcileSegmentConsumption(rows, { playMode, currentBalance, segmentStartBalls, chainId, rentBalls = 250, trayBalls = 0, expectedRate = 0 }) {
     if (!Array.isArray(rows) || rows.length === 0) return rows;
     if (playMode !== "chodama" && playMode !== "mochi") return rows;
 
@@ -84,11 +108,24 @@ export function reconcileSegmentConsumption(rows, { playMode, currentBalance, se
         grossStart = assumedSum;
     } else {
         // 暫定消費が無い区間（回転入力前の瞬間当たり等）のみ、残高から区間開始玉を推定する。
-        // 持ち越し玉の混入を防ぐため、回転数から導く上限で頭打ちにする。
-        const MIN_PLAUSIBLE_RATE = 5; // 回転率の下限(回/K)。実打ではこれ未満は非現実的
+        // 推定グロス = 想定回転率での消費玉 + 上皿残玉（グロスは「区間で手元にあった玉」のため）。
+        // 旧実装の上限「回転率下限5回/K（=最大50玉/回転）」は実勢（15〜20回/K ≒ 13〜17玉/回転）から
+        // 大きく外れ、瞬間当たり区間に数百玉の幻の消費が計上されて回転率・EV/K が
+        // 極端なマイナスに沈むバグ（例: 19回転に950玉 → 回転率4.0回/K）の原因だった。
+        // また、区間内に現金投資（プッシュ補正等）がある場合、その現金で回った分の回転を
+        // 貯玉/持ち玉の消費から除外する（同じ回転の玉・現金二重計上を防ぐ）。
         const rb = Number(rentBalls) || 250;
-        const maxGross = totalRot > 0 ? totalRot * (rb / MIN_PLAUSIBLE_RATE) : 0; // 回転数 × 最大玉/回転
+        const rate = Math.min(Math.max(Number(expectedRate) > 0 ? Number(expectedRate) : DEFAULT_ASSUMED_RATE, 5), 30);
+        const tray = Math.max(0, Number(trayBalls) || 0);
+        const cashYen = segmentCashYen(rows, bounds);
+        const coveredRot = (cashYen / 1000) * rate; // 現金投資で説明できる回転数
+        const uncoveredRot = Math.max(0, totalRot - coveredRot);
+        const maxGross = Math.ceil(uncoveredRot * (rb / rate)) + tray;
         grossStart = Math.min(Number(currentBalance) || 0, maxGross);
+        // 全回転が現金分で説明でき上皿残も無い場合でも最低1玉/行を書き込む。
+        // 未設定のままだと deriveFromRows が「ballsConsumed なし = rentBalls(1K分)」として
+        // フォールバックし、幻の1K消費が計上されるため。
+        grossStart = Math.max(grossStart, segIdxs.length);
     }
 
     if (!(grossStart > 0) || !(totalRot > 0)) return rows;
