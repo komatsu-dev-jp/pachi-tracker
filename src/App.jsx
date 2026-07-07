@@ -42,6 +42,7 @@ import {
   NOTIF_VERDICT_CHANGE,
 } from "./notifications";
 import { takeSnapshot, takeSnapshotImmediate, getLatest as getLatestSnapshot } from "./snapshot";
+import { setupGlobalHaptics } from "./haptics";
 import EHIME_STORES from "./data/ehimeStores";
 
 // 旧タブ名 → 新モード名 のマッピング
@@ -128,6 +129,7 @@ export default function App() {
   const [accentColor, setAccentColor] = useLS("pt_accentColor", "purple");
   const [highContrast, setHighContrast] = useLS("pt_highContrast", false);
   const [colorBlind, setColorBlind] = useLS("pt_colorBlind", false);
+  const [hapticFeedback, setHapticFeedback] = useLS("pt_hapticFeedback", true);
 
   // Security
   const [appLock, setAppLock] = useLS("pt_appLock", false);
@@ -163,6 +165,12 @@ export default function App() {
   useEffect(() => {
     document.documentElement.classList.toggle("color-blind", !!colorBlind);
   }, [colorBlind]);
+
+  // タップ触覚フィードバック：設定ONの間だけ全ページ共通のタップ検知を張る
+  useEffect(() => {
+    if (!hapticFeedback) return;
+    return setupGlobalHaptics();
+  }, [hapticFeedback]);
 
   // Settings
   const [rentBalls, setRentBalls] = useLS("pt_rentBalls", 250);
@@ -1000,6 +1008,7 @@ export default function App() {
     accentColor, setAccentColor, colorThemes: COLOR_THEMES,
     highContrast, setHighContrast,
     colorBlind, setColorBlind,
+    hapticFeedback, setHapticFeedback,
     // セキュリ
     appLock, setAppLock, appPin, setAppPin, setIsLocked,
     // 貯玉関連
