@@ -10176,7 +10176,7 @@ export function SettingsTab({ s, onReset }) {
             "pt_sessionStarted","pt_startGameCount","pt_initialMochiBalls","pt_initialChodama",
             "pt_selectedStoreId","pt_storeName","pt_machineNum","pt_machineName","pt_investYen","pt_recoveryYen",
             "pt_stores","pt_customMachines","pt_archives","pt_theme","pt_accentColor","pt_highContrast",
-            "pt_colorBlind","pt_appLock","pt_appPin",
+            "pt_colorBlind","pt_hapticFeedback","pt_appLock","pt_appPin",
             "pt_monthlyEvTarget","pt_chodamaLog"];
         try { await flushAll(); } catch { /* 続行 */ }
         const data = {};
@@ -11430,6 +11430,7 @@ export function SettingsTab({ s, onReset }) {
     const IconShield = () => (<svg {...svgProps}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>);
     const IconContrast = () => (<svg {...svgProps}><circle cx="12" cy="12" r="9"/><path d="M12 3v18" fill="currentColor"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/></svg>);
     const IconEye = () => (<svg {...svgProps}><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>);
+    const IconVibrate = () => (<svg {...svgProps}><rect x="8" y="5" width="8" height="14" rx="1.5"/><path d="M2 10v4"/><path d="M22 10v4"/></svg>);
     const IconExchange = () => (<svg {...svgProps}><circle cx="12" cy="12" r="9"/><path d="M9 8h4.5a2.5 2.5 0 0 1 0 5H9"/><path d="M9 13h4.5a2.5 2.5 0 0 1 0 5H9"/><path d="M11 6v12"/><path d="M14 6v12"/></svg>);
     const IconTrending = () => (<svg {...svgProps}><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>);
     const IconCoin = () => (<svg {...svgProps}><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>);
@@ -11588,6 +11589,8 @@ export function SettingsTab({ s, onReset }) {
                             right={<Toggle value={s.highContrast} onChange={s.setHighContrast} />} />
                         <Row IconComp={IconEye} iconColor={C.subHi} label="色覚サポート" sub="色の識別をサポート"
                             right={<Toggle value={s.colorBlind} onChange={s.setColorBlind} />} />
+                        <Row IconComp={IconVibrate} iconColor={C.subHi} label="タップ振動フィードバック" sub="ボタン操作時に振動（対応端末のみ）"
+                            right={<Toggle value={s.hapticFeedback} onChange={s.setHapticFeedback} />} />
                     </Section>
                 </div>
                 <ToastPortal />
