@@ -18,7 +18,7 @@ function MetricCard({ label, value, unit, baseHint, accent, accentBg = true, acc
         </span>
         {unit && <span className="metric-card-v2__unit">{unit}</span>}
       </div>
-      {/* 生EV/K を補正後カード内に小さく併記（参考値・案A） */}
+      {/* 生EV/K を実質EV/Kカード内に小さく併記（参考値・案A） */}
       {rawNote && <div className="metric-card-v2__raw" style={{ fontFamily: mono }}>{rawNote}</div>}
       {baseHint && <div className="metric-card-v2__base">{baseHint}</div>}
     </div>
@@ -56,15 +56,15 @@ export function KeyMetrics({ ev, currentBalls, ballsLabel = "持ち玉", playMod
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
-      {/* 上段（案A）：補正後EV/K を主役（大）＋ ボーダー差 の2枚。生EV/K は補正後カード内に小さく併記 */}
+      {/* 上段（案A）：実質EV/K（旧「補正後EV/K」）を主役（大）＋ ボーダー差 の2枚。生EV/K は実質EV/Kカード内に小さく併記 */}
       <div style={{ display: "grid", gridTemplateColumns: "1.35fr 1fr", gap: 8 }}>
         <MetricCard
-          label="補正後EV/K"
+          label="実質EV/K"
           value={ev1KC !== 0 ? sp(ev1KC, 0) : "—"}
           unit="円"
           hero
           rawNote={`生 ${ev1KRaw !== 0 ? sp(ev1KRaw, 0) : "—"}円`}
-          baseHint="実質値・基準+100"
+          baseHint="上皿込み・基準+100"
           accent={C.yellow}
         />
         <MetricCard
