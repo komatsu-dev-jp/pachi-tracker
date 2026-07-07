@@ -1561,6 +1561,23 @@ input, select, textarea {
   font-size: 17px;
 }
 
+/* 案A: 補正後EV/K を主役化（ヒーロー数字） */
+.metric-card-v2__num--hero {
+  font-size: 30px;
+  line-height: 1;
+}
+
+/* 補正後カード内に生EVを小さく併記（参考値） */
+.metric-card-v2__raw {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--blue);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .metric-card-v2__unit {
   font-size: 10px;
   color: var(--sub-hi);

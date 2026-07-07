@@ -1,7 +1,7 @@
 import { C, font, mono, sc, sp, f } from "../../constants";
 import { getPredictedSpinRate } from "./metricSelectors";
 
-function MetricCard({ label, value, unit, baseHint, accent, accentBg = true, accentText }) {
+function MetricCard({ label, value, unit, baseHint, accent, accentBg = true, accentText, hero = false, rawNote }) {
   const accentColor = accent || C.blue;
   return (
     <div
@@ -11,13 +11,15 @@ function MetricCard({ label, value, unit, baseHint, accent, accentBg = true, acc
       <div className="metric-card-v2__label">{label}</div>
       <div className="metric-card-v2__row">
         <span
-          className="metric-card-v2__num"
+          className={`metric-card-v2__num${hero ? " metric-card-v2__num--hero" : ""}`}
           style={{ color: accentText || accentColor, fontFamily: mono }}
         >
           {value}
         </span>
         {unit && <span className="metric-card-v2__unit">{unit}</span>}
       </div>
+      {/* 生EV/K を補正後カード内に小さく併記（参考値・案A） */}
+      {rawNote && <div className="metric-card-v2__raw" style={{ fontFamily: mono }}>{rawNote}</div>}
       {baseHint && <div className="metric-card-v2__base">{baseHint}</div>}
     </div>
   );
@@ -54,21 +56,16 @@ export function KeyMetrics({ ev, currentBalls, ballsLabel = "持ち玉", playMod
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
-      {/* 上段：補正後EV/K（黄アクセント）/ 生EV/K（青）/ ボーダー差（緑または赤） */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+      {/* 上段（案A）：補正後EV/K を主役（大）＋ ボーダー差 の2枚。生EV/K は補正後カード内に小さく併記 */}
+      <div style={{ display: "grid", gridTemplateColumns: "1.35fr 1fr", gap: 8 }}>
         <MetricCard
           label="補正後EV/K"
           value={ev1KC !== 0 ? sp(ev1KC, 0) : "—"}
           unit="円"
+          hero
+          rawNote={`生 ${ev1KRaw !== 0 ? sp(ev1KRaw, 0) : "—"}円`}
           baseHint="実質値・基準+100"
           accent={C.yellow}
-        />
-        <MetricCard
-          label="生EV/K"
-          value={ev1KRaw !== 0 ? sp(ev1KRaw, 0) : "—"}
-          unit="円"
-          baseHint="参考値・補正なし"
-          accent={C.blue}
         />
         <MetricCard
           label="ボーダー差"
