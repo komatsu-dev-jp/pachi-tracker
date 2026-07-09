@@ -46,6 +46,7 @@ import {
 } from "./analysisSelectors";
 import { CalendarTab } from "../Tabs";
 import AnalyzerView from "./AnalyzerView";
+import { storeAnalysis } from "./analyticsViewSelectors";
 
 // 表示の切替（月別/年別/通算/分析+）はヘッダーの期間ラベルをタップして開く
 // プルダウンメニュー（VIEW_MENU）でまとめて選ぶ。
@@ -685,8 +686,8 @@ function BalanceBars({ rows }) {
   );
 }
 
-// 店舗トップ3。行タップでの店舗詳細への遷移は別PRで対応予定のため、現時点では非インタラクティブ。
-function StorePanel({ rows }) {
+// 店舗トップ3。行タップで店舗詳細（storeDetailName）へ遷移する。
+function StorePanel({ rows, onSelect }) {
   const top3 = rows.slice(0, 3);
   if (top3.length === 0) {
     return <section className={`${card} p-4 text-center text-[11px] text-[var(--at-mut)]`}>対象期間の記録がありません</section>;
@@ -698,14 +699,20 @@ function StorePanel({ rows }) {
         <span className="text-[11px] font-bold text-[var(--at-cyan)]">すべて見る</span>
       </div>
       {top3.map((row, index) => (
-        <div key={row.storeName} className="flex items-center gap-3 border-t border-[var(--at-ln-soft)] px-3.5 py-3">
+        <button
+          key={row.storeName}
+          type="button"
+          onClick={() => onSelect?.(row.storeName)}
+          className="flex w-full items-center gap-3 border-t border-[var(--at-ln-soft)] px-3.5 py-3 text-left"
+        >
           <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg font-mono text-[12px] font-black ${RANK_BADGE[index]}`}>{index + 1}</span>
           <span className="min-w-0 flex-1">
             <div className="truncate text-[13px] font-bold text-[var(--at-strong)]">{row.storeName}</div>
             <div className="text-[10.5px] font-semibold text-[var(--at-mut)]">期待値 {signed(row.ev)}円 ・ {row.days}日</div>
           </span>
           <span className={`shrink-0 font-mono text-[15px] font-black tabular-nums ${moneyClass(row.actual)}`}>{signed(row.actual)}円</span>
-        </div>
+          <ChevronRight className="h-4 w-4 shrink-0 text-[var(--at-faint)]" />
+        </button>
       ))}
     </section>
   );
@@ -949,6 +956,161 @@ function HeaderMenu({ current, onSelect }) {
   );
 }
 
+// 店舗詳細（#3a）: 1店舗の指標（実施回数・勝敗・勝率・時間・投資/回収・平均額・時給・期待値合計/平均）＋実施履歴。
+// archives は呼び出し側で既に対象スコープ（現在のフィルタ）まで絞り込み済みのものを渡す想定。
+function StoreStatRow({ label, value, cls = "text-[var(--at-strong)]" }) {
+  return (
+    <div className="flex min-h-11 items-center justify-between gap-3 border-b border-[var(--at-ln-soft)] py-2 last:border-b-0">
+      <span className="text-[12px] font-semibold text-[var(--at-mut)]">{label}</span>
+      <span className={`font-mono text-[15px] font-black tabular-nums ${cls}`}>{value}</span>
+    </div>
+  );
+}
+
+function StoreDetailScreen({ storeName, archives, isDemo, onBack }) {
+  const storeArchives = useMemo(
+    () => archives.filter((a) => (a?.storeName || "") === storeName),
+    [archives, storeName],
+  );
+
+  const demoStore = isDemo ? DEMO_STORES.find((s) => s.storeName === storeName) : null;
+
+  const summaryX = useMemo(() => (isDemo ? null : summarize(storeArchives)), [isDemo, storeArchives]);
+  const avgSpin = useMemo(() => {
+    if (isDemo) return demoStore?.spin ?? null;
+    const store = storeAnalysis(storeArchives).find((s) => s.storeName === storeName);
+    return store?.spinRate ?? null;
+  }, [isDemo, storeArchives, storeName, demoStore]);
+  const isTopStore = useMemo(() => {
+    if (isDemo) return DEMO_STORES[0]?.storeName === storeName;
+    return storeAnalysis(archives)[0]?.storeName === storeName;
+  }, [isDemo, archives, storeName]);
+
+  const heroPL = isDemo ? (demoStore?.actual ?? 0) : (summaryX.totalRealPL || 0);
+  const visits = useMemo(() => {
+    return [...storeArchives]
+      .map((a) => ({
+        key: a.id ?? `${a.date}-${a.time}`,
+        date: a.date,
+        machineName: a.machineName || "未設定",
+        pl: getActualPL(a),
+        ev: getEvAmount(a),
+      }))
+      .sort((a, b) => {
+        if (a.pl != null && b.pl == null) return -1;
+        if (a.pl == null && b.pl != null) return 1;
+        if (a.pl != null && b.pl != null) return b.pl - a.pl;
+        return (b.date || "").localeCompare(a.date || "");
+      });
+  }, [storeArchives]);
+
+  const stats = isDemo
+    ? [
+      { label: "実施回数", value: `${demoStore?.days ?? 0}回` },
+      { label: "勝ち・負け", value: "—" },
+      { label: "勝率", value: "—" },
+      { label: "総遊技時間", value: "—" },
+      { label: "投資合計", value: "—" },
+      { label: "回収合計", value: "—" },
+      { label: "平均額", value: "—" },
+      { label: "時給", value: "—" },
+      { label: "期待値合計", value: `${signed(demoStore?.ev ?? 0)}円`, cls: "text-[var(--at-cyan)]" },
+      { label: "期待値平均", value: "—" },
+    ]
+    : [
+      { label: "実施回数", value: `${summaryX.sessions}回` },
+      { label: "勝ち・負け", value: `${summaryX.winCount}勝${Math.max(0, summaryX.realSessions - summaryX.winCount)}敗` },
+      { label: "勝率", value: summaryX.winRate != null ? `${Math.round(summaryX.winRate)}%` : "—", cls: "text-[var(--at-gold)]" },
+      { label: "総遊技時間", value: `${summaryX.workHours.toFixed(1)}h` },
+      { label: "投資合計", value: `${fmt(summaryX.totalInvest)}円` },
+      { label: "回収合計", value: `${fmt(summaryX.totalRecovery)}円` },
+      {
+        label: "平均額",
+        value: summaryX.realSessions > 0 ? `${signed(Math.round(summaryX.totalRealPL / summaryX.realSessions))}円` : "—",
+        cls: summaryX.realSessions > 0 ? moneyClass(summaryX.totalRealPL) : undefined,
+      },
+      {
+        label: "時給",
+        value: summaryX.wage != null ? `${signed(summaryX.wage)}円/h` : "—",
+        cls: summaryX.wage != null ? moneyClass(summaryX.wage) : undefined,
+      },
+      { label: "期待値合計", value: `${signed(Math.round(summaryX.evAmount))}円`, cls: "text-[var(--at-cyan)]" },
+      {
+        label: "期待値平均",
+        value: summaryX.sessions > 0 ? `${signed(Math.round(summaryX.evAmount / summaryX.sessions))}円` : "—",
+        cls: "text-[var(--at-cyan)]",
+      },
+    ];
+
+  return (
+    <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--at-page)] text-[var(--at-strong)]">
+      <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-5 pt-4">
+        <div className="flex items-center gap-2.5">
+          <button type="button" onClick={onBack} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[var(--at-ln-md)] bg-[var(--at-panel2)] text-[var(--at-mut)]">
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-extrabold tracking-[.24em] text-[var(--at-gold)]">STORE REPORT</div>
+            <h1 className="mt-0.5 truncate text-[19px] font-black leading-tight">{storeName}</h1>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="rounded-full border border-[var(--at-ln-md)] px-3 py-1.5 text-[11px] font-bold text-[var(--at-subtle-hi)]">全期間</span>
+          {isTopStore && (
+            <span className="rounded-full border border-[var(--at-gold)]/35 bg-[var(--at-gold)]/10 px-3 py-1.5 text-[11px] font-extrabold text-[var(--at-gold)]">店舗1位</span>
+          )}
+        </div>
+
+        <div className="mt-4 flex items-end justify-between gap-3">
+          <div>
+            <div className="text-[12px] font-extrabold tracking-[.14em] text-[var(--at-mut)]">この店舗での収支</div>
+            <div className="mt-1 flex items-baseline gap-1">
+              <span className={`font-mono text-[42px] font-black leading-none tracking-[-.03em] tabular-nums ${moneyClass(heroPL)}`}>{signed(heroPL)}</span>
+              <span className="pb-0.5 text-[14px] font-extrabold text-[var(--at-mut)]">円</span>
+            </div>
+          </div>
+          <div className="pb-1 text-right">
+            <div className="text-[10px] font-extrabold text-[var(--at-mut)]">平均回転率</div>
+            <div className="mt-0.5 font-mono text-[18px] font-black tabular-nums">
+              {avgSpin != null ? avgSpin.toFixed(1) : "—"}<span className="text-[10px] font-bold text-[var(--at-mut)]">回/k</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain pb-12 pt-4">
+          <section className={`${card} px-4 py-1`}>
+            {stats.map((s) => <StoreStatRow key={s.label} {...s} />)}
+          </section>
+
+          <section className={`${card} p-0`}>
+            <div className="flex items-center justify-between px-3.5 pb-1.5 pt-3">
+              <h2 className="text-[14px] font-black text-[var(--at-strong)]">実施履歴</h2>
+              <span className="text-[11px] font-bold text-[var(--at-mut)]">収支順</span>
+            </div>
+            {visits.length === 0 ? (
+              <div className="px-3.5 py-6 text-center text-[11px] text-[var(--at-mut)]">実戦記録がありません</div>
+            ) : (
+              visits.map((v) => (
+                <div key={v.key} className="flex items-center gap-3 border-t border-[var(--at-ln-soft)] px-3.5 py-3">
+                  <span className="w-14 shrink-0 font-mono text-[12px] font-extrabold text-[var(--at-subtle-hi)]">{v.date?.slice(5).replace("-", "/")}</span>
+                  <span className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] font-extrabold">{v.machineName}</div>
+                    <div className="text-[10.5px] font-bold text-[var(--at-cyan)]">期待値 {signed(Math.round(v.ev))}円</div>
+                  </span>
+                  <span className={`shrink-0 font-mono text-[15px] font-black tabular-nums ${v.pl != null ? moneyClass(v.pl) : "text-[var(--at-faint)]"}`}>
+                    {v.pl != null ? `${signed(v.pl)}円` : "—"}
+                  </span>
+                </div>
+              ))
+            )}
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AnalysisDashboard({
   S,
   onReset,
@@ -980,6 +1142,8 @@ export default function AnalysisDashboard({
   // 編集シート（CalendarTab focusMode）を開くためのサブ画面状態。
   //   null=非表示 / { day: "YYYY-MM-DD", archiveId: number|null }（archiveId 指定時はその記録の編集フォームを直接開く）
   const [recordsDay, setRecordsDay] = useState(null);
+  // 店舗トップ3の行タップで開く店舗詳細のサブ画面状態。null=非表示 / string=対象の店舗名。
+  const [storeDetailName, setStoreDetailName] = useState(null);
   // スワイプ判定用のタッチ開始座標。
   const touchRef = useRef({ x: 0, y: 0, active: false });
 
@@ -1185,6 +1349,19 @@ export default function AnalysisDashboard({
     );
   }
 
+  // 分析タブの店舗トップ3タップで開く店舗詳細のサブ画面。
+  // 分析タブの集計は期間絞り込みなし（periodFilters === {} for "analyzer"）のため、対象は常に全期間。
+  if (storeDetailName !== null) {
+    return (
+      <StoreDetailScreen
+        storeName={storeDetailName}
+        archives={filterArchives(archives, filters)}
+        isDemo={isDemo}
+        onBack={() => setStoreDetailName(null)}
+      />
+    );
+  }
+
   if (periodTab === "analyzer") {
     return (
       <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--at-page)] text-[var(--at-strong)]">
@@ -1196,7 +1373,7 @@ export default function AnalysisDashboard({
             <MonthPillTabs current={periodTab} onSelect={handleSelectView} />
             <MachinePodium rows={machines} />
             <BalanceBars rows={machines} />
-            <StorePanel rows={stores} />
+            <StorePanel rows={stores} onSelect={setStoreDetailName} />
             <AnalyzerView archives={archives} extraFilters={filters} />
           </div>
         </div>
