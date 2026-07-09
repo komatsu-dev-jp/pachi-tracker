@@ -612,55 +612,99 @@ function TrendPanel({ data }) {
   );
 }
 
-function MachinePanel({ rows, sortMode, setSortMode }) {
-  const sorted = [...rows].sort((a, b) => sortMode === "spin" ? b.spin - a.spin : b.evAmount - a.evAmount);
+// 表彰台（1〜3位）。中央＝1位を一回り大きく表示し、実収支の符号で緑/赤に色分けする。
+// rows は既に実収支（actualPL）降順で渡ってくる想定（machineRanking のデフォルト順）。
+const RANK_BADGE = [
+  "bg-[var(--at-gold)] text-[#1d1503]",
+  "bg-[var(--at-subtle-hi)]/15 text-[var(--at-subtle-hi)]",
+  "bg-[var(--at-amber)]/15 text-[var(--at-amber)]",
+];
+function MachinePodium({ rows }) {
+  const top3 = rows.slice(0, 3);
+  if (top3.length === 0) {
+    return <section className={`${card} p-4 text-center text-[11px] text-[var(--at-mut)]`}>対象期間の記録がありません</section>;
+  }
   return (
-    <section className={`${card} p-2.5`}>
-      <SectionTitle
-        action={<button className="text-[8px] font-bold text-[var(--at-cyan)]">すべて見る</button>}
-      >
-        機種ランキング <span className="text-[8px] font-normal text-[var(--at-mut3)]">（{sortMode === "spin" ? "回転率順" : "期待値順"}）</span>
-      </SectionTitle>
-      <div className="grid grid-cols-[22px_1fr_38px_38px_50px_50px_32px] gap-1 border-b border-[var(--at-ln)] pb-1.5 text-right text-[8px] text-[var(--at-faint2)]">
-        <span className="text-left">順位</span><span className="text-left">機種名</span><span>時間</span><span>回転率</span><span>期待値</span><span>実収支</span><span>勝率</span>
-      </div>
-      {sorted.slice(0, 5).map((row, index) => (
-        <div key={row.machineName} className="grid grid-cols-[22px_1fr_38px_38px_50px_50px_32px] items-center gap-1 border-b border-[var(--at-ln-soft)] py-2.5 text-right font-mono text-[9px]">
-          <span className={`text-left font-black ${index === 0 ? "text-[var(--at-gold)]" : index === 1 ? "text-[var(--at-subtle-hi)]" : index === 2 ? "text-[var(--at-amber)]" : "text-[var(--at-strong)]"}`}>{index < 3 ? "♛" : index + 1}</span>
-          <span className="truncate text-left font-sans font-bold text-[var(--at-strong)]">{row.machineName}</span>
-          <span className="text-[var(--at-subtle-hi)]">{row.hours || "—"}h</span>
-          <span className="text-[var(--at-subtle-hi)]">{row.spin || "—"}</span>
-          <span className="font-bold text-[var(--at-pos)]">{signed(row.evAmount)}</span>
-          <span className={`font-bold ${moneyClass(row.actualPL)}`}>{signed(row.actualPL)}</span>
-          <span className="text-[var(--at-subtle-hi)]">{row.winRate || 0}%</span>
-        </div>
-      ))}
-      <div className="mt-2 flex gap-3 text-[7px]">
-        <button type="button" onClick={() => setSortMode("ev")} className={sortMode === "ev" ? "text-[var(--at-cyan)]" : "text-[var(--at-mut2)]"}>▶ 期待値順</button>
-        <button type="button" onClick={() => setSortMode("spin")} className={sortMode === "spin" ? "text-[var(--at-cyan)]" : "text-[var(--at-mut2)]"}>回転率順</button>
+    <section className="grid grid-cols-3 items-end gap-2">
+      {[1, 0, 2].map((idx) => {
+        const m = top3[idx];
+        if (!m) return <div key={idx} />;
+        const isFirst = idx === 0;
+        return (
+          <div
+            key={m.machineName}
+            className={`rounded-2xl border text-center ${
+              isFirst
+                ? "border-[var(--at-gold)]/40 bg-[image:linear-gradient(170deg,rgba(255,200,61,.16),rgba(255,200,61,.02))] px-2.5 py-4"
+                : `${card} px-2.5 py-3.5`
+            }`}
+          >
+            <div className={`mx-auto flex items-center justify-center rounded-full font-mono font-black ${isFirst ? "h-8 w-8 text-[15px]" : "h-7 w-7 text-[13px]"} ${RANK_BADGE[idx]}`}>
+              {idx + 1}
+            </div>
+            <div className={`mt-2 line-clamp-2 font-black leading-tight text-[var(--at-strong)] ${isFirst ? "text-[13px]" : "text-[12px]"}`}>
+              {m.machineName}
+            </div>
+            <div className={`mt-1.5 font-mono font-black tabular-nums ${moneyClass(m.actualPL)} ${isFirst ? "text-[20px]" : "text-[16px]"}`}>
+              {signed(m.actualPL)}
+            </div>
+            <div className="mt-0.5 truncate text-[9px] font-bold text-[var(--at-mut)]">
+              勝率{m.winRate || 0}%・{m.spin ? Number(m.spin).toFixed(1) : "—"}回/k
+            </div>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+// 実収支バランス：機種名＋符号付き金額を並べ、下に水平バー。多列テーブルを使わない。
+function BalanceBars({ rows }) {
+  if (rows.length === 0) return null;
+  const maxAbs = Math.max(1, ...rows.map((row) => Math.abs(row.actualPL)));
+  return (
+    <section className={`${card} p-3.5`}>
+      <SectionTitle note="機種別（実収支）">実収支バランス</SectionTitle>
+      <div className="space-y-2.5">
+        {rows.map((row) => (
+          <div key={row.machineName}>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="min-w-0 truncate text-[12px] font-bold text-[var(--at-subtle-hi)]">{row.machineName}</span>
+              <span className={`shrink-0 font-mono text-[13px] font-black tabular-nums ${moneyClass(row.actualPL)}`}>{signed(row.actualPL)}円</span>
+            </div>
+            <div className="mt-1 h-2 overflow-hidden rounded-full bg-[var(--at-ln-soft)]">
+              <div
+                className={`h-full rounded-full ${row.actualPL >= 0 ? "bg-[var(--at-pos)]" : "bg-[var(--at-neg)]"}`}
+                style={{ width: `${Math.max(4, Math.round((Math.abs(row.actualPL) / maxAbs) * 100))}%` }}
+              />
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   );
 }
 
+// 店舗トップ3。行タップでの店舗詳細への遷移は別PRで対応予定のため、現時点では非インタラクティブ。
 function StorePanel({ rows }) {
+  const top3 = rows.slice(0, 3);
+  if (top3.length === 0) {
+    return <section className={`${card} p-4 text-center text-[11px] text-[var(--at-mut)]`}>対象期間の記録がありません</section>;
+  }
   return (
-    <section className={`${card} p-2.5`}>
-      <SectionTitle action={<button className="text-[8px] font-bold text-[var(--at-cyan)]">すべて見る</button>}>
-        店舗ランキング <span className="text-[8px] font-normal text-[var(--at-mut3)]">（期待値順）</span>
-      </SectionTitle>
-      <div className="grid grid-cols-[22px_1fr_40px_38px_50px_50px_28px] gap-1 border-b border-[var(--at-ln)] pb-1.5 text-right text-[8px] text-[var(--at-faint2)]">
-        <span className="text-left">順位</span><span className="text-left">店舗名</span><span>規模</span><span>回転率</span><span>期待値</span><span>実収支</span><span>日</span>
+    <section className={`${card} p-0`}>
+      <div className="flex items-center justify-between px-3.5 pb-1.5 pt-3">
+        <h2 className="text-[14px] font-black text-[var(--at-strong)]">店舗トップ3</h2>
+        <span className="text-[11px] font-bold text-[var(--at-cyan)]">すべて見る</span>
       </div>
-      {rows.slice(0, 5).map((row, index) => (
-        <div key={row.storeName} className="grid grid-cols-[22px_1fr_40px_38px_50px_50px_28px] items-center gap-1 border-b border-[var(--at-ln-soft)] py-2.5 text-right font-mono text-[9px]">
-          <span className={`text-left font-black ${index === 0 ? "text-[var(--at-gold)]" : index === 1 ? "text-[var(--at-subtle-hi)]" : index === 2 ? "text-[var(--at-amber)]" : "text-[var(--at-strong)]"}`}>{index < 3 ? "♛" : index + 1}</span>
-          <span className="truncate text-left font-sans font-bold text-[var(--at-strong)]">{row.storeName}</span>
-          <span className="font-sans text-[var(--at-subtle-hi)]">{row.size}</span>
-          <span className="text-[var(--at-subtle-hi)]">{row.spin?.toFixed?.(1) || row.spin}</span>
-          <span className={`font-bold ${moneyClass(row.ev)}`}>{signed(row.ev)}</span>
-          <span className={`font-bold ${moneyClass(row.actual)}`}>{signed(row.actual)}</span>
-          <span className="text-[var(--at-subtle-hi)]">{row.days}</span>
+      {top3.map((row, index) => (
+        <div key={row.storeName} className="flex items-center gap-3 border-t border-[var(--at-ln-soft)] px-3.5 py-3">
+          <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg font-mono text-[12px] font-black ${RANK_BADGE[index]}`}>{index + 1}</span>
+          <span className="min-w-0 flex-1">
+            <div className="truncate text-[13px] font-bold text-[var(--at-strong)]">{row.storeName}</div>
+            <div className="text-[10.5px] font-semibold text-[var(--at-mut)]">期待値 {signed(row.ev)}円 ・ {row.days}日</div>
+          </span>
+          <span className={`shrink-0 font-mono text-[15px] font-black tabular-nums ${moneyClass(row.actual)}`}>{signed(row.actual)}円</span>
         </div>
       ))}
     </section>
@@ -925,7 +969,6 @@ export default function AnalysisDashboard({
   const setFilters = onChangeFilters || setInternalFilters;
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedDay, setSelectedDay] = useState(14);
-  const [sortMode, setSortMode] = useState("ev");
   const [shareOpen, setShareOpen] = useState(false);
   const [monthOffset, setMonthOffset] = useState(0);
   // ヘッダーの期間ラベルをタップで開くプルダウンの開閉。月別/年別/通算/分析+ の切替導線。
@@ -1150,9 +1193,11 @@ export default function AnalysisDashboard({
           {viewMenuOpen && <div className="fixed inset-0 z-30" onClick={() => setViewMenuOpen(false)} />}
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain pb-12">
             {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
-            <AnalyzerView archives={archives} extraFilters={filters} />
-            <MachinePanel rows={machines} sortMode={sortMode} setSortMode={setSortMode} />
+            <MonthPillTabs current={periodTab} onSelect={handleSelectView} />
+            <MachinePodium rows={machines} />
+            <BalanceBars rows={machines} />
             <StorePanel rows={stores} />
+            <AnalyzerView archives={archives} extraFilters={filters} />
           </div>
         </div>
       </div>
