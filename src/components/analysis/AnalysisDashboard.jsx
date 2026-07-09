@@ -340,7 +340,14 @@ function MonthScrubber({ monthOffset, baseDate, archives, filters, isDemo, curre
   }, [monthOffset]);
 
   return (
-    <div ref={scrollRef} className="-mx-0.5 flex gap-2 overflow-x-auto px-0.5 pb-0.5">
+    <div
+      ref={scrollRef}
+      className="-mx-0.5 flex gap-2 overflow-x-auto px-0.5 pb-0.5"
+      // 親<main>のonTouchStart/onTouchEndは横スワイプで月送り(goPeriod)を発火するため、
+      // スクラバー内のドラッグ操作（チップの横スクロール）が伝播して誤って月移動しないよう遮断する。
+      onTouchStart={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => e.stopPropagation()}
+    >
       {items.map((item) => (
         <button
           key={item.offset}
