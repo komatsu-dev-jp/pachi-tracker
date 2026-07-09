@@ -1,10 +1,8 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart3,
   CalendarDays,
   CalendarRange,
-  Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
@@ -233,9 +231,8 @@ function ActionButton({ children, onClick, active = false }) {
   );
 }
 
-// 月別画面のクイック切替ピル（月別/年別/通算/分析）。
-// HeaderBar の期間ラベルタップ→プルダウン（HeaderMenu）と機能重複するが削除はせず、
-// カレンダー画面だけ1タップで切り替えられる導線を追加する（タップ数増加なし・既存導線は温存）。
+// 常設の表示切替ピル（月別/年別/通算/分析）。ヘッダー直下に固定表示し、
+// どの画面からも1タップで切替できる（5b 常設タブ＋期間スクラバー 採用。旧ヘッダープルダウンは廃止）。
 const PILL_LABELS = { month: "月別", year: "年別", all: "通算", analyzer: "分析" };
 function MonthPillTabs({ current, onSelect }) {
   return (
@@ -298,6 +295,73 @@ function MonthHero({ actual, ev, diff, winRate }) {
         </div>
       </div>
     </section>
+  );
+}
+
+// 期間スクラバー（5b 常設タブ＋期間スクラバー）。現在月を中心に前後の月チップを横スクロール表示し、
+// タップで直接その月へジャンプできる（ヘッダーの‹›が1ヶ月ずつの送りなのに対し、離れた月へ一気に移動する用途）。
+// 各チップの金額は既存 summarize().totalRealPL をそのまま表示するだけで、計算ロジックには未介入。
+const SCRUB_MONTHS_BEFORE = 5;
+const SCRUB_MONTHS_AFTER = 2;
+function MonthScrubber({ monthOffset, baseDate, archives, filters, isDemo, currentActual, onSelect }) {
+  const scrollRef = useRef(null);
+
+  const items = useMemo(() => {
+    const list = [];
+    for (let o = monthOffset - SCRUB_MONTHS_BEFORE; o <= monthOffset + SCRUB_MONTHS_AFTER; o++) {
+      const d = new Date(baseDate.getFullYear(), baseDate.getMonth() + o, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const isCurrent = o === monthOffset;
+      const crossesYear = d.getFullYear() !== baseDate.getFullYear();
+      let hasData = false;
+      let value = 0;
+      if (isCurrent) {
+        hasData = true;
+        value = currentActual;
+      } else if (!isDemo) {
+        const s = summarize(archives, { ...filters, month: key });
+        hasData = (s.sessions || 0) > 0;
+        value = s.totalRealPL || 0;
+      }
+      list.push({
+        offset: o,
+        isCurrent,
+        label: isCurrent || crossesYear ? `${d.getFullYear()}年${d.getMonth() + 1}月` : `${d.getMonth() + 1}月`,
+        hasData,
+        value,
+      });
+    }
+    return list;
+  }, [archives, baseDate, currentActual, filters, isDemo, monthOffset]);
+
+  useEffect(() => {
+    const current = scrollRef.current?.querySelector('[data-current="true"]');
+    current?.scrollIntoView({ inline: "center", block: "nearest" });
+  }, [monthOffset]);
+
+  return (
+    <div ref={scrollRef} className="-mx-0.5 flex gap-2 overflow-x-auto px-0.5 pb-0.5">
+      {items.map((item) => (
+        <button
+          key={item.offset}
+          type="button"
+          data-current={item.isCurrent}
+          onClick={() => onSelect(item.offset)}
+          className={`flex shrink-0 flex-col items-center gap-0.5 rounded-2xl border px-3.5 py-2.5 transition ${
+            item.isCurrent
+              ? "border-[var(--at-cyan)] bg-[var(--at-cyan)]/12 text-[var(--at-strong)]"
+              : "border-[var(--at-ln-md)] text-[var(--at-mut)]"
+          }`}
+        >
+          <span className={`whitespace-nowrap text-[12px] ${item.isCurrent ? "font-black" : "font-extrabold"}`}>{item.label}</span>
+          <span className={`whitespace-nowrap font-mono text-[9px] font-extrabold tabular-nums ${
+            item.hasData ? moneyClass(item.value) : "text-[var(--at-faint2)]"
+          }`}>
+            {item.hasData ? signed(item.value) : "記録なし"}
+          </span>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -879,9 +943,10 @@ function MonthDetailContent({ chartData, score, stats }) {
   );
 }
 
-// 画面ヘッダー。左に前の月（‹）、中央に期間ラベル（タップで表示切替メニュー）＋次の月（›）、
-// 右端に「月次詳細」トグルボタン（月別のみ）。期間ラベルのタップで月別/年別/通算/分析+ を切り替える。
-function HeaderBar({ title, onPrev, onNext, navDisabled, onTitleTap, menuOpen, current, onSelect, onToggleDetail, detailActive }) {
+// 画面ヘッダー。左に前の月（‹）、中央に期間ラベル＋次の月（›）、右端に「月次詳細」トグルボタン（月別のみ）。
+// 月別/年別/通算/分析+ の切替は常設ピル（MonthPillTabs、ヘッダー直下）に統合したため、
+// ヘッダー側のタップ式プルダウンは廃止した（5b 常設タブ＋期間スクラバー 採用に伴う変更）。
+function HeaderBar({ title, onPrev, onNext, navDisabled, onToggleDetail, detailActive }) {
   const hasNav = Boolean(onPrev && onNext);
   return (
     <div className="relative z-40 mb-3 flex h-12 shrink-0 items-center justify-between">
@@ -892,12 +957,9 @@ function HeaderBar({ title, onPrev, onNext, navDisabled, onTitleTap, menuOpen, c
         </button>
       ) : <span className="h-10 w-10 shrink-0" />}
 
-      {/* 中央：期間ラベル（タップで表示切替メニュー）＋次の月（絶対配置で中央寄せ）。 */}
+      {/* 中央：期間ラベル＋次の月（絶対配置で中央寄せ）。 */}
       <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-1">
-        <button type="button" onClick={onTitleTap} className="flex items-center gap-1 rounded-lg px-1.5 py-0.5" aria-label={`${title} 表示を切り替える`} aria-expanded={menuOpen}>
-          <h1 className="whitespace-nowrap text-[21px] font-black tracking-[.01em] text-[var(--at-strong)]">{title}</h1>
-          {onTitleTap && <ChevronDown className={`h-3.5 w-3.5 text-[var(--at-faint2)] transition ${menuOpen ? "rotate-180" : ""}`} />}
-        </button>
+        <h1 className="whitespace-nowrap px-1.5 py-0.5 text-[21px] font-black tracking-[.01em] text-[var(--at-strong)]">{title}</h1>
         {hasNav && (
           <button type="button" onClick={onNext} disabled={navDisabled} aria-label="次へ" className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--at-subtle)] disabled:opacity-20">
             <ChevronRight className="h-5 w-5" />
@@ -921,38 +983,6 @@ function HeaderBar({ title, onPrev, onNext, navDisabled, onTitleTap, menuOpen, c
           月次詳細
         </button>
       ) : <span className="h-10 w-10 shrink-0" />}
-
-      {menuOpen && <HeaderMenu current={current} onSelect={onSelect} />}
-    </div>
-  );
-}
-
-// ハンバーガーから開くプルダウン。月別/年別/通算/分析+ を選んで切り替える。
-function HeaderMenu({ current, onSelect }) {
-  return (
-    <div className="hdr-menu-pop absolute left-1/2 top-[calc(100%+8px)] z-50 w-60 -translate-x-1/2 overflow-hidden rounded-2xl border border-[var(--at-ln-md)] bg-[var(--at-menu)] p-1.5 shadow-[var(--at-menu-shadow)]">
-      {VIEW_MENU.map((item) => {
-        const active = current === item.id;
-        return (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => onSelect(item.id)}
-            className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${
-              active ? "bg-[var(--at-cyan)]/12" : "hover:bg-[var(--at-hoverbg)]"
-            }`}
-          >
-            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${active ? "border-[var(--at-cyan)]/50 bg-[var(--at-cyan)]/15 text-[var(--at-cyan)]" : "border-[var(--at-ln-md)] bg-[var(--at-panel-hi)] text-[var(--at-iconblue)]"}`}>
-              <item.Icon className="h-[18px] w-[18px]" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[14px] font-black text-[var(--at-strong)]">{item.label}</span>
-              <span className="block truncate text-[10px] text-[var(--at-mut)]">{item.desc}</span>
-            </span>
-            {active && <Check className="h-4 w-4 shrink-0 text-[var(--at-cyan)]" />}
-          </button>
-        );
-      })}
     </div>
   );
 }
@@ -1306,8 +1336,6 @@ export default function AnalysisDashboard({
   const [selectedDay, setSelectedDay] = useState(14);
   const [shareOpen, setShareOpen] = useState(false);
   const [monthOffset, setMonthOffset] = useState(0);
-  // ヘッダーの期間ラベルをタップで開くプルダウンの開閉。月別/年別/通算/分析+ の切替導線。
-  const [viewMenuOpen, setViewMenuOpen] = useState(false);
   // 月別画面の「月次詳細」表示トグル（false=カレンダー / true=収支グラフ＋成績）。
   const [detailView, setDetailView] = useState(false);
   // 月送り遷移の向き（next=左スワイプ/prev=右スワイプ/fade=メニュー切替）。CSSアニメーション用。
@@ -1322,13 +1350,12 @@ export default function AnalysisDashboard({
   // スワイプ判定用のタッチ開始座標。
   const touchRef = useRef({ x: 0, y: 0, active: false });
 
-  // 表示メニューから期間/分析を選択（選択後はメニューを閉じる。切替はフェード遷移）。
+  // 常設ピル（月別/年別/通算/分析+）から期間/分析を選択（切替はフェード遷移）。
   // 月別以外へ移ると月次詳細トグルは意味を持たないため false に戻す。
   const handleSelectView = (id) => {
     setSlideDir("fade");
     setPeriodTab(id);
     setDetailView(false);
-    setViewMenuOpen(false);
   };
 
   // 月次詳細トグル（カレンダー⇄収支グラフ＋成績）。切替はフェード遷移。
@@ -1343,6 +1370,13 @@ export default function AnalysisDashboard({
     const step = periodTab === "year" ? 12 : 1;
     setSlideDir(delta > 0 ? "next" : "prev");
     setMonthOffset((value) => value + delta * step);
+  };
+
+  // 期間スクラバーのチップタップで指定の月へ直接ジャンプ（相対送りの goPeriod と異なり絶対値指定）。
+  const gotoMonth = (offset) => {
+    if (offset === monthOffset) return;
+    setSlideDir(offset > monthOffset ? "next" : "prev");
+    setMonthOffset(offset);
   };
 
   // 横スワイプ（フリック）で月送り。縦スクロールを阻害しないよう横優勢時のみ反応。
@@ -1553,11 +1587,10 @@ export default function AnalysisDashboard({
     return (
       <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--at-page)] text-[var(--at-strong)]">
         <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-5 pt-4">
-          <HeaderBar title={headerTitle} onTitleTap={() => setViewMenuOpen((value) => !value)} menuOpen={viewMenuOpen} current={periodTab} onSelect={handleSelectView} />
-          {viewMenuOpen && <div className="fixed inset-0 z-30" onClick={() => setViewMenuOpen(false)} />}
+          <HeaderBar title={headerTitle} />
+          <MonthPillTabs current={periodTab} onSelect={handleSelectView} />
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain pb-12">
             {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
-            <MonthPillTabs current={periodTab} onSelect={handleSelectView} />
             <MachinePodium rows={machines} />
             <BalanceBars rows={machines} />
             <StorePanel rows={stores} onSelect={setStoreDetailName} />
@@ -1571,21 +1604,18 @@ export default function AnalysisDashboard({
   return (
     <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--at-page)] text-[var(--at-strong)]">
       <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-5 pt-4">
-        {/* 左の ‹ ／ 右側の › と中央ラベル横の › で月（年別は年）送り。ラベルのタップで表示切替メニュー。
+        {/* 左の ‹ ／ 右側の › と中央ラベル横の › で月（年別は年）送り。
             右端の「月次詳細」ボタンでカレンダーと収支グラフ＋成績を同一画面で切り替える（月別のみ）。 */}
         <HeaderBar
           title={headerTitle}
           onPrev={() => goPeriod(-1)}
           onNext={() => goPeriod(1)}
           navDisabled={periodTab === "all"}
-          onTitleTap={() => setViewMenuOpen((value) => !value)}
-          menuOpen={viewMenuOpen}
-          current={periodTab}
-          onSelect={handleSelectView}
           onToggleDetail={periodTab === "month" ? toggleDetailView : undefined}
           detailActive={detailView}
         />
-        {viewMenuOpen && <div className="fixed inset-0 z-30" onClick={() => setViewMenuOpen(false)} />}
+        {/* 常設ピル：月別/年別/通算/分析+ をどの画面からも1タップで切替（5b 常設タブ＋期間スクラバー 採用）。 */}
+        <MonthPillTabs current={periodTab} onSelect={handleSelectView} />
 
         {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
 
@@ -1599,8 +1629,16 @@ export default function AnalysisDashboard({
                 <MonthDetailContent chartData={summaryChart} score={summaryScore} stats={summaryStats} />
               ) : (
                 <>
-                  {/* クイック切替ピル＋ヒーロー数値（勝率リング付き）＋日別ヒートマップ＋選択日詳細。 */}
-                  <MonthPillTabs current={periodTab} onSelect={handleSelectView} />
+                  {/* 期間スクラバー＋ヒーロー数値（勝率リング付き）＋日別ヒートマップ＋選択日詳細。 */}
+                  <MonthScrubber
+                    monthOffset={monthOffset}
+                    baseDate={baseDate}
+                    archives={archives}
+                    filters={filters}
+                    isDemo={isDemo}
+                    currentActual={actual}
+                    onSelect={gotoMonth}
+                  />
                   <MonthHero actual={actual} ev={ev} diff={monthDiff} winRate={winRate} />
                   <CalendarPanel dayMap={dayMap} selectedDay={selectedDay} setSelectedDay={setSelectedDay} year={year} month={month} />
                   <DayDetail dateLabel={selectedDateLabel} row={dayMap[selectedDay]} archives={dayArchives} onEditRecords={(archiveId = null) => setRecordsDay({ day: selectedDateStr, archiveId })} />
