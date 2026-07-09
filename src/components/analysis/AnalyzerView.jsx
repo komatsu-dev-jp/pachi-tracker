@@ -429,7 +429,7 @@ function MachineRadar({ values }) {
   );
 }
 
-function FeaturedMachineCard({ row, totalSpins, radarValues }) {
+function FeaturedMachineCard({ row, totalSpins, radarValues, onSelect }) {
   const stats = [
     { label: "実収支", value: row.hasActual ? `${sp(Math.round(row.actualPL))}円` : "—", color: row.hasActual ? sc(row.actualPL) : C.sub },
     { label: "期待値", value: `${sp(Math.round(row.evAmount))}円`, color: ACCENT },
@@ -438,11 +438,16 @@ function FeaturedMachineCard({ row, totalSpins, radarValues }) {
     { label: "勝率", value: row.winRate != null ? `${f(row.winRate, 0)}%` : "—", color: C.yellow },
   ];
   return (
-    <Card style={{
-      background: `linear-gradient(170deg, color-mix(in srgb, ${C.yellow} 14%, transparent), color-mix(in srgb, ${C.yellow} 2%, transparent))`,
-      border: `1px solid color-mix(in srgb, ${C.yellow} 35%, transparent)`,
-      padding: 16,
-    }}>
+    <button
+      type="button"
+      onClick={() => onSelect?.(row.machineName)}
+      style={{
+        display: "block", width: "100%", textAlign: "left", cursor: onSelect ? "pointer" : "default",
+        background: `linear-gradient(170deg, color-mix(in srgb, ${C.yellow} 14%, transparent), color-mix(in srgb, ${C.yellow} 2%, transparent))`,
+        border: `1px solid color-mix(in srgb, ${C.yellow} 35%, transparent)`,
+        borderRadius: 16, overflow: "hidden", marginBottom: 12, boxShadow: "var(--card-shadow)", padding: 16,
+      }}
+    >
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ width: 26, height: 26, borderRadius: "50%", background: C.yellow, color: "#1d1503", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900, fontFamily: mono, flexShrink: 0 }}>1</span>
         <span style={{ minWidth: 0, flex: 1, fontSize: 15, fontWeight: 900, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: font }}>{row.machineName}</span>
@@ -458,18 +463,22 @@ function FeaturedMachineCard({ row, totalSpins, radarValues }) {
           ))}
         </div>
       </div>
-    </Card>
+    </button>
   );
 }
 
-function MachineKarteRow({ row, rank, totalSpins }) {
+function MachineKarteRow({ row, rank, totalSpins, onSelect }) {
   const badge = rank === 1
     ? { bg: C.yellow, fg: "#1d1503" }
     : rank === 2
       ? { bg: `color-mix(in srgb, ${C.sub} 20%, transparent)`, fg: C.subHi ?? C.sub }
       : { bg: `color-mix(in srgb, ${C.orange} 20%, transparent)`, fg: C.orange };
   return (
-    <div style={{ padding: "12px 14px", borderTop: `1px solid ${C.border}` }}>
+    <button
+      type="button"
+      onClick={() => onSelect?.(row.machineName)}
+      style={{ display: "block", width: "100%", textAlign: "left", padding: "12px 14px", borderTop: `1px solid ${C.border}` }}
+    >
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <span style={{
           width: 26, height: 26, flexShrink: 0, borderRadius: 8, display: "flex", alignItems: "center",
@@ -501,13 +510,13 @@ function MachineKarteRow({ row, rank, totalSpins }) {
           </span>
         </div>
       )}
-    </div>
+    </button>
   );
 }
 
 // 機種カルテ（1位のみレーダーチャート付きで強調表示、2位以下は4指標＋勝率バーのカード）。
 // row タップでの機種詳細（#4a）への遷移は別PRで対応予定のため、現時点では非インタラクティブ。
-function MachineKarte({ rows, totalsMap }) {
+function MachineKarte({ rows, totalsMap, onSelect }) {
   if (rows.length === 0) return null;
   const maxima = {
     ev: Math.max(1, ...rows.map((r) => r.evAmount || 0)),
@@ -525,12 +534,12 @@ function MachineKarte({ rows, totalsMap }) {
   const [top, ...rest] = rows;
   return (
     <>
-      <FeaturedMachineCard row={top} totalSpins={totalsMap.get(top.machineName) || 0} radarValues={radarValues(top)} />
+      <FeaturedMachineCard row={top} totalSpins={totalsMap.get(top.machineName) || 0} radarValues={radarValues(top)} onSelect={onSelect} />
       {rest.length > 0 && (
         <Card style={{ padding: 0 }}>
           <SectionLabel hint="現在の並べ替え順">機種カルテ</SectionLabel>
           {rest.map((row, i) => (
-            <MachineKarteRow key={row.key} row={row} rank={i + 2} totalSpins={totalsMap.get(row.machineName) || 0} />
+            <MachineKarteRow key={row.key} row={row} rank={i + 2} totalSpins={totalsMap.get(row.machineName) || 0} onSelect={onSelect} />
           ))}
         </Card>
       )}
@@ -548,7 +557,7 @@ const MACHINE_SORTS = [
   { id: "hours", label: "稼働時間順" },
 ];
 
-function MachineSection({ archives, extraFilters }) {
+function MachineSection({ archives, extraFilters, onSelectMachine }) {
   const [sortKey, setSortKey] = useState("actual");
   const rows = useMemo(() => machineAnalysis(archives, { ...extraFilters, sortKey }), [archives, extraFilters, sortKey]);
   const totalsMap = useMemo(() => buildMachineTotalSpins(archives, extraFilters), [archives, extraFilters]);
@@ -589,7 +598,7 @@ function MachineSection({ archives, extraFilters }) {
       </div>
 
       {/* 機種カルテ（1位=レーダーチャート付き強調カード／2位以下=4指標+勝率バー） */}
-      <MachineKarte rows={rows} totalsMap={totalsMap} />
+      <MachineKarte rows={rows} totalsMap={totalsMap} onSelect={onSelectMachine} />
 
       {/* 選択機種の回転率推移 */}
       <Card>
@@ -625,7 +634,7 @@ function MachineSection({ archives, extraFilters }) {
   );
 }
 
-export default function AnalyzerView({ archives, extraFilters }) {
+export default function AnalyzerView({ archives, extraFilters, onSelectMachine }) {
   const list = useMemo(() => archives || [], [archives]);
   const [tab, setTab] = useState("ev");
 
@@ -644,7 +653,7 @@ export default function AnalyzerView({ archives, extraFilters }) {
       <SubTabBar tab={tab} setTab={setTab} />
       {tab === "ev" && <EvSection archives={list} extraFilters={extraFilters} />}
       {tab === "store" && <StoreSection archives={list} extraFilters={extraFilters} />}
-      {tab === "machine" && <MachineSection archives={list} extraFilters={extraFilters} />}
+      {tab === "machine" && <MachineSection archives={list} extraFilters={extraFilters} onSelectMachine={onSelectMachine} />}
     </>
   );
 }

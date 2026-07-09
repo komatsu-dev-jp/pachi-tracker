@@ -47,6 +47,7 @@ import {
 import { CalendarTab } from "../Tabs";
 import AnalyzerView from "./AnalyzerView";
 import { storeAnalysis } from "./analyticsViewSelectors";
+import { getSpinRate } from "./analyzerSelectors";
 
 // 表示の切替（月別/年別/通算/分析+）はヘッダーの期間ラベルをタップして開く
 // プルダウンメニュー（VIEW_MENU）でまとめて選ぶ。
@@ -1111,6 +1112,178 @@ function StoreDetailScreen({ storeName, archives, isDemo, onBack }) {
   );
 }
 
+// 機種詳細（#4a）: 1機種の複数実戦履歴を推移グラフ＋明細表で表示。
+// archives は呼び出し側で既に対象スコープ（現在のフィルタ）まで絞り込み済みのものを渡す想定。
+function buildMachineSessions(archives, machineName) {
+  return archives
+    .filter((a) => (a?.machineName || "") === machineName)
+    .map((a) => ({
+      key: a.id ?? `${a.date}-${a.time}`,
+      sortKey: `${a.date || ""}_${a.id ?? 0}`,
+      date: a.date,
+      store: a.storeName || "未設定",
+      pl: getActualPL(a),
+      ev: getEvAmount(a),
+      invest: Number(a.investYen) || 0,
+      recovery: Number(a.recoveryYen) || 0,
+      spin: getSpinRate(a),
+      hours: archiveWorkMinutes(a) / 60,
+      netRot: Number(a?.stats?.netRot) || 0,
+    }))
+    .sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+}
+
+function MachineDetailScreen({ machineName, archives, isDemo, onBack }) {
+  const demoMachine = isDemo ? DEMO_MACHINES.find((m) => m.machineName === machineName) : null;
+
+  const chartRows = useMemo(() => {
+    if (isDemo) return [];
+    let cum = 0;
+    let cumEv = 0;
+    return buildMachineSessions(archives, machineName).map((s) => {
+      cum += s.pl ?? 0;
+      cumEv += s.ev;
+      const [, m, d] = (s.date || "").split("-");
+      return { ...s, day: m && d ? `${Number(m)}/${Number(d)}` : s.date, cum, cumEv };
+    });
+  }, [isDemo, archives, machineName]);
+
+  const rows = useMemo(() => [...chartRows].reverse(), [chartRows]);
+
+  const summaryX = useMemo(() => {
+    if (isDemo || chartRows.length === 0) return null;
+    const realRows = chartRows.filter((s) => s.pl != null);
+    const wins = realRows.filter((s) => s.pl > 0).length;
+    const totalHours = chartRows.reduce((t, s) => t + s.hours, 0);
+    const totalPl = chartRows[chartRows.length - 1].cum;
+    const spinRows = chartRows.filter((s) => s.spin != null);
+    return {
+      count: chartRows.length,
+      totalPl,
+      totalEv: chartRows[chartRows.length - 1].cumEv,
+      winRate: realRows.length > 0 ? Math.round((wins / realRows.length) * 100) : null,
+      wins, losses: realRows.length - wins,
+      avgSpin: spinRows.length > 0 ? spinRows.reduce((t, s) => t + s.spin, 0) / spinRows.length : null,
+      totalSpins: chartRows.reduce((t, s) => t + s.netRot, 0),
+      totalHours,
+      wage: totalHours > 0 && realRows.length > 0 ? Math.round(totalPl / totalHours) : null,
+    };
+  }, [isDemo, chartRows]);
+
+  const heroPL = isDemo ? (demoMachine?.actualPL ?? 0) : (summaryX?.totalPl ?? 0);
+  const heroEv = isDemo ? (demoMachine?.evAmount ?? 0) : (summaryX?.totalEv ?? 0);
+
+  return (
+    <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--at-page)] text-[var(--at-strong)]">
+      <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-5 pt-4">
+        <div className="flex items-center gap-2.5">
+          <button type="button" onClick={onBack} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[var(--at-ln-md)] bg-[var(--at-panel2)] text-[var(--at-mut)]">
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-extrabold tracking-[.24em] text-[var(--at-gold)]">MACHINE REPORT</div>
+            <h1 className="mt-0.5 truncate text-[19px] font-black leading-tight">{machineName}</h1>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <div className="text-[12px] font-extrabold tracking-[.14em] text-[var(--at-mut)]">この機種の通算収支</div>
+          <div className={`mt-1 font-mono text-[42px] font-black leading-none tracking-[-.03em] tabular-nums ${moneyClass(heroPL)}`}>{signed(heroPL)}</div>
+          <div className="mt-2 text-[12px] font-extrabold text-[var(--at-cyan)]">期待値累計 {signed(heroEv)}円</div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="rounded-full border border-[var(--at-ln-md)] px-3 py-1.5 text-[11px] font-bold text-[var(--at-subtle-hi)]">
+            実戦 {isDemo ? "—" : summaryX?.count ?? 0}回
+          </span>
+          <span className="rounded-full border border-[var(--at-gold)]/35 bg-[var(--at-gold)]/10 px-3 py-1.5 text-[11px] font-extrabold text-[var(--at-gold)]">
+            勝率 {isDemo ? (demoMachine?.winRate ?? "—") : (summaryX?.winRate ?? "—")}%
+            {!isDemo && summaryX && <>（{summaryX.wins}勝{summaryX.losses}敗）</>}
+          </span>
+          <span className="rounded-full border border-[var(--at-ln-md)] px-3 py-1.5 text-[11px] font-bold text-[var(--at-subtle-hi)]">
+            時給 {!isDemo && summaryX?.wage != null ? `${signed(summaryX.wage)}円/h` : "—"}
+          </span>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain pb-12 pt-4">
+          <section className={`${card} overflow-hidden p-3`}>
+            <SectionTitle note="累計実収支（実線）／累計期待値（破線）">実戦ごとの累計推移</SectionTitle>
+            {chartRows.length === 0 ? (
+              <div className="px-2 py-8 text-center text-[11px] text-[var(--at-mut)]">実戦記録がありません</div>
+            ) : (
+              <div className="h-[200px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={chartRows} margin={{ top: 6, right: 4, bottom: 0, left: 0 }}>
+                    <CartesianGrid stroke="rgba(255,255,255,.07)" vertical={false} />
+                    <XAxis dataKey="day" tick={{ fill: "#8794a9", fontSize: 8 }} tickLine={false} axisLine={false} />
+                    <YAxis width={38} tick={{ fill: "#8794a9", fontSize: 8 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+                    <ReferenceLine y={0} stroke="rgba(255,255,255,.2)" />
+                    <Tooltip contentStyle={{ background: "#071326", border: "1px solid rgba(255,255,255,.12)", borderRadius: 8, fontSize: 10 }} formatter={(value) => `${signed(value)}円`} />
+                    <Legend iconSize={8} wrapperStyle={{ fontSize: 9 }} />
+                    <Bar dataKey="pl" name="単発収支" radius={[2, 2, 0, 0]} maxBarSize={16}>
+                      {chartRows.map((d, i) => <Cell key={i} fill={(d.pl ?? 0) >= 0 ? "rgba(37,211,102,.5)" : "rgba(255,99,122,.45)"} />)}
+                    </Bar>
+                    <Line type="monotone" dataKey="cum" name="累計実収支" stroke="#25D366" strokeWidth={2.2} dot={false} />
+                    <Line type="monotone" dataKey="cumEv" name="累計期待値" stroke="#FFC83D" strokeWidth={1.6} strokeDasharray="4 3" dot={false} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </section>
+
+          <section className={`${card} px-4 py-3`}>
+            <div className="mb-1 text-[14px] font-black">通算サマリー</div>
+            <div className="grid grid-cols-3 gap-2">
+              <MiniStat label="平均回転率" value={!isDemo && summaryX?.avgSpin != null ? `${summaryX.avgSpin.toFixed(1)}回/k` : (isDemo ? `${demoMachine?.spin ?? "—"}回/k` : "—")} />
+              <MiniStat label="総回転数" value={!isDemo && summaryX ? `${fmt(summaryX.totalSpins)}G` : "—"} />
+              <MiniStat label="総遊技時間" value={!isDemo && summaryX ? `${summaryX.totalHours.toFixed(1)}h` : (isDemo ? `${demoMachine?.hours ?? "—"}h` : "—")} />
+            </div>
+          </section>
+
+          <section className={`${card} p-0`}>
+            <div className="flex items-center justify-between px-3.5 pb-1.5 pt-3">
+              <h2 className="text-[14px] font-black text-[var(--at-strong)]">実戦履歴</h2>
+              <span className="text-[11px] font-bold text-[var(--at-mut)]">新しい順</span>
+            </div>
+            {rows.length === 0 ? (
+              <div className="px-3.5 py-6 text-center text-[11px] text-[var(--at-mut)]">実戦記録がありません</div>
+            ) : (
+              rows.map((r) => (
+                <div key={r.key} className="border-t border-[var(--at-ln-soft)] px-3.5 py-3">
+                  <div className="grid grid-cols-[1fr_66px_66px_62px] items-center gap-1.5 text-right">
+                    <span className="min-w-0 text-left">
+                      <div className="truncate text-[12.5px] font-black">{r.day}</div>
+                      <div className="truncate text-[9.5px] font-bold text-[var(--at-mut)]">{r.store}</div>
+                    </span>
+                    <span className={`font-mono text-[12px] font-black tabular-nums ${r.pl != null ? moneyClass(r.pl) : "text-[var(--at-faint)]"}`}>{r.pl != null ? signed(r.pl) : "—"}</span>
+                    <span className="font-mono text-[12px] font-black tabular-nums text-[var(--at-cyan)]">{signed(Math.round(r.ev))}</span>
+                    <span className={`font-mono text-[12px] font-black tabular-nums ${moneyClass(r.cum)}`}>{signed(r.cum)}</span>
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-3.5 text-[9.5px] font-bold text-[var(--at-mut)]">
+                    <span>投資 <span className="font-mono tabular-nums text-[var(--at-strong)]">{fmt(r.invest)}</span></span>
+                    <span>回収 <span className="font-mono tabular-nums text-[var(--at-strong)]">{fmt(r.recovery)}</span></span>
+                    <span>{r.spin != null ? `${r.spin.toFixed(1)}回/k` : "—"}</span>
+                    <span>{r.hours > 0 ? `${r.hours.toFixed(1)}h` : "—"}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MiniStat({ label, value }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[9.5px] font-bold text-[var(--at-mut)]">{label}</div>
+      <div className="mt-0.5 truncate font-mono text-[14px] font-black tabular-nums">{value}</div>
+    </div>
+  );
+}
+
 export default function AnalysisDashboard({
   S,
   onReset,
@@ -1144,6 +1317,8 @@ export default function AnalysisDashboard({
   const [recordsDay, setRecordsDay] = useState(null);
   // 店舗トップ3の行タップで開く店舗詳細のサブ画面状態。null=非表示 / string=対象の店舗名。
   const [storeDetailName, setStoreDetailName] = useState(null);
+  // 分析+の機種カルテ行タップで開く機種詳細のサブ画面状態。null=非表示 / string=対象の機種名。
+  const [machineDetailName, setMachineDetailName] = useState(null);
   // スワイプ判定用のタッチ開始座標。
   const touchRef = useRef({ x: 0, y: 0, active: false });
 
@@ -1362,6 +1537,18 @@ export default function AnalysisDashboard({
     );
   }
 
+  // 分析+の機種カルテ行タップで開く機種詳細のサブ画面。店舗詳細と同じく全期間スコープ。
+  if (machineDetailName !== null) {
+    return (
+      <MachineDetailScreen
+        machineName={machineDetailName}
+        archives={filterArchives(archives, filters)}
+        isDemo={isDemo}
+        onBack={() => setMachineDetailName(null)}
+      />
+    );
+  }
+
   if (periodTab === "analyzer") {
     return (
       <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--at-page)] text-[var(--at-strong)]">
@@ -1374,7 +1561,7 @@ export default function AnalysisDashboard({
             <MachinePodium rows={machines} />
             <BalanceBars rows={machines} />
             <StorePanel rows={stores} onSelect={setStoreDetailName} />
-            <AnalyzerView archives={archives} extraFilters={filters} />
+            <AnalyzerView archives={archives} extraFilters={filters} onSelectMachine={setMachineDetailName} />
           </div>
         </div>
       </div>
