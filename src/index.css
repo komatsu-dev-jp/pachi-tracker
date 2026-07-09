@@ -311,10 +311,15 @@
   --sm-map-bg: #e8edf4;
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+/* レイヤー外の * リセットは Tailwind v4 の @layer utilities より常に優先されてしまい、
+   p-* / m-* / space-y-* 等の余白ユーティリティが全て無効化される（カスケードレイヤーの仕様）。
+   @layer base に入れることで意味を保ったままユーティリティが正しく上書きできるようにする。 */
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
 }
 
 html, body {
