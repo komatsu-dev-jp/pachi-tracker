@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { C, f, sc, sp, font, mono } from "../../constants";
 import { Card } from "../Atoms";
-import { listAvailableMachines } from "./analysisSelectors";
+import { filterArchives, listAvailableMachines } from "./analysisSelectors";
 import {
   buildSpinRateTrend,
   buildBorderDiffHistogram,
@@ -377,6 +377,168 @@ function StoreSection({ archives, extraFilters }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// 機種カルテ（注目1機種のレーダーチャート + 2位以下のカードリスト）
+// ──────────────────────────────────────────────────────────────────────────────
+
+// 機種別の総回転数（machineAnalysis には無い生の netRot 合計）。
+// 既存セレクタと同じ filterArchives スコープで、表示専用に集計するだけ（新しい計算式は導入しない）。
+function buildMachineTotalSpins(archives, extraFilters) {
+  const filtered = filterArchives(archives, extraFilters || {});
+  const map = new Map();
+  for (const a of filtered) {
+    const name = a?.machineName || "未設定";
+    map.set(name, (map.get(name) || 0) + (Number(a?.stats?.netRot) || 0));
+  }
+  return map;
+}
+
+function machineWage(row) {
+  return row.hours > 0 && row.hasActual ? row.actualPL / row.hours : null;
+}
+
+function normalize(value, max) {
+  if (value == null || !isFinite(value) || max <= 0) return 0;
+  return Math.max(0, Math.min(1, value / max));
+}
+
+const RADAR_LABELS = ["期待値", "回転率", "勝率", "時給", "稼働"];
+function MachineRadar({ values }) {
+  const cx = 80, cy = 78, r = 60;
+  const angleFor = (i) => -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+  const ptsAt = (scale) => [0, 1, 2, 3, 4].map((i) => {
+    const a = angleFor(i);
+    return `${(cx + Math.cos(a) * r * scale).toFixed(1)},${(cy + Math.sin(a) * r * scale).toFixed(1)}`;
+  }).join(" ");
+  const dataPts = values.map((v, i) => {
+    const a = angleFor(i);
+    return `${(cx + Math.cos(a) * r * v).toFixed(1)},${(cy + Math.sin(a) * r * v).toFixed(1)}`;
+  }).join(" ");
+  return (
+    <svg width="152" height="150" viewBox="0 0 160 150" style={{ flexShrink: 0 }}>
+      {[0.33, 0.66, 1].map((s) => (
+        <polygon key={s} points={ptsAt(s)} fill="none" stroke={C.border} />
+      ))}
+      <polygon points={dataPts} fill={`color-mix(in srgb, ${ACCENT} 18%, transparent)`} stroke={ACCENT} strokeWidth={2} />
+      {RADAR_LABELS.map((t, i) => {
+        const a = angleFor(i);
+        const x = (cx + Math.cos(a) * 74).toFixed(1);
+        const y = (cy + Math.sin(a) * 74 + 3).toFixed(1);
+        return <text key={t} x={x} y={y} textAnchor="middle" fill={C.sub} fontSize="9" fontWeight="700">{t}</text>;
+      })}
+    </svg>
+  );
+}
+
+function FeaturedMachineCard({ row, totalSpins, radarValues }) {
+  const stats = [
+    { label: "実収支", value: row.hasActual ? `${sp(Math.round(row.actualPL))}円` : "—", color: row.hasActual ? sc(row.actualPL) : C.sub },
+    { label: "期待値", value: `${sp(Math.round(row.evAmount))}円`, color: ACCENT },
+    { label: "平均回転率", value: row.spinRate != null ? `${f(row.spinRate, 1)}回/k` : "—", color: C.text },
+    { label: "総回転数", value: totalSpins > 0 ? `${f(totalSpins, 0)}G` : "—", color: C.text },
+    { label: "勝率", value: row.winRate != null ? `${f(row.winRate, 0)}%` : "—", color: C.yellow },
+  ];
+  return (
+    <Card style={{
+      background: `linear-gradient(170deg, color-mix(in srgb, ${C.yellow} 14%, transparent), color-mix(in srgb, ${C.yellow} 2%, transparent))`,
+      border: `1px solid color-mix(in srgb, ${C.yellow} 35%, transparent)`,
+      padding: 16,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ width: 26, height: 26, borderRadius: "50%", background: C.yellow, color: "#1d1503", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900, fontFamily: mono, flexShrink: 0 }}>1</span>
+        <span style={{ minWidth: 0, flex: 1, fontSize: 15, fontWeight: 900, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: font }}>{row.machineName}</span>
+      </div>
+      <div style={{ marginTop: 12, display: "flex", gap: 14, alignItems: "center" }}>
+        <MachineRadar values={radarValues} />
+        <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 9 }}>
+          {stats.map((s) => (
+            <div key={s.label} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: C.sub, fontFamily: font }}>{s.label}</span>
+              <span style={{ fontSize: 13, fontWeight: 900, color: s.color, fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{s.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function MachineKarteRow({ row, rank, totalSpins }) {
+  const badge = rank === 1
+    ? { bg: C.yellow, fg: "#1d1503" }
+    : rank === 2
+      ? { bg: `color-mix(in srgb, ${C.sub} 20%, transparent)`, fg: C.subHi ?? C.sub }
+      : { bg: `color-mix(in srgb, ${C.orange} 20%, transparent)`, fg: C.orange };
+  return (
+    <div style={{ padding: "12px 14px", borderTop: `1px solid ${C.border}` }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{
+          width: 26, height: 26, flexShrink: 0, borderRadius: 8, display: "flex", alignItems: "center",
+          justifyContent: "center", fontSize: 12, fontWeight: 900, fontFamily: mono, background: badge.bg, color: badge.fg,
+        }}>{rank}</span>
+        <span style={{ minWidth: 0, flex: 1, fontSize: 13.5, fontWeight: 800, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: font }}>{row.machineName}</span>
+        <span style={{ flexShrink: 0, fontSize: 15, fontWeight: 900, fontFamily: mono, fontVariantNumeric: "tabular-nums", color: row.hasActual ? sc(row.actualPL) : C.sub }}>
+          {row.hasActual ? `${sp(Math.round(row.actualPL))}円` : "未記録"}
+        </span>
+      </div>
+      <div style={{ marginTop: 9, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6 }}>
+        {[
+          { label: "期待値", value: `${sp(Math.round(row.evAmount))}円`, color: ACCENT },
+          { label: "平均回転率", value: row.spinRate != null ? `${f(row.spinRate, 1)}回/k` : "—" },
+          { label: "総回転数", value: totalSpins > 0 ? `${f(totalSpins, 0)}G` : "—" },
+          { label: "遊技時間", value: row.hours > 0 ? `${f(row.hours, 1)}h` : "—" },
+        ].map((m) => (
+          <div key={m.label} style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: C.sub, fontFamily: font }}>{m.label}</div>
+            <div style={{ marginTop: 2, fontSize: 11.5, fontWeight: 900, color: m.color || C.text, fontFamily: mono, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{m.value}</div>
+          </div>
+        ))}
+      </div>
+      {row.winRate != null && (
+        <div style={{ marginTop: 9, display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 9, fontWeight: 700, color: C.sub, fontFamily: font, whiteSpace: "nowrap" }}>勝率 {f(row.winRate, 0)}%</span>
+          <span style={{ flex: 1, height: 5, borderRadius: 3, background: C.surfaceHi, overflow: "hidden", display: "flex" }}>
+            <span style={{ width: `${Math.max(0, Math.min(100, row.winRate))}%`, background: C.yellow, borderRadius: 3 }} />
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 機種カルテ（1位のみレーダーチャート付きで強調表示、2位以下は4指標＋勝率バーのカード）。
+// row タップでの機種詳細（#4a）への遷移は別PRで対応予定のため、現時点では非インタラクティブ。
+function MachineKarte({ rows, totalsMap }) {
+  if (rows.length === 0) return null;
+  const maxima = {
+    ev: Math.max(1, ...rows.map((r) => r.evAmount || 0)),
+    spin: Math.max(1, ...rows.map((r) => r.spinRate || 0)),
+    wage: Math.max(1, ...rows.map((r) => machineWage(r) || 0)),
+    hours: Math.max(1, ...rows.map((r) => r.hours || 0)),
+  };
+  const radarValues = (row) => [
+    normalize(row.evAmount, maxima.ev),
+    normalize(row.spinRate, maxima.spin),
+    (row.winRate ?? 0) / 100,
+    normalize(machineWage(row), maxima.wage),
+    normalize(row.hours, maxima.hours),
+  ];
+  const [top, ...rest] = rows;
+  return (
+    <>
+      <FeaturedMachineCard row={top} totalSpins={totalsMap.get(top.machineName) || 0} radarValues={radarValues(top)} />
+      {rest.length > 0 && (
+        <Card style={{ padding: 0 }}>
+          <SectionLabel hint="現在の並べ替え順">機種カルテ</SectionLabel>
+          {rest.map((row, i) => (
+            <MachineKarteRow key={row.key} row={row} rank={i + 2} totalSpins={totalsMap.get(row.machineName) || 0} />
+          ))}
+        </Card>
+      )}
+    </>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // 機種分析セクション（並べ替えランキング + 選択機種の回転率推移）
 // ──────────────────────────────────────────────────────────────────────────────
 const MACHINE_SORTS = [
@@ -389,6 +551,7 @@ const MACHINE_SORTS = [
 function MachineSection({ archives, extraFilters }) {
   const [sortKey, setSortKey] = useState("actual");
   const rows = useMemo(() => machineAnalysis(archives, { ...extraFilters, sortKey }), [archives, extraFilters, sortKey]);
+  const totalsMap = useMemo(() => buildMachineTotalSpins(archives, extraFilters), [archives, extraFilters]);
 
   const machines = useMemo(() => listAvailableMachines(archives), [archives]);
   const [selectedMachine, setSelectedMachine] = useState("");
@@ -425,47 +588,8 @@ function MachineSection({ archives, extraFilters }) {
         })}
       </div>
 
-      {/* ランキング */}
-      <Card>
-        <div style={{
-          display: "grid", gridTemplateColumns: "18px 1fr 44px 40px 52px",
-          gap: 6, padding: "10px 14px 6px", borderBottom: `1px solid ${C.border}`,
-        }}>
-          {["#", "機種", "時間", "回転", "実収支"].map((hh, i) => (
-            <div key={hh} style={{ fontSize: 9, color: C.sub, fontWeight: 700, textAlign: i === 1 ? "left" : i === 0 ? "center" : "right" }}>{hh}</div>
-          ))}
-        </div>
-        {rows.map((r, i) => (
-          <div key={r.key} style={{
-            display: "grid", gridTemplateColumns: "18px 1fr 44px 40px 52px",
-            gap: 6, padding: "10px 14px", alignItems: "center",
-            borderTop: i === 0 ? "none" : `1px solid ${C.border}`,
-          }}>
-            <div style={{ textAlign: "center", fontSize: 12, fontWeight: 800, color: i < 3 ? ACCENT : C.sub, fontFamily: mono }}>{i + 1}</div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.machineName}</div>
-              <div style={{ fontSize: 9, color: C.sub, marginTop: 1 }}>
-                EV {sp(Math.round(r.evAmount))}
-                {r.winRate != null && <> ・ 勝率{f(r.winRate, 0)}%</>}
-              </div>
-            </div>
-            <div style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: r.hours > 0 ? C.text : C.sub, fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
-              {r.hours > 0 ? f(r.hours, 1) : "—"}
-            </div>
-            <div style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: r.spinRate != null ? ACCENT : C.sub, fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
-              {r.spinRate != null ? f(r.spinRate, 1) : "—"}
-            </div>
-            <div style={{ textAlign: "right" }}>
-              {r.hasActual
-                ? <span style={{ fontSize: 12, fontWeight: 800, color: sc(r.actualPL), fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{sp(Math.round(r.actualPL))}</span>
-                : <span style={{ fontSize: 10, color: C.sub }}>未記録</span>}
-            </div>
-          </div>
-        ))}
-        <div style={{ padding: "8px 14px 12px", fontSize: 9, color: C.sub, lineHeight: 1.5, borderTop: `1px solid ${C.border}` }}>
-          時間=稼働時間(h) ／ 回転=平均回転率(回/K) ／ 実収支=回収−投資（記録のあるセッションのみ）
-        </div>
-      </Card>
+      {/* 機種カルテ（1位=レーダーチャート付き強調カード／2位以下=4指標+勝率バー） */}
+      <MachineKarte rows={rows} totalsMap={totalsMap} />
 
       {/* 選択機種の回転率推移 */}
       <Card>
