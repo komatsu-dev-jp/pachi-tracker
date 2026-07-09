@@ -380,6 +380,27 @@ function StoreSection({ archives, extraFilters }) {
 // 機種カルテ（注目1機種のレーダーチャート + 2位以下のカードリスト）
 // ──────────────────────────────────────────────────────────────────────────────
 
+// 記録0件時のダミー機種データ（machineAnalysis と同じ形）。
+// 機種カルテのレイアウト・タップ導線（→機種詳細）を記録が無い状態でも確認できるようにするための表示専用データ。
+const DEMO_MACHINE_ANALYSIS_ROWS = [
+  { key: "demo-0", machineName: "スマスロ マギアレコード", sessions: 3, hours: 6.5, spinRate: 19.7, evAmount: 2615, actualPL: 5406, hasActual: true, winRate: 67 },
+  { key: "demo-1", machineName: "eシン・エヴァンゲリオン", sessions: 2, hours: 7.2, spinRate: 20.1, evAmount: 3200, actualPL: 2800, hasActual: true, winRate: 50 },
+  { key: "demo-2", machineName: "P大海物語5", sessions: 2, hours: 3.4, spinRate: 18.2, evAmount: 1800, actualPL: -1250, hasActual: true, winRate: 33 },
+  { key: "demo-3", machineName: "東京喰種", sessions: 2, hours: 4.1, spinRate: 17.9, evAmount: 2400, actualPL: -2900, hasActual: true, winRate: 25 },
+  { key: "demo-4", machineName: "北斗の拳 暴凶星", sessions: 2, hours: 4.0, spinRate: 16.8, evAmount: 1300, actualPL: -4800, hasActual: true, winRate: 25 },
+];
+const DEMO_MACHINE_TOTAL_SPINS = new Map(
+  DEMO_MACHINE_ANALYSIS_ROWS.map((m) => [m.machineName, Math.round(m.hours * 60 * 6.5)]),
+);
+function sortDemoMachineRows(sortKey) {
+  const sorted = [...DEMO_MACHINE_ANALYSIS_ROWS];
+  if (sortKey === "ev") sorted.sort((a, b) => b.evAmount - a.evAmount);
+  else if (sortKey === "spin") sorted.sort((a, b) => b.spinRate - a.spinRate);
+  else if (sortKey === "hours") sorted.sort((a, b) => b.hours - a.hours);
+  else sorted.sort((a, b) => b.actualPL - a.actualPL);
+  return sorted;
+}
+
 // 機種別の総回転数（machineAnalysis には無い生の netRot 合計）。
 // 既存セレクタと同じ filterArchives スコープで、表示専用に集計するだけ（新しい計算式は導入しない）。
 function buildMachineTotalSpins(archives, extraFilters) {
@@ -557,10 +578,16 @@ const MACHINE_SORTS = [
   { id: "hours", label: "稼働時間順" },
 ];
 
-function MachineSection({ archives, extraFilters, onSelectMachine }) {
+function MachineSection({ archives, extraFilters, onSelectMachine, isDemo }) {
   const [sortKey, setSortKey] = useState("actual");
-  const rows = useMemo(() => machineAnalysis(archives, { ...extraFilters, sortKey }), [archives, extraFilters, sortKey]);
-  const totalsMap = useMemo(() => buildMachineTotalSpins(archives, extraFilters), [archives, extraFilters]);
+  const rows = useMemo(
+    () => (isDemo ? sortDemoMachineRows(sortKey) : machineAnalysis(archives, { ...extraFilters, sortKey })),
+    [archives, extraFilters, sortKey, isDemo],
+  );
+  const totalsMap = useMemo(
+    () => (isDemo ? DEMO_MACHINE_TOTAL_SPINS : buildMachineTotalSpins(archives, extraFilters)),
+    [archives, extraFilters, isDemo],
+  );
 
   const machines = useMemo(() => listAvailableMachines(archives), [archives]);
   const [selectedMachine, setSelectedMachine] = useState("");
@@ -634,26 +661,29 @@ function MachineSection({ archives, extraFilters, onSelectMachine }) {
   );
 }
 
+function NoArchivesCard() {
+  return (
+    <Card style={{ padding: "32px 16px", textAlign: "center" }}>
+      <div style={{ fontSize: 13, color: C.sub, fontFamily: font, lineHeight: 1.6 }}>
+        アーカイブがまだありません。実戦記録を保存すると、ここに詳細分析が表示されます。
+      </div>
+    </Card>
+  );
+}
+
 export default function AnalyzerView({ archives, extraFilters, onSelectMachine }) {
   const list = useMemo(() => archives || [], [archives]);
   const [tab, setTab] = useState("ev");
-
-  if (list.length === 0) {
-    return (
-      <Card style={{ padding: "32px 16px", textAlign: "center" }}>
-        <div style={{ fontSize: 13, color: C.sub, fontFamily: font, lineHeight: 1.6 }}>
-          アーカイブがまだありません。実戦記録を保存すると、ここに詳細分析が表示されます。
-        </div>
-      </Card>
-    );
-  }
+  const isDemo = list.length === 0;
 
   return (
     <>
       <SubTabBar tab={tab} setTab={setTab} />
-      {tab === "ev" && <EvSection archives={list} extraFilters={extraFilters} />}
-      {tab === "store" && <StoreSection archives={list} extraFilters={extraFilters} />}
-      {tab === "machine" && <MachineSection archives={list} extraFilters={extraFilters} onSelectMachine={onSelectMachine} />}
+      {/* 期待値分析・店舗分析は記録0件時は従来通り空状態のまま（デモ用データ無し）。
+          機種分析のみ、機種カルテのタップ導線を確認できるようダミー機種データで表示する。 */}
+      {tab === "ev" && (isDemo ? <NoArchivesCard /> : <EvSection archives={list} extraFilters={extraFilters} />)}
+      {tab === "store" && (isDemo ? <NoArchivesCard /> : <StoreSection archives={list} extraFilters={extraFilters} />)}
+      {tab === "machine" && <MachineSection archives={list} extraFilters={extraFilters} onSelectMachine={onSelectMachine} isDemo={isDemo} />}
     </>
   );
 }
