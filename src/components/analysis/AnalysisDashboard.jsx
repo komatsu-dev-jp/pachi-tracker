@@ -231,25 +231,70 @@ function ActionButton({ children, onClick, active = false }) {
   );
 }
 
-// 月別トップの4指標ストリップ（月収支 / 期待値 / 差 / 勝率）。
-// モック準拠でアイコン・カードを廃し、罫線区切りの横並びテキストで情報密度を上げる。
-// 値はすべて既存 summary から算出（計算ロジックには未介入）。
-function MonthStatStrip({ actual, ev, diff, winRate }) {
-  const items = [
-    { label: "月収支", value: `${signed(actual)}円`, cls: moneyClass(actual) },
-    { label: "期待値", value: `${signed(ev)}円`, cls: ev >= 0 ? "text-[var(--at-cyan)]" : "text-[var(--at-neg)]" },
-    { label: "差", value: `${signed(diff)}円`, cls: moneyClass(diff) },
-    { label: "勝率", value: `${winRate}%`, cls: "text-[var(--at-strong)]" },
-  ];
+// 月別画面のクイック切替ピル（月別/年別/通算/分析）。
+// HeaderBar の期間ラベルタップ→プルダウン（HeaderMenu）と機能重複するが削除はせず、
+// カレンダー画面だけ1タップで切り替えられる導線を追加する（タップ数増加なし・既存導線は温存）。
+const PILL_LABELS = { month: "月別", year: "年別", all: "通算", analyzer: "分析" };
+function MonthPillTabs({ current, onSelect }) {
   return (
-    <section className="grid grid-cols-4 border-b border-[var(--at-ln)] pb-4">
-      {items.map((item, index) => (
-        <div key={item.label} className={`min-w-0 px-1 text-center ${index > 0 ? "border-l border-[var(--at-ln)]" : ""}`}>
-          <div className="truncate text-[11px] font-semibold text-[var(--at-mut)]">{item.label}</div>
-          {/* 中央寄せ＋nowrap は幅超過時に左端の符号から欠けるため、truncate で右側から省略する */}
-          <div className={`mt-1.5 truncate whitespace-nowrap font-mono text-[clamp(11px,3.4vw,18px)] font-black tracking-[-.04em] tabular-nums ${item.cls}`}>{item.value}</div>
+    <div className="flex gap-1.5">
+      {VIEW_MENU.map((item) => {
+        const active = current === item.id;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onSelect(item.id)}
+            aria-pressed={active}
+            className={`flex min-h-10 flex-1 items-center justify-center rounded-full text-[13px] font-bold transition ${
+              active
+                ? "bg-[var(--at-cyan)] text-[var(--at-page)]"
+                : "border border-[var(--at-ln-md)] text-[var(--at-mut)]"
+            }`}
+          >
+            {PILL_LABELS[item.id]}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// 月別トップのヒーロー数値（月収支の大型表示 ＋ 勝率の円形リング）。
+// 値はすべて既存 summary から算出した actual/ev/diff/winRate をそのまま表示するだけで、
+// 計算ロジックには未介入（円弧の割合計算のみ・金銭計算は含まない）。
+const RING_R = 36;
+const RING_CIRC = 2 * Math.PI * RING_R;
+function MonthHero({ actual, ev, diff, winRate }) {
+  const clampedRate = Math.max(0, Math.min(100, Number(winRate) || 0));
+  const dashOffset = RING_CIRC * (1 - clampedRate / 100);
+  return (
+    <section className="flex items-center gap-4 px-0.5 pb-1 pt-1">
+      <div className="min-w-0 flex-1">
+        <div className="text-[12px] font-extrabold tracking-[.14em] text-[var(--at-mut)]">月間収支</div>
+        <div className={`mt-1 flex items-end gap-1.5 font-mono ${moneyClass(actual)}`}>
+          <strong className="text-[clamp(32px,11vw,54px)] font-black leading-none tracking-[-.05em]">{signed(actual)}</strong>
+          <span className="pb-1 text-[16px] font-extrabold text-[var(--at-mut)]">円</span>
         </div>
-      ))}
+        <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[12px] font-bold">
+          <span className="whitespace-nowrap text-[var(--at-cyan)]">期待値 {signed(ev)}円</span>
+          <span className="h-[3px] w-[3px] shrink-0 rounded-full bg-[var(--at-ln-hi)]" />
+          <span className={`whitespace-nowrap ${moneyClass(diff)}`}>差 {signed(diff)}円</span>
+        </div>
+      </div>
+      <div className="relative h-[84px] w-[84px] shrink-0">
+        <svg width="84" height="84" viewBox="0 0 84 84" className="-rotate-90">
+          <circle cx="42" cy="42" r={RING_R} fill="none" stroke="var(--at-ln-hi)" strokeWidth="7" />
+          <circle
+            cx="42" cy="42" r={RING_R} fill="none" stroke="var(--at-gold)" strokeWidth="7"
+            strokeLinecap="round" strokeDasharray={RING_CIRC} strokeDashoffset={dashOffset}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="font-mono text-[19px] font-black tabular-nums text-[var(--at-strong)]">{Math.round(clampedRate)}<span className="text-[10px]">%</span></span>
+          <span className="text-[8px] font-extrabold tracking-[.14em] text-[var(--at-mut)]">勝率</span>
+        </div>
+      </div>
     </section>
   );
 }
@@ -477,9 +522,12 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay, year, month }) {
   return (
     <section className={`${card} p-3.5`}>
       {/* 見出し（凡例は廃止しシンプルに）。 */}
-      <div className="mb-3 flex items-center gap-2">
-        <CalendarDays className="h-5 w-5 shrink-0 text-[var(--at-cyan)]" />
-        <h2 className="text-[14px] font-black tracking-[.02em] text-[var(--at-strong)]">日別収支</h2>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <CalendarDays className="h-5 w-5 shrink-0 text-[var(--at-cyan)]" />
+          <h2 className="text-[14px] font-black tracking-[.02em] text-[var(--at-strong)]">日別ヒートマップ</h2>
+        </div>
+        <span className="shrink-0 text-[10px] font-bold text-[var(--at-mut)]">タップで日別詳細</span>
       </div>
       {/* 曜日見出し。日曜は赤系・土曜は青系。セルと同じ7列・同じ余白で整列。 */}
       <div className="grid grid-cols-7 gap-1 px-0.5 text-center text-[11px] font-bold text-[var(--at-mut3)]">
@@ -1142,8 +1190,9 @@ export default function AnalysisDashboard({
                 <MonthDetailContent chartData={summaryChart} score={summaryScore} stats={summaryStats} />
               ) : (
                 <>
-                  {/* 4指標ストリップ＋日別収支カレンダー＋選択日詳細（モック1）。 */}
-                  <MonthStatStrip actual={actual} ev={ev} diff={monthDiff} winRate={winRate} />
+                  {/* クイック切替ピル＋ヒーロー数値（勝率リング付き）＋日別ヒートマップ＋選択日詳細。 */}
+                  <MonthPillTabs current={periodTab} onSelect={handleSelectView} />
+                  <MonthHero actual={actual} ev={ev} diff={monthDiff} winRate={winRate} />
                   <CalendarPanel dayMap={dayMap} selectedDay={selectedDay} setSelectedDay={setSelectedDay} year={year} month={month} />
                   <DayDetail dateLabel={selectedDateLabel} row={dayMap[selectedDay]} archives={dayArchives} onEditRecords={(archiveId = null) => setRecordsDay({ day: selectedDateStr, archiveId })} />
                 </>
