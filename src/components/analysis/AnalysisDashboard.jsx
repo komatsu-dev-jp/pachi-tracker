@@ -1626,8 +1626,11 @@ export default function AnalysisDashboard({
 
         {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
 
-        {/* 画面内スクロール領域。横スワイプで月送り（縦スクロールは阻害しない）。 */}
-        <main onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pb-12">
+        {/* 画面内スクロール領域。横スワイプで月送り（縦スクロールは阻害しない）。
+            touch-pan-y必須: 指定なしだとブラウザが横方向の触操作を「未確定のパン」として解釈し、
+            スワイプ中に画面が横にわずかに引っ張られて元に戻る（弾性バウンス）挙動でブレて見える。
+            pan-yで縦スクロールのみブラウザに許可し、横方向は即座にJS(onSwipeStart/End)へ渡す。 */}
+        <main onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd} className="touch-pan-y min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pb-12">
           {/* 月送り・表示切替で key が変わり、向きに応じたアニメーションを再生する。 */}
           <div key={`${periodTab}-${monthOffset}-${detailView}`} className={`month-pane-${slideDir} space-y-5`}>
             {periodTab === "month" ? (
