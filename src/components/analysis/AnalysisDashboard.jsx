@@ -1610,7 +1610,11 @@ export default function AnalysisDashboard({
 
   return (
     <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--at-page)] text-[var(--at-strong)]">
-      <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-5 pt-4">
+      {/* overflow-x:clip 必須（横スワイプ月送りのズレ対策）: このコンテナは overflow-y が visible のため
+          clip がそのまま効き、スクロールボックスを作らずに横方向をハードクリップする。これにより月送り
+          スライド（.month-pane-*）の一時的な横はみ出しや幅超過要素が、rubber-band 可能な祖先（.analytics-terminal）
+          へ伝播して「画面全体が左へパンしたまま固定される」現象を根元で遮断する。 */}
+      <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col overflow-x-clip px-5 pt-4">
         {/* 左の ‹ ／ 右側の › と中央ラベル横の › で月（年別は年）送り。
             右端の「月次詳細」ボタンでカレンダーと収支グラフ＋成績を同一画面で切り替える（月別のみ）。 */}
         <HeaderBar
@@ -1629,7 +1633,10 @@ export default function AnalysisDashboard({
         {/* 画面内スクロール領域。横スワイプで月送り（縦スクロールは阻害しない）。
             touch-pan-y必須: 指定なしだとブラウザが横方向の触操作を「未確定のパン」として解釈し、
             スワイプ中に画面が横にわずかに引っ張られて元に戻る（弾性バウンス）挙動でブレて見える。
-            pan-yで縦スクロールのみブラウザに許可し、横方向は即座にJS(onSwipeStart/End)へ渡す。 */}
+            pan-yで縦スクロールのみブラウザに許可し、横方向は即座にJS(onSwipeStart/End)へ渡す。
+            横方向の弾性オーバースクロール（rubber-band）による「画面全体が左へパンしたまま固定」は
+            親コンテナ（下記コメント）の overflow-x:clip で遮断する。ここは overflow-y:auto のため
+            overflow-x:clip を付けても CSS 仕様上 hidden に計算されクリップバリアにならない。 */}
         <main onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd} className="touch-pan-y min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pb-12">
           {/* 月送り・表示切替で key が変わり、向きに応じたアニメーションを再生する。 */}
           <div key={`${periodTab}-${monthOffset}-${detailView}`} className={`month-pane-${slideDir} space-y-5`}>
