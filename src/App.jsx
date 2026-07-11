@@ -9,6 +9,7 @@ import HomeDashboard from "./components/home/HomeDashboard";
 import AnalysisDashboard from "./components/analysis/AnalysisDashboard";
 import ScoutDashboard from "./components/scout/ScoutDashboard";
 import StrategyMapDashboard from "./components/strategy/StrategyMapDashboard";
+import StoreDetail from "./pages/StoreDetail";
 import DeltaAnalyzer from "./components/delta/DeltaAnalyzer";
 import DeltaMapView from "./components/delta/DeltaMapView";
 import { getStoreIslands } from "./components/select/hallMapSelectors";
@@ -91,6 +92,11 @@ export default function App() {
   // 現在のモード: "home" | "scout" | "select" | "record" | "analysis" | "settings"
   // 新規ユーザーはホーム画面から始まる。既存ユーザーは保存済みの値を維持。
   const [currentMode, setCurrentMode] = useLS("pt_currentMode", "home");
+
+  // 店舗詳細画面（storeDetail モード）で表示対象の店舗ID。
+  // react-router 等は導入せず、既存の currentMode 方式に合わせて state で管理する。
+  // TODO: 店舗一覧・店舗検索からの遷移導線は次ステップで実装（現状は見た目優先プロトタイプ）。
+  const [storeDetailId, setStoreDetailId] = useState(null);
 
   // 分析モード内の期間サブタブ
   // "month" | "year" | "all" | "calendar"
@@ -1158,6 +1164,18 @@ export default function App() {
           />
         )}
         {currentMode === "settings" && <SettingsTab s={S} onReset={() => resetAll(0, { clearStoreChodama: true })} />}
+        {/* 店舗詳細（見た目優先プロトタイプ）。ダミーデータのみで、既存の店舗検索・登録
+            （SettingsTab 内）とは独立。将来的に店舗一覧等からの遷移導線を追加する際は
+            setStoreDetailId(id) → setCurrentMode("storeDetail") を呼び出す想定。 */}
+        {currentMode === "storeDetail" && (
+          <StoreDetail
+            storeId={storeDetailId}
+            onBack={() => {
+              setStoreDetailId(null);
+              setCurrentMode("home");
+            }}
+          />
+        )}
       </main>
 
       {/* Mode Navigation (5 タブ) */}
