@@ -1173,13 +1173,15 @@ export default function App() {
             }}
           />
         )}
-        {/* 店舗詳細（見た目優先プロトタイプ）。ダミーデータのみで、既存の店舗検索・登録
-            （SettingsTab 内）とは独立した見た目確認用画面。遷移導線は
+        {/* 店舗詳細。店舗基本情報・貯玉・会員カード・交換率は S.stores から実データ解決（resolveStoreDetail）。
+            分析タブ関連はまだダミーのまま（TODO: 別ステップで実装）。既存の店舗検索・登録
+            （SettingsTab 内）とは独立した画面。遷移導線は
             ①設定タブの店舗一覧の各行（onOpenStoreDetail）と
             ②ホーム画面の「店舗詳細」カード（S.setTab("storeDetail")）の2箇所。 */}
         {currentMode === "storeDetail" && (
           <StoreDetail
             storeId={storeDetailId}
+            S={S}
             onBack={() => {
               setStoreDetailId(null);
               setCurrentMode("home");
