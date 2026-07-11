@@ -11,13 +11,15 @@
 // 各タブは独立したスクロールコンテナを持ち、非表示時も DOM を維持することで
 // タブごとのスクロール位置を保持する。
 //
-// データは現状すべて src/data/mockStoreDetail.js のダミーデータ（storeId は未使用）。
-// TODO: 実データ接続（pt_stores / archives 由来の分析集計）は次ステップで行う。
+// 店舗基本情報・貯玉・会員カード・交換率は S.stores（pt_stores）から実データを解決する
+// （resolveStoreDetail、Tabs.jsx の Store detail view と同一の計算式を使用）。
+// 分析タブ関連（店舗分析度・データ充足状況・傾向・判断ログ）はまだ実集計ロジックが無いため
+// mockStoreDetail.js のダミー値のまま。TODO: archives ベースの店舗別集計は別ステップで実装。
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { ChevronLeft, Share2 } from "lucide-react";
-import { MOCK_STORE_DETAIL } from "../data/mockStoreDetail";
 import { Badge } from "../components/store/storeDetailShared";
+import { resolveStoreDetail } from "../components/store/storeDetailSelectors";
 import StoreOverviewTab from "../components/store/StoreOverviewTab";
 import StoreAnalysisTab from "../components/store/StoreAnalysisTab";
 import StoreSettingsTab from "../components/store/StoreSettingsTab";
@@ -28,10 +30,17 @@ const TABS = [
   { id: "settings", label: "設定" },
 ];
 
-export default function StoreDetail({ storeId, onBack }) {
+export default function StoreDetail({ storeId, onBack, S }) {
   const [activeTab, setActiveTab] = useState("overview");
-  // TODO: storeId から実店舗データ（pt_stores）を解決する。現状はダミー1店舗のみ。
-  const data = MOCK_STORE_DETAIL;
+  const data = useMemo(
+    () =>
+      resolveStoreDetail(S?.stores, storeId, {
+        chodamaReplayLimit: S?.chodamaReplayLimit,
+        currentRentBalls: S?.rentBalls,
+        currentExRate: S?.exRate,
+      }),
+    [S?.stores, storeId, S?.chodamaReplayLimit, S?.rentBalls, S?.exRate]
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden" data-store-id={storeId ?? data.id}>
