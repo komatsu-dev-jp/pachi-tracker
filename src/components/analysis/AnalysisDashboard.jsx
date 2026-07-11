@@ -110,18 +110,14 @@ const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 const moneyClass = (value) => Number(value) >= 0 ? "text-[var(--at-pos)]" : "text-[var(--at-neg)]";
 // カレンダーセル専用の表示フォーマット（表示のみ・計算には使わない）。
 // 1万円未満は実額表示、1万円以上は枠内に収まるよう万表記へ短縮する。
-// 分岐は絶対値ベースで判定し、四捨五入で符号が反転する事故（-0.0万など）を避ける。
+// 丸めは絶対値に対して行い、正負で結果が非対称になる Math.round の負数.5挙動を避ける。
 const formatCellAmount = (value) => {
   const amount = Number(value) || 0;
   const abs = Math.abs(amount);
   if (abs < 10000) return signed(amount);
-  const sign = amount > 0 ? "+" : amount < 0 ? "-" : "";
-  if (abs < 1000000) {
-    const man = Math.abs(Math.round(amount / 1000) / 10).toFixed(1);
-    return `${sign}${man}万`;
-  }
-  const man = Math.abs(Math.round(amount / 10000));
-  return `${sign}${man}万`;
+  const sign = amount > 0 ? "+" : "-";
+  if (abs < 1000000) return `${sign}${(Math.round(abs / 1000) / 10).toFixed(1)}万`;
+  return `${sign}${Math.round(abs / 10000)}万`;
 };
 const card = "rounded-[14px] border border-[var(--at-ln-md)] bg-[image:var(--at-card-grad)] shadow-[var(--at-card-shadow2)]";
 const label = "text-[11px] font-semibold tracking-[.04em] text-[var(--at-mut)]";
