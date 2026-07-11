@@ -108,6 +108,9 @@ const fmt = (value) => Math.round(Number(value) || 0).toLocaleString("ja-JP");
 const signed = (value) => `${Number(value) > 0 ? "+" : ""}${fmt(value)}`;
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 const moneyClass = (value) => Number(value) >= 0 ? "text-[var(--at-pos)]" : "text-[var(--at-neg)]";
+// カレンダーセル金額のフォントサイズ（桁数で自動段階調整し、実額のまま枠内に収める）
+const cellAmountSize = (text) =>
+  text.length <= 7 ? "text-[11px]" : text.length === 8 ? "text-[10px]" : "text-[9px]";
 const card = "rounded-[14px] border border-[var(--at-ln-md)] bg-[image:var(--at-card-grad)] shadow-[var(--at-card-shadow2)]";
 const label = "text-[11px] font-semibold tracking-[.04em] text-[var(--at-mut)]";
 
@@ -453,18 +456,19 @@ function CalendarCell({ day, row, selected, weekday, onSelect }) {
         : weekday === 6
           ? "text-[var(--at-sat)]"
           : "text-[var(--at-subtle-hi)]";
+  const amountText = signed(amount);
   return (
     <button
       type="button"
       onClick={() => onSelect(day)}
-      className={`relative flex aspect-square min-w-0 flex-col items-start overflow-hidden rounded-[8px] border px-1.5 pb-1 pt-1.5 transition ${heat} ${
+      className={`relative flex aspect-square min-w-0 flex-col items-start overflow-hidden rounded-[8px] border px-0 pb-1 pt-1.5 transition ${heat} ${
         selected ? "z-10 border-[var(--at-cyan)] shadow-[0_0_0_1px_var(--at-cyan)]" : ""
       }`}
     >
-      {/* 日付は左上。金額は日付の下に配置（「k」を使わず実額・等幅・詰め字で枠内に収める）。 */}
-      <span className={`text-[13px] font-bold leading-none ${dayColor}`}>{day}</span>
+      {/* 日付は左上。金額は日付の下に配置（実額のまま表示し、桁数に応じてフォントサイズを段階調整して枠内に収める）。 */}
+      <span className={`pl-1 text-[13px] font-bold leading-none ${dayColor}`}>{day}</span>
       {hasAmount && (
-        <span className={`mt-auto w-full text-center font-mono text-[9.5px] font-black leading-none tracking-[-.04em] tabular-nums ${moneyClass(amount)}`}>{signed(amount)}</span>
+        <span className={`mt-auto w-full text-center font-black leading-none tracking-[-.03em] tabular-nums ${cellAmountSize(amountText)} ${moneyClass(amount)}`}>{amountText}</span>
       )}
     </button>
   );
@@ -593,9 +597,9 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay, year, month }) {
   const count = new Date(year, month, 0).getDate();
   const cells = [...Array(blanks).fill(null), ...Array.from({ length: count }, (_, i) => i + 1)];
   return (
-    <section className={`${card} p-3.5`}>
+    <section className={`${card} p-2`}>
       {/* 見出し（凡例は廃止しシンプルに）。 */}
-      <div className="mb-3 flex items-center justify-between gap-2">
+      <div className="mb-3 flex items-center justify-between gap-2 px-1.5">
         <div className="flex items-center gap-2">
           <CalendarDays className="h-5 w-5 shrink-0 text-[var(--at-cyan)]" />
           <h2 className="text-[14px] font-black tracking-[.02em] text-[var(--at-strong)]">日別ヒートマップ</h2>
@@ -603,13 +607,13 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay, year, month }) {
         <span className="shrink-0 text-[10px] font-bold text-[var(--at-mut)]">タップで日別詳細</span>
       </div>
       {/* 曜日見出し。日曜は赤系・土曜は青系。セルと同じ7列・同じ余白で整列。 */}
-      <div className="grid grid-cols-7 gap-1 px-0.5 text-center text-[11px] font-bold text-[var(--at-mut3)]">
+      <div className="grid grid-cols-7 gap-0.5 px-0 text-center text-[11px] font-bold text-[var(--at-mut3)]">
         {WEEKDAYS.map((day, index) => (
           <span key={day} className={index === 0 ? "text-[var(--at-sun)]" : index === 6 ? "text-[var(--at-sat)]" : ""}>{day}</span>
         ))}
       </div>
       {/* 角丸の独立セルを gap で並べる（選択日はシアンのグロー枠）。 */}
-      <div className="mt-1.5 grid grid-cols-7 gap-1">
+      <div className="mt-1.5 grid grid-cols-7 gap-0.5">
         {cells.map((day, index) => day
           ? (
             <CalendarCell
