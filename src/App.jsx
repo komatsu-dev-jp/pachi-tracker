@@ -1163,10 +1163,20 @@ export default function App() {
             onChangeFilters={setAnalysisFilters}
           />
         )}
-        {currentMode === "settings" && <SettingsTab s={S} onReset={() => resetAll(0, { clearStoreChodama: true })} />}
+        {currentMode === "settings" && (
+          <SettingsTab
+            s={S}
+            onReset={() => resetAll(0, { clearStoreChodama: true })}
+            onOpenStoreDetail={(store) => {
+              setStoreDetailId(store?.id ?? null);
+              setCurrentMode("storeDetail");
+            }}
+          />
+        )}
         {/* 店舗詳細（見た目優先プロトタイプ）。ダミーデータのみで、既存の店舗検索・登録
-            （SettingsTab 内）とは独立。将来的に店舗一覧等からの遷移導線を追加する際は
-            setStoreDetailId(id) → setCurrentMode("storeDetail") を呼び出す想定。 */}
+            （SettingsTab 内）とは独立した見た目確認用画面。遷移導線は
+            ①設定タブの店舗一覧の各行（onOpenStoreDetail）と
+            ②ホーム画面の「店舗詳細」カード（S.setTab("storeDetail")）の2箇所。 */}
         {currentMode === "storeDetail" && (
           <StoreDetail
             storeId={storeDetailId}

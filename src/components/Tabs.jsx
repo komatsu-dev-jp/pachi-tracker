@@ -9748,7 +9748,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
 /* ================================================================
    SettingsTab — 設定 + 機種検索（統合）
 ================================================================ */
-export function SettingsTab({ s, onReset }) {
+export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     const [confirming, setConfirming] = useState(false);
     const [showMachineSearch, setShowMachineSearch] = useState(false);
     const [query, setQuery] = useState("");
@@ -10969,24 +10969,38 @@ export function SettingsTab({ s, onReset }) {
                     <div style={{ textAlign: "center", color: C.sub, padding: "40px 16px", fontSize: 12 }}>登録された店舗がありません</div>
                 ) : (
                     storeResults.map((st, i) => (
-                        <button key={st.id || i} className="b" onClick={() => setSelectedStore(st)} style={{
-                            width: "100%", background: i % 2 === 0 ? "transparent" : "transparent",
-                            border: "none", borderBottom: `1px solid ${C.border}`, padding: "14px 16px",
-                            display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer",
-                            textAlign: "left",
-                        }}>
-                            <div>
-                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                                    <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{st.name}</span>
-                                    {st.memberCard?.created && <span style={{ fontSize: 9, fontWeight: 800, color: C.green, background: `${C.green}22`, border: `1px solid ${C.green}55`, borderRadius: 6, padding: "1px 6px" }}>会員</span>}
+                        <div key={st.id || i} style={{ borderBottom: `1px solid ${C.border}` }}>
+                            <button className="b" onClick={() => setSelectedStore(st)} style={{
+                                width: "100%", background: "transparent",
+                                border: "none", padding: "14px 16px",
+                                display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer",
+                                textAlign: "left",
+                            }}>
+                                <div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                                        <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{st.name}</span>
+                                        {st.memberCard?.created && <span style={{ fontSize: 9, fontWeight: 800, color: C.green, background: `${C.green}22`, border: `1px solid ${C.green}55`, borderRadius: 6, padding: "1px 6px" }}>会員</span>}
+                                    </div>
+                                    {st.address && <div style={{ fontSize: 10, color: C.sub }}>{st.address}</div>}
                                 </div>
-                                {st.address && <div style={{ fontSize: 10, color: C.sub }}>{st.address}</div>}
-                            </div>
-                            <div style={{ textAlign: "right" }}>
-                                <div style={{ fontSize: 12, fontWeight: 600, color: C.yellow, fontFamily: mono }}>{Math.round(st.rentBalls || 250) / 10}玉</div>
-                                <div style={{ fontSize: 9, color: C.sub }}>交換 {Math.round(st.exRate || 250) / 10}玉{(st.chodama || 0) > 0 ? ` 💎${f(st.chodama)}` : ""}</div>
-                            </div>
-                        </button>
+                                <div style={{ textAlign: "right" }}>
+                                    <div style={{ fontSize: 12, fontWeight: 600, color: C.yellow, fontFamily: mono }}>{Math.round(st.rentBalls || 250) / 10}玉</div>
+                                    <div style={{ fontSize: 9, color: C.sub }}>交換 {Math.round(st.exRate || 250) / 10}玉{(st.chodama || 0) > 0 ? ` 💎${f(st.chodama)}` : ""}</div>
+                                </div>
+                            </button>
+                            {/* 店舗詳細（見た目優先プロトタイプ）への導線。既存の編集導線（上のボタン）とは独立。
+                                TODO: 現状 StoreDetail 側はダミーデータ固定表示のため、st.id は将来の実データ接続用に渡すのみ。 */}
+                            {onOpenStoreDetail && (
+                                <button className="b" onClick={() => onOpenStoreDetail(st)} style={{
+                                    width: "100%", background: "transparent", border: "none",
+                                    padding: "0 16px 12px", display: "flex", alignItems: "center", gap: 4,
+                                    cursor: "pointer", textAlign: "left", minHeight: 32,
+                                    fontSize: 11, fontWeight: 700, color: C.blue, fontFamily: font,
+                                }}>
+                                    店舗詳細プレビューを見る ›
+                                </button>
+                            )}
+                        </div>
                     ))
                 )}
             </div>

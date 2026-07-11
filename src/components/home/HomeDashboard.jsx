@@ -1253,6 +1253,39 @@ function DeltaStatusCard({ status, onAnalyze, onViewMap }) {
     );
 }
 
+// ===== 店舗詳細（見た目優先プロトタイプへの導線）=====
+// TODO: 現状はダミー1店舗固定のプレビュー。店舗一覧からの実店舗選択・実データ接続は次ステップ。
+function StoreDetailPreviewCard({ onOpen }) {
+    return (
+        <div style={sectionGap}>
+            <SectionHeader title="店舗詳細" />
+            <div style={cardBase}>
+                <div style={{ fontSize: 12, color: P.sub, lineHeight: 1.5, marginBottom: 12 }}>
+                    分析度・貯玉状況・会員カードなどを1画面で確認できる新しい店舗詳細画面のプレビューです。
+                </div>
+                <button
+                    type="button"
+                    onClick={onOpen}
+                    style={{
+                        width: "100%",
+                        minHeight: 48,
+                        borderRadius: 12,
+                        border: `1px solid ${P.borderHi}`,
+                        background: P.cardSub,
+                        color: P.textHi,
+                        fontSize: 13,
+                        fontWeight: 800,
+                        fontFamily: font,
+                        cursor: "pointer",
+                    }}
+                >
+                    店舗詳細プレビューを見る ›
+                </button>
+            </div>
+        </div>
+    );
+}
+
 // =====================================================
 // メインコンポーネント
 // =====================================================
@@ -1470,6 +1503,7 @@ export default function HomeDashboard({ S }) {
     const goStrategy = () => S?.setTab?.("select");
     const goDelta = () => S?.setTab?.("delta");
     const goDeltaMap = () => S?.setTab?.("deltaMap");
+    const goStoreDetail = () => S?.setTab?.("storeDetail");
 
     return (
         <div style={{
@@ -1499,6 +1533,9 @@ export default function HomeDashboard({ S }) {
 
             {/* 差玉解析ステータス（独立タブにせず、ここから起動） */}
             <DeltaStatusCard status={deltaStatus} onAnalyze={goDelta} onViewMap={goDeltaMap} />
+
+            {/* 店舗詳細（見た目優先プロトタイプへの導線） */}
+            <StoreDetailPreviewCard onOpen={goStoreDetail} />
 
             {/* ③ 次のアクション */}
             <ActionButtons onRecord={goRecord} onSelect={goSelect} onAnalysis={goAnalysis} />
