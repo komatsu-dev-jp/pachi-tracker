@@ -108,6 +108,21 @@ const fmt = (value) => Math.round(Number(value) || 0).toLocaleString("ja-JP");
 const signed = (value) => `${Number(value) > 0 ? "+" : ""}${fmt(value)}`;
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 const moneyClass = (value) => Number(value) >= 0 ? "text-[var(--at-pos)]" : "text-[var(--at-neg)]";
+// カレンダーセル専用の表示フォーマット（表示のみ・計算には使わない）。
+// 1万円未満は実額表示、1万円以上は枠内に収まるよう万表記へ短縮する。
+// 分岐は絶対値ベースで判定し、四捨五入で符号が反転する事故（-0.0万など）を避ける。
+const formatCellAmount = (value) => {
+  const amount = Number(value) || 0;
+  const abs = Math.abs(amount);
+  if (abs < 10000) return signed(amount);
+  const sign = amount > 0 ? "+" : amount < 0 ? "-" : "";
+  if (abs < 1000000) {
+    const man = Math.abs(Math.round(amount / 1000) / 10).toFixed(1);
+    return `${sign}${man}万`;
+  }
+  const man = Math.abs(Math.round(amount / 10000));
+  return `${sign}${man}万`;
+};
 const card = "rounded-[14px] border border-[var(--at-ln-md)] bg-[image:var(--at-card-grad)] shadow-[var(--at-card-shadow2)]";
 const label = "text-[11px] font-semibold tracking-[.04em] text-[var(--at-mut)]";
 
@@ -457,14 +472,14 @@ function CalendarCell({ day, row, selected, weekday, onSelect }) {
     <button
       type="button"
       onClick={() => onSelect(day)}
-      className={`relative flex aspect-square min-w-0 flex-col items-start overflow-hidden rounded-[8px] border px-1.5 pb-1 pt-1.5 transition ${heat} ${
+      className={`relative flex aspect-square min-w-0 flex-col items-start overflow-hidden rounded-[8px] border px-1 pb-1 pt-1.5 transition ${heat} ${
         selected ? "z-10 border-[var(--at-cyan)] shadow-[0_0_0_1px_var(--at-cyan)]" : ""
       }`}
     >
-      {/* 日付は左上。金額は日付の下に配置（「k」を使わず実額・等幅・詰め字で枠内に収める）。 */}
+      {/* 日付は左上。金額は日付の下に配置（1万円以上は万表記に短縮して枠内に収める。正確な金額は下の日別詳細に表示）。 */}
       <span className={`text-[13px] font-bold leading-none ${dayColor}`}>{day}</span>
       {hasAmount && (
-        <span className={`mt-auto w-full text-center font-mono text-[9.5px] font-black leading-none tracking-[-.04em] tabular-nums ${moneyClass(amount)}`}>{signed(amount)}</span>
+        <span className={`mt-auto w-full text-center font-mono text-[9px] font-black leading-none tracking-[-.04em] tabular-nums ${moneyClass(amount)}`}>{formatCellAmount(amount)}</span>
       )}
     </button>
   );
