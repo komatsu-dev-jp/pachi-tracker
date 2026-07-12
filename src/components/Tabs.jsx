@@ -3147,6 +3147,15 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     </div>
                                 </div>
 
+                                {/* 端数玉の入力方法ガイド（持ち玉/貯玉モードのみ表示）:
+                                    「玉が半端に残っている時、いつ・どう入力すればいいか」で迷わないための固定表示。
+                                    操作ステップは増やさず、判断に必要な文言のみを常時表示する。 */}
+                                {(S.playMode === "mochi" || S.playMode === "chodama") && (
+                                    <div className="numpad-modal__hint" style={{ fontFamily: font }}>
+                                        💡 {ballsLabel}が尽きたら、その時点でそのまま回転数を入力してください。端数玉は自動で計算され、次の入力から現金投資に切り替わります。
+                                    </div>
+                                )}
+
                                 {/* 入力値ディスプレイ */}
                                 <div className="numpad-modal__display">
                                     <div>
