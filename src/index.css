@@ -2080,6 +2080,17 @@ input, select, textarea {
   color: var(--blue);
 }
 
+.numpad-modal__hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--sub-hi);
+  background: color-mix(in srgb, var(--yellow) 10%, var(--surface-hi));
+  border: 1px solid color-mix(in srgb, var(--yellow) 24%, var(--border));
+  border-radius: 12px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+
 .numpad-modal__display {
   display: flex;
   align-items: center;
