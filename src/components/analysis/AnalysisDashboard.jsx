@@ -1170,12 +1170,16 @@ function buildMachineSessions(archives, machineName) {
       spin: getSpinRate(a),
       hours: archiveWorkMinutes(a) / 60,
       netRot: Number(a?.stats?.netRot) || 0,
+      machineNum: a.machineNum != null ? String(a.machineNum) : "",
     }))
     .sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 }
 
 function MachineDetailScreen({ machineName, archives, isDemo, onBack }) {
   const demoMachine = isDemo ? DEMO_MACHINES.find((m) => m.machineName === machineName) : null;
+  // 実戦履歴の並び替え: recent=新しい順 / spin=回転率が高い順 / machineNum=台番号順（同一台番号内は回転率が高い順）。
+  // 台番号ごとの回転率の傾向を比較しやすくするための表示専用ソート（logic・保存データは非変更）。
+  const [sortMode, setSortMode] = useState("recent");
 
   const chartRows = useMemo(() => {
     if (isDemo) return [];
@@ -1189,7 +1193,26 @@ function MachineDetailScreen({ machineName, archives, isDemo, onBack }) {
     });
   }, [isDemo, archives, machineName]);
 
-  const rows = useMemo(() => [...chartRows].reverse(), [chartRows]);
+  const rows = useMemo(() => {
+    if (sortMode === "spin") {
+      // 回転率が高い順（未記録は末尾）。
+      return [...chartRows].sort((a, b) => (b.spin ?? -Infinity) - (a.spin ?? -Infinity));
+    }
+    if (sortMode === "machineNum") {
+      // 台番号の小さい順にまとめ、同一台番号内は回転率が高い順（台番号未入力は末尾）。
+      return [...chartRows].sort((a, b) => {
+        const na = Number(a.machineNum);
+        const nb = Number(b.machineNum);
+        const aHas = a.machineNum !== "" && !Number.isNaN(na);
+        const bHas = b.machineNum !== "" && !Number.isNaN(nb);
+        if (aHas && bHas && na !== nb) return na - nb;
+        if (aHas !== bHas) return aHas ? -1 : 1;
+        return (b.spin ?? -Infinity) - (a.spin ?? -Infinity);
+      });
+    }
+    // 新しい順（既定）。
+    return [...chartRows].reverse();
+  }, [chartRows, sortMode]);
 
   const summaryX = useMemo(() => {
     if (isDemo || chartRows.length === 0) return null;
@@ -1282,9 +1305,19 @@ function MachineDetailScreen({ machineName, archives, isDemo, onBack }) {
           </section>
 
           <section className={`${card} p-0`}>
-            <div className="flex items-center justify-between px-3.5 pb-1.5 pt-3">
+            <div className="px-3.5 pb-2 pt-3">
               <h2 className="text-[14px] font-black text-[var(--at-strong)]">実戦履歴</h2>
-              <span className="text-[11px] font-bold text-[var(--at-mut)]">新しい順</span>
+              {/* 並び替え（新しい順／回転率順／台番号順）。台番号ごとの回転率比較用の表示専用トグル。 */}
+              <div className="mt-2 grid grid-cols-3 gap-1 rounded-[10px] border border-[var(--at-ln-md)] bg-[var(--at-panel2)] p-1">
+                {[["recent", "新しい順"], ["spin", "回転率順"], ["machineNum", "台番号順"]].map(([key, label]) => (
+                  <button key={key} type="button" onClick={() => setSortMode(key)}
+                    className={`h-10 rounded-[7px] text-[11px] font-bold transition-colors ${sortMode === key
+                      ? "bg-[var(--at-cyan)] text-[var(--at-page)]"
+                      : "text-[var(--at-mut)] active:opacity-70"}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
             {rows.length === 0 ? (
               <div className="px-3.5 py-6 text-center text-[11px] text-[var(--at-mut)]">実戦記録がありません</div>
@@ -1294,7 +1327,7 @@ function MachineDetailScreen({ machineName, archives, isDemo, onBack }) {
                   <div className="grid grid-cols-[1fr_66px_66px_62px] items-center gap-1.5 text-right">
                     <span className="min-w-0 text-left">
                       <div className="truncate text-[12.5px] font-black">{r.day}</div>
-                      <div className="truncate text-[9.5px] font-bold text-[var(--at-mut)]">{r.store}</div>
+                      <div className="truncate text-[9.5px] font-bold text-[var(--at-mut)]">{[r.store, r.machineNum ? `${r.machineNum}番台` : ""].filter(Boolean).join(" / ")}</div>
                     </span>
                     <span className={`font-mono text-[12px] font-black tabular-nums ${r.pl != null ? moneyClass(r.pl) : "text-[var(--at-faint)]"}`}>{r.pl != null ? signed(r.pl) : "—"}</span>
                     <span className="font-mono text-[12px] font-black tabular-nums text-[var(--at-cyan)]">{signed(Math.round(r.ev))}</span>
@@ -1563,7 +1596,8 @@ export default function AnalysisDashboard({
         {/* スクロールを画面内に閉じ込める（親mainの高さ依存を避け、下部ナビと重ならない）。
             overflow-x-hidden 必須: overflow-y のみ指定だと横方向が auto になり、幅超過要素があると画面全体が左へパンしたまま固定される */}
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
-          <CalendarTab S={S} onReset={onReset} initialDate={sheetDay} focusMode initialArchiveId={recordsDay.archiveId} onDone={() => setRecordsDay(null)} />
+          <CalendarTab S={S} onReset={onReset} initialDate={sheetDay} focusMode initialArchiveId={recordsDay.archiveId} onDone={() => setRecordsDay(null)}
+            onOpenMachine={(name) => { if (name) { setRecordsDay(null); setMachineDetailName(name); } }} />
         </div>
       </div>
     );

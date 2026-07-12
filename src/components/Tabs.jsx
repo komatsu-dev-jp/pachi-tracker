@@ -8220,7 +8220,7 @@ export function HistoryTab({ jpLog, delJPLast, S, ev }) {
 /* ================================================================
    CalendarTab — カレンダー式記録 + 詳細表示
 ================================================================ */
-export function CalendarTab({ S, onReset, initialDate = null, focusMode = false, initialArchiveId = null, onDone = null }) {
+export function CalendarTab({ S, onReset, initialDate = null, focusMode = false, initialArchiveId = null, onDone = null, onOpenMachine = null }) {
     // initialDate（"YYYY-MM-DD" 任意）で初期選択日と表示月を指定できる。
     // 分析タブの月別「記録を編集」導線から該当日を開くために使用。省略時は従来通り未選択・当月表示。
     // focusMode: 分析からの編集導線専用。カレンダー・KPI等の重複表示を出さず、
@@ -8923,20 +8923,35 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                             const ev = Number(arSt.effectiveWorkAmount ?? arSt.workAmount) || 0;
                             const denom = ar.settings?.synthDenom;
                             const name = ar.machineName && ar.machineName !== `1/${denom}` ? ar.machineName : (ar.machineName || `1/${denom || "—"}`);
+                            // 分析（MACHINE REPORT）へ飛べる実機種名のみを対象にする（合成分母フォールバックや未入力は除外）。
+                            const realMachine = ar.machineName && ar.machineName !== `1/${denom}` ? ar.machineName : "";
+                            const canAnalyze = !!(onOpenMachine && realMachine);
                             const active = ar.id === sel.id;
                             return (
-                                <button key={ar.id} type="button" onClick={() => { setSelectedArchiveId(ar.id); setDelConfirm(null); }}
-                                    className={`${cardCls} flex min-h-[56px] w-full items-center gap-3 p-3.5 text-left ${active ? "border-[var(--at-cyan)] shadow-[0_0_0_1px_var(--at-cyan)]" : ""}`}>
-                                    <div className="min-w-0 flex-1">
-                                        <div className="truncate text-[14px] font-black text-[var(--at-strong)]">{name}</div>
-                                        <div className="mt-0.5 truncate text-[10.5px] font-bold text-[var(--at-mut)]">
-                                            {[ar.storeName, ar.machineNum ? `${ar.machineNum}番台` : "", ev !== 0 ? `期待値 ${yenFmt(ev)}円` : ""].filter(Boolean).join(" / ") || "詳細未入力"}
+                                <div key={ar.id}
+                                    className={`${cardCls} flex min-h-[56px] w-full items-stretch overflow-hidden ${active ? "border-[var(--at-cyan)] shadow-[0_0_0_1px_var(--at-cyan)]" : ""}`}>
+                                    {/* 主動作: タップで編集対象を選択。押下が伝わるよう active フィードバックを付与 */}
+                                    <button type="button" onClick={() => { setSelectedArchiveId(ar.id); setDelConfirm(null); }}
+                                        className="flex min-w-0 flex-1 items-center gap-3 p-3.5 text-left transition active:opacity-60">
+                                        <div className="min-w-0 flex-1">
+                                            <div className="truncate text-[14px] font-black text-[var(--at-strong)]">{name}</div>
+                                            <div className="mt-0.5 truncate text-[10.5px] font-bold text-[var(--at-mut)]">
+                                                {[ar.storeName, ar.machineNum ? `${ar.machineNum}番台` : "", ev !== 0 ? `期待値 ${yenFmt(ev)}円` : ""].filter(Boolean).join(" / ") || "詳細未入力"}
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div className={`shrink-0 font-mono text-[16px] font-black tabular-nums ${hasActual ? plCls(pl) : "text-[var(--at-faint)]"}`}>
-                                        {hasActual ? `${yenFmt(pl)}円` : "—"}
-                                    </div>
-                                </button>
+                                        <div className={`shrink-0 font-mono text-[16px] font-black tabular-nums ${hasActual ? plCls(pl) : "text-[var(--at-faint)]"}`}>
+                                            {hasActual ? `${yenFmt(pl)}円` : "—"}
+                                        </div>
+                                    </button>
+                                    {/* この機種の分析（MACHINE REPORT）へ直行。分析画面までの動線を短縮する導線 */}
+                                    {canAnalyze && (
+                                        <button type="button" onClick={() => onOpenMachine(realMachine)} aria-label="この機種の分析を見る"
+                                            className="flex w-12 shrink-0 flex-col items-center justify-center gap-0.5 border-l border-[var(--at-ln-md)] text-[var(--at-cyan)] transition active:opacity-60">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><rect x="7" y="11" width="3" height="6" /><rect x="13" y="7" width="3" height="10" /></svg>
+                                            <span className="text-[8px] font-black leading-none">分析</span>
+                                        </button>
+                                    )}
+                                </div>
                             );
                         })}
 
