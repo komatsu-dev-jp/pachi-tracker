@@ -224,9 +224,16 @@ check("T10_公開振分の主要値を固定", () => {
   assert.deepStrictEqual(signature(byName("Pフィーバー機動戦士ガンダムSEED LT-Light ver.").hesoModes[0].rows), [[10, 1500, 1], [2, 300, 99]]);
   assert.deepStrictEqual(signature(byName("e 東京リベンジャーズ 聖夜決戦編").hesoModes[0].rows), [[2, 300, 50], [2, 300, 50]]);
   assert.deepStrictEqual(signature(byName("e 無職転生 ～異世界行ったら本気だす～").rushModes[0].rows), [["10R×4", 6000, 23.5], ["10R×2", 3000, 26.5], [10, 1500, 50]]);
-  assert.deepStrictEqual(signature(byName("e結城友奈は勇者である～極限7500～").rushModes[0].rows), [["10R×5", 7500, 18.75], [10, 1500, 56.25], [0, 0, 25]]);
-  assert.deepStrictEqual(signature(byName("e 東京喰種 超デカ超一撃ver.").hesoModes[0].rows), [["10R×5", 7500, 17.5], ["10R×2", 3000, 17.5], [2, 300, 65]]);
-  assert.deepStrictEqual(signature(byName("ぱちんこ 必殺仕事人Ⅵ").hesoModes[0].rows), [[3, 450, 46], [0, 0, 8], [3, 450, 46]]);
+  const yuyuyu = byName("e結城友奈は勇者である～極限7500～");
+  assert.strictEqual(yuyuyu.rushContinueRate, 70, "真・勇者RUSH継続率");
+  assert.deepStrictEqual(signature(yuyuyu.rushModes[0].rows), [["BONUSジャッジ", "1500 or 7500個", 75], ["STリセット", 0, 25]]);
+  assert.deepStrictEqual(signature(yuyuyu.rushModes[1].rows), [["10R×5", 7500, 25], [10, 1500, 75]]);
+  const ghoul = byName("e 東京喰種 超デカ超一撃ver.");
+  assert.strictEqual(normalizeMachine(ghoul).updatedAt, "2026-07-13", "公開情報の確認日");
+  assert.deepStrictEqual(signature(ghoul.hesoModes[0].rows), [["10R×5", 7500, 50], ["10R×2", 3000, 50]]);
+  assert.deepStrictEqual(signature(ghoul.hesoModes[1].rows), [["2R or 10R×5", "300 or 7500個", 100]]);
+  assert.deepStrictEqual(signature(ghoul.rushModes[0].rows), [["10R×6＋α", "9000個＋α", 12.5], ["10R×6", 9000, 12.5], ["10R×4", 6000, 25], ["10R×2", 3000, 50]]);
+  assert.deepStrictEqual(signature(byName("ぱちんこ 必殺仕事人Ⅵ").hesoModes[0].rows), [[3, 450, 46], ["C時短", 0, 8], [3, 450, 46]]);
   assert.deepStrictEqual(signature(byName("e ソードアート・オンライン アリシゼーション 夜空").hesoModes[0].rows), [["10R×2～6＋α", "3000～9000個＋α", 1.5], [2, 300, 48.5], [2, 300, 50]]);
 });
 

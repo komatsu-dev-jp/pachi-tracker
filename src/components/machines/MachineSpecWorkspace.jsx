@@ -278,11 +278,17 @@ function DetailScreen({ machine, synced, onToggleSync, onEdit, onBack, primaryAc
             <div className="ms-divider" />
             {rushModes.map((mode) => <AllocationMode key={mode.id} mode={mode} tone="orange" />)}
             {machine.allocationNote && <p className="ms-allocation-note ms-allocation-note-global">{machine.allocationNote}</p>}
-            <div className="ms-summary-line">
-              ヘソ平均出玉 <b>{machine.hesoAvg}</b>
-              <span>/</span>
-              RUSH平均出玉 <b>{machine.rushAvg}</b>
-            </div>
+            {machine.hasExplicitAllocationModes ? (
+              <p className="ms-allocation-note ms-allocation-note-global">
+                状態別の表を正しい振分として表示しています。平均出玉はP-EVIDENCE計算用の参考値です。
+              </p>
+            ) : (
+              <div className="ms-summary-line">
+                ヘソ平均出玉 <b>{machine.hesoAvg}</b>
+                <span>/</span>
+                RUSH平均出玉 <b>{machine.rushAvg}</b>
+              </div>
+            )}
           </div>
         </section>
 
