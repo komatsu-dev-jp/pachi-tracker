@@ -3,7 +3,7 @@ import ReactDOM from "react-dom";
 import { C, f, sc, sp, tsNow, font, mono } from "../constants";
 import { archiveWorkMinutes } from "./analysis/analysisSelectors";
 import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./Atoms";
-import { machineDB, searchMachines, deriveSpecForMachine } from "../machineDB";
+import { searchMachines, deriveSpecForMachine, getEffectiveMachineList } from "../machineDB";
 import { calcPreciseEV } from "../logic";
 import { reconcileSegmentConsumption, clearPushCorrections, estimateSegmentGross, hasPushCorrections } from "../ballConsumption";
 import { createBackup, restoreBackup } from "../persistence";
@@ -1459,7 +1459,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     // 現在の機種からタイプ(ミドル/甘デジ等)を解決
     const currentMachineType = useMemo(() => {
         if (!S.machineName) return "";
-        const all = [...machineDB, ...(S.customMachines || [])];
+        const all = getEffectiveMachineList(S.customMachines);
         const hit = all.find(m => m && m.name === S.machineName);
         return hit?.type || "パチンコ";
     }, [S.machineName, S.customMachines]);
@@ -10439,7 +10439,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     const formulaBorder = specNetGainYen > 0 ? ((s.synthDenom || 1) * 1000) / specNetGainYen : 0;
 
     // 機種DB（標準＋カスタム）から現在設定中の機種を引き当て、DB実戦値ボーダーを優先
-    const allMachinesForBorder = [...(s.customMachines || []), ...machineDB];
+    const allMachinesForBorder = getEffectiveMachineList(s.customMachines);
     const matchedMachine = s.machineName
         ? allMachinesForBorder.find(m => m.name === s.machineName)
         : null;

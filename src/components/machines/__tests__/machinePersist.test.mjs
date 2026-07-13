@@ -301,6 +301,32 @@ check("T13_旧マスタ5機種の公開振分を固定", () => {
   assert.deepStrictEqual(signature(toaru.rushModes[0].rows), [[10, 1500, 70], [4, 400, 30]]);
 });
 
+// ── T14: 古い同名カスタムが新しい標準データを隠さない ──
+check("T14_古い同名カスタムより更新版マスタを優先", () => {
+  const master = machineDB.find((machine) => machine.name === "エヴァンゲリオン15");
+  const stale = {
+    ...structuredClone(master),
+    id: 1,
+    isCustom: true,
+    dataUpdatedAt: "2026/06/02 18:42",
+    border1K: 22,
+    rushEntryRate: 60,
+    rushContinueRate: 75,
+    hesoModes: [{
+      name: "特図1・ヘソ",
+      rows: [
+        { rounds: 10, payout: 1500, rate: 60 },
+        { rounds: 10, payout: 1500, rate: 40 },
+      ],
+    }],
+  };
+  const hit = searchMachines("エヴァンゲリオン15", [stale])[0];
+  assert.strictEqual(hit.dataUpdatedAt, "2026-07-13");
+  assert.strictEqual(hit.border1K, 17);
+  assert.strictEqual(hit.rushEntryRate, 70);
+  assert.strictEqual(hit.hesoModes[0].rows[1].rounds, 3);
+});
+
 console.log(JSON.stringify(out, null, 2));
 console.log(`\n${passed} passed / ${failed} failed`);
 if (failed > 0) process.exit(1);

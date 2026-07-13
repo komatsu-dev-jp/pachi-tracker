@@ -2735,14 +2735,38 @@ export function deriveSpecForMachine(m) {
 // 機種検索（カスタム機種も含む）
 // ビルトイン機種を編集して保存した場合、同名のビルトインは一覧に重複表示しない（カスタム側で上書き）。
 // isOverride: ビルトインを編集して上書きしたカスタムか（true）／新規登録したカスタムか（false）
-export function searchMachines(query, customMachines = []) {
-  const customList = customMachines || [];
-  const customNames = new Set(customList.map(m => m.name));
-  const baseMachines = machineDB.filter(m => !customNames.has(m.name));
-  const allMachines = [
-    ...customList.map(m => ({ ...m, isCustom: true, isOverride: machineDB.some(db => db.name === m.name) })),
-    ...baseMachines,
+function dataDate(value) {
+  const match = String(value || "").match(/^(\d{4})[/-](\d{2})[/-](\d{2})/);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : "";
+}
+
+export function isMasterMachineNewer(master, custom) {
+  const masterDate = dataDate(master?.dataUpdatedAt);
+  const customDate = dataDate(custom?.dataUpdatedAt);
+  return !!masterDate && (!customDate || masterDate > customDate);
+}
+
+// 旧版アプリで保存された同名カスタムが、新しい標準スペックを隠さないようにする。
+// 標準データの更新日が新しい場合は標準を採用し、同日以降に編集した値だけ上書きとして残す。
+export function getEffectiveMachineList(customMachines = [], builtInMachines = machineDB) {
+  const customList = Array.isArray(customMachines) ? customMachines : [];
+  const builtIns = Array.isArray(builtInMachines) ? builtInMachines : [];
+  const builtInByName = new Map(builtIns.map((machine) => [machine.name, machine]));
+  const effectiveCustom = customList.map((custom) => {
+    const master = builtInByName.get(custom?.name);
+    if (!master) return { ...custom, isCustom: true, isOverride: false };
+    if (isMasterMachineNewer(master, custom)) return master;
+    return { ...master, ...custom, isCustom: true, isOverride: true };
+  });
+  const customNames = new Set(customList.map((machine) => machine?.name));
+  return [
+    ...effectiveCustom,
+    ...builtIns.filter((machine) => !customNames.has(machine.name)),
   ];
+}
+
+export function searchMachines(query, customMachines = []) {
+  const allMachines = getEffectiveMachineList(customMachines);
   if (!query || query.trim().length === 0) return allMachines;
   const q = query.trim().toLowerCase();
   return allMachines.filter(m =>
