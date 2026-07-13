@@ -16,6 +16,7 @@ import { RecentEventList } from "./decision/RecentEventList";
 import MachineSpecWorkspace from "./machines/MachineSpecWorkspace";
 import IslandMapManager from "./select/IslandMapManager";
 import { getStoreIslands, setStoreIslands } from "./select/hallMapSelectors";
+import { buildMultiRoundHit, getMachineRoundOptions } from "./record/machineRoundOptions";
 
 // 信頼度（試行充足率）: 1500回転で 100% （evDecision の calcConfidence と整合。
 // VerdictBadge.jsx の STABLE_TARGET_ROT と同値・同期すること）
@@ -853,7 +854,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     const [hitWizardData, setHitWizardData] = useState({
         pushAmount: 0,
         rotCount: "", // 画面 A 1.回転数（ゲーム数）
-        trayBalls: "", rounds: 0, displayBalls: "", actualBalls: "",
+        trayBalls: "", rounds: 0, mult: 1, displayBalls: "", actualBalls: "",
         hitType: "", // "単発" or "確変"
         jitanSpins: "", // 時短回数
         finalBallsAfterJitan: "" // 時短終了後最終出玉
@@ -871,38 +872,10 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             el.scrollIntoView({ behavior: "smooth", block: "center" });
         }
     }, [hitInputFocus, hitWizardOpen]);
-    // 機種からラウンド情報を取得（初当たり用 - roundDist使用）
-    const getMachineRounds = () => {
-        const machine = searchMachines(S.machineName, S.customMachines)[0];
-        if (!machine || !machine.roundDist) return [3, 4, 5, 6, 7, 8, 9, 10]; // デフォルト
-        // roundDist例: "4R:50%, 10R:50%" → [4, 10]
-        const matches = machine.roundDist.match(/(\d+)R/g);
-        if (!matches) return [3, 4, 5, 6, 7, 8, 9, 10];
-        return [...new Set(matches.map(m => parseInt(m)))].sort((a, b) => a - b);
-    };
-    const machineRounds = getMachineRounds();
-
-    // 機種から確変中のラウンド情報を取得（連チャン用 - rushDist使用、なければroundDistにフォールバック）
-    const getMachineRushRounds = () => {
-        const machine = searchMachines(S.machineName, S.customMachines)[0];
-        const defaultOpts = [3,4,5,6,7,8,9,10].map(r => ({ rounds: r, mult: 1 }));
-        if (!machine) return defaultOpts;
-        const dist = machine.rushDist || machine.roundDist;
-        if (!dist) return defaultOpts;
-        const re = /(\d+)R(?:×(\d+))?/g;
-        const found = [];
-        const seen = new Set();
-        let m;
-        while ((m = re.exec(dist)) !== null) {
-            const rounds = parseInt(m[1]);
-            const mult = m[2] ? parseInt(m[2]) : 1;
-            const key = `${rounds}-${mult}`;
-            if (!seen.has(key)) { seen.add(key); found.push({ rounds, mult }); }
-        }
-        if (found.length === 0) return defaultOpts;
-        return found.sort((a, b) => a.rounds - b.rounds || a.mult - b.mult);
-    };
-    const machineRushRounds = getMachineRushRounds();
+    const selectedMachine = searchMachines(S.machineName, S.customMachines)[0];
+    // 詳細振分も読むため、10R×2・10R×4のような複数セットを選択できる。
+    const machineRounds = getMachineRoundOptions(selectedMachine, "heso");
+    const machineRushRounds = getMachineRoundOptions(selectedMachine, "rush");
 
     // 長押し削除用state
     const longPressTimerRef = useRef(null);
@@ -993,27 +966,15 @@ export function RotTab({ rows, setRows, S, ev, border }) {
 
     // mult (×N) 対応: 1エントリーを 1 hit として保存（液晶演出上1連 = データ上も1 hit）
     // rounds / displayBalls は全連合算、mult / rawRounds は表示用
-    const buildSingleHit = (hitNumber, { rnd, mult, disp, lastOut, nextTiming, elecRot }) => {
-        const multN = Math.max(1, Number(mult) || 1);
-        const totalRounds = rnd * multN;
-        const totalDisp = disp * multN;
-        const sapoChange = nextTiming - lastOut - totalDisp;
-        const sapoPerRot = elecRot > 0 ? sapoChange / elecRot : 0;
-        return {
-            hitNumber,
-            mult: multN,
-            rawRounds: rnd,
-            rounds: totalRounds,
-            displayBalls: totalDisp,
-            lastOutBalls: lastOut,
-            nextTimingBalls: nextTiming,
-            elecSapoRot: elecRot,
-            sapoChange,
-            sapoPerRot,
-            actualBalls: 0,
-            time: tsNow(),
-        };
-    };
+    const buildSingleHit = (hitNumber, { rnd, mult, disp, lastOut, nextTiming, elecRot }) => buildMultiRoundHit(hitNumber, {
+        rounds: rnd,
+        mult,
+        displayBalls: disp,
+        lastOutBalls: lastOut,
+        nextTimingBalls: nextTiming,
+        elecSapoRot: elecRot,
+        time: tsNow(),
+    });
 
     // 連チャン追加ウィザード完了（継続 or 最終）
     const handleChainWizardComplete = (isFinal = false, finalRealOpts = null) => {
@@ -1792,7 +1753,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             return true;
         }
         // 旧UI互換フォールバック: 画面 A を開く（実際には呼ばれない経路）
-        setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: "", rounds: 3, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
+        setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: "", rounds: 3, mult: 1, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
         setHitWizardOpen(true);
         return true;
     };
@@ -1802,11 +1763,14 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     // overrideHitType: 確変ボタンから直接呼ばれる場合に使用（setStateが非同期のため）
     const handleWizardComplete = (overrideHitType) => {
         if (endLockRef.current) return;
-        const { pushAmount, trayBalls, rounds, displayBalls, actualBalls, hitType: stateHitType, jitanSpins, finalBallsAfterJitan } = hitWizardData;
+        const { pushAmount, trayBalls, rounds, mult, displayBalls, actualBalls, hitType: stateHitType, jitanSpins, finalBallsAfterJitan } = hitWizardData;
         const hitType = overrideHitType || stateHitType;
         const rnd = Number(rounds) || 0;
+        const multN = Math.max(1, Number(mult) || 1);
+        const totalRounds = rnd * multN;
         const tray = Number(trayBalls) || 0;
         const disp = Number(displayBalls) || 0;
+        const totalDisp = disp * multN;
         const actual = Number(actualBalls) || 0;
         const jitan = Number(jitanSpins) || 0;
         const finalBalls = Number(finalBallsAfterJitan) || 0;
@@ -1877,8 +1841,10 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                 elecSapoRot: 0,
                 sapoChange: 0,
                 sapoPerRot: 0,
-                rounds: rnd,
-                displayBalls: disp,
+                mult: multN,
+                rawRounds: rnd,
+                rounds: totalRounds,
+                displayBalls: totalDisp,
                 actualBalls: actual,
                 time: tsNow(),
             }];
@@ -1910,18 +1876,18 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             return updated;
         });
 
-        S.pushLog({ type: hitType === "単発" ? "単発終了" : "初当たり記録", time: tsNow(), rounds: rnd });
+        S.pushLog({ type: hitType === "単発" ? "単発終了" : "初当たり記録", time: tsNow(), rounds: totalRounds });
         setHitWizardOpen(false);
         setHitInputError("");
         setHitInputFocus("");
-        setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: "", rounds: 3, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
+        setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: "", rounds: 3, mult: 1, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
 
         // 確変の場合: HistoryTabで連チャン記録継続
         if (hitType === "確変") {
             S.setSessionSubTab("history");
         } else {
             // 単発の場合: 持ち玉モードに切替 & 出玉を持ち玉に加算 & 回転タブへ
-            const addBalls = finalBalls > 0 ? finalBalls : (tray + disp);
+            const addBalls = finalBalls > 0 ? finalBalls : (tray + totalDisp);
             S.setCurrentMochiBalls((prev) => prev + addBalls);
             S.setPlayMode("mochi");
             S.setTab("rot");
@@ -2948,7 +2914,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                         setShowEventMenu(false);
                                         setHitInputError("");
                                         setHitInputFocus("pushAmount");
-                                        setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: "", rounds: 0, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
+                                        setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: "", rounds: 0, mult: 1, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "" });
                                         setHitWizardOpen(true);
                                     }}
                                 >
@@ -5358,6 +5324,8 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     const dispN = numOr0("displayBalls");
                     const actualN = numOr0("actualBalls");
                     const rndN = numOr0("rounds");
+                    const multN = Math.max(1, numOr0("mult") || 1);
+                    const roundLabel = rndN > 0 ? (multN > 1 ? `${rndN}R×${multN}` : `${rndN}R`) : "";
 
                     // 液晶出玉(dispN)は簡易フローでは入力しないため必須から除外
                     const requiredOk = rotN > 0 && trayN > 0 && rndN > 0;
@@ -5389,7 +5357,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             case "pushAmount": return (D.pushAmount || 0) > 0 ? `+${(D.pushAmount).toLocaleString()}` : "なし";
                             case "rotCount":   return rotN > 0 ? f(rotN) : "";
                             case "trayBalls":  return trayN > 0 ? f(trayN) : "";
-                            case "rounds":     return rndN > 0 ? `${rndN}` : "";
+                            case "rounds":     return roundLabel;
                             case "displayBalls": return dispN > 0 ? f(dispN) : "";
                             case "actualBalls":  return actualN > 0 ? f(actualN) : "";
                             default: return "";
@@ -5507,7 +5475,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         { label: "プッシュ補正額", value: (D.pushAmount || 0) > 0 ? `+${(D.pushAmount).toLocaleString()}` : "0", unit: "円" },
                         { label: "当たった回転数", value: rotN > 0 ? f(rotN) : "--",   unit: "回転" },
                         { label: "開始前の玉数",   value: trayN > 0 ? f(trayN) : "--", unit: "玉" },
-                        { label: "ラウンド数",     value: rndN > 0 ? `${rndN}R` : "--", unit: "" },
+                        { label: "ラウンド数",     value: roundLabel || "--", unit: multN > 1 ? `（合計${rndN * multN}R）` : "" },
                     ];
 
                     // プッシュ補正額のプリセット
@@ -5518,10 +5486,11 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         { label: "クリア", onClick: () => updField("pushAmount", 0),     active: false },
                     ];
 
-                    // ラウンド数のプリセット（機種マスタ + デフォルト 10R）
-                    const rndPresetList = [...new Set([...machineRounds, 3, 4, 7, 10])].slice(0, 6).sort((a, b) => a - b);
-                    const roundPresets = rndPresetList.map(r => ({
-                        label: `${r}R`, active: rndN === r, onClick: () => updField("rounds", r)
+                    // ラウンド数のプリセット（状態別の詳細振分を含む）
+                    const roundPresets = machineRounds.slice(0, 6).map(({ rounds: r, mult: m }) => ({
+                        label: m > 1 ? `${r}R×${m}` : `${r}R`,
+                        active: rndN === r && multN === m,
+                        onClick: () => setHitWizardData(d => ({ ...d, rounds: r, mult: m })),
                     }));
 
                     // 現在ステップの表示テキスト（中央の大きな値）
@@ -5530,7 +5499,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             case "pushAmount":   return (D.pushAmount || 0) > 0 ? `+${(D.pushAmount).toLocaleString()}` : "0";
                             case "rotCount":     return rotN > 0 ? f(rotN) : "0";
                             case "trayBalls":    return trayN > 0 ? f(trayN) : "0";
-                            case "rounds":       return rndN > 0 ? `${rndN}` : "0";
+                            case "rounds":       return rndN > 0 ? (multN > 1 ? `${rndN}R×${multN}` : `${rndN}`) : "0";
                             case "displayBalls": return dispN > 0 ? f(dispN) : "0";
                             case "actualBalls":  return actualN > 0 ? f(actualN) : "0";
                             default: return "";
@@ -5538,7 +5507,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     })();
                     const bigValueUnit = curStep.id === "pushAmount" ? "円"
                         : curStep.id === "rotCount" ? "回転"
-                        : curStep.id === "rounds" ? "R"
+                        : curStep.id === "rounds" ? (multN > 1 ? "" : "R")
                         : curStep.id === "result" ? "" : "玉";
 
                     const themeColor = C.blue;
