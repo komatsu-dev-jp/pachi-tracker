@@ -262,6 +262,33 @@
   font-weight: 900;
 }
 
+.ms-model-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -2px 0 14px;
+  color: #dbeafe;
+  font-size: 13px;
+}
+
+.ms-model-name > span {
+  color: #93a4bd;
+  font-weight: 700;
+}
+
+.ms-model-name > strong {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.ms-model-name > a {
+  color: #67e8f9;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .ms-allocation-mode + .ms-allocation-mode {
   margin-top: 16px;
   padding-top: 16px;

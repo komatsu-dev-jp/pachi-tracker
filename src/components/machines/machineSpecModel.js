@@ -4,6 +4,9 @@
 
 export const fallbackMachine = {
   name: "P大海物語5 MTE2",
+  modelName: "型式未登録",
+  modelVerified: false,
+  modelSourceUrl: "",
   meta: "三洋 | ハイミドル | 3個賞球",
   tags: ["海シリーズ", "m_master連携", "削り込み適用"],
   updatedAt: "2026/06/02 18:42",
@@ -239,6 +242,10 @@ export function normalizeMachine(data) {
 
   const model = {
     name: data.name || fallbackMachine.name,
+    modelName: plainText(data.modelName) || fallbackMachine.modelName,
+    modelVerified: data.modelVerified === true,
+    modelSourceUrl: plainText(data.modelSourceUrl),
+    modelUpdatedAt: plainText(data.modelUpdatedAt),
     maker,
     type,
     synthProb: rawNum(synthProb),

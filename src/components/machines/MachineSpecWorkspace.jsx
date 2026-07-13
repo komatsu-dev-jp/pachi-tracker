@@ -250,6 +250,14 @@ function DetailScreen({ machine, synced, onToggleSync, onEdit, onBack, primaryAc
         <section className="ms-hero-panel">
           <h2>{machine.name}</h2>
           <p>{machine.meta}</p>
+          <div className="ms-model-name">
+            <span>正式型式</span>
+            <strong>{machine.modelName}</strong>
+            {machine.modelVerified && <Pill tone="success">型式確認済み</Pill>}
+            {machine.modelSourceUrl && (
+              <a href={machine.modelSourceUrl} target="_blank" rel="noreferrer">確認元</a>
+            )}
+          </div>
           <div className="ms-tag-row">
             {machine.tags.map((tag, index) => (
               <Pill key={tag} tone={index === 0 ? "blue" : index === 1 ? "teal" : "purple"}>

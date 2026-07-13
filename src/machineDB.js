@@ -7,7 +7,7 @@
    specSapo: サポ増減/初当たり
    ※ 理論ボーダー = synthProb × exRate / (spec1R × specAvgTotalRounds + specSapo)
 ================================================================ */
-export const machineDB = [
+const rawMachineDB = [
   // ── ミドルスペック ──
   {
     name: "P大海物語5 MTE2",
@@ -2609,6 +2609,106 @@ export const machineDB = [
   },
 ];
 
+// 正式型式レジストリ。
+// 「型式確認済み」と「大当り振り分け確認済み」は別の状態として扱う。
+// そのため、ここに型式を登録しても allocationVerified は変更しない。
+export const machineModelRegistry = Object.freeze(Object.fromEntries([
+  ["ルパン三世 消されたルパン", "P消されたルパンH1AZ1", "https://1geki.jp/pachinko/p_kesareta_lupin2022/"],
+  ["仮面ライダー轟音", "Pぱちんこ仮面ライダー轟音M6", "https://p-town.dmm.com/machines/3689"],
+  ["海物語IN沖縄5", "Pスーパー海物語IN沖縄5SCF", "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20210702.pdf"],
+  ["ジューシーハニー3", "Pジューシーハニー3MGY2", "https://1geki.jp/pachinko/p_jh3/"],
+  ["海物語IN沖縄5 甘デジ", "PAスーパー海物語IN沖縄5SBA", "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20211203.pdf"],
+  ["大海物語5 甘デジ", "PA大海物語5ARBC", "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20230602.pdf"],
+  ["ガンダムSEED", "Pフィーバー機動戦士ガンダムSEED S", "https://www.sankyo-fever.jp/products/machine_list/pfs/spec/"],
+  ["Re:ゼロから始める異世界生活", "P Re:ゼロから始める異世界生活M06", "https://p-town.dmm.com/machines/3796"],
+  ["e東京喰種W", "e東京喰種W", "https://p-town.dmm.com/machines/4824"],
+  ["e新世紀エヴァンゲリオン ～はじまりの記憶～", "e新世紀エヴァンゲリオン17 はじまりの記憶R", "https://www.pref.okayama.jp/uploaded/life/1015492_9802765_misc.pdf"],
+  ["PAフィーバーからくりサーカス2YF", "PAフィーバーからくりサーカス2YF", "https://www.pref.okayama.jp/uploaded/life/1015492_9802765_misc.pdf"],
+  ["P大海物語5スペシャル", "P大海物語5スペシャルALTA", "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20240906.pdf"],
+  ["Pスーパー海物語IN沖縄6 LTP", "Pスーパー海物語IN沖縄6LTP", "https://www.sanyobussan.co.jp/products/pachinko/p_oki6/"],
+  ["eカケグルイ219ver.", "eカケグルイLTT-NV", "https://daiichi.net/pdf/mente/rakito.pdf"],
+  ["eカケグルイ7500ver.", "eカケグルイ～生か死か～LTT-KR", "https://daiichi.net/pdf/mente/rakito.pdf"],
+  ["eひきこまり吸血姫の悶々", "eひきこまり吸血姫の悶々FHV", "https://daiichi.net/pdf/mente/rakito.pdf"],
+  ["P犬夜叉3.0甘SPEC", "P犬夜叉FH-NF", "https://1geki.jp/pachinko/p_inuyasha3_ama/"],
+  ["eバイオハザード6", "eバイオハザード6APN", "https://daiichi.net/pdf/mente/rakito.pdf"],
+  ["eリコリス・リコイル", "eリコリス・リコイルM3", "https://www.pref.yamanashi.jp/documents/84365/r0801.pdf"],
+  ["PA海物語 極JAPAN Withナギナミ", "PA海物語極ジャパンHBD", "https://www.sanyobussan.co.jp/products/pachinko/pa_kiwami_japan/"],
+  ["Pスーパー海物語IN沖縄6", "Pスーパー海物語IN沖縄6LTP", "https://www.sanyobussan.co.jp/products/pachinko/p_oki6/"],
+  ["PA海物語3R3", "PA海物語3R3LBA / PA海物語3R3LBAW", "https://www.sanyobussan.co.jp/products/pachinko/pa_umi3r3/"],
+  ["P海物語 極JAPAN", "P海物語極ジャパンHTH", "https://www.sanyobussan.co.jp/products/pachinko/p_kiwami_japan/"],
+  ["PA大海物語5ブラックLT99ver.", "PA大海物語5HLD", "https://www.p-world.co.jp/machine/database/10393"],
+  ["e大海物語5スペシャル", "e大海物語5スペシャルELTA4", "https://www.sanyobussan.co.jp/products/pachinko/e_daium5_sp/"],
+  ["PAスーパー海物語IN地中海2", "PAスーパー海物語IN地中海2HLA", "https://www.sanyobussan.co.jp/products/pachinko/pa_chichukai2/"],
+  ["P大海物語5ブラック", "P大海物語5HCL", "https://1geki.jp/pachinko/p_daiumi5_black/"],
+  ["e新海物語349", "e新海物語349ELTH", "https://www.p-world.co.jp/machine/database/10378"],
+  ["PA大海物語5 Withアグネス・ラム", "PA大海物語5ARBC", "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20230602.pdf"],
+  ["P大海物語5", "P大海物語5MTE2", "https://www.sanyobussan.co.jp/products/pachinko/p_daium5/"],
+  ["PAスーパー海物語IN沖縄5 夜桜超旋風99ver.", "PAスーパー海物語IN沖縄5YBA", "https://www.sanyobussan.co.jp/products/pachinko/pa_oki5_yozakura/"],
+  ["PA新海物語", "PA新海物語ARBB", "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20220603.pdf"],
+  ["Pスーパー海物語IN沖縄5 夜桜超旋風", "Pスーパー海物語IN沖縄5YTC", "https://www.sanyobussan.co.jp/products/pachinko/p_oki5_yozakura/"],
+  ["PAスーパー海物語IN沖縄5 with アイマリン", "PAスーパー海物語IN沖縄5SBA", "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20211203.pdf"],
+  ["Pスーパー海物語IN沖縄5 桜199ver.", "Pスーパー海物語IN沖縄5SCF", "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20210702.pdf"],
+  ["e範馬刃牙 199ver.", "eバキ2LBM4", "https://www.pref.fukui.lg.jp/kenkei/doc/kenkei/yuugikikenteikouji_d/fil/R707yugikikenteikouji.pdf"],
+  ["P閃乱カグラ189大入りver.", "P閃乱カグラLTN-FS", "https://www.p-world.co.jp/machine/database/10401"],
+  ["e ULTRAMAN 4500超ライト", "eULTRAMAN-111verK4", "https://www.p-world.co.jp/machine/database/10424"],
+  ["e盾の勇者の成り上がりアルティメット199ver.", "e盾の勇者の成り上がりEREF", "https://news.p-world.co.jp/articles/33974/greenbelt"],
+  ["PF彼女、お借りします LT-Light ver.", "Pフィーバー彼女、お借りしますLR", "https://www.pref.yamanashi.jp/documents/84365/r0709.pdf"],
+  ["PFうたわれるもの LT-Light ver.", "PAフィーバーうたわれるものY", "https://www.pref.yamanashi.jp/documents/84365/r0709.pdf"],
+  ["PA清流物語4ウキウキ79ver.", "PA清流物語4HBB", "https://www.sanyobussan.co.jp/products/pachinko/pa_seiryu4/"],
+  ["eようこそ実力至上主義の教室へ", "eようこそ実力至上主義の教室へMA", "https://www.pref.yamanashi.jp/documents/84365/r0710.pdf"],
+  ["e吉宗極乗3000ver.", "e／吉宗極乗3000ver／L06", "https://www.pref.fukui.lg.jp/kenkei/doc/kenkei/yuugikikenteikouji_d/fil/R707yugikikenteikouji.pdf"],
+  ["Pリングにかけろ1 129ver.", "Pリングにかけろ1LM", "https://1geki.jp/pachinko/p_ringnikakero1_129/"],
+  ["eゴジラ対エヴァンゲリオン2 超デカゴールド", "eゴジラ対エヴァンゲリオン2超デカゴールドTR", "https://www.daiichi.net/pdf/mente/rakito.pdf"],
+  ["Pゴジラ対エヴァンゲリオン2 超デカシルバー", "Pゴジラ対エヴァンゲリオン2超デカシルバーLV", "https://www.daiichi.net/pdf/mente/rakito.pdf"],
+  ["eソードアート・オンライン99Ver.", "eソードアート・オンライン～閃光の軌跡～99Ver.K1", "https://www.pref.fukui.lg.jp/kenkei/doc/kenkei/yuugikikenteikouji_d/fil/R707yugikikenteikouji.pdf"],
+  ["e真・北斗無双 第5章 夢幻闘双", "e真北斗無双5夢幻闘双SCEA", "https://www.pref.okayama.jp/uploaded/life/1015492_9802765_misc.pdf"],
+  ["eフィーバーBASTARD!! -暗黒の破壊神-", "eフィーバーバスタードG", "https://1geki.jp/pachinko/e_bastard/"],
+  ["e牙狼11〜冴島大河〜魔戒BURST Ver.", "e牙狼トリプルバーストRF", "https://www.p-world.co.jp/machine/database/10446"],
+  ["e魔法少女まどか☆マギカ3 時間遡行", "e魔法少女まどか☆マギカ3LPM1", "https://www.p-world.co.jp/machine/database/10445"],
+  ["e北斗の拳11 暴凶星", "e北斗の拳11暴凶星SHEF", "https://www.pref.okayama.jp/uploaded/life/1030473_9967706_misc.pdf"],
+  ["e花の慶次～黄金の一撃", "e花の慶次～黄金の一撃H4", "https://1geki.jp/pachinko/e_hanano_kei_ougon/"],
+  ["e仮面ライダー電王 デカヘソ239", "e仮面ライダー電王-239verK2", "https://www.p-world.co.jp/machine/database/10362"],
+  ["eとある科学の超電磁砲 PHASE NEXT", "eとある科学の超電磁砲LTRSY", "https://www.daiichi.net/pdf/mente/rakito.pdf"],
+  ["eフィーバー炎炎ノ消防隊2 シンラver.", "eフィーバー炎炎ノ消防隊2", "https://www.sankyo-fever.jp/collection/984/"],
+  ["e真・一騎当千～軍神覚醒～ 396ver.", "e真・一騎当千～軍神覚醒～LTM-JH", "https://www.pref.yamanashi.jp/documents/84365/r0706.pdf"],
+  ["e真・北斗無双 第5章 ドデカSTART", "e真北斗無双5SFEE", "https://1geki.jp/pachinko/e_sinhmusou5ds/"],
+  ["eルパン三世 ONE COLLECTION 超ブチヌキLTver.", "eルパン三世14L9YZ5", "https://news.p-world.co.jp/articles/29556/yugitsushin"],
+  ["eぱちんこ押忍!番長 男の頂", "e／押忍番長漢の頂／L09", "https://news.p-world.co.jp/articles/29596/yugitsushin"],
+  ["Pフィーバーからくりサーカス2 運命ver.", "Pフィーバーからくりサーカス2T", "https://www.pref.okayama.jp/uploaded/life/1015492_9802749_misc.pdf"],
+  ["eフィーバーからくりサーカス2 魔王ver.", "eフィーバーからくりサーカス2R", "https://www.sankyo-fever.jp/collection/968/"],
+  ["eフィーバーキン肉マン", "eフィーバーキン肉マン", "https://www.pref.okayama.jp/uploaded/life/1030473_9967709_misc.pdf"],
+  ["e牙狼12黄金騎士極限 XX-MJ", "e牙狼12XX-MJ", "https://1geki.jp/pachinko/e_garo12/"],
+  ["PフィーバークィーンⅡ YS", "PAフィーバークィーンⅡYS", "https://www.pref.yamanashi.jp/documents/84365/r0801.pdf"],
+  ["eルパン三世VSキャッツ・アイ 157ver. 極限突破ブッた斬り7500", "eルパン三世VSキャッツアイLBM6", "https://pachimaga.com/free/mach/maker-p/amutex/064974.php"],
+  ["eライザのアトリエ 常闇の女王と秘密の隠れ家 K3", "eライザのアトリエK3", "https://www.daiichi.net/pdf/mente/rakito.pdf"],
+  ["e86-エイティシックス- MAM2", "eエイティシックスMAM2", "https://www.pref.yamanashi.jp/documents/84365/r0801.pdf"],
+  ["デカスタP戦国無双 100ver.", "P戦国無双N", "https://1geki.jp/pachinko/p_ds_sngkms100/"],
+  ["eまわるん超ワープ ギンギラパラダイス VIVA FESTA HTA2", "eギンパラVIVAFESTAHTA2", "https://www.pref.yamanashi.jp/documents/84365/r0801.pdf"],
+  ["P NEW TOKIO ハカマタイプ", "PニュートキオV1", "https://www.p-world.co.jp/machine/database/9389"],
+  ["eリング 最恐領域 RHA", "eリング最恐領域RHA", "https://1geki.jp/pachinko/e_ring_saikyou/"],
+  ["e女神のカフェテラス JLZ", "e女神のカフェテラスJLZ", "https://www.pref.shizuoka.jp/police/_res/projects/project_police/_page_/002/001/249/20250401-20260131kenteiyugiki.pdf"],
+  ["Pクイーンズブレイド奈落 ナナエル79Ver.", "Pクイーンズブレイド奈落V3B", "https://g-net-ps.com/info/p0551/"],
+  ["Pデビルマン THE FINAL", "PデビルマンN4-S", "https://www.police.pref.tokushima.jp/wp-content/uploads/post16554/yuugiki20241030.pdf"],
+  ["ぱちんこ シン・エヴァンゲリオン 129 LT ver.", "Pシン・エヴァンゲリオンMV", "https://www.p-world.co.jp/machine/database/10206"],
+  ["eノーゲーム・ノーライフ 319Ver.", "eノーゲーム・ノーライフV1B", "https://1geki.jp/pachinko/e_ngnl_319/"],
+  ["e聖戦士ダンバイン", "e聖戦士ダンバイン3GREA", "https://1geki.jp/pachinko/e_dunbine3_zs/"],
+  ["eフィーバーブルーロック", "eフィーバーブルーロックMZ", "https://g-net-ps.com/info/p0456-2/"],
+  ["eフィーバー戦姫絶唱シンフォギア4 キャロルver.", "eフィーバー戦姫絶唱シンフォギア4F", "https://www.sankyo-fever.jp/collection/972/"],
+  ["PAスーパー海物語IN JAPAN2 with 太鼓の達人", "PAスーパー海物語INジャパン2MG", "https://pachinko-spec.info/spec-detail/1109/"],
+  ["PA海物語3R2スペシャル", "PA海物語3R2スペシャルMBA", "https://pachinko-spec.info/spec-detail/26365/"],
+  ["PAスーパー海物語IN地中海SBA", "PAスーパー海物語IN地中海SBA", "https://www.pref.okayama.jp/uploaded/life/1002555_9663976_misc.pdf"],
+].map(([name, modelName, modelSourceUrl]) => [name, Object.freeze({
+  modelName,
+  modelVerified: true,
+  modelSourceUrl,
+  modelUpdatedAt: "2026-07-13",
+})])));
+
+export const machineDB = rawMachineDB.map((machine) => ({
+  ...machine,
+  ...(machineModelRegistry[machine.name] || {}),
+}));
+
 // 機種に設定するスペック値を決定する（applyMachine / 稼働開始セットアップ共通）。
 // 旧形式（spec1R / specAvgTotalRounds / specSapo を持つ機種）はその値をそのまま返す。
 // 新形式（border1K のみを持つ機種）は、理論ボーダー＝border1K を再現する
@@ -2647,6 +2747,7 @@ export function searchMachines(query, customMachines = []) {
   const q = query.trim().toLowerCase();
   return allMachines.filter(m =>
     m.name.toLowerCase().includes(q) ||
+    (m.modelName && m.modelName.toLowerCase().includes(q)) ||
     (Array.isArray(m.aliases) && m.aliases.some(alias => String(alias).toLowerCase().includes(q))) ||
     (m.maker && m.maker.toLowerCase().includes(q)) ||
     (m.type && m.type.toLowerCase().includes(q))
