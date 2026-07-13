@@ -125,6 +125,32 @@ export function formatBorder(data) {
   return fallbackMachine.border;
 }
 
+function normalizeAllocationRows(rows, prefix) {
+  if (!Array.isArray(rows)) return [];
+  return rows.slice(0, 8).map((row, index) => ({
+    id: `${prefix}${index + 1}`,
+    payout: String(row.payout ?? 0),
+    ratio: String(row.rate ?? row.ratio ?? 0),
+    rounds: String(row.rounds ?? ""),
+    roundsLabel: plainText(row.roundsLabel),
+    payoutLabel: plainText(row.payoutLabel),
+    label: plainText(row.label),
+    destination: plainText(row.destination),
+  }));
+}
+
+function normalizeAllocationModes(modes, prefix) {
+  if (!Array.isArray(modes)) return [];
+  return modes
+    .map((mode, index) => ({
+      id: `${prefix}MODE${index + 1}`,
+      name: plainText(mode.name) || `${prefix}${index + 1}`,
+      note: plainText(mode.note),
+      rows: normalizeAllocationRows(mode.rows, `${prefix}${index + 1}-`),
+    }))
+    .filter((mode) => mode.rows.length > 0);
+}
+
 function pct(value) {
   const n = toNum(value);
   return n > 0 ? `${n}%` : "";
@@ -171,9 +197,12 @@ export function normalizeMachine(data) {
   const border1K = getBorder1K(data);
   // ラウンド振分文字列（初当たり=roundDist / 確変中=rushDist）を行に取り込む。
   // hesoDist と roundDist は機種マスタ上は独立配列のため、件数が一致するときのみ行へ対応付ける。
+  const hesoModes = normalizeAllocationModes(data.hesoModes, "ヘソ");
   const hesoSrc = Array.isArray(data.hesoDist) ? data.hesoDist.slice(0, 3) : [];
   const roundEntries = parseDist(data.roundDist);
-  const heso = hesoSrc.length > 0
+  const heso = hesoModes[0]?.rows?.length > 0
+    ? hesoModes[0].rows
+    : hesoSrc.length > 0
     ? hesoSrc.map((row, index) => ({
         id: `ヘソ${index + 1}`,
         payout: String(row.payout ?? 0),
@@ -186,9 +215,12 @@ export function normalizeMachine(data) {
   // 特図2・RUSH（確変中）の出玉振分。機種マスタに rushDist 配列があれば採用し、
   // なければ RUSH平均出玉を 100% の単一振分として初期表示する（後から編集・追加可能）。
   // R数は rushDist 文字列があれば取り込む。
+  const rushModes = normalizeAllocationModes(data.rushModes, "RUSH");
   const rushAvgNum = Number(data.rushAvgPayout);
   const rushRoundEntries = parseDist(typeof data.rushDist === "string" ? data.rushDist : "");
-  const rush = Array.isArray(data.rushDist) && data.rushDist.length > 0
+  const rush = rushModes[0]?.rows?.length > 0
+    ? rushModes[0].rows
+    : Array.isArray(data.rushDist) && data.rushDist.length > 0
     ? data.rushDist.slice(0, 4).map((row, index) => ({
         id: `RUSH${index + 1}`,
         payout: String(row.payout ?? 0),
@@ -247,6 +279,9 @@ export function normalizeMachine(data) {
     ],
     heso,
     rush,
+    hesoModes,
+    rushModes,
+    allocationNote: plainText(data.allocationNote),
     roundDist: data.roundDist || fallbackMachine.roundDist || "1500発 100%",
     rushDist: data.rushDist || fallbackMachine.rushDist || "1500発 100%",
   };
@@ -331,11 +366,37 @@ export function buildMachineOverride(rawSource, model) {
   writeNumIfChanged(out, "mcWinRate", model.mcWinRate, init.mcWinRate);
 
   // 振分（ラウンド数）→ 記録フロー用の roundDist / rushDist
-  out.roundDist = buildDist(model.heso) || rawSource?.roundDist || "";
-  out.rushDist = buildDist(model.rush) || rawSource?.rushDist || "";
+  const hesoChanged = rowsChanged(model.heso, init.heso);
+  const rushChanged = rowsChanged(model.rush, init.rush);
+  out.roundDist = hesoChanged ? (buildDist(model.heso) || rawSource?.roundDist || "") : (rawSource?.roundDist || "");
+  out.rushDist = rushChanged ? (buildDist(model.rush) || rawSource?.rushDist || "") : (rawSource?.rushDist || "");
+
+  // 状態別振分を持つ機種では、編集対象の先頭モードだけを書き換え、上位RUSHなど他モードは保全する。
+  if (Array.isArray(rawSource?.hesoModes) && hesoChanged) {
+    out.hesoModes = rawSource.hesoModes.map((mode, modeIndex) => modeIndex > 0 ? mode : ({
+      ...mode,
+      rows: model.heso.map((row, index) => ({
+        ...(mode.rows?.[index] || {}),
+        payout: toNum(row.payout),
+        rate: toNum(row.ratio),
+        rounds: toNum(row.rounds),
+      })),
+    }));
+  }
+  if (Array.isArray(rawSource?.rushModes) && rushChanged) {
+    out.rushModes = rawSource.rushModes.map((mode, modeIndex) => modeIndex > 0 ? mode : ({
+      ...mode,
+      rows: model.rush.map((row, index) => ({
+        ...(mode.rows?.[index] || {}),
+        payout: toNum(row.payout),
+        rate: toNum(row.ratio),
+        rounds: toNum(row.rounds),
+      })),
+    }));
+  }
 
   // hesoDist（出玉×比率）。元データに在った or 行が変更された場合のみ。
-  if (Array.isArray(rawSource?.hesoDist) || rowsChanged(model.heso, init.heso)) {
+  if (Array.isArray(rawSource?.hesoDist) || hesoChanged) {
     out.hesoDist = model.heso
       .filter((h) => toNum(h.payout) > 0 || toNum(h.ratio) > 0)
       .map((h) => ({ payout: toNum(h.payout), rate: toNum(h.ratio) }));

@@ -168,6 +168,68 @@ check("T6_基本スペック編集を保存", () => {
   assert.strictEqual(ov.mcWinRate, 55.5, "mcWinRate");
 });
 
+// ── T7: 状態別振分は各表100%で、表示用のR数・行き先も保持する ──
+check("T7_状態別振分を正規化", () => {
+  const src = machineDB.find((m) => m.name === "e 東京リベンジャーズ 聖夜決戦編");
+  const model = normalizeMachine(src);
+  assert.strictEqual(model.hesoModes.length, 1, "ヘソモード数");
+  assert.strictEqual(model.rushModes.length, 3, "RUSHモード数");
+  for (const mode of [...model.hesoModes, ...model.rushModes]) {
+    assert.strictEqual(sumRatio(mode.rows), 100, `${mode.name}の比率合計`);
+  }
+  assert.strictEqual(model.hesoModes[0].rows[0].rounds, "2", "初当りは2R");
+  assert.strictEqual(model.rushModes[1].rows[0].roundsLabel, "10R×2", "CLIMAXは10R×2");
+  assert.strictEqual(model.rushModes[1].rows[0].destination || model.rushModes[1].rows[0].label, "CLIMAX継続");
+});
+
+// ── T8: 状態別振分を無編集保存しても、可変R表記や他のRUSH状態を壊さない ──
+check("T8_状態別振分の無編集保存を保全", () => {
+  const src = structuredClone(machineDB.find((m) => m.name === "e ソードアート・オンライン アリシゼーション 夜空"));
+  const model = normalizeMachine(src);
+  const ov = buildMachineOverride(src, model);
+  assert.strictEqual(ov.roundDist, src.roundDist, "roundDist");
+  assert.strictEqual(ov.rushDist, src.rushDist, "rushDist");
+  assert.deepStrictEqual(ov.hesoModes, src.hesoModes, "hesoModes");
+  assert.deepStrictEqual(ov.rushModes, src.rushModes, "rushModes");
+});
+
+// ── T9: 今回の全対象機種は、状態別の各振分が100% ──
+check("T9_対象8機種の全振分が100%", () => {
+  const targets = [
+    "PAスーパー海物語IN沖縄6 Withえなこ",
+    "Pフィーバー機動戦士ガンダムSEED LT-Light ver.",
+    "e 東京リベンジャーズ 聖夜決戦編",
+    "e 無職転生 ～異世界行ったら本気だす～",
+    "e結城友奈は勇者である～極限7500～",
+    "e 東京喰種 超デカ超一撃ver.",
+    "ぱちんこ 必殺仕事人Ⅵ",
+    "e ソードアート・オンライン アリシゼーション 夜空",
+  ];
+  for (const name of targets) {
+    const src = machineDB.find((m) => m.name === name);
+    assert.ok(src, `${name}が未登録`);
+    const model = normalizeMachine(src);
+    for (const mode of [...model.hesoModes, ...model.rushModes]) {
+      assert.strictEqual(sumRatio(mode.rows), 100, `${name} / ${mode.name}`);
+    }
+  }
+});
+
+// ── T10: 公開サイトで照合した主要振分を固定し、後の変更で架空値へ戻るのを防ぐ ──
+check("T10_公開振分の主要値を固定", () => {
+  const byName = (name) => machineDB.find((m) => m.name === name);
+  const signature = (rows) => rows.map((r) => [r.roundsLabel || r.rounds, r.payoutLabel || r.payout, r.rate]);
+
+  assert.deepStrictEqual(signature(byName("PAスーパー海物語IN沖縄6 Withえなこ").hesoModes[0].rows), [[10, 1000, 1], [6, 600, 50], [4, 400, 4], [4, 400, 45]]);
+  assert.deepStrictEqual(signature(byName("Pフィーバー機動戦士ガンダムSEED LT-Light ver.").hesoModes[0].rows), [[10, 1500, 1], [2, 300, 99]]);
+  assert.deepStrictEqual(signature(byName("e 東京リベンジャーズ 聖夜決戦編").hesoModes[0].rows), [[2, 300, 50], [2, 300, 50]]);
+  assert.deepStrictEqual(signature(byName("e 無職転生 ～異世界行ったら本気だす～").rushModes[0].rows), [["10R×4", 6000, 23.5], ["10R×2", 3000, 26.5], [10, 1500, 50]]);
+  assert.deepStrictEqual(signature(byName("e結城友奈は勇者である～極限7500～").rushModes[0].rows), [["10R×5", 7500, 18.75], [10, 1500, 56.25], [0, 0, 25]]);
+  assert.deepStrictEqual(signature(byName("e 東京喰種 超デカ超一撃ver.").hesoModes[0].rows), [["10R×5", 7500, 17.5], ["10R×2", 3000, 17.5], [2, 300, 65]]);
+  assert.deepStrictEqual(signature(byName("ぱちんこ 必殺仕事人Ⅵ").hesoModes[0].rows), [[3, 450, 46], [0, 0, 8], [3, 450, 46]]);
+  assert.deepStrictEqual(signature(byName("e ソードアート・オンライン アリシゼーション 夜空").hesoModes[0].rows), [["10R×2～6＋α", "3000～9000個＋α", 1.5], [2, 300, 48.5], [2, 300, 50]]);
+});
+
 console.log(JSON.stringify(out, null, 2));
 console.log(`\n${passed} passed / ${failed} failed`);
 if (failed > 0) process.exit(1);

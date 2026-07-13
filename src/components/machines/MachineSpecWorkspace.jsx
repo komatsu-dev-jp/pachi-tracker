@@ -170,6 +170,33 @@ function MetricCard({ label, value, color, sub }) {
   );
 }
 
+function allocationLabel(row) {
+  const rounds = row.roundsLabel || (row.rounds ? `${row.rounds}R` : "");
+  const payout = row.payoutLabel || `${formatNumber(row.payout, "0")}発`;
+  const outcome = row.label || row.destination;
+  return [rounds, payout, outcome].filter(Boolean).join("・");
+}
+
+function AllocationMode({ mode, tone = "success" }) {
+  return (
+    <div className="ms-allocation-mode">
+      <div className="ms-allocation-head">
+        <strong>{mode.name}</strong>
+        <Pill tone={tone}>比率合計 {sumRatio(mode.rows)}%</Pill>
+      </div>
+      <div className="ms-chip-row">
+        {mode.rows.map((row) => (
+          <React.Fragment key={row.id}>
+            <span>{allocationLabel(row)}</span>
+            <strong>{row.ratio}%</strong>
+          </React.Fragment>
+        ))}
+      </div>
+      {mode.note && <p className="ms-allocation-note">{mode.note}</p>}
+    </div>
+  );
+}
+
 function CheckMark({ status = "ok" }) {
   return (
     <span className={`ms-check ms-check-${status}`}>
@@ -180,6 +207,12 @@ function CheckMark({ status = "ok" }) {
 
 function DetailScreen({ machine, synced, onToggleSync, onEdit, onBack, primaryActionLabel, onPrimaryAction }) {
   const [tsvCopied, setTsvCopied] = useState(false);
+  const hesoModes = machine.hesoModes?.length
+    ? machine.hesoModes
+    : [{ id: "heso-default", name: "特図1・ヘソ", rows: machine.heso }];
+  const rushModes = machine.rushModes?.length
+    ? machine.rushModes
+    : [{ id: "rush-default", name: "特図2・RUSH", rows: machine.rush || [] }];
 
   const copyTsv = async () => {
     const text = machine.tsv.join("\t");
@@ -241,31 +274,10 @@ function DetailScreen({ machine, synced, onToggleSync, onEdit, onBack, primaryAc
         <section className="ms-panel">
           <h2>大当り振分サマリー</h2>
           <div className="ms-allocation-box">
-            <div className="ms-allocation-head">
-              <strong>特図1・ヘソ</strong>
-              <Pill tone="success">比率合計 {sumRatio(machine.heso)}%</Pill>
-            </div>
-            <div className="ms-chip-row">
-              {machine.heso.map((row) => (
-                <React.Fragment key={row.id}>
-                  <span>{row.rounds ? `${row.rounds}R ` : ""}{formatNumber(row.payout, "0")}発</span>
-                  <strong>{row.ratio}%</strong>
-                </React.Fragment>
-              ))}
-            </div>
+            {hesoModes.map((mode) => <AllocationMode key={mode.id} mode={mode} />)}
             <div className="ms-divider" />
-            <div className="ms-allocation-head">
-              <strong>特図2・RUSH</strong>
-              <Pill tone="orange">比率合計 {sumRatio(machine.rush || [])}%</Pill>
-            </div>
-            <div className="ms-chip-row">
-              {(machine.rush || []).map((row) => (
-                <React.Fragment key={row.id}>
-                  <span>{row.rounds ? `${row.rounds}R ` : ""}{formatNumber(row.payout, "0")}発</span>
-                  <strong>{row.ratio}%</strong>
-                </React.Fragment>
-              ))}
-            </div>
+            {rushModes.map((mode) => <AllocationMode key={mode.id} mode={mode} tone="orange" />)}
+            {machine.allocationNote && <p className="ms-allocation-note ms-allocation-note-global">{machine.allocationNote}</p>}
             <div className="ms-summary-line">
               ヘソ平均出玉 <b>{machine.hesoAvg}</b>
               <span>/</span>
@@ -485,6 +497,19 @@ function RegisterScreen({ machine, onSave, onBack }) {
   });
 
   const handleSave = () => {
+    const updatedHeso = form.heso.map((h, i) => ({
+      id: `ヘソ${i + 1}`,
+      payout: plainNum(h.payout) || "0",
+      ratio: plainNum(h.ratio) || "0",
+      rounds: plainNum(h.rounds),
+      rush: h.rush,
+    }));
+    const updatedRush = form.rush.map((h, i) => ({
+      id: `RUSH${i + 1}`,
+      payout: plainNum(h.payout) || "0",
+      ratio: plainNum(h.ratio) || "0",
+      rounds: plainNum(h.rounds),
+    }));
     const updated = {
       ...machine,
       name: form.name.trim() || machine.name,
@@ -514,19 +539,16 @@ function RegisterScreen({ machine, onSave, onBack }) {
       mcExpectedDaily: plainNum(form.mcExpectedDaily),
       mcWinRate: plainNum(form.mcWinRate),
       synced: form.synced,
-      heso: form.heso.map((h, i) => ({
-        id: `ヘソ${i + 1}`,
-        payout: plainNum(h.payout) || "0",
-        ratio: plainNum(h.ratio) || "0",
-        rounds: plainNum(h.rounds),
-        rush: h.rush,
-      })),
-      rush: form.rush.map((h, i) => ({
-        id: `RUSH${i + 1}`,
-        payout: plainNum(h.payout) || "0",
-        ratio: plainNum(h.ratio) || "0",
-        rounds: plainNum(h.rounds),
-      })),
+      heso: updatedHeso,
+      rush: updatedRush,
+      hesoModes: machine.hesoModes?.map((mode, modeIndex) => modeIndex > 0 ? mode : ({
+        ...mode,
+        rows: updatedHeso.map((row, index) => ({ ...(mode.rows[index] || {}), ...row })),
+      })) || [],
+      rushModes: machine.rushModes?.map((mode, modeIndex) => modeIndex > 0 ? mode : ({
+        ...mode,
+        rows: updatedRush.map((row, index) => ({ ...(mode.rows[index] || {}), ...row })),
+      })) || [],
       // R数が入力されていれば記録フロー用の roundDist / rushDist を再生成（未入力なら従来値を維持）
       roundDist: buildDist(form.heso) || machine.roundDist,
       rushDist: buildDist(form.rush) || machine.rushDist,
