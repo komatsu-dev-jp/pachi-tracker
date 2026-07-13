@@ -233,7 +233,7 @@ function DetailScreen({ machine, synced, onToggleSync, onEdit, onBack, primaryAc
           <MetricCard label="大当り確率" value={machine.probability} color="yellow" />
           <MetricCard label="ボーダー(1k)" value={machine.border} color="cyan" />
           <MetricCard label="1大当り平均出玉" value={machine.avgPayout} color="green" sub="削り込み" />
-          <MetricCard label="標準偏差" value={machine.stdDev} color="blue" />
+          <MetricCard label="標準偏差" value={machine.stdDev} color="blue" sub={machine.stdDevSource} />
           <MetricCard label="RUSH突入率" value={machine.rushEntry} color="orange" />
           <MetricCard label="RUSH継続率" value={machine.rushContinue} color="orange" />
         </section>

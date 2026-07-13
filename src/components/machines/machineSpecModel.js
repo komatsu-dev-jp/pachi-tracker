@@ -121,6 +121,7 @@ export function getBorder1K(data) {
 export function formatBorder(data) {
   const border1K = getBorder1K(data);
   if (border1K > 0) return formatNumber(border1K);
+  if (data?.borderLabel) return data.borderLabel;
   return fallbackMachine.border;
 }
 
@@ -227,7 +228,8 @@ export function normalizeMachine(data) {
     probability: formatProbability(data),
     border: formatBorder(data),
     avgPayout: formatNumber(data.avgPayoutPerHit, fallbackMachine.avgPayout),
-    stdDev: formatNumber(data.stdDev, fallbackMachine.stdDev),
+    stdDev: Number(data.stdDev) > 0 ? formatNumber(data.stdDev) : (data.stdDevLabel || "未公表"),
+    stdDevSource: data.stdDevLabel || (Number(data.stdDev) > 0 ? "登録値" : "未公表"),
     rushEntry: Number(data.rushEntryRate) > 0 ? `${data.rushEntryRate}%` : fallbackMachine.rushEntry,
     rushContinue: Number(data.rushContinueRate) > 0 ? `${data.rushContinueRate}%` : fallbackMachine.rushContinue,
     hesoAvg: formatNumber(data.hesoAvgPayout, fallbackMachine.hesoAvg),
