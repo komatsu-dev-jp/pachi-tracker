@@ -55,7 +55,6 @@ const mappingGroups = {
 const segmentKeys = ["必須", "出玉", "MC", "振分"];
 
 const validationItems = [
-  ["ok", "比率合計 100%"],
   ["ok", "削り込み計算 OK"],
   ["ok", "重複なし"],
   ["ok", "関数列に未入力"],
@@ -213,6 +212,8 @@ function DetailScreen({ machine, synced, onToggleSync, onEdit, onBack, primaryAc
   const rushModes = machine.rushModes?.length
     ? machine.rushModes
     : [{ id: "rush-default", name: "特図2・RUSH", rows: machine.rush || [] }];
+  const allocationRatioOk = machine.allocationUsable
+    && [...hesoModes, ...rushModes].every((mode) => mode.rows.length > 0 && Math.abs(sumRatio(mode.rows) - 100) < 0.001);
 
   const copyTsv = async () => {
     const text = machine.tsv.join("\t");
@@ -274,20 +275,28 @@ function DetailScreen({ machine, synced, onToggleSync, onEdit, onBack, primaryAc
         <section className="ms-panel">
           <h2>大当り振分サマリー</h2>
           <div className="ms-allocation-box">
-            {hesoModes.map((mode) => <AllocationMode key={mode.id} mode={mode} />)}
-            <div className="ms-divider" />
-            {rushModes.map((mode) => <AllocationMode key={mode.id} mode={mode} tone="orange" />)}
-            {machine.allocationNote && <p className="ms-allocation-note ms-allocation-note-global">{machine.allocationNote}</p>}
-            {machine.hasExplicitAllocationModes ? (
+            {!machine.allocationUsable ? (
               <p className="ms-allocation-note ms-allocation-note-global">
-                状態別の表を正しい振分として表示しています。平均出玉はP-EVIDENCE計算用の参考値です。
+                公開情報との照合が未完了のため、振分は表示していません。共通の1500発などで自動補完せず、確認できた値だけを登録します。
               </p>
             ) : (
-              <div className="ms-summary-line">
-                ヘソ平均出玉 <b>{machine.hesoAvg}</b>
-                <span>/</span>
-                RUSH平均出玉 <b>{machine.rushAvg}</b>
-              </div>
+              <>
+                {hesoModes.map((mode) => <AllocationMode key={mode.id} mode={mode} />)}
+                <div className="ms-divider" />
+                {rushModes.map((mode) => <AllocationMode key={mode.id} mode={mode} tone="orange" />)}
+                {machine.allocationNote && <p className="ms-allocation-note ms-allocation-note-global">{machine.allocationNote}</p>}
+                {machine.hasExplicitAllocationModes ? (
+                  <p className="ms-allocation-note ms-allocation-note-global">
+                    状態別の表を正しい振分として表示しています。平均出玉はP-EVIDENCE計算用の参考値です。
+                  </p>
+                ) : (
+                  <div className="ms-summary-line">
+                    ヘソ平均出玉 <b>{machine.hesoAvg}</b>
+                    <span>/</span>
+                    RUSH平均出玉 <b>{machine.rushAvg}</b>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </section>
@@ -313,6 +322,10 @@ function DetailScreen({ machine, synced, onToggleSync, onEdit, onBack, primaryAc
         <section className="ms-panel">
           <h2>検証ステータス</h2>
           <div className="ms-validation-grid">
+            <div className="ms-validation-item">
+              <CheckMark status={allocationRatioOk ? "ok" : "warn"} />
+              <span>{allocationRatioOk ? "振分比率合計 100%" : "振分未検証"}</span>
+            </div>
             {validationItems.map(([status, label]) => (
               <div key={label} className="ms-validation-item">
                 <CheckMark status={status} />

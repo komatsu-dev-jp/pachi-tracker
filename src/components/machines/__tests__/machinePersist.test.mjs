@@ -59,6 +59,7 @@ check("T1_無編集セーブは元データ保全", () => {
 check("T2_R数往復が記録フロー抽出を保つ", () => {
   const src = {
     name: "テスト機A",
+    isCustom: true,
     synthProb: 319.6,
     hesoDist: [{ payout: 600, rate: 40 }, { payout: 1500, rate: 60 }],
     roundDist: "4R:40%, 10R:60%",
@@ -78,6 +79,7 @@ check("T2_R数往復が記録フロー抽出を保つ", () => {
 check("T3_R数編集がroundDistへ反映", () => {
   const src = {
     name: "テスト機B",
+    isCustom: true,
     synthProb: 319.6,
     hesoDist: [{ payout: 450, rate: 30 }, { payout: 1500, rate: 70 }],
     roundDist: "3R:30%, 10R:70%",
@@ -247,6 +249,56 @@ check("T11_エヴァ15の公開振分を固定", () => {
   assert.deepStrictEqual(signature(eva15.hesoModes[0].rows), [[10, 1500, 3], [3, 450, 56], [3, 450, 41]]);
   assert.deepStrictEqual(signature(eva15.rushModes[0].rows), [[10, 1500, 100]]);
   assert.deepStrictEqual(flowRounds(eva15.roundDist), [3, 10]);
+});
+
+// ── T12: 未検証機種を共通1500発で補完しない ──
+check("T12_未検証振分の架空補完を禁止", () => {
+  const unverified = machineDB.filter((m) => m.allocationVerified !== true);
+  assert.ok(unverified.length > 0, "未検証機種の抽出");
+  for (const machine of unverified) {
+    const model = normalizeMachine(machine);
+    assert.strictEqual(model.allocationUsable, false, `${machine.name}: 未検証フラグ`);
+    assert.deepStrictEqual(model.heso, [], `${machine.name}: ヘソを架空補完しない`);
+    assert.deepStrictEqual(model.rush, [], `${machine.name}: RUSHを架空補完しない`);
+  }
+
+  const verified = machineDB.filter((m) => m.allocationVerified === true);
+  assert.ok(verified.length >= 9, "照合済み機種数");
+  for (const machine of verified) {
+    assert.ok(Array.isArray(machine.sourceUrls) && machine.sourceUrls.length > 0, `${machine.name}: 出典URL`);
+    const model = normalizeMachine(machine);
+    assert.strictEqual(model.allocationUsable, true, `${machine.name}: 表示可`);
+    for (const mode of [...model.hesoModes, ...model.rushModes]) {
+      assert.strictEqual(sumRatio(mode.rows), 100, `${machine.name} / ${mode.name}`);
+    }
+  }
+});
+
+// ── T13: 旧マスタで誤っていた5機種の公開振分を固定する ──
+check("T13_旧マスタ5機種の公開振分を固定", () => {
+  const byName = (name) => machineDB.find((m) => m.name === name);
+  const signature = (rows) => rows.map((r) => [r.roundsLabel || r.rounds, r.payoutLabel || r.payout, r.rate]);
+
+  const oumi5 = byName("P大海物語5 MTE2");
+  assert.deepStrictEqual(signature(oumi5.hesoModes[0].rows), [[10, 1500, 60], [10, 1500, 40]]);
+  assert.deepStrictEqual(signature(oumi5.rushModes[0].rows), [[10, 1500, 60], [10, 1500, 40]]);
+
+  const hokuto10 = byName("e北斗の拳10");
+  assert.strictEqual(hokuto10.synthProb, 348.6, "北斗10の通常時確率");
+  assert.deepStrictEqual(signature(hokuto10.hesoModes[0].rows), [[10, 1500, 5], [2, 300, 70], [2, 300, 1], [2, 300, 4], [2, 300, 20]]);
+  assert.deepStrictEqual(signature(hokuto10.rushModes[0].rows), [[10, 1500, 70], [3, 450, 30]]);
+
+  const keiji3 = byName("P真・花の慶次3");
+  assert.deepStrictEqual(signature(keiji3.hesoModes[0].rows), [[6, 900, 55], [6, 900, 45]]);
+  assert.deepStrictEqual(signature(keiji3.rushModes[0].rows), [[10, 1500, 80], [2, 300, 20]]);
+
+  const gen = byName("P大工の源さん超韋駄天");
+  assert.deepStrictEqual(signature(gen.hesoModes[0].rows), [[6, 660, 60.2], [6, 660, 39.8]]);
+  assert.deepStrictEqual(signature(gen.rushModes[0].rows), [[9, 990, 20], [3, 330, 80]]);
+
+  const toaru = byName("Pとある魔術の禁書目録");
+  assert.deepStrictEqual(signature(toaru.hesoModes[0].rows), [[4, 400, 100]]);
+  assert.deepStrictEqual(signature(toaru.rushModes[0].rows), [[10, 1500, 70], [4, 400, 30]]);
 });
 
 console.log(JSON.stringify(out, null, 2));

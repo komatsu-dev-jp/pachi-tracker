@@ -11,6 +11,7 @@ export const machineDB = [
   // ── ミドルスペック ──
   {
     name: "P大海物語5 MTE2",
+    aliases: ["P大海物語5", "大海物語5"],
     maker: "三洋",
     type: "ハイミドル",
     prob: "1/319.6",
@@ -30,6 +31,28 @@ export const machineDB = [
     rushEntryRate: 60,
     rushContinueRate: 75,
     hesoDist: [{ payout: 1500, rate: 60 }, { payout: 1500, rate: 40 }],
+    allocationVerified: true,
+    hesoModes: [
+      {
+        name: "特図1・ヘソ",
+        rows: [
+          { rounds: 10, payout: 1500, rate: 60, label: "確変（次回まで）" },
+          { rounds: 10, payout: 1500, rate: 40, label: "通常（時短100回）" },
+        ],
+      },
+    ],
+    rushModes: [
+      {
+        name: "特図2・電チュー",
+        rows: [
+          { rounds: 10, payout: 1500, rate: 60, label: "確変（次回まで）" },
+          { rounds: 10, payout: 1500, rate: 40, label: "通常（時短100回）" },
+        ],
+      },
+    ],
+    allocationNote: "出玉は払い出し。ヘソ・電チューともに10R・1500発で、確変60%／通常40%です。",
+    sourceUrls: ["https://www.p-world.co.jp/machine/database/9768", "https://1geki.jp/pachinko/p_oumi5/11/"],
+    dataUpdatedAt: "2026-07-13",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
@@ -53,6 +76,7 @@ export const machineDB = [
     rushEntryRate: 70,
     rushContinueRate: 81,
     hesoDist: [{ payout: 1500, rate: 3 }, { payout: 450, rate: 56 }, { payout: 450, rate: 41 }],
+    allocationVerified: true,
     hesoModes: [
       {
         name: "特図1・ヘソ",
@@ -77,20 +101,55 @@ export const machineDB = [
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
-    name: "北斗の拳10",
+    name: "e北斗の拳10",
+    aliases: ["北斗の拳10", "北斗10"],
     maker: "サミー",
-    type: "ミドル",
-    prob: "1/319.6",
-    synthProb: 319.6,
-    spec1R: 135,
+    type: "スマパチ",
+    prob: "1/348.6",
+    synthProb: 348.6,
+    spec1R: 140,
     specAvgTotalRounds: 32.0,
     specSapo: 0,
-    roundDist: "3R:30%, 10R:70%",
-    border: { "4.00": 18.5, "3.57": 19.5, "3.33": 20.4, "3.03": 21.4 },
+    roundDist: "10R:5%, 2R:95%",
+    rushDist: "10R:70%, 3R:30%",
+    border1K: 17.0,
+    border: { "4.00": 17.0, "3.57": 17.7, "3.33": 18.2, "3.03": 18.9 },
+    prize: 1,
+    hesoAvgPayout: 360,
+    rushAvgPayout: 1185,
+    rushEntryRate: 80,
+    rushContinueRate: 80,
+    hesoDist: [{ payout: 1500, rate: 5 }, { payout: 300, rate: 70 }, { payout: 300, rate: 25 }],
+    allocationVerified: true,
+    hesoModes: [
+      {
+        name: "特図1・図柄揃い",
+        rows: [
+          { rounds: 10, payout: 1500, rate: 5, label: "BATTLE MODEへ" },
+          { rounds: 2, payout: 300, rate: 70, label: "BATTLE MODEへ" },
+          { rounds: 2, payout: 300, rate: 1, label: "HYPER BATTLE MODEへ" },
+          { rounds: 2, payout: 300, rate: 4, label: "BATTLE MODEへ" },
+          { rounds: 2, payout: 300, rate: 20, label: "通常時へ" },
+        ],
+      },
+    ],
+    rushModes: [
+      {
+        name: "特図2・BATTLE MODE／HYPER BATTLE MODE",
+        rows: [
+          { rounds: 10, payout: 1500, rate: 70, label: "RUSH継続" },
+          { rounds: 3, payout: 450, rate: 30, label: "RUSH継続" },
+        ],
+      },
+    ],
+    allocationNote: "出玉は払い出し。通常時の図柄揃い振り分けです。別抽選の世紀末チャージは1%で上位RUSH、99%で通常へ移行します。上位RUSH継続率は約89%です。",
+    sourceUrls: ["https://www.p-world.co.jp/machine/database/10054", "https://1geki.jp/pachinko/e_hokutonoken10/", "https://1geki.jp/pachinko/e_hokutonoken10/11/"],
+    dataUpdatedAt: "2026-07-13",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
-    name: "真・花の慶次3",
+    name: "P真・花の慶次3",
+    aliases: ["真・花の慶次3", "花の慶次3"],
     maker: "ニューギン",
     type: "ミドル",
     prob: "1/319.6",
@@ -98,8 +157,38 @@ export const machineDB = [
     spec1R: 130,
     specAvgTotalRounds: 30.0,
     specSapo: 0,
-    roundDist: "4R:40%, 10R:60%",
-    border: { "4.00": 20.5, "3.57": 21.6, "3.33": 22.6, "3.03": 23.7 },
+    roundDist: "6R確変:55%, 6R通常:45%",
+    rushDist: "10R確変:80%, 2R確変:20%",
+    border1K: 16.9,
+    border: { "4.00": 16.9, "3.57": 17.7, "3.33": 18.1, "3.03": 18.8 },
+    prize: 2,
+    hesoAvgPayout: 900,
+    rushAvgPayout: 1260,
+    rushEntryRate: 67.5,
+    rushContinueRate: 83.3,
+    hesoDist: [{ payout: 900, rate: 55 }, { payout: 900, rate: 45 }],
+    allocationVerified: true,
+    hesoModes: [
+      {
+        name: "特図1・ヘソ",
+        rows: [
+          { rounds: 6, payout: 900, rate: 55, label: "真・傾奇RUSH（ST135回）へ" },
+          { rounds: 6, payout: 900, rate: 45, label: "傾奇RUSH（時短100回）へ" },
+        ],
+      },
+    ],
+    rushModes: [
+      {
+        name: "特図2・電チュー",
+        rows: [
+          { rounds: 10, payout: 1500, rate: 80, label: "真・傾奇RUSH（ST135回）へ" },
+          { rounds: 2, payout: 300, rate: 20, label: "真・傾奇RUSH（ST135回）へ" },
+        ],
+      },
+    ],
+    allocationNote: "出玉は払い出し。RUSH突入率約67.5%は、確変55%に時短100回と残保留からの引き戻しを含む数値です。",
+    sourceUrls: ["https://www.p-world.co.jp/machine/database/9532", "https://1geki.jp/pachinko/p_shinhanakei3/", "https://1geki.jp/pachinko/p_shinhanakei3/1/"],
+    dataUpdatedAt: "2026-07-13",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
@@ -209,20 +298,52 @@ export const machineDB = [
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
-    name: "源さん超韋駄天",
+    name: "P大工の源さん超韋駄天",
+    aliases: ["源さん超韋駄天", "大工の源さん超韋駄天"],
     maker: "三洋",
     type: "ミドル",
-    prob: "1/319.6",
-    synthProb: 319.6,
-    spec1R: 140,
+    prob: "1/318.1（合算）",
+    synthProb: 318.1,
+    spec1R: 100,
     specAvgTotalRounds: 24.0,
     specSapo: 0,
-    roundDist: "2R:50%, 10R:50%",
-    border: { "4.00": 23.8, "3.57": 25.1, "3.33": 26.2, "3.03": 27.5 },
+    roundDist: "6R:100%（RUSH突入60.2%）",
+    rushDist: "9R:20%, 3R:80%",
+    border1K: 20.9,
+    border: { "4.00": 20.9, "3.57": 21.7, "3.33": 22.3, "3.03": 23.2 },
+    prize: 3,
+    hesoAvgPayout: 660,
+    rushAvgPayout: 462,
+    rushEntryRate: 60.2,
+    rushContinueRate: 93,
+    hesoDist: [{ payout: 660, rate: 60.2 }, { payout: 660, rate: 39.8 }],
+    allocationVerified: true,
+    hesoModes: [
+      {
+        name: "特図1・ヘソ",
+        rows: [
+          { rounds: 6, payout: 660, rate: 60.2, label: "超源RUSH（時短3回＋残保留1個）へ" },
+          { rounds: 6, payout: 660, rate: 39.8, label: "通常時へ" },
+        ],
+      },
+    ],
+    rushModes: [
+      {
+        name: "特図2・右打ち中",
+        rows: [
+          { rounds: 9, payout: 990, rate: 20, label: "超源RUSHへ" },
+          { rounds: 3, payout: 330, rate: 80, label: "超源RUSHへ" },
+        ],
+      },
+    ],
+    allocationNote: "出玉は払い出し。通常時1/318.1は大当り1/319.6と小当り1/65536の合算です。",
+    sourceUrls: ["https://www.p-world.co.jp/machine/database/9168", "https://1geki.jp/pachinko/p_daigentyoida/", "https://1geki.jp/pachinko/p_daigentyoida/11/"],
+    dataUpdatedAt: "2026-07-13",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
-    name: "とある魔術の禁書目録",
+    name: "Pとある魔術の禁書目録",
+    aliases: ["とある魔術の禁書目録", "とある禁書目録"],
     maker: "藤商事",
     type: "ミドル",
     prob: "1/319.6",
@@ -230,8 +351,37 @@ export const machineDB = [
     spec1R: 130,
     specAvgTotalRounds: 30.0,
     specSapo: 0,
-    roundDist: "4R:45%, 10R:55%",
-    border: { "4.00": 20.5, "3.57": 21.6, "3.33": 22.6, "3.03": 23.7 },
+    roundDist: "4R確変:100%",
+    rushDist: "10R確変:70%, 4R確変:30%",
+    border1K: 17.0,
+    border: { "4.00": 17.0, "3.57": 17.7, "3.33": 18.2, "3.03": 18.9 },
+    prize: 1,
+    hesoAvgPayout: 400,
+    rushAvgPayout: 1170,
+    rushEntryRate: 100,
+    rushContinueRate: 79,
+    hesoDist: [{ payout: 400, rate: 100 }],
+    allocationVerified: true,
+    hesoModes: [
+      {
+        name: "特図1・ヘソ",
+        rows: [
+          { rounds: 4, payout: 400, rate: 100, label: "ST154回へ" },
+        ],
+      },
+    ],
+    rushModes: [
+      {
+        name: "特図2・電チュー",
+        rows: [
+          { rounds: 10, payout: 1500, rate: 70, label: "ST154回へ" },
+          { rounds: 4, payout: 400, rate: 30, label: "ST154回へ" },
+        ],
+      },
+    ],
+    allocationNote: "出玉は払い出し。初当りは4R・400発100%で、全てST154回へ突入します。",
+    sourceUrls: ["https://1geki.jp/pachinko/p_toaru/", "https://1geki.jp/pachinko/p_toaru/11/"],
+    dataUpdatedAt: "2026-07-13",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   // ── スマパチ / 新規追加機種 ──
@@ -491,6 +641,7 @@ export const machineDB = [
     rushContinueRate: 82,
     roundDist: "10R:1%, 6R:50%, 4R:49%",
     rushDist: "10R:10%, 6R:54%, 4R:36%",
+    allocationVerified: true,
     hesoModes: [
       {
         name: "特図1・ヘソ",
@@ -558,6 +709,7 @@ export const machineDB = [
     rushContinueRate: 70,
     roundDist: "10R:1%, 2R:99%",
     rushDist: "10R:50%, 2R:50%",
+    allocationVerified: true,
     hesoModes: [
       {
         name: "特図1・ヘソ",
@@ -1459,6 +1611,7 @@ export const machineDB = [
     rushContinueRate: 79,
     roundDist: "2R:50%, 2R:50%",
     rushDist: "10R:100%",
+    allocationVerified: true,
     hesoModes: [
       {
         name: "特図1・ヘソ",
@@ -2166,6 +2319,7 @@ export const machineDB = [
     rushContinueRate: 76.5,
     roundDist: "8R:54%, 8R:46%",
     rushDist: "40R:23.5%, 20R:26.5%, 10R:50%",
+    allocationVerified: true,
     hesoModes: [
       {
         name: "特図1・図柄揃い時",
@@ -2220,6 +2374,7 @@ export const machineDB = [
     rushContinueRate: 70,
     roundDist: "10R:51.5%, 10R:48.5%",
     rushDist: "BONUSジャッジ:75%, STリセット:25%",
+    allocationVerified: true,
     hesoModes: [
       {
         name: "特図1・ヘソ",
@@ -2287,6 +2442,7 @@ export const machineDB = [
     rushContinueRate: 50,
     roundDist: "50R:50%, 20R:50%（図柄揃い時）",
     rushDist: "20R:50%, 40R以上:50%（初回上乗せ判定）",
+    allocationVerified: true,
     hesoModes: [
       {
         name: "特図1・図柄揃い時",
@@ -2356,6 +2512,7 @@ export const machineDB = [
     rushContinueRate: 75,
     roundDist: "3R:46%, C時短:8%, 3R:46%",
     rushDist: "10R:33%, 10R:67%",
+    allocationVerified: true,
     hesoModes: [
       {
         name: "特図1・ヘソ",
@@ -2414,6 +2571,7 @@ export const machineDB = [
     rushContinueRate: 65,
     roundDist: "20R以上:1.5%, 2R:48.5%, 2R:50%",
     rushDist: "20R以上:11%, 10R:89%",
+    allocationVerified: true,
     hesoModes: [
       {
         name: "特図1・ヘソ",

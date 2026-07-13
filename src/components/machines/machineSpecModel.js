@@ -195,12 +195,16 @@ export function normalizeMachine(data) {
   const prizeText = Number.isFinite(prize) && prize > 0 ? ` | ${prize}個賞球` : "";
   const synthProb = parseProbDenom(data);
   const border1K = getBorder1K(data);
+  const allocationVerified = data.allocationVerified === true;
+  const allocationUsable = allocationVerified || data.isCustom === true;
   // ラウンド振分文字列（初当たり=roundDist / 確変中=rushDist）を行に取り込む。
   // hesoDist と roundDist は機種マスタ上は独立配列のため、件数が一致するときのみ行へ対応付ける。
-  const hesoModes = normalizeAllocationModes(data.hesoModes, "ヘソ");
+  const hesoModes = allocationUsable ? normalizeAllocationModes(data.hesoModes, "ヘソ") : [];
   const hesoSrc = Array.isArray(data.hesoDist) ? data.hesoDist.slice(0, 3) : [];
   const roundEntries = parseDist(data.roundDist);
-  const heso = hesoModes[0]?.rows?.length > 0
+  const heso = !allocationUsable
+    ? []
+    : hesoModes[0]?.rows?.length > 0
     ? hesoModes[0].rows
     : hesoSrc.length > 0
     ? hesoSrc.map((row, index) => ({
@@ -210,15 +214,17 @@ export function normalizeMachine(data) {
         rounds: roundEntries.length === hesoSrc.length ? (roundEntries[index]?.rounds || "") : "",
         rush: Number(row.rate) > 0,
       }))
-    : fallbackMachine.heso;
+    : [];
 
   // 特図2・RUSH（確変中）の出玉振分。機種マスタに rushDist 配列があれば採用し、
   // なければ RUSH平均出玉を 100% の単一振分として初期表示する（後から編集・追加可能）。
   // R数は rushDist 文字列があれば取り込む。
-  const rushModes = normalizeAllocationModes(data.rushModes, "RUSH");
+  const rushModes = allocationUsable ? normalizeAllocationModes(data.rushModes, "RUSH") : [];
   const rushAvgNum = Number(data.rushAvgPayout);
   const rushRoundEntries = parseDist(typeof data.rushDist === "string" ? data.rushDist : "");
-  const rush = rushModes[0]?.rows?.length > 0
+  const rush = !allocationUsable
+    ? []
+    : rushModes[0]?.rows?.length > 0
     ? rushModes[0].rows
     : Array.isArray(data.rushDist) && data.rushDist.length > 0
     ? data.rushDist.slice(0, 4).map((row, index) => ({
@@ -229,7 +235,7 @@ export function normalizeMachine(data) {
       }))
     : Number.isFinite(rushAvgNum) && rushAvgNum > 0
       ? [{ id: "RUSH1", payout: String(rushAvgNum), ratio: "100", rounds: rushRoundEntries[0]?.rounds || "" }]
-      : fallbackMachine.rush;
+      : [];
 
   const model = {
     name: data.name || fallbackMachine.name,
@@ -254,7 +260,7 @@ export function normalizeMachine(data) {
     tags: [
       data.name?.includes("海") ? "海シリーズ" : "機種検索連携",
       "m_master連携",
-      "削り込み適用",
+      allocationVerified ? "公開振分確認済" : (data.isCustom ? "ユーザー登録振分" : "振分未検証"),
     ],
     updatedAt: plainText(data.dataUpdatedAt) || fallbackMachine.updatedAt,
     probability: formatProbability(data),
@@ -281,6 +287,8 @@ export function normalizeMachine(data) {
     rush,
     hesoModes,
     rushModes,
+    allocationVerified,
+    allocationUsable,
     hasExplicitAllocationModes: Array.isArray(data.hesoModes) || Array.isArray(data.rushModes),
     allocationNote: plainText(data.allocationNote),
     roundDist: data.roundDist || fallbackMachine.roundDist || "1500発 100%",
@@ -396,8 +404,9 @@ export function buildMachineOverride(rawSource, model) {
     }));
   }
 
-  // hesoDist（出玉×比率）。元データに在った or 行が変更された場合のみ。
-  if (Array.isArray(rawSource?.hesoDist) || hesoChanged) {
+  // hesoDist（出玉×比率）。行が変更された場合だけ書き換える。
+  // 未検証機種は画面上の行を空にするため、無編集保存で元の生データを消してはいけない。
+  if (hesoChanged) {
     out.hesoDist = model.heso
       .filter((h) => toNum(h.payout) > 0 || toNum(h.ratio) > 0)
       .map((h) => ({ payout: toNum(h.payout), rate: toNum(h.ratio) }));
