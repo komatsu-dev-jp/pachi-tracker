@@ -3,6 +3,14 @@
 // opts パラメータは将来の riskAdjusted 切替のために予約（Step 2 以降で追加予定）。
 
 function calcConfidence(ev) {
+  if (ev?.evidence?.hasEstimate && Number.isFinite(Number(ev.evidence.confidence))) {
+    const total = Math.min(1, Math.max(0, Number(ev.evidence.confidence)));
+    return {
+      rot: Math.min(1, Math.max(0, Number(ev.evidence.liveConfidence) || 0)),
+      jp: Math.min(1, Math.max(0, Number(ev.evidence.deltaConfidence) || 0)),
+      total,
+    };
+  }
   const rotConf = Math.min((ev.netRot ?? 0) / 1500, 1.0);
   const jpConf  = Math.min((ev.jpCount ?? 0) / 5, 1.0);
   return {
@@ -30,13 +38,17 @@ export function evDecision(ev) {
   const conf = calcConfidence(safeEv);
   // 上皿補正後の値を判断に使用（Step 2b）
   // 生の値（ev1K / bDiff）は UI 表示用に保持される
-  const evAdj = safeEv.effectiveEV1K ?? safeEv.ev1KCorrected ?? safeEv.ev1K ?? 0;
-  const bDiff = safeEv.effectiveBDiff ?? safeEv.bDiffCorrected ?? safeEv.bDiff ?? 0;
+  const evidence = safeEv.evidence?.hasEstimate ? safeEv.evidence : null;
+  const evidenceEv = evidence?.trueBorder > 0
+    ? ((evidence.predictedRotation - evidence.trueBorder) / evidence.trueBorder) * 1000
+    : null;
+  const evAdj = evidenceEv ?? safeEv.effectiveEV1K ?? safeEv.ev1KCorrected ?? safeEv.ev1K ?? 0;
+  const bDiff = evidence?.borderDifference ?? safeEv.effectiveBDiff ?? safeEv.bDiffCorrected ?? safeEv.bDiff ?? 0;
   const netRot = safeEv.netRot ?? 0;
   const jpCount = safeEv.jpCount ?? 0;
 
   // データ不足（回転数ゼロ）は安全側（ヤメ）に倒す
-  if (!netRot) {
+  if (!netRot && !evidence) {
     return {
       verdict: "stop",
       confidence: 0,
@@ -58,7 +70,12 @@ export function evDecision(ev) {
     { ok: evAdj > 100,      text: `EV/K ${sign(evAdj)}${Math.round(evAdj)}円（基準 +100超え）` },
     { ok: bDiff > 0.5,      text: `ボーダー差 ${sign(bDiff)}${bDiff.toFixed(1)}回/K（基準 +0.5超え）` },
     { ok: conf.total > 0.4, text: `信頼度 ${Math.round(conf.total * 100)}%（基準 40%以上）` },
-    { ok: jpCount >= 5,     text: `大当り ${jpCount}回（信頼度基準 5回以上）` },
+    evidence
+      ? {
+          ok: (evidence.delta?.observationCount || 0) >= 2 || netRot >= 1500,
+          text: `差玉記録 ${evidence.delta?.observationCount || 0}件 / 実戦 ${netRot}回転`,
+        }
+      : { ok: jpCount >= 5, text: `大当り ${jpCount}回（信頼度基準 5回以上）` },
   ];
 
   return {

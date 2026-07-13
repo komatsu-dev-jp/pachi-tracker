@@ -31,6 +31,13 @@ import {
   unlockBadges,
 } from "./components/hunter/badges";
 import { evDecision } from "./components/decision/evDecision";
+import { runEvidence } from "./evidence";
+import { machineDB } from "./machineDB";
+import {
+  buildDeltaEvidence,
+  collectDeltaRows,
+  findMachineSpec,
+} from "./components/delta/deltaEvidence";
 import {
   addNotification as appendNotification,
   makeNotification,
@@ -429,13 +436,28 @@ export default function App() {
   const pushLog = (e) => setSesLog((p) => [...p, e]);
 
   // ── 高精度期待値エンジン ──
-  const ev = calcPreciseEV({
+  const calculatedEv = calcPreciseEV({
     rotRows, startRot, jpLog,
     rentBalls, exRate, synthDenom, rotPerHour,
     totalTrayBalls, border,
     spec1R, specAvgRounds, specSapo,
     chodamaSettings: { includeChodamaInBalance },
   });
+  const evidenceMachine = findMachineSpec(machineName, customMachines, machineDB);
+  const savedDeltaEvidence = evidenceMachine
+    ? buildDeltaEvidence(collectDeltaRows(deltaScans, {
+        storeId: selectedStoreId,
+        storeName: selectedStoreId == null ? storeName : "",
+        machineName,
+        num: machineNum,
+      }), evidenceMachine)
+    : null;
+  const evidence = runEvidence(calculatedEv, {
+    priorBalls: evidenceMachine?.muraCoef,
+    priorRotation: savedDeltaEvidence?.hasEstimate ? savedDeltaEvidence.predictedRotation : undefined,
+    priorConfidence: savedDeltaEvidence?.hasEstimate ? savedDeltaEvidence.confidence : 0,
+  });
+  const ev = { ...calculatedEv, evidence: { ...evidence, delta: savedDeltaEvidence } };
 
   // ── Phase 6 XPトリガー：大当たり（jpLog の hits 合計が増えたら +20/件） ──
   // マイグレーション完了後にのみ作動。

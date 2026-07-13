@@ -1,88 +1,83 @@
-// 戦略マップ用 表示データ（プロトタイプ・純粋関数）
-//
-// ⚠️ 仮データ（将来連携予定）:
-//   本ファイルが返す各台の「推定回転率・確信度・期待値・ボーダー差」は、
-//   戦略マップ画面の見た目を確認するためのサンプル表示専用データ。
-//   将来的には差玉解析（pt_deltaScans）と台選びの島データ（pt_hallMaps）から
-//   算出した実データへ差し替える。
-//   src/logic.js の計算ロジックには一切依存・変更しない（表示専用）。
-//
-// 画面内のヘッダー候補数・KPI・TOP5・島評価は、すべてここで生成した同一の
-// 台配列から導出するため、表示間で数値が矛盾しない。
+// 保存済み差玉解析（pt_deltaScans）から戦略マップ表示データを作る純粋関数。
+// 仮データ・乱数は使わない。Google Sheets への通信も行わない。
 
-// 島ごとの基準ボーダー（仮値）。将来は機種スペック・釘調整から算出予定。
-const DEFAULT_BORDER = 16.8;
+import { machineDB } from "../../machineDB.js";
+import {
+  buildDeltaEvidence,
+  collectDeltaRows,
+  findMachineSpec,
+} from "../delta/deltaEvidence.js";
+import { buildPEvidenceAnalytics } from "../evidence/pevidenceAnalytics.js";
+import { getStoreIslands } from "../select/hallMapSelectors.js";
 
-// 決定論的擬似乱数（mulberry32）。同じシードで常に同じ配置を返す。
-function makeRng(seed) {
-  let s = seed >>> 0;
-  return function next() {
-    s = (s + 0x6d2b79f5) >>> 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+function round1(value) {
+  return Math.round(Number(value || 0) * 10) / 10;
 }
 
-function round1(n) {
-  return Math.round(n * 10) / 10;
-}
-
-// ボーダー差・確信度から判定区分を決める。
-//   strong : ボーダー超え（緑）
-//   watch  : 様子見（黄）
-//   weak   : ボーダー未満（赤）
-//   nodata : データ不足（灰）
 function classify(borderDiff, confidence) {
-  if (confidence < 40) return "nodata";
-  if (borderDiff >= 0.8) return "strong";
+  if (confidence < 20) return "nodata";
+  if (borderDiff >= 0.5) return "strong";
   if (borderDiff >= -0.4) return "watch";
   return "weak";
 }
 
-function scoreOf(m) {
-  return (
-    m.borderDiff * 8 +
-    m.confidence * 0.4 +
-    (m.isStar ? 6 : 0) +
-    (m.verdict === "strong" ? 4 : 0)
+function scoreOf(machine) {
+  return Number(machine.goodMachineScore || 0);
+}
+
+function evPerHourOf(rotation, border) {
+  if (!(rotation > 0) || !(border > 0)) return 0;
+  const evPerK = ((rotation - border) / border) * 1000;
+  return Math.round(evPerK * (210 / rotation));
+}
+
+function emptyMap(playingNum) {
+  return {
+    source: "delta",
+    machineName: "差玉データなし",
+    total: 0,
+    border: 0,
+    islands: [],
+    all: [],
+    candidates: [],
+    top5: [],
+    kpi: { evPerHour: 0, rot: 0, confidence: 0, candidates: 0 },
+    leadId: null,
+    playingNum,
+    islandAvgRot: () => 0,
+    analytics: null,
+    portfolio: { plan: [], totalHours: 0, expectedProfit: 0 },
+    aiProfile: { overall: { rate: 0, count: 0 }, profiles: [] },
+    nextMap: [],
+    islandStats: [],
+  };
+}
+
+function latestScanGroup(scans) {
+  const valid = (scans || []).filter((scan) => Array.isArray(scan?.rows) && scan.rows.length);
+  if (!valid.length) return [];
+  const latest = [...valid].sort((a, b) =>
+    String(b.date || "").localeCompare(String(a.date || "")) ||
+    String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
+  )[0];
+  return valid.filter((scan) =>
+    String(scan.storeId ?? scan.storeName ?? "") === String(latest.storeId ?? latest.storeName ?? "") &&
+    String(scan.date || "") === String(latest.date || "")
   );
 }
 
-function buildMachine(num, islandId, rot, confidence, border) {
-  const borderDiff = round1(rot - border);
-  const evPerHour = Math.round(((rot - border) * 820) / 10) * 10;
-  const verdict = classify(borderDiff, confidence);
-  const isStar = verdict === "strong" && borderDiff >= 1.8 && confidence >= 72;
-  const m = {
-    id: `m-${num}`,
-    num,
-    islandId,
-    rot,
-    confidence,
-    border,
-    borderDiff,
-    evPerHour,
-    verdict,
-    isStar,
-    // 過去7日の推定回転率（仮・将来は実履歴へ差し替え）
-    history: buildHistory(rot, num),
-  };
-  m.score = scoreOf(m);
-  return m;
-}
-
-function buildHistory(rot, num) {
-  const r = makeRng(num * 7 + 13);
-  const out = [];
-  for (let i = 0; i < 7; i++) {
-    out.push(round1(rot - 1.6 + r() * 3.2));
+function historyFor(scans, machineName, num, machine) {
+  const byDate = new Map();
+  for (const row of collectDeltaRows(scans, { machineName, num })) {
+    if (!byDate.has(row.date)) byDate.set(row.date, []);
+    byDate.get(row.date).push(row);
   }
-  out[6] = rot; // 当日は現在の推定値で締める
-  return out;
+  return [...byDate.entries()]
+    .sort(([a], [b]) => String(a).localeCompare(String(b)))
+    .slice(-7)
+    .map(([, rows]) => round1(buildDeltaEvidence(rows, machine).predictedRotation));
 }
 
-// 良台率から島評価（仮の文字グレード）を返す。
 function islandGrade(goodRate) {
   if (goodRate >= 0.5) return "A-";
   if (goodRate >= 0.38) return "B+";
@@ -93,88 +88,201 @@ function islandGrade(goodRate) {
 
 function summarizeIsland(island) {
   const list = island.machines;
-  const strong = list.filter((m) => m.verdict === "strong");
+  const strong = list.filter((machine) => machine.verdict === "strong");
   const goodRate = list.length ? strong.length / list.length : 0;
-  const evDensity = strong.length
-    ? Math.round(strong.reduce((a, m) => a + m.evPerHour, 0) / strong.length)
-    : 0;
   const best = [...list].sort((a, b) => b.score - a.score)[0] || null;
   return {
     ...island,
     grade: islandGrade(goodRate),
     goodRate: Math.round(goodRate * 100),
     candidates: strong.length,
-    evDensity,
+    evDensity: strong.length
+      ? Math.round(strong.reduce((sum, machine) => sum + machine.evPerHour, 0) / strong.length)
+      : 0,
     strongZone: best ? `${best.num}番周辺` : "—",
   };
 }
 
-// 戦略マップ全体の表示データを生成する。
-// playingNum を渡すと、その台番号を「実戦中」としてマークする。
-export function buildStrategyMap({ playingNum = null } = {}) {
-  const islandDefs = [
-    { id: 1, name: "1島", start: 776 },
-    { id: 2, name: "2島", start: 790 },
-    { id: 3, name: "3島", start: 804 },
-  ];
-  const perIsland = 14;
-  const r = makeRng(20260616);
-  const playing = playingNum != null ? Number(playingNum) : null;
-
-  const islands = islandDefs.map((def) => {
-    const machines = [];
-    for (let i = 0; i < perIsland; i++) {
-      const num = def.start + i;
-      let rot;
-      let confidence;
-      if (num === 790) {
-        // 本日の本命（モック基準値）
-        rot = 19.7;
-        confidence = 84;
-      } else {
-        // 790（本命）を本日のTOP1に保つため上限を 19.4 に抑える
-        rot = round1(14.6 + r() * 4.8);
-        confidence = Math.round(30 + r() * 60);
-      }
-      const m = buildMachine(num, def.id, rot, confidence, DEFAULT_BORDER);
-      if (playing != null && m.num === playing) m.isPlaying = true;
-      machines.push(m);
-    }
-    return summarizeIsland({ ...def, machines });
+// 島マップ管理で登録した順番と台番号範囲を、分析結果へ重ねる。
+// 分析データがない台も画面上では灰色で残せるよう、start/end を必ず返す。
+function applyHallLayout(analyzedIslands, hallIslands) {
+  if (!hallIslands.length) return analyzedIslands;
+  const used = new Set();
+  const laidOut = hallIslands.map((layout, order) => {
+    const matched = analyzedIslands.find((island) => {
+      if (used.has(island.id)) return false;
+      if (String(island.name) === String(layout.name)) return true;
+      return island.machines.some((machine) => {
+        const num = Number(machine.num);
+        const machineMatches = !layout.machineName || machine.machineName === layout.machineName;
+        return machineMatches && num >= layout.start && num <= layout.end;
+      });
+    });
+    if (matched) used.add(matched.id);
+    return {
+      ...(matched || summarizeIsland({ id: layout.name || layout.id, name: layout.name, machines: [] })),
+      layoutId: layout.id,
+      name: layout.name || matched?.name || `島${order + 1}`,
+      machineName: layout.machineName || matched?.machineName || "",
+      start: layout.start,
+      end: layout.end,
+      layoutOrder: order,
+      registeredLayout: true,
+    };
   });
+  const extras = analyzedIslands
+    .filter((island) => !used.has(island.id))
+    .map((island, index) => ({
+      ...island,
+      end: Math.max(...island.machines.map((machine) => Number(machine.num) || 0)),
+      layoutOrder: laidOut.length + index,
+      registeredLayout: false,
+    }));
+  return [...laidOut, ...extras];
+}
 
-  const all = islands.flatMap((isl) => isl.machines);
-  const candidates = all.filter((m) => m.verdict === "strong");
+export function buildStrategyMap({
+  playingNum = null,
+  scans = [],
+  customMachines = [],
+  hallMaps = {},
+  selectedStoreId = null,
+} = {}) {
+  const currentScans = latestScanGroup(scans);
+  if (!currentScans.length) return emptyMap(playingNum);
+
+  const analysisStoreId = currentScans[0]?.storeId ?? selectedStoreId;
+  const hallIslands = getStoreIslands(hallMaps, analysisStoreId);
+  const analytics = buildPEvidenceAnalytics({ scans, customMachines, islands: hallIslands });
+  const analyticsByMachine = new Map(analytics.latestRows.map((item) => [
+    `${item.store}___${item.machineName}___${item.num}`,
+    item,
+  ]));
+
+  const currentRows = currentScans.flatMap((scan) =>
+    (scan.rows || []).map((row) => ({
+      ...row,
+      machineName: row.machineName || scan.machineName || "",
+      island: row.island || `${row.machineName || scan.machineName || "未分類"}島`,
+      storeId: scan.storeId,
+      storeName: scan.storeName,
+    }))
+  );
+  const uniqueRows = new Map();
+  for (const row of currentRows) uniqueRows.set(`${row.machineName}:${row.num}`, row);
+
+  const islandMap = new Map();
+  for (const row of uniqueRows.values()) {
+    const machineName = row.machineName;
+    const machineSpec = findMachineSpec(machineName, customMachines, machineDB);
+    if (!machineSpec) continue;
+    const historyRows = collectDeltaRows(scans, {
+      storeId: row.storeId,
+      storeName: row.storeId == null ? row.storeName : "",
+      machineName,
+      num: row.num,
+    });
+    const evidence = buildDeltaEvidence(historyRows, machineSpec);
+    const rowStore = String(row.storeId ?? row.storeName ?? "").trim();
+    const pe = analyticsByMachine.get(`${rowStore}___${machineName}___${String(row.num).replace(/_旧.*/, "").trim()}`);
+    const predictedRotation = pe?.valid ? pe.predictedRotation : evidence.predictedRotation;
+    const trueBorder = pe?.valid ? pe.border : evidence.trueBorder;
+    const confidence = pe?.valid ? pe.confidence : evidence.confidence;
+    const confidencePct = Math.round(confidence * 100);
+    const borderDiff = round1(pe?.valid ? pe.borderDifference : (evidence.borderDifference || 0));
+    const verdict = pe?.valid ? pe.verdict : classify(borderDiff, confidencePct);
+    const islandName = row.island || `${machineName}島`;
+    const islandId = islandName;
+    const history = historyFor(scans, machineName, row.num, machineSpec);
+    const machine = {
+      id: `m-${machineName}-${row.num}`,
+      num: Number(row.num) || row.num,
+      islandId,
+      machineName,
+      rot: round1(predictedRotation),
+      confidence: confidencePct,
+      border: round1(trueBorder),
+      borderDiff,
+      goodMachineScore: round1(pe?.valid ? pe.score : evidence.goodMachineScore),
+      score: 0,
+      evPerHour: pe?.valid ? pe.hourly : evPerHourOf(predictedRotation, trueBorder),
+      verdict,
+      isStar: verdict === "strong" && (pe?.score ?? evidence.goodMachineScore) >= 50,
+      isPlaying: playingNum != null && String(row.num) === String(playingNum),
+      history: history.length > 1
+        ? history
+        : [history[0] ?? round1(evidence.predictedRotation), history[0] ?? round1(evidence.predictedRotation)],
+      evidence,
+      pevidence: pe || null,
+      ema: round1(pe?.ema || 0),
+      cusumUp: round1(pe?.cusumUp || 0),
+      cusumDown: round1(pe?.cusumDown || 0),
+      nailAlert: pe?.nailAlert || "データ収集中",
+      regimeStart: pe?.regimeStart || "",
+      tomorrowTight: Math.round((pe?.tightProbability || 0) * 100),
+      weekdayTight: Math.round((pe?.weekdayTightRate || 0) * 100),
+      weekdaySamples: pe?.weekdaySampleCount || 0,
+      winRate: Math.round((pe?.winRate || 0) * 100),
+      unitPrice: pe?.unitPrice || 0,
+      daily: pe?.daily || 0,
+      hourlyLow: pe?.hourlyLow || 0,
+      hourlyHigh: pe?.hourlyHigh || 0,
+      dailyLow: pe?.dailyLow || 0,
+      dailyHigh: pe?.dailyHigh || 0,
+      hourlyRisk: pe?.hourlyRisk || 0,
+      dailyRisk: pe?.dailyRisk || 0,
+      sharpe: round1(pe?.sharpe || 0),
+      spatialAlert: pe?.spatial?.label || "隣接情報なし",
+      oppositeAlert: pe?.opposite?.label || "対面情報なし",
+      nextPrediction: analytics.nextMap.find((item) => String(item.number) === String(row.num) && item.machineName === machineName)?.prediction || "データ収集中",
+    };
+    machine.score = scoreOf(machine);
+    if (!islandMap.has(islandId)) islandMap.set(islandId, { id: islandId, name: islandName, machines: [] });
+    islandMap.get(islandId).machines.push(machine);
+  }
+
+  const analyzedIslands = [...islandMap.values()].map((island) => summarizeIsland({
+    ...island,
+    machines: island.machines.sort((a, b) => Number(a.num) - Number(b.num)),
+    start: Math.min(...island.machines.map((machine) => Number(machine.num) || 0)),
+  }));
+  const islands = applyHallLayout(analyzedIslands, hallIslands);
+  const all = islands.flatMap((island) => island.machines);
+  if (!all.length) return emptyMap(playingNum);
+  const candidates = all.filter((machine) => machine.verdict === "strong");
   const top5 = [...all]
-    .filter((m) => m.verdict !== "nodata")
+    .filter((machine) => machine.verdict !== "nodata")
     .sort((a, b) => b.score - a.score)
     .slice(0, 5)
-    .map((m, i) => ({ ...m, rank: i + 1 }));
-
-  const lead = top5[0] || null;
-  const kpi = {
-    evPerHour: lead ? lead.evPerHour : 0,
-    rot: lead ? lead.rot : 0,
-    confidence: lead ? lead.confidence : 0,
-    candidates: candidates.length,
-  };
-
+    .map((machine, index) => ({ ...machine, rank: index + 1 }));
+  const lead = top5[0] || [...all].sort((a, b) => b.confidence - a.confidence)[0];
+  const machineNames = [...new Set(all.map((machine) => machine.machineName))];
   const islandAvgRot = (id) => {
-    const list = all.filter((m) => m.islandId === id);
-    if (!list.length) return 0;
-    return round1(list.reduce((a, m) => a + m.rot, 0) / list.length);
+    const list = all.filter((machine) => machine.islandId === id && machine.rot > 0);
+    return list.length ? round1(list.reduce((sum, machine) => sum + machine.rot, 0) / list.length) : 0;
   };
 
   return {
-    machineName: "eシン・エヴァンゲリオン",
+    source: "delta",
+    machineName: machineNames.length === 1 ? machineNames[0] : `${machineNames.length}機種`,
     total: all.length,
-    border: DEFAULT_BORDER,
+    border: lead?.border || 0,
     islands,
     all,
     candidates,
     top5,
-    kpi,
-    leadId: lead ? lead.id : (all[0] ? all[0].id : null),
+    kpi: {
+      evPerHour: lead?.evPerHour || 0,
+      rot: lead?.rot || 0,
+      confidence: lead?.confidence || 0,
+      candidates: candidates.length,
+    },
+    leadId: lead?.id || null,
     islandAvgRot,
+    analytics,
+    portfolio: analytics.portfolio,
+    aiProfile: analytics.aiProfile,
+    nextMap: analytics.nextMap,
+    islandStats: analytics.islandStats,
   };
 }
