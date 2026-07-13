@@ -6,7 +6,7 @@ import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./
 import { machineDB, searchMachines, deriveSpecForMachine } from "../machineDB";
 import { calcPreciseEV } from "../logic";
 import { reconcileSegmentConsumption, clearPushCorrections, estimateSegmentGross, hasPushCorrections } from "../ballConsumption";
-import { getSync, set as persistSet, flushAll } from "../persistence";
+import { createBackup, restoreBackup } from "../persistence";
 import { evDecision } from "./decision/evDecision";
 import { confidenceAccuracyLabel } from "./decision/confidenceLabels";
 import { VerdictBadge } from "./decision/VerdictBadge";
@@ -10200,32 +10200,23 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     };
 
     // === 全データバックアップ/リストア ===
-    // 永続化層は IDB(Dexie) バックの memCache に統一されており、getSync で同期参照可能。
-    // 旧形式（値が JSON 文字列の二重エンコード）のバックアップファイルとも後方互換。
     const backupAllData = async () => {
-        const keys = ["pt_rentBalls","pt_exRate","pt_synthDenom","pt_rotPerHour","pt_border","pt_investPace","pt_ballVal",
-            "pt_spec1R","pt_specAvgRounds","pt_specSapo","pt_ceilingRot","pt_yutimePayout","pt_jpLog3","pt_sesLog","pt_rotRows","pt_startRot",
-            "pt_totalTrayBalls","pt_playMode","pt_includeChodamaInBalance","pt_chodamaReplayLimit",
-            "pt_chodamaUsedToday","pt_chodamaLastDate","pt_currentMochiBalls","pt_currentChodama",
-            "pt_sessionStarted","pt_startGameCount","pt_initialMochiBalls","pt_initialChodama",
-            "pt_selectedStoreId","pt_storeName","pt_machineNum","pt_machineName","pt_investYen","pt_recoveryYen",
-            "pt_stores","pt_customMachines","pt_archives","pt_theme","pt_accentColor","pt_highContrast",
-            "pt_colorBlind","pt_hapticFeedback","pt_appLock","pt_appPin",
-            "pt_monthlyEvTarget","pt_chodamaLog"];
-        try { await flushAll(); } catch { /* 続行 */ }
-        const data = {};
-        keys.forEach(k => {
-            const v = getSync(k);
-            if (v !== undefined) data[k] = v;
-        });
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `pachi-backup-${new Date().toISOString().slice(0,10)}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-        showToast("バックアップファイルをダウンロードしました");
+        try {
+            const data = await createBackup();
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `pachi-tracker-backup-${new Date().toISOString().slice(0,10)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            showToast("全データのバックアップを保存しました");
+        } catch (error) {
+            console.error("[backup] export failed:", error);
+            showToast("バックアップの保存に失敗しました", "error");
+        }
     };
 
     const restoreAllData = async (e) => {
@@ -10245,24 +10236,16 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
         inputEl.value = "";
         try {
             const data = JSON.parse(text);
-            if (typeof data !== "object" || data === null || data["pt_archives"] === undefined) {
-                showToast("バックアップファイルの形式が正しくありません", "error");
-                return;
-            }
-            // 旧形式（v が JSON 文字列）と新形式（v が JS 値）の両方を吸収
-            Object.entries(data).forEach(([k, v]) => {
-                if (!k.startsWith("pt_")) return;
-                let parsed = v;
-                if (typeof v === "string") {
-                    try { parsed = JSON.parse(v); } catch { /* 文字列のまま */ }
-                }
-                persistSet(k, parsed);
-            });
-            try { await flushAll(); } catch { /* リロードでも IDB は読み戻る */ }
-            showToast("データを復元しました。ページを再読み込みします");
+            const ok = window.confirm(
+                "現在のデータをバックアップファイルの内容に置き換えます。\n\n復元を続けますか？"
+            );
+            if (!ok) return;
+            const result = await restoreBackup(data);
+            showToast(`${result.keyCount}項目のデータを復元しました。再読み込みします`);
             setTimeout(() => window.location.reload(), 1500);
-        } catch {
-            showToast("バックアップファイルの読み込みに失敗しました", "error");
+        } catch (error) {
+            console.error("[backup] restore failed:", error);
+            showToast(error?.message || "バックアップファイルの読み込みに失敗しました", "error");
         }
     };
 
@@ -12011,7 +11994,10 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                     <Section>
                         <div style={{ padding: "14px 16px" }}>
                             <div style={{ fontSize: 12, color: C.sub, marginBottom: 14, lineHeight: 1.6 }}>
-                                全データ（記録・設定・機種・店舗）をJSON形式で保存します。機種変更時に使用してください。
+                                実践記録・収支・設定・機種・店舗など、端末内の全データを1つのファイルに保存します。アプリを削除する前に実行してください。
+                            </div>
+                            <div style={{ fontSize: 11, color: C.orange, marginBottom: 14, lineHeight: 1.6 }}>
+                                バックアップにはPINなどの設定も含まれます。ファイルを他人に送らないでください。
                             </div>
                             <Btn label="全データをバックアップ" onClick={backupAllData} bg={C.green} fg="#fff" bd="none" />
                         </div>
@@ -12021,7 +12007,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                     <Section>
                         <div style={{ padding: "14px 16px" }}>
                             <div style={{ fontSize: 12, color: C.sub, marginBottom: 14, lineHeight: 1.6 }}>
-                                バックアップファイル（.json）を読み込んで全データを復元します。現在のデータは上書きされます。
+                                保存したバックアップファイル（.json）を選ぶと、実践データを元に戻せます。復元前に確認画面が表示されます。
                             </div>
                             <label style={{
                                 display: "block", width: "100%", boxSizing: "border-box",
