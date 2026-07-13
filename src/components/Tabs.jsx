@@ -8250,6 +8250,8 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
     // Swipe delete state
     const [swipedId, setSwipedId] = useState(null);
     const swipeRef = useRef({ startX: 0, id: null });
+    // focusMode: この日の記録カード（機種情報）タップで回転数データへ自動スクロールするための参照先
+    const rotHistoryRef = useRef(null);
     // ランキング・履歴の「すべて見る」展開状態
     const [showAllMachines, setShowAllMachines] = useState(false);
     const [showAllStores, setShowAllStores] = useState(false);
@@ -8930,8 +8932,14 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                             return (
                                 <div key={ar.id}
                                     className={`${cardCls} flex min-h-[56px] w-full items-stretch overflow-hidden ${active ? "border-[var(--at-cyan)] shadow-[0_0_0_1px_var(--at-cyan)]" : ""}`}>
-                                    {/* 主動作: タップで編集対象を選択。押下が伝わるよう active フィードバックを付与 */}
-                                    <button type="button" onClick={() => { setSelectedArchiveId(ar.id); setDelConfirm(null); }}
+                                    {/* 主動作: タップで編集対象を選択し、下部の回転数データまで自動スクロール */}
+                                    <button type="button" onClick={() => {
+                                        setSelectedArchiveId(ar.id);
+                                        setDelConfirm(null);
+                                        requestAnimationFrame(() => {
+                                            rotHistoryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                        });
+                                    }}
                                         className="flex min-w-0 flex-1 items-center gap-3 p-3.5 text-left transition active:opacity-60">
                                         <div className="min-w-0 flex-1">
                                             <div className="truncate text-[14px] font-black text-[var(--at-strong)]">{name}</div>
@@ -9023,9 +9031,11 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                             </div>
                         ) : null}
 
-                        {/* 回転数データ・大当たり履歴（既存表示を残置） */}
-                        {renderRotHistory(sel)}
-                        {renderJpHistory(sel)}
+                        {/* 回転数データ・大当たり履歴（既存表示を残置）。上部の記録カードタップの自動スクロール先 */}
+                        <div ref={rotHistoryRef}>
+                            {renderRotHistory(sel)}
+                            {renderJpHistory(sel)}
+                        </div>
 
                         {/* 削除（確認付き。削除後もシートに留まり、0件になれば追加フォームへ） */}
                         <div className={`${cardCls} flex items-center justify-between gap-3 p-3.5`}>
