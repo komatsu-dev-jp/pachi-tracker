@@ -34,16 +34,46 @@ export const machineDB = [
   },
   {
     name: "エヴァンゲリオン15",
+    aliases: ["P新世紀エヴァンゲリオン15 未来への咆哮", "新世紀エヴァンゲリオン～未来への咆哮～", "エヴァ15"],
     maker: "ビスティ",
     type: "ミドル",
-    prob: "1/319.6",
-    synthProb: 319.6,
+    prob: "1/319.7",
+    synthProb: 319.7,
     spec1R: 130,
     specAvgTotalRounds: 28.0,
     specSapo: 0,
-    roundDist: "4R:50%, 10R:50%",
-    rushDist: "4R:30%, 10R:70%",
-    border: { "4.00": 22.0, "3.57": 23.2, "3.33": 24.2, "3.03": 25.4 },
+    roundDist: "10R確変:3%, 3R確変:56%, 3R通常:41%",
+    rushDist: "10R確変:100%",
+    border1K: 17.0,
+    border: { "4.00": 17.0, "3.57": 17.6, "3.33": 18.2, "3.03": 18.9 },
+    prize: 1,
+    avgPayoutPerHit: 481.5,
+    hesoAvgPayout: 481.5,
+    rushAvgPayout: 1500,
+    rushEntryRate: 70,
+    rushContinueRate: 81,
+    hesoDist: [{ payout: 1500, rate: 3 }, { payout: 450, rate: 56 }, { payout: 450, rate: 41 }],
+    hesoModes: [
+      {
+        name: "特図1・ヘソ",
+        rows: [
+          { rounds: 10, payout: 1500, rate: 3, label: "IMPACT MODE（ST163回）へ" },
+          { rounds: 3, payout: 450, rate: 56, label: "IMPACT MODE（ST163回）へ" },
+          { rounds: 3, payout: 450, rate: 41, label: "チャンスタイム（時短100回）へ" },
+        ],
+      },
+    ],
+    rushModes: [
+      {
+        name: "特図2・右打ち中",
+        rows: [
+          { rounds: 10, payout: 1500, rate: 100, label: "IMPACT MODE（ST163回）へ" },
+        ],
+      },
+    ],
+    allocationNote: "出玉は払い出し。RUSH突入率約70%は、ST直行59%に時短100回と残保留からの引き戻しを含む数値です。",
+    sourceUrls: ["https://www.p-world.co.jp/machine/database/9509", "https://1geki.jp/pachinko/p_eva15roar/11/"],
+    dataUpdatedAt: "2026-07-13",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
@@ -2256,7 +2286,7 @@ export const machineDB = [
     rushEntryRate: 50,
     rushContinueRate: 50,
     roundDist: "50R:50%, 20R:50%（図柄揃い時）",
-    rushDist: "60R＋α:12.5%, 60R:12.5%, 40R:25%, 20R:50%",
+    rushDist: "20R:50%, 40R以上:50%（初回上乗せ判定）",
     hesoModes: [
       {
         name: "特図1・図柄揃い時",
@@ -2276,8 +2306,16 @@ export const machineDB = [
     ],
     rushModes: [
       {
-        name: "超デカ超一撃RUSH中",
-        note: "公開されている4区分をそのまま表示。9000個＋αは追加3000個の可能性があるため上限固定ではありません。",
+        name: "RUSH大当り・初回上乗せ判定",
+        note: "まず3000個を獲得し、約50%でさらに3000個以上を上乗せします。一般的な3000個50%／6000個以上50%という見方はこちらです。",
+        rows: [
+          { roundsLabel: "10R×2", payout: 3000, rate: 50, label: "上乗せなし・RUSHへ" },
+          { roundsLabel: "10R×4以上", payout: 6000, payoutLabel: "6000個以上", rate: 50, label: "上乗せ継続抽選・RUSHへ" },
+        ],
+      },
+      {
+        name: "最終獲得出玉の公開内訳",
+        note: "上乗せ抽選を最後まで展開した内訳です。9000個＋αは追加3000個の可能性があるため上限固定ではありません。",
         rows: [
           { roundsLabel: "10R×6＋α", payout: 9000, payoutLabel: "9000個＋α", rate: 12.5, label: "追加3000個の可能性あり・RUSHへ" },
           { roundsLabel: "10R×6", payout: 9000, rate: 12.5, label: "RUSHへ" },
@@ -2286,7 +2324,7 @@ export const machineDB = [
         ],
       },
     ],
-    allocationNote: "出玉は払い出し。通常時合算は約1/349.9。図柄揃いとチャージは条件が違うため別表にしています。",
+    allocationNote: "出玉は払い出し。通常時合算は約1/349.9。RUSHは初回判定の50%／50%と、最終出玉の4区分を分けて表示しています。",
     sourceUrls: ["https://www.p-world.co.jp/machine/database/10500", "https://www.amuse-p.com/blog/tokyo-ghoul1-999/", "https://p.hisshobon.jp/machine/4746/1/115529"],
     dataUpdatedAt: "2026-07-13",
     displayToReal: null,

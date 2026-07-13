@@ -232,9 +232,21 @@ check("T10_公開振分の主要値を固定", () => {
   assert.strictEqual(normalizeMachine(ghoul).updatedAt, "2026-07-13", "公開情報の確認日");
   assert.deepStrictEqual(signature(ghoul.hesoModes[0].rows), [["10R×5", 7500, 50], ["10R×2", 3000, 50]]);
   assert.deepStrictEqual(signature(ghoul.hesoModes[1].rows), [["2R or 10R×5", "300 or 7500個", 100]]);
-  assert.deepStrictEqual(signature(ghoul.rushModes[0].rows), [["10R×6＋α", "9000個＋α", 12.5], ["10R×6", 9000, 12.5], ["10R×4", 6000, 25], ["10R×2", 3000, 50]]);
+  assert.deepStrictEqual(signature(ghoul.rushModes[0].rows), [["10R×2", 3000, 50], ["10R×4以上", "6000個以上", 50]]);
+  assert.deepStrictEqual(signature(ghoul.rushModes[1].rows), [["10R×6＋α", "9000個＋α", 12.5], ["10R×6", 9000, 12.5], ["10R×4", 6000, 25], ["10R×2", 3000, 50]]);
   assert.deepStrictEqual(signature(byName("ぱちんこ 必殺仕事人Ⅵ").hesoModes[0].rows), [[3, 450, 46], ["C時短", 0, 8], [3, 450, 46]]);
   assert.deepStrictEqual(signature(byName("e ソードアート・オンライン アリシゼーション 夜空").hesoModes[0].rows), [["10R×2～6＋α", "3000～9000個＋α", 1.5], [2, 300, 48.5], [2, 300, 50]]);
+});
+
+// ── T11: エヴァ15の古い仮振分へ戻らないことを固定 ──
+check("T11_エヴァ15の公開振分を固定", () => {
+  const eva15 = machineDB.find((m) => m.name === "エヴァンゲリオン15");
+  const signature = (rows) => rows.map((r) => [r.roundsLabel || r.rounds, r.payoutLabel || r.payout, r.rate]);
+  assert.strictEqual(eva15.synthProb, 319.7, "通常時確率");
+  assert.strictEqual(eva15.border1K, 17.0, "等価ボーダー");
+  assert.deepStrictEqual(signature(eva15.hesoModes[0].rows), [[10, 1500, 3], [3, 450, 56], [3, 450, 41]]);
+  assert.deepStrictEqual(signature(eva15.rushModes[0].rows), [[10, 1500, 100]]);
+  assert.deepStrictEqual(flowRounds(eva15.roundDist), [3, 10]);
 });
 
 console.log(JSON.stringify(out, null, 2));
