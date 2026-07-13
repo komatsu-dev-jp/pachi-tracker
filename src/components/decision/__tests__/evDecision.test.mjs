@@ -10,6 +10,7 @@ const cases = {
   continue:       { ev: { ev1K: 200, netRot: 1500, jpCount: 5, bDiff: 1.0 },    expected: 'continue' },
   hold:           { ev: { ev1K: 50,  netRot: 1500, jpCount: 5, bDiff: 0.3 },    expected: 'hold' },
   stop:           { ev: { ev1K: -100, netRot: 1500, jpCount: 5, bDiff: -1.5 },  expected: 'stop' },
+  evidence:       { ev: { netRot: 0, evidence: { hasEstimate: true, trueBorder: 17, predictedRotation: 19, borderDifference: 2, confidence: 0.8, deltaConfidence: 0.8, liveConfidence: 0, delta: { observationCount: 3 } } }, expected: 'continue' },
 };
 
 const out = {};

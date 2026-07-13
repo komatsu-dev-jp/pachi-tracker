@@ -1,5 +1,4 @@
 import { C, font, mono, sc, sp, f } from "../../constants";
-import { getPredictedSpinRate } from "./metricSelectors";
 
 function MetricCard({ label, value, unit, baseHint, accent, accentBg = true, accentText, hero = false, rawNote }) {
   const accentColor = accent || C.blue;
@@ -50,12 +49,41 @@ export function KeyMetrics({ ev, currentBalls, ballsLabel = "持ち玉", playMod
   const ev1KRaw = ev.ev1K ?? 0;
   const bDiffC = ev.effectiveBDiff ?? ev.bDiffCorrected ?? ev.bDiff ?? 0;
   const start1KC = ev.effectiveStart1K ?? ev.start1KCorrected ?? ev.start1K ?? 0;
-  const predictedSpinRate = getPredictedSpinRate(ev);
+  const observedSpinRate = ev.effectiveStart1K ?? ev.start1KCorrected ?? ev.start1K ?? 0;
   const rawInvest = ev.rawInvest ?? 0;
   const correctedInvest = ev.correctedInvestYen ?? rawInvest;
+  const evidence = ev.evidence;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
+      {evidence && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+          <SubMetricCard
+            label="真のボーダー"
+            value={evidence.trueBorder > 0 ? f(evidence.trueBorder, 1) : "—"}
+            unit="回/K"
+            accent={C.blue}
+          />
+          <SubMetricCard
+            label="良台スコア"
+            value={evidence.hasEstimate ? f(evidence.goodMachineScore, 1) : "—"}
+            unit="pt"
+            accent={evidence.goodMachineScore >= 30 ? C.green : C.yellow}
+          />
+          <SubMetricCard
+            label="信頼度"
+            value={evidence.hasEstimate ? f(evidence.confidence * 100, 1) : "—"}
+            unit="%"
+            accent={C.purple}
+          />
+          <SubMetricCard
+            label="予測回転率"
+            value={evidence.hasEstimate ? f(evidence.predictedRotation, 1) : "—"}
+            unit="回/K"
+            accent={C.teal}
+          />
+        </div>
+      )}
       {/* 上段（案A）：実質EV/K（旧「補正後EV/K」）を主役（大）＋ ボーダー差 の2枚。生EV/K は実質EV/Kカード内に小さく併記 */}
       <div style={{ display: "grid", gridTemplateColumns: "1.35fr 1fr", gap: 8 }}>
         <MetricCard
@@ -78,8 +106,8 @@ export function KeyMetrics({ ev, currentBalls, ballsLabel = "持ち玉", playMod
       {/* 下段：予測回転率 / 総投資 / 持ち玉 / 実質投資 */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
         <SubMetricCard
-          label="予測回転率"
-          value={predictedSpinRate > 0 ? f(predictedSpinRate, 1) : "—"}
+          label="実測回転率"
+          value={observedSpinRate > 0 ? f(observedSpinRate, 1) : "—"}
           unit="回/K"
           accent={C.text}
         />
