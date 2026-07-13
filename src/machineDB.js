@@ -614,6 +614,13 @@ const rawMachineDB = [
     rushAvgPayout: 2500,
     rushEntryRate: 50,
     rushContinueRate: 75,
+    // モードAは5R×1、モードBは5R×4 or 5R×8。UDは5R×8後、5R×4を約50%で上乗せ。
+    roundLoops: [{
+      phase: "rush", rounds: 5, baseMultipliers: [1, 4, 8],
+      loopBaseMult: 8, incrementMult: 4, incrementPayout: 3000,
+      rate: 50, label: "アルティメットドライブ",
+      sourceUrl: "https://www.newgin.co.jp/pub/machine/elycorisrecoil/spec.html",
+    }],
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   // ── 海シリーズ（最新追加：P機 / e機 / PA甘デジ／CSV準拠フォーマットへ更新） ──
@@ -1556,6 +1563,13 @@ const rawMachineDB = [
     rushAvgPayout: 2200,
     rushEntryRate: 52,
     rushContinueRate: 82,
+    // 右打ちは10R×1、超炎上BURSTは10R×2後、10R×1を約50%で上乗せ。
+    roundLoops: [{
+      phase: "rush", rounds: 10, baseMultipliers: [1, 2],
+      loopBaseMult: 2, incrementMult: 1, incrementPayout: 1500,
+      rate: 50, label: "超炎上BURST",
+      sourceUrl: "https://www.sankyo-fever.jp/products/machine_list/pxj/spec/",
+    }],
     hesoDist: [{ payout: 1400, rate: 96 }, { payout: 280, rate: 4 }],
     mcExpectedDaily: -7227,
     mcWinRate: 29.5,

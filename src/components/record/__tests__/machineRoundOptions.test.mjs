@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { machineDB } from "../../../machineDB.js";
 import {
   buildMultiRoundHit,
+  changeRoundMultiplier,
+  getMachineRoundLoop,
   getMachineRoundOptions,
   parseRoundOptions,
 } from "../machineRoundOptions.js";
@@ -30,6 +32,29 @@ assert.deepEqual(
 const ghoulHeso = signatures(getMachineRoundOptions(machine("e 東京喰種 超デカ超一撃ver."), "heso"));
 assert.ok(ghoulHeso.includes("10R×2"), "東京喰種の10R×2を選択できること");
 assert.ok(ghoulHeso.includes("10R×5"), "東京喰種の10R×5を選択できること");
+
+const enen = machine("eフィーバー炎炎ノ消防隊2 シンラver.");
+assert.deepEqual(
+  signatures(getMachineRoundOptions(enen, "rush")),
+  ["10R×1", "10R×2"],
+  "炎炎は通常1500玉と上乗せ開始3000玉を選択できること",
+);
+const enenLoop = getMachineRoundLoop(enen, "rush", 10);
+assert.equal(changeRoundMultiplier(2, 1, enenLoop), 3, "炎炎は1500玉（10R×1）ずつ上乗せ");
+assert.equal(changeRoundMultiplier(5, 1, enenLoop), 6, "炎炎の50%ループが何回続いても増やせること");
+
+const lycoris = machine("eリコリス・リコイル");
+assert.deepEqual(
+  signatures(getMachineRoundOptions(lycoris, "rush")),
+  ["5R×1", "5R×4", "5R×8"],
+  "リコリスの750・3000・6000玉相当を選択できること",
+);
+const lycorisLoop = getMachineRoundLoop(lycoris, "rush", 5);
+assert.equal(changeRoundMultiplier(8, 1, lycorisLoop), 12, "リコリスは3000玉（5R×4）ずつ上乗せ");
+assert.equal(changeRoundMultiplier(12, 1, lycorisLoop), 16, "リコリスの50%ループが何回続いても増やせること");
+assert.equal(changeRoundMultiplier(12, -1, lycorisLoop), 8, "リコリスの上乗せ回数を訂正できること");
+
+assert.equal(changeRoundMultiplier(4, 1), 5, "未登録のループ機種も1セットずつ手動調整できること");
 
 const hit6000 = buildMultiRoundHit(1, {
   rounds: 10,

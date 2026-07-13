@@ -60,6 +60,14 @@ export function getMachineRoundOptions(machine, phase = "heso") {
     }
   }
 
+  // 50%上乗せループなど、終了回数が実戦ごとに変わる機種の開始候補。
+  for (const loop of Array.isArray(machine.roundLoops) ? machine.roundLoops : []) {
+    if ((loop?.phase || "rush") !== phase) continue;
+    for (const mult of Array.isArray(loop.baseMultipliers) ? loop.baseMultipliers : []) {
+      addUnique(options, seen, makeOption(loop.rounds, mult));
+    }
+  }
+
   // 状態別振分がある場合はそちらを正とする。簡易文字列も足すと、
   // 「10R×2」と同じ意味の「20R」が二重に並ぶため、詳細が無い時だけ補完する。
   if (options.length === 0) {
@@ -71,6 +79,25 @@ export function getMachineRoundOptions(machine, phase = "heso") {
 
   if (options.length === 0) return fallback;
   return options.sort((a, b) => a.totalRounds - b.totalRounds || a.rounds - b.rounds || a.mult - b.mult);
+}
+
+/** 選択中のR数に対応する上乗せループ設定を返す。未登録機種はnull。 */
+export function getMachineRoundLoop(machine, phase, rounds) {
+  if (!machine || !Number(rounds)) return null;
+  return (Array.isArray(machine.roundLoops) ? machine.roundLoops : []).find((loop) =>
+    (loop?.phase || "rush") === phase && Number(loop?.rounds) === Number(rounds)
+  ) || null;
+}
+
+/** セット回数の増減。専用ループは開始倍率以降だけ機種固有の刻みを使う。 */
+export function changeRoundMultiplier(currentMult, direction, loop = null) {
+  const current = Math.max(1, Number(currentMult) || 1);
+  const dir = direction < 0 ? -1 : 1;
+  const loopBase = Math.max(1, Number(loop?.loopBaseMult) || 1);
+  const loopStep = Math.max(1, Number(loop?.incrementMult) || 1);
+  const step = current >= loopBase ? loopStep : 1;
+  if (dir < 0 && current > loopBase && current - step < loopBase) return loopBase;
+  return Math.max(1, current + dir * step);
 }
 
 /** 10R×Nを画面上は1回の大当たり、集計上は合計R数として保存する。 */

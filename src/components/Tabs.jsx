@@ -16,7 +16,8 @@ import { RecentEventList } from "./decision/RecentEventList";
 import MachineSpecWorkspace from "./machines/MachineSpecWorkspace";
 import IslandMapManager from "./select/IslandMapManager";
 import { getStoreIslands, setStoreIslands } from "./select/hallMapSelectors";
-import { buildMultiRoundHit, getMachineRoundOptions } from "./record/machineRoundOptions";
+import { buildMultiRoundHit, getMachineRoundLoop, getMachineRoundOptions } from "./record/machineRoundOptions";
+import RoundMultiplierControl from "./record/RoundMultiplierControl";
 
 // 信頼度（試行充足率）: 1500回転で 100% （evDecision の calcConfidence と整合。
 // VerdictBadge.jsx の STABLE_TARGET_ROT と同値・同期すること）
@@ -5492,6 +5493,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         active: rndN === r && multN === m,
                         onClick: () => setHitWizardData(d => ({ ...d, rounds: r, mult: m })),
                     }));
+                    const roundLoop = getMachineRoundLoop(selectedMachine, "heso", rndN);
 
                     // 現在ステップの表示テキスト（中央の大きな値）
                     const bigValueText = (() => {
@@ -5683,20 +5685,24 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                             </div>
                                         )}
                                         {curStep.id === "rounds" && (
-                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 6 }}>
-                                                {roundPresets.map(p => (
-                                                    <button key={p.label} className="b" type="button" onClick={p.onClick}
-                                                        style={{
-                                                            minHeight: 44, borderRadius: 10, padding: "0 6px",
-                                                            background: p.active ? `color-mix(in srgb, ${curStep.color} 28%, transparent)` : "var(--surface-hi)",
-                                                            border: `1px solid ${p.active ? curStep.color : C.border}`,
-                                                            color: p.active ? curStep.color : C.text,
-                                                            fontSize: 14, fontWeight: 700, fontFamily: mono,
-                                                        }}>
-                                                        {p.label}
-                                                    </button>
-                                                ))}
-                                            </div>
+                                            <>
+                                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 6 }}>
+                                                    {roundPresets.map(p => (
+                                                        <button key={p.label} className="b" type="button" onClick={p.onClick}
+                                                            style={{
+                                                                minHeight: 44, borderRadius: 10, padding: "0 6px",
+                                                                background: p.active ? `color-mix(in srgb, ${curStep.color} 28%, transparent)` : "var(--surface-hi)",
+                                                                border: `1px solid ${p.active ? curStep.color : C.border}`,
+                                                                color: p.active ? curStep.color : C.text,
+                                                                fontSize: 14, fontWeight: 700, fontFamily: mono,
+                                                            }}>
+                                                            {p.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                <RoundMultiplierControl rounds={rndN} mult={multN} loop={roundLoop} color={curStep.color}
+                                                    onChange={(nextMult) => setHitWizardData(d => ({ ...d, mult: nextMult }))} />
+                                            </>
                                         )}
                                     </div>
                                 ) : (
@@ -6195,6 +6201,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         active: rndN === r && multN === m,
                         onClick: () => setChainWizardData(d => ({ ...d, rounds: r, mult: m })),
                     }));
+                    const roundLoop = getMachineRoundLoop(selectedMachine, "rush", rndN);
 
                     // 期待差玉などの上部HUD用
                     const evNet = ev && Number.isFinite(ev.totalNetGain) ? ev.totalNetGain : 0;
@@ -6388,20 +6395,24 @@ export function RotTab({ rows, setRows, S, ev, border }) {
 
                                                 {/* ステップ別プリセット */}
                                                 {curStep.id === "rounds" && (
-                                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 6 }}>
-                                                        {roundPresets.map(p => (
-                                                            <button key={p.label} className="b" type="button" onClick={p.onClick}
-                                                                style={{
-                                                                    minHeight: 44, borderRadius: 10, padding: "0 6px",
-                                                                    background: p.active ? `color-mix(in srgb, ${curStep.color} 28%, transparent)` : "var(--surface-hi)",
-                                                                    border: `1px solid ${p.active ? curStep.color : C.border}`,
-                                                                    color: p.active ? curStep.color : C.text,
-                                                                    fontSize: 14, fontWeight: 700, fontFamily: mono,
-                                                                }}>
-                                                                {p.label}
-                                                            </button>
-                                                        ))}
-                                                    </div>
+                                                    <>
+                                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 6 }}>
+                                                            {roundPresets.map(p => (
+                                                                <button key={p.label} className="b" type="button" onClick={p.onClick}
+                                                                    style={{
+                                                                        minHeight: 44, borderRadius: 10, padding: "0 6px",
+                                                                        background: p.active ? `color-mix(in srgb, ${curStep.color} 28%, transparent)` : "var(--surface-hi)",
+                                                                        border: `1px solid ${p.active ? curStep.color : C.border}`,
+                                                                        color: p.active ? curStep.color : C.text,
+                                                                        fontSize: 14, fontWeight: 700, fontFamily: mono,
+                                                                    }}>
+                                                                    {p.label}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                        <RoundMultiplierControl rounds={rndN} mult={multN} loop={roundLoop} color={curStep.color}
+                                                            onChange={(nextMult) => setChainWizardData(d => ({ ...d, mult: nextMult }))} />
+                                                    </>
                                                 )}
                                                 {curStep.id === "displayBalls" && (
                                                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 6 }}>
