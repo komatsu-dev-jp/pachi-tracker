@@ -179,6 +179,33 @@ const blueLockLoop = getMachineRoundLoop(blueLock, "rush", 10);
 assert.equal(changeRoundMultiplier(5, 1, blueLockLoop), 6, "ブルーロックは保証分を加えた実質9000発を記録できること");
 assert.equal(changeRoundMultiplier(8, -1, blueLockLoop), 7, "ブルーロックの連続上乗せ回数を訂正できること");
 
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(machine("e新世紀エヴァンゲリオン ～はじまりの記憶～"), "rush")),
+  ["8R×2", "8R×4"],
+  "はじまりの記憶は2400・4800発を8R回数で記録できること",
+);
+
+const kake219 = machine("eカケグルイ219ver.");
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(kake219, "rush")),
+  ["10R×1", "10R×2", "10R×3", "10R×4", "10R×5"],
+  "カケグルイ219は1500～7500発を選べること",
+);
+assert.equal(changeRoundMultiplier(5, 1, getMachineRoundLoop(kake219, "rush", 10)), 10, "カケグルイ219は7500発単位で再上乗せできること");
+
+const kake7500 = machine("eカケグルイ7500ver.");
+assert.deepStrictEqual(signatures(getMachineRoundOptions(kake7500, "rush")), ["10R×1", "10R×5"], "カケグルイ7500の基本候補");
+assert.equal(changeRoundMultiplier(5, 1, getMachineRoundLoop(kake7500, "rush", 10)), 10, "カケグルイ7500は30%ループを記録できること");
+
+const hikikomari = machine("eひきこまり吸血姫の悶々");
+assert.deepStrictEqual(signatures(getMachineRoundOptions(hikikomari, "rush")), ["10R×1", "10R×2", "10R×3", "10R×4"], "ひきこまりのBONUS候補");
+assert.equal(changeRoundMultiplier(4, 1, getMachineRoundLoop(hikikomari, "rush", 10)), 5, "ひきこまりは1G連保証分を追加できること");
+
+const bio6 = machine("eバイオハザード6");
+const bioOptions = getMachineRoundOptions(bio6, "rush");
+assert.equal(bioOptions.length, 25, "バイオ6は公表25パターンを記録候補に持つこと");
+assert.deepStrictEqual([bioOptions[0].totalRounds, bioOptions.at(-1).totalRounds], [2, 50], "バイオ6は2R相当～50R相当を記録できること");
+
 const hit6000 = buildMultiRoundHit(1, {
   rounds: 10,
   mult: 4,

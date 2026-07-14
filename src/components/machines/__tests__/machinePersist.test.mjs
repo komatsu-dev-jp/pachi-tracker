@@ -578,6 +578,34 @@ check("T22_ルパン猫・女神・ノゲノラ・ダンバイン・ブルーロ
   }
 });
 
+// ── T23: 2025年12月～2026年5月の追加5台を固定 ──
+check("T23_はじまりの記憶・カケグルイ2機種・ひきこまり・バイオ6を固定", () => {
+  const byName = (name) => machineDB.find((m) => m.name === name);
+  const signature = (rows) => rows.map((r) => [r.roundsLabel || r.rounds, r.payoutLabel || r.payout, r.rate]);
+  const eva = byName("e新世紀エヴァンゲリオン ～はじまりの記憶～");
+  const kake219 = byName("eカケグルイ219ver.");
+  const kake7500 = byName("eカケグルイ7500ver.");
+  const hikikomari = byName("eひきこまり吸血姫の悶々");
+  const bio = byName("eバイオハザード6");
+
+  assert.deepStrictEqual(signature(eva.rushModes[0].rows), [["8R×4", 4800, 0.5], ["8R×2", 2400, 99.5]]);
+  assert.deepStrictEqual(signature(kake219.hesoModes[0].rows), [[10, 1500, 24.5], [2, 300, 0.5], [2, 300, 75]]);
+  assert.deepStrictEqual(signature(kake219.rushModes[1].rows), [["10R×5", 7500, 41], ["10R×4", 6000, 41], ["10R×3", 4500, 15.4], ["10R×2", 3000, 2.5], [10, 1500, 0.1]]);
+  assert.strictEqual(kake7500.rushEntryRate, 12.5, "7500ver.のジャッジ成功込みLT突入率");
+  assert.deepStrictEqual(signature(kake7500.rushModes[1].rows), [["10R×5", 7500, 30], [10, 1500, 70]]);
+  assert.deepStrictEqual(signature(hikikomari.rushModes[1].rows), [["10R×4+1G連", "6000発+1500発以上", 12.5], ["10R×3", 4500, 37.5], ["10R×2", 3000, 37.5], [10, 1500, 12.5]]);
+  assert.deepStrictEqual(signature(bio.rushModes[0].rows), [["合計2R相当×1～25", "300～7500発", 100]]);
+
+  for (const target of [eva, kake219, kake7500, hikikomari, bio]) {
+    assert.strictEqual(target.allocationVerified, true, `${target.name}: 照合済み`);
+    assert.ok(target.sourceUrls.length >= 2, `${target.name}: 複数出典`);
+    const model = normalizeMachine(target);
+    for (const mode of [...model.hesoModes, ...model.rushModes]) {
+      assert.strictEqual(sumRatio(mode.rows), 100, `${target.name} / ${mode.name}`);
+    }
+  }
+});
+
 console.log(JSON.stringify(out, null, 2));
 console.log(`\n${passed} passed / ${failed} failed`);
 if (failed > 0) process.exit(1);
