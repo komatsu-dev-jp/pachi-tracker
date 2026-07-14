@@ -91,6 +91,31 @@ const gojiSilverLoop = getMachineRoundLoop(gojiSilver, "rush", 4);
 assert.equal(changeRoundMultiplier(2, 1, gojiSilverLoop), 3, "ゴジエヴァSILVERは400発単位の上乗せを記録できること");
 assert.equal(changeRoundMultiplier(6, -1, gojiSilverLoop), 5, "ゴジエヴァSILVERの可変ループ回数を訂正できること");
 
+assert.deepEqual(
+  signatures(getMachineRoundOptions(machine("e真・北斗無双 第5章 夢幻闘双"), "rush")),
+  ["10R×1", "10R×2", "10R×3", "10R×4", "10R×5"],
+  "北斗無双5は1500～7500玉の全セット数を選択できること",
+);
+assert.deepEqual(
+  signatures(getMachineRoundOptions(machine("eフィーバーBASTARD!! -暗黒の破壊神-"), "rush")),
+  ["10R×1", "10R×2", "10R×3"],
+  "BASTARDは1500・3000・4500玉を選択できること",
+);
+assert.deepEqual(
+  signatures(getMachineRoundOptions(machine("e魔法少女まどか☆マギカ3 時間遡行"), "rush")),
+  ["5R×1", "5R×2", "5R×4"],
+  "まどか3は750・1500・3000玉を選択できること",
+);
+assert.ok(
+  signatures(getMachineRoundOptions(machine("e北斗の拳11 暴凶星"), "heso")).includes("12R×1"),
+  "北斗11の拳王覚醒は2R+10Rを合計12Rとして記録できること",
+);
+assert.deepEqual(
+  signatures(getMachineRoundOptions(machine("e北斗の拳11 暴凶星"), "rush")),
+  ["10R×1", "10R×3", "10R×4"],
+  "北斗11は1500・4500・6000玉を選択できること",
+);
+
 assert.equal(changeRoundMultiplier(4, 1), 5, "未登録のループ機種も1セットずつ手動調整できること");
 
 const hit6000 = buildMultiRoundHit(1, {

@@ -448,6 +448,47 @@ check("T18_清流・リンかけ・ゴジエヴァ・SAOの公開振分を固定
   }
 });
 
+// ── T19: 2026年初夏の追加5機種と旧誤登録値を固定 ──
+check("T19_北斗無双・BASTARD・牙狼・まどか・北斗11の公開振分を固定", () => {
+  const byName = (name) => machineDB.find((m) => m.name === name);
+  const signature = (rows) => rows.map((r) => [r.roundsLabel || r.rounds, r.payoutLabel || r.payout, r.rate]);
+  const musou = byName("e真・北斗無双 第5章 夢幻闘双");
+  const bastard = byName("eフィーバーBASTARD!! -暗黒の破壊神-");
+  const garo = byName("e牙狼11〜冴島大河〜魔戒BURST Ver.");
+  const madoka = byName("e魔法少女まどか☆マギカ3 時間遡行");
+  const hokuto = byName("e北斗の拳11 暴凶星");
+
+  assert.strictEqual(musou.synthProb, 159.8, "北斗無双5の大当り確率");
+  assert.deepStrictEqual(signature(musou.rushModes[0].rows), [["10R×5", 7500, 0.2], ["10R×4", 6000, 2.9], ["10R×3", 4500, 14.7], ["10R×2", 3000, 36.6], [10, 1500, 45.6]]);
+
+  assert.strictEqual(bastard.synthProb, 399.9, "BASTARDの表示確率");
+  assert.strictEqual(bastard.figureProb, 349.9, "BASTARDの図柄揃い確率");
+  assert.strictEqual(bastard.chargeProb, 2785, "BASTARDのラーズちゃーじ確率");
+  assert.deepStrictEqual(signature(bastard.rushModes[1].rows), [["10R×3", 4500, 30], ["10R×2", 3000, 70]]);
+
+  assert.strictEqual(garo.synthProb, 349.9, "牙狼11の大当り確率");
+  assert.strictEqual(garo.rushEntryRate, 25, "牙狼11の魔戒BURST突入率");
+  assert.deepStrictEqual(signature(garo.rushModes[0].rows), [[10, 1500, 64.6], [10, 1500, 35.4]]);
+
+  assert.strictEqual(madoka.synthProb, 319.9, "まどか3の大当り確率");
+  assert.deepStrictEqual(signature(madoka.hesoModes[0].rows), [[10, 1500, 1], [3, 450, 69], [3, 450, 30]]);
+  assert.deepStrictEqual(signature(madoka.rushModes[1].rows), [["5R×4", 3000, 75], [5, 750, 25]]);
+
+  assert.strictEqual(hokuto.synthProb, 399.8, "北斗11の大当り確率");
+  assert.strictEqual(hokuto.rushEntryRate, 61, "北斗11のRUSH突入率");
+  assert.deepStrictEqual(signature(hokuto.hesoModes[0].rows), [["10R×3", 4500, 5], ["2R+10R", 1800, 4], [10, 1500, 52], [10, 1500, 39]]);
+  assert.deepStrictEqual(signature(hokuto.rushModes[0].rows), [["10R×4", 6000, 10], ["10R×3", 4500, 40], [10, 1500, 30], ["STリセット", 0, 20]]);
+
+  for (const target of [musou, bastard, garo, madoka, hokuto]) {
+    assert.strictEqual(target.allocationVerified, true, `${target.name}: 照合済み`);
+    assert.ok(target.sourceUrls.some((url) => url.includes("hisshobon.jp")), `${target.name}: 必勝本の出典`);
+    const model = normalizeMachine(target);
+    for (const mode of [...model.hesoModes, ...model.rushModes]) {
+      assert.strictEqual(sumRatio(mode.rows), 100, `${target.name} / ${mode.name}`);
+    }
+  }
+});
+
 console.log(JSON.stringify(out, null, 2));
 console.log(`\n${passed} passed / ${failed} failed`);
 if (failed > 0) process.exit(1);
