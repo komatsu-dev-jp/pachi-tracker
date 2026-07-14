@@ -5,6 +5,9 @@
 
 const DEFAULT_PRIOR_BALLS = 50000;
 const BALLS_PER_1K = 250;
+// 回転率の事前分散（±2回/K）。deltaEvidence の DEFAULT_PRIOR_VARIANCE と同じ値で、
+// 3エンジンの信頼区間を同一の式（conf²·実測誤差² + (1-conf)²·事前分散）に揃えるために使う。
+const PRIOR_ROTATION_VARIANCE = 4;
 
 function finite(value, fallback = 0) {
   const number = Number(value);
@@ -47,10 +50,20 @@ export function runEvidence(ev = {}, settings = {}) {
   const borderDifference = hasEstimate ? predictedRotation - trueBorder : 0;
   const goodMachineScore = Math.max(0, borderDifference * confidence * 100);
 
+  // 3エンジン共通の区間式（deltaEvidence / pevidenceAnalytics と同一）:
+  // 予測は 実測×実戦信頼度 + 事前値×(1-実戦信頼度) の合成なので、
+  // 区間幅も conf²·実測誤差² + (1-conf)²·事前分散 のベイズ事後分散から取る。
+  // 事前値が差玉解析のときは、その事後分散 事前分散×(1-差玉信頼度) を引き継ぐ
+  // （従来は信頼度・差玉事前を無視した ±1.96×2/√K の固定式だった）。
   const samples1K = Math.max(1, totalKCount);
-  const standardError = 2 / Math.sqrt(samples1K);
-  const predictedLow = Math.max(0, predictedRotation - 1.96 * standardError);
-  const predictedHigh = predictedRotation + 1.96 * standardError;
+  const observationSe = 2 / Math.sqrt(samples1K);
+  const priorRotationVariance = PRIOR_ROTATION_VARIANCE * (1 - deltaConfidence);
+  const posteriorSd = Math.sqrt(
+    (liveConfidence * observationSe) ** 2 +
+    ((1 - liveConfidence) ** 2) * priorRotationVariance,
+  );
+  const predictedLow = Math.max(0, predictedRotation - 1.96 * posteriorSd);
+  const predictedHigh = predictedRotation + 1.96 * posteriorSd;
 
   // 信頼度20%未満はグレードを断言しない（deltaEvidence と同じゲート）。
   let grade = "データ収集中";

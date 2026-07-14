@@ -8,6 +8,7 @@
 
 import { machineDB } from "../../machineDB.js";
 import {
+  DEFAULT_PRIOR_VARIANCE,
   findMachineSpec,
   machineBorder,
   resolveMachineStats,
@@ -286,8 +287,12 @@ function createProcessedRows(rawRows, customMachines, params) {
       const predictedRotation = activeRate * confidence + row.border * (1 - confidence);
       const aggregateDerivative = 250 * cumulativeSpins / Math.max(1, cumulativeInputBalls ** 2);
       const standardError = Math.max(0.12, aggregateDerivative * Math.sqrt(Math.max(0, cumulativeInputVariance)));
-      const predictedLow = Math.max(0, predictedRotation - 1.96 * standardError * confidence);
-      const predictedHigh = predictedRotation + 1.96 * standardError * confidence;
+      // 3エンジン共通の区間式（deltaEvidence と同一）: 予測は実測×信頼度+ボーダー×(1-信頼度)の
+      // 合成なので、区間幅も conf²·SE² + (1-conf)²·priorVariance のベイズ事後分散から取る。
+      // 従来の SE×conf は信頼度ゼロ付近で区間幅0（＝データなしで断定）に潰れていた。
+      const posteriorSd = Math.sqrt((confidence * standardError) ** 2 + ((1 - confidence) ** 2) * DEFAULT_PRIOR_VARIANCE);
+      const predictedLow = Math.max(0, predictedRotation - 1.96 * posteriorSd);
+      const predictedHigh = predictedRotation + 1.96 * posteriorSd;
 
       output.push({
         ...row,
@@ -517,6 +522,8 @@ function economics(row, params) {
   const daily = unitPrice * params.sessionSpins;
   const lowUnit = row.predictedLow > 0 ? 1000 / border - 1000 / row.predictedLow : 0;
   const highUnit = row.predictedHigh > 0 ? 1000 / border - 1000 / row.predictedHigh : 0;
+  // ここでの stdDev は「1日分の出玉ブレ（結果のリスク）」としての利用。
+  // low/high（回転率の推定誤差に基づく信頼区間）とは役割が別なので、意図的に統一しない。
   const machineSdYen = Math.max(1, num(row.estimate?.stats?.stdDev, 3000) * params.ballValueYen);
   const hourlyRisk = machineSdYen * Math.sqrt(params.spinsPerHour / params.sessionSpins);
   const winRate = normalCdf(daily / machineSdYen);

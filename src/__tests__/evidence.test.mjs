@@ -53,4 +53,26 @@ assert.equal(lowConfidence.grade, "データ収集中");
 assert.equal(empty.source, "none");
 assert.equal(sample.source, "live");
 
+// 信頼区間（3エンジン統一の事後分散式）:
+// 実戦データが増えるほど狭まり、差玉事前分布の確信度も区間幅へ引き継ぐ
+const noTrialsWidth = noTrials.predictedHigh - noTrials.predictedLow;
+const sampleWidth = sample.predictedHigh - sample.predictedLow;
+const bigSample = runEvidence({
+  theoreticalBorder: 18,
+  effectiveStart1K: 22,
+  cashKCount: 1e6,
+}, { priorBalls: 50000 });
+assert.ok(sampleWidth < noTrialsWidth, "実戦データが増えるほど予測レンジが狭まる");
+assert.ok(bigSample.predictedHigh - bigSample.predictedLow < sampleWidth);
+const deltaOnly = runEvidence({ theoreticalBorder: 18 }, {
+  priorBalls: 50000,
+  priorConfidence: 0.9,
+  priorRotation: 21,
+});
+assert.ok(
+  deltaOnly.predictedHigh - deltaOnly.predictedLow < noTrialsWidth,
+  "差玉解析の確信度が高いほど、実戦データなしでも予測レンジが狭い",
+);
+assert.ok(deltaOnly.predictedHigh > deltaOnly.predictedLow, "予測レンジは幅0に潰れない");
+
 console.log("evidence.test.mjs: all tests passed");

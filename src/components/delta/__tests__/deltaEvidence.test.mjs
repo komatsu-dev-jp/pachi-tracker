@@ -44,6 +44,14 @@ const lowSd = buildDeltaEvidence(scans[0].rows, { ...machine, stdDev: 3000 });
 const highSd = buildDeltaEvidence(scans[0].rows, { ...machine, stdDev: 19000 });
 assert.ok(lowSd.confidence > highSd.confidence, "標準偏差が大きい機種ほど信頼度を下げる");
 
+// 信頼区間: SE×信頼度の二重掛けを廃止（ベイズ事後分散へ統一）したため、
+// ブレが大きい機種ほど予測レンジが広く、かつ事前分布の幅（±1.96×2回/K）を超えない
+const lowSdWidth = lowSd.predictedHigh - lowSd.predictedLow;
+const highSdWidth = highSd.predictedHigh - highSd.predictedLow;
+assert.ok(highSdWidth > lowSdWidth, "標準偏差が大きい機種ほど予測レンジを広げる");
+assert.ok(highSdWidth <= 2 * 1.96 * 2 + 1e-9, "予測レンジは事前分布の幅を超えない");
+assert.ok(lowSdWidth > 0, "データが少なくても予測レンジが幅0に潰れない");
+
 const legacy = resolveMachineStats({ spec1R: 130, roundDist: "4R:50%, 10R:50%" });
 assert.equal(legacy.avgPayout, 910);
 assert.ok(legacy.stdDev >= 3000);
