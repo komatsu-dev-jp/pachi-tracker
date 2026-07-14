@@ -226,6 +226,31 @@ assert.deepStrictEqual(
   "一騎当千396は1500・3000発を記録できること",
 );
 
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(machine("Pクイーンズブレイド奈落 ナナエル79Ver."), "rush")),
+  ["10R×1", "10R×5"],
+  "QB奈落は600発と3000発（10R×5）を区別して記録できること",
+);
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(machine("PフィーバークィーンⅡ YS"), "rush")),
+  ["4R×1", "10R×1"],
+  "クィーンⅡは電サポ表と別に4R・10Rを記録できること",
+);
+const ginpara = machine("eまわるん超ワープ ギンギラパラダイス VIVA FESTA HTA2");
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(ginpara, "rush")),
+  ["3R×1", "10R×1", "10R×2", "10R×3"],
+  "ギンパラVIVA FESTAは∞ストック分を実際のR数で記録できること",
+);
+assert.equal(changeRoundMultiplier(3, 1, getMachineRoundLoop(ginpara, "rush", 10)), 4, "ギンパラの追加10Rを記録できること");
+const lupinOc = machine("eルパン三世 ONE COLLECTION 超ブチヌキLTver.");
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(lupinOc, "rush")),
+  ["2R×1", "2R×2", "10R×1", "10R×2"],
+  "ルパン超ブチヌキは2回セットの実際の組合せを記録できること",
+);
+assert.equal(changeRoundMultiplier(2, 1, getMachineRoundLoop(lupinOc, "rush", 10)), 3, "ルパン超ブチヌキの+αを追加できること");
+
 const hit6000 = buildMultiRoundHit(1, {
   rounds: 10,
   mult: 4,

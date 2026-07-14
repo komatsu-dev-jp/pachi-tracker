@@ -635,6 +635,36 @@ check("T24_からくり甘・犬夜叉甘・極JAPAN・沖海6・一騎当千396
   }
 });
 
+// ── T25: 2025年2月～2026年5月の追加5台を固定 ──
+check("T25_クィーン・ルパン・戦国・ギンパラ・QB奈落の公開振分を固定", () => {
+  const byName = (name) => machineDB.find((m) => m.name === name);
+  const signature = (rows) => rows.map((r) => [r.roundsLabel || r.rounds, r.payoutLabel || r.payout, r.rate]);
+  const queen = byName("PフィーバークィーンⅡ YS");
+  const lupin = byName("eルパン三世 ONE COLLECTION 超ブチヌキLTver.");
+  const sengoku = byName("デカスタP戦国無双 100ver.");
+  const ginpara = byName("eまわるん超ワープ ギンギラパラダイス VIVA FESTA HTA2");
+  const qb = byName("Pクイーンズブレイド奈落 ナナエル79Ver.");
+
+  assert.deepStrictEqual(signature(queen.hesoModes[0].rows), [[10, 1000, 11], [4, 400, 89]]);
+  assert.deepStrictEqual(signature(queen.rushModes[3].rows), [["電サポ10000回", 0, 1.6], ["電サポ100回", 0, 62.2], ["電サポ40回", 0, 36.2]]);
+  assert.strictEqual(lupin.rushContinueRate, 77, "ルパン超ブチヌキのST継続率");
+  assert.deepStrictEqual(signature(lupin.rushModes[0].rows), [["2R+10R+α / 10R×2+α", "平均約3000発", 80], ["2R×2", 300, 20]]);
+  assert.strictEqual(sengoku.synthProb, 100.98, "戦国無双100の通常時確率");
+  assert.deepStrictEqual(signature(sengoku.hesoModes[0].rows), [[10, 1000, 1], [5, 250, 24], [5, 250, 75]]);
+  assert.strictEqual(ginpara.synthProb, 319.6, "ギンパラVIVA FESTAの通常時確率");
+  assert.deepStrictEqual(signature(ginpara.rushModes[2].rows), [[10, 1500, 73], [3, 450, 24], ["10R+∞×2", "2400～4500発以上", 1], ["10R+∞×1", "1950～3000発以上", 1], ["3R+∞×1", "900～1950発以上", 1]]);
+  assert.deepStrictEqual(signature(qb.rushModes[0].rows), [["10R×5", 3000, 50], [10, 600, 50]]);
+
+  for (const target of [queen, lupin, sengoku, ginpara, qb]) {
+    assert.strictEqual(target.allocationVerified, true, `${target.name}: 照合済み`);
+    assert.ok(target.sourceUrls.length >= 2, `${target.name}: 複数出典`);
+    const model = normalizeMachine(target);
+    for (const mode of [...model.hesoModes, ...model.rushModes]) {
+      assert.strictEqual(sumRatio(mode.rows), 100, `${target.name} / ${mode.name}`);
+    }
+  }
+});
+
 console.log(JSON.stringify(out, null, 2));
 console.log(`\n${passed} passed / ${failed} failed`);
 if (failed > 0) process.exit(1);
