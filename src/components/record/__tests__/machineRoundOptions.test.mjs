@@ -153,6 +153,32 @@ assert.deepEqual(
 
 assert.equal(changeRoundMultiplier(4, 1), 5, "未登録のループ機種も1セットずつ手動調整できること");
 
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(machine("eルパン三世VSキャッツ・アイ 157ver. 極限突破ブッた斬り7500"), "rush")),
+  ["10R×1", "10R×2", "10R×3", "10R×4", "10R×5"],
+  "ルパン猫157は1500～7500発を実際の10R回数で選べること",
+);
+
+const megami = machine("e女神のカフェテラス JLZ");
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(megami, "rush")),
+  ["10R×1", "10R×2", "10R×3"],
+  "女神のカフェテラスは1500・3000・4500発を選べること",
+);
+const megamiLoop = getMachineRoundLoop(megami, "rush", 10);
+assert.equal(changeRoundMultiplier(3, 1, megamiLoop), 4, "女神のカフェテラスは爆乗せ分を10R単位で追加できること");
+assert.equal(changeRoundMultiplier(7, -1, megamiLoop), 6, "女神のカフェテラスの上乗せ回数を訂正できること");
+
+const blueLock = machine("eフィーバーブルーロック");
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(blueLock, "rush")),
+  ["10R×1", "10R×2", "10R×3", "10R×4", "10R×5"],
+  "ブルーロックは1500～7500発を選べること",
+);
+const blueLockLoop = getMachineRoundLoop(blueLock, "rush", 10);
+assert.equal(changeRoundMultiplier(5, 1, blueLockLoop), 6, "ブルーロックは保証分を加えた実質9000発を記録できること");
+assert.equal(changeRoundMultiplier(8, -1, blueLockLoop), 7, "ブルーロックの連続上乗せ回数を訂正できること");
+
 const hit6000 = buildMultiRoundHit(1, {
   rounds: 10,
   mult: 4,
