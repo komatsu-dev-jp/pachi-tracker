@@ -125,6 +125,31 @@ assert.deepEqual(
   ["10R×1", "10R×2", "10R×3", "10R×4", "10R×5"],
   "超電磁砲は1500～7500玉の各セット数を選択できること",
 );
+assert.deepEqual(
+  signatures(getMachineRoundOptions(machine("eフィーバーキン肉マン"), "rush")),
+  ["10R×1", "10R×2", "10R×3", "10R×4", "10R×5"],
+  "キン肉マンは1500～7500玉の全セット数を選択できること",
+);
+assert.deepEqual(
+  signatures(getMachineRoundOptions(machine("e牙狼12黄金騎士極限 XX-MJ"), "rush")),
+  ["10R×1", "10R×5"],
+  "牙狼12は1500・7500玉を選択できること",
+);
+const ryza = machine("eライザのアトリエ 常闇の女王と秘密の隠れ家 K3");
+assert.ok(signatures(getMachineRoundOptions(ryza, "heso")).includes("12R×1"), "ライザの1800玉は2R+10R=12Rで記録できること");
+const ryzaLoop = getMachineRoundLoop(ryza, "rush", 10);
+assert.equal(changeRoundMultiplier(3, 1, ryzaLoop), 6, "ライザは4500玉単位で上乗せできること");
+assert.equal(changeRoundMultiplier(9, -1, ryzaLoop), 6, "ライザの上乗せ回数を訂正できること");
+assert.deepEqual(
+  signatures(getMachineRoundOptions(machine("e86-エイティシックス- MAM2"), "rush")),
+  ["2R×1", "10R×1", "10R×2", "10R×3", "10R×4", "10R×5"],
+  "86はキリヤ血戦を含む公表範囲を選択できること",
+);
+assert.deepEqual(
+  signatures(getMachineRoundOptions(machine("eリング 最恐領域 RHA"), "rush")),
+  ["10R×1", "10R×2", "10R×4"],
+  "リング最恐領域は1500・3000・6000玉を選択できること",
+);
 
 assert.equal(changeRoundMultiplier(4, 1), 5, "未登録のループ機種も1セットずつ手動調整できること");
 

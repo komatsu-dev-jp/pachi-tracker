@@ -517,6 +517,39 @@ check("T20_慶次・電王・超電磁砲・北斗無双デカヘソの公開振
   }
 });
 
+// ── T21: 2025年8月～2026年5月のLT機5台を固定 ──
+check("T21_キン肉マン・牙狼12・ライザ・86・リングの公開振分を固定", () => {
+  const byName = (name) => machineDB.find((m) => m.name === name);
+  const signature = (rows) => rows.map((r) => [r.roundsLabel || r.rounds, r.payoutLabel || r.payout, r.rate]);
+  const kinnikuman = byName("eフィーバーキン肉マン");
+  const garo = byName("e牙狼12黄金騎士極限 XX-MJ");
+  const ryza = byName("eライザのアトリエ 常闇の女王と秘密の隠れ家 K3");
+  const eightySix = byName("e86-エイティシックス- MAM2");
+  const ring = byName("eリング 最恐領域 RHA");
+
+  assert.strictEqual(kinnikuman.synthProb, 349.9, "キン肉マンのチャージ込み確率");
+  assert.deepStrictEqual(signature(kinnikuman.rushModes[0].rows), [["10R×5", 7500, 0.6], ["10R×4", 6000, 5.6], ["10R×3", 4500, 20.2], ["10R×2", 3000, 36.5], [10, 1500, 33.1], ["STリセット", 0, 4]]);
+  assert.strictEqual(garo.rushEntryRate, 25, "牙狼12のLT実質突入率");
+  assert.deepStrictEqual(signature(garo.rushModes[1].rows), [["10R×5", 7500, 25], [10, 1500, 51], [10, 1500, 24]]);
+  assert.strictEqual(ryza.synthProb, 239.7, "ライザの通常時確率");
+  assert.deepStrictEqual(signature(ryza.hesoModes[0].rows), [["2R+10R", 1800, 26], ["2R+10R", 1800, 25], [2, 300, 49]]);
+  assert.deepStrictEqual(signature(ryza.rushModes[3].rows), [["10R×3追加", 4500, 64], ["追加なし", 0, 36]]);
+  assert.strictEqual(eightySix.synthProb, 239.1, "86の通常時確率");
+  assert.deepStrictEqual(signature(eightySix.hesoModes[0].rows), [["10R×3", 4500, 0.5], [2, 300, 54.5], [2, 300, 45]]);
+  assert.strictEqual(ring.rushEntryRate, 57, "リング最恐領域のLT突入率");
+  assert.deepStrictEqual(signature(ring.rushModes[0].rows), [["10R×4", 6000, 50], ["10R×2", 3000, 50]]);
+  assert.deepStrictEqual(signature(ring.rushModes[1].rows), [[10, 1500, 100]]);
+
+  for (const target of [kinnikuman, garo, ryza, eightySix, ring]) {
+    assert.strictEqual(target.allocationVerified, true, `${target.name}: 照合済み`);
+    assert.ok(target.sourceUrls.length >= 2, `${target.name}: 複数出典`);
+    const model = normalizeMachine(target);
+    for (const mode of [...model.hesoModes, ...model.rushModes]) {
+      assert.strictEqual(sumRatio(mode.rows), 100, `${target.name} / ${mode.name}`);
+    }
+  }
+});
+
 console.log(JSON.stringify(out, null, 2));
 console.log(`\n${passed} passed / ${failed} failed`);
 if (failed > 0) process.exit(1);
