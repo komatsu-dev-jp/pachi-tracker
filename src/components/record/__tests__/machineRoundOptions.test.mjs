@@ -81,6 +81,16 @@ assert.deepEqual(
   "彼女、お借りしますは4回分の全合計R数を選択できること",
 );
 
+const gojiGold = machine("eゴジラ対エヴァンゲリオン2 超デカゴールド");
+const gojiGoldLoop = getMachineRoundLoop(gojiGold, "rush", 10);
+assert.equal(changeRoundMultiplier(2, 1, gojiGoldLoop), 3, "ゴジエヴァGOLDは1500発単位の上乗せを記録できること");
+assert.equal(changeRoundMultiplier(5, -1, gojiGoldLoop), 4, "ゴジエヴァGOLDの上乗せ回数を訂正できること");
+
+const gojiSilver = machine("Pゴジラ対エヴァンゲリオン2 超デカシルバー");
+const gojiSilverLoop = getMachineRoundLoop(gojiSilver, "rush", 4);
+assert.equal(changeRoundMultiplier(2, 1, gojiSilverLoop), 3, "ゴジエヴァSILVERは400発単位の上乗せを記録できること");
+assert.equal(changeRoundMultiplier(6, -1, gojiSilverLoop), 5, "ゴジエヴァSILVERの可変ループ回数を訂正できること");
+
 assert.equal(changeRoundMultiplier(4, 1), 5, "未登録のループ機種も1セットずつ手動調整できること");
 
 const hit6000 = buildMultiRoundHit(1, {

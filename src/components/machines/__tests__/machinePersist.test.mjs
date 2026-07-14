@@ -412,6 +412,42 @@ check("T17_2026年1月機種5台の公開振分を固定", () => {
   }
 });
 
+// ── T18: 2026年1月の追加5機種と旧誤登録値を固定 ──
+check("T18_清流・リンかけ・ゴジエヴァ・SAOの公開振分を固定", () => {
+  const byName = (name) => machineDB.find((m) => m.name === name);
+  const signature = (rows) => rows.map((r) => [r.roundsLabel || r.rounds, r.payoutLabel || r.payout, r.rate]);
+  const seiryu = byName("PA清流物語4ウキウキ79ver.");
+  const ring = byName("Pリングにかけろ1 129ver.");
+  const gold = byName("eゴジラ対エヴァンゲリオン2 超デカゴールド");
+  const silver = byName("Pゴジラ対エヴァンゲリオン2 超デカシルバー");
+  const sao = byName("eソードアート・オンライン99Ver.");
+
+  assert.deepStrictEqual(signature(seiryu.rushModes[0].rows), [["10R×2", 1400, 33], [10, 700, 33], [3, 210, 34]]);
+  assert.deepStrictEqual(signature(ring.hesoModes[0].rows), [[10, 1200, 5], [6, 720, 45], [6, 720, 50]]);
+  assert.deepStrictEqual(signature(ring.rushModes[1].rows), [["10R×2", 2400, 54.5], [10, 1200, 19.5], [4, 480, 5.5], ["STリセット", 0, 20.5]]);
+  assert.deepStrictEqual(signature(gold.hesoModes[0].rows), [[10, 1500, 0.5], [2, 300, 29.5], [2, 300, 70]]);
+  assert.deepStrictEqual(signature(gold.rushModes[0].rows), [["10R×2+α", "3000発+α", 5], ["10R×2", 3000, 25], [10, 1500, 70]]);
+
+  assert.strictEqual(silver.synthProb, 174.9, "SILVERの図柄揃い確率");
+  assert.strictEqual(silver.border1K, 34.4, "SILVERの等価ボーダー");
+  assert.strictEqual(silver.rushEntryRate, 25, "SILVERのLT突入率");
+  assert.strictEqual(silver.rushContinueRate, 90, "SILVERのLT継続率");
+  assert.deepStrictEqual(signature(silver.rushModes[0].rows), [["4R×2+α", "800発+α", 25], [4, 400, 75]]);
+
+  assert.deepStrictEqual(signature(sao.hesoModes[0].rows), [[10, 800, 1], [3, 240, 54], [3, 240, 45]]);
+  assert.deepStrictEqual(signature(sao.rushModes[0].rows), [[10, 800, 1], [10, 800, 15.5], [10, 800, 48.5], [3, 240, 35]]);
+  assert.deepStrictEqual(signature(sao.rushModes[1].rows), [[10, 800, 33], [10, 800, 32], [3, 240, 35]]);
+
+  for (const target of [seiryu, ring, gold, silver, sao]) {
+    assert.strictEqual(target.allocationVerified, true, `${target.name}: 照合済み`);
+    assert.ok(target.sourceUrls.some((url) => url.includes("hisshobon.jp")), `${target.name}: 必勝本の出典`);
+    const model = normalizeMachine(target);
+    for (const mode of [...model.hesoModes, ...model.rushModes]) {
+      assert.strictEqual(sumRatio(mode.rows), 100, `${target.name} / ${mode.name}`);
+    }
+  }
+});
+
 console.log(JSON.stringify(out, null, 2));
 console.log(`\n${passed} passed / ${failed} failed`);
 if (failed > 0) process.exit(1);
