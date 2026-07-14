@@ -4,6 +4,7 @@ import { C, f, sc, sp, tsNow, font, mono } from "../constants";
 import { archiveWorkMinutes } from "./analysis/analysisSelectors";
 import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./Atoms";
 import { searchMachines, deriveSpecForMachine, getEffectiveMachineList } from "../machineDB";
+import { MACHINE_SORT_OPTIONS, sortMachines } from "../machineSort";
 import { calcPreciseEV } from "../logic";
 import { reconcileSegmentConsumption, clearPushCorrections, estimateSegmentGross, hasPushCorrections } from "../ballConsumption";
 import { createBackup, restoreBackup } from "../persistence";
@@ -755,6 +756,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     const [machineQuery, setMachineQuery] = useState("");
     const [showMachinePicker, setShowMachinePicker] = useState(false);
     const [pickerFilter, setPickerFilter] = useState("all");
+    const [pickerSort, setPickerSort] = useState("default");
     // 機種選択ボトムシートの適用先（"setup"=稼働開始モーダル / "move"=台移動モーダル）
     const [machinePickerFor, setMachinePickerFor] = useState("setup");
     const [summaryCollapsed, setSummaryCollapsed] = useState(true);
@@ -1384,9 +1386,9 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     // 機種ピッカー: 検索 ∩ タイプフィルター
     const filteredMachines = useMemo(() => {
         const all = searchMachines(machineQuery, S.customMachines);
-        if (pickerFilter === "all") return all;
-        return all.filter(m => m.type === pickerFilter);
-    }, [machineQuery, pickerFilter, S.customMachines]);
+        const filtered = pickerFilter === "all" ? all : all.filter(m => m.type === pickerFilter);
+        return sortMachines(filtered, pickerSort);
+    }, [machineQuery, pickerFilter, pickerSort, S.customMachines]);
 
     // 機種設定 編集モーダル用の検索結果
     const editMachineResults = useMemo(() => {
@@ -2131,6 +2133,29 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     })}
                 </div>
 
+                {/* 並び替え */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 16px 12px" }}>
+                    <label htmlFor="machine-picker-sort" style={{ color: C.sub, fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                        並び替え
+                    </label>
+                    <select
+                        id="machine-picker-sort"
+                        value={pickerSort}
+                        onChange={(event) => setPickerSort(event.target.value)}
+                        style={{
+                            width: "100%", minHeight: 40, boxSizing: "border-box",
+                            background: "var(--surface-hi)", border: `1px solid ${C.borderHi}`,
+                            borderRadius: 10, padding: "8px 36px 8px 12px",
+                            color: C.text, fontSize: 13, fontWeight: 700, fontFamily: font,
+                            outline: "none", cursor: "pointer",
+                        }}
+                    >
+                        {MACHINE_SORT_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                    </select>
+                </div>
+
                 {/* 機種リスト (スクロール) */}
                 <div style={{ flex: 1, overflowY: "auto", paddingBottom: 12 }}>
                     {filteredMachines.map((m, i) => {
@@ -2405,7 +2430,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     <div style={{ fontSize: 10, color: C.sub, marginBottom: 4, fontWeight: 600 }}>機種</div>
                                     <button
                                         className="b"
-                                        onClick={() => { setMachineQuery(""); setPickerFilter("all"); setMachinePickerFor("setup"); setShowMachinePicker(true); }}
+                                        onClick={() => { setMachineQuery(""); setPickerFilter("all"); setPickerSort("default"); setMachinePickerFor("setup"); setShowMachinePicker(true); }}
                                         style={{
                                             width: "100%", boxSizing: "border-box",
                                             background: C.bg, border: `1px solid ${C.borderHi}`,
@@ -5245,7 +5270,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>移動先の機種名</div>
                             <button
                                 className="b"
-                                onClick={() => { setMachineQuery(""); setPickerFilter("all"); setMachinePickerFor("move"); setShowMachinePicker(true); }}
+                                onClick={() => { setMachineQuery(""); setPickerFilter("all"); setPickerSort("default"); setMachinePickerFor("move"); setShowMachinePicker(true); }}
                                 style={{
                                     width: "100%", boxSizing: "border-box",
                                     background: C.bg, border: `2px solid ${C.borderHi}`,
@@ -9905,12 +9930,14 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     const [showMachineSearch, setShowMachineSearch] = useState(false);
     const [query, setQuery] = useState("");
     const [machineFilter, setMachineFilter] = useState("all");
+    const [machineSort, setMachineSort] = useState("default");
     const [selected, setSelected] = useState(null);
     const [editingMachine, setEditingMachine] = useState(null);
     const [showMachineForm, setShowMachineForm] = useState(false);
     const [showEvidenceMachineUi, setShowEvidenceMachineUi] = useState(false);
     const allResults = searchMachines(query, s.customMachines);
-    const results = machineFilter === "all" ? allResults : allResults.filter(m => m.type === machineFilter);
+    const filteredResults = machineFilter === "all" ? allResults : allResults.filter(m => m.type === machineFilter);
+    const results = sortMachines(filteredResults, machineSort);
     const updateManualYutime = (key, value) => {
         const number = Math.max(0, Number(value) || 0);
         if (key === "triggerLowSpins") s.setCeilingRot(number);
@@ -11532,7 +11559,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                 {/* ヘッダー */}
                 <div style={{ padding: "12px 14px 8px", flexShrink: 0 }}>
                     <div style={{ marginBottom: 12 }}>
-                        <button className="b" onClick={() => { setShowMachineSearch(false); setQuery(""); setMachineFilter("all"); setConfirmingDeleteMachine(null); }} style={{
+                        <button className="b" onClick={() => { setShowMachineSearch(false); setQuery(""); setMachineFilter("all"); setMachineSort("default"); setConfirmingDeleteMachine(null); }} style={{
                             background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
                             color: C.text, fontSize: 12, padding: "8px 16px", minHeight: 44, fontFamily: font, fontWeight: 600
                         }}>← 設定に戻る</button>
@@ -11571,6 +11598,29 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                             >{chip.label}</button>
                         );
                     })}
+                </div>
+
+                {/* 並び替え */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 14px 12px", flexShrink: 0 }}>
+                    <label htmlFor="settings-machine-sort" style={{ color: C.sub, fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                        並び替え
+                    </label>
+                    <select
+                        id="settings-machine-sort"
+                        value={machineSort}
+                        onChange={(event) => setMachineSort(event.target.value)}
+                        style={{
+                            width: "100%", minHeight: 40, boxSizing: "border-box",
+                            background: "var(--surface-hi)", border: `1px solid ${C.borderHi}`,
+                            borderRadius: 10, padding: "8px 36px 8px 12px",
+                            color: C.text, fontSize: 13, fontWeight: 700, fontFamily: font,
+                            outline: "none", cursor: "pointer",
+                        }}
+                    >
+                        {MACHINE_SORT_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                    </select>
                 </div>
 
                 {/* 機種リスト (カード形式・スクロール) */}
