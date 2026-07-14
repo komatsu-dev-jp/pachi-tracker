@@ -13,6 +13,14 @@ export const MACHINE_SORT_OPTIONS = Object.freeze([
   { value: "updated-desc", label: "更新が新しい順" },
 ]);
 
+export const MACHINE_PROBABILITY_FILTER_OPTIONS = Object.freeze([
+  { value: "all", label: "すべて" },
+  { value: "under-130", label: "〜1/129" },
+  { value: "130-199", label: "1/130〜199" },
+  { value: "200-319", label: "1/200〜319" },
+  { value: "over-320", label: "1/320〜" },
+]);
+
 function text(value) {
   return String(value || "").normalize("NFKC").trim();
 }
@@ -43,6 +51,52 @@ function probability(machine) {
   const match = text(machine?.prob).match(/1\s*\/\s*([\d.]+)/);
   const parsed = Number(match?.[1]);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : Number.POSITIVE_INFINITY;
+}
+
+export function getMachineMakerKey(machine) {
+  const maker = text(machine?.maker);
+  const alias = {
+    sankyo: "SANKYO",
+    kyoraku: "京楽",
+    "京楽": "京楽",
+    sammy: "サミー",
+    "サミー": "サミー",
+  }[maker.toLowerCase()];
+  return alias || maker || "メーカー未設定";
+}
+
+function machineTypeKey(machine) {
+  const type = text(machine?.type);
+  if (type.includes("スマパチ")) return "スマパチ";
+  if (type.includes("ハイミドル")) return "ハイミドル";
+  if (type.includes("ライトミドル")) return "ライトミドル";
+  if (type.includes("甘デジ")) return "甘デジ";
+  if (type.includes("ミドル")) return "ミドル";
+  return type;
+}
+
+function matchesProbabilityFilter(machine, filter) {
+  if (filter === "all") return true;
+  const value = probability(machine);
+  if (!Number.isFinite(value)) return false;
+  if (filter === "under-130") return value < 130;
+  if (filter === "130-199") return value >= 130 && value < 200;
+  if (filter === "200-319") return value >= 200 && value < 320;
+  if (filter === "over-320") return value >= 320;
+  return true;
+}
+
+export function filterMachines(machines, filters = {}) {
+  const list = Array.isArray(machines) ? machines : [];
+  const type = filters.type || "all";
+  const maker = filters.maker || "all";
+  const probabilityFilter = filters.probability || "all";
+
+  return list.filter((machine) => (
+    (type === "all" || machineTypeKey(machine) === type)
+    && (maker === "all" || getMachineMakerKey(machine) === maker)
+    && matchesProbabilityFilter(machine, probabilityFilter)
+  ));
 }
 
 function updatedTime(machine) {

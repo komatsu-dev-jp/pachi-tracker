@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MACHINE_SORT_OPTIONS, sortMachines } from "../../../machineSort.js";
+import {
+  MACHINE_PROBABILITY_FILTER_OPTIONS,
+  MACHINE_SORT_OPTIONS,
+  filterMachines,
+  getMachineMakerKey,
+  sortMachines,
+} from "../../../machineSort.js";
 
 const machines = [
   { name: "P北斗10", maker: "サミー", synthProb: 349, dataUpdatedAt: "2026-06-01" },
@@ -59,5 +65,41 @@ test("更新日は新しい順に並べ、未設定を最後にする", () => {
   assert.deepEqual(
     sortMachines(machines, "updated-desc").map((machine) => machine.dataUpdatedAt),
     ["2026-07-01", "2026-06-01", "2026-05-01", undefined],
+  );
+});
+
+test("メーカーの英字・日本語表記を同じグループとして扱う", () => {
+  assert.equal(getMachineMakerKey({ maker: "KYORAKU" }), "京楽");
+  assert.equal(getMachineMakerKey({ maker: "京楽" }), "京楽");
+  assert.equal(getMachineMakerKey({ maker: "Sammy" }), "サミー");
+  assert.equal(getMachineMakerKey({ maker: "サミー" }), "サミー");
+});
+
+test("タイプ・メーカー・確率帯を組み合わせて絞り込む", () => {
+  const candidates = [
+    { name: "A", maker: "KYORAKU", type: "スマパチ", synthProb: 349 },
+    { name: "B", maker: "京楽", type: "ライトミドル・LT", synthProb: 199.9 },
+    { name: "C", maker: "SANKYO", type: "ライトミドル", synthProb: 129.9 },
+    { name: "D", maker: "Sammy", type: "スマパチ", synthProb: 319.9 },
+  ];
+
+  assert.deepEqual(
+    filterMachines(candidates, { maker: "京楽" }).map((machine) => machine.name),
+    ["A", "B"],
+  );
+  assert.deepEqual(
+    filterMachines(candidates, { type: "ライトミドル", probability: "130-199" }).map((machine) => machine.name),
+    ["B"],
+  );
+  assert.deepEqual(
+    filterMachines(candidates, { maker: "サミー", probability: "200-319" }).map((machine) => machine.name),
+    ["D"],
+  );
+});
+
+test("確率帯の表示項目を提供する", () => {
+  assert.deepEqual(
+    MACHINE_PROBABILITY_FILTER_OPTIONS.map((option) => option.value),
+    ["all", "under-130", "130-199", "200-319", "over-320"],
   );
 });

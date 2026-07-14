@@ -4,7 +4,13 @@ import { C, f, sc, sp, tsNow, font, mono } from "../constants";
 import { archiveWorkMinutes } from "./analysis/analysisSelectors";
 import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./Atoms";
 import { searchMachines, deriveSpecForMachine, getEffectiveMachineList } from "../machineDB";
-import { MACHINE_SORT_OPTIONS, sortMachines } from "../machineSort";
+import {
+    MACHINE_PROBABILITY_FILTER_OPTIONS,
+    MACHINE_SORT_OPTIONS,
+    filterMachines,
+    getMachineMakerKey,
+    sortMachines,
+} from "../machineSort";
 import { calcPreciseEV } from "../logic";
 import { reconcileSegmentConsumption, clearPushCorrections, estimateSegmentGross, hasPushCorrections } from "../ballConsumption";
 import { createBackup, restoreBackup } from "../persistence";
@@ -9930,14 +9936,40 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     const [showMachineSearch, setShowMachineSearch] = useState(false);
     const [query, setQuery] = useState("");
     const [machineFilter, setMachineFilter] = useState("all");
+    const [machineMakerFilter, setMachineMakerFilter] = useState("all");
+    const [machineProbabilityFilter, setMachineProbabilityFilter] = useState("all");
     const [machineSort, setMachineSort] = useState("default");
+    const [showMachineDetails, setShowMachineDetails] = useState(false);
     const [selected, setSelected] = useState(null);
     const [editingMachine, setEditingMachine] = useState(null);
     const [showMachineForm, setShowMachineForm] = useState(false);
     const [showEvidenceMachineUi, setShowEvidenceMachineUi] = useState(false);
     const allResults = searchMachines(query, s.customMachines);
-    const filteredResults = machineFilter === "all" ? allResults : allResults.filter(m => m.type === machineFilter);
+    const makerOptions = useMemo(() => {
+        const counts = new Map();
+        searchMachines("", s.customMachines).forEach((machine) => {
+            const maker = getMachineMakerKey(machine);
+            counts.set(maker, (counts.get(maker) || 0) + 1);
+        });
+        return [...counts.entries()]
+            .map(([id, count]) => ({ id, label: id, count }))
+            .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label, "ja"));
+    }, [s.customMachines]);
+    const quickMakerOptions = ["SANKYO", "京楽", "三洋", "サミー"]
+        .map((id) => makerOptions.find((option) => option.id === id))
+        .filter(Boolean);
+    const visibleQuickMakerOptions = machineMakerFilter === "all"
+        || quickMakerOptions.some((option) => option.id === machineMakerFilter)
+        ? quickMakerOptions
+        : [makerOptions.find((option) => option.id === machineMakerFilter), ...quickMakerOptions].filter(Boolean);
+    const filteredResults = filterMachines(allResults, {
+        type: machineFilter,
+        maker: machineMakerFilter,
+        probability: machineProbabilityFilter,
+    });
     const results = sortMachines(filteredResults, machineSort);
+    const activeMachineFilterCount = Number(machineMakerFilter !== "all")
+        + Number(machineProbabilityFilter !== "all");
     const updateManualYutime = (key, value) => {
         const number = Math.max(0, Number(value) || 0);
         if (key === "triggerLowSpins") s.setCeilingRot(number);
@@ -11556,136 +11588,27 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
         };
         return (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                {/* ヘッダー */}
-                <div style={{ padding: "12px 14px 8px", flexShrink: 0 }}>
-                    <div style={{ marginBottom: 12 }}>
-                        <button className="b" onClick={() => { setShowMachineSearch(false); setQuery(""); setMachineFilter("all"); setMachineSort("default"); setConfirmingDeleteMachine(null); }} style={{
-                            background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
-                            color: C.text, fontSize: 12, padding: "8px 16px", minHeight: 44, fontFamily: font, fontWeight: 600
+                {/* ヘッダー + 上部検索 */}
+                <div style={{ padding: "12px 14px 10px", flexShrink: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+                        <button className="b" onClick={() => {
+                            setShowMachineSearch(false);
+                            setQuery("");
+                            setMachineFilter("all");
+                            setMachineMakerFilter("all");
+                            setMachineProbabilityFilter("all");
+                            setMachineSort("default");
+                            setShowMachineDetails(false);
+                            setConfirmingDeleteMachine(null);
+                        }} style={{
+                            background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 9,
+                            color: C.text, fontSize: 12, padding: "8px 13px", minHeight: 40, fontFamily: font, fontWeight: 700
                         }}>← 設定に戻る</button>
+                        <span style={{ color: C.sub, fontSize: 11, fontWeight: 700 }}>{results.length}機種</span>
                     </div>
-                </div>
-
-                {/* フィルターチップ */}
-                <div style={{
-                    display: "flex", gap: 8, overflowX: "auto",
-                    padding: "4px 14px 12px", scrollbarWidth: "none",
-                    WebkitOverflowScrolling: "touch", flexShrink: 0,
-                }}>
-                    {[
-                        { id: "all", label: "全て" },
-                        { id: "スマパチ", label: "スマパチ" },
-                        { id: "ハイミドル", label: "ハイミドル" },
-                        { id: "ミドル", label: "ミドル" },
-                        { id: "ライトミドル", label: "ライトミドル" },
-                        { id: "甘デジ", label: "甘デジ" },
-                    ].map(chip => {
-                        const active = machineFilter === chip.id;
-                        return (
-                            <button
-                                key={chip.id}
-                                className="b"
-                                onClick={() => setMachineFilter(chip.id)}
-                                style={{
-                                    flexShrink: 0, minHeight: 36,
-                                    background: active ? C.blue : "var(--surface-hi)",
-                                    color: active ? "#fff" : C.text,
-                                    border: "none", borderRadius: 999,
-                                    padding: "8px 16px", fontSize: 13, fontWeight: 600,
-                                    fontFamily: font, cursor: "pointer",
-                                    transition: "background 0.15s", whiteSpace: "nowrap",
-                                }}
-                            >{chip.label}</button>
-                        );
-                    })}
-                </div>
-
-                {/* 並び替え */}
-                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 14px 12px", flexShrink: 0 }}>
-                    <label htmlFor="settings-machine-sort" style={{ color: C.sub, fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
-                        並び替え
-                    </label>
-                    <select
-                        id="settings-machine-sort"
-                        value={machineSort}
-                        onChange={(event) => setMachineSort(event.target.value)}
-                        style={{
-                            width: "100%", minHeight: 40, boxSizing: "border-box",
-                            background: "var(--surface-hi)", border: `1px solid ${C.borderHi}`,
-                            borderRadius: 10, padding: "8px 36px 8px 12px",
-                            color: C.text, fontSize: 13, fontWeight: 700, fontFamily: font,
-                            outline: "none", cursor: "pointer",
-                        }}
-                    >
-                        {MACHINE_SORT_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                    </select>
-                </div>
-
-                {/* 機種リスト (カード形式・スクロール) */}
-                <div style={{ flex: 1, overflowY: "auto", padding: "0 12px 12px" }}>
-                    {results.length === 0 ? (
-                        <div style={{ textAlign: "center", color: C.sub, padding: "40px 16px", fontSize: 12 }}>該当する機種がありません</div>
-                    ) : (
-                        results.map((m, i) => {
-                            const iconColor = settingsTypeColors[m.type] || C.sub;
-                            const iconLabel = (m.type || "").slice(0, 2);
-                            const probText = m.prob || (m.synthProb ? `1/${m.synthProb}` : "—");
-                            return (
-                                <div key={m.isCustom ? `custom-${m.id}` : `db-${i}`} style={{
-                                    background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14,
-                                    marginBottom: 10, overflow: "hidden",
-                                }}>
-                                    {/* カード本体（タップで詳細・適用へ） */}
-                                    <button className="b" onClick={() => { setConfirmingDeleteMachine(null); setSelected(m); }} style={{
-                                        width: "100%", background: "transparent",
-                                        border: "none", padding: "14px 16px",
-                                        display: "flex", alignItems: "center", gap: 14, cursor: "pointer", textAlign: "left",
-                                        fontFamily: font, minHeight: 64,
-                                    }}>
-                                        <div style={{
-                                            width: 44, height: 44, flexShrink: 0, borderRadius: 10,
-                                            background: iconColor,
-                                            display: "flex", alignItems: "center", justifyContent: "center",
-                                            color: "#fff", fontSize: 13, fontWeight: 800, fontFamily: font,
-                                        }}>{iconLabel}</div>
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div style={{ fontSize: 16, fontWeight: 800, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
-                                                {m.name}
-                                                {m.isCustom && (
-                                                    <span style={{ fontSize: 9, background: m.isOverride ? C.blue : C.teal, color: "#fff", padding: "2px 6px", borderRadius: 4, fontWeight: 600, flexShrink: 0 }}>
-                                                        {m.isOverride ? "編集済み" : "カスタム"}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <div style={{ fontSize: 12, color: C.sub, marginBottom: m.maker || m.type ? 4 : 0 }}>
-                                                {m.maker || "メーカー未設定"}{m.type ? ` ・ ${m.type}` : ""}
-                                            </div>
-                                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                                <span style={{ fontSize: 12, fontWeight: 700, color: C.yellow, fontFamily: mono, background: "rgba(0,0,0,0.2)", borderRadius: 6, padding: "2px 8px" }}>
-                                                    確率 {probText}
-                                                </span>
-                                                {m.spec1R != null && (
-                                                    <span style={{ fontSize: 12, fontWeight: 700, color: C.teal, fontFamily: mono, background: "rgba(0,0,0,0.2)", borderRadius: 6, padding: "2px 8px" }}>
-                                                        1R {f(m.spec1R)}発
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <span style={{ fontSize: 15, color: C.sub, flexShrink: 0, fontWeight: 500 }}>›</span>
-                                    </button>
-
-                                </div>
-                            );
-                        })
-                    )}
-                </div>
-
-                {/* 検索バー (下部固定) */}
-                <div style={{ padding: "12px 14px calc(12px + env(safe-area-inset-bottom))", borderTop: `1px solid ${C.border}`, background: C.surface, flexShrink: 0 }}>
+                    <div style={{ fontSize: 20, lineHeight: 1.2, fontWeight: 850, color: C.text, marginBottom: 10 }}>機種を探す</div>
                     <div style={{ position: "relative" }}>
-                        <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: C.sub, display: "flex" }}>
+                        <span style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: C.sub, display: "flex" }}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <circle cx="11" cy="11" r="7" />
                                 <path d="m21 21-4.3-4.3" />
@@ -11695,15 +11618,180 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                             type="text"
                             value={query}
                             onChange={e => setQuery(e.target.value)}
-                            placeholder="機種名・メーカーで検索..."
+                            placeholder="機種名・メーカーで検索"
                             style={{
-                                width: "100%", boxSizing: "border-box",
-                                background: "var(--surface-hi)", border: "none",
-                                borderRadius: 12, padding: "12px 14px 12px 40px",
-                                fontSize: 14, color: C.text, fontFamily: font, outline: "none",
+                                width: "100%", minHeight: 44, boxSizing: "border-box",
+                                background: "var(--surface-hi)", border: `1px solid ${C.border}`,
+                                borderRadius: 12, padding: "11px 38px 11px 39px",
+                                fontSize: 13, color: C.text, fontFamily: font, outline: "none",
                             }}
                         />
+                        {query && (
+                            <button className="b" aria-label="検索文字を消す" onClick={() => setQuery("")} style={{
+                                position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
+                                width: 32, height: 32, border: "none", borderRadius: 999,
+                                background: "transparent", color: C.sub, fontSize: 17, cursor: "pointer",
+                            }}>×</button>
+                        )}
                     </div>
+                </div>
+
+                {/* タイプ絞り込み */}
+                <div style={{ display: "flex", alignItems: "center", gap: 7, overflowX: "auto", padding: "0 14px 9px", scrollbarWidth: "none", flexShrink: 0 }}>
+                    <span style={{ width: 48, flex: "0 0 48px", color: C.sub, fontSize: 10, fontWeight: 800 }}>タイプ</span>
+                    {[
+                        { id: "all", label: "全て" },
+                        { id: "スマパチ", label: "スマパチ" },
+                        { id: "ハイミドル", label: "ハイミドル" },
+                        { id: "ミドル", label: "ミドル" },
+                        { id: "ライトミドル", label: "ライト" },
+                        { id: "甘デジ", label: "甘デジ" },
+                    ].map(chip => {
+                        const active = machineFilter === chip.id;
+                        return (
+                            <button key={chip.id} className="b" onClick={() => setMachineFilter(chip.id)} style={{
+                                flexShrink: 0, minHeight: 32, background: active ? C.blue : "var(--surface-hi)",
+                                color: active ? "#fff" : C.text, border: "none", borderRadius: 999,
+                                padding: "6px 12px", fontSize: 11, fontWeight: 700, fontFamily: font,
+                                cursor: "pointer", whiteSpace: "nowrap",
+                            }}>{chip.label}</button>
+                        );
+                    })}
+                </div>
+
+                {/* メーカー快捷チップ */}
+                <div style={{ display: "flex", alignItems: "center", gap: 7, overflowX: "auto", padding: "0 14px 10px", scrollbarWidth: "none", flexShrink: 0 }}>
+                    <span style={{ width: 48, flex: "0 0 48px", color: C.sub, fontSize: 10, fontWeight: 800 }}>メーカー</span>
+                    <button className="b" onClick={() => setMachineMakerFilter("all")} style={{
+                        flexShrink: 0, minHeight: 32, borderRadius: 999, padding: "6px 11px",
+                        background: machineMakerFilter === "all" ? "rgba(31,182,255,0.18)" : "var(--surface-hi)",
+                        border: `1px solid ${machineMakerFilter === "all" ? C.blue : C.borderHi}`,
+                        color: machineMakerFilter === "all" ? C.blue : C.text,
+                        fontSize: 11, fontWeight: 700, fontFamily: font, cursor: "pointer",
+                    }}>全て</button>
+                    {visibleQuickMakerOptions.map((option) => {
+                        const active = machineMakerFilter === option.id;
+                        return (
+                            <button key={option.id} className="b" onClick={() => setMachineMakerFilter(option.id)} style={{
+                                flexShrink: 0, minHeight: 32, borderRadius: 999, padding: "6px 11px",
+                                background: active ? "rgba(31,182,255,0.18)" : "var(--surface-hi)",
+                                border: `1px solid ${active ? C.blue : C.borderHi}`,
+                                color: active ? C.blue : C.text,
+                                fontSize: 11, fontWeight: 700, fontFamily: font, cursor: "pointer", whiteSpace: "nowrap",
+                            }}>{option.label}</button>
+                        );
+                    })}
+                </div>
+
+                {/* 並び替え + 詳細条件 */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 14px 10px", flexShrink: 0 }}>
+                    <select id="settings-machine-sort" aria-label="並び替え" value={machineSort} onChange={(event) => setMachineSort(event.target.value)} style={{
+                        flex: 1, minWidth: 0, minHeight: 38, boxSizing: "border-box",
+                        background: "var(--surface-hi)", border: `1px solid ${C.borderHi}`,
+                        borderRadius: 10, padding: "8px 32px 8px 11px",
+                        color: C.text, fontSize: 11, fontWeight: 700, fontFamily: font, outline: "none", cursor: "pointer",
+                    }}>
+                        {MACHINE_SORT_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{`並び替え：${option.label}`}</option>
+                        ))}
+                    </select>
+                    <button className="b" aria-expanded={showMachineDetails} onClick={() => setShowMachineDetails((open) => !open)} style={{
+                        minHeight: 38, flexShrink: 0, borderRadius: 10, padding: "7px 10px",
+                        background: showMachineDetails ? "rgba(31,182,255,0.14)" : "var(--surface-hi)",
+                        border: `1px solid ${showMachineDetails ? C.blue : C.borderHi}`,
+                        color: showMachineDetails ? C.blue : C.text, fontSize: 11, fontWeight: 750,
+                        fontFamily: font, cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
+                    }}>
+                        詳細条件
+                        {activeMachineFilterCount > 0 && <span style={{ minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: C.blue, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 9 }}>{activeMachineFilterCount}</span>}
+                        <span style={{ color: C.sub }}>{showMachineDetails ? "⌃" : "⌄"}</span>
+                    </button>
+                </div>
+
+                {/* 詳細条件パネル */}
+                {showMachineDetails && (
+                    <div style={{ margin: "0 14px 10px", padding: 12, background: C.surface, border: `1px solid ${C.borderHi}`, borderRadius: 12, flexShrink: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 9 }}>
+                            <span style={{ color: C.text, fontSize: 11, fontWeight: 800 }}>大当り確率</span>
+                            <button className="b" onClick={() => { setMachineMakerFilter("all"); setMachineProbabilityFilter("all"); }} style={{ background: "transparent", border: "none", color: C.blue, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>条件をリセット</button>
+                        </div>
+                        <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 10, scrollbarWidth: "none" }}>
+                            {MACHINE_PROBABILITY_FILTER_OPTIONS.map((option) => {
+                                const active = machineProbabilityFilter === option.value;
+                                return (
+                                    <button key={option.value} className="b" onClick={() => setMachineProbabilityFilter(option.value)} style={{
+                                        flexShrink: 0, minHeight: 32, borderRadius: 9, padding: "6px 10px",
+                                        background: active ? "rgba(31,182,255,0.16)" : "var(--surface-hi)",
+                                        border: `1px solid ${active ? C.blue : C.borderHi}`,
+                                        color: active ? C.blue : C.text, fontSize: 10, fontWeight: 700, cursor: "pointer",
+                                    }}>{option.label}</button>
+                                );
+                            })}
+                        </div>
+                        <div style={{ color: C.text, fontSize: 11, fontWeight: 800, marginBottom: 8 }}>すべてのメーカー</div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, maxHeight: 92, overflowY: "auto" }}>
+                            {makerOptions.map((option) => {
+                                const active = machineMakerFilter === option.id;
+                                return (
+                                    <button key={option.id} className="b" onClick={() => setMachineMakerFilter(option.id)} style={{
+                                        minHeight: 30, borderRadius: 8, padding: "5px 9px",
+                                        background: active ? "rgba(31,182,255,0.16)" : "var(--surface-hi)",
+                                        border: `1px solid ${active ? C.blue : C.border}`,
+                                        color: active ? C.blue : C.text, fontSize: 10, fontWeight: 700, cursor: "pointer",
+                                    }}>{option.label} <span style={{ color: C.sub }}>{option.count}</span></button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* 機種リスト (コンパクト表示) */}
+                <div style={{ flex: 1, overflowY: "auto", padding: "0 12px 12px" }}>
+                    {results.length === 0 ? (
+                        <div style={{ textAlign: "center", color: C.sub, padding: "36px 16px", fontSize: 12 }}>
+                            <div style={{ fontWeight: 700, color: C.text, marginBottom: 6 }}>該当する機種がありません</div>
+                            条件を減らすか、検索文字を変更してください
+                        </div>
+                    ) : (
+                        results.map((m, i) => {
+                            const typeColorKey = ["スマパチ", "ハイミドル", "ライトミドル", "甘デジ", "ミドル"]
+                                .find((type) => String(m.type || "").includes(type));
+                            const iconColor = settingsTypeColors[typeColorKey] || C.sub;
+                            const iconLabel = (m.type || "").slice(0, 2);
+                            const probText = m.prob || (m.synthProb ? `1/${m.synthProb}` : "—");
+                            return (
+                                <div key={m.isCustom ? `custom-${m.id}` : `db-${i}`} style={{
+                                    borderBottom: `1px solid ${C.border}`, overflow: "hidden",
+                                }}>
+                                    {/* カード本体（タップで詳細・適用へ） */}
+                                    <button className="b" onClick={() => { setConfirmingDeleteMachine(null); setSelected(m); }} style={{
+                                        width: "100%", background: "transparent",
+                                        border: "none", padding: "8px 5px",
+                                        display: "flex", alignItems: "center", gap: 10, cursor: "pointer", textAlign: "left",
+                                        fontFamily: font, minHeight: 68,
+                                    }}>
+                                        <div style={{
+                                            width: 36, height: 36, flexShrink: 0, borderRadius: 9,
+                                            background: iconColor,
+                                            display: "flex", alignItems: "center", justifyContent: "center",
+                                            color: "#fff", fontSize: 10, fontWeight: 800, fontFamily: font,
+                                        }}>{iconLabel}</div>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontSize: 13, fontWeight: 800, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 4 }}>
+                                                {m.name}
+                                            </div>
+                                            <div style={{ fontSize: 10, color: C.sub, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                                {m.maker || "メーカー未設定"}{m.type ? ` ・ ${m.type}` : ""}
+                                                {m.isCustom ? ` ・ ${m.isOverride ? "編集済み" : "カスタム"}` : ""}
+                                            </div>
+                                        </div>
+                                        <span style={{ fontSize: 11, fontWeight: 800, color: C.yellow, fontFamily: mono, whiteSpace: "nowrap" }}>{probText}</span>
+                                        <span style={{ fontSize: 15, color: C.sub, flexShrink: 0, fontWeight: 500 }}>›</span>
+                                    </button>
+                                </div>
+                            );
+                        })
+                    )}
                 </div>
             </div>
         );
