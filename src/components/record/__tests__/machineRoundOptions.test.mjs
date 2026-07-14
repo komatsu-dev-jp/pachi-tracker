@@ -271,6 +271,22 @@ assert.deepStrictEqual(
 );
 assert.equal(changeRoundMultiplier(3, 1, getMachineRoundLoop(sympho4, "rush", 10)), 4, "シンフォギア4の上乗せ10Rを追加できること");
 
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(machine("PA海物語3R3"), "rush")),
+  ["5R×1", "10R×1"],
+  "海物語3R3は5R・10Rを区別して記録できること",
+);
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(machine("PA大海物語5ブラックLT99ver."), "rush")),
+  ["3R×1", "8R×1"],
+  "大海5ブラックLT99は3R・8Rを区別して記録できること",
+);
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(machine("Pデビルマン THE FINAL"), "rush")),
+  ["2R×1", "3R×1", "7R×1"],
+  "デビルマンTHE FINALは2R・3R・7Rを区別して記録できること",
+);
+
 const hit6000 = buildMultiRoundHit(1, {
   rounds: 10,
   mult: 4,
