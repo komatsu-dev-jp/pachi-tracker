@@ -16,6 +16,9 @@ const normalizeMemberCard = (mc) => ({ created: false, number: "", deposit: 0, .
 export function resolveStoreDetail(stores, storeId, opts = {}) {
   const { chodamaReplayLimit = 0, currentRentBalls, currentExRate } = opts;
   const list = Array.isArray(stores) ? stores : [];
+  if (storeId == null || storeId === MOCK_STORE_DETAIL.id) {
+    return { ...MOCK_STORE_DETAIL, isRealStore: false };
+  }
   const store = list.find((st) => st && st.id === storeId) || list[0] || null;
 
   if (!store) {
