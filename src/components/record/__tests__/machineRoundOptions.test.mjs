@@ -115,6 +115,16 @@ assert.deepEqual(
   ["10R×1", "10R×3", "10R×4"],
   "北斗11は1500・4500・6000玉を選択できること",
 );
+assert.deepEqual(
+  signatures(getMachineRoundOptions(machine("e花の慶次～黄金の一撃"), "rush")),
+  ["10R×1", "10R×2", "10R×4"],
+  "花の慶次は1500・3000・6000玉を選択できること",
+);
+assert.deepEqual(
+  signatures(getMachineRoundOptions(machine("eとある科学の超電磁砲 PHASE NEXT"), "rush")),
+  ["10R×1", "10R×2", "10R×3", "10R×4", "10R×5"],
+  "超電磁砲は1500～7500玉の各セット数を選択できること",
+);
 
 assert.equal(changeRoundMultiplier(4, 1), 5, "未登録のループ機種も1セットずつ手動調整できること");
 

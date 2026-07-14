@@ -489,6 +489,34 @@ check("T19_北斗無双・BASTARD・牙狼・まどか・北斗11の公開振分
   }
 });
 
+// ── T20: 直近のデカヘソ・LT機4台を固定 ──
+check("T20_慶次・電王・超電磁砲・北斗無双デカヘソの公開振分を固定", () => {
+  const byName = (name) => machineDB.find((m) => m.name === name);
+  const signature = (rows) => rows.map((r) => [r.roundsLabel || r.rounds, r.payoutLabel || r.payout, r.rate]);
+  const keiji = byName("e花の慶次～黄金の一撃");
+  const deno = byName("e仮面ライダー電王 デカヘソ239");
+  const railgun = byName("eとある科学の超電磁砲 PHASE NEXT");
+  const musouDs = byName("e真・北斗無双 第5章 ドデカSTART");
+
+  assert.deepStrictEqual(signature(keiji.hesoModes[0].rows), [[10, 1500, 50.1], [10, 1500, 49.9]]);
+  assert.deepStrictEqual(signature(keiji.rushModes[2].rows), [["10R×4", 6000, 49.5], [10, 1500, 50.5]]);
+  assert.strictEqual(deno.border1K, 30.4, "電王デカヘソの等価ボーダー");
+  assert.deepStrictEqual(signature(deno.rushModes[1].rows), [["10R×2", 3000, 80], ["STリセット", 0, 20]]);
+  assert.strictEqual(railgun.synthProb, 169.7, "超電磁砲PHASE NEXTの通常時確率");
+  assert.deepStrictEqual(signature(railgun.rushModes[0].rows), [["10R×4 or 10R×5+α", "6000or7500発+α", 9.3], ["10R×3", 4500, 20.6], ["10R×2", 3000, 23.1], [10, 1500, 47]]);
+  assert.strictEqual(musouDs.border1K, 29.8, "北斗無双デカヘソの等価ボーダー");
+  assert.deepStrictEqual(signature(musouDs.hesoModes[0].rows), [["10R×2", 3000, 0.1], [6, 600, 50], [6, 600, 49.9]]);
+
+  for (const target of [keiji, deno, railgun, musouDs]) {
+    assert.strictEqual(target.allocationVerified, true, `${target.name}: 照合済み`);
+    assert.ok(target.sourceUrls.length >= 2, `${target.name}: 複数出典`);
+    const model = normalizeMachine(target);
+    for (const mode of [...model.hesoModes, ...model.rushModes]) {
+      assert.strictEqual(sumRatio(mode.rows), 100, `${target.name} / ${mode.name}`);
+    }
+  }
+});
+
 console.log(JSON.stringify(out, null, 2));
 console.log(`\n${passed} passed / ${failed} failed`);
 if (failed > 0) process.exit(1);
