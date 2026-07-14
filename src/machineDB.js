@@ -1204,10 +1204,10 @@ const rawMachineDB = [
   // ── 追加機種スペック（CSV準拠フォーマット、ユーザー指定データそのまま記録） ──
   {
     name: "e範馬刃牙 199ver.",
-    maker: "",
+    maker: "平和",
     type: "スマパチ",
-    prob: "1/199.6",
-    synthProb: 199.6,
+    prob: "1/199.8",
+    synthProb: 199.8,
     border1K: 16.7,
     prize: 1,
     unitCost: 14.0,
@@ -1217,15 +1217,46 @@ const rawMachineDB = [
     muraCoef: 80000,
     spatialSens: 1,
     regimeSens: 1,
-    hesoAvgPayout: 1000,
-    rushAvgPayout: 2000,
+    hesoAvgPayout: 300,
+    rushAvgPayout: 1500,
     rushEntryRate: 50.00,
     rushContinueRate: 75.0,
+    allocationVerified: true,
+    hesoModes: [{
+      name: "ヘソ入賞時",
+      rows: [
+        { rounds: 2, payout: 300, rate: 50, label: "バトルMODEへ" },
+        { rounds: 2, payout: 300, rate: 50, label: "通常へ" },
+      ],
+    }],
+    rushModes: [
+      {
+        name: "バトルMODE・1～2回目",
+        rows: [
+          { rounds: 10, payout: 1500, rate: 5, label: "地上最強の親子喧嘩へ" },
+          { rounds: 10, payout: 1500, rate: 95, label: "バトルMODE継続" },
+        ],
+      },
+      {
+        name: "バトルMODE・3回目",
+        rows: [{ rounds: 10, payout: 1500, rate: 100, label: "地上最強の親子喧嘩へ" }],
+      },
+      {
+        name: "地上最強の親子喧嘩・LT中",
+        rows: [
+          { rounds: 10, payout: 1500, rate: 43, label: "史上最強バトルMODE86・次回濃厚" },
+          { rounds: 10, payout: 1500, rate: 57, label: "史上最強バトルMODE86・1回" },
+        ],
+      },
+    ],
+    allocationNote: "出玉は払い出し。初当りは2R・300発、右打ち中は全て10R・1500発です。バトル勝利回数とLT中の時短回数で状態を分けています。",
+    sourceUrls: ["https://p.hisshobon.jp/machine/4662/1/112708", "https://p.hisshobon.jp/machine/4662/1/112709"],
+    dataUpdatedAt: "2026-07-14",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
     name: "P閃乱カグラ189大入りver.",
-    maker: "",
+    maker: "Daiichi",
     type: "ライトミドル",
     prob: "1/189.4",
     synthProb: 189.4,
@@ -1238,10 +1269,37 @@ const rawMachineDB = [
     muraCoef: 80000,
     spatialSens: 1,
     regimeSens: 1,
-    hesoAvgPayout: 1000,
-    rushAvgPayout: 3000,
+    hesoAvgPayout: 300,
+    rushAvgPayout: 1397,
     rushEntryRate: 50.00,
     rushContinueRate: 60.0,
+    allocationVerified: true,
+    hesoModes: [{
+      name: "ヘソ入賞時",
+      rows: [
+        { rounds: 2, payout: 300, rate: 50, label: "RUSHへ" },
+        { rounds: 2, payout: 300, rate: 50, label: "通常へ" },
+      ],
+    }],
+    rushModes: [
+      {
+        name: "RUSH中",
+        rows: [
+          { roundsLabel: "7R×4", payout: 4200, rate: 11, label: "絶・秘伝RUSHへ" },
+          { rounds: 7, payout: 1050, rate: 89, label: "RUSH継続" },
+        ],
+      },
+      {
+        name: "絶・秘伝RUSH（LT）中",
+        rows: [
+          { roundsLabel: "7R×4", payout: 4200, rate: 50, label: "LT継続" },
+          { rounds: 7, payout: 1050, rate: 50, label: "LT継続" },
+        ],
+      },
+    ],
+    allocationNote: "出玉は払い出し。通常RUSHは4200発が約11%、LT中は4200発が約50%。RUSH平均は通常RUSHの公開振り分けから算出した参考値です。",
+    sourceUrls: ["https://p.hisshobon.jp/machine/4673/1/113112", "https://p.hisshobon.jp/machine/4673/1/113105"],
+    dataUpdatedAt: "2026-07-14",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
@@ -1341,7 +1399,7 @@ const rawMachineDB = [
   },
   {
     name: "PF彼女、お借りします LT-Light ver.",
-    maker: "",
+    maker: "SANKYO",
     type: "ライトミドル",
     prob: "1/189.7",
     synthProb: 189.7,
@@ -1354,15 +1412,36 @@ const rawMachineDB = [
     muraCoef: 80000,
     spatialSens: 1,
     regimeSens: 1,
-    hesoAvgPayout: 1000,
-    rushAvgPayout: 2000,
+    hesoAvgPayout: 436,
+    rushAvgPayout: 1244,
     rushEntryRate: 50.00,
     rushContinueRate: 50.0,
+    allocationVerified: true,
+    hesoModes: [{
+      name: "ヘソ入賞時",
+      rows: [
+        { rounds: 10, payout: 1000, rate: 6, label: "DREAM RUSHへ" },
+        { rounds: 4, payout: 400, rate: 44, label: "DREAM RUSHへ" },
+        { rounds: 4, payout: 400, rate: 50, label: "通常へ" },
+      ],
+    }],
+    rushModes: [{
+      name: "RUSH中・図柄揃い時（4回分）",
+      note: "4個の電チュー入賞で得る4回分の合計出玉です。2回目以降の図柄揃いならLTへ移行します。",
+      rows: [
+        { roundsLabel: "合計20R / 26R / 32R", payout: 2000, payoutLabel: "2000～3200発", rate: 12, label: "DREAM RUSH／2回目以降はLTへ" },
+        { roundsLabel: "合計14R", payout: 1400, rate: 38, label: "DREAM RUSH／2回目以降はLTへ" },
+        { roundsLabel: "合計8R", payout: 800, rate: 50, label: "DREAM RUSH／2回目以降はLTへ" },
+      ],
+    }],
+    allocationNote: "出玉は払い出し。右打ちは電チューへ4個入賞させ、4回分の大当りをまとめて告知します。2000～3200発部分の内部比率は非公表のため、RUSH平均は範囲中央値を使ったP-EVIDENCE参考値です。",
+    sourceUrls: ["https://p.hisshobon.jp/machine/4642/1/112224", "https://p.hisshobon.jp/machine/4642/1/112225"],
+    dataUpdatedAt: "2026-07-14",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
     name: "PFうたわれるもの LT-Light ver.",
-    maker: "",
+    maker: "SANKYO",
     type: "甘デジ",
     prob: "1/99.9",
     synthProb: 99.9,
@@ -1375,10 +1454,44 @@ const rawMachineDB = [
     muraCoef: 80000,
     spatialSens: 1,
     regimeSens: 1,
-    hesoAvgPayout: 1000,
-    rushAvgPayout: 2000,
+    hesoAvgPayout: 350,
+    rushAvgPayout: 700,
     rushEntryRate: 50.00,
     rushContinueRate: 75.0,
+    allocationVerified: true,
+    hesoModes: [{
+      name: "ヘソ入賞時",
+      rows: [
+        { rounds: 5, payout: 350, rate: 50, label: "仮面RUSHへ" },
+        { rounds: 5, payout: 350, rate: 50, label: "通常へ" },
+      ],
+    }],
+    rushModes: [
+      {
+        name: "仮面RUSH中・残保留",
+        rows: [
+          { rounds: 10, payout: 700, rate: 5, label: "仮面RUSH超へ" },
+          { rounds: 10, payout: 700, rate: 95, label: "仮面RUSH継続" },
+        ],
+      },
+      {
+        name: "仮面RUSH超（LT）中",
+        note: "1400発当選後は次回大当り濃厚。次回も同じ60%抽選が有効です。",
+        rows: [
+          { roundsLabel: "10R×2", payout: 1400, rate: 60, label: "LT継続・次回大当り濃厚" },
+          { rounds: 10, payout: 700, rate: 40, label: "LT継続" },
+        ],
+      },
+    ],
+    roundLoops: [{
+      phase: "rush", rounds: 10, baseMultipliers: [1, 3],
+      loopBaseMult: 3, incrementMult: 2, incrementPayout: 1400,
+      label: "仮面RUSH超・1400発上乗せ", probability: 60,
+      sourceUrl: "https://p.hisshobon.jp/machine/4643/1/112234",
+    }],
+    allocationNote: "出玉は払い出し。LT中に1400発を引くと次回大当り濃厚となり、最低2100発。以後も約60%で1400発が上乗せされるため、実践記録では10R×3から10R×2ずつ増やせます。",
+    sourceUrls: ["https://p.hisshobon.jp/machine/4643/1/112233", "https://p.hisshobon.jp/machine/4643/1/112234"],
+    dataUpdatedAt: "2026-07-14",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
@@ -1404,7 +1517,7 @@ const rawMachineDB = [
   },
   {
     name: "eようこそ実力至上主義の教室へ",
-    maker: "",
+    maker: "サンセイR&D",
     type: "スマパチ",
     prob: "1/349.9",
     synthProb: 349.9,
@@ -1417,10 +1530,37 @@ const rawMachineDB = [
     muraCoef: 80000,
     spatialSens: 1,
     regimeSens: 1,
-    hesoAvgPayout: 1000,
+    hesoAvgPayout: 450,
     rushAvgPayout: 3000,
     rushEntryRate: 50.00,
     rushContinueRate: 50.0,
+    allocationVerified: true,
+    hesoModes: [{
+      name: "ヘソ入賞時",
+      rows: [
+        { rounds: 3, payout: 450, rate: 50, label: "TREASURE HUNTへ" },
+        { rounds: 3, payout: 450, rate: 50, label: "通常へ" },
+      ],
+    }],
+    rushModes: [
+      {
+        name: "TREASURE HUNT中",
+        rows: [
+          { roundsLabel: "10R×2", payout: 3000, rate: 73, label: "TREASURE HUNT EXTRAへ" },
+          { roundsLabel: "10R×2", payout: 3000, rate: 27, label: "通常へ" },
+        ],
+      },
+      {
+        name: "TREASURE HUNT EXTRA（LT）中",
+        rows: [
+          { roundsLabel: "10R×2", payout: 3000, rate: 87, label: "LT継続" },
+          { roundsLabel: "10R×2", payout: 3000, rate: 13, label: "通常へ" },
+        ],
+      },
+    ],
+    allocationNote: "出玉は払い出し。初当りは3R・450発、右打ちの大当りは全て10R×2・3000発です。通常RUSHとLTで移行比率を分けています。",
+    sourceUrls: ["https://p.hisshobon.jp/machine/4661/1/112673", "https://p.hisshobon.jp/machine/4661/1/112674"],
+    dataUpdatedAt: "2026-07-14",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {

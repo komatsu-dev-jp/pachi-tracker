@@ -381,6 +381,37 @@ check("T16_直近機種5台の状態別振分を固定", () => {
   }
 });
 
+// ── T17: 2026年1月導入機種の状態別振分を固定 ──
+check("T17_2026年1月機種5台の公開振分を固定", () => {
+  const byName = (name) => machineDB.find((m) => m.name === name);
+  const signature = (rows) => rows.map((r) => [r.roundsLabel || r.rounds, r.payoutLabel || r.payout, r.rate]);
+  const baki = byName("e範馬刃牙 199ver.");
+  const kagura = byName("P閃乱カグラ189大入りver.");
+  const kanokari = byName("PF彼女、お借りします LT-Light ver.");
+  const utawarerumono = byName("PFうたわれるもの LT-Light ver.");
+  const youjitsu = byName("eようこそ実力至上主義の教室へ");
+
+  assert.strictEqual(baki.synthProb, 199.8, "刃牙の通常時確率");
+  assert.deepStrictEqual(signature(baki.rushModes[0].rows), [[10, 1500, 5], [10, 1500, 95]]);
+  assert.deepStrictEqual(signature(baki.rushModes[2].rows), [[10, 1500, 43], [10, 1500, 57]]);
+  assert.deepStrictEqual(signature(kagura.rushModes[0].rows), [["7R×4", 4200, 11], [7, 1050, 89]]);
+  assert.deepStrictEqual(signature(kagura.rushModes[1].rows), [["7R×4", 4200, 50], [7, 1050, 50]]);
+  assert.deepStrictEqual(signature(kanokari.hesoModes[0].rows), [[10, 1000, 6], [4, 400, 44], [4, 400, 50]]);
+  assert.deepStrictEqual(signature(kanokari.rushModes[0].rows), [["合計20R / 26R / 32R", "2000～3200発", 12], ["合計14R", 1400, 38], ["合計8R", 800, 50]]);
+  assert.deepStrictEqual(signature(utawarerumono.rushModes[1].rows), [["10R×2", 1400, 60], [10, 700, 40]]);
+  assert.deepStrictEqual(signature(youjitsu.rushModes[0].rows), [["10R×2", 3000, 73], ["10R×2", 3000, 27]]);
+  assert.deepStrictEqual(signature(youjitsu.rushModes[1].rows), [["10R×2", 3000, 87], ["10R×2", 3000, 13]]);
+
+  for (const target of [baki, kagura, kanokari, utawarerumono, youjitsu]) {
+    assert.strictEqual(target.allocationVerified, true, `${target.name}: 照合済み`);
+    assert.ok(target.sourceUrls.every((url) => url.includes("hisshobon.jp")), `${target.name}: 必勝本の出典`);
+    const model = normalizeMachine(target);
+    for (const mode of [...model.hesoModes, ...model.rushModes]) {
+      assert.strictEqual(sumRatio(mode.rows), 100, `${target.name} / ${mode.name}`);
+    }
+  }
+});
+
 console.log(JSON.stringify(out, null, 2));
 console.log(`\n${passed} passed / ${failed} failed`);
 if (failed > 0) process.exit(1);

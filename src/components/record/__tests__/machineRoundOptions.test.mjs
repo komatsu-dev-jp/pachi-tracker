@@ -69,6 +69,18 @@ const yoshimuneLoop = getMachineRoundLoop(yoshimune, "rush", 5);
 assert.equal(changeRoundMultiplier(4, 1, yoshimuneLoop), 8, "吉宗は3000玉単位の上乗せを記録できること");
 assert.equal(changeRoundMultiplier(12, -1, yoshimuneLoop), 8, "吉宗の上乗せ回数を訂正できること");
 
+const utawarerumono = machine("PFうたわれるもの LT-Light ver.");
+assert.ok(signatures(getMachineRoundOptions(utawarerumono, "rush")).includes("10R×3"), "うたわれるものは最低2100発を選択できること");
+const utawarerumonoLoop = getMachineRoundLoop(utawarerumono, "rush", 10);
+assert.equal(changeRoundMultiplier(3, 1, utawarerumonoLoop), 5, "うたわれるものは1400発単位の上乗せを記録できること");
+assert.equal(changeRoundMultiplier(7, -1, utawarerumonoLoop), 5, "うたわれるものの上乗せ回数を訂正できること");
+
+assert.deepEqual(
+  signatures(getMachineRoundOptions(machine("PF彼女、お借りします LT-Light ver."), "rush")),
+  ["8R×1", "14R×1", "20R×1", "26R×1", "32R×1"],
+  "彼女、お借りしますは4回分の全合計R数を選択できること",
+);
+
 assert.equal(changeRoundMultiplier(4, 1), 5, "未登録のループ機種も1セットずつ手動調整できること");
 
 const hit6000 = buildMultiRoundHit(1, {
