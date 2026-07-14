@@ -21,6 +21,36 @@ export const NOTIF_BADGE_UNLOCKED = "badge_unlocked";
 
 export const NOTIFICATION_LOG_MAX = 50;
 
+export const DEFAULT_NOTIFICATION_PREFS = Object.freeze({
+  levelUp: true,
+  streak: true,
+  badge: true,
+  verdict: true,
+});
+
+const PREF_KEY_BY_TYPE = Object.freeze({
+  [NOTIF_LEVEL_UP]: "levelUp",
+  [NOTIF_STREAK]: "streak",
+  [NOTIF_BADGE_UNLOCKED]: "badge",
+  [NOTIF_VERDICT_CHANGE]: "verdict",
+});
+
+export function normalizeNotificationPrefs(value) {
+  const source = value && typeof value === "object" ? value : {};
+  return Object.fromEntries(
+    Object.entries(DEFAULT_NOTIFICATION_PREFS).map(([key, fallback]) => [
+      key,
+      typeof source[key] === "boolean" ? source[key] : fallback,
+    ])
+  );
+}
+
+export function isNotificationEnabled(type, preferences) {
+  const key = PREF_KEY_BY_TYPE[type];
+  if (!key) return true;
+  return normalizeNotificationPrefs(preferences)[key];
+}
+
 let idCounter = 0;
 function nextId(timestamp) {
   idCounter = (idCounter + 1) % 1000;

@@ -20,14 +20,19 @@ export function SectionHeader({ title, action, onAction }) {
   return (
     <div className="flex items-center justify-between px-4 pt-4 pb-1">
       <h3 className="text-[14px] font-bold text-[var(--text)]">{title}</h3>
-      {action && (
+      {action && onAction && (
         <button
           type="button"
           onClick={onAction}
-          className="flex min-h-[32px] items-center gap-0.5 rounded-full border border-[var(--border-hi)] bg-[var(--surface-hi)] px-2.5 text-[11px] font-bold text-[var(--sub-hi)] active:opacity-70"
+          className="flex min-h-[44px] items-center gap-0.5 rounded-full border border-[var(--border-hi)] bg-[var(--surface-hi)] px-3 text-[11px] font-bold text-[var(--sub-hi)] active:opacity-70"
         >
           {action}
         </button>
+      )}
+      {action && !onAction && (
+        <span className="flex min-h-[32px] items-center gap-0.5 rounded-full border border-[var(--border-hi)] bg-[var(--surface-hi)] px-2.5 text-[11px] font-bold text-[var(--sub-hi)]">
+          {action}
+        </span>
       )}
     </div>
   );

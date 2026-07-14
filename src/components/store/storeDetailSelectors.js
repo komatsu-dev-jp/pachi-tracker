@@ -27,8 +27,8 @@ export function resolveStoreDetail(stores, storeId, opts = {}) {
   }
 
   // Tabs.jsx の Store detail view と同一の導出式（faceRent/faceEx は 玉/100円 の面値）
-  const faceRent = Math.round((store.rentBalls || 250) / 10);
-  const faceEx = Math.round((store.exRate || 250) / 10);
+  const faceRent = Number(store.rentBalls || 250) / 10;
+  const faceEx = Number(store.exRate || 250) / 10;
   const yenPerBall = faceRent > 0 ? 100 / faceRent : 0; // 貸玉単価（円/1玉）
   const exYenPerBall = faceEx > 0 ? 100 / faceEx : 0; // 玉単価（円/1玉、交換時）
   const rentalYenPer100 = Number.isInteger(yenPerBall) ? yenPerBall : Math.round(yenPerBall * 10) / 10;

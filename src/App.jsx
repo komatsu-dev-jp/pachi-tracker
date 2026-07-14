@@ -44,6 +44,8 @@ import {
   markAsRead as markNotifAsRead,
   markAllAsRead as markAllNotifAsRead,
   clearAll as clearNotifAll,
+  normalizeNotificationPrefs,
+  isNotificationEnabled,
   NOTIF_LEVEL_UP,
   NOTIF_STREAK,
   NOTIF_BADGE_UNLOCKED,
@@ -52,6 +54,12 @@ import {
 import { takeSnapshot, takeSnapshotImmediate, getLatest as getLatestSnapshot } from "./snapshot";
 import { setupGlobalHaptics } from "./haptics";
 import EHIME_STORES from "./data/ehimeStores";
+import {
+  mergeBuiltinStores,
+  normalizeAutoLockMinutes,
+  shouldAutoLock,
+  updateStoresForSessionReset,
+} from "./settingsUtils";
 import {
   calculateYutimeEV,
   deriveCurrentLowProbabilitySpins,
@@ -88,16 +96,16 @@ function verdictBodyText(decision) {
 }
 
 const COLOR_THEMES = [
-  { id: "purple",   gradient: "linear-gradient(135deg,#667eea,#764ba2)", primary: "#667eea" },
-  { id: "teal",     gradient: "linear-gradient(135deg,#0093E9,#80D0C7)", primary: "#0093E9" },
-  { id: "green",    gradient: "linear-gradient(135deg,#11998e,#38ef7d)", primary: "#11998e" },
-  { id: "orange",   gradient: "linear-gradient(135deg,#f7971e,#ffd200)", primary: "#f7971e" },
-  { id: "red",      gradient: "linear-gradient(135deg,#cb2d3e,#ef473a)", primary: "#ef473a" },
-  { id: "pink",     gradient: "linear-gradient(135deg,#ee0979,#ff6a00)", primary: "#ee0979" },
-  { id: "lavender", gradient: "linear-gradient(135deg,#a18cd1,#fbc2eb)", primary: "#a18cd1" },
-  { id: "emerald",  gradient: "linear-gradient(135deg,#0cebeb,#20e3b2)", primary: "#20e3b2" },
-  { id: "cyan",     gradient: "linear-gradient(135deg,#43cea2,#185a9d)", primary: "#43cea2" },
-  { id: "yellow",   gradient: "linear-gradient(135deg,#f6d365,#fda085)", primary: "#f6d365" },
+  { id: "purple", label: "パープル", gradient: "linear-gradient(135deg,#667eea,#764ba2)", primary: "#667eea" },
+  { id: "teal", label: "ブルー", gradient: "linear-gradient(135deg,#0093E9,#80D0C7)", primary: "#0093E9" },
+  { id: "green", label: "グリーン", gradient: "linear-gradient(135deg,#11998e,#38ef7d)", primary: "#11998e" },
+  { id: "orange", label: "オレンジ", gradient: "linear-gradient(135deg,#f7971e,#ffd200)", primary: "#f7971e" },
+  { id: "red", label: "レッド", gradient: "linear-gradient(135deg,#cb2d3e,#ef473a)", primary: "#ef473a" },
+  { id: "pink", label: "ピンク", gradient: "linear-gradient(135deg,#ee0979,#ff6a00)", primary: "#ee0979" },
+  { id: "lavender", label: "ラベンダー", gradient: "linear-gradient(135deg,#a18cd1,#fbc2eb)", primary: "#a18cd1" },
+  { id: "emerald", label: "エメラルド", gradient: "linear-gradient(135deg,#0cebeb,#20e3b2)", primary: "#20e3b2" },
+  { id: "cyan", label: "シアン", gradient: "linear-gradient(135deg,#43cea2,#185a9d)", primary: "#43cea2" },
+  { id: "yellow", label: "イエロー", gradient: "linear-gradient(135deg,#f6d365,#fda085)", primary: "#f6d365" },
 ];
 
 export default function App() {
@@ -152,9 +160,34 @@ export default function App() {
   // Security
   const [appLock, setAppLock] = useLS("pt_appLock", false);
   const [appPin, setAppPin] = useLS("pt_appPin", "");
+  const [autoLockMinutes, setAutoLockMinutes] = useLS("pt_autoLockMinutes", 0);
   const [isLocked, setIsLocked] = useState(() => appLock);
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState(false);
+  const hiddenAtRef = useRef(null);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (!appLock || !appPin) {
+        hiddenAtRef.current = null;
+        return;
+      }
+      const mode = normalizeAutoLockMinutes(autoLockMinutes);
+      if (document.visibilityState === "hidden") {
+        hiddenAtRef.current = Date.now();
+        if (mode === "background") setIsLocked(true);
+        return;
+      }
+      if (document.visibilityState === "visible") {
+        if (shouldAutoLock({ autoLockMinutes: mode, hiddenAt: hiddenAtRef.current })) {
+          setIsLocked(true);
+        }
+        hiddenAtRef.current = null;
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [appLock, appPin, autoLockMinutes]);
 
   useEffect(() => {
     if (theme === "system") {
@@ -345,6 +378,12 @@ export default function App() {
 
   // 通知ログ（Phase 6）
   const [notificationLog, setNotificationLog] = useLS("pt_notificationLog", []);
+  const [notificationPrefs, setNotificationPrefs] = useLS("pt_notificationPrefs", {
+    levelUp: true,
+    streak: true,
+    badge: true,
+    verdict: true,
+  });
 
   // レベルアップトースト表示状態（永続化しない）
   const [levelUpToast, setLevelUpToast] = useState({ show: false, level: 1 });
@@ -355,8 +394,9 @@ export default function App() {
   // 通知ログを追加するヘルパー
   const pushNotification = useCallback((notif) => {
     if (!notif) return;
+    if (!isNotificationEnabled(notif.type, notificationPrefs)) return;
     setNotificationLog((prev) => appendNotification(prev, notif));
-  }, [setNotificationLog]);
+  }, [notificationPrefs, setNotificationLog]);
 
   // レベルアップ検出付き XP 加算ヘルパー。
   // 大当たり・回転マイルストーン・セッション完了・連続日数の全トリガーで使う。
@@ -416,45 +456,15 @@ export default function App() {
     if (storesSeeded) return;
     setStoresSeeded(true);
     if (Array.isArray(stores) && stores.length > 0) return;
-    const seeded = EHIME_STORES.map((st, i) => ({
-      id: Date.now() + i,
-      name: st.name,
-      address: st.address,
-      rentBalls: 250,
-      exRate: 250,
-      memo: "",
-      chodama: 0,
-      chodamaMax: 0,
-      lastVisit: "",
-      replayBalls: 0,
-      todaySettle: 0,
-      memberCard: { created: false, number: "", deposit: 0 },
-    }));
-    setStores(seeded);
+    setStores(mergeBuiltinStores([], EHIME_STORES));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storesSeeded]);
 
-  // V2 移行: 旧データ（誤情報の多かった旧リスト）を持つ既存ユーザーの店舗を
-  // P-WORLD正式データへ全置き換えする（一度だけ実行）。
-  // 貯玉残高・会員カード等は新規登録なのでリセットされる（旧データが不正確なため許容）。
+  // V2 移行: 既存の店舗・貯玉・会員カードを保持し、内蔵店舗の不足分だけ追加する。
   useEffect(() => {
     if (storesMigratedV2) return;
     setStoresMigratedV2(true);
-    const seeded = EHIME_STORES.map((st, i) => ({
-      id: Date.now() + i,
-      name: st.name,
-      address: st.address,
-      rentBalls: 250,
-      exRate: 250,
-      memo: "",
-      chodama: 0,
-      chodamaMax: 0,
-      lastVisit: "",
-      replayBalls: 0,
-      todaySettle: 0,
-      memberCard: { created: false, number: "", deposit: 0 },
-    }));
-    setStores(seeded);
+    setStores((prev) => mergeBuiltinStores(prev, EHIME_STORES));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storesMigratedV2]);
 
@@ -771,23 +781,18 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionStarted]);
 
-  const resetAll = (extraChodamaToStore = 0, { clearStoreChodama = false } = {}) => {
+  const resetAll = (extraChodamaToStore = 0, { persistStoreBalance = true } = {}) => {
     // セッション終了直前の atomic スナップショット（reset 前に確保）
     try { takeSnapshotImmediate("session:end", getUndoSnapshot()); } catch { /* ignore */ }
     // セッション終了前に選択中の店舗の貯玉残高を自動更新
     // extraChodamaToStore: 終了時に「持ち玉を貯玉化」して上乗せする玉数（既定0）
-    // clearStoreChodama: データリセット時は true。店舗の貯玉残高も 0 にクリアし、
-    //   次回同じ店舗で新規稼働した際に前回の持ち玉（貯玉）が引き継がれないようにする。
-    if (selectedStoreId) {
-      const finalChodama = clearStoreChodama
-        ? 0
-        : (currentChodama || 0) + (Math.max(0, Math.round(Number(extraChodamaToStore) || 0)));
-      setStores(prev => prev.map(st =>
-        typeof st === "object" && st.id === selectedStoreId
-          ? { ...st, chodama: finalChodama }
-          : st
-      ));
-    }
+    // 設定画面からのセッション初期化では店舗資産を変更しない。
+    setStores((prev) => updateStoresForSessionReset(prev, {
+      persistStoreBalance,
+      selectedStoreId,
+      currentChodama,
+      extraChodama: extraChodamaToStore,
+    }));
     setSessionStartDate("");
     setJpLog([]);
     setSesLog([]);
@@ -1100,6 +1105,7 @@ export default function App() {
     hapticFeedback, setHapticFeedback,
     // セキュリ
     appLock, setAppLock, appPin, setAppPin, setIsLocked,
+    autoLockMinutes, setAutoLockMinutes,
     // 貯玉関連
     includeChodamaInBalance, setIncludeChodamaInBalance,
     chodamaReplayLimit, setChodamaReplayLimit,
@@ -1126,6 +1132,7 @@ export default function App() {
     hunterCounters,
     // 通知（Phase 6）
     notificationLog,
+    notificationPrefs: normalizeNotificationPrefs(notificationPrefs), setNotificationPrefs,
     openNotificationPanel: () => setNotificationPanelOpen(true),
   };
 
@@ -1249,7 +1256,7 @@ export default function App() {
         {currentMode === "settings" && (
           <SettingsTab
             s={S}
-            onReset={() => resetAll(0, { clearStoreChodama: true })}
+            onReset={() => resetAll(0, { persistStoreBalance: false })}
             onOpenStoreDetail={(store) => {
               setStoreDetailId(store?.id ?? null);
               setCurrentMode("storeDetail");
@@ -1265,6 +1272,11 @@ export default function App() {
           <StoreDetail
             storeId={storeDetailId}
             S={S}
+            onOpenSettings={() => {
+              if (storeDetailId != null) setSelectedStoreId(storeDetailId);
+              setStoreDetailId(null);
+              setCurrentMode("settings");
+            }}
             onBack={() => {
               setStoreDetailId(null);
               setCurrentMode("home");

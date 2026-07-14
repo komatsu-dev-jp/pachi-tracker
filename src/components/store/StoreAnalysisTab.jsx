@@ -12,7 +12,6 @@ import {
   Target,
   Search,
   LogOut,
-  ChevronRight,
   AlertTriangle,
 } from "lucide-react";
 import { SectionCard, SectionHeader, MiniBarSpark, WarningCard } from "./storeDetailShared";
@@ -38,29 +37,22 @@ const trendIcons = {
 function TrendRow({ trend }) {
   const Icon = trendIcons[trend.id] || CalendarDays;
   return (
-    <button
-      type="button"
-      className="flex min-h-[44px] flex-1 items-center justify-between gap-1 rounded-xl border border-[var(--border)] bg-[var(--surface-hi)] px-2.5 py-2.5 active:opacity-70"
-    >
+    <div className="flex min-h-[44px] flex-1 items-center justify-between gap-1 rounded-xl border border-[var(--border)] bg-[var(--surface-hi)] px-2.5 py-2.5">
       <span className="flex min-w-0 items-center gap-1.5">
         <Icon size={14} className="shrink-0 text-[var(--sub-hi)]" />
         <span className="truncate text-[12px] font-bold text-[var(--text)]">{trend.label}</span>
       </span>
       <span className="flex shrink-0 items-center gap-1">
         <MiniBarSpark values={trend.spark} colorVar={`var(--${trend.color})`} />
-        <ChevronRight size={13} className="shrink-0 text-[var(--sub)]" />
       </span>
-    </button>
+    </div>
   );
 }
 
 function JudgmentRow({ icon, iconColorClass, label, count, countLabel }) {
   const Icon = icon;
   return (
-    <button
-      type="button"
-      className="flex min-h-[48px] w-full items-center justify-between gap-2 border-b border-[var(--border)] px-4 py-3 last:border-b-0 active:opacity-70"
-    >
+    <div className="flex min-h-[48px] w-full items-center justify-between gap-2 border-b border-[var(--border)] px-4 py-3 last:border-b-0">
       <span className="flex min-w-0 items-center gap-2.5">
         <Icon size={17} className={"shrink-0 " + iconColorClass} />
         <span className="truncate text-[13px] font-bold text-[var(--text)]">{label}</span>
@@ -68,9 +60,8 @@ function JudgmentRow({ icon, iconColorClass, label, count, countLabel }) {
       <span className="flex shrink-0 items-center gap-2">
         <span className="text-[12px] text-[var(--sub)]">{countLabel}</span>
         <span className="text-[14px] font-black text-[var(--blue)]">{count}件</span>
-        <ChevronRight size={14} className="text-[var(--sub)]" />
       </span>
-    </button>
+    </div>
   );
 }
 
@@ -79,6 +70,9 @@ export default function StoreAnalysisTab({ data, onNavigateTab }) {
 
   return (
     <div className="px-3 pt-3 pb-6">
+      <div className="mb-3 rounded-xl border border-[var(--orange)]/40 bg-[var(--orange)]/10 px-3 py-2.5 text-[11px] font-bold text-[var(--orange)]">
+        サンプル表示：分析データはまだ実績集計に接続されていません
+      </div>
       {/* 1. データ充足状況 */}
       <SectionCard>
         <SectionHeader title="データ充足状況" />

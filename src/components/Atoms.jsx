@@ -1,9 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { C, font, mono } from "../constants";
 
-export function NI({ v, set, w = 80, ph = "0", center = false, big = false, onEnter }) {
+export function NI({ v, set, w = 80, ph = "0", center = false, big = false, onEnter, ariaLabel, validate }) {
     const inputRef = useRef(null);
     const focused = useRef(false);
+    const [error, setError] = useState("");
 
     // 外部から値が変わったとき（機種プリセット適用など）はフォーカス外のみ DOM を直接更新
     useEffect(() => {
@@ -14,20 +15,34 @@ export function NI({ v, set, w = 80, ph = "0", center = false, big = false, onEn
 
     const commit = () => {
         const raw = inputRef.current ? inputRef.current.value : "";
-        if (raw === "") { set(""); return; }
-        const n = Number(raw);
+        const n = raw === "" ? NaN : Number(raw);
+        if (validate) {
+            const message = validate(raw, n) || "";
+            if (message) {
+                setError(message);
+                if (inputRef.current) {
+                    inputRef.current.value = v !== "" && v !== null && v !== undefined ? String(v) : "";
+                }
+                return false;
+            }
+        }
+        setError("");
+        if (raw === "") { set(""); return true; }
         set(isNaN(n) ? "" : n);
+        return true;
     };
 
-    return (
+    const input = (
         <input
             ref={inputRef}
+            aria-label={ariaLabel}
+            aria-invalid={error ? "true" : undefined}
             type="text"
             inputMode="decimal"
             defaultValue={v !== "" && v !== null && v !== undefined ? String(v) : ""}
             placeholder={ph}
             onKeyDown={(e) => {
-                if (e.key === "Enter") { commit(); onEnter && onEnter(); }
+                if (e.key === "Enter" && commit()) onEnter && onEnter();
             }}
             onFocus={(e) => {
                 focused.current = true;
@@ -40,6 +55,8 @@ export function NI({ v, set, w = 80, ph = "0", center = false, big = false, onEn
             }}
             style={{
                 width: w,
+                minHeight: 44,
+                boxSizing: "border-box",
                 background: C.surface,
                 border: `1px solid ${C.borderHi}`,
                 borderRadius: 10,
@@ -53,6 +70,14 @@ export function NI({ v, set, w = 80, ph = "0", center = false, big = false, onEn
                 transition: "border-color 0.2s ease",
             }}
         />
+    );
+
+    if (!validate) return input;
+    return (
+        <div style={{ width: w, flexShrink: 0 }}>
+            {input}
+            {error && <div role="alert" style={{ color: C.red, fontSize: 10, lineHeight: 1.3, marginTop: 4, textAlign: "center" }}>{error}</div>}
+        </div>
     );
 }
 
@@ -112,11 +137,13 @@ export function SecLabel({ label, color }) {
     );
 }
 
-export function Btn({ label, onClick, bg, fg = C.text, bd = C.border, fs = 14, primary = false, small = false }) {
+export function Btn({ label, onClick, bg, fg = C.text, bd = C.border, fs = 14, primary = false, small = false, disabled = false }) {
     return (
         <button
             className="b"
             onClick={onClick}
+            disabled={disabled}
+            aria-disabled={disabled || undefined}
             style={{
                 background: primary ? C.blue : (bg || C.surfaceHi),
                 border: primary ? "none" : `1px solid ${bd}`,
@@ -125,9 +152,12 @@ export function Btn({ label, onClick, bg, fg = C.text, bd = C.border, fs = 14, p
                 fontSize: small ? 12 : fs,
                 fontWeight: 700,
                 padding: small ? "10px 0" : "14px 0",
+                minHeight: 44,
                 width: "100%",
                 fontFamily: font,
                 boxShadow: "none",
+                cursor: disabled ? "not-allowed" : "pointer",
+                opacity: disabled ? 0.6 : 1,
             }}
         >
             {label}

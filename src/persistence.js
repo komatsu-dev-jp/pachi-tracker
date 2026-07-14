@@ -1,4 +1,9 @@
 import { db } from "./db.js";
+import {
+    SECRET_BACKUP_KEYS,
+    sanitizeBackupKv,
+    sanitizeLegacyBackupObject,
+} from "./backupSafety.js";
 
 // useLS の同期 API 契約を保ったまま、内部実装を IndexedDB(Dexie) バックに差し替えるための層。
 //
@@ -12,7 +17,7 @@ import { db } from "./db.js";
 
 const KEY_PREFIX = "pt_";
 const BACKUP_FORMAT = "pachi-tracker-backup";
-const BACKUP_VERSION = 1;
+const BACKUP_VERSION = 2;
 const FLUSH_DEBOUNCE_MS = 250;
 // localStorage クリーンアップ猶予: 30 日
 const LS_CLEANUP_GRACE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -147,12 +152,13 @@ export async function createBackup() {
     await awaitReady();
     await flushAll();
 
-    const [kv, snapshots, meta] = await Promise.all([
+    const [kvRows, snapshots, meta] = await Promise.all([
         db.kv.toArray(),
         db.snapshots.toArray(),
         db.meta.toArray(),
     ]);
 
+    const kv = sanitizeBackupKv(kvRows);
     return {
         format: BACKUP_FORMAT,
         version: BACKUP_VERSION,
@@ -168,7 +174,7 @@ function normalizeBackup(input) {
 
     // 現行形式: IndexedDB の全テーブルをそのまま保持する。
     if (input.format === BACKUP_FORMAT) {
-        if (input.version !== BACKUP_VERSION || !input.database) {
+        if (![1, BACKUP_VERSION].includes(input.version) || !input.database) {
             throw new Error("このバックアップ形式には対応していません");
         }
         const { kv, snapshots = [], meta = [] } = input.database;
@@ -179,11 +185,11 @@ function normalizeBackup(input) {
             row && typeof row.key === "string" && row.key.startsWith(KEY_PREFIX) && "value" in row
         );
         if (!validKv) throw new Error("バックアップデータに不正な項目があります");
-        return { kv, snapshots, meta };
+        return { kv: sanitizeBackupKv(kv), snapshots, meta };
     }
 
     // 旧形式: { "pt_xxx": value } も引き続き復元できる。
-    const entries = Object.entries(input).filter(([key]) => key.startsWith(KEY_PREFIX));
+    const entries = sanitizeLegacyBackupObject(input);
     if (entries.length === 0) {
         throw new Error("パチトラッカーのデータが見つかりません");
     }
@@ -212,6 +218,7 @@ export async function restoreBackup(input) {
     // 復元に失敗した場合にも、直前まで入力していた現在データはDBへ残しておく。
     await flushAll();
     const backup = normalizeBackup(input);
+    const preservedSecrets = (await db.kv.bulkGet(SECRET_BACKUP_KEYS)).filter(Boolean);
 
     if (flushTimer != null) {
         clearTimeout(flushTimer);
@@ -222,6 +229,7 @@ export async function restoreBackup(input) {
     await db.transaction("rw", db.kv, db.snapshots, db.meta, async () => {
         await Promise.all([db.kv.clear(), db.snapshots.clear(), db.meta.clear()]);
         if (backup.kv.length > 0) await db.kv.bulkPut(backup.kv);
+        if (preservedSecrets.length > 0) await db.kv.bulkPut(preservedSecrets);
         if (backup.snapshots.length > 0) await db.snapshots.bulkPut(backup.snapshots);
         if (backup.meta.length > 0) await db.meta.bulkPut(backup.meta);
         await db.meta.put({ key: "restored_at", value: Date.now(), ts: Date.now() });
@@ -229,6 +237,7 @@ export async function restoreBackup(input) {
 
     memCache.clear();
     backup.kv.forEach((row) => memCache.set(row.key, row.value));
+    preservedSecrets.forEach((row) => memCache.set(row.key, row.value));
     return { keyCount: backup.kv.length };
 }
 

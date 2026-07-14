@@ -7,6 +7,8 @@ import { searchMachines, deriveSpecForMachine, getEffectiveMachineList } from ".
 import { calcPreciseEV } from "../logic";
 import { reconcileSegmentConsumption, clearPushCorrections, estimateSegmentGross, hasPushCorrections } from "../ballConsumption";
 import { createBackup, restoreBackup } from "../persistence";
+import { parseCsvRows, toCsvRow } from "../csv";
+import { validateSettingNumber } from "../settingsUtils";
 import { evDecision } from "./decision/evDecision";
 import { confidenceAccuracyLabel } from "./decision/confidenceLabels";
 import { VerdictBadge } from "./decision/VerdictBadge";
@@ -9951,6 +9953,8 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
 
     // サブ画面ナビゲーション
     const [showAppearanceView, setShowAppearanceView] = useState(false);
+    const [showNotificationView, setShowNotificationView] = useState(false);
+    const [showAutoLockView, setShowAutoLockView] = useState(false);
     const [showGameSettingsView, setShowGameSettingsView] = useState(false);
     const [showMachineSpecView, setShowMachineSpecView] = useState(false);
     const [showChodamaView, setShowChodamaView] = useState(false);
@@ -9970,13 +9974,15 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     const [confirmingDeleteStore, setConfirmingDeleteStore] = useState(null);
 
     // セキュリ: PIN設定UI
-    const [pinSetStep, setPinSetStep] = useState("idle"); // idle | enter | confirm
+    const [pinSetStep, setPinSetStep] = useState("idle"); // idle | verify-disable | verify-change | enter | confirm
+    const [pinCurrent, setPinCurrent] = useState("");
     const [pinDraft, setPinDraft] = useState("");
     const [pinConfirm, setPinConfirm] = useState("");
     const [pinSetError, setPinSetError] = useState(false);
 
-    // SNSシェア（匿名化） — UIプレビュー用ローカル状態（将来連携予定: スクショ取得時にホール名/台番号を自動マスキング）
-    const [snsAnonymize, setSnsAnonymize] = useState(false);
+    const validatePositive = (raw) => validateSettingNumber(raw);
+    const validateNonNegative = (raw) => validateSettingNumber(raw, { allowZero: true });
+    const validateFinite = (raw) => validateSettingNumber(raw, { allowZero: true, allowNegative: true });
 
     // トースト通知
     const [toasts, setToasts] = useState([]);
@@ -10015,6 +10021,23 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     // lastVisit=最終来店(表示用テキスト) / replayBalls=店内再プレイ玉数 / todaySettle=本日精算予定玉数（いずれも任意・既定0/空）
     const emptyStore = { name: "", address: "", rentBalls: 25, exRate: 25, memo: "", chodama: 0, chodamaMax: 0, lastVisit: "", replayBalls: 0, todaySettle: 0, memberCard: { ...emptyMemberCard } };
     const [storeFormData, setStoreFormData] = useState(emptyStore);
+    const [storeFormErrors, setStoreFormErrors] = useState({});
+    const validateStoreNumberField = (field, value) => validateSettingNumber(value, {
+        allowZero: !["rentBalls", "exRate"].includes(field),
+    });
+    const setStoreNumberValue = (field, value) => {
+        setStoreFormData((prev) => ({ ...prev, [field]: value }));
+        setStoreFormErrors((prev) => ({ ...prev, [field]: "" }));
+    };
+    const validateStoreNumberOnBlur = (field) => {
+        setStoreFormErrors((prev) => ({
+            ...prev,
+            [field]: validateStoreNumberField(field, storeFormData[field]),
+        }));
+    };
+    const StoreFieldError = ({ field }) => storeFormErrors[field]
+        ? <div role="alert" style={{ color: C.red, fontSize: 10, marginTop: 4 }}>{storeFormErrors[field]}</div>
+        : null;
 
     // 店舗データの正規化（旧形式の文字列配列を新形式のオブジェクト配列に変換）+ chodama/会員カードフィールドの補完
     const normalizedStores = (s.stores || []).map(st =>
@@ -10147,13 +10170,14 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
 
     // 店舗登録フォームを開く
     const openStoreForm = (store = null) => {
+        setStoreFormErrors({});
         if (store) {
             setEditingStore(store);
             // 内部値（×10）をフォーム用の面値（÷10）に変換してセット
             setStoreFormData({
                 ...emptyStore, ...store,
-                rentBalls: Math.round((store.rentBalls || 250) / 10),
-                exRate: Math.round((store.exRate || 250) / 10),
+                rentBalls: Number(store.rentBalls || 250) / 10,
+                exRate: Number(store.exRate || 250) / 10,
             });
         } else {
             setEditingStore(null);
@@ -10165,16 +10189,23 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     // 店舗を保存（フォームの面値を内部値×10に変換）
     const saveStore = () => {
         if (!storeFormData.name.trim()) return;
+        const numericFields = ["rentBalls", "exRate", "chodama", "chodamaMax", "replayBalls", "todaySettle"];
+        const errors = Object.fromEntries(numericFields.map((field) => [field, validateStoreNumberField(field, storeFormData[field])]));
+        setStoreFormErrors(errors);
+        if (Object.values(errors).some(Boolean)) {
+            showToast("数値欄のエラーを修正してください", "error");
+            return;
+        }
         const storeData = {
             ...storeFormData,
             id: editingStore?.id || Date.now(),
-            rentBalls: Math.round((parseFloat(storeFormData.rentBalls) || 25) * 10),
-            exRate: Math.round((parseFloat(storeFormData.exRate) || 25) * 10),
-            chodama: parseInt(storeFormData.chodama) || 0,
-            chodamaMax: parseInt(storeFormData.chodamaMax) || 0,
+            rentBalls: Math.round(Number(storeFormData.rentBalls) * 10),
+            exRate: Math.round(Number(storeFormData.exRate) * 10),
+            chodama: Math.round(Number(storeFormData.chodama)),
+            chodamaMax: Math.round(Number(storeFormData.chodamaMax)),
             lastVisit: (storeFormData.lastVisit || "").trim(),
-            replayBalls: parseInt(storeFormData.replayBalls) || 0,
-            todaySettle: parseInt(storeFormData.todaySettle) || 0,
+            replayBalls: Math.round(Number(storeFormData.replayBalls)),
+            todaySettle: Math.round(Number(storeFormData.todaySettle)),
             memberCard: normalizeMemberCard(storeFormData.memberCard),
         };
         if (editingStore) {
@@ -10215,14 +10246,14 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
             return;
         }
         // 日本語ヘッダー・表示値（貸玉/交換は100円あたり玉数の面値）でエクスポート
-        const rows = normalizedStores.map(st => [
-            `"${String(st.name || "").replace(/"/g, '""')}"`,
-            `"${String(st.address || "").replace(/"/g, '""')}"`,
-            Math.round((st.rentBalls || 250) / 10),
-            Math.round((st.exRate || 250) / 10),
-            `"${String(st.memo || "").replace(/"/g, '""')}"`,
+        const rows = normalizedStores.map(st => toCsvRow([
+            st.name || "",
+            st.address || "",
+            Number(st.rentBalls || 250) / 10,
+            Number(st.exRate || 250) / 10,
+            st.memo || "",
             st.chodama || 0,
-        ].join(","));
+        ]));
         const csvContent = ["店舗名,住所,貸玉,交換,メモ,貯玉", ...rows].join("\n");
         downloadCSV(csvContent, "stores.csv");
     };
@@ -10241,32 +10272,12 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
 
     // CSVパース関数
     const parseCSV = (text) => {
-        const lines = text.split(/\r?\n/).filter(l => l.trim());
-        if (lines.length < 2) return [];
-        const headers = lines[0].split(",").map(h => h.replace(/^"|"$/g, "").trim());
-        return lines.slice(1).map(line => {
-            const values = [];
-            let current = "";
-            let inQuotes = false;
-            for (let i = 0; i < line.length; i++) {
-                const char = line[i];
-                if (char === '"') {
-                    if (inQuotes && line[i + 1] === '"') {
-                        current += '"';
-                        i++;
-                    } else {
-                        inQuotes = !inQuotes;
-                    }
-                } else if (char === "," && !inQuotes) {
-                    values.push(current.trim());
-                    current = "";
-                } else {
-                    current += char;
-                }
-            }
-            values.push(current.trim());
+        const rows = parseCsvRows(text);
+        if (rows.length < 2) return [];
+        const headers = rows[0].map(h => h.trim());
+        return rows.slice(1).map(values => {
             const obj = {};
-            headers.forEach((h, i) => { obj[h] = values[i] || ""; });
+            headers.forEach((h, i) => { obj[h] = (values[i] || "").trim(); });
             return obj;
         });
     };
@@ -10303,11 +10314,11 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
             const getName = d => isJp ? d["店舗名"] : d["name"];
             // 日本語形式: 貸玉/交換は表示値（25玉）→ 内部値（250）に変換
             // 英語形式: 既に内部値（250）のまま
-            const getRentBalls = d => isJp ? (parseInt(d["貸玉"]) || 25) * 10 : (parseInt(d["rentBalls"]) || 250);
-            const getExRate   = d => isJp ? (parseInt(d["交換"])  || 25) * 10 : (parseInt(d["exRate"])    || 250);
+            const getRentBalls = d => isJp ? Math.round((parseFloat(d["貸玉"]) || 25) * 10) : (parseFloat(d["rentBalls"]) || 250);
+            const getExRate   = d => isJp ? Math.round((parseFloat(d["交換"])  || 25) * 10) : (parseFloat(d["exRate"])    || 250);
             const getChodama  = d => isJp ? (parseInt(d["貯玉"]) || 0) : (parseInt(d["chodama"]) || 0);
-            const newStores = data.filter(d => getName(d)).map(d => ({
-                id: Date.now() + Math.random(),
+            const candidates = data.filter(d => getName(d)).map((d, index) => ({
+                id: Date.now() + index,
                 name: getName(d) || "",
                 address: (isJp ? d["住所"] : d["address"]) || "",
                 rentBalls: getRentBalls(d),
@@ -10315,6 +10326,13 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                 memo: (isJp ? d["メモ"] : d["memo"]) || "",
                 chodama: getChodama(d),
             }));
+            const known = new Set(normalizedStores.map(st => `${String(st.name || "").trim().toLowerCase()}|${String(st.address || "").trim().toLowerCase()}`));
+            const newStores = candidates.filter((store) => {
+                const key = `${store.name.trim().toLowerCase()}|${store.address.trim().toLowerCase()}`;
+                if (known.has(key)) return false;
+                known.add(key);
+                return true;
+            });
             if (newStores.length > 0) {
                 s.setStores(prev => [...prev.filter(st => typeof st === "object"), ...newStores]);
                 showToast(`${newStores.length}件の店舗をインポートしました`);
@@ -10422,12 +10440,12 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
             const yd = a.yutimeDecision || {};
             const yr = yd.result || {};
             const ys = yd.spec || {};
-            return [
+            return toCsvRow([
                 a.date || "",
                 a.time || "",
-                (a.storeName || "").replace(/,/g, "，"),
+                a.storeName || "",
                 a.machineNum || "",
-                (a.machineName || "").replace(/,/g, "，"),
+                a.machineName || "",
                 invest,
                 recovery,
                 recovery - invest,
@@ -10452,8 +10470,8 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                 ys.durationSpins ?? "",
                 ys.expectedNetBalls ?? "",
                 ys.source || "",
-                String(ys.sourceUrl || "").replace(/,/g, "%2C")
-            ].join(",");
+                String(ys.sourceUrl || "")
+            ]);
         });
         const csv = "\uFEFF" + headers.join(",") + "\n" + rows.join("\n");
         downloadCSV(csv.replace(/^\uFEFF/, ""), `pachi-tracker-${new Date().toISOString().slice(0, 10)}.csv`);
@@ -10468,12 +10486,12 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                 let text = ev.target?.result;
                 if (typeof text !== "string") return;
                 if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
-                const lines = text.split(/\r?\n/).filter(l => l.trim());
-                if (lines.length < 2) {
+                const rows = parseCsvRows(text);
+                if (rows.length < 2) {
                     showToast("有効なCSVデータがありません", "error");
                     return;
                 }
-                const headers = lines[0].split(",").map(h => h.trim().replace(/^["']|["']$/g, ""));
+                const headers = rows[0].map(h => h.trim());
                 const colIdx = (names) => {
                     const arr = Array.isArray(names) ? names : [names];
                     for (const name of arr) {
@@ -10488,8 +10506,8 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                 };
 
                 const newArchives = [];
-                for (let i = 1; i < lines.length; i++) {
-                    const cols = lines[i].split(",").map(c => c.trim());
+                for (let i = 1; i < rows.length; i++) {
+                    const cols = rows[i].map(c => c.trim());
                     if (cols.length < 3) continue;
                     let date = getCol(cols, ["日付", "date"]);
                     if (date.includes("/")) date = date.replace(/\//g, "-");
@@ -10561,20 +10579,18 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                 }
 
                 const importedArchives = newArchives.map(a => ({ ...a, isImported: true }));
-                s.setArchives(prev => {
-                    const nonImported = prev.filter(a => !a.isImported);
-                    const existingKeys = new Set(nonImported.map(archiveKey));
-                    const uniqueImported = importedArchives.filter(a => !existingKeys.has(archiveKey(a)));
-                    const seenKeys = new Set();
-                    const dedupedImported = uniqueImported.filter(a => {
-                        const key = archiveKey(a);
-                        if (seenKeys.has(key)) return false;
-                        seenKeys.add(key);
-                        return true;
-                    });
-                    return [...nonImported, ...dedupedImported];
+                const previous = Array.isArray(s.archives) ? s.archives : [];
+                const nonImported = previous.filter(a => !a.isImported);
+                const existingKeys = new Set(nonImported.map(archiveKey));
+                const seenKeys = new Set();
+                const dedupedImported = importedArchives.filter(a => {
+                    const key = archiveKey(a);
+                    if (existingKeys.has(key) || seenKeys.has(key)) return false;
+                    seenKeys.add(key);
+                    return true;
                 });
-                showToast(`${newArchives.length}件の収支データをインポートしました`);
+                s.setArchives([...nonImported, ...dedupedImported]);
+                showToast(`${dedupedImported.length}件の収支データをインポートしました`);
             } catch (err) {
                 showToast(`CSVの読み込みに失敗しました: ${err.message}`, "error");
             }
@@ -10636,8 +10652,8 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     // Store detail view
     if (selectedStore) {
         const st = selectedStore;
-        const faceRent = Math.round((st.rentBalls || 250) / 10);
-        const faceEx = Math.round((st.exRate || 250) / 10);
+        const faceRent = Number(st.rentBalls || 250) / 10;
+        const faceEx = Number(st.exRate || 250) / 10;
         const yenPerBall = faceRent > 0 ? 100 / faceRent : 0;        // 1玉あたりの貸玉単価（円）
         const rentLabel = `${Number.isInteger(yenPerBall) ? yenPerBall : yenPerBall.toFixed(1)}円パチンコ`;
         const exYenPerBall = faceEx > 0 ? 100 / faceEx : 0;          // 1玉あたりの換金額（円）
@@ -10664,12 +10680,12 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
                     <button className="b" onClick={() => { setSelectedStore(null); setCardEditOpen(false); setChodamaMoveOpen(null); setShowChodamaHistory(false); }} style={{
                         background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 10,
-                        color: C.text, fontSize: 12, padding: "9px 14px", fontFamily: font, fontWeight: 600
+                        color: C.text, fontSize: 12, padding: "9px 14px", minHeight: 44, fontFamily: font, fontWeight: 600
                     }}>← 一覧に戻る</button>
                     <div style={{ flex: 1 }} />
                     <button className="b" onClick={() => { setSelectedStore(null); openStoreForm(); }} style={{
                         background: C.blue, border: "none", borderRadius: 10,
-                        color: "#fff", fontSize: 12, padding: "9px 16px", fontFamily: font, fontWeight: 800,
+                        color: "#fff", fontSize: 12, padding: "9px 16px", minHeight: 44, fontFamily: font, fontWeight: 800,
                         boxShadow: `0 4px 14px ${C.blue}44`,
                     }}>＋ 店舗を登録</button>
                 </div>
@@ -10958,7 +10974,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
             <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
                 <button className="b" onClick={() => { setShowStoreForm(false); setEditingStore(null); setStoreFormData(emptyStore); }} style={{
                     background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
-                    color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600, marginBottom: 12
+                    color: C.text, fontSize: 12, padding: "8px 16px", minHeight: 44, fontFamily: font, fontWeight: 600, marginBottom: 12
                 }}>← 戻る</button>
 
                 <Card style={{ padding: 16, marginBottom: 12 }}>
@@ -10987,18 +11003,20 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                         <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貸玉（玉/100円）</div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                             <input type="text" inputMode="decimal"
+                                aria-label="店舗の貸玉100円あたりの玉数" aria-invalid={storeFormErrors.rentBalls ? "true" : undefined}
                                 value={storeFormData.rentBalls}
-                                onChange={e => setStoreFormData({ ...storeFormData, rentBalls: e.target.value })}
-                                onBlur={() => setStoreFormData(p => ({ ...p, rentBalls: parseFloat(p.rentBalls) || 25 }))}
+                                onChange={e => setStoreNumberValue("rentBalls", e.target.value)}
+                                onBlur={() => validateStoreNumberOnBlur("rentBalls")}
                                 placeholder="25"
-                                style={{ flex: 1, boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                                style={{ flex: 1, minHeight: 44, boxSizing: "border-box", background: C.bg, border: `1px solid ${storeFormErrors.rentBalls ? C.red : C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
                             <span style={{ fontSize: 10, color: C.sub, whiteSpace: "nowrap" }}>{(100 / (parseFloat(storeFormData.rentBalls) || 25)).toFixed(2)}円/玉</span>
                         </div>
+                        <StoreFieldError field="rentBalls" />
                         {/* プリセット（4円/1円/0.5円 を含む複数交換率対応） */}
                         <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                             {[{l:"4円等価",v:25},{l:"28玉",v:28},{l:"30玉",v:30},{l:"33玉",v:33},{l:"1円",v:100},{l:"0.5円",v:200}].map(({l,v}) => {
                                 const active = String(storeFormData.rentBalls) === String(v);
-                                return <button key={v} className="b" onClick={() => setStoreFormData(p => ({...p, rentBalls: v, exRate: v}))} style={{ fontSize: 10, padding: "5px 10px", borderRadius: 6, border: `1px solid ${active ? C.blue : C.borderHi}`, background: active ? `${C.blue}22` : C.surfaceHi, color: active ? C.blue : C.sub, fontFamily: font, fontWeight: active ? 700 : 500, cursor: "pointer" }}>{l}</button>;
+                                return <button key={v} className="b" onClick={() => { setStoreFormData(p => ({...p, rentBalls: v, exRate: v})); setStoreFormErrors(p => ({ ...p, rentBalls: "", exRate: "" })); }} style={{ fontSize: 10, padding: "5px 10px", minHeight: 44, borderRadius: 6, border: `1px solid ${active ? C.blue : C.borderHi}`, background: active ? `${C.blue}22` : C.surfaceHi, color: active ? C.blue : C.sub, fontFamily: font, fontWeight: active ? 700 : 500, cursor: "pointer" }}>{l}</button>;
                             })}
                         </div>
                     </div>
@@ -11008,13 +11026,15 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                         <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>交換（玉/100円）</div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                             <input type="text" inputMode="decimal"
+                                aria-label="店舗の交換100円あたりの玉数" aria-invalid={storeFormErrors.exRate ? "true" : undefined}
                                 value={storeFormData.exRate}
-                                onChange={e => setStoreFormData({ ...storeFormData, exRate: e.target.value })}
-                                onBlur={() => setStoreFormData(p => ({ ...p, exRate: parseFloat(p.exRate) || 25 }))}
+                                onChange={e => setStoreNumberValue("exRate", e.target.value)}
+                                onBlur={() => validateStoreNumberOnBlur("exRate")}
                                 placeholder="25"
-                                style={{ flex: 1, boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                                style={{ flex: 1, minHeight: 44, boxSizing: "border-box", background: C.bg, border: `1px solid ${storeFormErrors.exRate ? C.red : C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
                             <span style={{ fontSize: 10, color: C.sub, whiteSpace: "nowrap" }}>{(100 / (parseFloat(storeFormData.exRate) || 25)).toFixed(2)}円/玉</span>
                         </div>
+                        <StoreFieldError field="exRate" />
                         {/* プリセット（貸玉レート別の代表的な交換率: 4円/1円/0.5円） */}
                         <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                             {(() => {
@@ -11025,7 +11045,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                                 else presets = [{l:"等価",v:25},{l:"28玉",v:28},{l:"30玉",v:30},{l:"33玉",v:33}];
                                 return presets.map(({l,v}) => {
                                     const active = String(storeFormData.exRate) === String(v);
-                                    return <button key={v} className="b" onClick={() => setStoreFormData(p => ({...p, exRate: v}))} style={{ fontSize: 10, padding: "5px 10px", borderRadius: 6, border: `1px solid ${active ? C.blue : C.borderHi}`, background: active ? `${C.blue}22` : C.surfaceHi, color: active ? C.blue : C.sub, fontFamily: font, fontWeight: active ? 700 : 500, cursor: "pointer" }}>{l}</button>;
+                                    return <button key={v} className="b" onClick={() => { setStoreNumberValue("exRate", v); }} style={{ fontSize: 10, padding: "5px 10px", minHeight: 44, borderRadius: 6, border: `1px solid ${active ? C.blue : C.borderHi}`, background: active ? `${C.blue}22` : C.surfaceHi, color: active ? C.blue : C.sub, fontFamily: font, fontWeight: active ? 700 : 500, cursor: "pointer" }}>{l}</button>;
                                 });
                             })()}
                         </div>
@@ -11036,20 +11056,24 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                         <div>
                             <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貯玉残高（玉）</div>
                             <input type="text" inputMode="numeric" pattern="[0-9]*"
+                                aria-label="店舗の貯玉残高" aria-invalid={storeFormErrors.chodama ? "true" : undefined}
                                 value={storeFormData.chodama === "" ? "" : String(storeFormData.chodama || 0)}
-                                onChange={e => setStoreFormData({ ...storeFormData, chodama: e.target.value })}
-                                onBlur={() => setStoreFormData(p => ({ ...p, chodama: parseInt(p.chodama) || 0 }))}
+                                onChange={e => setStoreNumberValue("chodama", e.target.value)}
+                                onBlur={() => validateStoreNumberOnBlur("chodama")}
                                 placeholder="0"
-                                style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                                style={{ width: "100%", minHeight: 44, boxSizing: "border-box", background: C.bg, border: `1px solid ${storeFormErrors.chodama ? C.red : C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                            <StoreFieldError field="chodama" />
                         </div>
                         <div>
                             <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貯玉上限（玉）</div>
                             <input type="text" inputMode="numeric" pattern="[0-9]*"
+                                aria-label="店舗の貯玉上限" aria-invalid={storeFormErrors.chodamaMax ? "true" : undefined}
                                 value={storeFormData.chodamaMax === "" ? "" : String(storeFormData.chodamaMax || 0)}
-                                onChange={e => setStoreFormData({ ...storeFormData, chodamaMax: e.target.value })}
-                                onBlur={() => setStoreFormData(p => ({ ...p, chodamaMax: parseInt(p.chodamaMax) || 0 }))}
+                                onChange={e => setStoreNumberValue("chodamaMax", e.target.value)}
+                                onBlur={() => validateStoreNumberOnBlur("chodamaMax")}
                                 placeholder="0"
-                                style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                                style={{ width: "100%", minHeight: 44, boxSizing: "border-box", background: C.bg, border: `1px solid ${storeFormErrors.chodamaMax ? C.red : C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                            <StoreFieldError field="chodamaMax" />
                         </div>
                     </div>
 
@@ -11058,20 +11082,24 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                         <div>
                             <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>店内再プレイ（玉）</div>
                             <input type="text" inputMode="numeric" pattern="[0-9]*"
+                                aria-label="店舗の再プレイ玉数" aria-invalid={storeFormErrors.replayBalls ? "true" : undefined}
                                 value={storeFormData.replayBalls === "" ? "" : String(storeFormData.replayBalls || 0)}
-                                onChange={e => setStoreFormData({ ...storeFormData, replayBalls: e.target.value })}
-                                onBlur={() => setStoreFormData(p => ({ ...p, replayBalls: parseInt(p.replayBalls) || 0 }))}
+                                onChange={e => setStoreNumberValue("replayBalls", e.target.value)}
+                                onBlur={() => validateStoreNumberOnBlur("replayBalls")}
                                 placeholder="0"
-                                style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                                style={{ width: "100%", minHeight: 44, boxSizing: "border-box", background: C.bg, border: `1px solid ${storeFormErrors.replayBalls ? C.red : C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                            <StoreFieldError field="replayBalls" />
                         </div>
                         <div>
                             <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>本日精算予定（玉）</div>
                             <input type="text" inputMode="numeric" pattern="[0-9]*"
+                                aria-label="店舗の本日精算予定玉数" aria-invalid={storeFormErrors.todaySettle ? "true" : undefined}
                                 value={storeFormData.todaySettle === "" ? "" : String(storeFormData.todaySettle || 0)}
-                                onChange={e => setStoreFormData({ ...storeFormData, todaySettle: e.target.value })}
-                                onBlur={() => setStoreFormData(p => ({ ...p, todaySettle: parseInt(p.todaySettle) || 0 }))}
+                                onChange={e => setStoreNumberValue("todaySettle", e.target.value)}
+                                onBlur={() => validateStoreNumberOnBlur("todaySettle")}
                                 placeholder="0"
-                                style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                                style={{ width: "100%", minHeight: 44, boxSizing: "border-box", background: C.bg, border: `1px solid ${storeFormErrors.todaySettle ? C.red : C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
+                            <StoreFieldError field="todaySettle" />
                         </div>
                     </div>
 
@@ -11088,12 +11116,15 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                     <div style={{ marginBottom: 12, background: "rgba(0,0,0,0.12)", borderRadius: 10, padding: 12 }}>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: (storeFormData.memberCard?.created) ? 10 : 0 }}>
                             <span style={{ fontSize: 12, color: C.text, fontWeight: 700 }}>会員カードを作成済み</span>
-                            <button className="b" onClick={() => setStoreFormData(p => ({ ...p, memberCard: { ...normalizeMemberCard(p.memberCard), created: !p.memberCard?.created } }))}
+                            <button className="b" type="button" role="switch" aria-label="会員カードを作成済み" aria-checked={!!storeFormData.memberCard?.created}
+                                onClick={() => setStoreFormData(p => ({ ...p, memberCard: { ...normalizeMemberCard(p.memberCard), created: !p.memberCard?.created } }))}
                                 style={{
-                                    width: 48, height: 28, borderRadius: 999, border: "none", cursor: "pointer", position: "relative",
-                                    background: storeFormData.memberCard?.created ? C.green : C.borderHi, transition: "background 0.2s",
+                                    width: 51, height: 44, borderRadius: 999, border: "none", cursor: "pointer", position: "relative",
+                                    background: "transparent",
                                 }}>
-                                <span style={{ position: "absolute", top: 3, left: storeFormData.memberCard?.created ? 23 : 3, width: 22, height: 22, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
+                                <span aria-hidden="true" style={{ position: "absolute", top: 6.5, left: 0, width: 51, height: 31, borderRadius: 999, background: storeFormData.memberCard?.created ? C.green : C.borderHi, transition: "background 0.2s" }}>
+                                    <span style={{ position: "absolute", top: 2, left: storeFormData.memberCard?.created ? 22 : 2, width: 27, height: 27, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
+                                </span>
                             </button>
                         </div>
                         {storeFormData.memberCard?.created && (
@@ -11130,11 +11161,11 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                 <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
                     <button className="b" onClick={() => { setShowStoreSearch(false); setStoreQuery(""); }} style={{
                         background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
-                        color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600
+                        color: C.text, fontSize: 12, padding: "8px 16px", minHeight: 44, fontFamily: font, fontWeight: 600
                     }}>← 設定に戻る</button>
                     <button className="b" onClick={() => openStoreForm()} style={{
                         background: C.blue, border: "none", borderRadius: 8,
-                        color: "#fff", fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 700
+                        color: "#fff", fontSize: 12, padding: "8px 16px", minHeight: 44, fontFamily: font, fontWeight: 700
                     }}>+ 店舗を登録</button>
                 </div>
 
@@ -11230,7 +11261,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
             <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
                 <button className="b" onClick={() => setSelected(null)} style={{
                     background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
-                    color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600, marginBottom: 12
+                    color: C.text, fontSize: 12, padding: "8px 16px", minHeight: 44, fontFamily: font, fontWeight: 600, marginBottom: 12
                 }}>← 一覧に戻る</button>
 
                 <Card style={{ padding: 16, marginBottom: 12 }}>
@@ -11388,7 +11419,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
             <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
                 <button className="b" onClick={() => { setShowMachineForm(false); setEditingMachine(null); setFormData(emptyMachine); }} style={{
                     background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
-                    color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600, marginBottom: 12
+                    color: C.text, fontSize: 12, padding: "8px 16px", minHeight: 44, fontFamily: font, fontWeight: 600, marginBottom: 12
                 }}>← 戻る</button>
 
                 <Card style={{ padding: 16, marginBottom: 12 }}>
@@ -11503,7 +11534,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                     <div style={{ marginBottom: 12 }}>
                         <button className="b" onClick={() => { setShowMachineSearch(false); setQuery(""); setMachineFilter("all"); setConfirmingDeleteMachine(null); }} style={{
                             background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 8,
-                            color: C.text, fontSize: 12, padding: "8px 16px", fontFamily: font, fontWeight: 600
+                            color: C.text, fontSize: 12, padding: "8px 16px", minHeight: 44, fontFamily: font, fontWeight: 600
                         }}>← 設定に戻る</button>
                     </div>
                 </div>
@@ -11656,7 +11687,6 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     const IconBell = () => (<svg {...svgProps}><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>);
     const IconCsv = () => (<svg {...svgProps}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 14h1.5a1 1 0 1 1 0 2H8v2"/><path d="M16 14a1 1 0 0 0-1 1c0 1 2 1 2 2a1 1 0 0 1-1 1"/><path d="M11 14l1 4 1-4"/></svg>);
     const IconFaceId = () => (<svg {...svgProps}><path d="M5 8V6a1 1 0 0 1 1-1h2"/><path d="M19 8V6a1 1 0 0 0-1-1h-2"/><path d="M5 16v2a1 1 0 0 0 1 1h2"/><path d="M19 16v2a1 1 0 0 1-1 1h-2"/><circle cx="9.5" cy="11" r="0.6" fill="currentColor"/><circle cx="14.5" cy="11" r="0.6" fill="currentColor"/><path d="M12 10v3.5"/><path d="M10 16c0.6 0.7 1.3 1 2 1s1.4-0.3 2-1"/></svg>);
-    const IconShare = () => (<svg {...svgProps}><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="m8.2 10.8 7.6-3.6"/><path d="m8.2 13.2 7.6 3.6"/></svg>);
     const IconFingerprint = () => (<svg {...svgProps}><path d="M12 11v3.5a2.5 2.5 0 0 0 5 0"/><path d="M9 8a4 4 0 0 1 7 2.7v3.3"/><path d="M6 13c0-4 2.7-7 6.5-7s6.5 3 6.5 7v2"/><path d="M7 17c-.4-.7-.7-1.6-.8-2.5"/><path d="M14 18c-1.5.7-3 1-4.5 1"/></svg>);
 
     // ── サブ画面共通ヘッダー ──
@@ -11667,9 +11697,9 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
             display: "flex", alignItems: "center", gap: 6, flexShrink: 0,
             borderBottom: `1px solid ${C.border}`,
         }}>
-            <button className="b" onClick={onBack} style={{
+            <button className="b" onClick={onBack} aria-label={`${title}から設定トップへ戻る`} style={{
                 background: "transparent", border: "none",
-                color: C.blue, fontSize: 26, width: 36, height: 36,
+                color: C.blue, fontSize: 26, width: 44, height: 44,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 cursor: "pointer", flexShrink: 0, fontWeight: 400, lineHeight: 1,
             }}>‹</button>
@@ -11678,20 +11708,33 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     );
 
     // ── 共通UIヘルパー ──
-    const Toggle = ({ value, onChange, color }) => (
-        <button className="b" onClick={() => onChange(!value)} style={{
-            width: 51, height: 31, borderRadius: 16, border: "none", flexShrink: 0,
-            background: value ? (color || C.blue) : "rgba(120,120,128,0.16)",
-            position: "relative", transition: "background 0.25s ease", cursor: "pointer",
+    const Toggle = ({ value, onChange, color, label }) => (
+        <button className="b" type="button" role="switch" aria-checked={!!value} aria-label={label} onClick={() => onChange(!value)} style={{
+            width: 51, height: 44, borderRadius: 22, border: "none", flexShrink: 0,
+            background: "transparent", position: "relative", cursor: "pointer",
             WebkitTapHighlightColor: "transparent",
         }}>
-            <div style={{
-                width: 27, height: 27, borderRadius: 14, background: "#fff",
-                position: "absolute", top: 2,
-                left: value ? 22 : 2, transition: "left 0.25s ease",
-                boxShadow: "0 1px 1px rgba(0,0,0,0.04), 0 3px 8px rgba(0,0,0,0.12)",
-            }} />
+            <span aria-hidden="true" style={{
+                width: 51, height: 31, borderRadius: 16,
+                background: value ? (color || C.blue) : "rgba(120,120,128,0.16)",
+                position: "absolute", left: 0, top: 6.5, transition: "background 0.25s ease",
+            }}>
+                <span style={{
+                    width: 27, height: 27, borderRadius: 14, background: "#fff",
+                    position: "absolute", top: 2,
+                    left: value ? 22 : 2, transition: "left 0.25s ease",
+                    boxShadow: "0 1px 1px rgba(0,0,0,0.04), 0 3px 8px rgba(0,0,0,0.12)",
+                }} />
+            </span>
         </button>
+    );
+
+    const ComingSoonBadge = () => (
+        <span style={{
+            borderRadius: 999, padding: "4px 9px", flexShrink: 0,
+            background: "color-mix(in srgb, var(--sub) 12%, transparent)",
+            color: "var(--sub)", fontSize: 10.5, fontWeight: 700,
+        }}>準備中</span>
     );
 
     // 汎用リスト行（onPressなしはdivでレンダリング → Toggle等の子要素がiOSでも押せる）
@@ -11762,7 +11805,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                                 ].map(({ id, label, icon }) => {
                                     const active = s.theme === id;
                                     return (
-                                        <button key={id} className="b" onClick={() => s.setTheme(id)} style={{
+                                        <button key={id} className="b" aria-label={`${label}テーマ`} aria-pressed={active} onClick={() => s.setTheme(id)} style={{
                                             flex: 1, padding: "12px 6px", borderRadius: 12,
                                             border: active ? `2px solid ${C.blue}` : `1px solid ${C.border}`,
                                             background: active ? `${C.blue}22` : C.surfaceHi,
@@ -11784,7 +11827,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                                 {(s.colorThemes || []).map(ct => {
                                     const active = s.accentColor === ct.id;
                                     return (
-                                        <button key={ct.id} className="b" onClick={() => s.setAccentColor(ct.id)} style={{
+                                        <button key={ct.id} className="b" aria-label={`${ct.label || ct.id}のカラーテーマ`} aria-pressed={active} onClick={() => s.setAccentColor(ct.id)} style={{
                                             aspectRatio: "1", borderRadius: 14,
                                             background: ct.primary,
                                             border: active ? "3px solid #fff" : "3px solid transparent",
@@ -11803,12 +11846,82 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                     <SectionLabel label="アクセシビリティ" />
                     <Section>
                         <Row IconComp={IconContrast} iconColor={C.subHi} label="ハイコントラストモード" sub="視認性を向上させます"
-                            right={<Toggle value={s.highContrast} onChange={s.setHighContrast} />} />
+                            right={<Toggle label="ハイコントラストモード" value={s.highContrast} onChange={s.setHighContrast} />} />
                         <Row IconComp={IconEye} iconColor={C.subHi} label="色覚サポート" sub="色の識別をサポート"
-                            right={<Toggle value={s.colorBlind} onChange={s.setColorBlind} />} />
+                            right={<Toggle label="色覚サポート" value={s.colorBlind} onChange={s.setColorBlind} />} />
                         <Row IconComp={IconVibrate} iconColor={C.subHi} label="タップ振動フィードバック" sub="ボタン操作時に振動（対応端末のみ）"
-                            right={<Toggle value={s.hapticFeedback} onChange={s.setHapticFeedback} />} />
+                            right={<Toggle label="タップ振動フィードバック" value={s.hapticFeedback} onChange={s.setHapticFeedback} />} />
                     </Section>
+                </div>
+                <ToastPortal />
+            </div>
+        );
+    }
+
+    // ── 通知設定サブビュー ──
+    if (showNotificationView) {
+        const prefs = s.notificationPrefs || {};
+        const setPref = (key, value) => s.setNotificationPrefs((prev) => ({ ...(prev || {}), [key]: value }));
+        return (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <SubHeader title="通知設定" onBack={() => setShowNotificationView(false)} />
+                <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(84px + env(safe-area-inset-bottom))" }}>
+                    <SectionLabel label="アプリ内通知" />
+                    <Section>
+                        <Row IconComp={IconBell} iconColor={C.purple} label="レベルアップ" sub="ハンターランクが上がったとき"
+                            right={<Toggle label="レベルアップ通知" value={prefs.levelUp !== false} onChange={(v) => setPref("levelUp", v)} />} />
+                        <Row IconComp={IconBell} iconColor={C.green} label="連続記録" sub="連続稼働ボーナスを獲得したとき"
+                            right={<Toggle label="連続記録通知" value={prefs.streak !== false} onChange={(v) => setPref("streak", v)} />} />
+                        <Row IconComp={IconBell} iconColor={C.orange} label="バッジ獲得" sub="新しい実績バッジを獲得したとき"
+                            right={<Toggle label="バッジ獲得通知" value={prefs.badge !== false} onChange={(v) => setPref("badge", v)} />} />
+                        <Row IconComp={IconBell} iconColor={C.blue} label="判断変化" sub="続行・様子見・ヤメの判断が変わったとき"
+                            right={<Toggle label="判断変化通知" value={prefs.verdict !== false} onChange={(v) => setPref("verdict", v)} />} />
+                    </Section>
+                    <div style={{ padding: "12px 16px", color: C.sub, fontSize: 11, lineHeight: 1.6 }}>
+                        ここで切り替えるのはアプリ内の通知履歴です。端末のプッシュ通知は使用していません。
+                    </div>
+                </div>
+                <ToastPortal />
+            </div>
+        );
+    }
+
+    // ── 自動ロック設定サブビュー ──
+    if (showAutoLockView) {
+        const options = [
+            { value: 0, label: "オフ" },
+            { value: "background", label: "バックグラウンド移動時" },
+            { value: 1, label: "1分後" },
+            { value: 5, label: "5分後" },
+            { value: 15, label: "15分後" },
+            { value: 30, label: "30分後" },
+        ];
+        return (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <SubHeader title="自動ロック" onBack={() => setShowAutoLockView(false)} />
+                <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(84px + env(safe-area-inset-bottom))" }}>
+                    <SectionLabel label="ロックするタイミング" />
+                    {!s.appPin ? (
+                        <Section><div style={{ padding: 16, color: C.sub, fontSize: 12, lineHeight: 1.6 }}>先にアプリロックをオンにして、4桁のPINを設定してください。</div></Section>
+                    ) : (
+                        <Section>
+                            {options.map((option, index) => {
+                                const active = String(s.autoLockMinutes ?? 0) === String(option.value);
+                                return (
+                                    <button key={String(option.value)} type="button" className="b settings-row" aria-pressed={active}
+                                        onClick={() => s.setAutoLockMinutes(option.value)} style={{
+                                            width: "100%", minHeight: 52, padding: "12px 16px", textAlign: "left",
+                                            display: "flex", alignItems: "center", justifyContent: "space-between",
+                                            background: "transparent", border: "none",
+                                            borderBottom: index < options.length - 1 ? `1px solid ${C.border}` : "none",
+                                            color: active ? C.blue : C.text, fontSize: 14, fontWeight: active ? 700 : 500,
+                                        }}>
+                                        <span>{option.label}</span><span aria-hidden="true">{active ? "✓" : ""}</span>
+                                    </button>
+                                );
+                            })}
+                        </Section>
+                    )}
                 </div>
                 <ToastPortal />
             </div>
@@ -11830,7 +11943,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                                 <div style={{ fontSize: 11, color: C.sub }}>{(100 / ((s.rentBalls || 250) / 10)).toFixed(2)}円/玉</div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                <NI v={Math.round(s.rentBalls || 250) / 10} set={(v) => s.setRentBalls(Math.round(parseFloat(v) * 10))} w={80} center />
+                                <NI ariaLabel="貸玉100円あたりの玉数" validate={validatePositive} v={Number(s.rentBalls || 250) / 10} set={(v) => s.setRentBalls(Math.round(Number(v) * 10))} w={80} center />
                                 <span style={{ fontSize: 11, color: C.sub, minWidth: 40 }}>玉/100円</span>
                             </div>
                         </div>
@@ -11840,7 +11953,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                                 <div style={{ fontSize: 11, color: C.sub }}>{(100 / ((s.exRate || 250) / 10)).toFixed(2)}円/玉</div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                <NI v={Math.round(s.exRate || 250) / 10} set={(v) => { const ex = Math.round(parseFloat(v) * 10); s.setExRate(ex); if (ex > 0) s.setBallVal(1000 / ex); }} w={80} center />
+                                <NI ariaLabel="交換100円あたりの玉数" validate={validatePositive} v={Number(s.exRate || 250) / 10} set={(v) => { const ex = Math.round(Number(v) * 10); s.setExRate(ex); s.setBallVal(1000 / ex); }} w={80} center />
                                 <span style={{ fontSize: 11, color: C.sub, minWidth: 40 }}>玉/100円</span>
                             </div>
                         </div>
@@ -11851,13 +11964,13 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                                 { label: "3.33円", balls: 30, yen: "3.33" },
                                 { label: "3.03円", balls: 33, yen: "3.03" },
                             ].map(({ label, balls, yen }) => {
-                                const isActive = Math.round((s.exRate || 250) / 10) === balls;
+                                const isActive = Math.abs(Number(s.exRate || 250) / 10 - balls) < 0.05;
                                 return (
                                     <button key={yen} className="b" onClick={() => { s.setExRate(balls * 10); s.setBallVal(1000 / (balls * 10)); }} style={{
                                         background: isActive ? C.blue : C.surfaceHi,
                                         border: isActive ? "none" : `1px solid ${C.border}`,
                                         borderRadius: 999, color: isActive ? "#fff" : C.subHi,
-                                        fontSize: 13, padding: "8px 14px", fontFamily: font, fontWeight: 600,
+                                        fontSize: 13, padding: "8px 14px", minHeight: 44, fontFamily: font, fontWeight: 600,
                                     }}>{label}</button>
                                 );
                             })}
@@ -11887,7 +12000,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                             <div key={lbl} className="settings-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
                                 <div style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>{lbl}</div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                    <NI v={v} set={set} w={80} center />
+                                    <NI ariaLabel={lbl} validate={lbl === "サポ増減/初当たり" ? validateFinite : validateNonNegative} v={v} set={set} w={80} center />
                                     <span style={{ fontSize: 11, color: C.sub, minWidth: 40 }}>{unit}</span>
                                 </div>
                             </div>
@@ -11904,7 +12017,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                             <div key={lbl} className="settings-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: i < arr.length - 1 ? `1px solid ${C.border}` : "none" }}>
                                 <div style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>{lbl}</div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                    <NI v={v} set={set} w={80} center />
+                                    <NI ariaLabel={lbl} validate={validatePositive} v={v} set={set} w={80} center />
                                     <span style={{ fontSize: 11, color: C.sub, minWidth: 40 }}>{unit}</span>
                                 </div>
                             </div>
@@ -11939,7 +12052,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                                     {sub && <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>{sub}</div>}
                                 </div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                    <NI v={v} set={(value) => updateManualYutime(key, value)} w={80} center />
+                                    <NI ariaLabel={lbl} validate={key === "expectedNetBalls" ? validateFinite : validateNonNegative} v={v} set={(value) => updateManualYutime(key, value)} w={80} center />
                                     <span style={{ fontSize: 11, color: C.sub, minWidth: 40 }}>{unit}</span>
                                 </div>
                             </div>
@@ -11961,14 +12074,14 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                     <SectionLabel label="貯玉オプション" />
                     <Section>
                         <Row IconComp={IconDiamond} iconColor={C.teal} label="貯玉を収支に含める" sub="OFFの場合、貯玉使用分は投資額0円として計算"
-                            right={<Toggle value={s.includeChodamaInBalance} onChange={s.setIncludeChodamaInBalance} color={C.purple} />} />
+                            right={<Toggle label="貯玉を収支に含める" value={s.includeChodamaInBalance} onChange={s.setIncludeChodamaInBalance} color={C.purple} />} />
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px" }}>
                             <div>
                                 <div style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>1日の再プレイ上限</div>
                                 <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>上限到達時に警告を表示します</div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                <NI v={s.chodamaReplayLimit} set={s.setChodamaReplayLimit} w={80} center />
+                                <NI ariaLabel="1日の再プレイ上限" validate={validateNonNegative} v={s.chodamaReplayLimit} set={s.setChodamaReplayLimit} w={80} center />
                                 <span style={{ fontSize: 11, color: C.sub, minWidth: 20 }}>玉</span>
                             </div>
                         </div>
@@ -12096,7 +12209,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                                 <div>
                                     <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 600 }}>玉数</div>
-                                    <NI v={chodamaFormBalls} set={setChodamaFormBalls} w="100%" center ph="2500" />
+                                    <NI ariaLabel="貯玉データの玉数" validate={validatePositive} v={chodamaFormBalls} set={setChodamaFormBalls} w="100%" center ph="2500" />
                                 </div>
                                 <div>
                                     <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 600 }}>日付</div>
@@ -12135,9 +12248,9 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                                             {e.type === "adjust" ? "=" : e.type === "withdraw" ? "−" : "+"}{f(e.balls)}
                                         </div>
                                     </div>
-                                    <button className="b" onClick={() => deleteLog(e.id)} style={{
+                                    <button className="b" aria-label={`${e.storeName}の貯玉履歴を削除`} onClick={() => deleteLog(e.id)} style={{
                                         background: "transparent", border: "none", color: C.sub, fontSize: 18,
-                                        width: 36, height: 36, cursor: "pointer", flexShrink: 0,
+                                        width: 44, height: 44, cursor: "pointer", flexShrink: 0,
                                     }}>✕</button>
                                 </div>
                             ))
@@ -12185,7 +12298,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                                 実践記録・収支・設定・機種・店舗など、端末内の全データを1つのファイルに保存します。アプリを削除する前に実行してください。
                             </div>
                             <div style={{ fontSize: 11, color: C.orange, marginBottom: 14, lineHeight: 1.6 }}>
-                                バックアップにはPINなどの設定も含まれます。ファイルを他人に送らないでください。
+                                PINとAI APIキーは安全のため含まれません。利用再開時にこの端末で再設定してください。
                             </div>
                             <Btn label="全データをバックアップ" onClick={backupAllData} bg={C.green} fg="#fff" bd="none" />
                         </div>
@@ -12275,12 +12388,12 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                     <SectionLabel label="セッションの初期化" />
                     <Section danger>
                         {!confirming ? (
-                            <Row IconComp={IconTrash} iconColor={C.red} label="データをリセット" sub="セッションデータ・履歴を消去します" danger onPress={() => setConfirming(true)} />
+                            <Row IconComp={IconTrash} iconColor={C.red} label="データをリセット" sub="現在のセッション内データだけを消去します" danger onPress={() => setConfirming(true)} />
                         ) : (
                             <div style={{ padding: "16px" }}>
                                 <div style={{ fontSize: 13, color: C.text, fontWeight: 600, marginBottom: 6 }}>本当にリセットしますか？</div>
                                 <div style={{ fontSize: 12, color: C.sub, marginBottom: 14, lineHeight: 1.6 }}>
-                                    回転数・獲得出玉・履歴などのセッションデータがすべて消去されます。設定値は保持されます。この操作は元に戻せません。
+                                    現在のセッション内の回転数・獲得出玉・入力履歴が消去されます。保存済み収支・店舗の貯玉・会員カード・設定値は保持されます。この操作は元に戻せません。
                                 </div>
                                 <div style={{ display: "flex", gap: 10 }}>
                                     <Btn label="本当にリセット" onClick={() => { onReset(); setConfirming(false); }} bg={C.red} fg="#fff" bd="none" />
@@ -12297,11 +12410,22 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
 
     // ── メイン設定（分析OS風ダークUI、全1カラム縦リスト） ──
     // 環境プロファイル用の値
-    const rateDisplay = `${Math.round((s.exRate || 250) / 10)}玉交換`;
+    const rateDisplay = `${Number(s.exRate || 250) / 10}玉交換`;
     const exLabelShort = exRateKey === "4.00" ? "等価"
         : exRateKey ? `${exRateKey}円`
         : `${yenPerBall.toFixed(2)}円`;
     const borderShort = calcBorder > 0 ? `${f(calcBorder, 1)}/K` : "—";
+    const appVersion = import.meta.env.PACKAGE_VERSION || "0.0.0";
+    const autoLockLabel = s.autoLockMinutes === "background"
+        ? "バックグラウンド移動時"
+        : Number(s.autoLockMinutes) > 0 ? `${Number(s.autoLockMinutes)}分後` : "オフ";
+    const verifyingPin = pinSetStep === "verify-disable" || pinSetStep === "verify-change";
+    const pinEntryValue = verifyingPin ? pinCurrent : (pinSetStep === "enter" ? pinDraft : pinConfirm);
+    const pinStepTitle = pinSetStep === "verify-disable"
+        ? "現在のPINを入力してロックを解除"
+        : pinSetStep === "verify-change"
+            ? "現在のPINを確認"
+            : pinSetStep === "enter" ? "新しいPINを入力（4桁）" : "PINを再入力して確認";
     // 「現在の遊技環境」サマリーカード用の値
     const storeCount = (s.stores || []).length;
     // 貯玉残高の合計（店舗オブジェクトの chodama を集計）と「要確認」判定
@@ -12402,14 +12526,13 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                 <div style={{ marginBottom: 14 }}>
                     <div style={{ fontSize: 30, fontWeight: 800, color: C.text, fontFamily: font, letterSpacing: -0.6, lineHeight: 1.05 }}>設定</div>
                     <div style={{ fontSize: 11.5, color: "var(--sub)", marginTop: 4, fontFamily: font }}>アプリの各種設定を管理します</div>
+                    <div style={{ fontSize: 10.5, color: "var(--green)", marginTop: 5, fontFamily: font }}>変更はこの端末へ自動保存されます</div>
                 </div>
 
-                {/* ── 現在の遊技環境（サマリーカード） ── */}
-                {/* タップで環境プロファイル切替画面へ — 遷移先は将来実装予定。現状は遊技設定サブビューへ */}
+                {/* ── 貸玉・交換率（サマリーカード） ── */}
                 <button
                     className="b"
                     onClick={() => {
-                        // TODO: 将来、ホール環境プロファイルの切替画面へ遷移する
                         setShowGameSettingsView(true);
                     }}
                     style={{
@@ -12424,19 +12547,19 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                <span style={{ fontSize: 16, fontWeight: 800, color: C.text, lineHeight: 1.2 }}>現在の遊技環境</span>
-                                <span style={{ color: "var(--blue)", display: "inline-flex" }}><IconInfo /></span>
+                                <span style={{ fontSize: 16, fontWeight: 800, color: C.text, lineHeight: 1.2 }}>貸玉・交換率</span>
+                                <span aria-hidden="true" style={{ color: "var(--blue)", display: "inline-flex" }}><IconInfo /></span>
                             </div>
-                            <div style={{ fontSize: 11, color: "var(--sub)", marginTop: 3 }}>計算精度に関わる設定をまとめて確認</div>
+                            <div style={{ fontSize: 11, color: "var(--sub)", marginTop: 3 }}>収支計算に使う玉数と交換率を確認</div>
                         </div>
                         <span style={{ fontSize: 16, color: "var(--sub)", flexShrink: 0, fontWeight: 400 }}>›</span>
                     </div>
                     {/* 下段：3指標（横スクロール禁止＝flex 等幅） */}
                     <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                         {[
-                            { label: "交換率", value: `${rateDisplay} / ${exLabelShort}`, warn: false },
-                            { label: "店舗", value: `${storeCount}件`, warn: false },
-                            { label: "貯玉", value: chodamaUnset ? "未設定" : `${f(chodamaTotal)}玉`, warn: chodamaUnset },
+                            { label: "貸玉", value: `${Number(s.rentBalls || 250) / 10}玉`, warn: false },
+                            { label: "交換率", value: rateDisplay, warn: false },
+                            { label: "玉単価", value: `${yenPerBall.toFixed(2)}円`, warn: false },
                         ].map((m) => (
                             <div key={m.label} style={{
                                 flex: 1, minWidth: 0,
@@ -12461,8 +12584,8 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                 <SectionCard>
                     {(() => {
                         const items = [
-                            { color: "var(--blue)", icon: IconExchange,   label: "レート・交換率",   sub: `${Math.round((s.exRate || 250) / 10)}玉 / ${exLabelShort}・収支計算に使用`, onPress: () => setShowGameSettingsView(true) },
-                            { color: "var(--green)", icon: IconStore,      label: "店舗検索・登録",   sub: `登録店舗: ${storeCount}件`,                                                   onPress: () => setShowStoreSearch(true) },
+                            { color: "var(--blue)", icon: IconExchange,   label: "レート・交換率",   sub: `${Number(s.exRate || 250) / 10}玉 / ${exLabelShort}・収支計算に使用`, onPress: () => setShowGameSettingsView(true) },
+                            { color: "var(--green)", icon: IconStore,      label: "店舗検索・登録",   sub: `利用可能な店舗データ: ${storeCount}件`,                                       onPress: () => setShowStoreSearch(true) },
                             { color: "var(--teal)", icon: IconMagnifier,  label: "機種検索・登録",   sub: `カスタム機種: ${(s.customMachines || []).length}件`,                          onPress: () => setShowMachineSearch(true) },
                             { color: "var(--orange)", icon: IconCoin,       label: "貯玉設定",         sub: s.includeChodamaInBalance ? "収支に含める / 再プレイ上限あり" : "収支に含めない", onPress: () => setShowChodamaView(true), warn: chodamaUnset },
                         ];
@@ -12538,9 +12661,9 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                 <SectionCard>
                     {(() => {
                         const items = [
-                            { color: "var(--purple)", icon: IconPaint,      label: "テーマ・カラー",     sub: "ダーク / 配色 / フォント", onPress: () => setShowAppearanceView(true) },
-                            { color: "var(--purple)", icon: IconBell,       label: "通知設定",           sub: "日次サマリー / 朝チェック", onPress: () => showToast("通知設定は準備中です", "warn") },
-                            { color: "var(--blue)", icon: IconChartBars,  label: "グラフ・表示設定",   sub: "形式 / 表示項目 / 単位",   onPress: () => showToast("グラフ設定は準備中です", "warn") },
+                            { color: "var(--purple)", icon: IconPaint,      label: "テーマ・カラー",     sub: "ダーク / 配色 / アクセシビリティ", onPress: () => setShowAppearanceView(true) },
+                            { color: "var(--purple)", icon: IconBell,       label: "通知設定",           sub: "4種類のアプリ内通知", onPress: () => setShowNotificationView(true) },
+                            { color: "var(--blue)", icon: IconChartBars,  label: "グラフ・表示設定",   sub: "形式 / 表示項目 / 単位", right: <ComingSoonBadge /> },
                         ];
                         return items.map((it, i) => (
                             <ListRow
@@ -12551,6 +12674,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                                 sub={it.sub}
                                 onPress={it.onPress}
                                 isLast={i === items.length - 1}
+                                right={it.right}
                             />
                         ));
                     })()}
@@ -12567,9 +12691,13 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                         sub={s.appLock ? (s.appPin ? "PIN設定済み" : "PIN未設定") : "オフ"}
                         right={
                             <Toggle
+                                label="アプリロック"
                                 value={s.appLock}
                                 onChange={(v) => {
-                                    if (!v) { s.setAppLock(false); s.setAppPin(""); setPinSetStep("idle"); }
+                                    setPinSetError(false);
+                                    setPinCurrent(""); setPinDraft(""); setPinConfirm("");
+                                    if (!v && s.appPin) { setPinSetStep("verify-disable"); }
+                                    else if (!v) { s.setAppLock(false); setPinSetStep("idle"); }
                                     else if (!s.appPin) { s.setAppLock(true); setPinSetStep("enter"); setPinDraft(""); }
                                     else s.setAppLock(true);
                                 }}
@@ -12582,34 +12710,28 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                         color="var(--purple)"
                         IconComp={IconFaceId}
                         label="自動ロック"
-                        sub="未設定"
-                        onPress={() => showToast("自動ロックは準備中です", "warn")}
+                        sub={s.appPin ? autoLockLabel : "PIN設定後に利用できます"}
+                        onPress={() => setShowAutoLockView(true)}
                     />
-                    {/* SNSシェア（匿名化）（Toggle） */}
-                    <ListRow
-                        color="var(--green)"
-                        IconComp={IconShare}
-                        label="SNSシェア（匿名化）"
-                        sub="スクショ時に自動で情報を保護"
-                        right={
-                            <Toggle
-                                value={snsAnonymize}
-                                onChange={(v) => {
-                                    setSnsAnonymize(v);
-                                    // TODO: 将来、スクショ取得時のホール名/台番号マスキング処理と連動
-                                    showToast(v ? "SNSシェアの匿名化をオンにしました" : "SNSシェアの匿名化をオフにしました");
-                                }}
-                                color="var(--green)"
-                            />
-                        }
-                    />
+                    {s.appPin && (
+                        <ListRow
+                            color="var(--green)"
+                            IconComp={IconKey}
+                            label="PINを変更"
+                            sub="現在のPINを確認して変更します"
+                            onPress={() => {
+                                setPinSetError(false); setPinCurrent(""); setPinDraft(""); setPinConfirm("");
+                                setPinSetStep("verify-change");
+                            }}
+                        />
+                    )}
                     {/* 生体認証でのロック（chevron） */}
                     <ListRow
                         color="#22d3ee"
                         IconComp={IconFingerprint}
                         label="生体認証でのロック"
-                        sub="オフ"
-                        onPress={() => showToast("生体認証でのロックは準備中です", "warn")}
+                        sub="対応端末向け機能"
+                        right={<ComingSoonBadge />}
                         isLast
                     />
 
@@ -12621,11 +12743,11 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                             border: "1px solid color-mix(in srgb, var(--glass-line) 14%, transparent)",
                         }}>
                             <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 8 }}>
-                                {pinSetStep === "enter" ? "新しいPINを入力（4桁）" : "PINを再入力して確認"}
+                                {pinStepTitle}
                             </div>
                             <div style={{ display: "flex", gap: 10, justifyContent: "center", marginBottom: 12 }}>
                                 {[0,1,2,3].map(i => {
-                                    const val = pinSetStep === "enter" ? pinDraft : pinConfirm;
+                                    const val = pinEntryValue;
                                     return (
                                         <div key={i} style={{
                                             width: 14, height: 14, borderRadius: 7,
@@ -12637,11 +12759,14 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                             </div>
                             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                                 <input
-                                    type="text" inputMode="numeric" pattern="[0-9]*" maxLength={4}
-                                    value={pinSetStep === "enter" ? pinDraft : pinConfirm}
+                                     type="password" inputMode="numeric" pattern="[0-9]*" maxLength={4}
+                                    aria-label={pinStepTitle}
+                                    value={pinEntryValue}
                                     onChange={e => {
                                         const v = e.target.value.replace(/\D/g, "").slice(0, 4);
-                                        if (pinSetStep === "enter") setPinDraft(v); else setPinConfirm(v);
+                                        if (verifyingPin) setPinCurrent(v);
+                                        else if (pinSetStep === "enter") setPinDraft(v);
+                                        else setPinConfirm(v);
                                         setPinSetError(false);
                                     }}
                                     placeholder="••••"
@@ -12653,9 +12778,19 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                                     }}
                                 />
                                 <button className="b" onClick={() => {
-                                    const val = pinSetStep === "enter" ? pinDraft : pinConfirm;
+                                    const val = pinEntryValue;
                                     if (val.length !== 4 || !/^\d{4}$/.test(val)) { setPinSetError(true); return; }
-                                    if (pinSetStep === "enter") {
+                                    if (verifyingPin) {
+                                        if (pinCurrent !== s.appPin) { setPinSetError(true); return; }
+                                        if (pinSetStep === "verify-disable") {
+                                            if (!window.confirm("アプリロックを解除し、保存済みのPINを削除しますか？")) return;
+                                            s.setAppLock(false); s.setAppPin(""); s.setAutoLockMinutes(0); s.setIsLocked(false);
+                                            setPinSetStep("idle"); setPinCurrent("");
+                                            showToast("アプリロックを解除しました");
+                                        } else {
+                                            setPinSetStep("enter"); setPinCurrent(""); setPinDraft("");
+                                        }
+                                    } else if (pinSetStep === "enter") {
                                         setPinSetStep("confirm"); setPinConfirm(""); setPinSetError(false);
                                     } else {
                                         if (pinConfirm !== pinDraft) { setPinSetError(true); return; }
@@ -12664,22 +12799,27 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                                         showToast("PINを設定しました");
                                     }
                                 }} style={{
-                                    background: C.blue, border: "none", borderRadius: 10,
-                                    color: "#fff", fontSize: 13, padding: "11px 18px",
+                                     background: C.blue, border: "none", borderRadius: 10,
+                                     color: "#fff", fontSize: 13, padding: "11px 18px", minHeight: 44,
                                     fontFamily: font, fontWeight: 700, cursor: "pointer", flexShrink: 0,
-                                }}>{pinSetStep === "enter" ? "次へ" : "確定"}</button>
+                                }}>{verifyingPin ? "確認" : pinSetStep === "enter" ? "次へ" : "確定"}</button>
                                 <button className="b" onClick={() => {
-                                    setPinSetStep("idle"); setPinDraft(""); setPinConfirm(""); setPinSetError(false);
+                                    setPinSetStep("idle"); setPinCurrent(""); setPinDraft(""); setPinConfirm(""); setPinSetError(false);
                                     if (!s.appPin) s.setAppLock(false);
                                 }} style={{
-                                    background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 10,
-                                    color: C.text, fontSize: 13, padding: "11px 14px",
+                                     background: C.surfaceHi, border: `1px solid ${C.borderHi}`, borderRadius: 10,
+                                     color: C.text, fontSize: 13, padding: "11px 14px", minHeight: 44,
                                     fontFamily: font, fontWeight: 600, cursor: "pointer", flexShrink: 0,
                                 }}>キャンセル</button>
                             </div>
                             {pinSetError && (
                                 <div style={{ fontSize: 12, color: C.red, marginTop: 8, textAlign: "center" }}>
-                                    {pinSetStep === "enter" ? "4桁の数字を入力してください" : "PINが一致しません。もう一度入力してください"}
+                                    {verifyingPin ? "現在のPINが一致しません" : pinSetStep === "enter" ? "4桁の数字を入力してください" : "PINが一致しません。もう一度入力してください"}
+                                </div>
+                            )}
+                            {pinSetStep === "enter" && (
+                                <div style={{ fontSize: 11, color: C.orange, marginTop: 10, lineHeight: 1.5 }}>
+                                    PINを忘れるとロックを解除できません。忘れない番号を設定してください。
                                 </div>
                             )}
                         </div>
@@ -12694,14 +12834,14 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                         IconComp={IconChat}
                         label="お問い合わせ"
                         sub="サポート / 不具合報告"
-                        onPress={() => showToast("サポートページは準備中です", "warn")}
+                        right={<ComingSoonBadge />}
                     />
                     <ListRow
                         color="var(--purple)"
                         IconComp={IconDoc}
                         label="利用規約・プライバシー"
                         sub="利用規約 / プライバシーポリシー"
-                        onPress={() => showToast("利用規約は準備中です", "warn")}
+                        right={<ComingSoonBadge />}
                         isLast
                     />
                 </SectionCard>
@@ -12721,41 +12861,30 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                         }}>🎰</div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 15, fontWeight: 800, color: C.text, lineHeight: 1.2 }}>パチトラッカー</div>
-                            <div style={{ fontSize: 10.5, color: "var(--sub)", marginTop: 2, fontFamily: mono }}>Version 1.0.0 (2025.7.1)</div>
+                            <div style={{ fontSize: 10.5, color: "var(--sub)", marginTop: 2, fontFamily: mono }}>Version {appVersion}</div>
                             <div style={{
                                 fontSize: 10.5, color: "var(--sub-hi)", marginTop: 4, lineHeight: 1.3,
                                 overflow: "hidden", textOverflow: "ellipsis",
                                 display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
                             }}>パチンコデータをもっと賢く、もっと楽しく。</div>
                         </div>
-                        <div style={{
-                            background: "color-mix(in srgb, #21d99b 14%, transparent)",
-                            border: "1px solid color-mix(in srgb, #21d99b 32%, transparent)",
-                            borderRadius: 999,
-                            padding: "4px 10px 4px 8px",
-                            display: "flex", alignItems: "center", gap: 4,
-                            flexShrink: 0,
-                        }}>
-                            <span style={{ fontSize: 10, color: "var(--green)", fontWeight: 700 }}>最新版</span>
-                            <span style={{ fontSize: 10, color: "var(--green)" }}>✓</span>
-                        </div>
                     </div>
                     {/* アップデート履歴 */}
-                    <button className="b" onClick={() => showToast("リリースノートは準備中です", "warn")} style={{
+                    <div aria-disabled="true" style={{
                         marginTop: 12, width: "100%",
                         background: "color-mix(in srgb, var(--glass-inner) 60%, transparent)",
                         border: "1px solid color-mix(in srgb, var(--glass-line) 14%, transparent)",
                         borderRadius: 12, padding: "11px 14px",
                         display: "flex", alignItems: "center", justifyContent: "space-between",
-                        cursor: "pointer", WebkitTapHighlightColor: "transparent",
+                        boxSizing: "border-box",
                         minHeight: 48,
                     }}>
                         <div style={{ textAlign: "left" }}>
                             <div style={{ fontSize: 12.5, color: C.text, fontWeight: 600 }}>アップデート履歴</div>
-                            <div style={{ fontSize: 10, color: "var(--sub)", marginTop: 2 }}>リリースノートを見る</div>
+                            <div style={{ fontSize: 10, color: "var(--sub)", marginTop: 2 }}>リリースノート</div>
                         </div>
-                        <span style={{ fontSize: 14, color: "var(--sub)" }}>›</span>
-                    </button>
+                        <ComingSoonBadge />
+                    </div>
                 </div>
 
                 <div style={{ height: 16 }} />

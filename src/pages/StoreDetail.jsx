@@ -17,7 +17,7 @@
 // mockStoreDetail.js のダミー値のまま。TODO: archives ベースの店舗別集計は別ステップで実装。
 
 import React, { useState, useMemo } from "react";
-import { ChevronLeft, Share2 } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { Badge } from "../components/store/storeDetailShared";
 import { resolveStoreDetail } from "../components/store/storeDetailSelectors";
 import StoreOverviewTab from "../components/store/StoreOverviewTab";
@@ -30,7 +30,7 @@ const TABS = [
   { id: "settings", label: "設定" },
 ];
 
-export default function StoreDetail({ storeId, onBack, S }) {
+export default function StoreDetail({ storeId, onBack, onOpenSettings, S }) {
   const [activeTab, setActiveTab] = useState("overview");
   const data = useMemo(
     () =>
@@ -56,15 +56,7 @@ export default function StoreDetail({ storeId, onBack, S }) {
             <ChevronLeft size={22} />
           </button>
           <h1 className="text-[15px] font-bold text-[var(--text)]">店舗詳細</h1>
-          <button
-            type="button"
-            // TODO: 共有機能は次ステップで実装（現状は導線のみ）
-            onClick={() => {}}
-            aria-label="共有"
-            className="flex h-11 w-11 items-center justify-center rounded-full text-[var(--text)] active:opacity-60"
-          >
-            <Share2 size={19} />
-          </button>
+          <div aria-hidden="true" className="h-11 w-11" />
         </div>
 
         {/* 店舗ヘッダーカード */}
@@ -112,7 +104,7 @@ export default function StoreDetail({ storeId, onBack, S }) {
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
                 className={
-                  "min-h-[40px] flex-1 rounded-lg text-[13px] font-bold transition-colors " +
+                  "min-h-[44px] flex-1 rounded-lg text-[13px] font-bold transition-colors " +
                   (active ? "bg-[var(--purple)] text-[#1a0b2e]" : "text-[var(--sub-hi)] active:opacity-70")
                 }
               >
@@ -141,8 +133,7 @@ export default function StoreDetail({ storeId, onBack, S }) {
           className="absolute inset-0 overflow-y-auto"
           style={{ display: activeTab === "settings" ? "block" : "none" }}
         >
-          {/* TODO: 編集/会員カード管理/入出金/実戦設定への適用は次ステップで実装 */}
-          <StoreSettingsTab data={data} />
+          <StoreSettingsTab data={data} onOpenSettings={onOpenSettings} />
         </div>
       </div>
     </div>
