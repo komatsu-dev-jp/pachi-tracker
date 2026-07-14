@@ -29,6 +29,14 @@ for (const [name, { ev, expected }] of Object.entries(cases)) {
   }
 }
 
+// P-EVIDENCE有効時は信頼度内訳のラベルが「実戦/差玉」になる
+const evidenceParts = evDecision(cases.evidence.ev).confidenceParts;
+assert.strictEqual(evidenceParts.rotLabel, "実戦");
+assert.strictEqual(evidenceParts.jpLabel, "差玉");
+const fallbackParts = evDecision(cases.continue.ev).confidenceParts;
+assert.strictEqual(fallbackParts.rotLabel, "回転");
+assert.strictEqual(fallbackParts.jpLabel, "大当り");
+
 console.log(JSON.stringify(out, null, 2));
 console.log(`\n${passed} passed / ${failed} failed`);
 if (failed > 0) process.exit(1);

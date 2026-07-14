@@ -2861,6 +2861,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             verdict={decision.verdict}
                             confidence={decision.confidence}
                             netRot={ev.netRot}
+                            evidenceActive={!!ev?.evidence?.hasEstimate}
                         />
 
                         {/* 1.5. 遊タイム狙い目分析（天井未設定機種では非表示） */}

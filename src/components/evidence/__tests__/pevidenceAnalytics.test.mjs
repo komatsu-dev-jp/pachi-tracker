@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildPEvidenceAnalytics, pevidenceInternals } from "../pevidenceAnalytics.js";
+import { buildPEvidenceAnalytics, pevidenceInternals, PE_PARAMS } from "../pevidenceAnalytics.js";
 
 const machine = {
   name: "テスト機",
@@ -153,6 +153,15 @@ for (const item of result.portfolio.plan) {
   const row = result.latestRows.find((r) => r.num === item.number && r.machineName === item.machineName);
   assert.ok(row && (row.verdict === "strong" || row.verdict === "watch"));
 }
+
+// 当りゼロの日は差玉（＝投入玉の実測）から回転率を直接推定する
+const zeroHit = pevidenceInternals.estimateDaily(
+  { normalSpins: 720, totalStarts: 0, val: -7200 },
+  machine,
+  PE_PARAMS,
+);
+assert.equal(zeroHit.valid, true);
+assert.ok(Math.abs(zeroHit.dailyRate - 25) < 0.01, "当りゼロの日は|差玉|を投入玉として全面採用する");
 
 const pairs = pevidenceInternals.buildOppositePairs([
   { start: 101, end: 103 },

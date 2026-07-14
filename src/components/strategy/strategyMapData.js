@@ -182,7 +182,7 @@ export function buildStrategyMap({
     const machineName = row.machineName;
     const machineSpec = findMachineSpec(machineName, customMachines, machineDB);
     if (!machineSpec) continue;
-    const historyRows = collectDeltaRows(scans, {
+    const historyRows = collectDeltaRows(storeScans, {
       storeId: row.storeId,
       storeName: row.storeId == null ? row.storeName : "",
       machineName,
@@ -199,7 +199,8 @@ export function buildStrategyMap({
     const verdict = pe?.valid ? pe.verdict : classify(borderDiff, confidencePct);
     const islandName = row.island || `${machineName}島`;
     const islandId = islandName;
-    const history = historyFor(scans, machineName, row.num, machineSpec);
+    // スパークラインも表示中店舗の履歴だけを使う（他店舗の同番号を混ぜない）
+    const history = historyFor(storeScans, machineName, row.num, machineSpec);
     const machine = {
       id: `m-${machineName}-${row.num}`,
       num: Number(row.num) || row.num,
@@ -213,7 +214,7 @@ export function buildStrategyMap({
       score: 0,
       evPerHour: pe?.valid ? pe.hourly : evPerHourOf(predictedRotation, trueBorder),
       verdict,
-      isStar: verdict === "strong" && (pe?.score ?? evidence.goodMachineScore) >= 50,
+      isStar: verdict === "strong" && (pe?.valid ? pe.score : evidence.goodMachineScore) >= 50,
       isPlaying: playingNum != null && String(row.num) === String(playingNum),
       history: history.length > 1
         ? history

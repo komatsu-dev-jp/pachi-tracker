@@ -362,10 +362,11 @@ function Kpi({ kpi }) {
 
 // ============================ ホールマップ ============================
 function Legend() {
+  // heatTone の閾値（diff>=1 緑 / 0〜1 黄 / 未満 赤）と文言を一致させる
   const items = [
-    ["ボーダー超え", P.green],
-    ["様子見", P.yellow],
-    ["未満", P.red],
+    ["ボーダー+1以上", P.green],
+    ["ボーダー0〜+1", P.yellow],
+    ["ボーダー未満", P.red],
     ["データ不足", P.gray],
   ];
   return (

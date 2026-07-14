@@ -1,8 +1,92 @@
 import React, { useMemo, useState } from "react";
-import { C, font } from "../../constants";
+import { C, font, mono } from "../../constants";
 import { Card } from "../Atoms";
 import StoreRankingCard from "./StoreRankingCard";
 import { getStoreRanking } from "./scoutSelectors";
+import { buildStrategyMap } from "../strategy/strategyMapData";
+
+// 本日予測タブ: 保存済み差玉から P-EVIDENCE 解析（buildStrategyMap）で計算した
+// 最新スキャン店舗の狙い台と翌日予測を表示する。仮データ・通信は使わない。
+const FORECAST_VERDICT = {
+  strong: { label: "本命", color: C.green },
+  watch: { label: "様子見", color: C.yellow },
+  weak: { label: "回収", color: C.red },
+  nodata: { label: "不足", color: C.sub },
+};
+
+const EMPTY_LIST = [];
+
+function ForecastTab({ S }) {
+  const scans = Array.isArray(S?.deltaScans) ? S.deltaScans : EMPTY_LIST;
+  const customMachines = Array.isArray(S?.customMachines) ? S.customMachines : EMPTY_LIST;
+  const hallMaps = S?.hallMaps;
+  const selectedStoreId = S?.selectedStoreId;
+  const data = useMemo(
+    () => buildStrategyMap({ scans, customMachines, hallMaps, selectedStoreId }),
+    [scans, customMachines, hallMaps, selectedStoreId],
+  );
+
+  if (!data.total) {
+    return (
+      <EmptyState>
+        差玉データがまだありません。
+        <br />
+        ホームの「差玉解析」でスキャンを保存すると、その店舗の本日予測を表示します。
+      </EmptyState>
+    );
+  }
+
+  const rows = data.top5.length ? data.top5 : data.all.slice(0, 5);
+  return (
+    <Card>
+      <div style={{ padding: "12px 14px 4px" }}>
+        <div style={{ fontSize: 12, color: C.sub, fontWeight: 700, letterSpacing: 0.4 }}>
+          本日の狙い台 TOP{rows.length}
+        </div>
+        <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>
+          {data.machineName} ／ 全{data.total}台 ・ 候補{data.kpi.candidates}台（保存済み差玉から計算）
+        </div>
+      </div>
+      <div style={{ padding: "4px 8px 10px" }}>
+        {rows.map((m, i) => {
+          const v = FORECAST_VERDICT[m.verdict] || FORECAST_VERDICT.nodata;
+          return (
+            <div
+              key={m.id}
+              style={{
+                display: "flex", alignItems: "center", gap: 10,
+                minHeight: 48, padding: "8px 8px",
+                borderTop: i === 0 ? "none" : `1px solid ${C.border}`,
+              }}
+            >
+              <span style={{
+                minWidth: 44, textAlign: "center", fontSize: 15, fontWeight: 900,
+                color: C.text, fontFamily: mono,
+              }}>
+                台{m.num}
+              </span>
+              <span style={{
+                fontSize: 11, fontWeight: 800, color: v.color,
+                border: `1px solid ${v.color}`, borderRadius: 999, padding: "3px 9px",
+                flexShrink: 0,
+              }}>
+                {v.label}
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.text, fontFamily: mono }}>
+                  予測 {Number(m.rot).toLocaleString("ja-JP", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}/k ・ 信頼度 {m.confidence}%
+                </div>
+                <div style={{ fontSize: 10, color: C.sub, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  明日の地図：{m.nextPrediction}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
 
 const SCOUT_TABS = [
   { id: "forecast", label: "本日予測" },
@@ -148,13 +232,7 @@ export default function ScoutDashboard({ S }) {
           padding: "0 14px calc(20px + env(safe-area-inset-bottom))",
         }}
       >
-        {activeTab === "forecast" && (
-          <EmptyState>
-            本日予測は P-EVIDENCE 連携後に表示します。
-            <br />
-            現在は未連携のため、予測データを表示していません。
-          </EmptyState>
-        )}
+        {activeTab === "forecast" && <ForecastTab S={S} />}
 
         {activeTab === "actual" && (
           <>

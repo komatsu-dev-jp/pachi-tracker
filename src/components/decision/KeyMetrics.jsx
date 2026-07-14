@@ -57,31 +57,38 @@ export function KeyMetrics({ ev, currentBalls, ballsLabel = "持ち玉", playMod
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
       {evidence && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-          <SubMetricCard
-            label="真のボーダー"
-            value={evidence.trueBorder > 0 ? f(evidence.trueBorder, 1) : "—"}
-            unit="回/K"
-            accent={C.blue}
-          />
-          <SubMetricCard
-            label="良台スコア"
-            value={evidence.hasEstimate ? f(evidence.goodMachineScore, 1) : "—"}
-            unit="pt"
-            accent={evidence.goodMachineScore >= 30 ? C.green : C.yellow}
-          />
-          <SubMetricCard
-            label="信頼度"
-            value={evidence.hasEstimate ? f(evidence.confidence * 100, 1) : "—"}
-            unit="%"
-            accent={C.purple}
-          />
-          <SubMetricCard
-            label="予測回転率"
-            value={evidence.hasEstimate ? f(evidence.predictedRotation, 1) : "—"}
-            unit="回/K"
-            accent={C.teal}
-          />
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+            <SubMetricCard
+              label="真のボーダー"
+              value={evidence.trueBorder > 0 ? f(evidence.trueBorder, 1) : "—"}
+              unit="回/K"
+              accent={C.blue}
+            />
+            <SubMetricCard
+              label="良台スコア"
+              value={evidence.hasEstimate ? f(evidence.goodMachineScore, 1) : "—"}
+              unit="pt"
+              accent={evidence.goodMachineScore >= 30 ? C.green : C.yellow}
+            />
+            <SubMetricCard
+              label="信頼度"
+              value={evidence.hasEstimate ? f(evidence.confidence * 100, 1) : "—"}
+              unit="%"
+              accent={C.purple}
+            />
+            <SubMetricCard
+              label="予測回転率"
+              value={evidence.hasEstimate ? f(evidence.predictedRotation, 1) : "—"}
+              unit="回/K"
+              accent={C.teal}
+            />
+          </div>
+          {evidence.hasEstimate && evidence.predictedHigh > 0 && (
+            <div style={{ fontSize: 10, color: C.sub, textAlign: "right", fontFamily: mono }}>
+              予測レンジ {f(evidence.predictedLow, 1)}〜{f(evidence.predictedHigh, 1)} 回/K
+            </div>
+          )}
         </div>
       )}
       {/* 上段（案A）：実質EV/K（旧「補正後EV/K」）を主役（大）＋ ボーダー差 の2枚。生EV/K は実質EV/Kカード内に小さく併記 */}

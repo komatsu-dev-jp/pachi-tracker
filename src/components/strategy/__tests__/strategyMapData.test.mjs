@@ -50,6 +50,10 @@ assert.ok(
   multiStoreMap.portfolio.plan.every((item) => String(item.number) === "101"),
   "ポートフォリオに他店舗の台を含めない"
 );
+assert.equal(
+  multiStoreMap.all[0].history.length, 2,
+  "スパークラインの履歴に他店舗の同番号データを混ぜない"
+);
 
 const hallMaps = {
   s1: [

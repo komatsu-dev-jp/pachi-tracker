@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useLS, calcPreciseEV } from "./logic";
 import { useUndoStack } from "./history";
 import { C, font, tsNow } from "./constants";
@@ -38,6 +38,7 @@ import {
   collectDeltaRows,
   findMachineSpec,
 } from "./components/delta/deltaEvidence";
+import { pruneScans } from "./components/delta/deltaSelectors";
 import {
   addNotification as appendNotification,
   makeNotification,
@@ -479,15 +480,21 @@ export default function App() {
     spec1R, specAvgRounds, specSapo,
     chodamaSettings: { includeChodamaInBalance },
   });
-  const evidenceMachine = findMachineSpec(machineName, customMachines, machineDB);
-  const savedDeltaEvidence = evidenceMachine
+  // 機種マスタ照合と差玉履歴の集計は全件走査になるため、依存値が変わったときだけ再計算する
+  const evidenceMachine = useMemo(
+    () => findMachineSpec(machineName, customMachines, machineDB),
+    [machineName, customMachines],
+  );
+  const savedDeltaEvidence = useMemo(() => (evidenceMachine
     ? buildDeltaEvidence(collectDeltaRows(deltaScans, {
         storeId: selectedStoreId,
         storeName: selectedStoreId == null ? storeName : "",
         machineName,
         num: machineNum,
       }), evidenceMachine)
-    : null;
+    : null),
+    [evidenceMachine, deltaScans, selectedStoreId, storeName, machineName, machineNum],
+  );
   // 差玉解析の回転率は250玉あたり基準なので、店の貸玉レート（rentBalls/1K）に換算して渡す。
   const evidence = runEvidence(calculatedEv, {
     priorBalls: evidenceMachine?.muraCoef,
@@ -1066,12 +1073,13 @@ export default function App() {
   })();
   const deltaIslands = getStoreIslands(hallMaps, deltaActiveStore?.id ?? null);
   // 差玉解析スキャンの保存（pt_deltaScans へ追加。同一 id は置換）。
+  // 保存のたびに保持ポリシー（90日/300件）で古いスキャンを剪定し、localStorageの肥大化を防ぐ。
   const handleSaveDeltaScan = (scan) => {
     if (typeof setDeltaScans !== "function") return;
     setDeltaScans((prev) => {
       const list = Array.isArray(prev) ? prev : [];
       const without = list.filter((s) => s && s.id !== scan.id);
-      return [...without, scan];
+      return pruneScans([...without, scan]);
     });
   };
 

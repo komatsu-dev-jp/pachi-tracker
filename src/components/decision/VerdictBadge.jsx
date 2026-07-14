@@ -65,7 +65,7 @@ function VerdictIcon({ kind }) {
   return null;
 }
 
-export function VerdictBadge({ verdict, confidence, netRot }) {
+export function VerdictBadge({ verdict, confidence, netRot, evidenceActive = false }) {
   const cfg = VERDICT_CONFIG[verdict] || VERDICT_CONFIG.hold;
   const pct = Math.max(0, Math.min(100, Math.round((confidence || 0) * 100)));
   const dashOffset = RING_CIRCUMFERENCE * (1 - pct / 100);
@@ -74,8 +74,9 @@ export function VerdictBadge({ verdict, confidence, netRot }) {
   // データ精度（信頼度を 3 段階で言語化）
   const accuracyLabel = confidenceAccuracyLabel(confidence);
 
-  // 安定まであと: 1500 回転までの残りを表示（既存 ev.netRot を流用、未指定時は非表示）
-  const remainRot = (netRot != null) ? Math.max(0, STABLE_TARGET_ROT - netRot) : null;
+  // 安定まであと: 1500 回転までの残りを表示（既存 ev.netRot を流用、未指定時は非表示）。
+  // P-EVIDENCE有効時は信頼度が回転数基準ではないため、回転数残の表示は矛盾するので出さない。
+  const remainRot = (!evidenceActive && netRot != null) ? Math.max(0, STABLE_TARGET_ROT - netRot) : null;
 
   return (
     <div

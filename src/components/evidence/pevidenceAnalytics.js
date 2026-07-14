@@ -151,11 +151,16 @@ function estimateDaily(row, machine, params) {
   }
 
   let payoutEstimate = 250;
-  if (stats.avgPayout > 0 && totalStarts > 0) payoutEstimate = Math.max(250, totalStarts * stats.avgPayout - deltaBalls);
-  else if (totalStarts === 0 && deltaBalls < 0) payoutEstimate = Math.max(250, Math.abs(deltaBalls));
+  let payoutWeight = clamp(totalStarts / 10, 0, 1);
+  if (stats.avgPayout > 0 && totalStarts > 0) {
+    payoutEstimate = Math.max(250, totalStarts * stats.avgPayout - deltaBalls);
+  } else if (totalStarts === 0 && deltaBalls < 0) {
+    // 当りゼロの日は差玉≒投入玉そのもの（最も正確な実測）なので全面的に採用する。
+    payoutEstimate = Math.max(250, Math.abs(deltaBalls));
+    payoutWeight = 1;
+  }
 
   const spinEstimate = Math.max(250, normalSpins / border * 250);
-  const payoutWeight = clamp(totalStarts / 10, 0, 1);
   const blended = payoutEstimate * payoutWeight + spinEstimate * (1 - payoutWeight);
   const estimatedInputBalls = clamp(blended, spinEstimate * 0.5, spinEstimate * 3);
   const dailyRate = normalSpins / (estimatedInputBalls / 250);

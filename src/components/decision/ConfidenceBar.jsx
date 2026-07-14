@@ -22,10 +22,10 @@ export function ConfidenceBar({ subValues }) {
       </span>
       <div style={{ display: "flex", gap: 14 }}>
         <span style={{ fontSize: 11, color: C.sub, fontFamily: font }}>
-          回転 <span style={{ fontFamily: mono, fontWeight: 700, color: C.text }}>{rotPct}%</span>
+          {subValues.rotLabel || "回転"} <span style={{ fontFamily: mono, fontWeight: 700, color: C.text }}>{rotPct}%</span>
         </span>
         <span style={{ fontSize: 11, color: C.sub, fontFamily: font }}>
-          大当り <span style={{ fontFamily: mono, fontWeight: 700, color: C.text }}>{jpPct}%</span>
+          {subValues.jpLabel || "大当り"} <span style={{ fontFamily: mono, fontWeight: 700, color: C.text }}>{jpPct}%</span>
         </span>
       </div>
     </div>

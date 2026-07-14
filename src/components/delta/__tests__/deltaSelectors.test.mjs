@@ -11,6 +11,7 @@ import {
   mergeTaiData,
   islandToNumbers,
   buildSegmentsNumbers,
+  pruneScans,
 } from "../deltaSelectors.js";
 import { getRank, RANKS } from "../deltaEngine.js";
 
@@ -181,4 +182,43 @@ test("getRank: 極小値は G", () => {
 test("getRank: 極大値は SS / RANKS は21定義", () => {
   assert.strictEqual(getRank(999999).rank, "SS");
   assert.strictEqual(RANKS.length, 21);
+});
+
+// ---- pruneScans（スキャン保持ポリシー） ----
+test("pruneScans: 期限内・件数内はそのまま保持する", () => {
+  const now = new Date("2026-07-14T12:00:00Z");
+  const scans = [
+    { id: "a", date: "2026-07-01", createdAt: "2026-07-01T10:00:00Z" },
+    { id: "b", date: "2026-07-10", createdAt: "2026-07-10T10:00:00Z" },
+  ];
+  const result = pruneScans(scans, { now });
+  assert.strictEqual(result.length, 2);
+});
+
+test("pruneScans: 90日より古いスキャンを落とす", () => {
+  const now = new Date("2026-07-14T12:00:00Z");
+  const scans = [
+    { id: "old", date: "2026-01-01", createdAt: "2026-01-01T10:00:00Z" },
+    { id: "new", date: "2026-07-10", createdAt: "2026-07-10T10:00:00Z" },
+  ];
+  const result = pruneScans(scans, { now });
+  assert.strictEqual(result.length, 1);
+  assert.strictEqual(result[0].id, "new");
+});
+
+test("pruneScans: 件数超過は古い日付から落とす", () => {
+  const now = new Date("2026-07-14T12:00:00Z");
+  const scans = Array.from({ length: 5 }, (_, i) => ({
+    id: `s${i}`,
+    date: `2026-07-${String(i + 1).padStart(2, "0")}`,
+    createdAt: `2026-07-${String(i + 1).padStart(2, "0")}T10:00:00Z`,
+  }));
+  const result = pruneScans(scans, { now, maxCount: 3 });
+  assert.strictEqual(result.length, 3);
+  assert.deepStrictEqual(result.map((s) => s.id), ["s2", "s3", "s4"]);
+});
+
+test("pruneScans: 配列以外や null 要素も安全に扱う", () => {
+  assert.deepStrictEqual(pruneScans(null), []);
+  assert.deepStrictEqual(pruneScans([null, undefined]), []);
 });
