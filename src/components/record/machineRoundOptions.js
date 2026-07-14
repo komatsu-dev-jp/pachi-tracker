@@ -51,6 +51,10 @@ export function getMachineRoundOptions(machine, phase = "heso") {
   const modes = phase === "rush" ? machine.rushModes : machine.hesoModes;
   for (const mode of Array.isArray(modes) ? modes : []) {
     for (const row of Array.isArray(mode?.rows) ? mode.rows : []) {
+      if (Number.isFinite(Number(row?.recordRounds)) && Number(row.recordRounds) > 0) {
+        addUnique(options, seen, makeOption(Number(row.recordRounds), Number(row.recordMult) || 1));
+        continue;
+      }
       const source = row?.roundsLabel ?? row?.rounds;
       if (typeof source === "number") {
         addUnique(options, seen, makeOption(source));

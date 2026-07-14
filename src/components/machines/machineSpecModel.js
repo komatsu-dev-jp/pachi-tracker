@@ -73,7 +73,10 @@ function parseProbDenom(data) {
 }
 
 export function sumRatio(heso) {
-  return heso.reduce((sum, row) => sum + (Number(plainNum(row.ratio)) || 0), 0);
+  const total = heso.reduce((sum, row) => sum + (Number(plainNum(row.ratio)) || 0), 0);
+  // 31.6 + 42.2 + ... のような小数割合は、JavaScript内部で
+  // 100.00000000000001 になることがあるため、表示精度より細かい桁で丸める。
+  return Math.round(total * 1e10) / 1e10;
 }
 
 // ラウンド振分文字列をパースする。"4R:50%, 10R:50%" → [{ rounds:"4", rate:"50" }, ...]
