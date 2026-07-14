@@ -52,6 +52,11 @@ import {
 import { takeSnapshot, takeSnapshotImmediate, getLatest as getLatestSnapshot } from "./snapshot";
 import { setupGlobalHaptics } from "./haptics";
 import EHIME_STORES from "./data/ehimeStores";
+import {
+  calculateYutimeEV,
+  deriveCurrentLowProbabilitySpins,
+  deriveNormalExpectedNetBalls,
+} from "./components/yutime/yutimeCalculator";
 
 // 旧タブ名 → 新モード名 のマッピング
 // Tabs.jsx 内から S.setTab("rot" | "calendar" | "settings") が呼ばれるため、
@@ -200,6 +205,27 @@ export default function App() {
   // 遊タイム関連設定（0 = 未設定 / 天井非搭載機種）。設定された場合のみ記録モードに分析カードを表示
   const [ceilingRot, setCeilingRot] = useLS("pt_ceilingRot", 0);
   const [yutimePayout, setYutimePayout] = useLS("pt_yutimePayout", 0);
+  const [yutimeSession, setYutimeSession] = useLS("pt_yutimeSession", null);
+  const [yutimeDecision, setYutimeDecision] = useLS("pt_yutimeDecision", null);
+  const [yutimeMigratedV2, setYutimeMigratedV2] = useLS("pt_yutimeMigratedV2", false);
+
+  // 旧設定は一度だけ新形式へ移す。元の pt_* は削除せず、バックアップ互換を保つ。
+  useEffect(() => {
+    if (yutimeMigratedV2) return;
+    if (!yutimeSession && Number(ceilingRot) > 0) {
+      setYutimeSession({
+        machineName: "",
+        triggerLowSpins: Math.round(Number(ceilingRot)),
+        durationSpins: 0,
+        expectedNetBalls: Number(yutimePayout) > 0 ? Number(yutimePayout) : null,
+        assumedStart1K: Number(border) > 0 ? Number(border) : 0,
+        sourceUrl: "",
+        verifiedAt: "",
+        source: "legacy",
+      });
+    }
+    setYutimeMigratedV2(true);
+  }, [yutimeMigratedV2, yutimeSession, ceilingRot, yutimePayout, border, setYutimeSession, setYutimeMigratedV2]);
 
   // Logs
   const [jpLog, setJpLog] = useLS("pt_jpLog3", []);
@@ -382,7 +408,7 @@ export default function App() {
       setChodamaUsedToday(0);
       setChodamaLastDate(today);
     }
-  }, [chodamaLastDate]);
+  }, [chodamaLastDate, setChodamaUsedToday, setChodamaLastDate]);
 
   // 初回のみ: 内蔵店舗リストを登録済み店舗へ自動シード（店舗が空の新規ユーザー向け）。
   // rentBalls/exRate は内部値（面値×10）。4円・等価相当の既定値（250）を入れ、店舗ごとに編集可能。
@@ -458,6 +484,23 @@ export default function App() {
     priorConfidence: savedDeltaEvidence?.hasEstimate ? savedDeltaEvidence.confidence : 0,
   });
   const ev = { ...calculatedEv, evidence: { ...evidence, delta: savedDeltaEvidence } };
+  const currentYutimeLowSpins = deriveCurrentLowProbabilitySpins(rotRows);
+  const measuredYutimeStart1K = Number(ev?.effectiveStart1K) > 0 ? Number(ev.effectiveStart1K) : 0;
+  const yutimeRateSource = measuredYutimeStart1K > 0 ? "measured" : "assumed";
+  const activeYutimeSession = yutimeSession && (
+    !yutimeSession.machineName || !machineName || yutimeSession.machineName === machineName
+  ) ? yutimeSession : null;
+  const yutimeLive = activeYutimeSession ? calculateYutimeEV({
+    probabilityDenom: synthDenom,
+    triggerLowSpins: activeYutimeSession.triggerLowSpins,
+    currentLowSpins: currentYutimeLowSpins,
+    start1K: measuredYutimeStart1K || activeYutimeSession.assumedStart1K || border,
+    normalExpectedNetBalls: deriveNormalExpectedNetBalls({ spec1R, specAvgRounds, specSapo }),
+    yutimeExpectedNetBalls: activeYutimeSession.expectedNetBalls,
+    rentBalls,
+    exRate,
+    playMode,
+  }) : null;
 
   // ── Phase 6 XPトリガー：大当たり（jpLog の hits 合計が増えたら +20/件） ──
   // マイグレーション完了後にのみ作動。
@@ -764,6 +807,8 @@ export default function App() {
     setCurrentMochiBalls(0);
     setCurrentChodama(0);
     setCarriedInYen(0);
+    setYutimeSession(null);
+    setYutimeDecision(null);
     // Phase 6 XPトリガー用カウンタもセッション一緒にリセット（次のセッションは 0 から数え直す）
     setHunterCounters((prev) => ({
       countedHits: 0,
@@ -806,6 +851,8 @@ export default function App() {
       chodamaNetBalls: (currentChodama || 0) - (initialChodama || 0),
       chodamaYen: Math.round((ev?.chodamaKCount || 0) * 1000 * (exRate || 250) / (rentBalls || 250)),
       isMoveArchive: isMove,
+      // 通常期待値とは合算せず、着席判断時点の遊タイム計算を独立保存する。
+      yutimeDecision: yutimeDecision ? JSON.parse(JSON.stringify(yutimeDecision)) : null,
     };
     setArchives((prev) => [...prev, archive]);
     // ハンターランク: 実戦アーカイブ確定で XP 加算（Phase 6：レベルアップ検出付き）
@@ -877,6 +924,8 @@ export default function App() {
     if (dest.spec1R != null) setSpec1R(dest.spec1R);
     if (dest.specAvgRounds != null) setSpecAvgRounds(dest.specAvgRounds);
     if (dest.specSapo != null) setSpecSapo(dest.specSapo);
+    setYutimeSession(dest.yutimeSession || null);
+    setYutimeDecision(dest.yutimeDecision || null);
     // 引き継いだ玉数を新台の初期値として設定（収支の基準にする）
     setInitialMochiBalls(carriedMochi);
     setInitialChodama(carriedChodama);
@@ -891,7 +940,7 @@ export default function App() {
     // 次台のコストベース：今回の持ち出し額を「持ち込みコスト」として引き継ぐ
     setCarriedInYen(carriedOutYen);
     // 新台のスタート行を引き継ぎ資産で再シード（開始回転数を cumRot の基準にする）
-    setRotRows([{ type: "start", cumRot: destStartRot, mode: carriedMode, mochiBalls: carriedMochi, chodamaBalls: carriedChodama }]);
+    setRotRows([{ type: "start", cumRot: destStartRot, yutimeLowSpins: dest.yutimeLowSpins ?? destStartRot, mode: carriedMode, mochiBalls: carriedMochi, chodamaBalls: carriedChodama }]);
     setSessionStarted(true);
     setCurrentMode("record");
   };
@@ -967,6 +1016,14 @@ export default function App() {
             spec1R: sheet.spec1R,
             specAvgTotalRounds: sheet.specAvgRounds,
             specSapo: sheet.specSapo,
+            yutime: yutimeSession?.triggerLowSpins ? {
+              triggerLowSpins: yutimeSession.triggerLowSpins,
+              durationSpins: yutimeSession.durationSpins || 0,
+              expectedNetBalls: yutimeSession.expectedNetBalls,
+              sourceUrl: yutimeSession.sourceUrl || "",
+              verifiedAt: yutimeSession.verifiedAt || "",
+              source: "manual",
+            } : undefined,
             roundDist: "",
             rushDist: "",
             border: { "4.00": 0, "3.57": 0, "3.33": 0, "3.03": 0 },
@@ -1015,6 +1072,10 @@ export default function App() {
     investPace, setInvestPace,
     spec1R, setSpec1R, specAvgRounds, setSpecAvgRounds, specSapo, setSpecSapo,
     ceilingRot, setCeilingRot, yutimePayout, setYutimePayout,
+    yutimeSession, setYutimeSession,
+    activeYutimeSession,
+    yutimeDecision, setYutimeDecision,
+    yutimeLive, currentYutimeLowSpins, yutimeRateSource,
     rotRows, setRotRows,
     jpLog, setJpLog, pushJP,
     sesLog, setSesLog,

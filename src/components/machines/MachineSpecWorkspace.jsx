@@ -455,6 +455,11 @@ function RegisterScreen({ machine, onSave, onBack }) {
     spec1R: plainNum(machine.spec1R),
     specAvgTotalRounds: plainNum(machine.specAvgTotalRounds),
     specSapo: plainNum(machine.specSapo),
+    yutimeTriggerLowSpins: plainNum(machine.yutime?.triggerLowSpins),
+    yutimeDurationSpins: plainNum(machine.yutime?.durationSpins),
+    yutimeExpectedNetBalls: plainNum(machine.yutime?.expectedNetBalls),
+    yutimeSourceUrl: machine.yutime?.sourceUrl || "",
+    yutimeVerifiedAt: machine.yutime?.verifiedAt || "",
     avgPayout: plainNum(machine.avgPayout),
     hesoAvg: plainNum(machine.hesoAvg),
     rushAvg: plainNum(machine.rushAvg),
@@ -556,6 +561,14 @@ function RegisterScreen({ machine, onSave, onBack }) {
       spec1R: plainNum(form.spec1R),
       specAvgTotalRounds: plainNum(form.specAvgTotalRounds),
       specSapo: plainNum(form.specSapo),
+      yutime: plainNum(form.yutimeTriggerLowSpins) ? {
+        triggerLowSpins: plainNum(form.yutimeTriggerLowSpins),
+        durationSpins: plainNum(form.yutimeDurationSpins),
+        expectedNetBalls: form.yutimeExpectedNetBalls === "" ? "" : plainNum(form.yutimeExpectedNetBalls),
+        sourceUrl: form.yutimeSourceUrl.trim(),
+        verifiedAt: form.yutimeVerifiedAt.trim(),
+        source: "manual",
+      } : null,
       avgPayout: form.avgPayout ? formatNumber(form.avgPayout, machine.avgPayout) : machine.avgPayout,
       hesoAvg: form.hesoAvg ? formatNumber(form.hesoAvg, machine.hesoAvg) : machine.hesoAvg,
       rushAvg: form.rushAvg ? formatNumber(form.rushAvg, machine.rushAvg) : machine.rushAvg,
@@ -722,6 +735,23 @@ function RegisterScreen({ machine, onSave, onBack }) {
             <Field label="1R出玉（記録用）" value={form.spec1R} unit="発" onChange={(v) => setField("spec1R", v)} />
             <Field label="平均総R/初当り" value={form.specAvgTotalRounds} unit="R" onChange={(v) => setField("specAvgTotalRounds", v)} />
             <Field label="サポ増減" value={form.specSapo} unit="発" onChange={(v) => setField("specSapo", v)} />
+          </div>
+        </section>
+
+        <section className="ms-register-card">
+          <div className="ms-card-head">
+            <h2>遊タイム（任意）</h2>
+          </div>
+          <div className="ms-form-grid">
+            <Field label="発動する低確率回転" value={form.yutimeTriggerLowSpins} unit="回" onChange={(v) => setField("yutimeTriggerLowSpins", v)} />
+            <Field label="遊タイム回数" value={form.yutimeDurationSpins} unit="回" onChange={(v) => setField("yutimeDurationSpins", v)} />
+            <Field label="突入後の平均純増" value={form.yutimeExpectedNetBalls} unit="玉" onChange={(v) => setField("yutimeExpectedNetBalls", v)} />
+            <TextField label="根拠URL" value={form.yutimeSourceUrl} onChange={(v) => setField("yutimeSourceUrl", v)} />
+            <TextField label="確認日（YYYY-MM-DD）" value={form.yutimeVerifiedAt} onChange={(v) => setField("yutimeVerifiedAt", v)} />
+          </div>
+          <div className="ms-info-note">
+            <span>i</span>
+            <strong>平均純増は、遊タイムをスルーする場合と電サポ中の玉増減も含めて入力します</strong>
           </div>
         </section>
 

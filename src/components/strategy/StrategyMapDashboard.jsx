@@ -6,6 +6,7 @@ import {
   P_EVIDENCE_DEMO_MACHINE,
   P_EVIDENCE_DEMO_SCANS,
 } from "../evidence/pevidenceDemoData.js";
+import YutimeCalculatorSheet from "../yutime/YutimeCalculatorSheet.jsx";
 
 // 戦略マップ画面（見た目優先プロトタイプ）
 //
@@ -794,6 +795,7 @@ export default function StrategyMapDashboard({ S, onBack }) {
     data.all.find((machine) => machine.id === data.leadId)?.islandId || data.islands[0]?.id || null
   );
   const [helpOpen, setHelpOpen] = useState(false);
+  const [yutimeOpen, setYutimeOpen] = useState(false);
 
   const selected = data.all.find((m) => m.id === selectedId) || null;
   const effectiveActiveIslandId = data.islands.some((island) => island.id === activeIslandId)
@@ -818,6 +820,22 @@ export default function StrategyMapDashboard({ S, onBack }) {
   return (
     <div className="strategy-map" style={{ flex: 1, background: P.bg, color: P.text, fontFamily: FONT, paddingBottom: "calc(24px + env(safe-area-inset-bottom))" }}>
       <Header data={data} updatedAt={updatedAt} onBack={onBack} onHelp={() => setHelpOpen(true)} />
+      <div style={{ padding: "4px 14px 0" }}>
+        <button
+          type="button"
+          onClick={() => setYutimeOpen(true)}
+          style={{
+            width: "100%", minHeight: 48, borderRadius: 14,
+            border: "1px solid color-mix(in srgb, var(--sm-cyan) 55%, transparent)",
+            background: "color-mix(in srgb, var(--sm-cyan) 12%, var(--sm-card))",
+            color: P.text, fontSize: 14, fontWeight: 900, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          }}
+        >
+          <span aria-hidden="true" style={{ color: P.cyan }}>◎</span>
+          遊タイム計算
+        </button>
+      </div>
       {data.total === 0 && (
         <div style={{ margin: "18px 14px 0", padding: "20px 16px", borderRadius: 18, background: P.card, border: `1px solid ${P.line}`, textAlign: "center" }}>
           <div style={{ fontSize: 15, fontWeight: 900, color: P.text }}>差玉データがありません</div>
@@ -845,6 +863,13 @@ export default function StrategyMapDashboard({ S, onBack }) {
       <LearningSummary data={data} selected={selected} />
       <PortfolioPlan portfolio={data.portfolio} />
       {helpOpen && <HelpSheet onClose={() => setHelpOpen(false)} />}
+      {yutimeOpen && (
+        <YutimeCalculatorSheet
+          S={S}
+          initialMachineName={selected?.machineName || ""}
+          onClose={() => setYutimeOpen(false)}
+        />
+      )}
     </div>
   );
 }

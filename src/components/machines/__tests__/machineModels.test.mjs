@@ -29,4 +29,13 @@ assert.ok(
   "正式型式コードで機種検索できません",
 );
 
+const verifiedYutime = machineDB.find((machine) => machine.name === "仮面ライダー轟音")?.yutime;
+assert.deepEqual(
+  [verifiedYutime?.triggerLowSpins, verifiedYutime?.durationSpins, verifiedYutime?.expectedNetBalls],
+  [950, 1200, 6756],
+  "確認済み遊タイムデータを自動入力できません",
+);
+const partialYutime = machineDB.find((machine) => machine.name === "PA新海物語")?.yutime;
+assert.equal(partialYutime?.expectedNetBalls, null, "期待出玉の根拠がない機種を推測で補完してはいけません");
+
 console.log("machineModels: 84件 PASS");

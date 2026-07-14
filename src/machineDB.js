@@ -215,6 +215,18 @@ const rawMachineDB = [
     specSapo: 0,
     roundDist: "4R:50%, 10R:50%",
     border: { "4.00": 22.0, "3.57": 23.2, "3.33": 24.2, "3.03": 25.4 },
+    yutime: {
+      triggerLowSpins: 950,
+      durationSpins: 1200,
+      expectedNetBalls: 6756,
+      sourceUrl: "https://nana-press.com/kaiseki/machine/234/6085/",
+      verifiedAt: "2026-07-14",
+      source: "master",
+    },
+    sourceUrls: [
+      "https://www.kyoraku.co.jp/news/detail/473",
+      "https://nana-press.com/kaiseki/machine/234/6085/",
+    ],
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   // ── ライトミドル ──
@@ -380,7 +392,20 @@ const rawMachineDB = [
       },
     ],
     allocationNote: "出玉は払い出し。初当りは4R・400発100%で、全てST154回へ突入します。",
-    sourceUrls: ["https://1geki.jp/pachinko/p_toaru/", "https://1geki.jp/pachinko/p_toaru/11/"],
+    sourceUrls: [
+      "https://www.fujimarukun.co.jp/products/p_toaru/",
+      "https://nana-press.com/kaiseki/machine/206/6275/",
+      "https://1geki.jp/pachinko/p_toaru/",
+      "https://1geki.jp/pachinko/p_toaru/11/",
+    ],
+    yutime: {
+      triggerLowSpins: 800,
+      durationSpins: 1214,
+      expectedNetBalls: 4994,
+      sourceUrl: "https://nana-press.com/kaiseki/machine/206/6275/",
+      verifiedAt: "2026-07-14",
+      source: "master",
+    },
     dataUpdatedAt: "2026-07-13",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
@@ -1019,6 +1044,14 @@ const rawMachineDB = [
     rushAvgPayout: 1700,
     rushEntryRate: 100,
     rushContinueRate: 70,
+    yutime: {
+      triggerLowSpins: 299,
+      durationSpins: 379,
+      expectedNetBalls: null,
+      sourceUrl: "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20220603.pdf",
+      verifiedAt: "2026-07-14",
+      source: "master",
+    },
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
