@@ -251,6 +251,26 @@ assert.deepStrictEqual(
 );
 assert.equal(changeRoundMultiplier(2, 1, getMachineRoundLoop(lupinOc, "rush", 10)), 3, "ルパン超ブチヌキの+αを追加できること");
 
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(machine("eぱちんこ押忍!番長 男の頂"), "rush")),
+  ["2R×1", "20R×1"],
+  "番長の3000発は10R+5R+5Rの合計20Rとして記録できること",
+);
+for (const name of ["Pフィーバーからくりサーカス2 運命ver.", "eフィーバーからくりサーカス2 魔王ver."]) {
+  assert.deepStrictEqual(
+    signatures(getMachineRoundOptions(machine(name), "rush")),
+    ["10R×1", "10R×2", "10R×3", "10R×4", "10R×5"],
+    `${name}は1500～7500発を実際の10R回数で記録できること`,
+  );
+}
+const sympho4 = machine("eフィーバー戦姫絶唱シンフォギア4 キャロルver.");
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(sympho4, "rush")),
+  ["10R×1", "10R×2", "10R×3"],
+  "シンフォギア4は1500・3000・最低4500発を記録できること",
+);
+assert.equal(changeRoundMultiplier(3, 1, getMachineRoundLoop(sympho4, "rush", 10)), 4, "シンフォギア4の上乗せ10Rを追加できること");
+
 const hit6000 = buildMultiRoundHit(1, {
   rounds: 10,
   mult: 4,
