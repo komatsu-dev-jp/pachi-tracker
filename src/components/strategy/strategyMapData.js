@@ -153,7 +153,13 @@ export function buildStrategyMap({
 
   const analysisStoreId = currentScans[0]?.storeId ?? selectedStoreId;
   const hallIslands = getStoreIslands(hallMaps, analysisStoreId);
-  const analytics = buildPEvidenceAnalytics({ scans, customMachines, islands: hallIslands });
+  // ポートフォリオ・翌日予測に他店舗の台が混ざらないよう、
+  // 解析対象は表示中の店舗（最新スキャンの店舗）の履歴に限定する。
+  const analysisStoreKey = String(currentScans[0]?.storeId ?? currentScans[0]?.storeName ?? "");
+  const storeScans = (scans || []).filter((scan) =>
+    String(scan?.storeId ?? scan?.storeName ?? "") === analysisStoreKey
+  );
+  const analytics = buildPEvidenceAnalytics({ scans: storeScans, customMachines, islands: hallIslands });
   const analyticsByMachine = new Map(analytics.latestRows.map((item) => [
     `${item.store}___${item.machineName}___${item.num}`,
     item,
@@ -234,7 +240,11 @@ export function buildStrategyMap({
       sharpe: round1(pe?.sharpe || 0),
       spatialAlert: pe?.spatial?.label || "隣接情報なし",
       oppositeAlert: pe?.opposite?.label || "対面情報なし",
-      nextPrediction: analytics.nextMap.find((item) => String(item.number) === String(row.num) && item.machineName === machineName)?.prediction || "データ収集中",
+      nextPrediction: analytics.nextMap.find((item) =>
+        String(item.number) === String(row.num) &&
+        item.machineName === machineName &&
+        String(item.store ?? "") === rowStore
+      )?.prediction || "データ収集中",
     };
     machine.score = scoreOf(machine);
     if (!islandMap.has(islandId)) islandMap.set(islandId, { id: islandId, name: islandName, machines: [] });

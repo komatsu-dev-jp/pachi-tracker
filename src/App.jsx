@@ -488,9 +488,13 @@ export default function App() {
         num: machineNum,
       }), evidenceMachine)
     : null;
+  // 差玉解析の回転率は250玉あたり基準なので、店の貸玉レート（rentBalls/1K）に換算して渡す。
   const evidence = runEvidence(calculatedEv, {
     priorBalls: evidenceMachine?.muraCoef,
-    priorRotation: savedDeltaEvidence?.hasEstimate ? savedDeltaEvidence.predictedRotation : undefined,
+    ballsPerK: rentBalls,
+    priorRotation: savedDeltaEvidence?.hasEstimate
+      ? savedDeltaEvidence.predictedRotation * ((rentBalls || 250) / 250)
+      : undefined,
     priorConfidence: savedDeltaEvidence?.hasEstimate ? savedDeltaEvidence.confidence : 0,
   });
   const ev = { ...calculatedEv, evidence: { ...evidence, delta: savedDeltaEvidence } };

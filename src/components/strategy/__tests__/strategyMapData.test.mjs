@@ -32,6 +32,25 @@ assert.ok(map.all[0].rot > 0);
 assert.ok(map.all[0].confidence >= 0 && map.all[0].confidence <= 100);
 assert.equal(map.all[0].history.length, 2);
 
+// 別店舗のスキャンが混ざっていても、解析・推奨は表示中の店舗に限定される
+const multiStoreScans = [
+  ...scans,
+  {
+    id: "d3", storeId: "s2", storeName: "別店", date: "2026-06-30", createdAt: "2026-06-30T12:00:00Z",
+    rows: [{ num: "101", machineName: "検証機", island: "1島", normalSpins: 900, totalStarts: 12, val: 5000 }],
+  },
+];
+const multiStoreMap = buildStrategyMap({ scans: multiStoreScans, customMachines: [machine] });
+assert.equal(multiStoreMap.total, 1, "表示は最新スキャンの店舗のみ");
+assert.ok(
+  multiStoreMap.analytics.latestRows.every((row) => row.store === "s1"),
+  "解析対象に他店舗の台を含めない"
+);
+assert.ok(
+  multiStoreMap.portfolio.plan.every((item) => String(item.number) === "101"),
+  "ポートフォリオに他店舗の台を含めない"
+);
+
 const hallMaps = {
   s1: [
     { id: "layout-b", name: "B島", start: 201, end: 206, machineName: "検証機" },

@@ -144,6 +144,11 @@ function estimateDaily(row, machine, params) {
   if (!(normalSpins > 0) || !(border > 0) || hasExplicitError(row)) {
     return { valid: false, normalSpins, totalStarts, deltaBalls, border, stats };
   }
+  // 平均出玉が不明なのに大当りがある日は、投入玉を推定できず
+  // 回転率が2倍側へ張り付くため除外する（deltaEvidence と同じ基準）。
+  if (totalStarts > 0 && !(stats.avgPayout > 0)) {
+    return { valid: false, reason: "平均出玉なし", normalSpins, totalStarts, deltaBalls, border, stats };
+  }
 
   let payoutEstimate = 250;
   if (stats.avgPayout > 0 && totalStarts > 0) payoutEstimate = Math.max(250, totalStarts * stats.avgPayout - deltaBalls);
@@ -265,9 +270,14 @@ function createProcessedRows(rawRows, customMachines, params) {
       const regimeSamples = regimeInputBalls / 250;
       const cumulativeRate = postSamples >= 1 ? cumulativeSpins / postSamples : row.border;
       const regimeRate = regimeSamples >= 2 ? regimeSpins / regimeSamples : 0;
-      const activeRate = regimeSamples >= 4 && regimeRate > 0 ? regimeRate : cumulativeRate;
-      const priorBalls = Math.max(2500, num(row.machine?.muraCoef, params.defaultPriorBalls) * Math.pow(0.5, cumulativeInputBalls / params.priorHalfLifeBalls));
-      const confidence = postSamples / (postSamples + priorBalls / 250);
+      const usesRegimeRate = regimeSamples >= 4 && regimeRate > 0;
+      const activeRate = usesRegimeRate ? regimeRate : cumulativeRate;
+      // 変化点後は変化前のデータを推定に使わないため、信頼度も
+      // 推定に実際に使っている玉数（新レジーム分）だけで計算する。
+      const confidenceBalls = usesRegimeRate ? regimeInputBalls : cumulativeInputBalls;
+      const confidenceSamples = confidenceBalls / 250;
+      const priorBalls = Math.max(2500, num(row.machine?.muraCoef, params.defaultPriorBalls) * Math.pow(0.5, confidenceBalls / params.priorHalfLifeBalls));
+      const confidence = confidenceSamples / (confidenceSamples + priorBalls / 250);
       const predictedRotation = activeRate * confidence + row.border * (1 - confidence);
       const aggregateDerivative = 250 * cumulativeSpins / Math.max(1, cumulativeInputBalls ** 2);
       const standardError = Math.max(0.12, aggregateDerivative * Math.sqrt(Math.max(0, cumulativeInputVariance)));
@@ -575,7 +585,10 @@ function applyDecision(latest, profiles, markov, spatial, opposite, params) {
   return latest.map((row) => {
     if (!row.valid) return { ...row, nailAlert: "データ除外", score: 0, verdict: "nodata" };
     const profile = profileMap.get(profileKey(row));
-    const dowProfile = profile?.days?.[dayOfWeek(row.date)];
+    // tightProbability は「翌日に締められる確率」なので、曜日プロファイルも
+    // 今日ではなく翌日の曜日（締めが起きる日）で参照する。
+    const tomorrowDow = (dayOfWeek(row.date) + 1) % 7;
+    const dowProfile = profile?.days?.[tomorrowDow];
     const markovProfile = markov.byKey.get(profileKey(row));
     const stateGood = row.ema >= row.border + 0.5;
     const totalA = markovProfile ? markovProfile.counts.AA + markovProfile.counts.AB : 0;
@@ -641,8 +654,9 @@ function applyDecision(latest, profiles, markov, spatial, opposite, params) {
 }
 
 function buildPortfolio(rows, params) {
+  // 信頼度不足（nodata）の台を時間配分へ推奨しない。strong / watch のみ対象。
   const candidates = rows
-    .filter((row) => row.valid && row.hourly > 0 && row.verdict !== "weak" && !row.nailAlert.includes("締め"))
+    .filter((row) => row.valid && row.hourly > 0 && (row.verdict === "strong" || row.verdict === "watch") && !row.nailAlert.includes("締め"))
     .sort((a, b) => b.sharpe - a.sharpe)
     .slice(0, 10);
   const totalSharpe = candidates.reduce((sum, row) => sum + Math.max(0, row.sharpe), 0);
@@ -671,12 +685,13 @@ function buildPortfolio(rows, params) {
 
 function buildNextMap(rows) {
   return rows.map((row) => {
+    // strong 判定の台に「回収寄り」を出す矛盾を避け、締め確率が中間帯なら様子見に落とす。
     let prediction = "回収寄り";
-    if (row.verdict === "strong" && row.tightProbability < 0.4) prediction = "据え置き有力";
-    else if (row.tightProbability >= 0.6) prediction = "明日締め注意";
+    if (row.tightProbability >= 0.6) prediction = "明日締め注意";
+    else if (row.verdict === "strong" && row.tightProbability < 0.4) prediction = "据え置き有力";
     else if (row.spatial?.code.includes("open") || row.opposite?.code.includes("open")) prediction = "開け波及候補";
-    else if (row.verdict === "watch") prediction = "様子見";
-    return { number: row.num, machineName: row.machineName, island: row.island, prediction, probability: row.tightProbability };
+    else if (row.verdict === "strong" || row.verdict === "watch") prediction = "様子見";
+    return { number: row.num, machineName: row.machineName, island: row.island, store: row.store, prediction, probability: row.tightProbability };
   });
 }
 
@@ -692,8 +707,15 @@ export function buildPEvidenceAnalytics({ scans = [], customMachines = [], islan
   const decisionRows = applyDecision(latest, storeProfiles, markov, spatial, opposite, params);
   const aiProfile = buildAIProfile(processed);
   const islandStats = buildIslandStats(latest);
-  const portfolio = buildPortfolio(decisionRows, params);
-  const nextMap = buildNextMap(decisionRows);
+  // 「今日の配分」「明日の地図」は最新スキャン日のデータがある台だけを対象にし、
+  // 数日前が最終データの台の古い予測を今日の推奨として出さない。
+  const validDays = decisionRows.filter((row) => row.valid).map((row) => dayNumber(row.date));
+  const currentDay = validDays.length ? Math.max(...validDays) : NaN;
+  const currentRows = Number.isFinite(currentDay)
+    ? decisionRows.filter((row) => dayNumber(row.date) === currentDay)
+    : [];
+  const portfolio = buildPortfolio(currentRows, params);
+  const nextMap = buildNextMap(currentRows);
   return {
     params,
     rawRowCount: rawRows.length,

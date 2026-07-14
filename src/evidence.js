@@ -25,7 +25,9 @@ export function runEvidence(ev = {}, settings = {}) {
     0,
     finite(ev.cashKCount) + finite(ev.mochiKCount) + finite(ev.chodamaKCount),
   );
-  const accumulatedBalls = totalKCount * BALLS_PER_1K;
+  // 1Kあたりの玉数は店の貸玉レート依存（4円等価=250）。低貸し等では250固定にしない。
+  const ballsPerK = Math.max(1, finite(settings.ballsPerK, BALLS_PER_1K));
+  const accumulatedBalls = totalKCount * ballsPerK;
   const priorBalls = Math.max(0, finite(settings.priorBalls, DEFAULT_PRIOR_BALLS));
   const liveConfidence = accumulatedBalls > 0
     ? clamp(accumulatedBalls / (accumulatedBalls + priorBalls), 0, 1)
@@ -50,8 +52,9 @@ export function runEvidence(ev = {}, settings = {}) {
   const predictedLow = Math.max(0, predictedRotation - 1.96 * standardError);
   const predictedHigh = predictedRotation + 1.96 * standardError;
 
+  // 信頼度20%未満はグレードを断言しない（deltaEvidence と同じゲート）。
   let grade = "データ収集中";
-  if (hasEstimate) {
+  if (hasEstimate && confidence >= 0.2) {
     if (goodMachineScore >= 50) grade = "鉄板";
     else if (goodMachineScore >= 30) grade = "狙い";
     else if (goodMachineScore >= 10) grade = "候補";
@@ -77,7 +80,9 @@ export function runEvidence(ev = {}, settings = {}) {
     predictedHigh,
     grade,
     hasEstimate,
-    source: hasLiveEstimate && hasDeltaEstimate ? "delta+live" : (hasDeltaEstimate ? "delta" : "live"),
+    source: hasLiveEstimate && hasDeltaEstimate
+      ? "delta+live"
+      : (hasDeltaEstimate ? "delta" : (hasLiveEstimate ? "live" : "none")),
   };
 }
 

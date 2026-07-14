@@ -162,7 +162,7 @@ const HELP_GROUPS = [
   {
     title: "店と場所のクセ",
     terms: [
-      { name: "曜日締め率", simple: "その店・機種が、その曜日に悪くなった割合です。", read: "同じ曜日が3件未満なら参考不足です。30%なら、過去の約10回中3回で締め方向になったという意味です。" },
+      { name: "曜日締め率", simple: "その店・機種が、明日と同じ曜日に悪くなった割合です。", read: "同じ曜日が3件未満なら参考不足です。30%なら、過去の約10回中3回で締め方向になったという意味です。" },
       { name: "島平均", simple: "同じ島にある台をまとめた平均回転率です。", read: "自分の台だけでなく、島全体が開いているか、1台だけ良く見えるのかを確認できます。" },
       { name: "隣接台の影響", simple: "近くの台が同じ方向へ動いているかを見ます。", read: "周りの60%以上が締め方向なら締め波及、開け方向なら開け波及として注意を出します。" },
       { name: "対面台の影響", simple: "向かい側の台と一緒に変化しているかを見ます。", read: "ホールマップで向かい合う2島を鏡向きに対応します。実際の配置と違う場合は参考にしないでください。" },
@@ -711,9 +711,9 @@ function LearningSummary({ data, selected }) {
           <div style={{ marginTop: 4, fontSize: 9, color: P.subHi }}>{fmt(overall.count)}件を玉数で重み付け</div>
         </div>
         <div style={{ padding: 12, borderRadius: 16, background: P.card, border: `1px solid ${P.line}` }}>
-          <div style={{ fontSize: 9, color: P.sub }}>選択台の曜日締め率</div>
+          <div style={{ fontSize: 9, color: P.sub }}>明日の曜日の締め率</div>
           <div style={{ marginTop: 6, fontSize: 19, fontWeight: 900, color: selected.weekdayTight >= 30 ? P.red : P.yellow, fontFamily: MONO }}>{fmt(selected.weekdayTight)}<span style={{ fontSize: 9, color: P.sub }}>%</span></div>
-          <div style={{ marginTop: 4, fontSize: 9, color: P.subHi }}>同じ曜日 {fmt(selected.weekdaySamples)}件</div>
+          <div style={{ marginTop: 4, fontSize: 9, color: P.subHi }}>明日と同じ曜日 {fmt(selected.weekdaySamples)}件</div>
         </div>
         <div style={{ padding: 12, borderRadius: 16, background: P.card, border: `1px solid ${P.line}`, gridColumn: "1 / -1" }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
