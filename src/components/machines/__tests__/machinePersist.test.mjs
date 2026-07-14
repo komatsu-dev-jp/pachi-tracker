@@ -756,6 +756,24 @@ check("T28_海物語シリーズ追加5機種を固定", () => {
   }
 });
 
+check("T29_大海5・夜桜2機種・新海・アイマリンを固定", () => {
+  const byName = (name) => machineDB.find((m) => m.name === name);
+  const sig = (rows) => rows.map((r) => [r.roundsLabel || r.rounds, r.payoutLabel || r.payout, r.rate]);
+  const targets = ["P大海物語5", "PAスーパー海物語IN沖縄5 夜桜超旋風99ver.", "PA新海物語", "Pスーパー海物語IN沖縄5 夜桜超旋風", "PAスーパー海物語IN沖縄5 with アイマリン"].map(byName);
+  assert.deepStrictEqual(sig(targets[0].hesoModes[0].rows), [[10, 1500, 60], [10, 1500, 40]]);
+  assert.deepStrictEqual(sig(targets[1].rushModes[0].rows), [[10, 700, 10], [3, 210, 90]]);
+  assert.deepStrictEqual(sig(targets[2].hesoModes[0].rows), [[10, 1000, 4], [5, 500, 6], [5, 500, 57], [5, 500, 33]]);
+  assert.deepStrictEqual(sig(targets[3].hesoModes[0].rows), [[7, 700, 58], [3, 300, 42]]);
+  assert.deepStrictEqual(sig(targets[3].rushModes[0].rows), [[10, 1000, 20], [3, 300, 80]]);
+  assert.deepStrictEqual(sig(targets[4].hesoModes[0].rows), [[10, 1100, 10], [5, 550, 57], [5, 550, 33]]);
+  for (const target of targets) {
+    assert.strictEqual(target.allocationVerified, true, `${target.name}: 照合済み`);
+    assert.ok(target.sourceUrls.length >= 2, `${target.name}: 複数出典`);
+    const model = normalizeMachine(target);
+    for (const mode of [...model.hesoModes, ...model.rushModes]) assert.strictEqual(sumRatio(mode.rows), 100, `${target.name}/${mode.name}`);
+  }
+});
+
 console.log(JSON.stringify(out, null, 2));
 console.log(`\n${passed} passed / ${failed} failed`);
 if (failed > 0) process.exit(1);

@@ -313,6 +313,15 @@ assert.deepStrictEqual(
   "大海5アグネスは4R・6R・10Rを区別して記録できること",
 );
 
+for (const [name, expected] of [
+  ["PAスーパー海物語IN沖縄5 夜桜超旋風99ver.", ["3R×1", "10R×1"]],
+  ["PA新海物語", ["5R×1", "10R×1"]],
+  ["Pスーパー海物語IN沖縄5 夜桜超旋風", ["3R×1", "10R×1"]],
+  ["PAスーパー海物語IN沖縄5 with アイマリン", ["5R×1", "10R×1"]],
+]) {
+  assert.deepStrictEqual(signatures(getMachineRoundOptions(machine(name), "rush")), expected, `${name}のR数を区別して記録できること`);
+}
+
 const hit6000 = buildMultiRoundHit(1, {
   rounds: 10,
   mult: 4,
