@@ -327,6 +327,30 @@ check("T14_古い同名カスタムより更新版マスタを優先", () => {
   assert.strictEqual(hit.hesoModes[0].rows[1].rounds, 3);
 });
 
+// ── T15: 50%上乗せループ機の状態別サマリーを固定 ──
+check("T15_炎炎とリコリスの状態別振分を固定", () => {
+  const signature = (rows) => rows.map((r) => [r.roundsLabel || r.rounds, r.payoutLabel || r.payout, r.rate]);
+
+  const lycoris = machineDB.find((m) => m.name === "eリコリス・リコイル");
+  assert.strictEqual(lycoris.allocationVerified, true);
+  assert.deepStrictEqual(signature(lycoris.hesoModes[0].rows), [[10, 1500, 0.1], [4, 600, 44.9], [3, 310, 5], [4, 600, 30], [3, 310, 20]]);
+  assert.deepStrictEqual(signature(lycoris.rushModes[1].rows), [["5R×8", 6000, 50], ["5R×4", 3000, 50]]);
+  assert.deepStrictEqual(signature(lycoris.rushModes[2].rows), [["5R×4上乗せ", 3000, 50], ["上乗せなし", 0, 50]]);
+
+  const enen = machineDB.find((m) => m.name === "eフィーバー炎炎ノ消防隊2 シンラver.");
+  assert.strictEqual(enen.allocationVerified, true);
+  assert.deepStrictEqual(signature(enen.hesoModes[0].rows), [["10R×2", 3000, 50], [2, 300, 1], [10, 1500, 49]]);
+  assert.deepStrictEqual(signature(enen.rushModes[2].rows), [["10R×2", 3000, 50], [10, 1500, 50]]);
+  assert.deepStrictEqual(signature(enen.rushModes[3].rows), [[10, 1500, 50], ["上乗せなし", 0, 50]]);
+
+  for (const target of [lycoris, enen]) {
+    const model = normalizeMachine(target);
+    for (const mode of [...model.hesoModes, ...model.rushModes]) {
+      assert.strictEqual(sumRatio(mode.rows), 100, `${target.name} / ${mode.name}`);
+    }
+  }
+});
+
 console.log(JSON.stringify(out, null, 2));
 console.log(`\n${passed} passed / ${failed} failed`);
 if (failed > 0) process.exit(1);

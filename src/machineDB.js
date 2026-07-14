@@ -597,7 +597,7 @@ const rawMachineDB = [
   },
   {
     name: "eリコリス・リコイル",
-    maker: "",
+    maker: "ニューギン",
     type: "スマパチ",
     prob: "1/259.7",
     synthProb: 259.7,
@@ -614,6 +614,43 @@ const rawMachineDB = [
     rushAvgPayout: 2500,
     rushEntryRate: 50,
     rushContinueRate: 75,
+    roundDist: "10R:0.1%, 4R:74.9%, 3R:25%",
+    rushDist: "モードA 5R:100% / モードB 5R×8:50%, 5R×4:50%",
+    allocationVerified: true,
+    hesoModes: [
+      {
+        name: "特図1・ヘソ",
+        note: "図柄揃いとチンアナゴBONUSを合算した大当り振分です。",
+        rows: [
+          { rounds: 10, payout: 1500, rate: 0.1, label: "RUSHへ" },
+          { rounds: 4, payout: 600, rate: 44.9, label: "RUSHへ" },
+          { rounds: 3, payout: 310, rate: 5, label: "RUSHへ" },
+          { rounds: 4, payout: 600, rate: 30, label: "通常へ" },
+          { rounds: 3, payout: 310, rate: 20, label: "通常へ" },
+        ],
+      },
+    ],
+    rushModes: [
+      {
+        name: "SPECIAL LycoReco RUSH・モードA",
+        note: "大当り後は50%でモードBへ移行。出玉振分自体は5R・750個が100%。",
+        rows: [{ rounds: 5, payout: 750, rate: 100, label: "RUSH継続" }],
+      },
+      {
+        name: "SPECIAL LycoReco RUSH・モードB",
+        rows: [
+          { roundsLabel: "5R×8", payout: 6000, rate: 50, label: "アルティメットドライブへ" },
+          { roundsLabel: "5R×4", payout: 3000, rate: 50, label: "RUSH継続" },
+        ],
+      },
+      {
+        name: "アルティメットドライブ・上乗せ判定",
+        rows: [
+          { roundsLabel: "5R×4上乗せ", payout: 3000, rate: 50, label: "上乗せ継続" },
+          { roundsLabel: "上乗せなし", payout: 0, rate: 50, label: "RUSHへ" },
+        ],
+      },
+    ],
     // モードAは5R×1、モードBは5R×4 or 5R×8。UDは5R×8後、5R×4を約50%で上乗せ。
     roundLoops: [{
       phase: "rush", rounds: 5, baseMultipliers: [1, 4, 8],
@@ -621,6 +658,9 @@ const rawMachineDB = [
       rate: 50, label: "アルティメットドライブ",
       sourceUrl: "https://www.newgin.co.jp/pub/machine/elycorisrecoil/spec.html",
     }],
+    allocationNote: "出玉は払い出し。モードA・モードB・アルティメットドライブを混ぜず、実際の状態別に表示しています。",
+    sourceUrls: ["https://www.newgin.co.jp/pub/machine/elycorisrecoil/spec.html", "https://p.hisshobon.jp/machine/4723/1/114574"],
+    dataUpdatedAt: "2026-07-14",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   // ── 海シリーズ（最新追加：P機 / e機 / PA甘デジ／CSV準拠フォーマットへ更新） ──
@@ -1545,10 +1585,11 @@ const rawMachineDB = [
   },
   {
     name: "eフィーバー炎炎ノ消防隊2 シンラver.",
-    maker: "",
+    maker: "SANKYO",
     type: "スマパチ",
-    prob: "1/399.9",
-    synthProb: 399.9,
+    prob: "1/349.9",
+    synthProb: 349.9,
+    figureProb: 399.9,
     border1K: 15.5,
     border: { "4.00": 15.5 },
     prize: 1,
@@ -1559,10 +1600,53 @@ const rawMachineDB = [
     muraCoef: 80000,
     spatialSens: 1,
     regimeSens: 1,
-    hesoAvgPayout: 1355,
+    hesoAvgPayout: 2238,
     rushAvgPayout: 2200,
-    rushEntryRate: 52,
-    rushContinueRate: 82,
+    rushEntryRate: 50.5,
+    rushContinueRate: 80,
+    roundDist: "10R×2:約50%, 2R:約1%, 10R:約49%",
+    rushDist: "10R:100%（超炎上BURST時は10R×2から約50%上乗せループ）",
+    allocationVerified: true,
+    hesoModes: [
+      {
+        name: "特図1・ヘソ（実質振分）",
+        rows: [
+          { roundsLabel: "10R×2", payout: 3000, rate: 50, label: "炎上バトルモードへ" },
+          { rounds: 2, payout: 300, rate: 1, label: "命の呼吸チャレンジへ" },
+          { rounds: 10, payout: 1500, rate: 49, label: "通常へ" },
+        ],
+      },
+    ],
+    rushModes: [
+      {
+        name: "炎上バトル・白ランプ状態",
+        rows: [
+          { roundsLabel: "10R×2", payout: 3000, rate: 12.5, label: "超炎上BURSTへ" },
+          { rounds: 10, payout: 1500, rate: 87.5, label: "炎上バトル継続" },
+        ],
+      },
+      {
+        name: "炎上バトル・緑ランプ状態",
+        rows: [
+          { roundsLabel: "10R×2", payout: 3000, rate: 25, label: "超炎上BURSTへ" },
+          { rounds: 10, payout: 1500, rate: 75, label: "炎上バトル継続" },
+        ],
+      },
+      {
+        name: "炎上バトル・青ランプ状態",
+        rows: [
+          { roundsLabel: "10R×2", payout: 3000, rate: 50, label: "超炎上BURSTへ" },
+          { rounds: 10, payout: 1500, rate: 50, label: "炎上バトル継続" },
+        ],
+      },
+      {
+        name: "超炎上BURST・上乗せ判定",
+        rows: [
+          { rounds: 10, payout: 1500, rate: 50, label: "上乗せ継続" },
+          { roundsLabel: "上乗せなし", payout: 0, rate: 50, label: "炎上バトルへ" },
+        ],
+      },
+    ],
     // 右打ちは10R×1、超炎上BURSTは10R×2後、10R×1を約50%で上乗せ。
     roundLoops: [{
       phase: "rush", rounds: 10, baseMultipliers: [1, 2],
@@ -1570,7 +1654,10 @@ const rawMachineDB = [
       rate: 50, label: "超炎上BURST",
       sourceUrl: "https://www.sankyo-fever.jp/products/machine_list/pxj/spec/",
     }],
-    hesoDist: [{ payout: 1400, rate: 96 }, { payout: 280, rate: 4 }],
+    hesoDist: [{ payout: 3000, rate: 50 }, { payout: 300, rate: 1 }, { payout: 1500, rate: 49 }],
+    allocationNote: "出玉は払い出し。炎炎ロゴの白・緑・青で超炎上BURST発生率が異なるため、状態別に分けています。",
+    sourceUrls: ["https://www.sankyo-fever.jp/products/machine_list/pxj/spec/", "https://p.hisshobon.jp/machine/4550/1/110097"],
+    dataUpdatedAt: "2026-07-14",
     mcExpectedDaily: -7227,
     mcWinRate: 29.5,
     displayToReal: null,
