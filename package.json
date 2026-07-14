@@ -8,6 +8,11 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "slack:notify": "node scripts/slack-notify.mjs",
+    "slack:check": "node scripts/slack-notify.mjs --check",
+    "slack:inbox": "node scripts/slack-inbox.mjs",
+    "test:slack": "node --test scripts/__tests__/slack-notify.test.mjs",
+    "test:slack-inbox": "node --test scripts/__tests__/slack-inbox.test.mjs",
     "test:settings": "node --test src/__tests__/settings-safety.test.mjs"
   },
   "dependencies": {
