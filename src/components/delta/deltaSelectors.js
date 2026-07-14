@@ -198,3 +198,22 @@ export function makeScan({ id, storeId = null, storeName = "", date, machineName
     createdAt,
   };
 }
+
+// スキャンの保持ポリシー。localStorage（実質5MB）の肥大化を防ぐため、
+// 保存時に古いスキャンを剪定する。90日 or 300件を超えた分は古い順に削除。
+export const SCAN_RETENTION = Object.freeze({ maxAgeDays: 90, maxCount: 300 });
+
+// スキャン一覧を保持ポリシーで剪定した新しい配列を返す（元配列は変更しない）。
+// date("YYYY-MM-DD") の辞書順比較で期限判定し、件数超過分は古い日付から落とす。
+export function pruneScans(list, { maxAgeDays = SCAN_RETENTION.maxAgeDays, maxCount = SCAN_RETENTION.maxCount, now = new Date() } = {}) {
+  const scans = Array.isArray(list) ? list.filter(Boolean) : [];
+  const cutoff = new Date(now.getTime() - maxAgeDays * 86400000).toISOString().slice(0, 10);
+  const kept = scans.filter((scan) => String(scan?.date || "") >= cutoff);
+  if (kept.length <= maxCount) return kept;
+  return [...kept]
+    .sort((a, b) =>
+      String(a?.date || "").localeCompare(String(b?.date || "")) ||
+      String(a?.createdAt || "").localeCompare(String(b?.createdAt || ""))
+    )
+    .slice(-maxCount);
+}

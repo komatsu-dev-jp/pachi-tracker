@@ -30,4 +30,27 @@ assert.equal(weak.predictedRotation, 17);
 assert.equal(weak.goodMachineScore, 0);
 assert.equal(weak.grade, "回収注意");
 
+// 貸玉レートが4円等価（250玉/K）以外でも、累積玉数はレート基準で数える
+const lowRate = runEvidence({
+  theoreticalBorder: 18,
+  effectiveStart1K: 22,
+  cashKCount: 200,
+}, { priorBalls: 50000, ballsPerK: 500 });
+assert.ok(Math.abs(lowRate.liveConfidence - 2 / 3) < 1e-9, "ballsPerK=500 なら累積玉数は2倍");
+assert.ok(Math.abs(lowRate.predictedRotation - 62 / 3) < 1e-9);
+
+// 信頼度20%未満はグレードを断言しない
+const lowConfidence = runEvidence({
+  theoreticalBorder: 18,
+  effectiveStart1K: 22,
+  cashKCount: 10,
+}, { priorBalls: 50000 });
+assert.equal(lowConfidence.hasEstimate, true);
+assert.ok(lowConfidence.confidence < 0.2);
+assert.equal(lowConfidence.grade, "データ収集中");
+
+// source ラベル: 推定なしは none、実測のみは live
+assert.equal(empty.source, "none");
+assert.equal(sample.source, "live");
+
 console.log("evidence.test.mjs: all tests passed");

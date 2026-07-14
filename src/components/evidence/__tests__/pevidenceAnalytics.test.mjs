@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildPEvidenceAnalytics, pevidenceInternals } from "../pevidenceAnalytics.js";
+import { buildPEvidenceAnalytics, pevidenceInternals, PE_PARAMS } from "../pevidenceAnalytics.js";
 
 const machine = {
   name: "テスト機",
@@ -93,6 +93,75 @@ for (const row of result.latestRows) {
 if (result.portfolio.plan.length) {
   assert.ok(result.portfolio.totalHours <= 8.1, "時間配分は1日の8時間を超えない");
 }
+
+// strong 判定の台に「回収寄り」の翌日予測を出さない（矛盾ラベルの禁止）
+for (const row of result.latestRows) {
+  if (!row.valid || row.verdict !== "strong") continue;
+  const next = result.nextMap.find((item) =>
+    item.number === row.num && item.machineName === row.machineName && item.store === row.store
+  );
+  assert.notEqual(next?.prediction, "回収寄り");
+}
+
+// 平均出玉を導出できない機種は、大当りがある日を有効データにしない
+const unknownPayoutMachine = { name: "出玉不明機", border1K: 18 };
+const unknownResult = buildPEvidenceAnalytics({
+  scans: [{
+    id: "u1",
+    storeId: "store-a",
+    storeName: "テスト店",
+    date: "2026-06-14",
+    createdAt: "2026-06-14T12:00:00.000Z",
+    rows: [{
+      date: "2026-06-14",
+      island: "C島",
+      machineName: "出玉不明機",
+      num: "301",
+      normalSpins: 720,
+      totalStarts: 10,
+      val: -3000,
+    }],
+  }],
+  customMachines: [unknownPayoutMachine],
+});
+assert.equal(unknownResult.latestRows.length, 1);
+assert.equal(unknownResult.latestRows[0].valid, false, "平均出玉なし+大当りありは無効データ");
+assert.equal(unknownResult.portfolio.plan.length, 0);
+
+// ポートフォリオと翌日予測は、最新スキャン日にデータがある台だけを対象にする
+const staleScans = [];
+for (let day = 1; day <= 3; day++) {
+  const date = `2026-06-${String(day).padStart(2, "0")}`;
+  const rows = [rowForRate(101, 22, date)];
+  if (day <= 2) rows.push(rowForRate(103, 23, date));
+  staleScans.push({
+    id: `stale-${day}`,
+    storeId: "store-a",
+    storeName: "テスト店",
+    date,
+    createdAt: `${date}T12:00:00.000Z`,
+    rows,
+  });
+}
+const staleResult = buildPEvidenceAnalytics({ scans: staleScans, customMachines: [machine] });
+assert.equal(staleResult.latestRows.length, 2, "古い台も一覧データには残す");
+assert.ok(!staleResult.nextMap.some((item) => item.number === "103"), "最新日にデータがない台は翌日予測へ出さない");
+assert.ok(!staleResult.portfolio.plan.some((item) => item.number === "103"), "最新日にデータがない台は時間配分へ出さない");
+
+// ポートフォリオに nodata / weak 判定の台を入れない
+for (const item of result.portfolio.plan) {
+  const row = result.latestRows.find((r) => r.num === item.number && r.machineName === item.machineName);
+  assert.ok(row && (row.verdict === "strong" || row.verdict === "watch"));
+}
+
+// 当りゼロの日は差玉（＝投入玉の実測）から回転率を直接推定する
+const zeroHit = pevidenceInternals.estimateDaily(
+  { normalSpins: 720, totalStarts: 0, val: -7200 },
+  machine,
+  PE_PARAMS,
+);
+assert.equal(zeroHit.valid, true);
+assert.ok(Math.abs(zeroHit.dailyRate - 25) < 0.01, "当りゼロの日は|差玉|を投入玉として全面採用する");
 
 const pairs = pevidenceInternals.buildOppositePairs([
   { start: 101, end: 103 },

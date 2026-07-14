@@ -5,10 +5,14 @@
 function calcConfidence(ev) {
   if (ev?.evidence?.hasEstimate && Number.isFinite(Number(ev.evidence.confidence))) {
     const total = Math.min(1, Math.max(0, Number(ev.evidence.confidence)));
+    // P-EVIDENCE有効時: rot=実戦投入玉由来 / jp=保存済み差玉解析由来。
+    // ラベルもUI（ConfidenceBar）でこの意味に合わせて表示する。
     return {
       rot: Math.min(1, Math.max(0, Number(ev.evidence.liveConfidence) || 0)),
       jp: Math.min(1, Math.max(0, Number(ev.evidence.deltaConfidence) || 0)),
       total,
+      rotLabel: "実戦",
+      jpLabel: "差玉",
     };
   }
   const rotConf = Math.min((ev.netRot ?? 0) / 1500, 1.0);
@@ -17,6 +21,8 @@ function calcConfidence(ev) {
     rot: rotConf,
     jp: jpConf,
     total: rotConf * 0.7 + jpConf * 0.3,
+    rotLabel: "回転",
+    jpLabel: "大当り",
   };
 }
 
@@ -52,7 +58,7 @@ export function evDecision(ev) {
     return {
       verdict: "stop",
       confidence: 0,
-      confidenceParts: { rot: 0, jp: 0 },
+      confidenceParts: { rot: 0, jp: 0, rotLabel: "回転", jpLabel: "大当り" },
       reasons: [{ ok: false, text: "データ不足のため判断不可（回転数入力が必要です）" }],
       evAdjusted: 0,
     };
@@ -81,7 +87,7 @@ export function evDecision(ev) {
   return {
     verdict,
     confidence: conf.total,
-    confidenceParts: { rot: conf.rot, jp: conf.jp },
+    confidenceParts: { rot: conf.rot, jp: conf.jp, rotLabel: conf.rotLabel, jpLabel: conf.jpLabel },
     reasons,
     evAdjusted: evAdj,
   };
