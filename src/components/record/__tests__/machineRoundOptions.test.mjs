@@ -206,6 +206,26 @@ const bioOptions = getMachineRoundOptions(bio6, "rush");
 assert.equal(bioOptions.length, 25, "バイオ6は公表25パターンを記録候補に持つこと");
 assert.deepStrictEqual([bioOptions[0].totalRounds, bioOptions.at(-1).totalRounds], [2, 50], "バイオ6は2R相当～50R相当を記録できること");
 
+const inuyasha3 = machine("P犬夜叉3.0甘SPEC");
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(inuyasha3, "rush")),
+  ["2R×1", "10R×1", "10R×2"],
+  "犬夜叉甘は200・1000・2000発のR数を選べること",
+);
+assert.equal(changeRoundMultiplier(2, 1, getMachineRoundLoop(inuyasha3, "rush", 10)), 3, "犬夜叉甘は+αの10Rを追加できること");
+
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(machine("PA海物語 極JAPAN Withナギナミ"), "rush")),
+  ["3R×1", "10R×1", "10R×2"],
+  "極JAPANは3R・10R・10R×2を区別して記録できること",
+);
+
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(machine("e真・一騎当千～軍神覚醒～ 396ver."), "rush")),
+  ["10R×1", "10R×2"],
+  "一騎当千396は1500・3000発を記録できること",
+);
+
 const hit6000 = buildMultiRoundHit(1, {
   rounds: 10,
   mult: 4,
