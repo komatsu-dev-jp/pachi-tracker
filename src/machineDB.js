@@ -401,9 +401,45 @@ const rawMachineDB = [
     prize: 1,
     avgPayoutPerHit: 2998,
     stdDev: 12000,
+    stdDevLabel: "P-EVIDENCE推定（分岐型）",
+    stdDevMethod: "p-evidence-branching-v2",
+    initialProb: 0.5,
+    muraCoef: 80000,
+    spatialSens: 1,
+    regimeSens: 1,
+    hesoAvgPayout: 1488,
     rushAvgPayout: 7500,
     rushEntryRate: 51,
     rushContinueRate: 75,
+    allocationVerified: true,
+    hesoModes: [
+      {
+        name: "特図1・ヘソ",
+        rows: [
+          { rounds: 10, payout: 1500, rate: 50, label: "HYPER喰種RUSHへ" },
+          { rounds: 2, payout: 300, rate: 1, label: "HYPER喰種RUSHへ" },
+          { rounds: 10, payout: 1500, rate: 49, label: "通常へ" },
+        ],
+      },
+    ],
+    rushModes: [
+      {
+        name: "HYPER喰種RUSH中",
+        rows: [
+          { roundsLabel: "10R×4", payout: 6000, rate: 3, label: "RUSH継続" },
+          { roundsLabel: "10R×2", payout: 3000, rate: 97, label: "RUSH継続" },
+        ],
+      },
+    ],
+    roundLoops: [{
+      phase: "rush", rounds: 10, baseMultipliers: [2, 4],
+      loopBaseMult: 4, incrementMult: 2, incrementPayout: 3000,
+      label: "喰種BONUS追加上乗せ",
+      sourceUrl: "https://p.hisshobon.jp/machine/4508/1/108719",
+    }],
+    allocationNote: "出玉は払い出し。初当りのRUSH突入率は10Rの約50%と2Rの約1%を合わせた約51%。右打ち中は3000発が基本で、約3%が6000発です。",
+    sourceUrls: ["https://p-town.dmm.com/machines/4824", "https://p.hisshobon.jp/machine/4508/1/108719"],
+    dataUpdatedAt: "2026-07-14",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
@@ -482,9 +518,50 @@ const rawMachineDB = [
     prize: 3,
     avgPayoutPerHit: 4550,
     stdDev: 14000,
+    stdDevLabel: "P-EVIDENCE推定（確変ループ・状態分岐型）",
+    stdDevMethod: "p-evidence-branching-v2",
+    initialProb: 0.5,
+    muraCoef: 80000,
+    spatialSens: 1,
+    regimeSens: 1,
+    hesoAvgPayout: 1212,
     rushAvgPayout: 5000,
     rushEntryRate: 60,
     rushContinueRate: 71.5,
+    allocationVerified: true,
+    hesoModes: [
+      {
+        name: "ヘソ入賞時",
+        rows: [
+          { rounds: 10, payout: 1500, rate: 40, label: "確変・次回まで" },
+          { rounds: 2, payout: 60, rate: 20, label: "確変・次回まで" },
+          { rounds: 10, payout: 1500, rate: 40, label: "通常・時短100回" },
+        ],
+      },
+    ],
+    rushModes: [
+      {
+        name: "確変・時短中（ジンベェタイム以外）",
+        note: "10R確変52%のうち1%はジンベェタイムへ移行します。",
+        rows: [
+          { rounds: 10, payout: 1500, rate: 51, label: "確変・次回まで" },
+          { rounds: 10, payout: 1500, rate: 1, label: "確変・ジンベェタイムへ" },
+          { rounds: 2, payout: 60, rate: 8, label: "確変・ジンベェタイムへ" },
+          { rounds: 10, payout: 1500, rate: 40, label: "通常・時短100回" },
+        ],
+      },
+      {
+        name: "ジンベェタイム中",
+        rows: [
+          { rounds: 10, payout: 1500, rate: 52, label: "確変・ジンベェタイム継続" },
+          { rounds: 2, payout: 60, rate: 8, label: "確変・ジンベェタイム継続" },
+          { rounds: 10, payout: 1500, rate: 40, label: "通常・時短200回" },
+        ],
+      },
+    ],
+    allocationNote: "出玉は払い出し。通常の電チュー振り分けでは10R確変52%の内1%でジンベェタイムへ移行し、2R確変8%でも同状態へ移行します。",
+    sourceUrls: ["https://www.sanyobussan.co.jp/products/pachinko/p_oki6/", "https://p.hisshobon.jp/machine/4583/1/110667"],
+    dataUpdatedAt: "2026-07-14",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   // ── 追加機種スペック（CSV形式準拠：大当り確率 / ボーダー(1k) / 賞球数 / 回転単価 /
@@ -1169,7 +1246,7 @@ const rawMachineDB = [
   },
   {
     name: "e ULTRAMAN 4500超ライト",
-    maker: "",
+    maker: "OK!!",
     type: "スマパチ",
     prob: "1/111.9",
     synthProb: 111.9,
@@ -1182,15 +1259,37 @@ const rawMachineDB = [
     muraCoef: 80000,
     spatialSens: 1,
     regimeSens: 1,
-    hesoAvgPayout: 1000,
-    rushAvgPayout: 1500,
+    hesoAvgPayout: 300,
+    rushAvgPayout: 4545,
     rushEntryRate: 33.00,
     rushContinueRate: 50.0,
+    allocationVerified: true,
+    hesoModes: [
+      {
+        name: "ヘソ入賞時",
+        rows: [
+          { rounds: 2, payout: 300, rate: 33, label: "リミッター解除RUSHへ" },
+          { rounds: 2, payout: 300, rate: 67, label: "通常へ" },
+        ],
+      },
+    ],
+    rushModes: [
+      {
+        name: "リミッター解除RUSH中",
+        rows: [
+          { roundsLabel: "10R×6", payout: 9000, rate: 1, label: "RUSH継続判定へ" },
+          { roundsLabel: "10R×3", payout: 4500, rate: 99, label: "RUSH継続判定へ" },
+        ],
+      },
+    ],
+    allocationNote: "出玉は払い出し。初当りは2R・300発で、33%がLTへ。LT中の大当りは4500発が99%、9000発が1%です。",
+    sourceUrls: ["https://p.hisshobon.jp/machine/4677/1/113195", "https://www.p-world.co.jp/machine/database/10424"],
+    dataUpdatedAt: "2026-07-14",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
     name: "e盾の勇者の成り上がりアルティメット199ver.",
-    maker: "",
+    maker: "Sammy",
     type: "スマパチ",
     prob: "1/199.0",
     synthProb: 199.0,
@@ -1203,10 +1302,41 @@ const rawMachineDB = [
     muraCoef: 80000,
     spatialSens: 1,
     regimeSens: 1,
-    hesoAvgPayout: 1000,
+    hesoAvgPayout: 333,
     rushAvgPayout: 2500,
-    rushEntryRate: 49.90,
+    rushEntryRate: 52.00,
     rushContinueRate: 85.0,
+    allocationVerified: true,
+    hesoModes: [
+      {
+        name: "ヘソ入賞時",
+        rows: [
+          { roundsLabel: "10R×2+α", payout: 3000, payoutLabel: "3000発+α", rate: 0.1, label: "裏アルティメットタイムへ" },
+          { roundsLabel: "6R+α", payout: 1800, payoutLabel: "1800発+α", rate: 2, label: "裏アルティメットタイムへ" },
+          { rounds: 2, payout: 300, rate: 49.9, label: "RISING RUSHへ" },
+          { rounds: 2, payout: 300, rate: 48, label: "通常へ" },
+        ],
+      },
+    ],
+    rushModes: [
+      {
+        name: "RISING RUSH中",
+        rows: [
+          { roundsLabel: "10R×3+α", payout: 4500, payoutLabel: "4500発+α", rate: 10, label: "裏アルティメットタイムへ" },
+          { roundsLabel: "10R×2", payout: 3000, rate: 90, label: "裏アルティメットタイムへ" },
+        ],
+      },
+      {
+        name: "裏アルティメットタイム中",
+        rows: [
+          { roundsLabel: "10R×2+α", payout: 3000, payoutLabel: "3000発+α", rate: 10, label: "LT継続" },
+          { rounds: 10, payout: 1500, rate: 90, label: "LT継続" },
+        ],
+      },
+    ],
+    allocationNote: "出玉は払い出し。初当りのLT直行2.1%とRISING RUSH49.9%を合わせたRUSH突入率は52%。右打ち中は状態ごとに振り分けを分離しています。",
+    sourceUrls: ["https://p.hisshobon.jp/machine/4637/1/112048", "https://news.p-world.co.jp/articles/33974/greenbelt"],
+    dataUpdatedAt: "2026-07-14",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
@@ -1295,7 +1425,7 @@ const rawMachineDB = [
   },
   {
     name: "e吉宗極乗3000ver.",
-    maker: "",
+    maker: "大都技研",
     type: "スマパチ",
     prob: "1/199.9",
     synthProb: 199.9,
@@ -1303,15 +1433,53 @@ const rawMachineDB = [
     prize: 1,
     unitCost: 14.0,
     avgPayoutPerHit: 1200,
-    stdDev: 13000,
+    stdDev: 17000,
+    stdDevLabel: "P-EVIDENCE推定（25%上乗せループ型）",
+    stdDevMethod: "p-evidence-branching-v2",
     initialProb: 0.5,
     muraCoef: 80000,
     spatialSens: 1,
     regimeSens: 1,
-    hesoAvgPayout: 1000,
-    rushAvgPayout: 3000,
+    hesoAvgPayout: 750,
+    rushAvgPayout: 2150,
     rushEntryRate: 30.00,
     rushContinueRate: 80.0,
+    allocationVerified: true,
+    hesoModes: [
+      {
+        name: "ヘソ入賞時",
+        rows: [
+          { rounds: 5, payout: 750, rate: 30, label: "振舞RUSHへ" },
+          { rounds: 5, payout: 750, rate: 70, label: "通常へ" },
+        ],
+      },
+    ],
+    rushModes: [
+      {
+        name: "振舞RUSH中",
+        rows: [
+          { roundsLabel: "5R×4+α", payout: 3000, payoutLabel: "3000発+α", rate: 50, label: "RUSH継続判定へ" },
+          { rounds: 2, payout: 300, rate: 50, label: "RUSH継続判定へ" },
+        ],
+      },
+      {
+        name: "3000発消化後・上乗せ判定",
+        note: "成功後も同じ25%抽選を繰り返すループとして記録します。",
+        rows: [
+          { roundsLabel: "5R×4追加", payout: 3000, rate: 25, label: "上乗せ継続" },
+          { roundsLabel: "追加なし", payout: 0, rate: 75, label: "上乗せ終了" },
+        ],
+      },
+    ],
+    roundLoops: [{
+      phase: "rush", rounds: 5, baseMultipliers: [4],
+      loopBaseMult: 4, incrementMult: 4, incrementPayout: 3000,
+      label: "極乗3000上乗せ", probability: 25,
+      sourceUrl: "https://p.hisshobon.jp/machine/4660/1/112671",
+    }],
+    allocationNote: "出玉は払い出し。右打ちの3000発側は、消化中に約25%でさらに3000発を上乗せし、成功後も同率の抽選を繰り返します。RUSH平均はこの上乗せループを含む参考値です。",
+    sourceUrls: ["https://p.hisshobon.jp/machine/4660/1/112671", "https://www.pref.fukui.lg.jp/kenkei/doc/kenkei/yuugikikenteikouji_d/fil/R707yugikikenteikouji.pdf"],
+    dataUpdatedAt: "2026-07-14",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {

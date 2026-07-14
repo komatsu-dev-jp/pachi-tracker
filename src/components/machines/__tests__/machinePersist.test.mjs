@@ -351,6 +351,36 @@ check("T15_炎炎とリコリスの状態別振分を固定", () => {
   }
 });
 
+// ── T16: 直近1年の優先更新5機種の公開振分を固定 ──
+check("T16_直近機種5台の状態別振分を固定", () => {
+  const byName = (name) => machineDB.find((m) => m.name === name);
+  const signature = (rows) => rows.map((r) => [r.roundsLabel || r.rounds, r.payoutLabel || r.payout, r.rate]);
+  const targets = [
+    "e東京喰種W",
+    "Pスーパー海物語IN沖縄6 LTP",
+    "e ULTRAMAN 4500超ライト",
+    "e盾の勇者の成り上がりアルティメット199ver.",
+    "e吉宗極乗3000ver.",
+  ].map(byName);
+
+  assert.deepStrictEqual(signature(targets[0].hesoModes[0].rows), [[10, 1500, 50], [2, 300, 1], [10, 1500, 49]]);
+  assert.deepStrictEqual(signature(targets[0].rushModes[0].rows), [["10R×4", 6000, 3], ["10R×2", 3000, 97]]);
+  assert.deepStrictEqual(signature(targets[1].rushModes[0].rows), [[10, 1500, 51], [10, 1500, 1], [2, 60, 8], [10, 1500, 40]]);
+  assert.deepStrictEqual(signature(targets[2].rushModes[0].rows), [["10R×6", 9000, 1], ["10R×3", 4500, 99]]);
+  assert.deepStrictEqual(signature(targets[3].hesoModes[0].rows), [["10R×2+α", "3000発+α", 0.1], ["6R+α", "1800発+α", 2], [2, 300, 49.9], [2, 300, 48]]);
+  assert.deepStrictEqual(signature(targets[3].rushModes[0].rows), [["10R×3+α", "4500発+α", 10], ["10R×2", 3000, 90]]);
+  assert.deepStrictEqual(signature(targets[4].rushModes[1].rows), [["5R×4追加", 3000, 25], ["追加なし", 0, 75]]);
+
+  for (const target of targets) {
+    assert.strictEqual(target.allocationVerified, true, `${target.name}: 照合済み`);
+    assert.ok(target.sourceUrls.some((url) => url.includes("hisshobon.jp")), `${target.name}: 必勝本の出典`);
+    const model = normalizeMachine(target);
+    for (const mode of [...model.hesoModes, ...model.rushModes]) {
+      assert.strictEqual(sumRatio(mode.rows), 100, `${target.name} / ${mode.name}`);
+    }
+  }
+});
+
 console.log(JSON.stringify(out, null, 2));
 console.log(`\n${passed} passed / ${failed} failed`);
 if (failed > 0) process.exit(1);
