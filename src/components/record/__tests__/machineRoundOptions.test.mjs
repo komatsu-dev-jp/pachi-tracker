@@ -322,6 +322,30 @@ for (const [name, expected] of [
   assert.deepStrictEqual(signatures(getMachineRoundOptions(machine(name), "rush")), expected, `${name}のR数を区別して記録できること`);
 }
 
+for (const [name, phase, expected] of [
+  ["ジューシーハニー3", "heso", ["4R×1", "10R×1"]],
+  ["大海物語5 甘デジ", "heso", ["4R×1", "6R×1", "10R×1"]],
+  ["ガンダムSEED", "heso", ["3R×1", "10R×2"]],
+  ["ガンダムSEED", "rush", ["10R×1", "10R×2"]],
+  ["Re:ゼロから始める異世界生活", "heso", ["5R×1", "10R×1"]],
+  ["Pスーパー海物語IN沖縄5 桜199ver.", "rush", ["3R×1", "5R×1", "10R×1"]],
+]) {
+  assert.deepStrictEqual(signatures(getMachineRoundOptions(machine(name), phase)), expected, `${name}の実際のR数を記録できること`);
+}
+
+for (const [name, phase, expected] of [
+  ["ルパン三世 消されたルパン", "rush", ["2R×1", "4R×1", "6R×1", "8R×1", "10R×1"]],
+  ["仮面ライダー轟音", "rush", ["2R×1", "10R×1"]],
+  ["海物語IN沖縄5", "heso", ["2R×1", "10R×1"]],
+  ["海物語IN沖縄5 甘デジ", "heso", ["5R×1", "10R×1"]],
+  ["P NEW TOKIO ハカマタイプ", "heso", ["3R×1", "5R×1", "10R×1"]],
+  ["PAスーパー海物語IN JAPAN2 with 太鼓の達人", "heso", ["3R×1", "5R×1", "7R×1", "10R×1"]],
+  ["PA海物語3R2スペシャル", "heso", ["4R×1", "10R×1"]],
+  ["PAスーパー海物語IN地中海SBA", "rush", ["4R×1", "6R×1", "10R×1"]],
+]) {
+  assert.deepStrictEqual(signatures(getMachineRoundOptions(machine(name), phase)), expected, `${name}の振り分けR数を記録できること`);
+}
+
 const hit6000 = buildMultiRoundHit(1, {
   rounds: 10,
   mult: 4,

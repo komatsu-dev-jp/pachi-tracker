@@ -254,7 +254,7 @@ check("T11_エヴァ15の公開振分を固定", () => {
 // ── T12: 未検証機種を共通1500発で補完しない ──
 check("T12_未検証振分の架空補完を禁止", () => {
   const unverified = machineDB.filter((m) => m.allocationVerified !== true);
-  assert.ok(unverified.length > 0, "未検証機種の抽出");
+  assert.strictEqual(unverified.length, 0, "全98機種の振り分けが照合済み");
   for (const machine of unverified) {
     const model = normalizeMachine(machine);
     assert.strictEqual(model.allocationUsable, false, `${machine.name}: 未検証フラグ`);
@@ -768,6 +768,60 @@ check("T29_大海5・夜桜2機種・新海・アイマリンを固定", () => {
   assert.deepStrictEqual(sig(targets[4].hesoModes[0].rows), [[10, 1100, 10], [5, 550, 57], [5, 550, 33]]);
   for (const target of targets) {
     assert.strictEqual(target.allocationVerified, true, `${target.name}: 照合済み`);
+    assert.ok(target.sourceUrls.length >= 2, `${target.name}: 複数出典`);
+    const model = normalizeMachine(target);
+    for (const mode of [...model.hesoModes, ...model.rushModes]) assert.strictEqual(sumRatio(mode.rows), 100, `${target.name}/${mode.name}`);
+  }
+});
+
+check("T30_ジューシー3・大海5甘・SEED・リゼロ・沖海5桜199を固定", () => {
+  const byName = (name) => machineDB.find((m) => m.name === name);
+  const sig = (rows) => rows.map((r) => [r.roundsLabel || r.rounds, r.payoutLabel || r.payout, r.rate]);
+  const juicy = byName("ジューシーハニー3");
+  const agnesAlias = byName("大海物語5 甘デジ");
+  const seed = byName("ガンダムSEED");
+  const rezero = byName("Re:ゼロから始める異世界生活");
+  const sakura = byName("Pスーパー海物語IN沖縄5 桜199ver.");
+
+  assert.deepStrictEqual(sig(juicy.hesoModes[0].rows), [[10, 1350, 14.8], [4, 540, 43], [4, 540, 42.2]]);
+  assert.deepStrictEqual(sig(juicy.rushModes[0].rows), [[10, 1350, 100]]);
+  assert.deepStrictEqual(sig(agnesAlias.hesoModes[0].rows), [[10, 1000, 4], [6, 600, 60], [4, 400, 6], [4, 400, 30]]);
+  assert.deepStrictEqual(sig(seed.hesoModes[0].rows), [["10R×2", 3000, 20], [3, 300, 40], [3, 300, 40]]);
+  assert.deepStrictEqual(sig(seed.rushModes[0].rows), [["10R×2", 3000, 15], [10, 1500, 5], [10, 1500, 80]]);
+  assert.deepStrictEqual(sig(rezero.rushModes[1].rows), [[10, 1000, 50], [5, 400, 20], [5, 400, 28], [5, 400, 2]]);
+  assert.deepStrictEqual(sig(sakura.hesoModes[0].rows), [[10, 1400, 25], [5, 700, 37.5], [3, 420, 37.5]]);
+
+  for (const target of [juicy, agnesAlias, seed, rezero, sakura]) {
+    assert.strictEqual(target.allocationVerified, true, `${target.name}: 照合済み`);
+    assert.ok(target.sourceUrls.length >= 2, `${target.name}: 複数出典`);
+    const model = normalizeMachine(target);
+    for (const mode of [...model.hesoModes, ...model.rushModes]) assert.strictEqual(sumRatio(mode.rows), 100, `${target.name}/${mode.name}`);
+  }
+});
+
+check("T31_残り8機種と全98機種の照合完了を固定", () => {
+  const byName = (name) => machineDB.find((m) => m.name === name);
+  const sig = (rows) => rows.map((r) => [r.roundsLabel || r.rounds, r.payoutLabel || r.payout, r.rate]);
+  const names = [
+    "ルパン三世 消されたルパン", "仮面ライダー轟音", "海物語IN沖縄5", "海物語IN沖縄5 甘デジ",
+    "P NEW TOKIO ハカマタイプ", "PAスーパー海物語IN JAPAN2 with 太鼓の達人",
+    "PA海物語3R2スペシャル", "PAスーパー海物語IN地中海SBA",
+  ];
+  const targets = names.map(byName);
+
+  assert.deepStrictEqual(sig(targets[0].rushModes[0].rows), [[10, 1500, 50], [8, 800, 4], [6, 600, 8], [4, 400, 9], [2, 50, 11], [2, 50, 1], [2, 50, 3], [2, 50, 14]]);
+  assert.deepStrictEqual(sig(targets[1].hesoModes[0].rows), [[10, 1500, 1], [3, 450, 10], [3, 450, 39], [3, 450, 50]]);
+  assert.strictEqual(targets[2].modelName, "Pスーパー海物語IN沖縄5LTV", "通常版沖海5を桜199のSCFと混同しない");
+  assert.deepStrictEqual(sig(targets[2].rushModes[0].rows), [[10, 1500, 52], [2, 90, 8], [10, 1500, 40]]);
+  assert.deepStrictEqual(sig(targets[3].hesoModes[0].rows), [[10, 1100, 10], [5, 550, 57], [5, 550, 33]]);
+  assert.deepStrictEqual(sig(targets[4].hesoModes[0].rows), [["3R（アタッカー2回）", 252, 33.333333], ["5R（アタッカー4回）", 504, 33.333333], ["10R（アタッカー9回）", 1134, 33.333334]]);
+  assert.deepStrictEqual(sig(targets[5].hesoModes[0].rows), [[10, 1000, 2], [10, 1000, 1], [7, 700, 1], [5, 500, 45], [3, 300, 6], [5, 500, 45]]);
+  assert.deepStrictEqual(sig(targets[6].hesoModes[0].rows), [[10, 720, 2], [4, 288, 73], [4, 288, 25]]);
+  assert.deepStrictEqual(sig(targets[7].rushModes[0].rows), [[10, 840, 2], [6, 504, 49], [4, 336, 49]]);
+
+  assert.strictEqual(machineDB.length, 98, "登録機種数");
+  assert.strictEqual(machineDB.filter((m) => m.allocationVerified === true).length, 98, "全機種照合済み");
+  for (const target of targets) {
     assert.ok(target.sourceUrls.length >= 2, `${target.name}: 複数出典`);
     const model = normalizeMachine(target);
     for (const mode of [...model.hesoModes, ...model.rushModes]) assert.strictEqual(sumRatio(mode.rows), 100, `${target.name}/${mode.name}`);
