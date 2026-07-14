@@ -260,6 +260,14 @@ export function normalizeMachine(data) {
     spec1R: rawAnyNum(data.spec1R),
     specAvgTotalRounds: rawAnyNum(data.specAvgTotalRounds),
     specSapo: rawAnyNum(data.specSapo),
+    yutime: {
+      triggerLowSpins: rawAnyNum(data.yutime?.triggerLowSpins),
+      durationSpins: rawAnyNum(data.yutime?.durationSpins),
+      expectedNetBalls: rawAnyNum(data.yutime?.expectedNetBalls),
+      sourceUrl: plainText(data.yutime?.sourceUrl),
+      verifiedAt: plainText(data.yutime?.verifiedAt),
+      source: plainText(data.yutime?.source) || (data.yutime ? "master" : ""),
+    },
     manualHesoValue: rawAnyNum(data.manualHesoValue),
     mcExpectedDaily: rawAnyNum(data.mcExpectedDaily),
     mcWinRate: rawAnyNum(data.mcWinRate),
@@ -380,6 +388,26 @@ export function buildMachineOverride(rawSource, model) {
   writeNumIfChanged(out, "manualHesoValue", model.manualHesoValue, init.manualHesoValue);
   writeNumIfChanged(out, "mcExpectedDaily", model.mcExpectedDaily, init.mcExpectedDaily);
   writeNumIfChanged(out, "mcWinRate", model.mcWinRate, init.mcWinRate);
+
+  const modelYutime = model.yutime || {};
+  const initYutime = init.yutime || {};
+  const yutimeChanged =
+    !plainEq(modelYutime.triggerLowSpins, initYutime.triggerLowSpins) ||
+    !plainEq(modelYutime.durationSpins, initYutime.durationSpins) ||
+    !plainEq(modelYutime.expectedNetBalls, initYutime.expectedNetBalls) ||
+    !textEq(modelYutime.sourceUrl, initYutime.sourceUrl) ||
+    !textEq(modelYutime.verifiedAt, initYutime.verifiedAt);
+  if (yutimeChanged) {
+    const triggerLowSpins = toNum(modelYutime.triggerLowSpins);
+    out.yutime = triggerLowSpins > 0 ? {
+      triggerLowSpins,
+      durationSpins: toNum(modelYutime.durationSpins),
+      expectedNetBalls: modelYutime.expectedNetBalls === "" ? null : toNum(modelYutime.expectedNetBalls),
+      sourceUrl: plainText(modelYutime.sourceUrl),
+      verifiedAt: plainText(modelYutime.verifiedAt),
+      source: "manual",
+    } : null;
+  }
 
   // 振分（ラウンド数）→ 記録フロー用の roundDist / rushDist
   const hesoChanged = rowsChanged(model.heso, init.heso);
