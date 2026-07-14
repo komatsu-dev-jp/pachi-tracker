@@ -727,6 +727,35 @@ check("T27_海物語4機種・デビルマンTHE FINALを固定", () => {
   }
 });
 
+// ── T28: 極JAPAN・地中海2・大海5ブラック・新海349・アグネスを固定 ──
+check("T28_海物語シリーズ追加5機種を固定", () => {
+  const byName = (name) => machineDB.find((m) => m.name === name);
+  const signature = (rows) => rows.map((r) => [r.roundsLabel || r.rounds, r.payoutLabel || r.payout, r.rate]);
+  const kiwami = byName("P海物語 極JAPAN");
+  const med = byName("PAスーパー海物語IN地中海2");
+  const black = byName("P大海物語5ブラック");
+  const shinumi = byName("e新海物語349");
+  const agnes = byName("PA大海物語5 Withアグネス・ラム");
+
+  assert.deepStrictEqual(signature(kiwami.hesoModes[0].rows), [[10, 1500, 50], [10, 1500, 50]]);
+  assert.deepStrictEqual(signature(kiwami.rushModes[0].rows), [["10R×2(+α)", "3000発+300or1500発の上乗せ抽選", 20], [10, 1500, 55], [2, 300, 25]]);
+  assert.deepStrictEqual(signature(med.hesoModes[0].rows), [[6, 480, 50], [4, 320, 50]]);
+  assert.deepStrictEqual(signature(med.rushModes[0].rows), [[10, 800, 2], [6, 480, 48], [4, 320, 50]]);
+  assert.deepStrictEqual(signature(black.rushModes[0].rows), [[10, 1500, 4], [10, 1500, 46], [3, 450, 50]]);
+  assert.deepStrictEqual(signature(black.rushModes[1].rows), [[10, 1500, 50], [3, 450, 50]]);
+  assert.deepStrictEqual(signature(shinumi.hesoModes[0].rows), [[10, 1500, 54], [2, 90, 8], [10, 1500, 38]]);
+  assert.deepStrictEqual(signature(agnes.hesoModes[0].rows), [[10, 1000, 4], [6, 600, 60], [4, 400, 6], [4, 400, 30]]);
+
+  for (const target of [kiwami, med, black, shinumi, agnes]) {
+    assert.strictEqual(target.allocationVerified, true, `${target.name}: 照合済み`);
+    assert.ok(target.sourceUrls.length >= 2, `${target.name}: 複数出典`);
+    const model = normalizeMachine(target);
+    for (const mode of [...model.hesoModes, ...model.rushModes]) {
+      assert.strictEqual(sumRatio(mode.rows), 100, `${target.name} / ${mode.name}`);
+    }
+  }
+});
+
 console.log(JSON.stringify(out, null, 2));
 console.log(`\n${passed} passed / ${failed} failed`);
 if (failed > 0) process.exit(1);

@@ -287,6 +287,32 @@ assert.deepStrictEqual(
   "デビルマンTHE FINALは2R・3R・7Rを区別して記録できること",
 );
 
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(machine("P海物語 極JAPAN"), "rush")),
+  ["2R×1", "10R×1", "20R×1"],
+  "極JAPANは300・1500・3000発を実際のR数で記録できること",
+);
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(machine("PAスーパー海物語IN地中海2"), "rush")),
+  ["4R×1", "6R×1", "10R×1"],
+  "地中海2は4R・6R・10Rを区別して記録できること",
+);
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(machine("P大海物語5ブラック"), "rush")),
+  ["3R×1", "10R×1"],
+  "大海5ブラックは3R・10Rを区別して記録できること",
+);
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(machine("e新海物語349"), "rush")),
+  ["2R×1", "10R×1"],
+  "e新海349は2R・10Rを区別して記録できること",
+);
+assert.deepStrictEqual(
+  signatures(getMachineRoundOptions(machine("PA大海物語5 Withアグネス・ラム"), "rush")),
+  ["4R×1", "6R×1", "10R×1"],
+  "大海5アグネスは4R・6R・10Rを区別して記録できること",
+);
+
 const hit6000 = buildMultiRoundHit(1, {
   rounds: 10,
   mult: 4,
