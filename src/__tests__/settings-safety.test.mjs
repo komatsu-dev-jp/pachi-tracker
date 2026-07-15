@@ -137,3 +137,27 @@ test("テーマA案は3つの世界観を実際の明暗と強調色へ接続す
   assert.match(source, /s\.setTheme\("system"\)/);
   assert.doesNotMatch(source, /gridTemplateColumns: "repeat\(5, 1fr\)"/);
 });
+
+test("設定トップはダークA案とライトB案を発光なしで切り替える", async () => {
+  const cssPath = fileURLToPath(new URL("../index.css", import.meta.url));
+  const tabsPath = fileURLToPath(new URL("../components/Tabs.jsx", import.meta.url));
+  const [css, tabs] = await Promise.all([
+    readFile(cssPath, "utf8"),
+    readFile(tabsPath, "utf8"),
+  ]);
+
+  const lightTokens = css.slice(css.indexOf(":root"), css.indexOf('[data-theme="dark"]'));
+  const darkTokens = css.slice(css.indexOf('[data-theme="dark"]'), css.indexOf("/* ================================================================"));
+  assert.match(lightTokens, /--settings-bg: #f3f0e9/);
+  assert.match(lightTokens, /--settings-card: #fffdf9/);
+  assert.match(lightTokens, /--settings-summary-rule: 4px solid #376f67/);
+  assert.match(darkTokens, /--settings-bg: #11151b/);
+  assert.match(darkTokens, /--settings-card: #191e26/);
+  assert.match(darkTokens, /--settings-icon-color: #929ba8/);
+
+  assert.match(tabs, /const SettingsIconBox/);
+  assert.doesNotMatch(tabs, /const NeonIconBox/);
+  const cardBlock = tabs.slice(tabs.indexOf("const glassCardStyle"), tabs.indexOf("const SectionLabelV2"));
+  assert.match(cardBlock, /background: "var\(--settings-card\)"/);
+  assert.doesNotMatch(cardBlock, /backdropFilter|linear-gradient|boxShadow/);
+});

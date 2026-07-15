@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>設定ページ 視認性改善モック</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      --bg: #11151b;
+      --surface: #191e26;
+      --surface-2: #20262f;
+      --line: #2c333e;
+      --text: #f2f4f7;
+      --sub: #929ba8;
+      --accent: #7ea6d6;
+      --accent-soft: #25364a;
+      --good: #83b69e;
+      --soon-bg: #272d35;
+      --soon-text: #a4acb7;
+      --icon-bg: #252b34;
+      --danger: #d48b8b;
+      --radius: 14px;
+    }
+
+    body.paper {
+      --bg: #f3f0e9;
+      --surface: #fffdf9;
+      --surface-2: #f7f4ed;
+      --line: #ded9cf;
+      --text: #282721;
+      --sub: #77736a;
+      --accent: #376f67;
+      --accent-soft: #e2ece8;
+      --good: #4f7862;
+      --soon-bg: #eeeae2;
+      --soon-text: #746f66;
+      --icon-bg: #efebe3;
+      --danger: #a84f4b;
+      --radius: 10px;
+    }
+
+    html, body { margin: 0; width: 100%; min-height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", sans-serif;
+      font-feature-settings: "palt";
+    }
+
+    .screen {
+      width: min(100%, 390px);
+      min-height: 844px;
+      margin: 0 auto;
+      background: var(--bg);
+      padding: 19px 15px 92px;
+      position: relative;
+    }
+
+    .mock-note {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 4px 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--sub);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      background: var(--surface);
+    }
+
+    h1 { margin: 15px 0 2px; font-size: 29px; line-height: 1.1; letter-spacing: -.045em; }
+    .lead { margin: 0; color: var(--sub); font-size: 12px; }
+    .saved { margin: 7px 0 15px; color: var(--good); font-size: 11px; font-weight: 650; }
+    .saved::before { content: "✓"; margin-right: 5px; }
+
+    .summary {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 13px 14px 12px;
+      margin-bottom: 16px;
+    }
+    body.paper .summary { border-left: 4px solid var(--accent); padding-left: 12px; }
+    .summary-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .summary-title { font-size: 15px; font-weight: 750; }
+    .chevron { color: var(--sub); font-size: 20px; line-height: 1; }
+    .summary-caption { margin-top: 2px; color: var(--sub); font-size: 10.5px; }
+    .metrics { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 11px; }
+    .metric { padding: 0 9px; border-left: 1px solid var(--line); }
+    .metric:first-child { border-left: 0; padding-left: 0; }
+    .metric:last-child { padding-right: 0; }
+    .metric small { display: block; color: var(--sub); font-size: 9px; }
+    .metric b { display: block; margin-top: 3px; font-size: 12px; font-variant-numeric: tabular-nums; }
+
+    .section { margin-top: 13px; }
+    .section-title {
+      margin: 0 0 6px 3px;
+      color: var(--sub);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .02em;
+    }
+    .card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .row {
+      min-height: 56px;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 9px 12px;
+      border-top: 1px solid var(--line);
+    }
+    .row:first-child { border-top: 0; }
+    .icon {
+      width: 34px;
+      height: 34px;
+      flex: 0 0 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 9px;
+      background: var(--icon-bg);
+      color: var(--sub);
+    }
+    body.paper .icon { background: transparent; border: 1px solid var(--line); color: var(--accent); }
+    .icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .copy { flex: 1; min-width: 0; }
+    .label { display: block; font-size: 13.5px; font-weight: 650; line-height: 1.25; }
+    .sub { display: block; margin-top: 2px; color: var(--sub); font-size: 10.5px; line-height: 1.25; }
+    .soon {
+      flex: 0 0 auto;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: var(--soon-bg);
+      color: var(--soon-text);
+      font-size: 9.5px;
+      font-weight: 750;
+    }
+    .value { color: var(--sub); font-size: 11px; }
+    .toggle {
+      width: 43px;
+      height: 25px;
+      border-radius: 999px;
+      background: var(--accent);
+      padding: 3px;
+    }
+    .toggle::after {
+      content: "";
+      display: block;
+      width: 19px;
+      height: 19px;
+      margin-left: 18px;
+      border-radius: 50%;
+      background: #fff;
+    }
+
+    .bottom-nav {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 72px;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      align-items: center;
+      border-top: 1px solid var(--line);
+      background: color-mix(in srgb, var(--bg) 94%, transparent);
+    }
+    .nav-item { color: var(--sub); text-align: center; font-size: 9px; }
+    .nav-dot { width: 20px; height: 3px; margin: 0 auto 7px; border-radius: 2px; background: transparent; }
+    .nav-item.active { color: var(--accent); font-weight: 750; }
+    .nav-item.active .nav-dot { background: var(--accent); }
+
+    .concept-name {
+      position: absolute;
+      top: 20px;
+      right: 15px;
+      color: var(--accent);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .08em;
+    }
+  </style>
+</head>
+<body>
+  <main class="screen">
+    <span class="mock-note">確認用モック・実装前</span>
+    <span class="concept-name" id="conceptName">A / CALM SLATE</span>
+    <h1>設定</h1>
+    <p class="lead">アプリの各種設定を管理します</p>
+    <p class="saved">変更はこの端末へ自動保存されます</p>
+
+    <section class="summary">
+      <div class="summary-head"><span class="summary-title">貸玉・交換率</span><span class="chevron">›</span></div>
+      <div class="summary-caption">収支計算に使う条件</div>
+      <div class="metrics">
+        <div class="metric"><small>貸玉</small><b>4円</b></div>
+        <div class="metric"><small>交換率</small><b>28玉</b></div>
+        <div class="metric"><small>持玉</small><b>12,500玉</b></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">表示・通知</h2>
+      <div class="card">
+        <div class="row">
+          <span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg></span>
+          <span class="copy"><span class="label">テーマ・カラー</span><span class="sub">明るさと強調色</span></span><span class="chevron">›</span>
+        </div>
+        <div class="row">
+          <span class="icon"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M10 20h4"/></svg></span>
+          <span class="copy"><span class="label">通知設定</span><span class="sub">4種類のアプリ内通知</span></span><span class="chevron">›</span>
+        </div>
+        <div class="row">
+          <span class="icon"><svg viewBox="0 0 24 24"><path d="M4 19v-7M10 19V5M16 19v-10M22 19v-4"/></svg></span>
+          <span class="copy"><span class="label">グラフ・表示設定</span><span class="sub">期間・単位・補助線</span></span><span class="soon">準備中</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">セキュリティ</h2>
+      <div class="card">
+        <div class="row">
+          <span class="icon"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></span>
+          <span class="copy"><span class="label">アプリロック</span><span class="sub">PIN設定済み</span></span><span class="toggle"></span>
+        </div>
+        <div class="row">
+          <span class="icon"><svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M20 8V5a1 1 0 0 0-1-1h-3M4 16v3a1 1 0 0 0 1 1h3M20 16v3a1 1 0 0 1-1 1h-3"/><path d="M9 15c2 1.5 4 1.5 6 0"/></svg></span>
+          <span class="copy"><span class="label">生体認証</span><span class="sub">対応端末でロック解除</span></span><span class="soon">準備中</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">サポート</h2>
+      <div class="card">
+        <div class="row">
+          <span class="icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v12H8l-4 3z"/></svg></span>
+          <span class="copy"><span class="label">お問い合わせ</span><span class="sub">不具合報告・ご意見</span></span><span class="soon">準備中</span>
+        </div>
+        <div class="row">
+          <span class="icon"><svg viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6z"/><path d="M15 3v4h4M9 12h6M9 16h6"/></svg></span>
+          <span class="copy"><span class="label">規約・プライバシー</span><span class="sub">アプリ内で確認</span></span><span class="soon">準備中</span>
+        </div>
+      </div>
+    </section>
+
+    <nav class="bottom-nav" aria-label="下部ナビゲーション">
+      <div class="nav-item"><div class="nav-dot"></div>ホーム</div>
+      <div class="nav-item"><div class="nav-dot"></div>記録</div>
+      <div class="nav-item"><div class="nav-dot"></div>分析</div>
+      <div class="nav-item"><div class="nav-dot"></div>店舗</div>
+      <div class="nav-item active"><div class="nav-dot"></div>設定</div>
+    </nav>
+  </main>
+
+  <script>
+    const variant = new URLSearchParams(location.search).get("variant");
+    if (variant === "paper") {
+      document.body.classList.add("paper");
+      document.getElementById("conceptName").textContent = "B / WARM PAPER";
+      document.title = "設定ページ B案 Warm Paper";
+    }
+  </script>
+</body>
+</html>

@@ -11830,14 +11830,14 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     // ── サブ画面共通ヘッダー ──
     const SubHeader = ({ title, onBack }) => (
         <div style={{
-            background: C.surface,
+            background: "var(--settings-card)",
             padding: "14px 12px 16px",
             display: "flex", alignItems: "center", gap: 6, flexShrink: 0,
-            borderBottom: `1px solid ${C.border}`,
+            borderBottom: "1px solid var(--settings-line)",
         }}>
             <button className="b" onClick={onBack} aria-label={`${title}から設定トップへ戻る`} style={{
                 background: "transparent", border: "none",
-                color: C.blue, fontSize: 26, width: 44, height: 44,
+                color: "var(--settings-accent)", fontSize: 26, width: 44, height: 44,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 cursor: "pointer", flexShrink: 0, fontWeight: 400, lineHeight: 1,
             }}>‹</button>
@@ -11854,7 +11854,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
         }}>
             <span aria-hidden="true" style={{
                 width: 51, height: 31, borderRadius: 16,
-                background: value ? (color || C.blue) : "rgba(120,120,128,0.16)",
+                background: value ? (color || "var(--settings-accent)") : "var(--settings-line)",
                 position: "absolute", left: 0, top: 6.5, transition: "background 0.25s ease",
             }}>
                 <span style={{
@@ -11870,19 +11870,19 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     const ComingSoonBadge = () => (
         <span style={{
             borderRadius: 999, padding: "4px 9px", flexShrink: 0,
-            background: "color-mix(in srgb, var(--sub) 12%, transparent)",
-            color: "var(--sub)", fontSize: 10.5, fontWeight: 700,
+            background: "var(--settings-badge)",
+            color: "var(--settings-badge-text)", fontSize: 10.5, fontWeight: 700,
         }}>準備中</span>
     );
 
     // 汎用リスト行（onPressなしはdivでレンダリング → Toggle等の子要素がiOSでも押せる）
-    const Row = ({ icon, IconComp, iconColor, label, sub, right, onPress, danger }) => {
+    const Row = ({ icon, IconComp, label, sub, right, onPress, danger }) => {
         const Tag = onPress ? "button" : "div";
-        const clr = iconColor || (danger ? C.red : C.subHi);
+        const clr = danger ? C.red : "var(--settings-icon-color)";
         return (
             <Tag className="b settings-row settings-list-row" onClick={onPress || undefined} style={{
                 width: "100%", background: "transparent", border: "none",
-                borderBottom: `1px solid ${C.border}`, padding: "12px 16px",
+                borderBottom: "1px solid var(--settings-line)", padding: "12px 16px",
                 display: "flex", alignItems: "center", gap: 12,
                 cursor: onPress ? "pointer" : "default", textAlign: "left",
                 WebkitTapHighlightColor: "transparent",
@@ -11890,9 +11890,8 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                 {(IconComp || icon) && (
                     <div style={{
                         width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-                        background: IconComp
-                            ? `color-mix(in srgb, ${clr} 14%, transparent)`
-                            : (danger ? "rgba(255,59,48,0.12)" : "rgba(128,128,128,0.1)"),
+                        background: danger ? "rgba(255,59,48,0.12)" : "var(--settings-icon-bg)",
+                        border: danger ? "none" : "1px solid var(--settings-icon-line)",
                         display: "flex", alignItems: "center", justifyContent: "center",
                         fontSize: 15, color: clr,
                     }}>{IconComp ? <IconComp /> : icon}</div>
@@ -11910,7 +11909,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     const SectionLabel = ({ label }) => (
         <div style={{
             padding: "24px 16px 8px",
-            fontSize: 13, fontWeight: 500, color: C.sub,
+            fontSize: 13, fontWeight: 500, color: "var(--sub)",
             letterSpacing: 0, textTransform: "none",
         }}>{label}</div>
     );
@@ -11918,9 +11917,9 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     // セクションカード（角丸まとめ）— last-childのborderBottomはCSS側で除去
     const Section = ({ children, danger }) => (
         <div style={{
-            background: danger ? "color-mix(in srgb, var(--red) 4%, transparent)" : C.surface,
-            borderRadius: 12,
-            border: `1px solid ${danger ? "color-mix(in srgb, var(--red) 18%, transparent)" : C.border}`,
+            background: danger ? "color-mix(in srgb, var(--red) 4%, transparent)" : "var(--settings-card)",
+            borderRadius: "var(--settings-radius)",
+            border: `1px solid ${danger ? "color-mix(in srgb, var(--red) 18%, transparent)" : "var(--settings-line)"}`,
             overflow: "hidden",
         }}>{children}</div>
     );
@@ -12293,7 +12292,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                     <SectionLabel label="貯玉オプション" />
                     <Section>
                         <Row IconComp={IconDiamond} iconColor={C.teal} label="貯玉を収支に含める" sub="OFFの場合、貯玉使用分は投資額0円として計算"
-                            right={<Toggle label="貯玉を収支に含める" value={s.includeChodamaInBalance} onChange={s.setIncludeChodamaInBalance} color={C.purple} />} />
+                            right={<Toggle label="貯玉を収支に含める" value={s.includeChodamaInBalance} onChange={s.setIncludeChodamaInBalance} color="var(--settings-accent)" />} />
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px" }}>
                             <div>
                                 <div style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>1日の再プレイ上限</div>
@@ -12667,27 +12666,24 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
         }}>⚠ 要確認</span>
     );
 
-    // ネオン系アイコン枠（グラデーション + 内側グロー）
-    const NeonIconBox = ({ color, IconComp, size = 44 }) => (
+    // 設定用アイコン枠。テーマ色に関係なく発光させず、文字の判読を優先する。
+    const SettingsIconBox = ({ IconComp, size = 44 }) => (
         <div style={{
             width: size, height: size, borderRadius: size * 0.30,
-            background: `linear-gradient(135deg, color-mix(in srgb, ${color} 32%, transparent), color-mix(in srgb, ${color} 8%, transparent))`,
-            border: `1px solid color-mix(in srgb, ${color} 40%, transparent)`,
-            boxShadow: `0 0 20px color-mix(in srgb, ${color} 22%, transparent), inset 0 1px 0 color-mix(in srgb, ${color} 30%, transparent)`,
+            background: "var(--settings-icon-bg)",
+            border: "1px solid var(--settings-icon-line)",
             display: "flex", alignItems: "center", justifyContent: "center",
-            color: color, flexShrink: 0,
+            color: "var(--settings-icon-color)", flexShrink: 0,
         }}>
             {IconComp ? <IconComp /> : null}
         </div>
     );
 
-    // 半透明濃紺カード（テーマ対応: index.css の --glass-* を参照）
+    // A案（ダーク）/B案（ライト）で共通利用するフラットカード。
     const glassCardStyle = {
-        background: "var(--glass-bg)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-        border: "1px solid color-mix(in srgb, var(--glass-line) 16%, transparent)",
-        borderRadius: 18,
+        background: "var(--settings-card)",
+        border: "1px solid var(--settings-line)",
+        borderRadius: "var(--settings-radius)",
         overflow: "hidden",
     };
 
@@ -12695,7 +12691,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     const SectionLabelV2 = ({ label }) => (
         <div style={{
             padding: "4px 6px 8px",
-            fontSize: 12.5, fontWeight: 700, color: "var(--sub-hi)",
+            fontSize: 12.5, fontWeight: 700, color: "var(--sub)",
             letterSpacing: 0.4,
         }}>{label}</div>
     );
@@ -12703,7 +12699,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     // 縦リストの1行（1カラム共通）
     // - iPhone片手操作のため最小高さ 60px（タップ領域 >= 44px の余裕を確保）
     // - 文字は 1〜2 行で省略、サブテキストは長くても 1 行で …
-    const ListRow = ({ color, IconComp, label, sub, onPress, right, isLast }) => {
+    const ListRow = ({ IconComp, label, sub, onPress, right, isLast }) => {
         const Tag = onPress ? "button" : "div";
         return (
             <Tag className="b settings-list-row" onClick={onPress || undefined} style={{
@@ -12711,10 +12707,10 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                 display: "flex", alignItems: "center", gap: 12,
                 padding: "13px 14px", cursor: onPress ? "pointer" : "default",
                 textAlign: "left", WebkitTapHighlightColor: "transparent",
-                borderBottom: isLast ? "none" : "1px solid color-mix(in srgb, var(--glass-line) 10%, transparent)",
+                borderBottom: isLast ? "none" : "1px solid var(--settings-line)",
                 minHeight: 60,
             }}>
-                {IconComp && <NeonIconBox color={color} IconComp={IconComp} size={40} />}
+                {IconComp && <SettingsIconBox IconComp={IconComp} size={40} />}
                 <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{
                         fontSize: 14.5, color: C.text, fontWeight: 600, lineHeight: 1.3,
@@ -12745,7 +12741,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                 <div style={{ marginBottom: 14 }}>
                     <div style={{ fontSize: 30, fontWeight: 800, color: C.text, fontFamily: font, letterSpacing: -0.6, lineHeight: 1.05 }}>設定</div>
                     <div style={{ fontSize: 11.5, color: "var(--sub)", marginTop: 4, fontFamily: font }}>アプリの各種設定を管理します</div>
-                    <div style={{ fontSize: 10.5, color: "var(--green)", marginTop: 5, fontFamily: font }}>変更はこの端末へ自動保存されます</div>
+                    <div style={{ fontSize: 10.5, color: "var(--settings-good)", marginTop: 5, fontFamily: font }}>✓ 変更はこの端末へ自動保存されます</div>
                 </div>
 
                 {/* ── 貸玉・交換率（サマリーカード） ── */}
@@ -12757,7 +12753,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                     style={{
                         ...glassCardStyle,
                         width: "100%", textAlign: "left",
-                        border: "1px solid color-mix(in srgb, var(--glass-line) 18%, transparent)",
+                        borderLeft: "var(--settings-summary-rule)",
                         padding: "14px", marginBottom: 18,
                         cursor: "pointer", WebkitTapHighlightColor: "transparent",
                     }}
@@ -12767,7 +12763,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                 <span style={{ fontSize: 16, fontWeight: 800, color: C.text, lineHeight: 1.2 }}>貸玉・交換率</span>
-                                <span aria-hidden="true" style={{ color: "var(--blue)", display: "inline-flex" }}><IconInfo /></span>
+                                <span aria-hidden="true" style={{ color: "var(--settings-accent)", display: "inline-flex" }}><IconInfo /></span>
                             </div>
                             <div style={{ fontSize: 11, color: "var(--sub)", marginTop: 3 }}>収支計算に使う玉数と交換率を確認</div>
                         </div>
@@ -12782,9 +12778,9 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                         ].map((m) => (
                             <div key={m.label} style={{
                                 flex: 1, minWidth: 0,
-                                background: "color-mix(in srgb, var(--glass-inner) 60%, transparent)",
-                                border: "1px solid color-mix(in srgb, var(--glass-line) 12%, transparent)",
-                                borderRadius: 12, padding: "10px 8px", textAlign: "center",
+                                background: "var(--settings-card-alt)",
+                                border: "1px solid var(--settings-line)",
+                                borderRadius: 10, padding: "10px 8px", textAlign: "center",
                             }}>
                                 <div style={{ fontSize: 10.5, color: "var(--sub)", marginBottom: 4 }}>{m.label}</div>
                                 <div style={{
@@ -12920,7 +12916,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                                     else if (!s.appPin) { s.setAppLock(true); setPinSetStep("enter"); setPinDraft(""); }
                                     else s.setAppLock(true);
                                 }}
-                                color={C.blue}
+                                color="var(--settings-accent)"
                             />
                         }
                     />
@@ -12958,8 +12954,8 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                     {pinSetStep !== "idle" && (
                         <div style={{
                             margin: "0 14px 14px", padding: "14px", borderRadius: 12,
-                            background: "color-mix(in srgb, var(--glass-inner) 60%, transparent)",
-                            border: "1px solid color-mix(in srgb, var(--glass-line) 14%, transparent)",
+                            background: "var(--settings-card-alt)",
+                            border: "1px solid var(--settings-line)",
                         }}>
                             <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 8 }}>
                                 {pinStepTitle}
@@ -12970,7 +12966,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                                     return (
                                         <div key={i} style={{
                                             width: 14, height: 14, borderRadius: 7,
-                                            background: val.length > i ? (pinSetError ? C.red : C.blue) : "rgba(128,128,128,0.3)",
+                                            background: val.length > i ? (pinSetError ? C.red : "var(--settings-accent)") : "rgba(128,128,128,0.3)",
                                             transition: "background 0.15s ease",
                                         }} />
                                     );
@@ -13018,7 +13014,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                                         showToast("PINを設定しました");
                                     }
                                 }} style={{
-                                     background: C.blue, border: "none", borderRadius: 10,
+                                     background: "var(--settings-accent)", border: "none", borderRadius: 10,
                                      color: "#fff", fontSize: 13, padding: "11px 18px", minHeight: 44,
                                     fontFamily: font, fontWeight: 700, cursor: "pointer", flexShrink: 0,
                                 }}>{verifyingPin ? "確認" : pinSetStep === "enter" ? "次へ" : "確定"}</button>
@@ -13072,9 +13068,8 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                         {/* アプリアイコン */}
                         <div style={{
                             width: 56, height: 56, borderRadius: 14,
-                            background: "linear-gradient(135deg, #1e3a8a 0%, #1e1b4b 100%)",
-                            border: "1px solid color-mix(in srgb, var(--glass-line) 26%, transparent)",
-                            boxShadow: "0 4px 14px rgba(0,0,0,0.45), 0 0 18px color-mix(in srgb, #38bdf8 18%, transparent)",
+                            background: "var(--settings-card-alt)",
+                            border: "1px solid var(--settings-line)",
                             display: "flex", alignItems: "center", justifyContent: "center",
                             fontSize: 28, flexShrink: 0,
                         }}>🎰</div>
@@ -13091,8 +13086,8 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                     {/* アップデート履歴 */}
                     <div aria-disabled="true" style={{
                         marginTop: 12, width: "100%",
-                        background: "color-mix(in srgb, var(--glass-inner) 60%, transparent)",
-                        border: "1px solid color-mix(in srgb, var(--glass-line) 14%, transparent)",
+                        background: "var(--settings-card-alt)",
+                        border: "1px solid var(--settings-line)",
                         borderRadius: 12, padding: "11px 14px",
                         display: "flex", alignItems: "center", justifyContent: "space-between",
                         boxSizing: "border-box",

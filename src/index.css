@@ -31,8 +31,20 @@
   --nav-bg: rgba(255, 255, 255, 0.98);
   --card-shadow: 0 1px 2px rgba(17, 24, 39, 0.04), 0 2px 8px rgba(17, 24, 39, 0.05);
   --accent-grad: #2f6fed;
-  /* 設定画面のグラスカード/濃紺サーフェス（ライト） */
-  --settings-bg: linear-gradient(180deg, #f2f3f7 0%, #eaecf2 100%);
+  /* 設定画面 B案: Warm Paper */
+  --settings-bg: #f3f0e9;
+  --settings-card: #fffdf9;
+  --settings-card-alt: #f7f4ed;
+  --settings-line: #ded9cf;
+  --settings-icon-bg: transparent;
+  --settings-icon-line: #ded9cf;
+  --settings-icon-color: #376f67;
+  --settings-accent: #376f67;
+  --settings-good: #4f7862;
+  --settings-badge: #eeeae2;
+  --settings-badge-text: #746f66;
+  --settings-radius: 10px;
+  --settings-summary-rule: 4px solid #376f67;
   --glass-bg: linear-gradient(180deg, #ffffff, #f7f9fc);
   --glass-line: #3f6ea8;
   --glass-inner: #e9eef6;
@@ -65,8 +77,20 @@
   --nav-bg: rgba(5, 7, 13, 0.96);
   --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 2px 10px rgba(0, 0, 0, 0.35);
   --accent-grad: #38bdf8;
-  /* 設定画面のグラスカード/濃紺サーフェス（ダーク） */
-  --settings-bg: linear-gradient(180deg, #030714 0%, #06101e 100%);
+  /* 設定画面 A案: Calm Slate */
+  --settings-bg: #11151b;
+  --settings-card: #191e26;
+  --settings-card-alt: #20262f;
+  --settings-line: #2c333e;
+  --settings-icon-bg: #252b34;
+  --settings-icon-line: transparent;
+  --settings-icon-color: #929ba8;
+  --settings-accent: #7ea6d6;
+  --settings-good: #83b69e;
+  --settings-badge: #272d35;
+  --settings-badge-text: #a4acb7;
+  --settings-radius: 14px;
+  --settings-summary-rule: 1px solid #2c333e;
   --glass-bg: linear-gradient(180deg, color-mix(in srgb, #0b1a2e 80%, transparent), color-mix(in srgb, #08111e 70%, transparent));
   --glass-line: #5b8fcf;
   --glass-inner: #0a1525;
