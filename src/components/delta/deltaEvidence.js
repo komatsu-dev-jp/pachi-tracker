@@ -190,8 +190,13 @@ export function buildDeltaEvidence(rows = [], machine = {}, options = {}) {
   const predictedRotation = observedRotation * confidence + border * (1 - confidence);
   const borderDifference = predictedRotation - border;
   const goodMachineScore = Math.max(0, borderDifference * confidence * 100);
-  const predictedLow = Math.max(0, predictedRotation - 1.96 * standardError * confidence);
-  const predictedHigh = predictedRotation + 1.96 * standardError * confidence;
+  // 予測回転率は「実測×信頼度 + ボーダー×(1-信頼度)」の合成推定なので、
+  // 区間幅も合成推定の分散 conf²·SE² + (1-conf)²·priorVariance（ベイズ事後分散）から取る。
+  // 従来の SE×conf は stdDev 由来の不確かさを SE と信頼度の両方に二重に掛けており、
+  // ブレが大きい機種ほど予測レンジが狭く見える逆転が起きていた。
+  const posteriorSd = Math.sqrt((confidence * standardError) ** 2 + ((1 - confidence) ** 2) * priorVariance);
+  const predictedLow = Math.max(0, predictedRotation - 1.96 * posteriorSd);
+  const predictedHigh = predictedRotation + 1.96 * posteriorSd;
 
   let grade = "回収注意";
   if (confidence < 0.2) grade = "データ収集中";
