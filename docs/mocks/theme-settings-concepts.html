@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>テーマ設定モック</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: #090b12; color: #f8f9ff; font-family: Inter, "Noto Sans JP", system-ui, sans-serif; }
+    button { font: inherit; }
+    .phone { width: 390px; min-height: 844px; margin: 0 auto; overflow: hidden; position: relative; background: var(--bg); color: var(--text); }
+    .top { height: 64px; display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(18px); }
+    .back { width: 44px; height: 44px; border: 0; border-radius: 14px; background: var(--panel); color: var(--text); font-size: 24px; }
+    .title strong { display: block; font-size: 16px; letter-spacing: .02em; }
+    .title span { color: var(--muted); font-size: 10px; }
+    .mock-tag { margin-left: auto; color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 999px; padding: 5px 8px; font-size: 9px; font-weight: 800; letter-spacing: .08em; }
+    .content { height: 780px; overflow: hidden; padding: 14px 14px 88px; }
+    .eyebrow { color: var(--accent); font-size: 10px; font-weight: 900; letter-spacing: .16em; text-transform: uppercase; }
+    h1 { font-size: 25px; line-height: 1.25; margin: 7px 0 5px; letter-spacing: -.04em; }
+    .lead { color: var(--muted); font-size: 11px; line-height: 1.65; margin: 0 0 15px; }
+    .bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 74px; display: flex; align-items: center; justify-content: center; background: linear-gradient(transparent, var(--bg) 28%); }
+    .save { width: calc(100% - 28px); height: 48px; border: 0; border-radius: 15px; background: var(--accent); color: #fff; font-weight: 900; box-shadow: 0 12px 30px color-mix(in srgb, var(--accent) 35%, transparent); }
+
+    /* A: 世界観カード */
+    .concept-a { --bg:#090b12; --panel:#141824; --line:#242a3a; --text:#f6f7fc; --muted:#9099ae; --accent:#786cff; }
+    .concept-a .mode { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 16px; }
+    .concept-a .mode button { height: 40px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); font-size: 11px; font-weight: 800; }
+    .concept-a .mode .active { color: #fff; background: #27243f; border-color: #786cff; }
+    .worlds { display: grid; gap: 10px; }
+    .world { min-height: 135px; border-radius: 22px; padding: 15px; position: relative; overflow: hidden; border: 1px solid rgba(255,255,255,.10); box-shadow: inset 0 1px 0 rgba(255,255,255,.10); }
+    .world::after { content:""; position:absolute; width:150px; height:150px; border-radius:50%; right:-45px; top:-60px; background:rgba(255,255,255,.12); filter: blur(2px); }
+    .world .choice { display:flex; align-items:center; justify-content:space-between; position:relative; z-index:2; }
+    .world h2 { font-size:16px; margin:0 0 2px; }
+    .world p { font-size:10px; margin:0; opacity:.72; }
+    .world .check { width:25px; height:25px; border-radius:50%; display:grid; place-items:center; border:1px solid rgba(255,255,255,.36); font-size:12px; }
+    .world.active .check { background:#fff; color:#191532; border-color:#fff; }
+    .mini { display:grid; grid-template-columns: 1.25fr .75fr; gap:7px; margin-top:13px; position:relative; z-index:2; }
+    .mini div { height:40px; border-radius:10px; background:rgba(10,12,20,.34); border:1px solid rgba(255,255,255,.12); padding:8px; }
+    .mini b { display:block; font-size:12px; }
+    .mini span { font-size:8px; opacity:.65; }
+    .world-night { background:linear-gradient(135deg,#302858,#16182c 68%); }
+    .world-focus { background:linear-gradient(135deg,#0c544c,#102a2f 70%); }
+    .world-day { background:linear-gradient(135deg,#f6f1e8,#dce9ff); color:#172033; }
+    .world-day .mini div { background:rgba(255,255,255,.52); border-color:rgba(20,40,80,.10); }
+
+    /* B: コントロールデッキ */
+    .concept-b { --bg:#0d1015; --panel:#171b22; --line:#29303a; --text:#f5f7fa; --muted:#87909e; --accent:#ff6d4a; }
+    .stage { height: 195px; border-radius: 24px; padding: 15px; background: linear-gradient(145deg,#222832,#11151b); border:1px solid #303844; position:relative; overflow:hidden; box-shadow:0 16px 45px rgba(0,0,0,.35); }
+    .stage::before { content:"LIVE PREVIEW"; position:absolute; right:14px; top:13px; color:#66717f; font-size:8px; font-weight:900; letter-spacing:.16em; }
+    .stage-header { display:flex; align-items:center; gap:8px; margin-bottom:13px; }
+    .logo { width:27px; height:27px; border-radius:9px; background:var(--accent); display:grid; place-items:center; font-size:11px; font-weight:900; }
+    .stage-header b { font-size:12px; }
+    .kpis { display:grid; grid-template-columns:1.2fr .8fr; gap:8px; }
+    .kpi { height:93px; border-radius:15px; background:#181d25; border:1px solid #303844; padding:12px; }
+    .kpi span { color:#7f8998; font-size:8px; }
+    .kpi strong { display:block; margin-top:7px; font-size:22px; letter-spacing:-.06em; }
+    .kpi strong em { color:var(--accent); font-style:normal; }
+    .bars { display:flex; align-items:flex-end; gap:4px; height:52px; }
+    .bars i { flex:1; border-radius:3px 3px 1px 1px; background:#3a4350; }
+    .bars i:nth-child(2), .bars i:nth-child(5) { background:var(--accent); }
+    .deck { margin-top:12px; border:1px solid var(--line); border-radius:20px; overflow:hidden; background:var(--panel); }
+    .deck-row { min-height:65px; padding:11px 13px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .deck-row:last-child { border-bottom:0; }
+    .deck-copy b { display:block; font-size:12px; }
+    .deck-copy span { color:var(--muted); font-size:9px; }
+    .segments { display:flex; gap:3px; padding:3px; background:#0f1319; border-radius:11px; }
+    .segments button { min-width:44px; height:34px; border:0; border-radius:8px; color:#77808d; background:transparent; font-size:9px; font-weight:800; }
+    .segments .active { background:#29313c; color:#fff; }
+    .energy { display:flex; align-items:center; gap:6px; }
+    .energy button { width:42px; height:34px; border:1px solid #343c48; border-radius:10px; background:#11161c; color:#8993a2; font-size:8px; font-weight:900; }
+    .energy .active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .meter { width:124px; }
+    .meter-top { display:flex; justify-content:space-between; font-size:8px; color:var(--muted); margin-bottom:7px; }
+    .track { height:7px; border-radius:99px; background:#303743; overflow:hidden; }
+    .track i { display:block; width:66%; height:100%; background:linear-gradient(90deg,#38414e,var(--accent)); border-radius:99px; }
+    .assist { margin-top:11px; display:flex; align-items:center; gap:10px; border:1px dashed #313a46; border-radius:15px; padding:11px 12px; color:var(--muted); font-size:9px; line-height:1.5; }
+    .assist b { color:#fff; font-size:10px; }
+  </style>
+</head>
+<body>
+  <main id="app"></main>
+  <script>
+    const concept = new URLSearchParams(location.search).get("concept") === "b" ? "b" : "a";
+    const app = document.querySelector("#app");
+    if (concept === "a") {
+      app.innerHTML = `
+        <section class="phone concept-a">
+          <header class="top"><button class="back" aria-label="戻る">‹</button><div class="title"><strong>テーマ</strong><span>見え方をひとつ選ぶ</span></div><span class="mock-tag">MOCK A</span></header>
+          <div class="content">
+            <div class="eyebrow">Select your atmosphere</div>
+            <h1>色ではなく、<br>使う場面で選ぶ。</h1>
+            <p class="lead">画面全体の明るさ・強調色・カードの奥行きを、3つの世界観にまとめました。</p>
+            <div class="mode"><button>端末に合わせる</button><button class="active">固定する</button><button>時間で切替</button></div>
+            <div class="worlds">
+              <article class="world world-night active"><div class="choice"><div><h2>DEEP NIGHT</h2><p>夜のホールでも眩しさを抑える</p></div><div class="check">✓</div></div><div class="mini"><div><span>本日の期待値</span><b>+12,800円</b></div><div><span>判断</span><b>続 行</b></div></div></article>
+              <article class="world world-focus"><div class="choice"><div><h2>FOCUS GREEN</h2><p>判断と数値の差を見分けやすく</p></div><div class="check"></div></div><div class="mini"><div><span>回転率</span><b>19.8 /K</b></div><div><span>差</span><b>+2.1</b></div></div></article>
+              <article class="world world-day"><div class="choice"><div><h2>DAYLIGHT</h2><p>昼間・屋外でも読みやすい明るさ</p></div><div class="check"></div></div><div class="mini"><div><span>今月の収支</span><b>+48,500円</b></div><div><span>勝率</span><b>66%</b></div></div></article>
+            </div>
+          </div><div class="bottom"><button class="save">この雰囲気を使う</button></div>
+        </section>`;
+    } else {
+      app.innerHTML = `
+        <section class="phone concept-b">
+          <header class="top"><button class="back" aria-label="戻る">‹</button><div class="title"><strong>表示チューニング</strong><span>見ながら少しずつ調整</span></div><span class="mock-tag">MOCK B</span></header>
+          <div class="content">
+            <div class="eyebrow">Visual control deck</div>
+            <h1>いつもの画面を見ながら、<br>自分用に整える。</h1>
+            <p class="lead">色名の一覧ではなく、実際のカードがどう見えるかを基準に調整します。</p>
+            <section class="stage"><div class="stage-header"><div class="logo">P</div><b>今日の稼働</b></div><div class="kpis"><div class="kpi"><span>期待値</span><strong><em>+</em>12,800円</strong><span>基準より +2,100円</span></div><div class="kpi"><span>推移</span><div class="bars"><i style="height:36%"></i><i style="height:62%"></i><i style="height:48%"></i><i style="height:70%"></i><i style="height:88%"></i></div></div></div></section>
+            <section class="deck">
+              <div class="deck-row"><div class="deck-copy"><b>画面の明るさ</b><span>背景とカードの明暗</span></div><div class="segments"><button>明るい</button><button class="active">深い</button></div></div>
+              <div class="deck-row"><div class="deck-copy"><b>エネルギーカラー</b><span>重要な数値だけに使用</span></div><div class="energy"><button>ICE</button><button class="active">HEAT</button><button>MINT</button></div></div>
+              <div class="deck-row"><div class="deck-copy"><b>強調の強さ</b><span>控えめ ← → はっきり</span></div><div class="meter"><div class="meter-top"><span>SOFT</span><b>66%</b></div><div class="track"><i></i></div></div></div>
+            </section>
+            <div class="assist"><span>◉</span><div><b>読みやすさは自動で維持</b><br>文字と背景の差が不足する組み合わせは選べません。</div></div>
+          </div><div class="bottom"><button class="save">この見え方を保存</button></div>
+        </section>`;
+    }
+  </script>
+</body>
+</html>
