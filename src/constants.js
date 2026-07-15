@@ -29,3 +29,13 @@ export const sc = n => (!isFinite(n) || n === 0 ? C.sub : n > 0 ? C.green : C.re
 export const sp = (n, d = 0) => isFinite(n) && !isNaN(n) ? (n >= 0 ? "+" : "") + f(n, d) : "—";
 
 export const tsNow = () => new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+
+// 端末ローカルの "YYYY-MM-DD"。
+// toISOString() は UTC 基準のため、日本時間の 0:00〜9:00 に前日の日付を返してしまう。
+// 記録日・日次リセット・連続日数などの「今日」判定は必ずこちらを使う。
+export const localDateStr = (d = new Date()) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};

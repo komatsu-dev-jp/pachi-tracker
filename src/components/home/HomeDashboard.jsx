@@ -12,6 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import { getActualPL, getEvAmount } from "../analysis/analysisSelectors";
+import { localDateStr } from "../../constants";
 import "./HomeDashboard.css";
 
 const DEMO = {
@@ -259,10 +260,17 @@ export default function HomeDashboard({ S }) {
   const storeName = selectedStore?.name || DEMO.storeName;
   const latest = archives[archives.length - 1];
   const latestPL = latest ? getActualPL(latest) : null;
+  // 回転率（1Kスタート）: 上皿補正後を優先し、無ければ生値。総回転数(netRot)とは別物なので混同しない。
+  const latestSpinRate = (() => {
+    const eff = Number(latest?.stats?.effectiveStart1K);
+    if (eff > 0) return eff;
+    const raw = Number(latest?.stats?.start1K);
+    return raw > 0 ? raw : null;
+  })();
   const recent = latest ? {
     machineName: latest.machineName || DEMO.machineName,
-    meta: `${latest.date === new Date().toISOString().slice(0, 10) ? "今日" : "前回"} ・ ${Math.max(0, Number(latest?.playMinutes) || 0) / 60 || 0.2}時間`,
-    spin: latest?.stats?.netRot ? `${(Number(latest.stats.netRot) / 1000).toFixed(1)} /k` : "19.2 /k",
+    meta: `${latest.date === localDateStr() ? "今日" : "前回"} ・ ${Math.max(0, Number(latest?.playMinutes) || 0) / 60 || 0.2}時間`,
+    spin: latestSpinRate != null ? `${latestSpinRate.toFixed(1)} /k` : "-- /k",
     ev: getEvAmount(latest),
     amount: latestPL ?? getEvAmount(latest),
   } : {
