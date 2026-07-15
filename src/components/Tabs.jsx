@@ -18,7 +18,7 @@ import { parseCsvRows, toCsvRow } from "../csv";
 import { validateSettingNumber } from "../settingsUtils";
 import { evDecision } from "./decision/evDecision";
 import { confidenceAccuracyLabel } from "./decision/confidenceLabels";
-import { VerdictBadge } from "./decision/VerdictBadge";
+import { LiveDecisionNavigator } from "./decision/LiveDecisionNavigator";
 import { KeyMetrics } from "./decision/KeyMetrics";
 import { ReasonList } from "./decision/ReasonList";
 import { RecentEventList } from "./decision/RecentEventList";
@@ -2856,13 +2856,8 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         paddingBottom: "calc(20px + env(safe-area-inset-bottom))",
                         display: "flex", flexDirection: "column", gap: 12,
                     }}>
-                        {/* 1. 判定ステータスカード（心電図アイコン + 円形ゲージ） */}
-                        <VerdictBadge
-                            verdict={decision.verdict}
-                            confidence={decision.confidence}
-                            netRot={ev.netRot}
-                            evidenceActive={!!ev?.evidence?.hasEstimate}
-                        />
+                        {/* 1. 3K・5K・10K・20K固定地点で判断する見切りナビ */}
+                        <LiveDecisionNavigator decision={ev.liveDecision} />
 
                         {/* 1.5. 遊タイム狙い目分析（天井未設定機種では非表示） */}
                         <YutimeEvCard

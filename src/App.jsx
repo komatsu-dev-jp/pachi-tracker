@@ -31,6 +31,7 @@ import {
   unlockBadges,
 } from "./components/hunter/badges";
 import { evDecision } from "./components/decision/evDecision";
+import { assessLiveRotation } from "./components/decision/liveRotationDecision";
 import { runEvidence } from "./evidence";
 import { machineDB } from "./machineDB";
 import {
@@ -504,7 +505,19 @@ export default function App() {
       : undefined,
     priorConfidence: savedDeltaEvidence?.hasEstimate ? savedDeltaEvidence.confidence : 0,
   });
-  const ev = { ...calculatedEv, evidence: { ...evidence, delta: savedDeltaEvidence } };
+  const liveDecision = assessLiveRotation({
+    trueBorder: evidence.trueBorder,
+    normalSpins: calculatedEv.netRot,
+    totalK: (calculatedEv.cashKCount || 0) + (calculatedEv.mochiKCount || 0) + (calculatedEv.chodamaKCount || 0),
+    rentBalls,
+    priorRotation: savedDeltaEvidence?.hasEstimate
+      ? savedDeltaEvidence.predictedRotation * ((rentBalls || 250) / 250)
+      : undefined,
+    priorConfidence: savedDeltaEvidence?.hasEstimate ? savedDeltaEvidence.confidence : 0,
+    priorScore: savedDeltaEvidence?.hasEstimate ? savedDeltaEvidence.goodMachineScore : 0,
+    rotationStdDevPerK: evidenceMachine?.rotationStdDevPerK,
+  });
+  const ev = { ...calculatedEv, evidence: { ...evidence, delta: savedDeltaEvidence }, liveDecision };
   const currentYutimeLowSpins = deriveCurrentLowProbabilitySpins(rotRows);
   const measuredYutimeStart1K = Number(ev?.effectiveStart1K) > 0 ? Number(ev.effectiveStart1K) : 0;
   const yutimeRateSource = measuredYutimeStart1K > 0 ? "measured" : "assumed";

@@ -41,6 +41,39 @@ function calcConfidence(ev) {
  */
 export function evDecision(ev) {
   const safeEv = ev || {};
+  const liveDecision = safeEv.liveDecision;
+  if (liveDecision && liveDecision.action !== "no_data") {
+    const verdictMap = {
+      collecting: "hold",
+      stop_candidate: "stop",
+      compare: "hold",
+      stop: "stop",
+      continue: "continue",
+      continue_strong: "continue_strong",
+    };
+    const confidence = Math.min(1, Math.max(0, Number(liveDecision.totalK || 0) / 10));
+    return {
+      verdict: verdictMap[liveDecision.action] || "hold",
+      confidence,
+      confidenceParts: {
+        rot: confidence,
+        jp: 0,
+        rotLabel: "実戦",
+        jpLabel: "判断地点",
+      },
+      reasons: [
+        {
+          ok: liveDecision.action === "continue" || liveDecision.action === "continue_strong",
+          text: liveDecision.reason,
+        },
+        {
+          ok: true,
+          text: `次の判断: ${liveDecision.nextCheckpointK ? `${liveDecision.nextCheckpointK}K` : "20K確認済み"}`,
+        },
+      ],
+      evAdjusted: safeEv.effectiveEV1K ?? safeEv.ev1KCorrected ?? safeEv.ev1K ?? 0,
+    };
+  }
   const conf = calcConfidence(safeEv);
   // 上皿補正後の値を判断に使用（Step 2b）
   // 生の値（ev1K / bDiff）は UI 表示用に保持される
