@@ -11931,59 +11931,140 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
 
     // ── 外観サブビュー ──
     if (showAppearanceView) {
+        const atmospheres = [
+            {
+                id: "deep-night",
+                name: "DEEP NIGHT",
+                description: "夜のホールでも眩しさを抑える",
+                theme: "dark",
+                accent: "purple",
+                background: "linear-gradient(135deg, #302858, #16182c 68%)",
+                text: "#f7f7ff",
+                sampleLabel: "本日の期待値",
+                sampleValue: "+12,800円",
+                sampleSideLabel: "判断",
+                sampleSideValue: "続 行",
+            },
+            {
+                id: "focus-green",
+                name: "FOCUS GREEN",
+                description: "判断と数値の差を見分けやすく",
+                theme: "dark",
+                accent: "green",
+                background: "linear-gradient(135deg, #0c544c, #102a2f 70%)",
+                text: "#f1fffb",
+                sampleLabel: "回転率",
+                sampleValue: "19.8 /K",
+                sampleSideLabel: "差",
+                sampleSideValue: "+2.1",
+            },
+            {
+                id: "daylight",
+                name: "DAYLIGHT",
+                description: "昼間・屋外でも読みやすい明るさ",
+                theme: "light",
+                accent: "teal",
+                background: "linear-gradient(135deg, #f6f1e8, #dce9ff)",
+                text: "#172033",
+                sampleLabel: "今月の収支",
+                sampleValue: "+48,500円",
+                sampleSideLabel: "勝率",
+                sampleSideValue: "66%",
+            },
+        ];
+        const selectedAtmosphere = atmospheres.find(
+            (item) => s.theme === item.theme && s.accentColor === item.accent,
+        );
+        const applyAtmosphere = (item) => {
+            s.setTheme(item.theme);
+            s.setAccentColor(item.accent);
+        };
         return (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <style>{`.settings-row:last-child{border-bottom:none!important}`}</style>
-                <SubHeader title="外観" onBack={() => setShowAppearanceView(false)} />
+                <SubHeader title="テーマ" onBack={() => setShowAppearanceView(false)} />
                 <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(84px + env(safe-area-inset-bottom))" }}>
-                    <SectionLabel label="テーマモード" />
-                    <Section>
-                        <div style={{ padding: "14px 16px" }}>
-                            <div style={{ display: "flex", gap: 8 }}>
-                                {[
-                                    { id: "system", label: "システム", icon: "📱" },
-                                    { id: "light",  label: "ライト",   icon: "☀️" },
-                                    { id: "dark",   label: "ダーク",   icon: "🌙" },
-                                ].map(({ id, label, icon }) => {
-                                    const active = s.theme === id;
-                                    return (
-                                        <button key={id} className="b" aria-label={`${label}テーマ`} aria-pressed={active} onClick={() => s.setTheme(id)} style={{
-                                            flex: 1, padding: "12px 6px", borderRadius: 12,
-                                            border: active ? `2px solid ${C.blue}` : `1px solid ${C.border}`,
-                                            background: active ? `${C.blue}22` : C.surfaceHi,
-                                            cursor: "pointer", transition: "all 0.2s ease",
-                                        }}>
-                                            <div style={{ fontSize: 20, marginBottom: 4 }}>{icon}</div>
-                                            <div style={{ fontSize: 11, fontWeight: active ? 700 : 500, color: active ? C.blue : C.text }}>{label}</div>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    </Section>
+                    <div style={{ padding: "18px 2px 2px" }}>
+                        <div style={{ color: C.blue, fontSize: 10, fontWeight: 900, letterSpacing: ".15em" }}>SELECT YOUR ATMOSPHERE</div>
+                        <h2 style={{ margin: "7px 0 5px", color: C.text, fontSize: 24, lineHeight: 1.25, letterSpacing: "-.04em" }}>
+                            色ではなく、<br />使う場面で選ぶ。
+                        </h2>
+                        <p style={{ margin: 0, color: C.sub, fontSize: 11, lineHeight: 1.65 }}>
+                            画面全体の明るさと強調色を、使いやすい3つの世界観にまとめました。
+                        </p>
+                    </div>
 
-                    <SectionLabel label="カラーテーマ" />
-                    <Section>
-                        <div style={{ padding: "14px 16px" }}>
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
-                                {(s.colorThemes || []).map(ct => {
-                                    const active = s.accentColor === ct.id;
-                                    return (
-                                        <button key={ct.id} className="b" aria-label={`${ct.label || ct.id}のカラーテーマ`} aria-pressed={active} onClick={() => s.setAccentColor(ct.id)} style={{
-                                            aspectRatio: "1", borderRadius: 14,
-                                            background: ct.primary,
-                                            border: active ? "3px solid #fff" : "3px solid transparent",
-                                            boxShadow: active ? `0 0 0 2px ${ct.primary}` : "none",
-                                            display: "flex", alignItems: "center", justifyContent: "center",
-                                            cursor: "pointer", transition: "all 0.2s ease",
-                                        }}>
-                                            {active && <span style={{ fontSize: 16, color: "#fff" }}>✓</span>}
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                    <div role="group" aria-label="テーマの連動方法" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, margin: "16px 0" }}>
+                        <button type="button" className="b" aria-pressed={s.theme === "system"} onClick={() => s.setTheme("system")} style={{
+                            minHeight: 44, borderRadius: 12, padding: "10px 8px",
+                            border: s.theme === "system" ? `2px solid ${C.blue}` : `1px solid ${C.border}`,
+                            background: s.theme === "system" ? "color-mix(in srgb, var(--blue) 18%, var(--surface))" : C.surface,
+                            color: s.theme === "system" ? C.blue : C.subHi,
+                            fontSize: 12, fontWeight: 800,
+                        }}>端末に合わせる</button>
+                        <button type="button" className="b" aria-pressed={s.theme !== "system"} onClick={() => applyAtmosphere(selectedAtmosphere || atmospheres[0])} style={{
+                            minHeight: 44, borderRadius: 12, padding: "10px 8px",
+                            border: s.theme !== "system" ? `2px solid ${C.blue}` : `1px solid ${C.border}`,
+                            background: s.theme !== "system" ? "color-mix(in srgb, var(--blue) 18%, var(--surface))" : C.surface,
+                            color: s.theme !== "system" ? C.blue : C.subHi,
+                            fontSize: 12, fontWeight: 800,
+                        }}>固定する</button>
+                    </div>
+
+                    <div role="radiogroup" aria-label="テーマの世界観" style={{ display: "grid", gap: 10 }}>
+                        {atmospheres.map((item) => {
+                            const active = selectedAtmosphere?.id === item.id && s.theme !== "system";
+                            return (
+                                <button key={item.id} type="button" className="b" role="radio" aria-checked={active}
+                                    aria-label={`${item.name}。${item.description}`} onClick={() => applyAtmosphere(item)} style={{
+                                        width: "100%", minHeight: 136, position: "relative", overflow: "hidden",
+                                        padding: 15, borderRadius: 22, textAlign: "left", color: item.text,
+                                        background: item.background,
+                                        border: active ? "2px solid #ffffff" : "1px solid rgba(255,255,255,.12)",
+                                        boxShadow: active ? `0 0 0 2px ${C.blue}, inset 0 1px 0 rgba(255,255,255,.14)` : "inset 0 1px 0 rgba(255,255,255,.1)",
+                                    }}>
+                                    <span aria-hidden="true" style={{
+                                        position: "absolute", width: 150, height: 150, right: -45, top: -60,
+                                        borderRadius: "50%", background: "rgba(255,255,255,.12)",
+                                    }} />
+                                    <span style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                        <span>
+                                            <strong style={{ display: "block", fontSize: 16, letterSpacing: ".01em" }}>{item.name}</strong>
+                                            <span style={{ display: "block", marginTop: 2, fontSize: 10, opacity: .72 }}>{item.description}</span>
+                                        </span>
+                                        <span aria-hidden="true" style={{
+                                            width: 28, height: 28, borderRadius: "50%", flex: "0 0 auto",
+                                            display: "grid", placeItems: "center", fontSize: 13,
+                                            border: "1px solid rgba(255,255,255,.4)",
+                                            background: active ? "#fff" : "transparent",
+                                            color: active ? "#191532" : item.text,
+                                        }}>{active ? "✓" : ""}</span>
+                                    </span>
+                                    <span aria-label="表示見本" style={{ position: "relative", zIndex: 1, display: "grid", gridTemplateColumns: "1.25fr .75fr", gap: 7, marginTop: 13 }}>
+                                        {[
+                                            [item.sampleLabel, item.sampleValue],
+                                            [item.sampleSideLabel, item.sampleSideValue],
+                                        ].map(([label, value]) => (
+                                            <span key={label} style={{
+                                                minHeight: 40, borderRadius: 10, padding: 8,
+                                                background: item.theme === "light" ? "rgba(255,255,255,.54)" : "rgba(10,12,20,.34)",
+                                                border: item.theme === "light" ? "1px solid rgba(20,40,80,.1)" : "1px solid rgba(255,255,255,.12)",
+                                            }}>
+                                                <small style={{ display: "block", fontSize: 8, opacity: .65 }}>{label}</small>
+                                                <strong style={{ display: "block", marginTop: 2, fontSize: 12 }}>{value}</strong>
+                                            </span>
+                                        ))}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {s.theme === "system" && (
+                        <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 12, color: C.sub, background: C.surface, border: `1px solid ${C.border}`, fontSize: 10, lineHeight: 1.6 }}>
+                            端末に合わせる間は、端末のライト・ダーク設定へ自動で追従します。世界観を選ぶと固定表示へ切り替わります。
                         </div>
-                    </Section>
+                    )}
 
                     <SectionLabel label="アクセシビリティ" />
                     <Section>
@@ -12520,12 +12601,12 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     }
 
 
-    // ── 詳細設定サブビュー ──
+    // ── セッション初期化サブビュー ──
     if (showAdvancedView) {
         return (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <style>{`.settings-row:last-child{border-bottom:none!important}`}</style>
-                <SubHeader title="詳細設定" onBack={() => setShowAdvancedView(false)} />
+                <SubHeader title="データをリセット" onBack={() => setShowAdvancedView(false)} />
                 <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(72px + env(safe-area-inset-bottom))" }}>
                     <SectionLabel label="セッションの初期化" />
                     <Section danger>
@@ -12760,7 +12841,6 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                             { color: "var(--teal)", icon: IconDiamond,     label: "貯玉データ",       sub: "店舗別残高 / 入出金履歴",                                                       onPress: () => setShowChodamaDataView(true) },
                             { color: "var(--teal)", icon: IconGrid,       label: "店舗レイアウト",   sub: hallMapStore ? `${hallMapStore.name || "店舗"} ・ ${hallMapIslandCount}島` : "店舗を登録すると編集できます", onPress: () => setShowHallMapView(true) },
                             { color: "var(--red)", icon: IconTarget,     label: "機種スペック設定", sub: `${s.synthDenom || 319.6} / ${borderShort}`,                                     onPress: () => setShowMachineSpecView(true) },
-                            { color: "var(--purple)", icon: IconCalculator, label: "上級設定",         sub: "削り補正 / 持玉比率 など",                                                       onPress: () => setShowAdvancedView(true) },
                         ];
                         return items.map((it, i) => (
                             <ListRow
@@ -12783,6 +12863,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                         const items = [
                             { color: "var(--blue)", icon: IconCloud,      label: "データの保存・復元", sub: "JSON全体バックアップ",                  onPress: () => setShowBackupView(true) },
                             { color: "var(--purple)", icon: IconCsv,        label: "CSV入出力",         sub: "収支データのインポート / エクスポート",  onPress: () => setShowBackupView(true) },
+                            { color: "var(--red)", icon: IconTrash,       label: "データをリセット",   sub: "現在のセッションだけを初期化",            onPress: () => setShowAdvancedView(true) },
                         ];
                         return items.map((it, i) => (
                             <ListRow
