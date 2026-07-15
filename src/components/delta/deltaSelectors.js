@@ -6,6 +6,14 @@
 
 import { getRank } from "./deltaEngine.js";
 
+// 端末ローカルの "YYYY-MM-DD"（node テストからも使うため本モジュール内に定義）
+function toLocalDay(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 // 全角数字→半角、カンマ除去をして整数化する。失敗時は null。
 function toHalfWidth(str) {
   return String(str ?? "").replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
@@ -187,7 +195,8 @@ export function buildSegmentsNumbers(segments) {
 export function makeScan({ id, storeId = null, storeName = "", date, machineName = "", rows = [] } = {}) {
   const now = new Date();
   const createdAt = now.toISOString();
-  const day = typeof date === "string" && date ? date : createdAt.slice(0, 10);
+  // 既定日はローカル日付にする（toISOString は UTC のため 0:00〜9:00 JST に前日となる）
+  const day = typeof date === "string" && date ? date : toLocalDay(now);
   return {
     id: id != null ? id : `delta-${now.getTime()}-${Math.floor(Math.random() * 100000)}`,
     storeId: storeId ?? null,
@@ -207,7 +216,7 @@ export const SCAN_RETENTION = Object.freeze({ maxAgeDays: 90, maxCount: 300 });
 // date("YYYY-MM-DD") の辞書順比較で期限判定し、件数超過分は古い日付から落とす。
 export function pruneScans(list, { maxAgeDays = SCAN_RETENTION.maxAgeDays, maxCount = SCAN_RETENTION.maxCount, now = new Date() } = {}) {
   const scans = Array.isArray(list) ? list.filter(Boolean) : [];
-  const cutoff = new Date(now.getTime() - maxAgeDays * 86400000).toISOString().slice(0, 10);
+  const cutoff = toLocalDay(new Date(now.getTime() - maxAgeDays * 86400000));
   const kept = scans.filter((scan) => String(scan?.date || "") >= cutoff);
   if (kept.length <= maxCount) return kept;
   return [...kept]

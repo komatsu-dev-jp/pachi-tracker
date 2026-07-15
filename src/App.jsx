@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useLS, calcPreciseEV } from "./logic";
 import { useUndoStack } from "./history";
-import { C, font, tsNow } from "./constants";
+import { C, font, tsNow, localDateStr } from "./constants";
 import { searchMachines } from "./machineDB";
 import { RotTab, SettingsTab } from "./components/Tabs";
 import ModeTabBar from "./components/ModeTabBar";
@@ -444,7 +444,7 @@ export default function App() {
 
   // 日付変更時に貯玉使用量をリセット
   useEffect(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDateStr();
     if (chodamaLastDate !== today) {
       setChodamaUsedToday(0);
       setChodamaLastDate(today);
@@ -562,7 +562,7 @@ export default function App() {
   useEffect(() => {
     if (!hunterRankMigrated) return;
     if (!hasActivityToday) return;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDateStr();
     if (hunterCounters?.lastDate === today) return;
     const next = applyDailyStreak(hunterCounters, today);
     setHunterCounters((prev) => ({
@@ -739,7 +739,7 @@ export default function App() {
   // 起動時：前回の持ち玉が日付を跨いで残っていれば「貯玉化」を促す（持越し検知）
   const [carryOverPrompt, setCarryOverPrompt] = useState(null);
   useEffect(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDateStr();
     const held = Math.round(currentMochiBalls || 0);
     if (held > 0 && sessionStartDate && sessionStartDate !== today) {
       const store = (stores || []).find(st => typeof st === "object" && st.id === selectedStoreId);
@@ -761,7 +761,7 @@ export default function App() {
   };
   // 持ち玉のまま今日のセッションとして続行（日付を今日に更新して再表示を防ぐ）
   const carryOverContinue = () => {
-    setSessionStartDate(new Date().toISOString().slice(0, 10));
+    setSessionStartDate(localDateStr());
     setCarryOverPrompt(null);
   };
   // 持ち玉を破棄（現金精算済みとして扱い）→ セッション終了
@@ -845,7 +845,7 @@ export default function App() {
     ) : {};
     const archive = {
       id: now.getTime(),
-      date: now.toISOString().slice(0, 10),
+      date: localDateStr(now),
       time: now.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
       rotRows: JSON.parse(JSON.stringify(rotRows)),
       jpLog: JSON.parse(JSON.stringify(jpLog)),
@@ -884,7 +884,7 @@ export default function App() {
     const beforeBal = Math.max(0, Math.round(Number(before) || 0));
     setChodamaLog((prev) => [{
       id: Date.now() + Math.random(),
-      date: new Date().toISOString().slice(0, 10),
+      date: localDateStr(),
       storeId,
       storeName: store?.name || "",
       type: "deposit",

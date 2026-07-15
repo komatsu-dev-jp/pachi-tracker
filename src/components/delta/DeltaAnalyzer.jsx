@@ -8,7 +8,7 @@
 // props: { store, islands, onClose, onSaveScan }
 
 import React, { useMemo, useRef, useState } from "react";
-import { C, f, sp, font, mono } from "../../constants";
+import { C, f, sp, font, mono, localDateStr } from "../../constants";
 import { Card } from "../Atoms";
 import { runAnalysis, getRankTone } from "./deltaEngine";
 import {
@@ -26,7 +26,7 @@ const TAP = 44; // 最小タップ領域
 const CTA = 48; // 下部固定CTA高さ
 
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateStr();
 }
 function todaySlash() {
   const d = new Date();

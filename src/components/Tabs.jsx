@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import ReactDOM from "react-dom";
-import { C, f, sc, sp, tsNow, font, mono } from "../constants";
+import { C, f, sc, sp, tsNow, font, mono, localDateStr } from "../constants";
 import { archiveWorkMinutes } from "./analysis/analysisSelectors";
 import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./Atoms";
 import { searchMachines, deriveSpecForMachine, getEffectiveMachineList } from "../machineDB";
@@ -1695,7 +1695,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         // セッション開始
         S.setStartRot(val);
         S.setSessionStarted(true);
-        S.setSessionStartDate(new Date().toISOString().slice(0, 10));
+        S.setSessionStartDate(localDateStr());
         setRows((r) => [...r, {
             type: "start",
             cumRot: val,
@@ -8615,7 +8615,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
             };
             S.setStores(prev => [...(prev || []).filter(st => typeof st === "object"), store]);
             S.setChodamaLog(prev => [{
-                id: Date.now() + Math.random(), date: new Date().toISOString().slice(0, 10),
+                id: Date.now() + Math.random(), date: localDateStr(),
                 storeId: newId, storeName: name, type: "adjust",
                 balls: newBal, balanceBefore: 0, balanceAfter: newBal, memo: "記録から店舗を新規登録",
             }, ...(prev || [])]);
@@ -8626,7 +8626,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
             S.setStores(prev => prev.map(st =>
                 (typeof st === "object" && st.id === store.id) ? { ...st, chodama: newBal } : st));
             S.setChodamaLog(prev => [{
-                id: Date.now() + Math.random(), date: new Date().toISOString().slice(0, 10),
+                id: Date.now() + Math.random(), date: localDateStr(),
                 storeId: store.id, storeName: store.name || "", type: "adjust",
                 balls: newBal - oldBal, balanceBefore: oldBal, balanceAfter: newBal, memo: "記録編集から残高調整",
             }, ...(prev || [])]);
@@ -10023,7 +10023,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     const [chodamaFormStoreId, setChodamaFormStoreId] = useState("");
     const [chodamaFormType, setChodamaFormType] = useState("deposit"); // deposit | withdraw | adjust
     const [chodamaFormBalls, setChodamaFormBalls] = useState("");
-    const [chodamaFormDate, setChodamaFormDate] = useState(() => new Date().toISOString().slice(0, 10));
+    const [chodamaFormDate, setChodamaFormDate] = useState(() => localDateStr());
     const [chodamaFormMemo, setChodamaFormMemo] = useState("");
     const [showBackupView, setShowBackupView] = useState(false);
     const [showAdvancedView, setShowAdvancedView] = useState(false);
@@ -10155,7 +10155,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
         patchStore(store.id, { chodama: after });
         const entry = {
             id: Date.now() + Math.random(),
-            date: new Date().toISOString().slice(0, 10),
+            date: localDateStr(),
             storeId: store.id,
             storeName: store.name,
             type,
@@ -10326,8 +10326,11 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
         const a = document.createElement("a");
         a.href = url;
         a.download = filename;
+        document.body.appendChild(a);
         a.click();
-        URL.revokeObjectURL(url);
+        a.remove();
+        // \u5373\u6642 revoke \u306F iOS Safari \u3067\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u304C\u4E2D\u65AD\u3055\u308C\u308B\u3053\u3068\u304C\u3042\u308B\u305F\u3081\u9045\u5EF6\u3055\u305B\u308B\uFF08backupAllData \u3068\u540C\u3058\u6271\u3044\uFF09
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
     };
 
     // CSVパース関数
@@ -10426,7 +10429,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = `pachi-tracker-backup-${new Date().toISOString().slice(0,10)}.json`;
+            a.download = `pachi-tracker-backup-${localDateStr()}.json`;
             document.body.appendChild(a);
             a.click();
             a.remove();
@@ -10534,7 +10537,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
             ]);
         });
         const csv = "\uFEFF" + headers.join(",") + "\n" + rows.join("\n");
-        downloadCSV(csv.replace(/^\uFEFF/, ""), `pachi-tracker-${new Date().toISOString().slice(0, 10)}.csv`);
+        downloadCSV(csv.replace(/^\uFEFF/, ""), `pachi-tracker-${localDateStr()}.csv`);
     };
 
     const importArchiveCSV = (e) => {
@@ -12260,7 +12263,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
             ));
             const entry = {
                 id: Date.now(),
-                date: chodamaFormDate || new Date().toISOString().slice(0, 10),
+                date: chodamaFormDate || localDateStr(),
                 storeId: store.id,
                 storeName: store.name,
                 type: chodamaFormType,
