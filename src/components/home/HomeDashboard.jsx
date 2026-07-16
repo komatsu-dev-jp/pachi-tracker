@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Clock3,
   Info,
+  ScanLine,
   Search,
   Store,
   Target,
@@ -161,6 +162,36 @@ function JudgmentItem({ icon, label, count, tone, onClick }) {
   );
 }
 
+// 差玉解析ステータス（独立タブにせず、ホームから起動。戦略マップ等の案内文が「ホームの差玉解析」を参照）
+function DeltaStatusCard({ status, onAnalyze, onViewMap }) {
+  return (
+    <section className="home-card home-delta-card">
+      <SectionTitle icon={ScanLine}>差玉解析</SectionTitle>
+      <div className="home-delta-stats">
+        <div className="home-delta-stat">
+          <span>最終解析</span>
+          <strong>{status.lastLabel}</strong>
+        </div>
+        <div className="home-delta-stat">
+          <span>解析済み台数</span>
+          <strong className="tone-yellow">{status.machineCount}<em>台</em></strong>
+        </div>
+        <div className="home-delta-stat">
+          <span>状態</span>
+          <strong className="home-delta-state">
+            <i className={status.hasScans ? "is-on" : ""} />
+            {status.stateLabel}
+          </strong>
+        </div>
+      </div>
+      <button type="button" className="home-delta-analyze" onClick={onAnalyze}>解析する</button>
+      {status.hasScans && (
+        <button type="button" className="home-delta-map" onClick={onViewMap}>保存した解析をマップで見る</button>
+      )}
+    </section>
+  );
+}
+
 function ActiveStoreCard({ storeName, onOpen }) {
   return (
     <section className="home-card home-active-store">
@@ -281,8 +312,37 @@ export default function HomeDashboard({ S }) {
     amount: DEMO.recentAmount,
   };
 
+  // 差玉解析ステータス（保存済みスキャン pt_deltaScans から導出）
+  const todayStr = localDateStr();
+  const deltaScansRaw = S?.deltaScans;
+  const deltaStatus = useMemo(() => {
+    const scans = Array.isArray(deltaScansRaw) ? deltaScansRaw : [];
+    if (scans.length === 0) {
+      return { hasScans: false, lastLabel: "—", machineCount: 0, stateLabel: "未解析" };
+    }
+    const sorted = [...scans].sort((a, b) =>
+      String(b?.createdAt || "").localeCompare(String(a?.createdAt || ""))
+    );
+    const last = sorted[0];
+    const machineCount = scans.reduce((s, sc) => s + (Array.isArray(sc?.rows) ? sc.rows.length : 0), 0);
+    // 日時ラベル: 今日は時刻、それ以外は M/D
+    let lastLabel = "—";
+    const created = String(last?.createdAt || "");
+    const day = String(last?.date || created.slice(0, 10));
+    if (day === todayStr) {
+      lastLabel = created.length >= 16
+        ? `本日 ${new Date(created).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}`
+        : "本日";
+    } else if (day.length >= 10) {
+      lastLabel = `${Number(day.slice(5, 7))}/${Number(day.slice(8, 10))}`;
+    }
+    return { hasScans: true, lastLabel, machineCount, stateLabel: "解析済み" };
+  }, [deltaScansRaw, todayStr]);
+
   const goAnalysis = () => S?.setTab?.("calendar");
   const goStore = () => S?.setTab?.("storeDetail");
+  const goDelta = () => S?.setTab?.("delta");
+  const goDeltaMap = () => S?.setTab?.("deltaMap");
   const unread = Array.isArray(S?.notificationLog) && S.notificationLog.some((item) => !item?.read);
 
   return (
@@ -301,6 +361,8 @@ export default function HomeDashboard({ S }) {
 
       <BalanceCard {...monthSummary} onDetail={goAnalysis} />
       <NextActionCard storeName={storeName} onOpen={goStore} />
+      {/* 差玉解析ステータス（独立タブにせず、ここから起動） */}
+      <DeltaStatusCard status={deltaStatus} onAnalyze={goDelta} onViewMap={goDeltaMap} />
       <JudgmentCard onDetail={goAnalysis} />
       <ActiveStoreCard storeName={storeName} onOpen={goStore} />
       <RecentCard recent={recent} onDetail={goAnalysis} />
