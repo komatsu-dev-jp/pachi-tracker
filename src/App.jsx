@@ -1341,9 +1341,8 @@ export default function App() {
             }}
           />
         )}
-        {/* 店舗詳細。店舗基本情報・貯玉・会員カード・交換率は S.stores から実データ解決（resolveStoreDetail）。
-            分析タブ関連はまだダミーのまま（TODO: 別ステップで実装）。既存の店舗検索・登録
-            （SettingsTab 内）とは独立した画面。遷移導線は
+        {/* 店舗詳細。店舗情報・実戦記録・貯玉履歴から表示用データを集計する。
+            既存の店舗検索・登録（SettingsTab 内）とは独立した画面。遷移導線は
             ①設定タブの店舗一覧の各行（onOpenStoreDetail）と
             ②ホーム画面の「店舗詳細」カード（S.setTab("storeDetail")）の2箇所。 */}
         {currentMode === "storeDetail" && (
@@ -1354,6 +1353,21 @@ export default function App() {
               if (storeDetailId != null) setSelectedStoreId(storeDetailId);
               setStoreDetailId(null);
               setCurrentMode("settings");
+            }}
+            onStartRecord={() => {
+              const store = (Array.isArray(stores) ? stores : []).find((item) => item?.id === storeDetailId);
+              if (store) {
+                setSelectedStoreId(store.id);
+                setStoreName(store.name || "");
+                if (Number(store.rentBalls) > 0) setRentBalls(Number(store.rentBalls));
+                if (Number(store.exRate) > 0) {
+                  setExRate(Number(store.exRate));
+                  setBallVal(1000 / Number(store.exRate));
+                }
+                if (store.closingTime) setSessionClosingTime(store.closingTime);
+              }
+              setStoreDetailId(null);
+              handleModeChange("record");
             }}
             onBack={() => {
               setStoreDetailId(null);
