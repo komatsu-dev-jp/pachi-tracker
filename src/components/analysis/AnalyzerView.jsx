@@ -674,7 +674,8 @@ function NoArchivesCard() {
 export default function AnalyzerView({ archives, extraFilters, onSelectMachine }) {
   const list = useMemo(() => archives || [], [archives]);
   const [tab, setTab] = useState("ev");
-  const isDemo = list.length === 0;
+  // 未記録時の機種カルテにも架空値を出さない。
+  const isDemo = false;
 
   return (
     <>

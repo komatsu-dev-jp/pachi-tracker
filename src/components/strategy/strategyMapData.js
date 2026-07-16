@@ -143,6 +143,7 @@ function applyHallLayout(analyzedIslands, hallIslands) {
 
 export function buildStrategyMap({
   playingNum = null,
+  liveDecision = null,
   scans = [],
   customMachines = [],
   hallMaps = {},
@@ -201,6 +202,7 @@ export function buildStrategyMap({
     const islandId = islandName;
     // スパークラインも表示中店舗の履歴だけを使う（他店舗の同番号を混ぜない）
     const history = historyFor(storeScans, machineName, row.num, machineSpec);
+    const isPlaying = playingNum != null && String(row.num) === String(playingNum);
     const machine = {
       id: `m-${machineName}-${row.num}`,
       num: Number(row.num) || row.num,
@@ -215,7 +217,8 @@ export function buildStrategyMap({
       evPerHour: pe?.valid ? pe.hourly : evPerHourOf(predictedRotation, trueBorder),
       verdict,
       isStar: verdict === "strong" && (pe?.valid ? pe.score : evidence.goodMachineScore) >= 50,
-      isPlaying: playingNum != null && String(row.num) === String(playingNum),
+      isPlaying,
+      liveDecision: isPlaying ? liveDecision : null,
       history: history.length > 1
         ? history
         : [history[0] ?? round1(evidence.predictedRotation), history[0] ?? round1(evidence.predictedRotation)],

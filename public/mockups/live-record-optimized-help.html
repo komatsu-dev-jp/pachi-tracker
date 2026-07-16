@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>実戦記録・統合モック</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", sans-serif; color: #eef4ff; background: #05070c; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: start center; padding: 16px; background: radial-gradient(circle at 50% 0%, rgba(23,172,151,.09), transparent 34%), #05070c; }
+    .phone { position: relative; width: 393px; max-width: 100%; height: 852px; overflow: hidden; border: 1px solid #2a3445; border-radius: 30px; background: #070a11; box-shadow: 0 24px 70px rgba(0,0,0,.55); }
+    .screen { padding: 10px 12px 112px; }
+    .status { width: 92px; height: 18px; margin: -10px auto 7px; border-radius: 0 0 14px 14px; background: #020309; }
+    .top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .machine { font-size: 13px; font-weight: 900; }
+    .machine small { display: block; margin-top: 3px; color: #6d788c; font-size: 8px; font-weight: 600; }
+    .live { color: #45dd98; }
+    .tools { display: flex; gap: 5px; }
+    .tool { min-width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid #273040; border-radius: 9px; background: #151a25; color: #aab5c6; font-size: 9px; }
+    .tabs { display: grid; grid-template-columns: repeat(4, 1fr); margin: 11px -12px 8px; border-bottom: 1px solid #1e2533; color: #6d788a; font-size: 8px; text-align: center; }
+    .tabs span { padding: 8px 1px; }
+    .tabs .active { border-bottom: 2px solid #36ced7; color: #60e5e8; font-weight: 900; }
+    .card { border: 1px solid #283142; border-radius: 13px; background: linear-gradient(145deg, #111822, #0c1119); }
+    .decision { padding: 9px 10px 8px; border-color: rgba(52,211,153,.5); background: linear-gradient(145deg, rgba(16,77,61,.42), #0b151a 72%); }
+    .decision-head { display: flex; justify-content: space-between; align-items: start; gap: 7px; }
+    .eyebrow { color: #95a2b5; font-size: 8px; font-weight: 800; }
+    .decision-status { margin-top: 1px; font-size: 19px; font-weight: 900; }
+    .decision-right { display: flex; align-items: center; gap: 5px; }
+    .prob { padding: 5px 7px; border: 1px solid rgba(52,211,153,.43); border-radius: 999px; color: #56dfa3; font-size: 8px; font-weight: 900; }
+    .root-link { color: #8996a9; font-size: 8px; }
+    .checks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 6px; }
+    .checks span { height: 24px; display: grid; place-items: center; border: 1px solid #2a3444; border-radius: 7px; color: #68758b; font-size: 8px; font-weight: 900; }
+    .checks .done { border-color: #31b47e; background: rgba(52,211,153,.14); color: #e1faef; }
+    .decision-line { display: flex; align-items: baseline; gap: 7px; margin-top: 6px; }
+    .decision-line b { color: #48dc9b; font: 900 17px ui-monospace, monospace; }
+    .decision-line span { color: #a4afc0; font-size: 8px; }
+    .decision-values { display: grid; grid-template-columns: repeat(2, 1fr); margin-top: 5px; padding-top: 5px; border-top: 1px solid rgba(148,163,184,.15); }
+    .decision-values div { color: #8793a6; font-size: 7px; text-align: center; }
+    .decision-values div + div { border-left: 1px solid rgba(148,163,184,.15); }
+    .decision-values b { display: block; margin-top: 1px; color: #f0f5fc; font-size: 12px; }
+    .section-title { display: flex; align-items: center; justify-content: space-between; margin: 7px 2px 4px; color: #aeb8c8; font-size: 9px; font-weight: 900; }
+    .section-title small { color: #6b778a; font-size: 7px; }
+    .forecast-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+    .forecast { position: relative; min-width: 0; padding: 7px 5px; border: 1px solid #293345; border-radius: 10px; background: #10151f; }
+    .forecast-label { display: flex; align-items: center; gap: 2px; color: #8e9bad; font-size: 7px; white-space: nowrap; }
+    .help { width: 15px; height: 15px; display: grid; place-items: center; padding: 0; border: 1px solid #526078; border-radius: 50%; background: transparent; color: #9faabd; font: 800 8px sans-serif; }
+    .forecast b { display: block; margin-top: 4px; font-size: 12px; white-space: nowrap; }
+    .border-value { color: #7083ff; }
+    .score-value { color: #f1cf55; }
+    .confidence-value { color: #b68cff; }
+    .prediction-value { color: #4bd9d5; }
+    .forecast-note { margin: 3px 2px 0; color: #f0c75b; font-size: 7px; }
+    .money { padding: 7px 8px; }
+    .money-flow { display: grid; grid-template-columns: 1fr 12px 1fr 12px 1fr; align-items: center; gap: 2px; }
+    .money-box { min-width: 0; padding: 5px 3px; border-radius: 8px; background: #161c27; text-align: center; }
+    .money-box span { display: block; color: #8390a4; font-size: 7px; white-space: nowrap; }
+    .money-box b { display: block; margin-top: 3px; font-size: 11px; white-space: nowrap; }
+    .money-box.used b { color: #55dfa1; }
+    .money-box.total b { color: #5fc8ff; }
+    .op { color: #667287; font-size: 10px; text-align: center; }
+    .effective { display: flex; align-items: center; justify-content: space-between; margin-top: 5px; padding-top: 5px; border-top: 1px solid #283142; color: #8591a4; font-size: 7px; }
+    .effective strong { color: #f1d05a; font-size: 12px; }
+    .balance-expect { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+    .mini { min-width: 0; padding: 6px 5px; border: 1px solid #293345; border-radius: 9px; background: #10151f; }
+    .mini span { display: block; color: #8793a6; font-size: 7px; white-space: nowrap; }
+    .mini b { display: block; margin-top: 3px; font-size: 10px; white-space: nowrap; }
+    .mini.mochi { border-color: rgba(52,211,153,.36); background: rgba(28,132,89,.11); }
+    .mini.mochi b { color: #54dfa1; }
+    .mini.chodama { border-color: rgba(182,140,255,.36); background: rgba(107,67,179,.12); }
+    .mini.chodama b { color: #b68cff; }
+    .mini.expected b { color: #f1d05a; }
+    .log { overflow: hidden; }
+    .log-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; border-bottom: 1px solid #222a38; font-size: 8px; font-weight: 900; }
+    .log-head span:last-child { color: #68758a; font-size: 7px; }
+    .log-row { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 5px; padding: 5px 8px; border-bottom: 1px solid rgba(148,163,184,.09); }
+    .log-row:last-child { border-bottom: 0; }
+    .time { color: #68758a; font: 7px ui-monospace, monospace; }
+    .action b { display: block; font-size: 8px; }
+    .action span { display: block; margin-top: 1px; color: #7d899d; font-size: 7px; }
+    .chip { padding: 3px 5px; border-radius: 6px; background: #171d28; color: #aab5c6; font-size: 7px; white-space: nowrap; }
+    .bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; background: rgba(7,10,17,.97); }
+    .input-row { display: grid; grid-template-columns: 1fr 73px; gap: 6px; padding: 7px 12px 4px; border-top: 1px solid #1d2432; }
+    .input-main { height: 45px; display: grid; place-items: center; border: 0; border-radius: 13px; background: linear-gradient(135deg, #5669dc, #4d61cd); color: #fff; font: 900 11px -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", sans-serif; }
+    .event { height: 45px; display: grid; place-items: center; border: 1px solid #405591; border-radius: 24px; background: transparent; color: #77a2ff; font: 500 8px -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", sans-serif; }
+    .fab { position: absolute; left: 50%; top: 60px; z-index: 3; width: 52px; height: 52px; transform: translateX(-50%); display: grid; place-items: center; padding: 0; border: 3px solid #070a11; border-radius: 50%; background: linear-gradient(180deg, #38bdf8, #00a6ff); box-shadow: 0 6px 18px rgba(0,166,255,.45), 0 0 0 1px rgba(0,166,255,.35); color: #fff; font-size: 30px; font-weight: 400; line-height: 1; }
+    .nav { height: 76px; display: grid; grid-template-columns: repeat(5, 1fr); padding: 4px 3px; border-top: 1px solid #1d2432; color: #738096; text-align: center; }
+    .nav-item { min-width: 0; min-height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; padding: 0 0 3px; border: 0; background: transparent; color: inherit; font: 500 9px -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", sans-serif; }
+    .nav-icon { height: 19px; display: grid; place-items: center; color: currentColor; font-size: 18px; line-height: 1; }
+    .nav-record { justify-content: flex-end; }
+    .nav-record .nav-icon { height: 52px; visibility: hidden; }
+    .nav .active { color: #52d9e4; font-weight: 800; }
+    .scrim { position: absolute; inset: 0; z-index: 5; display: none; background: rgba(3,6,11,.72); }
+    .scrim.open { display: block; }
+    .sheet { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 6; display: none; padding: 16px; border: 1px solid #364156; border-radius: 20px; background: #121823; box-shadow: 0 -16px 55px rgba(0,0,0,.55); }
+    .sheet.open { display: block; }
+    .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .sheet-head b { font-size: 16px; }
+    .close { min-width: 58px; min-height: 36px; border: 1px solid #354057; border-radius: 10px; background: #191f2c; color: #dbe4f1; font-weight: 800; }
+    .sheet-simple { margin-top: 14px; padding: 12px; border-radius: 13px; background: #18202c; color: #eef4ff; font-size: 13px; line-height: 1.7; }
+    .sheet-caution { margin-top: 10px; color: #f1cb5c; font-size: 11px; line-height: 1.6; }
+    .sheet-example { margin-top: 10px; color: #9eabbd; font-size: 11px; line-height: 1.6; }
+    @media (max-width: 410px) { body { padding: 0; } .phone { border-radius: 0; border-left: 0; border-right: 0; } }
+  </style>
+</head>
+<body>
+  <main class="phone" aria-label="実戦記録の整理後モック">
+    <div class="screen">
+      <div class="status"></div>
+      <div class="top"><div class="machine">eリコリス・リコイル #1<small><span class="live">● 実践中</span>　動作確認</small></div><div class="tools"><span class="tool">♧</span><span class="tool">⚙</span><span class="tool">1K</span></div></div>
+      <nav class="tabs"><span class="active">記録</span><span>詳細データ</span><span>大当り履歴</span><span>機種設定</span></nav>
+
+      <section class="card decision">
+        <div class="decision-head"><div><div class="eyebrow">見切りナビ</div><div class="decision-status">続行</div></div><div class="decision-right"><span class="prob">目標達成 82%</span><span class="root-link">根拠 ›</span></div></div>
+        <div class="checks"><span class="done">3K ✓</span><span class="done">5K ✓</span><span class="done">10K ✓</span><span>20K</span></div>
+        <div class="decision-line"><b>11.0K</b><span>次は20K・あと9.0K（約2,250玉）</span></div>
+        <div class="decision-values"><div>実測<b>20.0回/K</b></div><div>目標<b>18.7回/K</b></div></div>
+      </section>
+
+      <div class="section-title"><span>台の見込み</span><small>「？」で意味を見る</small></div>
+      <section class="forecast-grid">
+        <div class="forecast"><div class="forecast-label">真のボーダー<button class="help" type="button" data-help="border" aria-label="真のボーダーの説明">?</button></div><b class="border-value">16.7回/K</b></div>
+        <div class="forecast"><div class="forecast-label">良台スコア<button class="help" type="button" data-help="score" aria-label="良台スコアの説明">?</button></div><b class="score-value">0.9pt</b></div>
+        <div class="forecast"><div class="forecast-label">信頼度<button class="help" type="button" data-help="confidence" aria-label="信頼度の説明">?</button></div><b class="confidence-value">5.2%</b></div>
+        <div class="forecast"><div class="forecast-label">予測回転率<button class="help" type="button" data-help="prediction" aria-label="予測回転率の説明">?</button></div><b class="prediction-value">16.9回/K</b></div>
+      </section>
+      <p class="forecast-note">まだ記録が少ないため、予測は暫定です</p>
+
+      <div class="section-title"><span>投資の内訳</span><small>玉は交換価値で円換算</small></div>
+      <section class="card money"><div class="money-flow"><div class="money-box"><span>現金投資</span><b>6,000円</b></div><span class="op">＋</span><div class="money-box used"><span>使った持ち玉</span><b>1,250玉</b></div><span class="op">＝</span><div class="money-box total"><span>総投資</span><b>11,000円</b></div></div><div class="effective"><span>上皿補正 −800円</span><span>実質投資 <strong>10,200円</strong></span></div></section>
+
+      <div class="section-title"><span>現在と期待</span><small>残高・収益予測</small></div>
+      <section class="balance-expect"><div class="mini mochi"><span>持ち玉</span><b>3,480玉</b></div><div class="mini chodama"><span>貯玉</span><b>18,250玉</b></div><div class="mini expected"><span>期待値/1K</span><b>+142円</b></div><div class="mini expected"><span>ボーダー差</span><b>+0.2回/K</b></div></section>
+
+      <div class="section-title"><span>直近の行動ログ</span><small>すべて見る（6件）›</small></div>
+      <section class="card log">
+        <div class="log-row"><span class="time">23:38</span><span class="action"><b>回転入力</b><span>+21回転</span></span><span class="chip">持ち玉 250玉消費</span></div>
+        <div class="log-row"><span class="time">23:31</span><span class="action"><b>回転入力</b><span>+19回転</span></span><span class="chip">現金 1,000円</span></div>
+        <div class="log-row"><span class="time">23:24</span><span class="action"><b>持ち玉へ切替</b><span>大当たり終了後</span></span><span class="chip">持ち玉 3,730玉</span></div>
+        <div class="log-row"><span class="time">23:20</span><span class="action"><b>上皿補正</b><span>投資価値から差引</span></span><span class="chip">−800円</span></div>
+        <div class="log-row"><span class="time">23:12</span><span class="action"><b>遊技開始</b><span>0回転</span></span><span class="chip">現金遊技</span></div>
+      </section>
+    </div>
+
+    <div class="bottom">
+      <div class="input-row"><button class="input-main" type="button">▣　回転数を入力する</button><button class="event" type="button">＋ イベント</button></div>
+      <button class="fab" type="button" aria-label="記録開始">＋</button>
+      <nav class="nav" aria-label="メインメニュー">
+        <button class="nav-item" type="button"><span class="nav-icon">⌂</span><span>ホーム</span></button>
+        <button class="nav-item" type="button"><span class="nav-icon">▦</span><span>台選び</span></button>
+        <button class="nav-item nav-record active" type="button" aria-current="page"><span class="nav-icon">＋</span><span>記録開始</span></button>
+        <button class="nav-item" type="button"><span class="nav-icon">⌁</span><span>分析</span></button>
+        <button class="nav-item" type="button"><span class="nav-icon">⚙</span><span>設定</span></button>
+      </nav>
+    </div>
+    <div id="help-scrim" class="scrim"></div>
+    <section id="help-sheet" class="sheet" aria-hidden="true"><div class="sheet-head"><b id="help-title">信頼度とは？</b><button id="help-close" class="close" type="button">閉じる</button></div><div id="help-simple" class="sheet-simple"></div><div id="help-caution" class="sheet-caution"></div><div id="help-example" class="sheet-example"></div></section>
+  </main>
+  <script>
+    const HELP = {
+      border: { title: "真のボーダーとは？", simple: "その店の交換率や玉の価値も入れて考えた、平均的に損をしにくくなる最低回転率です。", caution: "16.7回/Kより多く回るほど、長い目では有利になります。", example: "目標18.7回/Kは、真のボーダー16.7回/Kに安全のための余裕を足した数字です。" },
+      score: { title: "良台スコアとは？", simple: "曜日・店舗・機種・釘の変化など、良い台だと考えられる材料をまとめた点数です。", caution: "勝てる確率ではありません。点数が高くても、実際の回転率を確認します。", example: "0.9ptは、今のところ強い根拠が少ない状態です。" },
+      confidence: { title: "信頼度とは？", simple: "予測を支える記録が、どれくらい集まっているかを表す数字です。", caution: "勝率ではありません。5.2%なら、まだ予測が変わりやすい段階です。", example: "目標達成82%でも信頼度5.2%なら、『良さそうだが、まだ記録不足』という意味です。" },
+      prediction: { title: "予測回転率とは？", simple: "過去の記録と今日の実測を合わせて予測した、これからの1,000円あたり回転数です。", caution: "現在の実測20.0回/Kとは別の数字です。", example: "予測16.9回/Kは、過去データを含めると今後は16.9回/K付近になりそう、という意味です。" }
+    };
+    const sheet = document.getElementById("help-sheet");
+    const scrim = document.getElementById("help-scrim");
+    const title = document.getElementById("help-title");
+    const simple = document.getElementById("help-simple");
+    const caution = document.getElementById("help-caution");
+    const example = document.getElementById("help-example");
+    const close = document.getElementById("help-close");
+    function setOpen(open) { sheet.classList.toggle("open", open); scrim.classList.toggle("open", open); sheet.setAttribute("aria-hidden", String(!open)); }
+    document.querySelectorAll("[data-help]").forEach((button) => button.addEventListener("click", () => { const help = HELP[button.dataset.help]; title.textContent = help.title; simple.textContent = help.simple; caution.textContent = help.caution; example.textContent = help.example; setOpen(true); close.focus(); }));
+    close.addEventListener("click", () => setOpen(false));
+    scrim.addEventListener("click", () => setOpen(false));
+  </script>
+</body>
+</html>

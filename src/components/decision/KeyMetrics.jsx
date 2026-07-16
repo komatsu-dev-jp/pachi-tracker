@@ -1,142 +1,181 @@
-import { C, font, mono, sc, sp, f } from "../../constants";
+import { useState } from "react";
+import { C, font, mono, f, sp } from "../../constants";
 
-function MetricCard({ label, value, unit, baseHint, accent, accentBg = true, accentText, hero = false, rawNote }) {
-  const accentColor = accent || C.blue;
+const METRIC_HELP = {
+  trueBorder: {
+    title: "真のボーダーとは？",
+    simple: "この回転率より上なら、長く打ったときにプラスを期待できる境目です。",
+    caution: "交換率や持ち玉の使い方を含めた数字なので、雑誌のボーダーと少し違う場合があります。",
+  },
+  goodMachineScore: {
+    title: "良台スコアとは？",
+    simple: "回りやすさと、データの確かさを1つにまとめた点数です。高いほど良い台の候補です。",
+    caution: "点数だけで決めず、信頼度と予測回転率も一緒に見ます。",
+  },
+  confidence: {
+    title: "信頼度とは？",
+    simple: "今の予測を、どれくらい信じてよいかの目安です。記録が増えるほど上がります。",
+    caution: "当たる確率ではありません。5%なら、まだ記録が少なく判断が早いという意味です。",
+  },
+  predictedRotation: {
+    title: "予測回転率とは？",
+    simple: "今までの記録から予想した、1,000円あたりの回転数です。",
+    caution: "実測値をそのまま使わず、少ない記録で早合点しないように補正しています。",
+  },
+};
+
+function HelpButton({ metricKey, onOpen }) {
+  const item = METRIC_HELP[metricKey];
   return (
-    <div
-      className={`metric-card-v2${accentBg ? " metric-card-v2--accent" : ""}`}
-      style={{ "--metric-accent": accentColor, fontFamily: font }}
+    <button
+      className="metric-help-button b"
+      type="button"
+      aria-label={`${item.title}の説明`}
+      onClick={() => onOpen(metricKey)}
     >
-      <div className="metric-card-v2__label">{label}</div>
-      <div className="metric-card-v2__row">
-        <span
-          className={`metric-card-v2__num${hero ? " metric-card-v2__num--hero" : ""}`}
-          style={{ color: accentText || accentColor, fontFamily: mono }}
-        >
-          {value}
-        </span>
-        {unit && <span className="metric-card-v2__unit">{unit}</span>}
+      ?
+    </button>
+  );
+}
+
+function EvidenceMetric({ label, value, unit, accent, metricKey, onHelp }) {
+  return (
+    <div className="evidence-metric" style={{ "--metric-accent": accent, fontFamily: font }}>
+      <div className="evidence-metric__label">
+        <span>{label}</span>
+        <HelpButton metricKey={metricKey} onOpen={onHelp} />
       </div>
-      {/* 生EV/K を実質EV/Kカード内に小さく併記（参考値・案A） */}
-      {rawNote && <div className="metric-card-v2__raw" style={{ fontFamily: mono }}>{rawNote}</div>}
-      {baseHint && <div className="metric-card-v2__base">{baseHint}</div>}
+      <div className="evidence-metric__value" style={{ fontFamily: mono }}>
+        {value}<small>{unit}</small>
+      </div>
     </div>
   );
 }
 
-function SubMetricCard({ label, value, unit, accent }) {
+function BalanceMetric({ label, value, unit, tone = "neutral", helpKey, onHelp }) {
   return (
-    <div
-      className="metric-card-v2"
-      style={{ "--metric-accent": accent || C.sub, fontFamily: font, gap: 2 }}
-    >
-      <div className="metric-card-v2__label">{label}</div>
-      <div className="metric-card-v2__row">
-        <span
-          className="metric-card-v2__num metric-card-v2__num--small"
-          style={{ color: accent || C.text, fontFamily: mono }}
-        >
-          {value}
-        </span>
-        {unit && <span className="metric-card-v2__unit">{unit}</span>}
+    <div className={`balance-metric is-${tone}`} style={{ fontFamily: font }}>
+      <div className="balance-metric__label">
+        <span>{label}</span>
+        {helpKey && <HelpButton metricKey={helpKey} onOpen={onHelp} />}
       </div>
+      <strong style={{ fontFamily: mono }}>{value}<small>{unit}</small></strong>
     </div>
   );
 }
 
-export function KeyMetrics({ ev, currentBalls, ballsLabel = "持ち玉", playMode }) {
-  const ev1KC = ev.effectiveEV1K ?? ev.ev1KCorrected ?? ev.ev1K ?? 0;
-  const ev1KRaw = ev.ev1K ?? 0;
-  const bDiffC = ev.effectiveBDiff ?? ev.bDiffCorrected ?? ev.bDiff ?? 0;
-  const start1KC = ev.effectiveStart1K ?? ev.start1KCorrected ?? ev.start1K ?? 0;
-  const observedSpinRate = ev.effectiveStart1K ?? ev.start1KCorrected ?? ev.start1K ?? 0;
-  const rawInvest = ev.rawInvest ?? 0;
-  const correctedInvest = ev.correctedInvestYen ?? rawInvest;
+const positive = (value) => Math.max(0, Number(value) || 0);
+const shownYen = (value) => positive(value) > 0 ? f(Math.round(value)) : "—";
+
+export function KeyMetrics({ ev, currentBalls, currentMochiBalls, currentChodama }) {
+  const [helpKey, setHelpKey] = useState(null);
   const evidence = ev.evidence;
+  const expectedPerK = ev.effectiveEV1K ?? ev.ev1KCorrected ?? ev.ev1K ?? 0;
+  const borderDiff = ev.effectiveBDiff ?? ev.bDiffCorrected ?? ev.bDiff ?? 0;
+  const hasObservedRotation = positive(ev.effectiveStart1K ?? ev.start1KCorrected ?? ev.start1K) > 0;
+  const rentBalls = positive(ev.rentBalls) || 250;
+  const cashInvest = positive(ev.cashCostYen ?? ev.rawInvest);
+  const mochiUsed = positive(ev.mochiKCount) * rentBalls;
+  const chodamaUsed = positive(ev.chodamaKCount) * rentBalls;
+  const usedBalls = mochiUsed + chodamaUsed;
+  const usedBallsLabel = mochiUsed > 0 && chodamaUsed > 0
+    ? "使った持ち玉等"
+    : chodamaUsed > 0 ? "使った貯玉" : "使った持ち玉";
+  const heldCost = positive(ev.mochiCostYen) + positive(ev.chodamaCostYen);
+  const grossInvest = cashInvest + heldCost;
+  const trayCredit = positive(ev.economicTrayCreditYen ?? ev.trayBallsYen);
+  const effectiveInvest = positive(ev.economicCostYen ?? ev.correctedInvestYen ?? grossInvest);
+  const mochiBalance = positive(currentMochiBalls ?? currentBalls);
+  const chodamaBalance = positive(currentChodama);
+  const help = helpKey ? METRIC_HELP[helpKey] : null;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
+    <section className="key-metrics-v3" style={{ fontFamily: font }}>
       {evidence && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-            <SubMetricCard
+        <>
+          <div className="metrics-section-head">
+            <b>台の見込み</b>
+            <span>「？」で意味を見る</span>
+          </div>
+          <div className="evidence-metrics-grid">
+            <EvidenceMetric
               label="真のボーダー"
               value={evidence.trueBorder > 0 ? f(evidence.trueBorder, 1) : "—"}
               unit="回/K"
               accent={C.blue}
+              metricKey="trueBorder"
+              onHelp={setHelpKey}
             />
-            <SubMetricCard
+            <EvidenceMetric
               label="良台スコア"
               value={evidence.hasEstimate ? f(evidence.goodMachineScore, 1) : "—"}
               unit="pt"
               accent={evidence.goodMachineScore >= 30 ? C.green : C.yellow}
+              metricKey="goodMachineScore"
+              onHelp={setHelpKey}
             />
-            <SubMetricCard
+            <EvidenceMetric
               label="信頼度"
               value={evidence.hasEstimate ? f(evidence.confidence * 100, 1) : "—"}
               unit="%"
               accent={C.purple}
+              metricKey="confidence"
+              onHelp={setHelpKey}
             />
-            <SubMetricCard
+            <EvidenceMetric
               label="予測回転率"
               value={evidence.hasEstimate ? f(evidence.predictedRotation, 1) : "—"}
               unit="回/K"
               accent={C.teal}
+              metricKey="predictedRotation"
+              onHelp={setHelpKey}
             />
           </div>
-          {evidence.hasEstimate && evidence.predictedHigh > 0 && (
-            <div style={{ fontSize: 10, color: C.sub, textAlign: "right", fontFamily: mono }}>
-              予測レンジ {f(evidence.predictedLow, 1)}〜{f(evidence.predictedHigh, 1)} 回/K
+          {!evidence.hasEstimate && <p className="evidence-estimate-note">まだ記録が少ないため、予測は暫定です</p>}
+        </>
+      )}
+
+      <div className="metrics-section-head">
+        <b>投資の内訳</b>
+        <span>玉は交換価値で円換算</span>
+      </div>
+      <div className="investment-breakdown">
+        <div className="investment-flow">
+          <div><span>現金投資</span><strong>{shownYen(cashInvest)}<small>円</small></strong></div>
+          <i>＋</i>
+          <div className="is-held"><span>{usedBallsLabel}</span><strong>{usedBalls > 0 ? f(Math.round(usedBalls)) : "—"}<small>玉</small></strong></div>
+          <i>＝</i>
+          <div className="is-total"><span>総投資</span><strong>{shownYen(grossInvest)}<small>円</small></strong></div>
+        </div>
+        <div className="investment-effective">
+          <span>上皿補正 {trayCredit > 0 ? `−${f(Math.round(trayCredit))}円` : "—"}</span>
+          <b>実質投資 <strong>{shownYen(effectiveInvest)}<small>円</small></strong></b>
+        </div>
+      </div>
+
+      <div className="metrics-section-head">
+        <b>現在と期待</b>
+        <span>残高・収益予測</span>
+      </div>
+      <div className="balance-metrics-grid">
+        <BalanceMetric label="持ち玉" value={mochiBalance > 0 ? f(Math.round(mochiBalance)) : "—"} unit="玉" tone="mochi" />
+        <BalanceMetric label="貯玉" value={chodamaBalance > 0 ? f(Math.round(chodamaBalance)) : "—"} unit="玉" tone="chodama" />
+        <BalanceMetric label="期待値/1K" value={expectedPerK !== 0 ? sp(expectedPerK, 0) : "—"} unit="円" tone="expected" />
+        <BalanceMetric label="ボーダー差" value={hasObservedRotation && borderDiff !== 0 ? sp(borderDiff, 1) : "—"} unit="回/K" tone="expected" />
+      </div>
+
+      {help && (
+        <div className="metric-help-backdrop" role="presentation" onClick={() => setHelpKey(null)}>
+          <div className="metric-help-sheet" role="dialog" aria-modal="true" aria-labelledby="metric-help-title" onClick={(event) => event.stopPropagation()}>
+            <div className="metric-help-sheet__head">
+              <b id="metric-help-title">{help.title}</b>
+              <button className="b" type="button" onClick={() => setHelpKey(null)}>閉じる</button>
             </div>
-          )}
+            <p>{help.simple}</p>
+            <small>{help.caution}</small>
+          </div>
         </div>
       )}
-      {/* 上段（案A）：実質EV/K（旧「補正後EV/K」）を主役（大）＋ ボーダー差 の2枚。生EV/K は実質EV/Kカード内に小さく併記 */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.35fr 1fr", gap: 8 }}>
-        <MetricCard
-          label="実質EV/K"
-          value={ev1KC !== 0 ? sp(ev1KC, 0) : "—"}
-          unit="円"
-          hero
-          rawNote={`生 ${ev1KRaw !== 0 ? sp(ev1KRaw, 0) : "—"}円`}
-          baseHint="上皿込み・基準+100"
-          accent={C.yellow}
-        />
-        <MetricCard
-          label="ボーダー差"
-          value={start1KC > 0 && bDiffC !== 0 ? sp(bDiffC, 1) : "—"}
-          unit="回/K"
-          baseHint="(基準 +0.5超え)"
-          accent={start1KC > 0 ? (sc(bDiffC) === C.sub ? C.green : sc(bDiffC)) : C.sub}
-        />
-      </div>
-      {/* 下段：予測回転率 / 総投資 / 持ち玉 / 実質投資 */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-        <SubMetricCard
-          label="実測回転率"
-          value={observedSpinRate > 0 ? f(observedSpinRate, 1) : "—"}
-          unit="回/K"
-          accent={C.text}
-        />
-        <SubMetricCard
-          label="総投資"
-          value={rawInvest > 0 ? f(rawInvest) : "—"}
-          unit="円"
-          accent={C.text}
-        />
-        <SubMetricCard
-          label={ballsLabel}
-          value={currentBalls != null && currentBalls > 0 ? f(currentBalls) : "—"}
-          unit="玉"
-          accent={playMode === "chodama" ? C.purple : C.text}
-        />
-        <SubMetricCard
-          label="実質投資"
-          value={correctedInvest !== 0 ? f(correctedInvest) : "—"}
-          unit="円"
-          accent={C.green}
-        />
-      </div>
-    </div>
+    </section>
   );
 }

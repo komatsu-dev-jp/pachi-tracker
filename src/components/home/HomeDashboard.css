@@ -116,19 +116,14 @@
 .home-active-state i { width: 6px; height: 6px; border-radius: 50%; background: var(--home-green); }
 .home-active-state b { margin-left: 5px; padding: 4px 8px; border-radius: 8px; color: #7c8cff; background: rgba(78,91,169,.14); font-size: 11px; }
 .home-active-store__main { display: flex; gap: 11px; }
-.home-store-logo { display: flex; width: 45px; height: 45px; flex: 0 0 auto; flex-direction: column; align-items: center; justify-content: center; border: 1px solid var(--border-hi); border-radius: 50%; color: #05070d; background: #fff; }
-.home-store-logo__m { position: relative; width: 29px; height: 24px; overflow: hidden; }
-.home-store-logo__m::before, .home-store-logo__m::after { content: ""; position: absolute; top: 2px; width: 11px; height: 22px; background: #ef0611; }
-.home-store-logo__m::before { left: 2px; transform: skew(-8deg); } .home-store-logo__m::after { right: 2px; transform: skew(8deg); }
-.home-store-logo__m span { position: absolute; z-index: 1; left: 50%; top: 8px; width: 12px; height: 12px; transform: translateX(-50%); border-radius: 50%; background: radial-gradient(circle at 40% 35%, #ff7171, #c0000a 66%); }
-.home-store-logo small { margin-top: -1px; font-size: 5px; font-weight: 950; letter-spacing: .08em; }
+.home-store-logo { display: grid; place-items: center; width: 45px; height: 45px; flex: 0 0 auto; border: 1px solid rgba(104,123,255,.28); border-radius: 50%; color: #8aa0ff; background: rgba(83,99,184,.12); }
 .home-active-store__content { min-width: 0; flex: 1; }
 .home-active-store__content > strong { display: block; overflow: hidden; font-size: 14px; line-height: 1.2; white-space: nowrap; text-overflow: ellipsis; }
 .home-store-score { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
 .home-store-score > span { flex: 0 0 auto; color: var(--sub-hi); font-size: 10px; }
 .home-store-score b { margin-left: 5px; color: var(--home-cyan); font-size: 16px; }
 .home-store-score > i { height: 6px; flex: 1; overflow: hidden; border-radius: 99px; background: var(--surface-hi); }
-.home-store-score > i span { display: block; width: 78%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #75a2ff, var(--home-cyan)); }
+.home-store-score > i span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #75a2ff, var(--home-cyan)); }
 .home-store-metrics { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 3px; }
 .home-store-metrics > span { display: flex; min-width: 0; flex-direction: column; align-items: center; border-left: 1px solid var(--border-hi); }
 .home-store-metrics > span:first-child { align-items: flex-start; border-left: 0; }
@@ -139,6 +134,7 @@
 .home-active-store__footer > span { display: flex; min-width: 0; align-items: center; gap: 7px; color: var(--home-yellow); font-size: 10px; font-weight: 750; white-space: nowrap; }
 
 .home-recent-card { padding-bottom: 6px; }
+.home-empty-state { padding: 10px 2px 12px; color: var(--sub-hi); font-size: 11px; line-height: 1.6; }
 .home-recent-row { display: grid; grid-template-columns: 38px minmax(0,1fr) auto 16px; align-items: center; width: 100%; padding: 0; border: 0; color: var(--text); background: transparent; text-align: left; cursor: pointer; }
 .home-machine-mark { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; color: white; background: linear-gradient(145deg, #e85b16, #ff750c); font-size: 20px; font-weight: 900; box-shadow: inset 0 0 0 1px rgba(255,255,255,.23); }
 .home-recent-copy { display: flex; min-width: 0; flex-direction: column; margin-left: 12px; }

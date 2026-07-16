@@ -394,6 +394,17 @@ function heatTone(machine) {
   };
 }
 
+function liveBadgeLabel(decision) {
+  if (!decision) return "";
+  if (decision.action === "collecting") return `${decision.nextCheckpointK || 3}K計測`;
+  if (decision.action === "continue_strong") return "強く続行";
+  if (decision.action === "continue") return "続行";
+  if (decision.action === "stop_candidate") return "撤退候補";
+  if (decision.action === "compare") return "他台比較";
+  if (decision.action === "stop") return "撤退";
+  return "記録中";
+}
+
 function HeatMachineCell({ number, machine, dim, selected, opposite, onSelect }) {
   const tone = heatTone(machine);
   const label = machine
@@ -424,6 +435,11 @@ function HeatMachineCell({ number, machine, dim, selected, opposite, onSelect })
         {machine ? fmt(machine.rot, 1) : "—"}
       </span>
       <span className="strategy-heat-unit">{machine ? "回/k" : "未計測"}</span>
+      {machine?.liveDecision && (
+        <span className={`strategy-live-badge is-${machine.liveDecision.action}`}>
+          {liveBadgeLabel(machine.liveDecision)}
+        </span>
+      )}
     </button>
   );
 }
@@ -784,11 +800,12 @@ export default function StrategyMapDashboard({ S, onBack }) {
   );
   const data = useMemo(() => buildStrategyMap({
     playingNum,
+    liveDecision: S?.ev?.liveDecision || null,
     scans: deltaScans,
     customMachines,
     hallMaps: isDemo ? P_EVIDENCE_DEMO_HALL_MAPS : S?.hallMaps,
     selectedStoreId: isDemo ? "pe-demo-store" : S?.selectedStoreId,
-  }), [playingNum, deltaScans, customMachines, isDemo, S?.hallMaps, S?.selectedStoreId]);
+  }), [playingNum, deltaScans, customMachines, isDemo, S?.hallMaps, S?.selectedStoreId, S?.ev?.liveDecision]);
   const updatedAt = useMemo(() => nowHM(), []);
   const [filter, setFilter] = useState("all");
   const [selectedId, setSelectedId] = useState(data.leadId);

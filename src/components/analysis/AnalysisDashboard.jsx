@@ -78,7 +78,7 @@ const DEMO_MACHINES = [
 const DEMO_STORES = [
   { storeName: "丸之内ヘリオス2000竹原", size: "大型店", spin: 19.7, ev: 18240, actual: 15920, days: 3 },
   { storeName: "BIG ROCKY北久米", size: "大型店", spin: 18.9, ev: 12530, actual: 10120, days: 2 },
-  { storeName: "マルハン今治店", size: "大型店", spin: 17.6, ev: 4220, actual: 2910, days: 1 },
+  { storeName: "サンプル店舗A", size: "大型店", spin: 17.6, ev: 4220, actual: 2910, days: 1 },
   { storeName: "ダイナム愛媛北条店", size: "中型店", spin: 16.4, ev: -3120, actual: -1880, days: 1 },
   { storeName: "BIG ROCKY堀江店", size: "中型店", spin: 15.8, ev: -5800, actual: -4220, days: 1 },
 ];
@@ -1367,7 +1367,8 @@ export default function AnalysisDashboard({
   onChangeFilters,
 }) {
   const archives = useMemo(() => Array.isArray(S?.archives) ? S.archives : [], [S]);
-  const isDemo = archives.length === 0;
+  // 審査版では未記録時に架空の収支・店舗を表示せず、空状態を表示する。
+  const isDemo = false;
   const [internalTab, setInternalTab] = useState("month");
   const rawPeriodTab = externalPeriodTab || internalTab;
   // 旧上位タブ「カレンダー」(記録エディタ単独タブ)の永続値は廃止。月別として扱う。

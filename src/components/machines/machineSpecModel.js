@@ -14,6 +14,7 @@ export const fallbackMachine = {
   border: "17.36",
   avgPayout: "1,350",
   stdDev: "13,000",
+  rotationStdDevPerK: "",
   rushEntry: "60%",
   rushContinue: "75%",
   hesoAvg: "1,500",
@@ -285,6 +286,7 @@ export function normalizeMachine(data) {
     border: formatBorder(data),
     avgPayout: formatNumber(data.avgPayoutPerHit, fallbackMachine.avgPayout),
     stdDev: Number(data.stdDev) > 0 ? formatNumber(data.stdDev) : (data.stdDevLabel || "未公表"),
+    rotationStdDevPerK: rawAnyNum(data.rotationStdDevPerK),
     stdDevSource: data.stdDevLabel || (Number(data.stdDev) > 0 ? "登録値" : "未公表"),
     rushEntry: Number(data.rushEntryRate) > 0 ? `${data.rushEntryRate}%` : fallbackMachine.rushEntry,
     rushContinue: Number(data.rushContinueRate) > 0 ? `${data.rushContinueRate}%` : fallbackMachine.rushContinue,
@@ -383,6 +385,7 @@ export function buildMachineOverride(rawSource, model) {
   writeNumIfChanged(out, "unitCost", model.unitCost, init.unitCost);
   writeNumIfChanged(out, "initialProb", model.initialProb, init.initialProb);
   writeNumIfChanged(out, "muraCoef", model.muraCoef, init.muraCoef);
+  writeNumIfChanged(out, "rotationStdDevPerK", model.rotationStdDevPerK, init.rotationStdDevPerK);
   writeNumIfChanged(out, "spatialSens", model.spatialSens, init.spatialSens);
   writeNumIfChanged(out, "regimeSens", model.regimeSens, init.regimeSens);
   writeNumIfChanged(out, "spec1R", model.spec1R, init.spec1R);

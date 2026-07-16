@@ -50,6 +50,24 @@ test("現金と持ち玉のコストを非等価で分離", () => {
   close(result.heldCostPerSpin, (250 * (1000 / 280)) / 18);
   assert.equal(result.selectedEV, result.heldEV);
   assert.ok(result.heldEV > result.cashEV);
+  close(result.arrivalInvestmentCash, 200 * (1000 / 18));
+  close(result.arrivalInvestmentHeld, 200 * ((250 * (1000 / 280)) / 18));
+});
+
+test("当たらず遊タイムまで回す必要資金を逆算", () => {
+  const result = calculateYutimeEV({ ...base, budgetYen: 5000 });
+  close(result.selectedArrivalInvestment, 200 * (1000 / 18));
+  assert.equal(result.affordableSpins, 90);
+  assert.equal(result.budgetCoveredSpins, 90);
+  close(result.budgetShortfallYen, result.selectedArrivalInvestment - 5000);
+  assert.equal(result.budgetCanReach, false);
+});
+
+test("予算が十分なら不足0円・残額を返す", () => {
+  const result = calculateYutimeEV({ ...base, budgetYen: 12000 });
+  assert.equal(result.budgetShortfallYen, 0);
+  close(result.budgetSurplusYen, 12000 - result.selectedArrivalInvestment);
+  assert.equal(result.budgetCanReach, true);
 });
 
 test("1円パチンコの持ち玉コスト", () => {
@@ -64,6 +82,7 @@ test("発動到達済みは残り投資0", () => {
   assert.equal(result.reachProbability, 1);
   assert.equal(result.expectedSpins, 0);
   assert.equal(result.expectedInvestmentCash, 0);
+  assert.equal(result.selectedArrivalInvestment, 0);
   assert.equal(result.cashEV, 7000 * 4);
 });
 

@@ -70,9 +70,11 @@ export default function StoreAnalysisTab({ data, onNavigateTab }) {
 
   return (
     <div className="px-3 pt-3 pb-6">
-      <div className="mb-3 rounded-xl border border-[var(--orange)]/40 bg-[var(--orange)]/10 px-3 py-2.5 text-[11px] font-bold text-[var(--orange)]">
-        サンプル表示：分析データはまだ実績集計に接続されていません
-      </div>
+      {dataSufficiency.validRecords === 0 && (
+        <div className="mb-3 rounded-xl border border-[var(--orange)]/40 bg-[var(--orange)]/10 px-3 py-2.5 text-[11px] font-bold text-[var(--orange)]">
+          この店舗の実戦記録はまだありません
+        </div>
+      )}
       {/* 1. データ充足状況 */}
       <SectionCard>
         <SectionHeader title="データ充足状況" />
@@ -89,7 +91,9 @@ export default function StoreAnalysisTab({ data, onNavigateTab }) {
       <SectionCard>
         <SectionHeader title="傾向" />
         <div className="grid grid-cols-2 gap-2 px-3 pb-3">
-          {trends.map((trend) => (
+          {trends.length === 0 ? (
+            <div className="col-span-2 py-3 text-center text-[11px] text-[var(--sub)]">記録を追加すると傾向が表示されます</div>
+          ) : trends.map((trend) => (
             <TrendRow key={trend.id} trend={trend} />
           ))}
         </div>

@@ -38,9 +38,29 @@ export default function StoreDetail({ storeId, onBack, onOpenSettings, S }) {
         chodamaReplayLimit: S?.chodamaReplayLimit,
         currentRentBalls: S?.rentBalls,
         currentExRate: S?.exRate,
+        archives: S?.archives,
       }),
-    [S?.stores, storeId, S?.chodamaReplayLimit, S?.rentBalls, S?.exRate]
+    [S?.stores, S?.archives, storeId, S?.chodamaReplayLimit, S?.rentBalls, S?.exRate]
   );
+
+  if (!data.isRealStore) {
+    return (
+      <div className="flex h-full min-h-0 flex-1 flex-col" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+        <div className="flex min-h-[48px] items-center justify-between px-2">
+          <button type="button" onClick={onBack} aria-label="戻る" className="flex h-11 w-11 items-center justify-center rounded-full text-[var(--text)] active:opacity-60">
+            <ChevronLeft size={22} />
+          </button>
+          <h1 className="text-[15px] font-bold text-[var(--text)]">店舗詳細</h1>
+          <div aria-hidden="true" className="h-11 w-11" />
+        </div>
+        <div className="mx-3 mt-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 text-center shadow-[var(--card-shadow)]">
+          <div className="text-[15px] font-bold text-[var(--text)]">店舗がまだ登録されていません</div>
+          <div className="mt-2 text-[12px] leading-6 text-[var(--sub)]">設定画面で店舗を登録すると、店舗別の記録と分析を確認できます。</div>
+          <button type="button" onClick={onOpenSettings} className="mt-4 min-h-11 rounded-xl bg-[var(--blue)] px-5 text-[13px] font-bold text-white">設定画面を開く</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden" data-store-id={storeId ?? data.id}>
@@ -73,7 +93,7 @@ export default function StoreDetail({ storeId, onBack, onOpenSettings, S }) {
               <div className="truncate text-[17px] font-bold text-[var(--text)]">{data.name}</div>
               <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1.5">
                 <span className="text-[12px] font-semibold text-[var(--sub-hi)]">
-                  店舗分析度 <b className="text-[15px] font-black text-[var(--blue)]">{data.analysisScore}%</b>
+                  記録充足度 <b className="text-[15px] font-black text-[var(--blue)]">{data.analysisScore}%</b>
                 </span>
                 <Badge tone="amber">データ信頼度 {data.dataReliability}</Badge>
                 <Badge tone="green" dot>

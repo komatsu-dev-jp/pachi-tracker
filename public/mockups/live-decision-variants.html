@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>見切りナビ UIモック 3案</title>
+  <style>
+    :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: radial-gradient(circle at 50% -15%, #16324e 0, #07101b 37%, #02060c 100%); color: #e9f1fb; }
+    .board { width: 1310px; min-height: 1010px; margin: 0 auto; padding: 28px 24px 36px; }
+    .board-head { display: flex; align-items: end; justify-content: space-between; margin: 0 4px 22px; }
+    .board-head h1 { margin: 0; font-size: 25px; letter-spacing: .04em; }
+    .board-head p { margin: 6px 0 0; color: #91a5bb; font-size: 12px; }
+    .dummy { padding: 7px 12px; border: 1px solid rgba(56,189,248,.42); border-radius: 999px; background: rgba(56,189,248,.09); color: #67e8f9; font-size: 11px; font-weight: 800; }
+    .variants { display: grid; grid-template-columns: repeat(3, 390px); gap: 44px; }
+    .variant-label { margin: 0 0 10px; display: flex; align-items: center; justify-content: space-between; }
+    .variant-label strong { font-size: 15px; }
+    .variant-label span { color: #8da1b7; font-size: 10px; }
+    .phone { position: relative; width: 390px; height: 844px; overflow: hidden; border: 1px solid rgba(148,163,184,.34); border-radius: 30px; background: #030812; box-shadow: 0 22px 55px rgba(0,0,0,.45), 0 0 0 6px rgba(7,16,27,.68); }
+    .status { height: 21px; display: flex; justify-content: center; align-items: center; color: #65778a; font: 700 8px ui-monospace, monospace; }
+    .app-head { height: 74px; padding: 7px 14px 10px; display: flex; justify-content: space-between; border-bottom: 1px solid #182434; }
+    .machine strong { display: block; font-size: 14px; }
+    .machine small { display: inline-flex; margin-top: 7px; padding: 3px 8px; border-radius: 999px; color: #4ade80; background: rgba(34,197,94,.14); border: 1px solid rgba(74,222,128,.3); font-size: 8px; font-weight: 900; }
+    .head-actions { display: flex; gap: 7px; align-items: center; }
+    .head-actions i { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; background: #101a29; color: #9fb0c4; font-size: 11px; font-style: normal; }
+    .tabs { height: 47px; display: grid; grid-template-columns: repeat(4,1fr); border-bottom: 1px solid #182434; }
+    .tabs span { display: grid; place-items: center; color: #718296; font-size: 9px; font-weight: 800; }
+    .tabs .active { color: #7dd3fc; border-bottom: 3px solid #38bdf8; }
+    .scroll { height: 642px; overflow: hidden; padding: 11px 12px 100px; }
+    .card { border: 1px solid #27364a; border-radius: 17px; background: linear-gradient(145deg,#101c2b,#08111d); }
+    .green-card { border-color: rgba(52,211,153,.68); box-shadow: 0 0 22px rgba(52,211,153,.10); }
+    .cyan-card { border-color: rgba(34,211,238,.62); box-shadow: 0 0 22px rgba(34,211,238,.09); }
+    .orange-card { border-color: rgba(251,146,60,.56); }
+    .eyebrow { color: #8aa0b7; font-size: 9px; font-weight: 900; letter-spacing: .08em; }
+    .pill { padding: 5px 8px; border: 1px solid rgba(52,211,153,.5); border-radius: 999px; color: #4ade80; background: rgba(34,197,94,.10); font-size: 9px; font-weight: 900; }
+    .progress { display: grid; grid-template-columns: repeat(4,1fr); gap: 4px; margin-top: 11px; }
+    .progress b { height: 27px; display: grid; place-items: center; border: 1px solid #28374a; border-radius: 7px; color: #62748a; font-size: 9px; }
+    .progress .done { color: #dcfce7; background: rgba(34,197,94,.17); border-color: #34d399; }
+    .progress .next { color: #67e8f9; border-color: #22d3ee; }
+    .triple { display: grid; grid-template-columns: repeat(3,1fr); margin-top: 11px; border: 1px solid #233247; border-radius: 11px; overflow: hidden; }
+    .triple div { padding: 8px 4px; text-align: center; border-right: 1px solid #233247; }
+    .triple div:last-child { border: 0; }
+    .triple span { display: block; color: #73869b; font-size: 8px; }
+    .triple strong { display: inline-block; margin-top: 4px; color: #fff; font: 900 17px ui-monospace,monospace; }
+    .triple small { margin-left: 2px; color: #718296; font-size: 7px; }
+    .kpis { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; margin-top: 8px; }
+    .kpi { min-height: 64px; padding: 9px 8px; border: 1px solid #263449; border-radius: 12px; background: #0a1320; }
+    .kpi span { display: block; color: #7f91a6; font-size: 7.5px; font-weight: 700; }
+    .kpi strong { display: inline-block; margin-top: 8px; color: #e6edf6; font: 900 14px ui-monospace, monospace; }
+    .kpi small { color: #718296; font-size: 6.5px; }
+    .kpi.good strong { color: #4ade80; }
+    .kpi.cyan strong { color: #22d3ee; }
+    .kpi.yellow strong { color: #facc15; }
+    .timeline { margin-top: 9px; padding: 10px 11px; }
+    .section-title { display: flex; justify-content: space-between; align-items: center; font-size: 10px; font-weight: 900; }
+    .section-title small { color: #65788d; font-size: 7px; }
+    .log { display: grid; grid-template-columns: 39px 11px 1fr auto; align-items: center; gap: 5px; min-height: 29px; color: #b5c3d2; font-size: 8px; border-bottom: 1px solid rgba(148,163,184,.10); }
+    .log:last-child { border: 0; }
+    .log time { color: #64748b; font: 700 7.5px ui-monospace,monospace; }
+    .log i { width: 7px; height: 7px; border-radius: 50%; background: #22d3ee; box-shadow: 0 0 8px #22d3ee; }
+    .log b { color: #e5edf7; }
+    .log em { color: #4ade80; font-style: normal; font-weight: 900; }
+    .reason { margin-top: 8px; padding: 10px 11px; }
+    .reason-row { margin-top: 7px; display: flex; align-items: flex-start; gap: 7px; color: #b7c4d2; font-size: 8.5px; line-height: 1.45; }
+    .reason-row i { color: #4ade80; font-style: normal; }
+    .input { position: absolute; left: 12px; right: 72px; bottom: 49px; height: 56px; display: grid; place-items: center; border-radius: 14px; color: #fff; background: linear-gradient(135deg,#2563eb,#4f46e5); font-size: 14px; font-weight: 900; box-shadow: 0 8px 28px rgba(37,99,235,.28); }
+    .fab { position: absolute; right: 12px; bottom: 49px; width: 52px; height: 52px; display: grid; place-items: center; border: 1px solid #315174; border-radius: 50%; color: #38bdf8; background: #0d1725; font-size: 24px; }
+    .nav { position: absolute; bottom: 0; left: 0; right: 0; height: 52px; display: grid; grid-template-columns: repeat(4,1fr); background: rgba(4,9,17,.97); border-top: 1px solid #182434; }
+    .nav span { display: grid; place-items: center; color: #516275; font-size: 8px; }
+    .nav .on { color: #38bdf8; }
+
+    /* A */
+    .hero-a { padding: 13px; }
+    .hero-a-top { display: flex; justify-content: space-between; align-items: start; }
+    .hero-a h2 { margin: 3px 0 0; color: #4ade80; font-size: 27px; line-height: 1; }
+    .current { display: flex; align-items: baseline; gap: 8px; margin-top: 11px; }
+    .current strong { color: #4ade80; font: 900 24px ui-monospace,monospace; }
+    .current span { color: #b7c5d3; font-size: 9px; font-weight: 800; }
+    .explain { margin: 8px 0 0; color: #c3d0dd; font-size: 9px; line-height: 1.5; }
+
+    /* B */
+    .hero-b { padding: 13px; }
+    .hero-b-head { display: flex; justify-content: space-between; align-items: center; }
+    .verdict-inline { color: #4ade80; font-size: 18px; font-weight: 950; }
+    .versus { display: grid; grid-template-columns: 1fr 38px 1fr; align-items: center; margin-top: 12px; }
+    .versus div { text-align: center; }
+    .versus span { display: block; color: #718397; font-size: 8px; }
+    .versus strong { display: block; margin-top: 5px; font: 900 31px ui-monospace,monospace; }
+    .versus .actual strong { color: #22d3ee; }
+    .versus .target strong { color: #facc15; }
+    .versus b { color: #4d6075; text-align: center; }
+    .bar { height: 8px; margin-top: 11px; overflow: hidden; border-radius: 99px; background: #172334; }
+    .bar i { display: block; width: 72%; height: 100%; background: linear-gradient(90deg,#22d3ee,#4ade80); box-shadow: 0 0 10px #22d3ee; }
+    .bar-label { display: flex; justify-content: space-between; margin-top: 5px; color: #8295aa; font-size: 8px; }
+    .next-card { margin-top: 8px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; }
+    .next-card strong { color: #67e8f9; font-size: 13px; }
+    .next-card span { color: #8fa3b8; font-size: 8px; }
+
+    /* C */
+    .action-banner { padding: 12px 13px; display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; background: linear-gradient(120deg,rgba(34,197,94,.22),rgba(8,17,29,.96)); }
+    .action-banner h2 { margin: 3px 0 0; color: #fff; font-size: 21px; }
+    .action-banner h2 b { color: #4ade80; }
+    .action-score { width: 58px; height: 58px; display: grid; place-items: center; border-radius: 50%; border: 6px solid #34d399; color: #fff; font: 900 16px ui-monospace,monospace; box-shadow: 0 0 18px rgba(52,211,153,.24); }
+    .action-sub { grid-column: 1 / -1; color: #a9bacb; font-size: 8.5px; }
+    .steps { margin-top: 8px; padding: 10px 11px; }
+    .step { display: grid; grid-template-columns: 20px 1fr auto; align-items: center; min-height: 31px; border-bottom: 1px solid rgba(148,163,184,.10); font-size: 8.5px; }
+    .step:last-child { border: 0; }
+    .step i { width: 17px; height: 17px; display: grid; place-items: center; border-radius: 50%; background: rgba(34,197,94,.14); color: #4ade80; font-style: normal; font-weight: 900; }
+    .step b { color: #dbe6f1; }
+    .step em { color: #8ea1b5; font-style: normal; }
+    .mini-kpis { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; margin-top: 8px; }
+    .mini-kpis div { padding: 9px 8px; border: 1px solid #263449; border-radius: 11px; background: #0a1320; }
+    .mini-kpis span { color: #7f91a6; font-size: 7px; }
+    .mini-kpis strong { display: block; margin-top: 5px; color: #fff; font: 900 14px ui-monospace,monospace; }
+    .note { width: 100%; margin-top: 22px; padding: 12px 16px; border: 1px solid rgba(148,163,184,.18); border-radius: 13px; background: rgba(10,19,32,.78); color: #9dafc1; font-size: 11px; line-height: 1.6; }
+    .note b { color: #e8f0f9; }
+  </style>
+</head>
+<body>
+  <main class="board">
+    <header class="board-head">
+      <div><h1>ダミーデータ入り「見切りナビ」UI比較</h1><p>同じ実戦データを、現場での見え方が異なる3案で比較</p></div>
+      <div class="dummy">DUMMY DATA｜5.0K・通常104回転</div>
+    </header>
+    <section class="variants">
+      <div>
+        <div class="variant-label"><strong>A｜結論優先</strong><span>現行案を自然に発展</span></div>
+        <article class="phone">
+          <div class="status">12:48　●●●　5G</div>
+          <header class="app-head"><div class="machine"><strong>eリコリス・リコイル <small>#101</small></strong><small>● 実戦中</small></div><div class="head-actions"><i>♧</i><i>⚙</i><i>1K</i></div></header>
+          <div class="tabs"><span class="active">◉ 記録</span><span>▥ 詳細データ</span><span>☆ 大当たり履歴</span><span>⚙ 機種設定</span></div>
+          <div class="scroll">
+            <section class="card green-card hero-a">
+              <div class="hero-a-top"><div><span class="eyebrow">見切りナビ</span><h2>続 行</h2></div><span class="pill">目標達成 72%</span></div>
+              <div class="progress"><b class="done">3K ✓</b><b class="done">5K ✓</b><b class="next">10K</b><b>20K</b></div>
+              <div class="current"><strong>5.0K</strong><span>次は10K・あと5.0K（約1,250玉）</span></div>
+              <p class="explain">実測20.8回/K。目標18.7回/Kを上回っています。次の固定地点まで続けます。</p>
+              <div class="triple"><div><span>実測</span><strong>20.8</strong><small>回/K</small></div><div><span>目標</span><strong>18.7</strong><small>回/K</small></div><div><span>使用量</span><strong>1,250</strong><small>玉</small></div></div>
+            </section>
+            <div class="kpis"><div class="kpi"><span>真のボーダー</span><strong>16.7</strong><small>回/K</small></div><div class="kpi yellow"><span>良台スコア</span><strong>74</strong><small>pt</small></div><div class="kpi"><span>信頼度</span><strong>78</strong><small>%</small></div><div class="kpi cyan"><span>予測回転率</span><strong>20.3</strong><small>回/K</small></div></div>
+            <section class="card timeline"><div class="section-title">直近の行動ログ <small>自動保存</small></div><div class="log"><time>12:15</time><i></i><b>1K入力</b><em>20回転</em></div><div class="log"><time>12:31</time><i></i><b>3K判定</b><em>62回転・続行</em></div><div class="log"><time>12:48</time><i></i><b>5K判定</b><em>104回転・続行</em></div></section>
+            <section class="card reason"><div class="section-title">判定の根拠</div><div class="reason-row"><i>✓</i><span>目標より実測が+2.1回/K上です</span></div><div class="reason-row"><i>✓</i><span>5K地点の目標達成確率は72%です</span></div></section>
+          </div>
+          <div class="input">▣　回転数を入力する</div><div class="fab">＋</div><nav class="nav"><span>⌂ ホーム</span><span>▦ 台選び</span><span class="on">● 記録開始</span><span>⚙ 設定</span></nav>
+        </article>
+      </div>
+
+      <div>
+        <div class="variant-label"><strong>B｜実測比較</strong><span>数字に慣れた人向け</span></div>
+        <article class="phone">
+          <div class="status">12:48　●●●　5G</div>
+          <header class="app-head"><div class="machine"><strong>eリコリス・リコイル <small>#101</small></strong><small>● 実戦中</small></div><div class="head-actions"><i>♧</i><i>⚙</i><i>1K</i></div></header>
+          <div class="tabs"><span class="active">◉ 記録</span><span>▥ 詳細データ</span><span>☆ 大当たり履歴</span><span>⚙ 機種設定</span></div>
+          <div class="scroll">
+            <section class="card cyan-card hero-b">
+              <div class="hero-b-head"><span class="eyebrow">5Kチェック結果</span><span class="verdict-inline">続行 72%</span></div>
+              <div class="versus"><div class="actual"><span>あなたの実測</span><strong>20.8</strong><span>回/K</span></div><b>VS</b><div class="target"><span>撤退しない目標</span><strong>18.7</strong><span>回/K</span></div></div>
+              <div class="bar"><i></i></div><div class="bar-label"><span>撤退寄り</span><b>目標を超える確率 72%</b><span>続行寄り</span></div>
+              <div class="progress"><b class="done">3K ✓</b><b class="done">5K ✓</b><b class="next">10K</b><b>20K</b></div>
+            </section>
+            <section class="card next-card"><div><span>次の判断まで</span><strong>あと5.0K</strong></div><div><span>使用できる目安</span><strong>約1,250玉</strong></div></section>
+            <div class="kpis"><div class="kpi good"><span>実質EV/K</span><strong>+216</strong><small>円</small></div><div class="kpi yellow"><span>良台スコア</span><strong>74</strong><small>pt</small></div><div class="kpi"><span>信頼度</span><strong>78</strong><small>%</small></div><div class="kpi cyan"><span>予測回転率</span><strong>20.3</strong><small>回/K</small></div></div>
+            <section class="card reason"><div class="section-title">今の判断理由</div><div class="reason-row"><i>✓</i><span>大当たりではなく、通常104回転と使用1,250玉だけで判定</span></div><div class="reason-row"><i>✓</i><span>過去データは最大3K相当までに制限</span></div></section>
+            <section class="card timeline"><div class="section-title">直近の行動ログ <small>3件</small></div><div class="log"><time>12:15</time><i></i><b>1K入力</b><em>20回転</em></div><div class="log"><time>12:31</time><i></i><b>3K判定</b><em>続行</em></div><div class="log"><time>12:48</time><i></i><b>5K判定</b><em>続行</em></div></section>
+          </div>
+          <div class="input">▣　回転数を入力する</div><div class="fab">＋</div><nav class="nav"><span>⌂ ホーム</span><span>▦ 台選び</span><span class="on">● 記録開始</span><span>⚙ 設定</span></nav>
+        </article>
+      </div>
+
+      <div>
+        <div class="variant-label"><strong>C｜次の行動優先</strong><span>現場で最速判断</span></div>
+        <article class="phone">
+          <div class="status">12:48　●●●　5G</div>
+          <header class="app-head"><div class="machine"><strong>eリコリス・リコイル <small>#101</small></strong><small>● 実戦中</small></div><div class="head-actions"><i>♧</i><i>⚙</i><i>1K</i></div></header>
+          <div class="tabs"><span class="active">◉ 記録</span><span>▥ 詳細データ</span><span>☆ 大当たり履歴</span><span>⚙ 機種設定</span></div>
+          <div class="scroll">
+            <section class="card green-card action-banner"><div><span class="eyebrow">今すること</span><h2><b>あと5K</b> 続ける</h2></div><div class="action-score">72%</div><div class="action-sub">10K地点で再判定。残り約1,250玉を上限にします。</div></section>
+            <section class="card steps"><div class="section-title">行動チェック</div><div class="step"><i>1</i><b>今は続行</b><em>実測20.8回/K</em></div><div class="step"><i>2</i><b>10Kで必ず再確認</b><em>感情で延長しない</em></div><div class="step"><i>3</i><b>灰色なら他台比較</b><em>マップ候補へ移動</em></div></section>
+            <div class="progress"><b class="done">3K ✓</b><b class="done">5K ✓</b><b class="next">10K</b><b>20K</b></div>
+            <div class="mini-kpis"><div><span>実測 / 目標</span><strong>20.8 / 18.7</strong></div><div><span>予測回転率</span><strong style="color:#22d3ee">20.3回/K</strong></div><div><span>期待時給</span><strong style="color:#4ade80">+2,580円</strong></div></div>
+            <section class="card timeline"><div class="section-title">直近の行動ログ <small>判断地点を保存</small></div><div class="log"><time>12:15</time><i></i><b>1K入力</b><em>20回転</em></div><div class="log"><time>12:31</time><i></i><b>3K判定</b><em>続行</em></div><div class="log"><time>12:48</time><i></i><b>5K判定</b><em>続行</em></div></section>
+            <section class="card reason"><div class="section-title">判定の根拠</div><div class="reason-row"><i>✓</i><span>目標達成確率72%。事前根拠も強いため10Kまで延長</span></div><div class="reason-row"><i>✓</i><span>勝ち負け・大当たり回数は回転率判断に使用していません</span></div></section>
+          </div>
+          <div class="input">▣　回転数を入力する</div><div class="fab">＋</div><nav class="nav"><span>⌂ ホーム</span><span>▦ 台選び</span><span class="on">● 記録開始</span><span>⚙ 設定</span></nav>
+        </article>
+      </div>
+    </section>
+    <div class="note"><b>3案共通:</b> 「直近の行動ログ」「判定の根拠」「回転数入力」は残しています。重複していた最下部の「詳細データ画面を開く」ボタンだけを外し、詳細データは上部タブから開く整理案です。</div>
+  </main>
+</body>
+</html>

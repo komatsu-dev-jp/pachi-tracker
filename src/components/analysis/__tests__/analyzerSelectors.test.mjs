@@ -4,7 +4,7 @@
 //
 // パチ analyzer（詳細分析）用集計セレクタの境界値テスト。
 // - 空配列・1件・旧アーカイブ形式（effective* 欠落）で破綻しないこと
-// - 回転率/ボーダー差のフォールバック順が既存表示ロジックと一致すること
+// - 回転率/ボーダー差は物理値を優先し、旧データだけ補正値へフォールバックすること
 // - ヒストグラムのビン集計・データ不足判定
 // - 店舗別/曜日別の集計値（EV フォールバック・実損益）
 
@@ -37,11 +37,14 @@ function arc(over = {}) {
 
 // ──────────── getSpinRate / getBorderDiff フォールバック ────────────
 
-test("getSpinRate: effective を最優先", () => {
+test("getSpinRate: 物理回転率を最優先", () => {
   assert.strictEqual(
     getSpinRate(arc({ stats: { effectiveStart1K: 20, start1KCorrected: 19, start1K: 18 } })),
-    20
+    18
   );
+});
+test("getSpinRate: 物理回転率が無い旧記録は effective へフォールバック", () => {
+  assert.strictEqual(getSpinRate(arc({ stats: { effectiveStart1K: 20 } })), 20);
 });
 test("getSpinRate: 旧アーカイブ（start1K のみ）", () => {
   assert.strictEqual(getSpinRate(arc({ stats: { start1K: 18 } })), 18);
@@ -53,7 +56,8 @@ test("getSpinRate: 数値が無ければ null", () => {
   assert.strictEqual(getSpinRate(undefined), null);
 });
 test("getBorderDiff: フォールバック順と null 扱い", () => {
-  assert.strictEqual(getBorderDiff(arc({ stats: { effectiveBDiff: -2, bDiff: 1 } })), -2);
+  assert.strictEqual(getBorderDiff(arc({ stats: { effectiveBDiff: -2, bDiff: 1 } })), 1);
+  assert.strictEqual(getBorderDiff(arc({ stats: { effectiveBDiff: -2 } })), -2);
   assert.strictEqual(getBorderDiff(arc({ stats: { bDiff: 1.5 } })), 1.5);
   assert.strictEqual(getBorderDiff(arc({ stats: {} })), null);
 });

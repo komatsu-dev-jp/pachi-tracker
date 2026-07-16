@@ -1,5 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useLS, calcPreciseEV } from "./logic";
+import {
+  applyEconomicEV,
+  heldBallCostPerK,
+  normalizeArchivesEconomics,
+} from "./economics";
 import { useUndoStack } from "./history";
 import { C, font, tsNow, localDateStr } from "./constants";
 import { searchMachines } from "./machineDB";
@@ -31,7 +36,7 @@ import {
   unlockBadges,
 } from "./components/hunter/badges";
 import { evDecision } from "./components/decision/evDecision";
-import { assessLiveRotation } from "./components/decision/liveRotationDecision";
+import { assessLiveRotation, LIVE_CHECKPOINTS_K } from "./components/decision/liveRotationDecision";
 import { runEvidence } from "./evidence";
 import { machineDB } from "./machineDB";
 import {
@@ -293,6 +298,11 @@ export default function App() {
   const [carriedInYen, setCarriedInYen] = useLS("pt_carriedInYen", 0);
   // セッション開始日（持ち玉の日付跨ぎ検知に使用。YYYY-MM-DD。未稼働時は ""）
   const [sessionStartDate, setSessionStartDate] = useLS("pt_sessionStartDate", "");
+  // 稼働計画。ISO日時は日付跨ぎや再起動後も同じ締切を参照するために保存する。
+  const [sessionStartedAt, setSessionStartedAt] = useLS("pt_sessionStartedAt", "");
+  const [sessionTargetEndAt, setSessionTargetEndAt] = useLS("pt_sessionTargetEndAt", "");
+  const [sessionClosingTime, setSessionClosingTime] = useLS("pt_sessionClosingTime", "");
+  const [sessionPlannedStart1K, setSessionPlannedStart1K] = useLS("pt_sessionPlannedStart1K", 0);
 
   // 時短/大当たり終了後のスタート入力プロンプト表示フラグ
   const [showStartPrompt, setShowStartPrompt] = useState(false);
@@ -355,6 +365,7 @@ export default function App() {
 
   // Archives
   const [archives, setArchives] = useLS("pt_archives", []);
+  const [decisionSnapshots, setDecisionSnapshots] = useState([]);
 
   // 月間期待値目標（ホーム画面の目標カード用 / 円）
   // 既存ユーザーは保存値、未設定は 100,000 円をデフォルトとして表示する。
@@ -474,12 +485,15 @@ export default function App() {
   const pushLog = (e) => setSesLog((p) => [...p, e]);
 
   // ── 高精度期待値エンジン ──
-  const calculatedEv = calcPreciseEV({
+  const baseCalculatedEv = calcPreciseEV({
     rotRows, startRot, jpLog,
     rentBalls, exRate, synthDenom, rotPerHour,
     totalTrayBalls, border,
     spec1R, specAvgRounds, specSapo,
     chodamaSettings: { includeChodamaInBalance },
+  });
+  const calculatedEv = applyEconomicEV(baseCalculatedEv, {
+    rotRows, jpLog, totalTrayBalls, rentBalls, exRate, rotPerHour,
   });
   // 機種マスタ照合と差玉履歴の集計は全件走査になるため、依存値が変わったときだけ再計算する
   const evidenceMachine = useMemo(
@@ -518,8 +532,22 @@ export default function App() {
     rotationStdDevPerK: evidenceMachine?.rotationStdDevPerK,
   });
   const ev = { ...calculatedEv, evidence: { ...evidence, delta: savedDeltaEvidence }, liveDecision };
+  // 3K・5K・10K・20Kへ初めて到達した時点の判断を、実戦記録へ残す。
+  useEffect(() => {
+    if (!sessionStarted || !(liveDecision.totalK > 0)) return;
+    const reached = LIVE_CHECKPOINTS_K.filter((checkpointK) => liveDecision.totalK >= checkpointK);
+    if (!reached.length) return;
+    setDecisionSnapshots((previous) => {
+      const saved = new Set(previous.map((snapshot) => snapshot.checkpointK));
+      const additions = reached
+        .filter((checkpointK) => !saved.has(checkpointK))
+        .map((checkpointK) => ({ checkpointK, recordedAt: new Date().toISOString(), ...liveDecision }));
+      return additions.length ? [...previous, ...additions] : previous;
+    });
+  }, [sessionStarted, liveDecision]);
   const currentYutimeLowSpins = deriveCurrentLowProbabilitySpins(rotRows);
-  const measuredYutimeStart1K = Number(ev?.effectiveStart1K) > 0 ? Number(ev.effectiveStart1K) : 0;
+  // 遊タイム到達までの玉数計算には、交換価値補正前の実測回転率を使う。
+  const measuredYutimeStart1K = Number(ev?.start1K) > 0 ? Number(ev.start1K) : 0;
   const yutimeRateSource = measuredYutimeStart1K > 0 ? "measured" : "assumed";
   const activeYutimeSession = yutimeSession && (
     !yutimeSession.machineName || !machineName || yutimeSession.machineName === machineName
@@ -818,6 +846,10 @@ export default function App() {
       extraChodama: extraChodamaToStore,
     }));
     setSessionStartDate("");
+    setSessionStartedAt("");
+    setSessionTargetEndAt("");
+    setSessionClosingTime("");
+    setSessionPlannedStart1K(0);
     setJpLog([]);
     setSesLog([]);
     setRotRows([]);
@@ -838,6 +870,7 @@ export default function App() {
     setCarriedInYen(0);
     setYutimeSession(null);
     setYutimeDecision(null);
+    setDecisionSnapshots([]);
     // Phase 6 XPトリガー用カウンタもセッション一緒にリセット（次のセッションは 0 から数え直す）
     setHunterCounters((prev) => ({
       countedHits: 0,
@@ -878,10 +911,15 @@ export default function App() {
       initialChodama: initialChodama || 0,
       finalChodama: currentChodama || 0,
       chodamaNetBalls: (currentChodama || 0) - (initialChodama || 0),
-      chodamaYen: Math.round((ev?.chodamaKCount || 0) * 1000 * (exRate || 250) / (rentBalls || 250)),
+      chodamaYen: Math.round((ev?.chodamaKCount || 0) * heldBallCostPerK(rentBalls, exRate)),
       isMoveArchive: isMove,
       // 通常期待値とは合算せず、着席判断時点の遊タイム計算を独立保存する。
       yutimeDecision: yutimeDecision ? JSON.parse(JSON.stringify(yutimeDecision)) : null,
+      decisionSnapshots: JSON.parse(JSON.stringify(decisionSnapshots)),
+      sessionStartedAt: sessionStartedAt || "",
+      sessionTargetEndAt: sessionTargetEndAt || "",
+      sessionClosingTime: sessionClosingTime || "",
+      sessionPlannedStart1K: Number(sessionPlannedStart1K) || 0,
     };
     setArchives((prev) => [...prev, archive]);
     // ハンターランク: 実戦アーカイブ確定で XP 加算（Phase 6：レベルアップ検出付き）
@@ -989,7 +1027,7 @@ export default function App() {
     const ballYen = store?.exRate > 0 ? 1000 / store.exRate : (exRate > 0 ? 1000 / exRate : (Number(ballVal) > 0 ? Number(ballVal) : 4));
     // 打ち始めに消費した貯玉（再プレイ分）。円換算は archiveCurrentSession と同一式で算出し保存値と一致させる。
     const chodamaBalls = Math.round((ev?.chodamaKCount || 0) * (rentBalls || 250));
-    const chodamaYen = Math.round((ev?.chodamaKCount || 0) * 1000 * (exRate || 250) / (rentBalls || 250));
+    const chodamaYen = Math.round((ev?.chodamaKCount || 0) * heldBallCostPerK(rentBalls, exRate));
     setEndSheet({
       // 投資額（現金分）= この台の現金投資 + 台移動で持ち込んだ持ち玉コスト（按分）
       invest: Math.round(ev?.rawInvest || 0) + Math.round(Number(carriedInYen) || 0),
@@ -1096,6 +1134,10 @@ export default function App() {
     });
   };
 
+  // 過去記録は元データを壊さず、参照時に現行の経済価値へ再計算する。
+  // 新規アーカイブは calculationVersion=2 のため、そのまま返る。
+  const economicArchives = useMemo(() => normalizeArchivesEconomics(archives), [archives]);
+
   const S = {
     rentBalls, setRentBalls, exRate, setExRate, synthDenom, setSynthDenom,
     rotPerHour, setRotPerHour, border, setBorder, ballVal, setBallVal,
@@ -1119,7 +1161,7 @@ export default function App() {
     deltaScans, setDeltaScans,
     aiApiKey, setAiApiKey,
     customMachines, setCustomMachines,
-    archives, setArchives,
+    archives: economicArchives, setArchives,
     monthlyEvTarget, setMonthlyEvTarget,
     ev, handleMoveTable, handleEndSession,
     theme, setTheme,
@@ -1143,9 +1185,14 @@ export default function App() {
     initialChodama, setInitialChodama,
     selectedStoreId, setSelectedStoreId,
     sessionStartDate, setSessionStartDate,
+    sessionStartedAt, setSessionStartedAt,
+    sessionTargetEndAt, setSessionTargetEndAt,
+    sessionClosingTime, setSessionClosingTime,
+    sessionPlannedStart1K, setSessionPlannedStart1K,
     // リアルタイム玉数
     currentMochiBalls, setCurrentMochiBalls,
     currentChodama, setCurrentChodama,
+    carriedInYen, setCarriedInYen,
     // スタート入力プロンプト
     showStartPrompt, setShowStartPrompt,
     // セッション内サブタブ
@@ -1159,6 +1206,11 @@ export default function App() {
     notificationLog,
     notificationPrefs: normalizeNotificationPrefs(notificationPrefs), setNotificationPrefs,
     openNotificationPanel: () => setNotificationPanelOpen(true),
+    openStoreDetail: (id) => {
+      const fallbackId = selectedStoreId ?? stores.find((store) => store && typeof store === "object")?.id ?? null;
+      setStoreDetailId(id ?? fallbackId);
+      setCurrentMode("storeDetail");
+    },
   };
 
   // PINロック画面
@@ -1238,7 +1290,8 @@ export default function App() {
           flexDirection: "column",
           overflow: "auto",
           overflowX: "hidden",
-          paddingBottom: "calc(44px + env(safe-area-inset-bottom))",
+          // 下部メニューを76px確保し、中央の記録ボタンが画面内の入力操作に重ならないようにする。
+          paddingBottom: "calc(76px + env(safe-area-inset-bottom))",
         }}
       >
         {currentMode === "home" && <HomeDashboard S={S} />}
