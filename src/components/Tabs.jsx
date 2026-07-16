@@ -46,7 +46,9 @@ import {
     createYutimeSessionFromMachine,
     deriveCurrentLowProbabilitySpins,
     deriveNormalExpectedNetBalls,
+    isYutimeTargetingSession,
 } from "./yutime/yutimeCalculator";
+import YutimeCalculatorSheet from "./yutime/YutimeCalculatorSheet";
 
 /* ================================================================
    Simple SVG Line Chart component
@@ -481,77 +483,73 @@ function effectiveEv(ev = {}) {
     };
 }
 
-// 遊タイム狙い目分析カード（記録タブ用）
-// - 天井回転数（ceilingRot）が 0/未設定なら何も描画しない（=非搭載機種）
-// - 残り回転数 = max(0, ceilingRot - currentHamari)
-// - 到達コスト = 残り回転数 ÷ 1Kスタート × 1000（円）。1Kスタート未測定時は理論ボーダー（S.border）を仮置きで利用
-// - 期待値 = 期待出玉 × ballVal − 到達コスト（円）
-// - 期待値 > 0 を「狙い目」、< 0 を「割に合わない」と表示
-function YutimeEvCard({ result, spec, rateSource = "assumed", playMode = "cash" }) {
-    if (!spec?.triggerLowSpins) return null;
+// 遊タイム状況カード（記録タブ用）
+// - 遊タイム非搭載機では描画しない
+// - 実戦中に必要な「残り回転・到達必要資金・到達率」だけをコンパクトに表示する
+// - カード全体をタップすると、台選び画面と同じ詳細計算シートを開く
+function YutimeEvCard({ result, spec, rateSource = "assumed", playMode = "cash", onOpen }) {
+    if (!isYutimeTargetingSession(spec)) return null;
     const isHeld = playMode === "mochi" || playMode === "chodama";
     const modeLabel = playMode === "chodama" ? "貯玉" : isHeld ? "持ち玉" : "現金";
     const canCompute = Boolean(result?.valid);
-    const ev = canCompute ? result.selectedEV : null;
     const missingPayout = result?.missing?.includes("yutimeExpectedNetBalls");
-    const verdictLabel = !canCompute
-        ? (missingPayout ? "期待出玉の入力が必要" : "入力不足")
-        : result.remainingSpins === 0 ? "発動回転に到達"
-        : ev >= 0 ? "期待値プラス" : "期待値マイナス";
-    const verdictColor = !canCompute ? C.sub : ev >= 0 ? C.green : C.red;
-    const verdictBg = !canCompute ? "rgba(148,163,184,0.12)" : ev >= 0 ? "rgba(34,197,94,0.16)" : "rgba(239,68,68,0.16)";
-    const fmtYen = (n) => (n == null ? "—" : `${n >= 0 ? "+" : ""}${Math.round(n).toLocaleString("ja-JP")}円`);
-    const cell = (label, value, color) => (
-        <div style={{ flex: 1, textAlign: "center", padding: "8px 4px" }}>
-            <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>{label}</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: color || C.text, fontFamily: mono, fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}>{value}</div>
-        </div>
-    );
+    const statusLabel = rateSource === "measured" ? "実測" : "暫定";
+    const remainingLabel = canCompute ? result.remainingSpins.toLocaleString("ja-JP") : "—";
+    const arrivalLabel = canCompute ? Math.ceil(result.selectedArrivalInvestment).toLocaleString("ja-JP") : "—";
+    const reachLabel = canCompute ? `${(result.reachProbability * 100).toFixed(1)}%` : "—";
+    const ariaLabel = canCompute
+        ? `遊タイム詳細。残り${remainingLabel}回、到達必要資金${arrivalLabel}円、到達率${reachLabel}`
+        : `遊タイム詳細。${missingPayout ? "期待出玉の入力が必要" : "設定の確認が必要"}`;
 
     return (
-        <div style={{
-            background: "var(--surface)",
-            border: "1px solid var(--border)",
-            borderRadius: 14,
-            padding: 12,
-            backdropFilter: "blur(8px)",
-            WebkitBackdropFilter: "blur(8px)",
-            boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
+        <button className="b" type="button" onClick={onOpen} aria-label={ariaLabel} style={{
+            width: "100%",
+            minHeight: 88,
+            position: "relative",
+            overflow: "hidden",
+            textAlign: "left",
+            color: C.text,
+            background: "linear-gradient(135deg, rgba(245,158,11,0.10), var(--surface) 42%, rgba(15,23,42,0.94))",
+            border: "1px solid rgba(245,180,0,0.88)",
+            borderRadius: 16,
+            padding: "11px 13px 11px 17px",
+            boxShadow: "0 5px 18px rgba(0,0,0,0.30), inset 0 0 24px rgba(245,158,11,0.025)",
         }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.blue} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <circle cx="12" cy="12" r="9" />
-                        <circle cx="12" cy="12" r="5" />
-                        <circle cx="12" cy="12" r="1.5" fill={C.blue} />
-                    </svg>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>遊タイム期待値</div>
+            <span aria-hidden="true" style={{ position: "absolute", left: 0, top: 12, bottom: 12, width: 4, borderRadius: "0 4px 4px 0", background: C.yellow, boxShadow: `0 0 12px ${C.yellow}` }} />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                <div style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 14, fontWeight: 900, color: C.text, whiteSpace: "nowrap" }}>遊タイム</span>
+                    <span style={{ padding: "2px 7px", borderRadius: 999, border: `1px solid ${rateSource === "measured" ? "rgba(56,189,248,0.42)" : "rgba(245,158,11,0.38)"}`, color: rateSource === "measured" ? C.blue : C.yellow, background: rateSource === "measured" ? "rgba(56,189,248,0.09)" : "rgba(245,158,11,0.08)", fontSize: 9, fontWeight: 800, whiteSpace: "nowrap" }}>
+                        {statusLabel}
+                    </span>
                 </div>
-                <div style={{
-                    fontSize: 11, fontWeight: 800, color: verdictColor,
-                    background: verdictBg, border: `1px solid ${verdictColor}`,
-                    borderRadius: 999, padding: "3px 10px",
-                }}>
-                    {verdictLabel}
+                <div style={{ flexShrink: 0, display: "flex", alignItems: "baseline", gap: 4, color: C.yellow }}>
+                    <span style={{ fontSize: 10, fontWeight: 800 }}>残り</span>
+                    <strong style={{ fontFamily: mono, fontVariantNumeric: "tabular-nums", fontSize: 24, lineHeight: 1, letterSpacing: "-0.02em" }}>{remainingLabel}</strong>
+                    <span style={{ fontSize: 11, fontWeight: 800 }}>回</span>
                 </div>
             </div>
-            <div style={{ fontSize: 11, color: C.sub, marginBottom: 7 }}>
-                現在の遊技方法：<strong style={{ color: C.text, fontSize: 14 }}>{modeLabel}</strong>
-                {rateSource === "assumed" && <span style={{ color: C.yellow }}> ・ 暫定</span>}
-            </div>
-            <div style={{ display: "flex", background: "var(--surface-hi)", border: `1px solid ${C.border}`, borderRadius: 10 }}>
-                {cell("期待値", fmtYen(ev), ev == null ? C.sub : ev >= 0 ? C.green : C.red)}
-                {cell("残り回転", canCompute ? `${result.remainingSpins.toLocaleString("ja-JP")}回` : "—", C.orange)}
-                {cell("到達率", canCompute ? `${(result.reachProbability * 100).toFixed(1)}%` : "—", C.blue)}
-            </div>
-            <div style={{ fontSize: 10, color: C.sub, marginTop: 6, lineHeight: 1.4 }}>
-                {canCompute ? <>
-                    当たらず遊タイムまで {Math.ceil(result.selectedArrivalInvestment).toLocaleString("ja-JP")}円<br />
-                    平均投資 {Math.round(result.selectedInvestment).toLocaleString("ja-JP")}円 ・ 0円以上の開始 {result.selectedBreakEvenLowSpins ?? "—"}回<br />
-                    現金 {fmtYen(result.cashEV)} / 持ち玉・貯玉 {fmtYen(result.heldEV)} ・ {rateSource === "measured" ? "実測回転率" : "想定回転率"}
-                </> : missingPayout ? "遊タイム中のスルーと電サポ増減を含む平均純増玉を入力してください。" : "確率・発動回転・回転率を確認してください。"}
-            </div>
-        </div>
+            {canCompute ? (
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.45fr) minmax(64px, .65fr) auto", alignItems: "end", gap: 9, marginTop: 10 }}>
+                    <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 9, color: C.sub, whiteSpace: "nowrap" }}>到達必要資金（{modeLabel}）</div>
+                        <div style={{ marginTop: 2, fontFamily: mono, fontVariantNumeric: "tabular-nums", color: C.text, whiteSpace: "nowrap" }}>
+                            <strong style={{ fontSize: 19, lineHeight: 1 }}>{arrivalLabel}</strong><span style={{ marginLeft: 3, fontSize: 10, fontWeight: 800 }}>円</span>
+                        </div>
+                    </div>
+                    <div style={{ minWidth: 0, paddingLeft: 9, borderLeft: `1px solid ${C.border}` }}>
+                        <div style={{ fontSize: 9, color: C.sub, whiteSpace: "nowrap" }}>到達率</div>
+                        <strong style={{ display: "block", marginTop: 2, fontFamily: mono, fontVariantNumeric: "tabular-nums", color: C.text, fontSize: 16, lineHeight: 1, whiteSpace: "nowrap" }}>{reachLabel}</strong>
+                    </div>
+                    <span style={{ alignSelf: "center", color: C.subHi, fontSize: 10, fontWeight: 800, whiteSpace: "nowrap" }}>詳細を見る <span aria-hidden="true">›</span></span>
+                </div>
+            ) : (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 12 }}>
+                    <span style={{ color: C.yellow, fontSize: 11, fontWeight: 800 }}>{missingPayout ? "期待出玉を設定してください" : "遊タイム条件を確認してください"}</span>
+                    <span style={{ color: C.subHi, fontSize: 10, fontWeight: 800, whiteSpace: "nowrap" }}>詳細を見る <span aria-hidden="true">›</span></span>
+                </div>
+            )}
+        </button>
     );
 }
 
@@ -780,6 +778,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     const [machinePickerFor, setMachinePickerFor] = useState("setup");
     const [summaryCollapsed, setSummaryCollapsed] = useState(true);
     const [showInvestSettings, setShowInvestSettings] = useState(false);
+    const [showYutimeCalculator, setShowYutimeCalculator] = useState(false);
     const [customInvestPace, setCustomInvestPace] = useState("");
     const [customInvestPaceError, setCustomInvestPaceError] = useState("");
     const tableRef = useRef(null);
@@ -1766,7 +1765,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         S.setCurrentMochiBalls(0);
 
         // 着席時点の遊タイム判断を固定保存する。以後の実測更新とは別物として扱う。
-        if (S.yutimeSession?.triggerLowSpins) {
+        if (isYutimeTargetingSession(S.yutimeSession)) {
             const assumedStart1K = Number(setupYutimeStart1K)
                 || Number(S.yutimeSession.assumedStart1K)
                 || Number(setupBorder1k)
@@ -1815,7 +1814,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         setRows((r) => [...r, {
             type: "start",
             cumRot: val,
-            ...(S.yutimeSession?.triggerLowSpins ? { yutimeLowSpins } : {}),
+            ...(isYutimeTargetingSession(S.yutimeSession) ? { yutimeLowSpins } : {}),
             mode: startPlayMode,
             mochiBalls: 0,
             chodamaBalls: initialChodama,
@@ -2686,8 +2685,8 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     </div>
                                 </div>
 
-                                {/* 遊タイム搭載機だけ表示。既定値が入るため、通常の開始操作は増えない。 */}
-                                {S.yutimeSession?.triggerLowSpins > 0 && (
+                                {/* 計算画面で遊タイム狙いを選んだ実戦だけ表示する。 */}
+                                {isYutimeTargetingSession(S.yutimeSession) && (
                                     <div style={{ marginBottom: 16, padding: 12, borderRadius: 12, background: "rgba(47,111,237,.08)", border: `1px solid ${C.blue}55` }}>
                                         <div style={{ fontSize: 12, fontWeight: 800, color: C.blue, marginBottom: 8 }}>遊タイム（任意）</div>
                                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -3090,7 +3089,18 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             spec={S.activeYutimeSession}
                             rateSource={S.yutimeRateSource}
                             playMode={S.playMode}
+                            onOpen={() => setShowYutimeCalculator(true)}
                         />
+                        {showYutimeCalculator && (
+                            <YutimeCalculatorSheet
+                                S={S}
+                                initialMachineName={S.machineName || ""}
+                                initialSession={S.activeYutimeSession}
+                                initialCurrentLowSpins={S.yutimeLive?.currentLowSpins || 0}
+                                initialStart1K={S.yutimeLive?.valid && S.yutimeLive.cashCostPerSpin > 0 ? 1000 / S.yutimeLive.cashCostPerSpin : null}
+                                onClose={() => setShowYutimeCalculator(false)}
+                            />
+                        )}
 
                         {/* 2. 指標カード（3 + 4） */}
                         <KeyMetrics
@@ -5455,7 +5465,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     ...(picked || {}),
                                     yutimeLowSpins: Math.max(0, Math.round(Number(moveStartRot) || 0)),
                                 };
-                                if (dest.yutimeSession?.triggerLowSpins) {
+                                if (isYutimeTargetingSession(dest.yutimeSession)) {
                                     const moveResult = calculateYutimeEV({
                                         probabilityDenom: dest.synthDenom || S.synthDenom,
                                         triggerLowSpins: dest.yutimeSession.triggerLowSpins,
