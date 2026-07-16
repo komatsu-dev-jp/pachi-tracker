@@ -237,6 +237,16 @@ export function createYutimeSessionFromMachine(machine, { assumedStart1K = 0 } =
     ...spec,
     machineName: String(machine?.name || "").trim(),
     assumedStart1K: Math.max(0, finiteNumber(assumedStart1K) || finiteNumber(machine?.border1K) || 0),
+    // 搭載機を選んだだけでは表示しない。計算画面で狙い開始を確定した時だけ true にする。
+    targetingEnabled: false,
     source: spec.source || "master",
   };
+}
+
+export function isYutimeTargetingSession(session) {
+  return Boolean(
+    session
+    && Number(session.triggerLowSpins) > 0
+    && session.targetingEnabled === true
+  );
 }
