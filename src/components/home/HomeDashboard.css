@@ -77,6 +77,25 @@
   font-size: 11px; font-weight: 800; white-space: nowrap; cursor: pointer;
 }
 
+.home-delta-stats { display: grid; grid-template-columns: 1.2fr 1fr 1fr; margin: 4px 0 10px; border-top: 1px solid var(--border); padding-top: 6px; }
+.home-delta-stat { min-width: 0; padding: 0 7px; border-left: 1px solid var(--border-hi); }
+.home-delta-stat:first-child { padding-left: 0; border-left: 0; }
+.home-delta-stat:last-child { padding-right: 0; }
+.home-delta-stat > span { display: block; color: var(--sub-hi); font-size: 10px; }
+.home-delta-stat strong { display: flex; align-items: center; gap: 5px; overflow: hidden; margin-top: 3px; font-size: clamp(12px, 3.55vw, 15px); white-space: nowrap; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.home-delta-stat strong em { color: var(--sub-hi); font-size: 10px; font-style: normal; }
+.home-delta-state i { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: var(--sub-hi); }
+.home-delta-state i.is-on { background: var(--home-green); box-shadow: 0 0 6px var(--home-green); }
+.home-delta-analyze {
+  display: block; width: 100%; min-height: 48px; border: 0; border-radius: 12px; color: #fff;
+  background: linear-gradient(145deg, #8392ff, #3559e9); font-size: 14px; font-weight: 800; cursor: pointer;
+  box-shadow: 0 7px 18px rgba(68, 96, 243, .24), inset 0 1px 0 rgba(255,255,255,.22);
+}
+.home-delta-map {
+  display: block; width: 100%; min-height: 44px; margin-top: 8px; border: 1px solid var(--border-hi);
+  border-radius: 12px; color: var(--text); background: var(--surface-alt); font-size: 13px; font-weight: 700; cursor: pointer;
+}
+
 .home-judgment-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
 .home-judgment { display: flex; align-items: center; min-width: 0; min-height: 51px; padding: 4px 8px; border-radius: 10px; text-align: left; cursor: pointer; }
 .home-judgment--teal { color: var(--home-cyan); border: 1px solid rgba(39,206,185,.38); background: rgba(21,143,132,.08); }
@@ -152,6 +171,7 @@
   .home-card:nth-of-type(3) { animation-delay: .08s; }
   .home-card:nth-of-type(4) { animation-delay: .12s; }
   .home-card:nth-of-type(5) { animation-delay: .16s; }
+  .home-card:nth-of-type(6) { animation-delay: .2s; }
   @keyframes home-card-in { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
 }
 
