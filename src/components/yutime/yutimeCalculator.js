@@ -26,6 +26,7 @@ function validateInput(input = {}) {
   const yutimeExpectedNetBalls = finiteNumber(input.yutimeExpectedNetBalls);
   const rentBalls = finiteNumber(input.rentBalls);
   const exRate = finiteNumber(input.exRate);
+  const budgetYen = finiteNumber(input.budgetYen);
 
   const missing = [];
   if (!(probabilityDenom > 1)) missing.push("probabilityDenom");
@@ -50,6 +51,7 @@ function validateInput(input = {}) {
       yutimeExpectedNetBalls,
       rentBalls,
       exRate,
+      budgetYen: budgetYen == null ? null : Math.max(0, budgetYen),
     },
   };
 }
@@ -86,6 +88,9 @@ function calculateAt(values) {
   const heldCostPerSpin = (rentBalls * ballValueYen) / start1K;
   const expectedInvestmentCash = expectedSpins * cashCostPerSpin;
   const expectedInvestmentHeld = expectedSpins * heldCostPerSpin;
+  // 途中で通常当たりせず、遊タイム発動回転まで全て回した場合に必要な金額。
+  const arrivalInvestmentCash = remainingSpins * cashCostPerSpin;
+  const arrivalInvestmentHeld = remainingSpins * heldCostPerSpin;
   const cashEV = expectedReturnYen - expectedInvestmentCash;
   const heldEV = expectedReturnYen - expectedInvestmentHeld;
 
@@ -103,6 +108,8 @@ function calculateAt(values) {
     heldCostPerSpin,
     expectedInvestmentCash,
     expectedInvestmentHeld,
+    arrivalInvestmentCash,
+    arrivalInvestmentHeld,
     cashEV,
     heldEV,
   };
@@ -137,6 +144,25 @@ export function calculateYutimeEV(input = {}) {
   const selectedInvestment = playMode === "cash"
     ? base.expectedInvestmentCash
     : base.expectedInvestmentHeld;
+  const selectedArrivalInvestment = playMode === "cash"
+    ? base.arrivalInvestmentCash
+    : base.arrivalInvestmentHeld;
+  const selectedCostPerSpin = playMode === "cash"
+    ? base.cashCostPerSpin
+    : base.heldCostPerSpin;
+  const budgetYen = checked.values.budgetYen;
+  const affordableSpins = budgetYen == null
+    ? null
+    : Math.max(0, Math.floor(budgetYen / selectedCostPerSpin));
+  const budgetCoveredSpins = affordableSpins == null
+    ? null
+    : Math.min(base.remainingSpins, affordableSpins);
+  const budgetShortfallYen = budgetYen == null
+    ? null
+    : Math.max(0, selectedArrivalInvestment - budgetYen);
+  const budgetSurplusYen = budgetYen == null
+    ? null
+    : Math.max(0, budgetYen - selectedArrivalInvestment);
 
   return {
     valid: true,
@@ -145,6 +171,12 @@ export function calculateYutimeEV(input = {}) {
     playMode,
     selectedEV,
     selectedInvestment,
+    selectedArrivalInvestment,
+    affordableSpins,
+    budgetCoveredSpins,
+    budgetShortfallYen,
+    budgetSurplusYen,
+    budgetCanReach: budgetYen == null ? null : budgetShortfallYen <= 0,
     breakEvenLowSpinsCash,
     breakEvenLowSpinsHeld,
     selectedBreakEvenLowSpins: playMode === "cash" ? breakEvenLowSpinsCash : breakEvenLowSpinsHeld,

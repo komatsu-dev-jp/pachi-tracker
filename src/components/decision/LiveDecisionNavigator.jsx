@@ -26,7 +26,12 @@ export function LiveDecisionNavigator({ decision }) {
           <span className="live-decision-kicker">見切りナビ</span>
           <h2>{decision.actionLabel}</h2>
         </div>
-        <span className="live-decision-prob">目標達成 {probability}%</span>
+        <div className="live-decision-head-actions">
+          <span className="live-decision-prob">目標達成 {probability}%</span>
+          <button type="button" className="live-decision-toggle" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
+            {open ? "閉じる" : "根拠 ›"}
+          </button>
+        </div>
       </div>
 
       <div className="live-decision-progress" aria-label="3K、5K、10K、20Kの判断地点">
@@ -49,9 +54,6 @@ export function LiveDecisionNavigator({ decision }) {
         <div><span>使用量</span><strong>{Math.round(decision.totalK * decision.rentBalls)}</strong><small>玉相当</small></div>
       </div>
 
-      <button type="button" className="live-decision-toggle" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
-        {open ? "計算の説明を閉じる" : "判断の根拠をやさしく見る"}
-      </button>
       {open && (
         <div className="live-decision-detail">
           <dl>

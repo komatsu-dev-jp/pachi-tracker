@@ -184,11 +184,11 @@
   position: relative;
   flex: 0 0 54px;
   width: 54px;
-  height: 76px;
+  height: 88px;
   display: grid;
   grid-template-rows: 17px 1fr 13px;
   place-items: center;
-  padding: 6px 3px 5px;
+  padding: 6px 3px 17px;
   scroll-snap-align: start;
   border: 1px solid;
   border-radius: 8px;
@@ -205,6 +205,26 @@
 .strategy-heat-number { color: #cbd5e1; font-family: var(--font-mono); font-size: 11px; font-weight: 900; }
 .strategy-heat-rotation { align-self: end; font-family: var(--font-mono); font-size: 16px; font-weight: 900; letter-spacing: -.04em; }
 .strategy-heat-unit { align-self: start; color: #cbd5e1; font-size: 7px; font-weight: 800; }
+.strategy-live-badge {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: 2px;
+  min-height: 15px;
+  display: grid;
+  place-items: center;
+  padding: 0 2px;
+  border-radius: 4px;
+  background: #0369a1;
+  color: #fff;
+  font-size: 6.5px;
+  font-weight: 900;
+  white-space: nowrap;
+  z-index: 2;
+}
+.strategy-live-badge.is-stop, .strategy-live-badge.is-stop_candidate { background: #be123c; }
+.strategy-live-badge.is-compare { background: #a16207; }
+.strategy-live-badge.is-continue, .strategy-live-badge.is-continue_strong { background: #047857; }
 
 .strategy-island-base {
   height: 17px;

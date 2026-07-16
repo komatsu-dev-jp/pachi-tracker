@@ -22,11 +22,13 @@ const empty = buildStrategyMap();
 assert.equal(empty.total, 0);
 assert.equal(empty.top5.length, 0);
 
-const map = buildStrategyMap({ scans, customMachines: [machine], playingNum: 101 });
+const liveDecision = { action: "collecting", actionLabel: "次の判定まで計測", nextCheckpointK: 3 };
+const map = buildStrategyMap({ scans, customMachines: [machine], playingNum: 101, liveDecision });
 assert.equal(map.source, "delta");
 assert.equal(map.total, 1);
 assert.equal(map.all[0].num, 101);
 assert.equal(map.all[0].isPlaying, true);
+assert.equal(map.all[0].liveDecision, liveDecision);
 assert.equal(map.all[0].evidence.observationCount, 2);
 assert.ok(map.all[0].rot > 0);
 assert.ok(map.all[0].confidence >= 0 && map.all[0].confidence <= 100);

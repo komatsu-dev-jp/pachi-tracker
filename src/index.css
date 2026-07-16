@@ -1627,6 +1627,216 @@ input, select, textarea {
   width: 100%;
 }
 
+/* 実戦記録: 指標・投資・残高を1つの流れに整理 */
+.key-metrics-v3 {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  flex-shrink: 0;
+}
+
+.metrics-section-head {
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 2px 4px;
+}
+
+.metrics-section-head b {
+  color: var(--sub-hi);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.metrics-section-head span {
+  color: var(--sub);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.evidence-metrics-grid,
+.balance-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.evidence-metric,
+.balance-metric {
+  min-width: 0;
+  padding: 9px 7px;
+  border: 1px solid color-mix(in srgb, var(--metric-accent, var(--border)) 42%, var(--border));
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--metric-accent, var(--surface)) 7%, var(--surface));
+}
+
+.evidence-metric__label,
+.balance-metric__label {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--sub-hi);
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.evidence-metric__label > span,
+.balance-metric__label > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.metric-help-button {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--sub) 65%, transparent);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--sub-hi);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.evidence-metric__value {
+  margin-top: 5px;
+  color: var(--metric-accent);
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
+.evidence-metric__value small,
+.balance-metric strong small,
+.investment-flow strong small,
+.investment-effective strong small {
+  margin-left: 2px;
+  color: var(--sub-hi);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.evidence-estimate-note {
+  margin: 5px 2px 0;
+  color: var(--yellow);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.investment-breakdown {
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.investment-flow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 14px minmax(0, 1fr) 14px minmax(0, 1fr);
+  align-items: center;
+  gap: 3px;
+}
+
+.investment-flow > div {
+  min-width: 0;
+  padding: 7px 4px;
+  border-radius: 10px;
+  background: var(--surface-hi);
+  text-align: center;
+}
+
+.investment-flow span {
+  display: block;
+  overflow: hidden;
+  color: var(--sub-hi);
+  font-size: 9px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.investment-flow strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.investment-flow .is-held strong { color: var(--green); }
+.investment-flow .is-total strong { color: var(--blue); }
+.investment-flow i { color: var(--sub); font-size: 13px; font-style: normal; text-align: center; }
+
+.investment-effective {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border);
+  color: var(--sub-hi);
+  font-size: 9px;
+}
+
+.investment-effective b { color: var(--sub-hi); font-weight: 700; white-space: nowrap; }
+.investment-effective strong { margin-left: 4px; color: var(--yellow); font-size: 17px; font-weight: 900; }
+
+.balance-metric { border-color: var(--border); background: var(--surface); }
+.balance-metric strong { display: block; margin-top: 5px; color: var(--text); font-size: 15px; font-weight: 900; white-space: nowrap; }
+.balance-metric.is-mochi { border-color: color-mix(in srgb, var(--green) 42%, var(--border)); background: color-mix(in srgb, var(--green) 8%, var(--surface)); }
+.balance-metric.is-mochi strong { color: var(--green); }
+.balance-metric.is-chodama { border-color: color-mix(in srgb, var(--purple) 42%, var(--border)); background: color-mix(in srgb, var(--purple) 8%, var(--surface)); }
+.balance-metric.is-chodama strong { color: var(--purple); }
+.balance-metric.is-expected strong { color: var(--yellow); }
+
+.metric-help-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 12px;
+  background: rgba(3, 6, 11, 0.72);
+}
+
+.metric-help-sheet {
+  width: min(456px, 100%);
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface-hi);
+  box-shadow: 0 -16px 55px rgba(0, 0, 0, 0.55);
+}
+
+.metric-help-sheet__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.metric-help-sheet__head b { color: var(--text); font-size: 17px; }
+.metric-help-sheet__head button { min-width: 58px; min-height: 44px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); color: var(--text); font-weight: 700; }
+.metric-help-sheet p { margin: 14px 0 0; color: var(--text); font-size: 14px; line-height: 1.7; }
+.metric-help-sheet small { display: block; margin-top: 10px; color: var(--yellow); font-size: 11px; line-height: 1.65; }
+
+@media (max-width: 380px) {
+  .evidence-metrics-grid,
+  .balance-metrics-grid { gap: 4px; }
+  .evidence-metric,
+  .balance-metric { padding: 8px 5px; }
+  .evidence-metric__label,
+  .balance-metric__label { font-size: 8px; }
+  .evidence-metric__value { font-size: 16px; }
+  .investment-flow strong { font-size: 13px; }
+}
+
 /* タイムライン: 直近の行動ログ */
 .timeline-card {
   background: var(--surface);

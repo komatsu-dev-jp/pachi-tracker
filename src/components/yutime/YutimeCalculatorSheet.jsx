@@ -59,8 +59,20 @@ function Result({ result, mode }) {
         ))}
       </div>
       <div style={{ padding: 11, color: "var(--sm-sub-hi)", fontSize: 10, lineHeight: 1.6 }}>
+        <div style={{ marginBottom: 7, padding: "9px 10px", borderRadius: 10, background: "color-mix(in srgb, var(--sm-yellow) 10%, var(--sm-card))", border: "1px solid color-mix(in srgb, var(--sm-yellow) 32%, transparent)" }}>
+          <span style={{ color: "var(--sm-sub-hi)" }}>当たらず遊タイムまで回す必要資金：</span>
+          <strong style={{ color: "var(--sm-yellow)", fontSize: 13 }}>{fmtYen(result.selectedArrivalInvestment).replace("+", "")}</strong>
+        </div>
+        {result.budgetCanReach != null && (
+          <div style={{ marginBottom: 7, color: result.budgetCanReach ? "var(--sm-green)" : "var(--sm-red)", fontSize: 11, fontWeight: 800 }}>
+            {result.budgetCanReach
+              ? `予算内で到達可能（残り約${Math.floor(result.budgetSurplusYen).toLocaleString()}円）`
+              : `予算では${result.budgetCoveredSpins.toLocaleString()}回転まで・あと約${Math.ceil(result.budgetShortfallYen).toLocaleString()}円必要`}
+          </div>
+        )}
         期待値0円以上の開始：{result.selectedBreakEvenLowSpins ?? "—"}回<br />
-        現金 {fmtYen(result.cashEV)} / 持ち玉・貯玉 {fmtYen(result.heldEV)}
+        現金 {fmtYen(result.cashEV)} / 持ち玉・貯玉 {fmtYen(result.heldEV)}<br />
+        到達必要資金：現金 {Math.ceil(result.arrivalInvestmentCash).toLocaleString()}円 / 持ち玉・貯玉 {Math.ceil(result.arrivalInvestmentHeld).toLocaleString()}円
       </div>
     </div>
   );
@@ -85,6 +97,7 @@ export default function YutimeCalculatorSheet({ S, initialMachineName = "", onCl
   const [sourceUrl, setSourceUrl] = useState(initialSession?.sourceUrl || "");
   const [source, setSource] = useState(initialSession?.source || "manual");
   const [playMode, setPlayMode] = useState(S?.playMode || "cash");
+  const [budgetYen, setBudgetYen] = useState("");
 
   const applyMachineName = (value) => {
     setMachineName(value);
@@ -119,6 +132,7 @@ export default function YutimeCalculatorSheet({ S, initialMachineName = "", onCl
     rentBalls: S?.rentBalls,
     exRate: S?.exRate,
     playMode,
+    budgetYen: numberOrNull(budgetYen),
   });
 
   const saveForSession = () => {
@@ -153,6 +167,7 @@ export default function YutimeCalculatorSheet({ S, initialMachineName = "", onCl
             <div>{label("想定1K回転率")}<input aria-label="1K回転率" type="number" min="0" step="0.1" inputMode="decimal" value={start1K} onChange={(e) => setStart1K(e.target.value)} style={fieldStyle} /></div>
           </div>
           <div>{label("遊技方法")}<div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>{[["cash", "現金"], ["mochi", "持ち玉"], ["chodama", "貯玉"]].map(([id, text]) => <button key={id} type="button" onClick={() => setPlayMode(id)} style={{ minHeight: 44, borderRadius: 10, border: `1px solid ${playMode === id ? "var(--sm-cyan)" : "var(--sm-line)"}`, background: playMode === id ? "color-mix(in srgb, var(--sm-cyan) 18%, var(--sm-card))" : "var(--sm-card)", color: "var(--sm-text)", fontWeight: 800 }}>{text}</button>)}</div></div>
+          <div>{label("使える予算（任意）")}<input aria-label="使える予算" type="number" min="0" step="1000" inputMode="numeric" value={budgetYen} onChange={(e) => setBudgetYen(e.target.value)} placeholder="例：10000" style={fieldStyle} /><div style={{ marginTop: 5, fontSize: 9, color: "var(--sm-sub)" }}>入力すると、予算で回せる回転数と不足額を逆算します。</div></div>
           <div style={{ padding: 12, borderRadius: 13, border: "1px solid var(--sm-line)", background: "var(--sm-card-hi)" }}>
             <div style={{ fontSize: 11, fontWeight: 900, color: "var(--sm-cyan)", marginBottom: 9 }}>遊タイム条件（手動修正できます）</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}><div>{label("発動回転数")}<input aria-label="発動回転数" type="number" min="0" value={triggerLowSpins} onChange={(e) => { setTriggerLowSpins(e.target.value); setSource("manual"); }} style={fieldStyle} /></div><div>{label("遊タイム回数")}<input aria-label="遊タイム回数" type="number" min="0" value={durationSpins} onChange={(e) => { setDurationSpins(e.target.value); setSource("manual"); }} style={fieldStyle} /></div></div>

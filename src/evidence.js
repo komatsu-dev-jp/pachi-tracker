@@ -21,7 +21,9 @@ function clamp(value, min, max) {
 export function runEvidence(ev = {}, settings = {}) {
   const trueBorder = finite(settings.trueBorder ?? ev.theoreticalBorder ?? ev.useBorder, 0);
   const observedRotation = finite(
-    ev.effectiveStart1K ?? ev.start1KCorrected ?? ev.start1K,
+    // 台の回りやすさは物理的な投入玉数で測る。交換価値で補正した実質回転率を
+    // 使うと、持ち玉比率だけで台性能の推定値が変わってしまう。
+    ev.start1K ?? ev.physicalStart1K ?? ev.start1KCorrected ?? ev.effectiveStart1K,
     0,
   );
   const totalKCount = Math.max(

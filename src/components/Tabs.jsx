@@ -12,15 +12,29 @@ import {
     sortMachines,
 } from "../machineSort";
 import { calcPreciseEV } from "../logic";
+import { applyEconomicEV } from "../economics";
+import {
+    calculateLiveActualBalance,
+    deadlineFromTime,
+    estimateHourlyWorkFromStart1K,
+    projectWorkToDeadline,
+    timeValueFromDate,
+    validateSessionSchedule,
+} from "../sessionProjection";
 import { reconcileSegmentConsumption, clearPushCorrections, estimateSegmentGross, hasPushCorrections } from "../ballConsumption";
 import { createBackup, restoreBackup } from "../persistence";
 import { parseCsvRows, toCsvRow } from "../csv";
 import { validateSettingNumber } from "../settingsUtils";
+import {
+    PACHINKO_RATE_PRESETS,
+    ballsForInvestment,
+    formatBallQuantity,
+    rentalYenPerBall,
+} from "../rateSettings";
 import { evDecision } from "./decision/evDecision";
 import { confidenceAccuracyLabel } from "./decision/confidenceLabels";
 import { LiveDecisionNavigator } from "./decision/LiveDecisionNavigator";
 import { KeyMetrics } from "./decision/KeyMetrics";
-import { ReasonList } from "./decision/ReasonList";
 import { RecentEventList } from "./decision/RecentEventList";
 import MachineSpecWorkspace from "./machines/MachineSpecWorkspace";
 import IslandMapManager from "./select/IslandMapManager";
@@ -33,12 +47,6 @@ import {
     deriveCurrentLowProbabilitySpins,
     deriveNormalExpectedNetBalls,
 } from "./yutime/yutimeCalculator";
-
-// 信頼度（試行充足率）: 1500回転で 100% （evDecision の calcConfidence と整合。
-// VerdictBadge.jsx の STABLE_TARGET_ROT と同値・同期すること）
-const STABLE_TARGET_ROT = 1500;
-// 次の判断ライン（再評価チェックポイント）の回転数
-const NEXT_CHECKPOINT_ROT = 300;
 
 /* ================================================================
    Simple SVG Line Chart component
@@ -538,6 +546,7 @@ function YutimeEvCard({ result, spec, rateSource = "assumed", playMode = "cash" 
             </div>
             <div style={{ fontSize: 10, color: C.sub, marginTop: 6, lineHeight: 1.4 }}>
                 {canCompute ? <>
+                    当たらず遊タイムまで {Math.ceil(result.selectedArrivalInvestment).toLocaleString("ja-JP")}円<br />
                     平均投資 {Math.round(result.selectedInvestment).toLocaleString("ja-JP")}円 ・ 0円以上の開始 {result.selectedBreakEvenLowSpins ?? "—"}回<br />
                     現金 {fmtYen(result.cashEV)} / 持ち玉・貯玉 {fmtYen(result.heldEV)} ・ {rateSource === "measured" ? "実測回転率" : "想定回転率"}
                 </> : missingPayout ? "遊タイム中のスルーと電サポ増減を含む平均純増玉を入力してください。" : "確率・発動回転・回転率を確認してください。"}
@@ -558,6 +567,16 @@ function dataCardStyle() {
         overflow: "hidden",
         boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
     };
+}
+
+function sessionScheduleErrorMessage(error) {
+    if (error === "closing_missing" || error === "closing_invalid") {
+        return "店舗の閉店時刻を設定してください。";
+    }
+    if (error === "target_after_closing") {
+        return "終了予定時刻は閉店時刻と同じか、それより前に設定してください。";
+    }
+    return "終了予定時刻は現在より後の時刻を設定してください。";
 }
 function cardHeaderStyle() {
     return {
@@ -677,9 +696,9 @@ export function DataTab({ ev, jpLog, S }) {
                     <UndoControls S={S} />
                 </div>
                 {!hasRot && <EmptySub msg="回転データなし（入力するとここに表示されます）" />}
-                {stat("1Kスタート", hasRot ? f(evEff.start1K, 1) : "—", "回/K", sc(evEff.bDiff))}
+                {stat("1Kスタート", hasRot ? f(ev.start1K, 1) : "—", "回/K", sc(ev.bDiff))}
                 {stat("理論ボーダー", ev.theoreticalBorder > 0 ? f(ev.theoreticalBorder, 1) : "—", "回/K", C.subHi)}
-                {stat("ボーダー差", hasRot ? sp(evEff.bDiff, 1) : "—", "回/K", sc(evEff.bDiff))}
+                {stat("ボーダー差", hasRot ? sp(ev.bDiff, 1) : "—", "回/K", sc(ev.bDiff))}
             </Card>
 
             {/* 期待値・収支 */}
@@ -723,7 +742,9 @@ export function DataTab({ ev, jpLog, S }) {
                 {stat("総投資額", hasRot ? f(ev.rawInvest) : "—", "円", C.red)}
                 {ev.trayBallsYen > 0 && stat("上皿補正", "-" + f(ev.trayBallsYen), "円", C.teal)}
                 {ev.correctedInvestYen > 0 && ev.trayBallsYen > 0 && stat("実質投資", f(Math.round(ev.correctedInvestYen)), "円", C.yellow)}
+                {stat("非現金比率", ev.nonCashRatio > 0 ? Math.round(ev.nonCashRatio * 100).toString() : "0", "%", C.orange)}
                 {stat("持ち玉比率", ev.mochiRatio > 0 ? Math.round(ev.mochiRatio * 100).toString() : "0", "%", C.orange)}
+                {stat("貯玉比率", ev.chodamaRatio > 0 ? Math.round(ev.chodamaRatio * 100).toString() : "0", "%", C.purple)}
             </Card>
         </div>
     );
@@ -745,16 +766,8 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     // 移動先の開始回転数（新台の台データ表示値。稼働開始時の「開始回転数」と同じ意味）
     const [moveStartRot, setMoveStartRot] = useState("");
     const movePickedMachineRef = useRef(null);
-    // 記録モード イベントメニュー（FAB から開く） + 詳細データ折りたたみ
+    // 記録モード イベントメニュー（FAB から開く）
     const [showEventMenu, setShowEventMenu] = useState(false);
-    const [showDetailCollapse, setShowDetailCollapse] = useState(false);
-    // 詳細データタブ — 折りたたみセクション（5〜9）の開閉状態。通常時は 1 行サマリーのみ表示
-    const [dataExpanded, setDataExpanded] = useState({
-        work: false, sigma: false, trend: false, stats: false, calc: false,
-    });
-    const toggleDataSec = (k) => setDataExpanded((prev) => ({ ...prev, [k]: !prev[k] }));
-    // AI 分析サマリーの折りたたみ（既定: 展開）
-    const [aiSummaryOpen, setAiSummaryOpen] = useState(true);
     // テンキーの直近入力履歴（表示専用・店内での再入力ヒント）
     const [inputHistory, setInputHistory] = useState([]);
     const [showSetupModal, setShowSetupModal] = useState(false);
@@ -767,8 +780,20 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     const [machinePickerFor, setMachinePickerFor] = useState("setup");
     const [summaryCollapsed, setSummaryCollapsed] = useState(true);
     const [showInvestSettings, setShowInvestSettings] = useState(false);
+    const [customInvestPace, setCustomInvestPace] = useState("");
+    const [customInvestPaceError, setCustomInvestPaceError] = useState("");
     const tableRef = useRef(null);
     const evEff = effectiveEv(ev);
+    const [projectionNow, setProjectionNow] = useState(() => Date.now());
+    const [showScheduleEditor, setShowScheduleEditor] = useState(false);
+    const [scheduleTargetTime, setScheduleTargetTime] = useState("");
+    const [scheduleClosingTime, setScheduleClosingTime] = useState("");
+    const [scheduleEditorError, setScheduleEditorError] = useState("");
+
+    useEffect(() => {
+        const timer = setInterval(() => setProjectionNow(Date.now()), 30000);
+        return () => clearInterval(timer);
+    }, []);
 
     // 遊タイム用の低確率回転数。開始時カウントに、着席後の通常回転を足す。
     const currentHamari = useMemo(
@@ -790,7 +815,8 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             const prefixRows = rowsAll.slice(0, i + 1);
             // その時点までに発生した大当たりチェーンのみ（hitRot = 発生時の cumRot）
             const prefixJp = jpAll.filter((c) => (Number(c?.hitRot) || 0) <= cum);
-            const evI = calcPreciseEV({
+            const prefixTrayBalls = prefixJp.reduce((sum, chain) => sum + (Number(chain?.trayBalls) || 0), 0);
+            const baseEvI = calcPreciseEV({
                 rotRows: prefixRows,
                 startRot: S.startRot,
                 jpLog: prefixJp,
@@ -798,14 +824,22 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                 exRate: S.exRate,
                 synthDenom: S.synthDenom,
                 rotPerHour: S.rotPerHour,
-                totalTrayBalls: S.totalTrayBalls,
+                totalTrayBalls: prefixTrayBalls,
                 border,
                 spec1R: S.spec1R,
                 specAvgRounds: S.specAvgRounds,
                 specSapo: S.specSapo,
                 chodamaSettings: { includeChodamaInBalance: S.includeChodamaInBalance },
             });
-            const bd = effectiveEv(evI).bDiff;
+            const evI = applyEconomicEV(baseEvI, {
+                rotRows: prefixRows,
+                jpLog: prefixJp,
+                totalTrayBalls: prefixTrayBalls,
+                rentBalls: S.rentBalls,
+                exRate: S.exRate,
+                rotPerHour: S.rotPerHour,
+            });
+            const bd = evI.bDiff;
             const conf = evDecision(evI).confidence;
             points.push({
                 x: cum,
@@ -814,7 +848,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             });
         }
         return points;
-    }, [S.rotRows, S.jpLog, S.startRot, S.rentBalls, S.exRate, S.synthDenom, S.rotPerHour, S.totalTrayBalls, border, S.spec1R, S.specAvgRounds, S.specSapo, S.includeChodamaInBalance]);
+    }, [S.rotRows, S.jpLog, S.startRot, S.rentBalls, S.exRate, S.synthDenom, S.rotPerHour, border, S.spec1R, S.specAvgRounds, S.specSapo, S.includeChodamaInBalance]);
 
     // 機種設定 編集モーダル用state
     const [showEditModal, setShowEditModal] = useState(false);
@@ -1387,7 +1421,41 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     const [setupBorder1k, setSetupBorder1k] = useState("");
     const [setupYutimeLowSpins, setSetupYutimeLowSpins] = useState("");
     const [setupYutimeStart1K, setSetupYutimeStart1K] = useState("");
+    const [setupEndTime, setSetupEndTime] = useState("");
+    const [setupClosingTime, setSetupClosingTime] = useState("");
+    const [setupPlannedStart1K, setSetupPlannedStart1K] = useState("");
+    const [setupError, setSetupError] = useState("");
     const [showSetupSpec, setShowSetupSpec] = useState(false);
+
+    const openSetupModal = () => {
+        const defaultEnd = new Date(Date.now() + 2 * 60 * 60 * 1000);
+        setProjectionNow(Date.now());
+        setSetupEndTime(timeValueFromDate(defaultEnd));
+        setSetupError("");
+        setShowSetupModal(true);
+    };
+
+    const setupPlayMode = Number(setupInitialBalls) > 0 ? "chodama" : "cash";
+    const setupHourlyEstimate = estimateHourlyWorkFromStart1K({
+        start1K: setupPlannedStart1K,
+        synthDenom: Number(setupSynthDenom) || S.synthDenom,
+        spec1R: S.spec1R,
+        specAvgRounds: S.specAvgRounds,
+        specSapo: S.specSapo,
+        exRate: S.exRate,
+        rentBalls: S.rentBalls,
+        rotPerHour: S.rotPerHour,
+        playMode: setupPlayMode,
+    });
+    const setupDeadline = deadlineFromTime(projectionNow, setupEndTime);
+    const setupClosingDeadline = deadlineFromTime(projectionNow, setupClosingTime, { allowNextDay: true });
+    const setupTargetAfterClosing = Boolean(setupDeadline && setupClosingDeadline && setupDeadline > setupClosingDeadline);
+    const setupProjection = setupHourlyEstimate && setupDeadline
+        ? projectWorkToDeadline({ currentWork: 0, hourlyWork: setupHourlyEstimate.hourlyWork, nowAt: projectionNow, deadlineAt: setupDeadline })
+        : null;
+    const setupCloseProjection = setupHourlyEstimate && setupClosingDeadline
+        ? projectWorkToDeadline({ currentWork: 0, hourlyWork: setupHourlyEstimate.hourlyWork, nowAt: projectionNow, deadlineAt: setupClosingDeadline })
+        : null;
 
     // 機種ピッカー: 検索 ∩ タイプフィルター
     const filteredMachines = useMemo(() => {
@@ -1466,6 +1534,26 @@ export function RotTab({ rows, setRows, S, ev, border }) {
 
     const investPace = S.investPace || 1000;
     const rentBalls = S.rentBalls || 250; // 貸玉数（デフォルト250玉/1K）
+    const ballsPerRecord = ballsForInvestment(investPace, rentBalls);
+    const rentalRateYen = rentalYenPerBall(rentBalls);
+
+    const applyRatePreset = (preset) => {
+        S.setRentBalls(preset.rentBalls);
+        S.setExRate(preset.rentBalls);
+        S.setBallVal(1000 / preset.rentBalls);
+        S.setInvestPace(preset.recommendedInvestPace);
+    };
+
+    const applyCustomInvestPace = () => {
+        const pace = Number(customInvestPace);
+        if (!Number.isInteger(pace) || pace <= 0) {
+            setCustomInvestPaceError("1円以上の整数で入力してください");
+            return;
+        }
+        S.setInvestPace(pace);
+        setCustomInvestPaceError("");
+        setShowInvestSettings(false);
+    };
 
     const decide = () => {
         if (submitLockRef.current) return;
@@ -1620,6 +1708,30 @@ export function RotTab({ rows, setRows, S, ev, border }) {
 
     // 新規稼働開始
     const handleStartSession = () => {
+        const now = new Date();
+        const schedule = validateSessionSchedule({
+            nowAt: now,
+            sessionStartedAt: now,
+            targetTime: setupEndTime,
+            closingTime: setupClosingTime,
+        });
+        const { targetDeadline } = schedule;
+        if (!setupStore.trim()) {
+            setSetupError("店舗を入力してください。閉店時刻と正しく結び付けるために必要です。");
+            return;
+        }
+        if (!setupMachineName.trim()) {
+            setSetupError("機種を選択してください。想定金額の計算に機種スペックが必要です。");
+            return;
+        }
+        if (!schedule.ok) {
+            setSetupError(sessionScheduleErrorMessage(schedule.error));
+            return;
+        }
+        if (!(Number(setupPlannedStart1K) > 0) || !setupHourlyEstimate) {
+            setSetupError("開始前の想定1Kスタートを入力し、機種スペックと回転設定を確認してください。");
+            return;
+        }
         const val = Number(setupStartRot) || 0;
         const yutimeLowSpins = setupYutimeLowSpins === ""
             ? val
@@ -1696,6 +1808,10 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         S.setStartRot(val);
         S.setSessionStarted(true);
         S.setSessionStartDate(localDateStr());
+        S.setSessionStartedAt(now.toISOString());
+        S.setSessionTargetEndAt(targetDeadline.toISOString());
+        S.setSessionClosingTime(setupClosingTime);
+        S.setSessionPlannedStart1K(Number(setupPlannedStart1K));
         setRows((r) => [...r, {
             type: "start",
             cumRot: val,
@@ -1717,6 +1833,10 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         setSetupBorder1k("");
         setSetupYutimeLowSpins("");
         setSetupYutimeStart1K("");
+        setSetupEndTime("");
+        setSetupClosingTime("");
+        setSetupPlannedStart1K("");
+        setSetupError("");
         setShowSetupSpec(false);
     };
 
@@ -2347,7 +2467,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     {/* 新規稼働ボタン（説明文の直下に配置） */}
                     <button
                         className="b"
-                        onClick={() => setShowSetupModal(true)}
+                        onClick={openSetupModal}
                         style={{
                             width: "100%",
                             height: 60,
@@ -2386,7 +2506,12 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                         <input
                                             type="text"
                                             value={setupStore}
-                                            onChange={e => setSetupStore(e.target.value)}
+                                            onChange={e => {
+                                                setSetupStore(e.target.value);
+                                                S.setSelectedStoreId(null);
+                                                setSetupClosingTime("");
+                                                setSetupError("");
+                                            }}
                                             placeholder="店舗名を入力"
                                             style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "14px 40px 14px 14px", fontSize: 16, color: C.text, fontFamily: font, outline: "none", transition: "border-color 0.2s" }}
                                         />
@@ -2406,7 +2531,11 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                                     <button key={st.id || i} className="b" onClick={() => {
                                                         setSetupStore(name);
                                                         if (typeof st === "object") {
-                                                            if (st.rentBalls) S.setRentBalls(st.rentBalls);
+                                                            if (st.rentBalls) {
+                                                                S.setRentBalls(st.rentBalls);
+                                                                const ratePreset = PACHINKO_RATE_PRESETS.find((preset) => preset.rentBalls === Number(st.rentBalls));
+                                                                if (ratePreset) S.setInvestPace(ratePreset.recommendedInvestPace);
+                                                            }
                                                             if (st.exRate) {
                                                                 S.setExRate(st.exRate);
                                                                 // 複数交換率対応: 玉単価も exRate から同期
@@ -2416,6 +2545,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                                             // 貯玉入力欄を店舗の残高で自動セット
                                                             if (st.chodama) setSetupInitialBalls(String(st.chodama));
                                                             S.setSelectedStoreId(st.id);
+                                                            setSetupClosingTime(st.closingTime || "");
                                                         }
                                                         setShowStoreDD(false);
                                                     }} style={{
@@ -2429,6 +2559,37 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                             })}
                                         </div>
                                     )}
+                                </div>
+
+                                {/* 貸玉レート。低貸しでは一般的な200玉区切りも同時に設定する。 */}
+                                <div style={{ marginBottom: 16 }}>
+                                    <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>貸玉レート</div>
+                                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+                                        {PACHINKO_RATE_PRESETS.map((preset) => {
+                                            const active = Number(S.rentBalls) === preset.rentBalls;
+                                            return (
+                                                <button
+                                                    key={preset.rentBalls}
+                                                    type="button"
+                                                    className="b"
+                                                    aria-pressed={active}
+                                                    onClick={() => applyRatePreset(preset)}
+                                                    style={{
+                                                        minHeight: 44, borderRadius: 10, fontSize: 13, fontWeight: 800,
+                                                        background: active ? C.blue : C.surfaceHi,
+                                                        color: active ? "#fff" : C.text,
+                                                        border: active ? "none" : `1px solid ${C.borderHi}`,
+                                                        fontFamily: font,
+                                                    }}
+                                                >
+                                                    {preset.label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    <div style={{ fontSize: 10, color: C.sub, marginTop: 7, lineHeight: 1.5 }}>
+                                        現在 {rentalRateYen.toFixed(2)}円/玉 ・ 1回の記録 {Number(investPace).toLocaleString()}円（{formatBallQuantity(ballsPerRecord)}玉）
+                                    </div>
                                 </div>
 
                                 {/* 機種選択 */}
@@ -2565,6 +2726,67 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     </div>
                                 )}
 
+                                {/* 稼働計画。時刻だけでは金額を出せないため、開始前の想定回転率も同時に確認する。 */}
+                                <div style={{ marginBottom: 18, padding: 12, borderRadius: 12, background: "var(--surface-hi)", border: `1px solid ${C.borderHi}` }}>
+                                    <div style={{ fontSize: 12, color: C.text, marginBottom: 10, fontWeight: 800 }}>稼働計画</div>
+                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                                        <label style={{ display: "block" }}>
+                                            <span style={{ display: "block", fontSize: 10, color: C.sub, marginBottom: 5 }}>終了予定時刻 *</span>
+                                            <input
+                                                aria-label="終了予定時刻"
+                                                type="time"
+                                                value={setupEndTime}
+                                                onChange={(e) => { setSetupEndTime(e.target.value); setSetupError(""); }}
+                                                style={{ width: "100%", minHeight: 44, boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 10, padding: "10px", color: C.text, fontSize: 16, fontFamily: mono }}
+                                            />
+                                        </label>
+                                        <label style={{ display: "block" }}>
+                                            <span style={{ display: "block", fontSize: 10, color: C.sub, marginBottom: 5 }}>店舗の閉店時刻 *</span>
+                                            <input
+                                                aria-label="店舗の閉店時刻"
+                                                type="time"
+                                                value={setupClosingTime}
+                                                onChange={(e) => { setSetupClosingTime(e.target.value); setSetupError(""); }}
+                                                style={{ width: "100%", minHeight: 44, boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 10, padding: "10px", color: C.text, fontSize: 16, fontFamily: mono }}
+                                            />
+                                        </label>
+                                    </div>
+                                    <label style={{ display: "block", marginBottom: 10 }}>
+                                        <span style={{ display: "block", fontSize: 10, color: C.sub, marginBottom: 5 }}>開始前の想定1Kスタート *</span>
+                                        <input
+                                            aria-label="開始前の想定1Kスタート"
+                                            type="number"
+                                            min="0.1"
+                                            step="0.1"
+                                            inputMode="decimal"
+                                            value={setupPlannedStart1K}
+                                            onChange={(e) => { setSetupPlannedStart1K(e.target.value); setSetupError(""); }}
+                                            placeholder="例: 20.0"
+                                            style={{ width: "100%", minHeight: 44, boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 10, padding: "10px 12px", color: C.text, fontSize: 16, fontFamily: mono }}
+                                        />
+                                    </label>
+                                    <div style={{ fontSize: 10, color: C.sub, lineHeight: 1.55, marginBottom: setupProjection ? 10 : 0 }}>
+                                        開始 {timeValueFromDate(projectionNow)} ・ 1時間 {f(S.rotPerHour)}回転で計算します。
+                                    </div>
+                                    {setupProjection && (
+                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                            <div style={{ background: C.bg, borderRadius: 9, padding: 9 }}>
+                                                <div style={{ fontSize: 9, color: C.sub }}>予定終了まで</div>
+                                                <div style={{ fontSize: 16, fontWeight: 800, color: sc(setupProjection.totalWork), fontFamily: mono }}>{sp(Math.round(setupProjection.totalWork))}円</div>
+                                            </div>
+                                            <div style={{ background: C.bg, borderRadius: 9, padding: 9 }}>
+                                                <div style={{ fontSize: 9, color: C.sub }}>閉店まで</div>
+                                                <div style={{ fontSize: 16, fontWeight: 800, color: setupCloseProjection ? sc(setupCloseProjection.totalWork) : C.sub, fontFamily: mono }}>
+                                                    {setupCloseProjection ? `${sp(Math.round(setupCloseProjection.totalWork))}円` : "—"}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {setupTargetAfterClosing && (
+                                        <div role="alert" style={{ marginTop: 8, fontSize: 10, color: C.red }}>終了予定時刻は閉店時刻と同じか、それより前に設定してください。</div>
+                                    )}
+                                </div>
+
                                 {/* 貯玉 */}
                                 <div style={{ marginBottom: 24 }}>
                                     <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>貯玉（任意）</div>
@@ -2577,6 +2799,8 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                         style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "14px", fontSize: 18, color: C.text, fontFamily: mono, outline: "none", textAlign: "center" }}
                                     />
                                 </div>
+
+                                {setupError && !setupTargetAfterClosing && <div role="alert" style={{ color: C.red, fontSize: 11, lineHeight: 1.5, marginBottom: 10 }}>{setupError}</div>}
 
                                 {/* ボタン - プレミアムデザイン */}
                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -2750,7 +2974,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
                         </svg>
                     </button>
-                    <button className="b" onClick={() => setShowInvestSettings(true)} style={{
+                    <button className="b" onClick={() => { setCustomInvestPace(String(investPace)); setCustomInvestPaceError(""); setShowInvestSettings(true); }} style={{
                         background: "var(--surface-hi)", border: `1px solid ${C.border}`, borderRadius: 8,
                         padding: "6px 10px", display: "flex", alignItems: "center", gap: 4, minHeight: 32, flexShrink: 0
                     }} aria-label="投資ペース設定">
@@ -2758,7 +2982,9 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             <rect x="2" y="6" width="20" height="13" rx="2" />
                             <path d="M2 10h20" />
                         </svg>
-                        <span style={{ fontSize: 10, color: C.subHi, fontWeight: 600, fontFamily: mono }}>{investPace >= 1000 ? `${investPace/1000}K` : `${investPace}円`}</span>
+                        <span style={{ fontSize: 10, color: C.subHi, fontWeight: 600, fontFamily: mono }}>
+                            {investPace >= 1000 ? `${investPace/1000}K` : `${investPace}円`}・{formatBallQuantity(ballsPerRecord)}玉
+                        </span>
                     </button>
                 </div>
 
@@ -2841,7 +3067,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
 
             {/* 記録タブ — モックアップ2準拠：ダーク × ネオンブルー × 戦略OS風UI */}
             {S.sessionSubTab === "rot" && (() => {
-                const decision = evDecision(ev);
                 const ballsLabel = S.playMode === "chodama" ? "貯玉" : "持ち玉";
                 const ballsVal = S.playMode === "chodama" ? (S.currentChodama || 0) : (S.currentMochiBalls || 0);
                 const lastRow = rows.length > 0 ? rows[rows.length - 1] : null;
@@ -2870,9 +3095,8 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         {/* 2. 指標カード（3 + 4） */}
                         <KeyMetrics
                             ev={ev}
-                            currentBalls={ballsVal}
-                            ballsLabel={ballsLabel}
-                            playMode={S.playMode}
+                            currentMochiBalls={S.currentMochiBalls || 0}
+                            currentChodama={S.currentChodama || 0}
                         />
 
                         {/* 3. 直近の行動ログ（タイムライン） */}
@@ -2905,65 +3129,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                 直前の入力を削除{lastDataRow?.thisRot != null ? `（+${lastDataRow.thisRot}回転）` : ""}
                             </button>
                         )}
-
-                        {/* 4. 判定の根拠（要約） */}
-                        <ReasonList
-                            reasons={decision.reasons}
-                            onDetails={() => S.setSessionSubTab("data")}
-                        />
-
-                        {/* 5. 詳細データ（折りたたみ） */}
-                        <div className="collapse-card">
-                            <button
-                                className="collapse-card__head b"
-                                type="button"
-                                aria-expanded={showDetailCollapse}
-                                onClick={() => setShowDetailCollapse((v) => !v)}
-                            >
-                                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.sub} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                        <path d="M4 20h16" />
-                                        <rect x="6" y="11" width="3" height="9" rx="0.5" />
-                                        <rect x="11" y="7" width="3" height="13" rx="0.5" />
-                                        <rect x="16" y="13" width="3" height="7" rx="0.5" />
-                                    </svg>
-                                    詳細データ
-                                </span>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.sub} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                    <polyline points="6 9 12 15 18 9" />
-                                </svg>
-                            </button>
-                            {showDetailCollapse && (
-                                <div style={{ padding: "0 14px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
-                                    <button
-                                        className="b"
-                                        type="button"
-                                        onClick={() => S.setSessionSubTab("data")}
-                                        style={{
-                                            width: "100%", minHeight: 44, borderRadius: 10,
-                                            background: `color-mix(in srgb, ${C.blue} 8%, transparent)`,
-                                            border: `1px solid color-mix(in srgb, ${C.blue} 35%, transparent)`,
-                                            color: C.blue, fontSize: 13, fontWeight: 700, fontFamily: font,
-                                            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                                        }}>
-                                        詳細データ画面を開く ›
-                                    </button>
-                                    {hasDataRow && (
-                                        <Btn
-                                            label="直前の記録を削除"
-                                            onClick={handleDeleteLastData}
-                                            bg="rgba(239, 68, 68, 0.1)"
-                                            fg={C.red}
-                                            bd={C.red + "30"}
-                                        />
-                                    )}
-                                    <div style={{ fontSize: 10, color: C.sub, padding: "4px 2px", fontFamily: font, lineHeight: 1.6 }}>
-                                        モード切替・履歴テーブル・サポ計算など、より詳しい情報は<br />
-                                        「詳細データ」タブから確認できます。
-                                    </div>
-                                </div>
-                            )}
-                        </div>
 
                     </div>
 
@@ -3973,11 +4138,193 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             {S.sessionSubTab === "data" && (() => {
                 const evEff = effectiveEv(ev);
                 const decision = evDecision(ev);
+                const liveDecision = ev.liveDecision;
+                const nextDecisionText = liveDecision?.nextCheckpointK
+                    ? `${liveDecision.nextCheckpointK}Kまであと${liveDecision.remainingK.toFixed(1)}K（約${liveDecision.remainingBalls}玉）`
+                    : "20K確認済み";
+                const sessionStartReference = S.sessionStartedAt || projectionNow;
+                const storedTargetDeadline = S.sessionTargetEndAt ? new Date(S.sessionTargetEndAt) : null;
+                const targetDeadline = storedTargetDeadline && Number.isFinite(storedTargetDeadline.getTime())
+                    ? storedTargetDeadline
+                    : null;
+                const closingDeadline = S.sessionClosingTime
+                    ? deadlineFromTime(sessionStartReference, S.sessionClosingTime, { allowNextDay: true })
+                    : null;
+                const plannedEstimate = estimateHourlyWorkFromStart1K({
+                    start1K: S.sessionPlannedStart1K,
+                    synthDenom: S.synthDenom,
+                    spec1R: S.spec1R,
+                    specAvgRounds: S.specAvgRounds,
+                    specSapo: S.specSapo,
+                    exRate: S.exRate,
+                    rentBalls: S.rentBalls,
+                    rotPerHour: S.rotPerHour,
+                    playMode: Number(S.initialChodama) > 0 ? "chodama" : "cash",
+                });
+                const openScheduleEditor = () => {
+                    const defaultTarget = new Date(Number(projectionNow) + 2 * 60 * 60 * 1000);
+                    setScheduleTargetTime(targetDeadline ? timeValueFromDate(targetDeadline) : timeValueFromDate(defaultTarget));
+                    setScheduleClosingTime(S.sessionClosingTime || "");
+                    setScheduleEditorError("");
+                    setShowScheduleEditor(true);
+                };
+                const saveScheduleEditor = () => {
+                    const schedule = validateSessionSchedule({
+                        nowAt: projectionNow,
+                        sessionStartedAt: sessionStartReference,
+                        targetTime: scheduleTargetTime,
+                        closingTime: scheduleClosingTime,
+                    });
+                    if (!schedule.ok) {
+                        setScheduleEditorError(sessionScheduleErrorMessage(schedule.error));
+                        return;
+                    }
+                    S.setSessionTargetEndAt(schedule.targetDeadline.toISOString());
+                    S.setSessionClosingTime(scheduleClosingTime);
+                    setScheduleEditorError("");
+                    setShowScheduleEditor(false);
+                };
+                const scheduleEditorButton = (
+                    <button
+                        type="button"
+                        aria-label="予定時間を変更"
+                        onClick={openScheduleEditor}
+                        style={{
+                            width: "100%",
+                            minHeight: 48,
+                            boxSizing: "border-box",
+                            border: `1px solid ${C.blue}`,
+                            borderRadius: 11,
+                            background: "rgba(10,132,255,0.09)",
+                            color: C.text,
+                            padding: "9px 12px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 10,
+                            fontFamily: font,
+                            cursor: "pointer",
+                        }}
+                    >
+                        <span style={{ textAlign: "left" }}>
+                            <span style={{ display: "block", fontSize: 11, fontWeight: 800 }}>予定時間を変更</span>
+                            <span style={{ display: "block", marginTop: 3, fontSize: 9.5, color: C.sub }}>
+                                終了 {targetDeadline ? timeValueFromDate(targetDeadline) : "未設定"} ・ 閉店 {S.sessionClosingTime || "未設定"}
+                            </span>
+                        </span>
+                        <span aria-hidden="true" style={{ color: C.blue, fontSize: 20, lineHeight: 1 }}>›</span>
+                    </button>
+                );
+                const scheduleEditorModal = showScheduleEditor && ReactDOM.createPortal(
+                    <div
+                        role="presentation"
+                        onMouseDown={(e) => {
+                            if (e.target === e.currentTarget) setShowScheduleEditor(false);
+                        }}
+                        style={{
+                            position: "fixed",
+                            inset: 0,
+                            zIndex: 2400,
+                            background: "rgba(0,0,0,0.72)",
+                            display: "flex",
+                            alignItems: "flex-end",
+                            justifyContent: "center",
+                        }}
+                    >
+                        <div
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label="予定時間の変更"
+                            style={{
+                                width: "100%",
+                                maxWidth: 430,
+                                boxSizing: "border-box",
+                                borderRadius: "22px 22px 0 0",
+                                border: `1px solid ${C.borderHi}`,
+                                borderBottom: "none",
+                                background: C.surface,
+                                padding: "10px 16px calc(18px + env(safe-area-inset-bottom))",
+                                boxShadow: "0 -18px 45px rgba(0,0,0,0.45)",
+                            }}
+                        >
+                            <div aria-hidden="true" style={{ width: 38, height: 4, borderRadius: 99, background: C.borderHi, margin: "0 auto 14px" }} />
+                            <div style={{ fontSize: 17, fontWeight: 900, color: C.text }}>予定時間を変更</div>
+                            <div style={{ marginTop: 5, fontSize: 10, lineHeight: 1.55, color: C.sub }}>
+                                時刻欄をタップすると、iPhoneでは端末標準のリール型時間選択が開きます。
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 16 }}>
+                                <label style={{ minWidth: 0 }}>
+                                    <span style={{ display: "block", marginBottom: 6, fontSize: 10, fontWeight: 800, color: C.subHi }}>終了予定時刻</span>
+                                    <input
+                                        aria-label="変更後の終了予定時刻"
+                                        type="time"
+                                        step="300"
+                                        value={scheduleTargetTime}
+                                        onChange={(e) => {
+                                            setScheduleTargetTime(e.target.value);
+                                            setScheduleEditorError("");
+                                        }}
+                                        style={{ width: "100%", minWidth: 0, minHeight: 52, boxSizing: "border-box", borderRadius: 12, border: `1px solid ${C.borderHi}`, background: C.bg, color: C.text, padding: "8px 10px", fontSize: 20, fontWeight: 800, fontFamily: mono }}
+                                    />
+                                </label>
+                                <label style={{ minWidth: 0 }}>
+                                    <span style={{ display: "block", marginBottom: 6, fontSize: 10, fontWeight: 800, color: C.subHi }}>店舗の閉店時刻</span>
+                                    <input
+                                        aria-label="変更後の店舗閉店時刻"
+                                        type="time"
+                                        step="300"
+                                        value={scheduleClosingTime}
+                                        onChange={(e) => {
+                                            setScheduleClosingTime(e.target.value);
+                                            setScheduleEditorError("");
+                                        }}
+                                        style={{ width: "100%", minWidth: 0, minHeight: 52, boxSizing: "border-box", borderRadius: 12, border: `1px solid ${C.borderHi}`, background: C.bg, color: C.text, padding: "8px 10px", fontSize: 20, fontWeight: 800, fontFamily: mono }}
+                                    />
+                                </label>
+                            </div>
+                            {scheduleEditorError && (
+                                <div role="alert" style={{ marginTop: 10, color: C.red, fontSize: 11, lineHeight: 1.5 }}>
+                                    {scheduleEditorError}
+                                </div>
+                            )}
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 16 }}>
+                                <button type="button" onClick={() => setShowScheduleEditor(false)} style={{ minHeight: 48, borderRadius: 12, border: `1px solid ${C.borderHi}`, background: C.surfaceHi, color: C.text, fontSize: 14, fontWeight: 800, fontFamily: font }}>キャンセル</button>
+                                <button type="button" onClick={saveScheduleEditor} style={{ minHeight: 48, borderRadius: 12, border: "none", background: C.blue, color: "#fff", fontSize: 14, fontWeight: 900, fontFamily: font }}>この時刻で保存</button>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body,
+                );
                 const hasData = (ev.netRot || 0) > 0;
                 if (!hasData) {
+                    const plannedTarget = plannedEstimate && targetDeadline
+                        ? projectWorkToDeadline({ currentWork: 0, hourlyWork: plannedEstimate.hourlyWork, nowAt: projectionNow, deadlineAt: targetDeadline })
+                        : null;
+                    const plannedClose = plannedEstimate && closingDeadline
+                        ? projectWorkToDeadline({ currentWork: 0, hourlyWork: plannedEstimate.hourlyWork, nowAt: projectionNow, deadlineAt: closingDeadline })
+                        : null;
                     return (
                         <div style={{ padding: 14 }}>
-                            <Card style={{ padding: "28px 16px", textAlign: "center" }}>
+                            <Card style={{ padding: "18px 16px", marginBottom: 10 }}>
+                                <div style={{ fontSize: 13, color: C.text, fontWeight: 800, marginBottom: 12 }}>開始前の仕事量見込み</div>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                    <div style={{ background: C.surfaceHi, borderRadius: 10, padding: 10 }}>
+                                        <div style={{ fontSize: 9, color: C.sub }}>予定終了 {targetDeadline ? timeValueFromDate(targetDeadline) : "未設定"}</div>
+                                        <div style={{ fontSize: 18, fontWeight: 800, color: plannedTarget ? sc(plannedTarget.totalWork) : C.sub, fontFamily: mono }}>
+                                            {plannedTarget ? `${sp(Math.round(plannedTarget.totalWork))}円` : "—"}
+                                        </div>
+                                    </div>
+                                    <div style={{ background: C.surfaceHi, borderRadius: 10, padding: 10 }}>
+                                        <div style={{ fontSize: 9, color: C.sub }}>閉店 {S.sessionClosingTime || "未設定"}</div>
+                                        <div style={{ fontSize: 18, fontWeight: 800, color: plannedClose ? sc(plannedClose.totalWork) : C.sub, fontFamily: mono }}>
+                                            {plannedClose ? `${sp(Math.round(plannedClose.totalWork))}円` : "—"}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style={{ marginTop: 9, fontSize: 10, color: C.sub, lineHeight: 1.5 }}>想定1Kスタート {Number(S.sessionPlannedStart1K) > 0 ? `${f(S.sessionPlannedStart1K, 1)}回/K` : "未設定"}。回転入力後は実測値で更新します。</div>
+                                <div style={{ marginTop: 12 }}>{scheduleEditorButton}</div>
+                            </Card>
+                            <Card style={{ padding: "22px 16px", textAlign: "center" }}>
                                 <div style={{ fontSize: 14, color: C.text, fontWeight: 800, marginBottom: 8 }}>
                                     詳細データはまだありません
                                 </div>
@@ -3985,54 +4332,61 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     回転数や大当たりを記録すると、実データに基づく分析を表示します。
                                 </div>
                             </Card>
+                            {scheduleEditorModal}
                         </div>
                     );
                 }
 
-                const start1K = evEff.start1K;
-                const theoreticalBorder = ev.theoreticalBorder > 0 ? ev.theoreticalBorder : 16.7;
-                const bDiff = evEff.bDiff;
+                const start1K = ev.start1K > 0 ? ev.start1K : evEff.start1K;
+                const theoreticalBorder = ev.theoreticalBorder > 0 ? ev.theoreticalBorder : 0;
+                const bDiff = Number.isFinite(ev.bDiff) ? ev.bDiff : evEff.bDiff;
                 const wage = evEff.wage;
-                const wageSpread = Math.max(2500, Math.abs(wage) * 1.5);
                 const confidence = decision.confidence;
                 const expectedWork = evEff.workAmount;
-                // 実収支（差玉換算）= 現持ち玉×交換単価 - 投資 - 補正
                 // 交換率（円/玉）：ballVal を優先、未設定なら exRate を 1000/exRate で換算
                 const ballValYenPerBall = Number(S.ballVal) > 0 ? Number(S.ballVal) :
                     (Number(S.exRate) > 0 ? 1000 / Number(S.exRate) : 4);
                 const exRate = ballValYenPerBall;
                 const currentMochi = Number(S.currentMochiBalls) || 0;
                 const totalInvestActual = ev.rawInvest > 0 ? ev.rawInvest : 0;
-                const actualBalance = Math.round(currentMochi * ballValYenPerBall - totalInvestActual);
-                const diffActVsExp = actualBalance - expectedWork; // σ用（実収支 − 期待値）。σの上振れ/下振れ判定はこの値で維持
+                // 実収支は、現金だけでなく開始からの貯玉増減と台移動の持込価値も含める。
+                const actualBalance = calculateLiveActualBalance({
+                    currentMochiBalls: currentMochi,
+                    currentChodama: S.currentChodama,
+                    initialChodama: S.initialChodama,
+                    rawInvest: totalInvestActual,
+                    carriedInYen: S.carriedInYen,
+                    ballValueYen: ballValYenPerBall,
+                });
                 // 差分表示用：差 = 期待値 − 実収支。正＝欠損（実収支が期待値を下回る）／負＝余剰（上回る）
                 const diffExpVsAct = expectedWork - actualBalance;
-                // σ プロキシ（見た目優先・概算）
-                const sigmaStdEst = Math.max(3500, Math.sqrt(Math.max(ev.netRot || 0, 80)) * 280);
-                const sigmaVal = Math.max(-3, Math.min(3, diffActVsExp / sigmaStdEst));
                 const currentBalls = currentMochi;
                 const jpCount = ev.jpCount || 0;
+                const totalHits = ev.totalHits || 0;
                 const netRot = ev.netRot || 0;
                 const avg1R = ev.avg1R > 0 ? ev.avg1R : 0;
-                // 信頼度「中」まで（基準STABLE_TARGET_ROT回転に対する不足分）
-                const remainsToMid = Math.max(0, STABLE_TARGET_ROT - netRot);
                 const evPerRot = Number.isFinite(evEff.evPerRot) ? evEff.evPerRot : 0;
                 const mochiRatio = ev.mochiRatio > 0 ? ev.mochiRatio : 0;
+                const chodamaRatio = ev.chodamaRatio > 0 ? ev.chodamaRatio : 0;
+                const nonCashRatio = ev.nonCashRatio > 0 ? ev.nonCashRatio : (mochiRatio + chodamaRatio);
                 const firstHitRateLabel = jpCount > 0 && netRot > 0 ? `1/${f(netRot / jpCount, 1)}` : "—";
                 const replayLimitLabel = Number(S.chodamaReplayLimit) > 0 ? `${f(Number(S.chodamaReplayLimit))} 玉` : "—";
-                // 想定仕事量レンジ
-                const workMid = expectedWork > 0 ? Math.round(expectedWork / 1500 * 45000) : 0;
-                const workLo = Math.round(workMid * 0.62);
-                const workHi = Math.round(workMid * 1.37);
-                const endTimeLabel = "未設定";
+                const targetProjection = targetDeadline
+                    ? projectWorkToDeadline({ currentWork: expectedWork, hourlyWork: wage, nowAt: projectionNow, deadlineAt: targetDeadline })
+                    : null;
+                const closeProjection = closingDeadline
+                    ? projectWorkToDeadline({ currentWork: expectedWork, hourlyWork: wage, nowAt: projectionNow, deadlineAt: closingDeadline })
+                    : null;
+                const formatRemaining = (minutes) => {
+                    const safeMinutes = Math.max(0, Math.round(Number(minutes) || 0));
+                    const hours = Math.floor(safeMinutes / 60);
+                    const mins = safeMinutes % 60;
+                    return hours > 0 ? `${hours}時間${mins > 0 ? `${mins}分` : ""}` : `${mins}分`;
+                };
                 // データ精度ラベル
                 const accuracyLabel = confidenceAccuracyLabel(confidence);
                 const accuracyFill = Math.min(1, Math.max(0.08, confidence));
-                // 想定時給 信頼度（バッジ表示用。データ精度ラベル(confidenceAccuracyLabel)とは
-                // 基準値が異なる別概念のため流用せず、日本語の短縮ラベルを個別定義する）
-                const wageConfLabel = confidence > 0.5 ? "高" : confidence > 0.3 ? "中" : "低";
-                // 上振れラベル
-                const sigmaLabel = sigmaVal >= 2 ? "大きく上振れ中" : sigmaVal >= 1 ? "上振れ中" : sigmaVal >= -1 ? "想定通り" : sigmaVal >= -2 ? "下振れ中" : "大きく下振れ中";
+                const wageConfLabel = accuracyLabel === "高い" ? "高" : accuracyLabel;
 
                 // SVG アイコン群
                 const IcAi = ({ s = 36 }) => (
@@ -4070,35 +4424,22 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                 const IcInv = ({ c, s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16v12H4z" /><path d="M4 10h16M8 7V4h8v3" /></svg>);
                 const IcSwap = ({ c, s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8h12l-3-3M20 16H8l3 3" /></svg>);
 
-                // 半円ゲージ（σ）の針角度
-                const sigmaAngle = ((sigmaVal + 3) / 6) * 180 - 90; // -90〜+90
-
-                // AI 分析サマリーのチェックリスト（瞬間理解UI）
+                // 分析サマリーのチェックリスト（瞬間理解UI）
                 const aiChecklist = [
                     {
                         kind: bDiff >= 0 ? "ok" : "ng",
                         text: <>ボーダーを <strong style={{ color: bDiff >= 0 ? "var(--green)" : "var(--red)", fontWeight: 800 }}>{sp(bDiff, 1)}回</strong> {bDiff >= 0 ? "上回っています" : "下回っています"}</>,
                     },
                     {
-                        kind: bDiff > 0 ? "ok" : "ng",
-                        text: bDiff > 0 ? "現状はプラス期待値です" : "現状はマイナス期待値です",
+                        kind: evEff.ev1K > 0 ? "ok" : "ng",
+                        text: evEff.ev1K > 0 ? "現状はプラス期待値です" : "現状はマイナス期待値です",
                     },
                     confidence < 0.3
                         ? { kind: "warn", text: "まだ初期判定（試行浅）" }
                         : { kind: "ok", text: `信頼度 ${Math.round(confidence * 100)}% で判定継続中` },
-                    netRot < NEXT_CHECKPOINT_ROT
-                        ? { kind: "target", text: `${NEXT_CHECKPOINT_ROT}回転到達で再評価します` }
-                        : { kind: "target", text: `データ蓄積中（${f(netRot)}回転）` },
+                    { kind: "target", text: nextDecisionText },
                 ];
 
-                // 折りたたみエリア用 1 行サマリー
-                // 差分ラベル：期待値 > 実収支 → 欠損 / 期待値 < 実収支 → 余剰 / 0近傍 → 想定通り
-                const diffLabel = diffExpVsAct > 0 ? "欠損" : diffExpVsAct < 0 ? "余剰" : "想定通り";
-                const workSummary = `期待値 ${sp(expectedWork, 0)}円 / 実収支 ${sp(actualBalance, 0)}円 / ${diffExpVsAct === 0 ? "想定通り" : `${diffLabel} ${f(Math.abs(diffExpVsAct), 0)}円`}`;
-                const sigmaSummary = `${sp(sigmaVal, 1)}σ（${sigmaLabel}）`;
-                const trendSummary = `ボーダー差 ${sp(bDiff, 1)} / 信頼度 ${Math.round(confidence * 100)}%`;
-                const statsSummary = `単価 ${sp(evPerRot, 2)}円/回 / 持ち玉比率 ${Math.round(mochiRatio * 1000) / 10}%`;
-                const calcSummary = `初当たり ${firstHitRateLabel} / 交換率 ${f(exRate, 2)}円/玉`;
 
                 // チェック / 警告 / 注視 / ターゲット 用アイコン
                 const IcOk = ({ s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>);
@@ -4106,99 +4447,41 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                 const IcWarn = ({ s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="var(--yellow)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4l10 17H2z" /><path d="M12 10v5M12 18.5v.5" /></svg>);
                 const IcTarget = ({ s = 14 }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="var(--blue)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.5" fill="var(--blue)" stroke="none" /></svg>);
 
-                // 折りたたみセクションヘッダ（タップで開閉）
-                const CollapseRow = ({ num, title, summary, openKey }) => (
-                    <button
-                        type="button"
-                        className="b"
-                        onClick={() => toggleDataSec(openKey)}
-                        style={{
-                            width: "100%",
-                            background: "transparent",
-                            border: "none",
-                            padding: "12px 14px",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            cursor: "pointer",
-                            textAlign: "left",
-                            minHeight: 48,
-                            color: "inherit",
-                            fontFamily: "inherit",
-                        }}
-                        aria-expanded={dataExpanded[openKey]}
-                    >
+                // 数値はすべて常時表示し、説明だけを必要に応じて別画面で確認できる構成にする。
+                const CollapseRow = ({ num, title }) => (
+                    <div style={{
+                        width: "100%",
+                        padding: "12px 14px 8px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        minHeight: 42,
+                    }}>
                         <span style={cardNumDot()}>{num}</span>
                         <span style={{ ...cardTitleStyle(), fontSize: 12.5 }}>{title}</span>
-                        <span style={{
-                            marginLeft: "auto",
-                            fontSize: 10.5,
-                            color: C.subHi,
-                            fontFamily: font,
-                            fontWeight: 500,
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            maxWidth: "55%",
-                            textAlign: "right",
-                        }}>{!dataExpanded[openKey] && summary}</span>
-                        <span style={{
-                            transition: "transform 0.28s cubic-bezier(0.22, 1, 0.36, 1)",
-                            transform: dataExpanded[openKey] ? "rotate(90deg)" : "rotate(0deg)",
-                            display: "inline-flex",
-                            flexShrink: 0,
-                        }}>
-                            <IcChevron c={C.sub} s={14} />
-                        </span>
-                    </button>
+                    </div>
                 );
-
-                // σゲージ用カラー（青→グレー→黄 のみ）
-                const sigmaPillBg = sigmaVal >= 1 ? "rgba(255,176,32,0.18)" : sigmaVal <= -1 ? "rgba(10,132,255,0.18)" : "rgba(107,114,128,0.18)";
-                const sigmaPillBorder = sigmaVal >= 1 ? "rgba(255,176,32,0.45)" : sigmaVal <= -1 ? "rgba(10,132,255,0.45)" : "rgba(107,114,128,0.45)";
-                const sigmaPillColor = sigmaVal >= 1 ? "var(--yellow)" : sigmaVal <= -1 ? "var(--blue)" : "var(--sub)";
 
                 return (
                     <>
                     <div style={{
                         flex: 1, overflowY: "auto",
                         padding: "10px 12px",
-                        // 下部固定ステータスバー(52px) + ModeTabBar(~60px) + セーフエリア
-                        paddingBottom: "calc(120px + env(safe-area-inset-bottom))",
+                        // ModeTabBar とセーフエリア分だけ確保する（画面を覆う固定カードは置かない）。
+                        paddingBottom: "calc(80px + env(safe-area-inset-bottom))",
                         background: "var(--bg)",
                     }}>
                         {/* ============================ */}
                         {/* 常時表示エリア（1〜4）       */}
                         {/* ============================ */}
 
-                        {/* 1. AI分析サマリー — チェックリスト型 */}
+                        {/* 1. 分析サマリー — チェックリスト型 */}
                         <div className="data-card" style={dataCardStyle()}>
                             <div style={{ ...cardHeaderStyle(), paddingBottom: 4 }}>
                                 <span style={cardNumDot()}>1</span>
-                                <span style={cardTitleStyle()}>AI分析サマリー</span>
-                                <button
-                                    type="button"
-                                    className="b"
-                                    onClick={() => setAiSummaryOpen((v) => !v)}
-                                    style={{
-                                        marginLeft: "auto",
-                                        background: "transparent",
-                                        border: "none",
-                                        padding: 6,
-                                        display: "inline-flex",
-                                        alignItems: "center",
-                                        cursor: "pointer",
-                                        transition: "transform 0.28s cubic-bezier(0.22, 1, 0.36, 1)",
-                                        transform: aiSummaryOpen ? "rotate(180deg)" : "rotate(0deg)",
-                                    }}
-                                    aria-label={aiSummaryOpen ? "折りたたむ" : "展開する"}
-                                >
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.sub} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="M6 9l6 6 6-6" />
-                                    </svg>
-                                </button>
+                                <span style={cardTitleStyle()}>分析サマリー</span>
                             </div>
-                            {aiSummaryOpen && (
+                            {(
                                 <div className="data-collapse-body">
                                     <div style={{ display: "flex", gap: 12, padding: "0 14px 12px", alignItems: "flex-start" }}>
                                         <div style={{
@@ -4275,16 +4558,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                                 <span style={{ marginLeft: 3 }}>次の判断ライン</span>
                                             </div>
                                             <div style={{ fontSize: 11, color: C.subHi, fontFamily: font, fontWeight: 600, lineHeight: 1.35 }}>
-                                                {netRot < NEXT_CHECKPOINT_ROT ? `${NEXT_CHECKPOINT_ROT}回転到達で再評価` : "次のチェックポイントへ"}
-                                            </div>
-                                        </div>
-                                        {/* 信頼度「中」まで（confidenceAccuracyLabel の中段階に対応） */}
-                                        <div style={subCardStyle()}>
-                                            <div style={subCardLabel()}>信頼度「中」まで</div>
-                                            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                                <span style={{ fontSize: 10, color: C.subHi, fontFamily: font, fontWeight: 600 }}>あと</span>
-                                                <span style={{ fontSize: 15, fontWeight: 800, color: "var(--blue)", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{f(remainsToMid)}</span>
-                                                <span style={{ fontSize: 9.5, color: C.sub, fontFamily: font }}>回転</span>
+                                                {nextDecisionText}
                                             </div>
                                         </div>
                                     </div>
@@ -4303,11 +4577,11 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                 </div>
                                 <div style={{ padding: "0 14px 8px" }}>
                                     <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                                        <span style={{ fontSize: 34, fontWeight: 800, color: "var(--green)", fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{f(start1K, 1)}</span>
+                                        <span style={{ fontSize: 34, fontWeight: 800, color: sc(bDiff), fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{f(start1K, 1)}</span>
                                         <span style={{ fontSize: 12, color: C.sub, fontWeight: 600 }}>回/K</span>
                                     </div>
                                     <div style={{ marginTop: 8, fontSize: 10.5, color: C.subHi, fontFamily: font }}>
-                                        理論ボーダー：<span style={{ color: C.text, fontWeight: 600 }}>{f(theoreticalBorder, 1)} 回/K</span>
+                                        理論ボーダー：<span style={{ color: C.text, fontWeight: 600 }}>{theoreticalBorder > 0 ? `${f(theoreticalBorder, 1)} 回/K` : "未設定"}</span>
                                     </div>
                                 </div>
                                 <div style={{
@@ -4363,79 +4637,60 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                         <span style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>円/h</span>
                                     </div>
                                 </div>
-                                <div style={{ padding: "0 12px 10px" }}>
-                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 10.5, color: C.subHi, fontFamily: font }}>
-                                        <span>ブレ幅：<span style={{ color: C.text, fontWeight: 700, fontFamily: mono }}>±{f(wageSpread)}</span> <span style={{ color: C.sub, fontSize: 9.5 }}>円/h</span></span>
-                                        <IcInfo c={C.sub} s={11} />
-                                    </div>
+                                <div style={{ padding: "0 12px 10px", fontSize: 9.5, color: C.sub, lineHeight: 1.4 }}>
+                                    実測1Kスタートと1時間の通常回転数から算出
                                 </div>
                             </div>
                         </div>
 
-                        {/* 4. 終了予定までの想定仕事量 */}
+                        {/* 4. 時刻に連動する想定仕事量 */}
                         <div style={dataCardStyle()}>
                             <div style={cardHeaderStyle()}>
                                 <span style={cardNumDot()}>3</span>
-                                <span style={cardTitleStyle()}>終了予定までの想定仕事量</span>
-                                <div style={{ marginLeft: "auto", textAlign: "right", fontSize: 9.5, color: C.sub, fontFamily: font }}>
-                                    <div>終了予定</div>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 3, justifyContent: "flex-end" }}>
-                                        <span style={{ fontSize: 14, fontWeight: 800, color: C.text, fontFamily: mono }}>{endTimeLabel}</span>
-                                        <IcClock c={C.subHi} s={11} />
+                                <span style={cardTitleStyle()}>時間別の想定仕事量</span>
+                                <IcClock c={C.subHi} s={13} />
+                            </div>
+                            <div style={{ padding: "0 12px 12px", display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 7 }}>
+                                {[
+                                    { label: "現在まで", time: `${f(netRot)}回転`, value: expectedWork },
+                                    {
+                                        label: "予定終了まで",
+                                        time: targetProjection ? `${timeValueFromDate(targetDeadline)}・残り${formatRemaining(targetProjection.remainingMinutes)}` : "時刻を再設定",
+                                        value: targetProjection?.totalWork,
+                                    },
+                                    {
+                                        label: "閉店まで",
+                                        time: closeProjection ? `${S.sessionClosingTime}・残り${formatRemaining(closeProjection.remainingMinutes)}` : "閉店済み／未設定",
+                                        value: closeProjection?.totalWork,
+                                    },
+                                ].map((item) => (
+                                    <div key={item.label} style={{ background: "var(--surface-hi)", border: "1px solid var(--border)", borderRadius: 11, padding: "9px 7px", minWidth: 0 }}>
+                                        <div style={{ fontSize: 8.5, color: C.sub, fontWeight: 700, marginBottom: 4 }}>{item.label}</div>
+                                        <div style={{ fontSize: 15, color: item.value == null ? C.sub : sc(item.value), fontWeight: 800, fontFamily: mono, whiteSpace: "nowrap" }}>
+                                            {item.value == null ? "—" : `${sp(Math.round(item.value))}円`}
+                                        </div>
+                                        <div style={{ fontSize: 8, color: C.sub, marginTop: 4, lineHeight: 1.35 }}>{item.time}</div>
                                     </div>
-                                </div>
+                                ))}
                             </div>
-                            <div style={{ padding: "0 14px 14px" }}>
-                                <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                                    <span style={{ fontSize: 30, fontWeight: 800, color: "var(--green)", fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{sp(workMid, 0)}</span>
-                                    <span style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>円</span>
-                                </div>
-                                <div style={{ marginTop: 6, fontSize: 10, color: C.sub, fontFamily: font }}>
-                                    推定レンジ：<span style={{ color: C.subHi }}>{sp(workLo, 0)} 〜 {sp(workHi, 0)}円</span>
-                                </div>
-                                {/* レンジバー */}
-                                <div style={{ position: "relative", height: 10, marginTop: 14 }}>
-                                    <div style={{
-                                        position: "absolute", left: 0, right: 0, top: 1, height: 8,
-                                        borderRadius: 999,
-                                        background: "linear-gradient(90deg, #21D99B 0%, #38bdf8 60%, #009DFF 100%)",
-                                        boxShadow: "0 0 10px rgba(33,217,155,0.30)",
-                                    }} />
-                                    <div style={{
-                                        position: "absolute", left: 0, top: -2, width: 4, height: 14, borderRadius: 2,
-                                        background: "var(--green)",
-                                    }} />
-                                    <div style={{
-                                        position: "absolute", right: 0, top: -2, width: 4, height: 14, borderRadius: 2,
-                                        background: "#009DFF",
-                                    }} />
-                                    {/* 中央値マーカー（白） */}
-                                    <div style={{
-                                        position: "absolute", left: "50%", top: -5, transform: "translateX(-50%)",
-                                        width: 3, height: 20, borderRadius: 1, background: "#fff",
-                                        boxShadow: "0 0 6px rgba(255,255,255,0.7)",
-                                    }} />
-                                </div>
-                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9.5, color: C.sub, fontFamily: font, marginTop: 8 }}>
-                                    <span>{sp(workLo, 0)}円</span>
-                                    <span style={{ color: C.text, fontWeight: 700 }}>中央値 {sp(workMid, 0)}円</span>
-                                    <span>{sp(workHi, 0)}円</span>
-                                </div>
+                            <div style={{ padding: "0 14px 12px", fontSize: 9.5, color: C.sub, lineHeight: 1.5 }}>
+                                現在までの仕事量に、想定時給 × 残り時間を加算しています。表示値は実データと残り時間のみで計算しています。
                             </div>
+                            <div style={{ margin: "0 12px 12px" }}>{scheduleEditorButton}</div>
+                            {scheduleEditorModal}
                         </div>
 
-                        {/* ============================ */}
-                        {/* 折りたたみエリア（5〜9）     */}
-                        {/* ============================ */}
-
-                        {/* 5. 仕事量 vs 実収支 [折りたたみ] */}
+                        {/* 4. 仕事量 vs 実収支 */}
                         <div style={dataCardStyle()}>
-                            <CollapseRow num="4" title="仕事量 vs 実収支" summary={workSummary} openKey="work" />
-                            {dataExpanded.work && (
+                            <CollapseRow num="4" title="仕事量 vs 実収支" />
+                            <div style={{ margin: "0 12px 9px", fontSize: 9.5, color: C.sub, lineHeight: 1.45 }}>
+                                仕事量は「期待値（理論上積み上がった金額）」です。実際の勝ち負けとは別に表示します。
+                            </div>
+                            {(
                                 <div className="data-collapse-body" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, padding: "0 12px 14px" }}>
                                     {[
-                                        { label: "期待値（積み上げ）", val: expectedWork, color: "var(--green)" },
-                                        { label: "実収支（差玉換算）", val: actualBalance, color: "var(--blue)" },
+                                        { label: "期待値（理論値）", val: expectedWork, color: "var(--green)" },
+                                        { label: "実収支（資産増減）", val: actualBalance, color: "var(--blue)" },
                                         { label: "差（期待値 − 実収支）", val: diffExpVsAct, color: diffExpVsAct > 0 ? "var(--red)" : diffExpVsAct < 0 ? "var(--green)" : "var(--sub)", badge: diffExpVsAct > 0 ? "欠損" : diffExpVsAct < 0 ? "余剰" : "想定通り" },
                                     ].map((m, idx) => {
                                         return (
@@ -4468,79 +4723,10 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             )}
                         </div>
 
-                        {/* 6. 期待値との差（σ）[折りたたみ] */}
+                        {/* 5. ボーダー差・信頼度の推移 */}
                         <div style={dataCardStyle()}>
-                            <CollapseRow num="5" title="期待値との差（σ分析）" summary={sigmaSummary} openKey="sigma" />
-                            {dataExpanded.sigma && (
-                                <div className="data-collapse-body" style={{ display: "flex", padding: "0 14px 16px", gap: 10, alignItems: "center" }}>
-                                    {/* 半円ゲージ（青→グレー→黄 のみ） */}
-                                    <div style={{ position: "relative", width: 180, height: 116, flexShrink: 0 }}>
-                                        <svg viewBox="0 0 200 116" width="180" height="116">
-                                            <defs>
-                                                <linearGradient id="sigmaGradV2" x1="0" y1="0" x2="1" y2="0">
-                                                    <stop offset="0%" stopColor="var(--blue)" />
-                                                    <stop offset="50%" stopColor="#6b7280" />
-                                                    <stop offset="100%" stopColor="var(--yellow)" />
-                                                </linearGradient>
-                                            </defs>
-                                            <path d="M15,100 A85,85 0 0 1 185,100" fill="none" stroke="url(#sigmaGradV2)" strokeWidth="14" strokeLinecap="round" opacity="0.92" />
-                                            {/* 目盛り */}
-                                            {[-3, -2, -1, 0, 1, 2, 3].map((t) => {
-                                                const a = ((t + 3) / 6) * Math.PI;
-                                                const x1 = 100 - 78 * Math.cos(a);
-                                                const y1 = 100 - 78 * Math.sin(a);
-                                                const x2 = 100 - 92 * Math.cos(a);
-                                                const y2 = 100 - 92 * Math.sin(a);
-                                                const lx = 100 - 100 * Math.cos(a);
-                                                const ly = 100 - 100 * Math.sin(a);
-                                                return (
-                                                    <g key={t}>
-                                                        <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="var(--border-hi)" strokeWidth="1" />
-                                                        <text x={lx} y={ly} fontSize="9" fill="var(--sub-hi)" textAnchor="middle" dominantBaseline="middle" fontFamily="Inter">{(t > 0 ? "+" : "") + t}σ</text>
-                                                    </g>
-                                                );
-                                            })}
-                                            {/* 針 */}
-                                            <g transform={`rotate(${sigmaAngle} 100 100)`}>
-                                                <line x1="100" y1="100" x2="100" y2="22" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" />
-                                                <circle cx="100" cy="100" r="5" fill="#fff" />
-                                            </g>
-                                        </svg>
-                                        {/* 中央値（数値） */}
-                                        <div style={{
-                                            position: "absolute", left: 0, right: 0, top: 64,
-                                            textAlign: "center",
-                                        }}>
-                                            <div style={{ fontSize: 22, fontWeight: 800, color: sigmaPillColor, fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{sp(sigmaVal, 1)}<span style={{ fontSize: 13, marginLeft: 2 }}>σ</span></div>
-                                        </div>
-                                        {/* ステータスピル */}
-                                        <div style={{
-                                            position: "absolute", left: "50%", bottom: -4, transform: "translateX(-50%)",
-                                            padding: "2px 10px", borderRadius: 999,
-                                            background: sigmaPillBg,
-                                            border: `1px solid ${sigmaPillBorder}`,
-                                            fontSize: 10, fontWeight: 700,
-                                            color: sigmaPillColor,
-                                            whiteSpace: "nowrap", fontFamily: font,
-                                        }}>{sigmaLabel}</div>
-                                    </div>
-                                    <div style={{ flex: 1, fontSize: 11.5, color: C.subHi, fontFamily: font, lineHeight: 1.55 }}>
-                                        現在の実収支は、<br />
-                                        期待値に対して統計的に<br />
-                                        {sigmaVal >= 1 ? "上振れ" : sigmaVal <= -1 ? "下振れ" : "想定通り推移し"}ています。
-                                        <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 5 }}>
-                                            <span style={{ fontSize: 10, color: C.sub }}>（統計目安：{sp(sigmaVal, 1)}σ）</span>
-                                            <IcInfo c={C.sub} s={11} />
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* 7. ボーダー差・信頼度の推移 [折りたたみ] */}
-                        <div style={dataCardStyle()}>
-                            <CollapseRow num="6" title="ボーダー差・信頼度の推移" summary={trendSummary} openKey="trend" />
-                            {dataExpanded.trend && (
+                            <CollapseRow num="5" title="ボーダー差・信頼度の推移" />
+                            {(
                                 <div className="data-collapse-body">
                                     {/* レジェンド */}
                                     <div style={{ display: "flex", gap: 14, padding: "0 14px 6px", fontSize: 10, color: C.subHi, fontFamily: font }}>
@@ -4651,17 +4837,17 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             )}
                         </div>
 
-                        {/* 8. 詳細スタッツ [折りたたみ] — 優先度別レイアウト */}
+                        {/* 6. 詳細スタッツ — 優先度別レイアウト */}
                         <div style={dataCardStyle()}>
-                            <CollapseRow num="7" title="詳細スタッツ" summary={statsSummary} openKey="stats" />
-                            {dataExpanded.stats && (
+                            <CollapseRow num="6" title="詳細スタッツ" />
+                            {(
                                 <div className="data-collapse-body" style={{ padding: "0 12px 12px" }}>
                                     {/* 優先度高 - 大きめ 3カード */}
                                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 10 }}>
                                         {[
                                             { Icon: IcCircleDot, color: "var(--green)", label: "単価", val: `${sp(evPerRot, 2)}`, unit: "円/回" },
-                                            { Icon: IcMochi, color: "var(--yellow)", label: "持ち玉比率", val: `${Math.round(mochiRatio * 1000) / 10}`, unit: "%" },
-                                            { Icon: IcBalls, color: "var(--purple)", label: "平均出玉", val: f(avg1R, 0), unit: "玉" },
+                                            { Icon: IcMochi, color: "var(--yellow)", label: "非現金比率", val: `${Math.round(nonCashRatio * 1000) / 10}`, unit: "%" },
+                                            { Icon: IcBalls, color: "var(--purple)", label: "1R平均出玉", val: f(avg1R, 0), unit: "玉" },
                                         ].map((m, i) => (
                                             <div key={i} style={{
                                                 background: "var(--surface-hi)",
@@ -4684,10 +4870,10 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     {/* 優先度低 - 小さめ行リスト */}
                                     <div style={{ display: "flex", flexDirection: "column", background: "var(--surface-hi)", borderRadius: 10, padding: "2px 8px" }}>
                                         {[
-                                            { Icon: IcLight, color: "var(--sub)", label: "大当たり確率（実測）", val: firstHitRateLabel, unit: "" },
+                                            { Icon: IcLight, color: "var(--sub)", label: "初当たり確率（実測）", val: firstHitRateLabel, unit: "" },
                                             { Icon: IcRot, color: "var(--sub)", label: "通常回転数", val: f(netRot), unit: "回" },
-                                            { Icon: IcFlame, color: "var(--sub)", label: "大当たり回数", val: `${jpCount}`, unit: "回" },
-                                            { Icon: IcPercent, color: "var(--sub)", label: "初当たり確率（実測）", val: firstHitRateLabel, unit: "" },
+                                            { Icon: IcPercent, color: "var(--sub)", label: "初当たり回数", val: `${jpCount}`, unit: "回" },
+                                            { Icon: IcFlame, color: "var(--sub)", label: "総大当たり回数", val: `${totalHits}`, unit: "回" },
                                         ].map((r, i, arr) => (
                                             <div key={i} style={{
                                                 display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -4710,18 +4896,20 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             )}
                         </div>
 
-                        {/* 9. 計算根拠 [折りたたみ] */}
+                        {/* 7. 計算根拠 */}
                         <div style={dataCardStyle()}>
-                            <CollapseRow num="8" title="計算根拠" summary={calcSummary} openKey="calc" />
-                            {dataExpanded.calc && (
+                            <CollapseRow num="7" title="計算根拠" />
+                            {(
                                 <div className="data-collapse-body">
-                                    <div style={{ fontSize: 9.5, color: C.sub, fontFamily: font, margin: "0 14px 4px" }}>（タップで詳細を確認）</div>
+                                    <div style={{ fontSize: 9.5, color: C.sub, fontFamily: font, margin: "0 14px 4px" }}>常に表示しています</div>
                                     <div style={{ display: "flex", flexDirection: "column", padding: "0 8px 4px" }}>
                                         {[
                                             { Icon: IcDice, color: "var(--green)", label: "初当たり確率（実測）", val: firstHitRateLabel },
-                                            { Icon: IcBalls, color: "var(--blue)", label: "表記出玉（平均）", val: `${f(avg1R, 0)} 玉` },
+                                            { Icon: IcBalls, color: "var(--blue)", label: "1R平均表記出玉", val: `${f(avg1R, 0)} 玉` },
                                             { Icon: IcMochi, color: "var(--blue)", label: "持ち玉（現在）", val: `${f(currentBalls)} 玉` },
-                                            { Icon: IcCoin, color: "var(--green)", label: "総投資", val: `${f(totalInvestActual)} 円` },
+                                            { Icon: IcCoin, color: "var(--green)", label: "現金投資", val: `${f(totalInvestActual)} 円` },
+                                            { Icon: IcMochi, color: "var(--purple)", label: "貯玉増減", val: `${sp((Number(S.currentChodama) || 0) - (Number(S.initialChodama) || 0))} 玉` },
+                                            ...(Number(S.carriedInYen) > 0 ? [{ Icon: IcCoin, color: "var(--yellow)", label: "持込玉コスト", val: `${f(S.carriedInYen)} 円` }] : []),
                                             { Icon: IcSwap, color: "var(--blue)", label: "交換率", val: `${f(exRate, 2)} 円/玉` },
                                             { Icon: IcInv, color: "var(--red)", label: "再プレイ上限", val: replayLimitLabel },
                                         ].map((r, i, arr) => (
@@ -4760,79 +4948,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         </div>
                     </div>
 
-                    {/* ============================ */}
-                    {/* 最下部固定ステータスバー       */}
-                    {/* スクロールしても常時表示       */}
-                    {/* ============================ */}
-                    <div style={{
-                        position: "fixed",
-                        bottom: "calc(56px + env(safe-area-inset-bottom))",
-                        left: "50%",
-                        transform: "translateX(-50%)",
-                        width: "100%",
-                        maxWidth: 480,
-                        zIndex: 99,
-                        padding: "8px 12px 6px",
-                        background: "linear-gradient(180deg, rgba(5,11,24,0) 0%, rgba(5,11,24,0.92) 35%, rgba(5,11,24,0.98) 100%)",
-                        pointerEvents: "none",
-                    }}>
-                        <div style={{
-                            background: "linear-gradient(180deg, rgba(11,22,40,0.95) 0%, rgba(16,27,45,0.92) 100%)",
-                            border: "1px solid rgba(26,77,117,0.55)",
-                            borderRadius: 14,
-                            padding: "10px 14px",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 10,
-                            backdropFilter: "blur(12px)",
-                            WebkitBackdropFilter: "blur(12px)",
-                            boxShadow: "0 6px 22px rgba(0,0,0,0.5)",
-                            pointerEvents: "auto",
-                            minHeight: 48,
-                        }}>
-                            {/* 左：現在の状態 */}
-                            <div style={{
-                                width: 28, height: 28, borderRadius: "50%",
-                                background: bDiff >= 0 ? "rgba(33,217,155,0.18)" : "rgba(255,90,95,0.18)",
-                                border: `1.5px solid ${bDiff >= 0 ? "rgba(33,217,155,0.7)" : "rgba(255,90,95,0.7)"}`,
-                                display: "inline-flex", alignItems: "center", justifyContent: "center",
-                                flexShrink: 0,
-                                boxShadow: bDiff >= 0 ? "0 0 10px rgba(33,217,155,0.35)" : "0 0 10px rgba(255,90,95,0.35)",
-                            }}>
-                                <IcOk s={14} />
-                            </div>
-                            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-                                <div style={{
-                                    fontSize: 12.5, fontWeight: 800,
-                                    color: C.text, fontFamily: font,
-                                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                                }}>{currentBalls > 0 ? "持ち玉遊技中" : "稼働中"}</div>
-                                <div style={{
-                                    fontSize: 10, color: C.subHi, fontFamily: font,
-                                    display: "flex", alignItems: "center", gap: 6,
-                                    whiteSpace: "nowrap",
-                                }}>
-                                    <span>ボーダー <strong style={{ color: bDiff >= 0 ? "var(--green)" : "var(--red)", fontWeight: 800 }}>{sp(bDiff, 1)}回</strong></span>
-                                    <span style={{ color: C.sub }}>|</span>
-                                    <span style={{ color: bDiff > 0 ? "var(--green)" : bDiff < 0 ? "var(--red)" : C.subHi, fontWeight: 700 }}>{bDiff > 0 ? "期待値プラス" : bDiff < 0 ? "期待値マイナス" : "期待値ニュートラル"}</span>
-                                </div>
-                            </div>
-                            {/* 右：信頼度 + 次の判断ライン */}
-                            <div style={{ display: "flex", gap: 10, flexShrink: 0 }}>
-                                <div style={{ textAlign: "center" }}>
-                                    <div style={{ fontSize: 8.5, color: C.sub, fontFamily: font, fontWeight: 600, marginBottom: 1 }}>信頼度</div>
-                                    <div style={{ fontSize: 12, fontWeight: 800, color: "var(--purple)", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{Math.round(confidence * 100)}%</div>
-                                </div>
-                                <div style={{ width: 1, background: "var(--border)" }} />
-                                <div style={{ textAlign: "center" }}>
-                                    <div style={{ fontSize: 8.5, color: C.sub, fontFamily: font, fontWeight: 600, marginBottom: 1 }}>次の判断</div>
-                                    <div style={{ fontSize: 11, fontWeight: 800, color: "var(--blue)", fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>
-                                        {netRot < NEXT_CHECKPOINT_ROT ? `${NEXT_CHECKPOINT_ROT}回転` : "継続中"}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
                     </>
                 );
             })()}
@@ -5100,20 +5215,24 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             </div>
 
                             {/* 貸玉レート・交換率プリセット
-                                4円 / 1円 / 0.5円 対応。プリセットをタップすると貸玉数と交換率（等価既定）を一括更新。
+                                4円 / 2円 / 1円 / 0.5円 対応。プリセットをタップすると貸玉数と交換率（等価既定）を一括更新。
                                 個別の数値入力は下に従来どおり残し、カスタム交換率もそのまま入力可能。 */}
                             {(() => {
-                                const RENT_PRESETS = [
-                                    { label: "4円", rb: 250 },
-                                    { label: "1円", rb: 1000 },
-                                    { label: "0.5円", rb: 2000 },
-                                ];
+                                const RENT_PRESETS = PACHINKO_RATE_PRESETS.map((preset) => ({
+                                    label: preset.label,
+                                    rb: preset.rentBalls,
+                                }));
                                 const EX_PRESETS_BY_RB = {
                                     250: [
                                         { label: "等価", v: 250 },
                                         { label: "3.57円", v: 280 },
                                         { label: "3.3円", v: 303 },
                                         { label: "2.5円", v: 400 },
+                                    ],
+                                    500: [
+                                        { label: "等価", v: 500 },
+                                        { label: "1.8円", v: 556 },
+                                        { label: "1.6円", v: 625 },
                                     ],
                                     1000: [
                                         { label: "等価", v: 1000 },
@@ -5150,9 +5269,9 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                                         key={p.rb}
                                                         className="b"
                                                         onClick={() => {
-                                                            setEditRentBalls(String(p.rb));
-                                                            // 貸玉レート変更時は等価交換率を既定としてセット（その後ユーザが交換率チップで上書き可能）
-                                                            setEditExRate(String(p.rb));
+                                                             setEditRentBalls(String(p.rb));
+                                                             // 貸玉レート変更時は等価交換率を既定としてセット（その後ユーザが交換率チップで上書き可能）
+                                                             setEditExRate(String(p.rb));
                                                         }}
                                                         style={chipStyle(active)}
                                                     >
@@ -5379,24 +5498,51 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             {showInvestSettings && (
                 <div style={{ position: "fixed", inset: 0, background: "rgba(17,24,39,0.45)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
                     <Card style={{ width: "100%", maxWidth: 320, padding: 20 }}>
-                        <SecLabel label="投資金額ペース" />
-                        <div style={{ fontSize: 12, color: C.sub, marginBottom: 16, lineHeight: 1.6 }}>
-                            1回の記録で加算する投資金額を選択
+                        <SecLabel label="1回の記録単位" />
+                        <div style={{ fontSize: 12, color: C.sub, marginBottom: 12, lineHeight: 1.6 }}>
+                            回転数を記録するたびに使った金額を選びます。現在は1玉 {rentalRateYen.toFixed(2)}円です。
                         </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
-                            {[500, 1000, 2000].map(pace => (
-                                <button key={pace} className="b" onClick={() => { S.setInvestPace(pace); setShowInvestSettings(false); }} style={{
-                                    padding: "14px 0", borderRadius: 10, fontWeight: 700, fontFamily: mono, fontSize: 15,
-                                    background: investPace === pace ? "#2f6fed" : "var(--surface-hi)",
-                                    border: investPace === pace ? "none" : `1px solid ${C.border}`,
-                                    color: investPace === pace ? "#fff" : C.text,
-                                    boxShadow: investPace === pace ? "0 4px 12px rgba(59, 130, 246, 0.3)" : "none"
-                                }}>
-                                    {pace >= 1000 ? `${pace/1000}K` : `${pace}円`}
-                                </button>
-                            ))}
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 14 }}>
+                            {[100, 200, 500, 1000, 2000].map(pace => {
+                                const active = Number(investPace) === pace;
+                                return (
+                                    <button key={pace} className="b" onClick={() => { S.setInvestPace(pace); setCustomInvestPaceError(""); setShowInvestSettings(false); }} style={{
+                                        padding: "11px 4px", borderRadius: 10, fontWeight: 700, fontFamily: mono, fontSize: 14,
+                                        background: active ? "#2f6fed" : "var(--surface-hi)",
+                                        border: active ? "none" : `1px solid ${C.border}`,
+                                        color: active ? "#fff" : C.text,
+                                        boxShadow: active ? "0 4px 12px rgba(59, 130, 246, 0.3)" : "none"
+                                    }}>
+                                        <span style={{ display: "block" }}>{pace >= 1000 ? `${pace/1000}K` : `${pace}円`}</span>
+                                        <span style={{ display: "block", marginTop: 3, fontSize: 10, opacity: 0.8 }}>{formatBallQuantity(ballsForInvestment(pace, rentBalls))}玉</span>
+                                    </button>
+                                );
+                            })}
                         </div>
-                        <button className="b" onClick={() => setShowInvestSettings(false)} style={{
+                        <div style={{ padding: 10, marginBottom: 14, borderRadius: 10, background: C.surfaceHi, border: `1px solid ${C.border}` }}>
+                            <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700 }}>その他の金額</div>
+                            <div style={{ display: "flex", gap: 8 }}>
+                                <input
+                                    aria-label="1回の記録金額"
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    value={customInvestPace}
+                                    onChange={(e) => { setCustomInvestPace(e.target.value.replace(/[^0-9]/g, "")); setCustomInvestPaceError(""); }}
+                                    onKeyDown={(e) => { if (e.key === "Enter") applyCustomInvestPace(); }}
+                                    placeholder="例: 200"
+                                    style={{ flex: 1, minWidth: 0, padding: "11px 12px", borderRadius: 9, background: C.bg, border: `1px solid ${customInvestPaceError ? C.red : C.borderHi}`, color: C.text, fontSize: 16, fontFamily: mono }}
+                                />
+                                <button type="button" className="b" onClick={applyCustomInvestPace} style={{ padding: "0 14px", borderRadius: 9, border: "none", background: C.blue, color: "#fff", fontWeight: 800 }}>適用</button>
+                            </div>
+                            {customInvestPaceError && <div style={{ marginTop: 6, color: C.red, fontSize: 11 }}>{customInvestPaceError}</div>}
+                            {Number(customInvestPace) > 0 && (
+                                <div style={{ marginTop: 6, color: C.sub, fontSize: 10 }}>
+                                    {Number(customInvestPace).toLocaleString()}円 ＝ {formatBallQuantity(ballsForInvestment(customInvestPace, rentBalls))}玉
+                                </div>
+                            )}
+                        </div>
+                        <button className="b" onClick={() => { setCustomInvestPaceError(""); setShowInvestSettings(false); }} style={{
                             width: "100%", padding: "12px", background: "var(--surface-hi)", border: `1px solid ${C.border}`,
                             borderRadius: 10, color: C.text, fontSize: 14, fontWeight: 600, fontFamily: font
                         }}>閉じる</button>
@@ -9346,6 +9492,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                                             ["残り回転", `${Math.round(a.yutimeDecision.result.remainingSpins || 0).toLocaleString()}回`],
                                             ["到達率", `${(Number(a.yutimeDecision.result.reachProbability || 0) * 100).toFixed(1)}%`],
                                             ["平均投資", `${Math.round(a.yutimeDecision.result.selectedInvestment || 0).toLocaleString()}円`],
+                                            ["到達必要資金", a.yutimeDecision.result.selectedArrivalInvestment == null ? "—" : `${Math.ceil(a.yutimeDecision.result.selectedArrivalInvestment).toLocaleString()}円`],
                                         ].map(([label, value]) => (
                                             <div key={label} style={{ background: "var(--surface-hi)", borderRadius: 9, padding: 9 }}>
                                                 <div style={{ fontSize: 9, color: C.sub }}>{label}</div>
@@ -10074,7 +10221,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
 
     // 店舗フォームの初期値（rentBalls/exRateはフォーム内では面値=玉/100円で扱う）
     // lastVisit=最終来店(表示用テキスト) / replayBalls=店内再プレイ玉数 / todaySettle=本日精算予定玉数（いずれも任意・既定0/空）
-    const emptyStore = { name: "", address: "", rentBalls: 25, exRate: 25, memo: "", chodama: 0, chodamaMax: 0, lastVisit: "", replayBalls: 0, todaySettle: 0, memberCard: { ...emptyMemberCard } };
+    const emptyStore = { name: "", address: "", closingTime: "", rentBalls: 25, exRate: 25, memo: "", chodama: 0, chodamaMax: 0, lastVisit: "", replayBalls: 0, todaySettle: 0, memberCard: { ...emptyMemberCard } };
     const [storeFormData, setStoreFormData] = useState(emptyStore);
     const [storeFormErrors, setStoreFormErrors] = useState({});
     const validateStoreNumberField = (field, value) => validateSettingNumber(value, {
@@ -10097,8 +10244,8 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     // 店舗データの正規化（旧形式の文字列配列を新形式のオブジェクト配列に変換）+ chodama/会員カードフィールドの補完
     const normalizedStores = (s.stores || []).map(st =>
         typeof st === "string"
-            ? { id: Date.now() + Math.random(), name: st, address: "", rentBalls: 250, exRate: 250, memo: "", chodama: 0, chodamaMax: 0, lastVisit: "", replayBalls: 0, todaySettle: 0, memberCard: { ...emptyMemberCard } }
-            : { ...st, chodama: st.chodama || 0, chodamaMax: st.chodamaMax || 0, lastVisit: st.lastVisit || "", replayBalls: st.replayBalls || 0, todaySettle: st.todaySettle || 0, memberCard: normalizeMemberCard(st.memberCard) }
+            ? { id: Date.now() + Math.random(), name: st, address: "", closingTime: "", rentBalls: 250, exRate: 250, memo: "", chodama: 0, chodamaMax: 0, lastVisit: "", replayBalls: 0, todaySettle: 0, memberCard: { ...emptyMemberCard } }
+            : { ...st, closingTime: st.closingTime || "", chodama: st.chodama || 0, chodamaMax: st.chodamaMax || 0, lastVisit: st.lastVisit || "", replayBalls: st.replayBalls || 0, todaySettle: st.todaySettle || 0, memberCard: normalizeMemberCard(st.memberCard) }
     );
 
     // 島マップ管理（設定）用: 編集対象店舗 → 選択中の店舗 → 無ければ先頭。
@@ -10256,6 +10403,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
             id: editingStore?.id || Date.now(),
             rentBalls: Math.round(Number(storeFormData.rentBalls) * 10),
             exRate: Math.round(Number(storeFormData.exRate) * 10),
+            closingTime: (storeFormData.closingTime || "").trim(),
             chodama: Math.round(Number(storeFormData.chodama)),
             chodamaMax: Math.round(Number(storeFormData.chodamaMax)),
             lastVisit: (storeFormData.lastVisit || "").trim(),
@@ -10487,7 +10635,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
             "日付", "時刻", "店舗名", "台番号", "機種名",
             "投資", "回収", "収支", "確率分母", "貸玉数", "換金率",
             "時間回転数", "ボーダー", "玉単価", "仕事量", "期待値/K", "1Kスタート", "総回転",
-            "遊タイム期待値", "遊タイム残り回転", "遊タイム到達率", "遊タイム平均投資",
+            "遊タイム期待値", "遊タイム残り回転", "遊タイム到達率", "遊タイム平均投資", "遊タイム到達必要資金",
             "遊タイム開始カウント", "遊タイム想定1K", "遊タイム遊技方法", "遊タイム発動回転",
             "遊タイム回数", "遊タイム平均純増玉", "遊タイムデータ種別", "遊タイム根拠URL"
         ];
@@ -10521,6 +10669,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                 yr.valid ? Math.round(yr.remainingSpins || 0) : "",
                 yr.valid ? Number(yr.reachProbability || 0).toFixed(8) : "",
                 yr.valid ? Math.round(yr.selectedInvestment || 0) : "",
+                yr.valid && yr.selectedArrivalInvestment != null ? Math.ceil(yr.selectedArrivalInvestment) : "",
                 yd.currentLowSpins ?? "",
                 yd.assumedStart1K ?? "",
                 yd.playMode || "",
@@ -10608,6 +10757,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                             remainingSpins: parseFloat(getCol(cols, ["遊タイム残り回転"], "0")) || 0,
                             reachProbability: parseFloat(getCol(cols, ["遊タイム到達率"], "0")) || 0,
                             selectedInvestment: parseFloat(getCol(cols, ["遊タイム平均投資"], "0")) || 0,
+                            selectedArrivalInvestment: getCol(cols, ["遊タイム到達必要資金"], "") === "" ? null : (parseFloat(getCol(cols, ["遊タイム到達必要資金"], "0")) || 0),
                         },
                     } : null;
 
@@ -11056,6 +11206,19 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                             style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: font, outline: "none" }} />
                     </div>
 
+                    {/* 閉店時刻は稼働計画の「閉店までの仕事量」に使用する。 */}
+                    <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>閉店時刻</div>
+                        <input
+                            aria-label="店舗の閉店時刻"
+                            type="time"
+                            value={storeFormData.closingTime || ""}
+                            onChange={e => setStoreFormData({ ...storeFormData, closingTime: e.target.value })}
+                            style={{ width: "100%", minHeight: 44, boxSizing: "border-box", background: C.bg, border: `1px solid ${C.borderHi}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.text, fontFamily: mono, outline: "none" }}
+                        />
+                        <div style={{ fontSize: 9, color: C.sub, marginTop: 5 }}>登録すると、稼働開始時に自動で入力されます。</div>
+                    </div>
+
                     {/* 貸玉100円 */}
                     <div style={{ marginBottom: 8 }}>
                         <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貸玉（玉/100円）</div>
@@ -11070,9 +11233,9 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                             <span style={{ fontSize: 10, color: C.sub, whiteSpace: "nowrap" }}>{(100 / (parseFloat(storeFormData.rentBalls) || 25)).toFixed(2)}円/玉</span>
                         </div>
                         <StoreFieldError field="rentBalls" />
-                        {/* プリセット（4円/1円/0.5円 を含む複数交換率対応） */}
+                        {/* プリセット（4円/2円/1円/0.5円 を含む複数交換率対応） */}
                         <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                            {[{l:"4円等価",v:25},{l:"28玉",v:28},{l:"30玉",v:30},{l:"33玉",v:33},{l:"1円",v:100},{l:"0.5円",v:200}].map(({l,v}) => {
+                            {[{l:"4円等価",v:25},{l:"28玉",v:28},{l:"30玉",v:30},{l:"33玉",v:33},{l:"2円",v:50},{l:"1円",v:100},{l:"0.5円",v:200}].map(({l,v}) => {
                                 const active = String(storeFormData.rentBalls) === String(v);
                                 return <button key={v} className="b" onClick={() => { setStoreFormData(p => ({...p, rentBalls: v, exRate: v})); setStoreFormErrors(p => ({ ...p, rentBalls: "", exRate: "" })); }} style={{ fontSize: 10, padding: "5px 10px", minHeight: 44, borderRadius: 6, border: `1px solid ${active ? C.blue : C.borderHi}`, background: active ? `${C.blue}22` : C.surfaceHi, color: active ? C.blue : C.sub, fontFamily: font, fontWeight: active ? 700 : 500, cursor: "pointer" }}>{l}</button>;
                             })}
@@ -11093,13 +11256,14 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                             <span style={{ fontSize: 10, color: C.sub, whiteSpace: "nowrap" }}>{(100 / (parseFloat(storeFormData.exRate) || 25)).toFixed(2)}円/玉</span>
                         </div>
                         <StoreFieldError field="exRate" />
-                        {/* プリセット（貸玉レート別の代表的な交換率: 4円/1円/0.5円） */}
+                        {/* プリセット（貸玉レート別の代表的な交換率: 4円/2円/1円/0.5円） */}
                         <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                             {(() => {
                                 const rb = parseFloat(storeFormData.rentBalls) || 25;
                                 let presets;
                                 if (rb >= 180) presets = [{l:"等価",v:200}];
                                 else if (rb >= 80) presets = [{l:"等価",v:100},{l:"0.9円",v:111}];
+                                else if (rb >= 40) presets = [{l:"等価",v:50},{l:"1.8円",v:56}];
                                 else presets = [{l:"等価",v:25},{l:"28玉",v:28},{l:"30玉",v:30},{l:"33玉",v:33}];
                                 return presets.map(({l,v}) => {
                                     const active = String(storeFormData.exRate) === String(v);

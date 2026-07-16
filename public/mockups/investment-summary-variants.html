@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>投資・持ち玉表示 3案</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", sans-serif;
+      color: #eef4ff;
+      background: #05070c;
+    }
+    body {
+      margin: 0;
+      min-width: 1240px;
+      padding: 22px 24px 28px;
+      background:
+        radial-gradient(circle at 14% 0%, rgba(56,189,248,.08), transparent 28%),
+        radial-gradient(circle at 86% 0%, rgba(52,211,153,.07), transparent 25%),
+        #05070c;
+    }
+    .page-head { max-width: 1240px; margin: 0 auto 15px; }
+    .page-head h1 { margin: 0 0 4px; font-size: 22px; }
+    .page-head p { margin: 0; color: #8f9caf; font-size: 12px; }
+    .variants { width: 1240px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .variant-label { display: flex; align-items: center; gap: 8px; margin: 0 0 8px 3px; }
+    .variant-label b { font-size: 15px; }
+    .variant-label span { color: #8290a5; font-size: 11px; }
+    .recommend { padding: 3px 7px; border-radius: 999px; background: rgba(52,211,153,.14); color: #5ce3a8 !important; font-weight: 800; }
+    .phone {
+      position: relative;
+      height: 820px;
+      overflow: hidden;
+      border: 1px solid #293143;
+      border-radius: 30px;
+      background: #070a11;
+      box-shadow: 0 22px 60px rgba(0,0,0,.45);
+    }
+    .screen { padding: 12px 13px 118px; }
+    .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .machine { font-size: 13px; font-weight: 900; }
+    .machine small { display: block; margin-top: 4px; color: #69758a; font-size: 9px; }
+    .live { color: #43dc95; }
+    .tools { display: flex; gap: 5px; }
+    .tool { min-width: 35px; height: 35px; display: grid; place-items: center; border: 1px solid #262e3d; border-radius: 10px; background: #151a25; color: #aeb8ca; font-size: 10px; }
+    .tabs { display: grid; grid-template-columns: repeat(4, 1fr); margin: 14px -13px 10px; border-bottom: 1px solid #202636; color: #6e798c; font-size: 9px; text-align: center; }
+    .tabs span { padding: 9px 1px; }
+    .tabs .active { border-bottom: 2px solid #35c8d6; color: #5ee1e8; font-weight: 800; }
+    .card { border: 1px solid #273043; border-radius: 15px; background: linear-gradient(145deg, #121923, #0d121b); }
+    .decision { padding: 11px 12px 10px; border-color: rgba(52,211,153,.48); background: linear-gradient(145deg, rgba(17,73,60,.45), #0c151b 72%); }
+    .decision-head { display: flex; align-items: start; justify-content: space-between; gap: 8px; }
+    .decision-kicker { color: #9eabbd; font-size: 9px; font-weight: 800; }
+    .decision-status { margin-top: 2px; font-size: 21px; font-weight: 900; }
+    .decision-right { display: flex; align-items: center; gap: 5px; }
+    .prob { padding: 5px 7px; border: 1px solid rgba(52,211,153,.42); border-radius: 999px; color: #52dea0; font-size: 9px; font-weight: 900; }
+    .reason-link { color: #93a2b7; font-size: 9px; }
+    .checks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 8px; }
+    .checks span { min-height: 25px; display: grid; place-items: center; border: 1px solid #2a3444; border-radius: 7px; color: #69758a; font-size: 9px; font-weight: 800; }
+    .checks .done { background: rgba(52,211,153,.14); border-color: #35b982; color: #dffbee; }
+    .decision-line { display: flex; align-items: baseline; gap: 8px; margin-top: 8px; }
+    .decision-line b { color: #45da98; font-size: 18px; font-family: ui-monospace, monospace; }
+    .decision-line span { color: #aab4c5; font-size: 9px; }
+    .decision-mini { display: grid; grid-template-columns: repeat(2, 1fr); margin-top: 7px; padding-top: 7px; border-top: 1px solid rgba(148,163,184,.15); }
+    .decision-mini div { text-align: center; color: #8692a5; font-size: 8px; }
+    .decision-mini div + div { border-left: 1px solid rgba(148,163,184,.16); }
+    .decision-mini b { display: block; margin-top: 2px; color: #f0f5ff; font-size: 14px; }
+    .section-title { display: flex; align-items: center; justify-content: space-between; margin: 10px 2px 6px; color: #aeb8c8; font-size: 10px; font-weight: 900; }
+    .section-title small { color: #687489; font-size: 8px; font-weight: 600; }
+    .money-flow { padding: 10px; }
+    .flow-row { display: grid; grid-template-columns: 1fr 16px 1fr 16px 1fr; align-items: center; gap: 3px; }
+    .flow-box { min-width: 0; padding: 7px 5px; border-radius: 10px; background: #151b25; text-align: center; }
+    .flow-box span { display: block; color: #8793a7; font-size: 8px; white-space: nowrap; }
+    .flow-box b { display: block; margin-top: 4px; font-size: 13px; white-space: nowrap; }
+    .flow-op { color: #637087; text-align: center; font-size: 13px; }
+    .held-used b { color: #5ce3a8; }
+    .gross b { color: #62c9ff; }
+    .adjust-row { display: flex; align-items: center; justify-content: space-between; margin-top: 7px; padding-top: 7px; border-top: 1px solid #283142; color: #8d99ab; font-size: 9px; }
+    .adjust-row strong { color: #f5d768; font-size: 14px; }
+    .balance-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 7px; }
+    .balance { padding: 8px 10px; border: 1px solid; border-radius: 11px; }
+    .balance span { display: block; font-size: 8px; }
+    .balance b { display: block; margin-top: 3px; font-size: 14px; }
+    .mochi { border-color: rgba(52,211,153,.4); background: rgba(29,142,94,.12); color: #5ce3a8; }
+    .chodama { border-color: rgba(178,139,255,.4); background: rgba(115,70,193,.13); color: #b891ff; }
+    .expect-grid { display: grid; grid-template-columns: 1.25fr 1fr; gap: 6px; margin-top: 7px; }
+    .expect { padding: 8px 9px; }
+    .expect span { color: #8e9aab; font-size: 8px; }
+    .expect b { display: block; margin-top: 3px; color: #f2d35d; font-size: 14px; }
+    .expect small { color: #748096; font-size: 7px; }
+    .log { overflow: hidden; }
+    .log-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid #222a39; font-size: 10px; font-weight: 900; }
+    .log-head span:last-child { color: #68758b; font-size: 8px; }
+    .log-row { display: grid; grid-template-columns: 40px 1fr auto; align-items: center; gap: 7px; padding: 7px 10px; border-bottom: 1px solid rgba(148,163,184,.1); }
+    .log-row:last-child { border-bottom: 0; }
+    .time { color: #68758a; font: 8px ui-monospace, monospace; }
+    .action b { display: block; font-size: 9px; }
+    .action span { display: block; margin-top: 2px; color: #7f8ba0; font-size: 7px; }
+    .chip { padding: 4px 6px; border-radius: 7px; background: #171d28; color: #aeb8c8; font-size: 7px; white-space: nowrap; }
+    .summary-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
+    .summary-card { padding: 10px; }
+    .summary-card span { color: #8995a8; font-size: 8px; }
+    .summary-card b { display: block; margin-top: 4px; font-size: 17px; }
+    .summary-card small { display: block; margin-top: 3px; color: #6f7b8e; font-size: 7px; }
+    .actual { border-color: rgba(52,211,153,.45); background: linear-gradient(145deg, rgba(25,113,79,.18), #0e151a); }
+    .actual b { color: #5ce3a8; }
+    .cash b { color: #f2f5fb; }
+    .gross-summary b { color: #62c9ff; }
+    .invest-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 7px; }
+    .invest-tile { padding: 8px 5px; border: 1px solid #283142; border-radius: 10px; background: #111722; text-align: center; }
+    .invest-tile span { display: block; color: #7f8ba0; font-size: 7px; }
+    .invest-tile b { display: block; margin-top: 4px; font-size: 12px; }
+    .invest-tile.primary { border-color: rgba(52,211,153,.42); background: rgba(26,125,84,.13); }
+    .invest-tile.primary b { color: #5ce3a8; }
+    .helper { margin: 5px 2px 0; color: #69758a; font-size: 7px; }
+    .combined-log { padding: 2px 0; }
+    .combined-row { display: grid; grid-template-columns: 39px 1fr auto; align-items: center; gap: 7px; padding: 7px 9px; border-bottom: 1px solid rgba(148,163,184,.1); }
+    .combined-row:last-child { border: 0; }
+    .combined-main b { display: block; font-size: 9px; }
+    .combined-main span { display: block; margin-top: 2px; color: #79869a; font-size: 7px; }
+    .amount { text-align: right; font-size: 9px; font-weight: 900; }
+    .amount.cash-color { color: #f5f7fb; }
+    .amount.mochi-color { color: #5ce3a8; }
+    .amount.adjust-color { color: #f2d35d; }
+    .combined-total { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 7px; }
+    .combined-total div { padding: 7px 4px; border: 1px solid #283142; border-radius: 9px; text-align: center; }
+    .combined-total span { display: block; color: #7b879b; font-size: 7px; }
+    .combined-total b { display: block; margin-top: 3px; font-size: 11px; }
+    .bottom { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(7,10,17,.97); }
+    .input-row { display: grid; grid-template-columns: 1fr 78px; gap: 7px; padding: 9px 13px 6px; border-top: 1px solid #1d2432; }
+    .input-main { height: 48px; display: grid; place-items: center; border-radius: 14px; background: linear-gradient(135deg, #5768db, #4e61ce); font-size: 12px; font-weight: 900; }
+    .event { height: 48px; display: grid; place-items: center; border: 1px solid #405591; border-radius: 24px; color: #77a2ff; font-size: 9px; }
+    .nav { display: grid; grid-template-columns: repeat(5, 1fr); padding: 7px 4px 9px; color: #617086; font-size: 7px; text-align: center; }
+    .nav .active { color: #54d7e5; }
+  </style>
+</head>
+<body>
+  <header class="page-head">
+    <h1>投資・持ち玉の整理案</h1>
+    <p>「使用量」をやめ、現金・使った玉・現在残高・投資合計を分けて表示。専門用語は「期待値」に統一。</p>
+  </header>
+  <main class="variants">
+    <section>
+      <div class="variant-label"><b>A｜お金の流れ型</b><span class="recommend">おすすめ</span><span>計算関係が一目で分かる</span></div>
+      <div class="phone"><div class="screen">
+        <div class="top"><div class="machine">eリコリス・リコイル #1<small><span class="live">● 実践中</span>　動作確認</small></div><div class="tools"><span class="tool">♧</span><span class="tool">⚙</span><span class="tool">1K</span></div></div>
+        <div class="tabs"><span class="active">記録</span><span>詳細データ</span><span>大当り履歴</span><span>機種設定</span></div>
+        <section class="card decision"><div class="decision-head"><div><div class="decision-kicker">見切りナビ</div><div class="decision-status">続行</div></div><div class="decision-right"><span class="prob">目標達成 82%</span><span class="reason-link">根拠 ›</span></div></div><div class="checks"><span class="done">3K ✓</span><span class="done">5K ✓</span><span class="done">10K ✓</span><span>20K</span></div><div class="decision-line"><b>11.0K</b><span>次は20K・あと9.0K（約2,250玉）</span></div><div class="decision-mini"><div>実測<b>20.0回/K</b></div><div>目標<b>18.7回/K</b></div></div></section>
+        <div class="section-title"><span>投資の内訳</span><small>玉は交換価値で円換算</small></div>
+        <section class="card money-flow"><div class="flow-row"><div class="flow-box"><span>現金投資</span><b>6,000円</b></div><div class="flow-op">＋</div><div class="flow-box held-used"><span>使った持ち玉</span><b>1,250玉</b></div><div class="flow-op">＝</div><div class="flow-box gross"><span>総投資</span><b>11,000円</b></div></div><div class="adjust-row"><span>上皿補正 −800円</span><span>実質投資 <strong>10,200円</strong></span></div></section>
+        <div class="balance-grid"><div class="balance mochi"><span>現在の持ち玉</span><b>3,480玉</b></div><div class="balance chodama"><span>現在の貯玉</span><b>18,250玉</b></div></div>
+        <div class="expect-grid"><div class="card expect"><span>期待値（1Kあたり）</span><b>+142円</b><small>上下限 −96～+380円</small></div><div class="card expect"><span>ボーダー差</span><b>+0.2回/K</b><small>基準 +0.5超え</small></div></div>
+        <div class="section-title"><span>直近の行動ログ</span><small>すべて見る（6件）›</small></div>
+        <section class="card log"><div class="log-row"><span class="time">23:38</span><span class="action"><b>回転入力</b><span>+21回転</span></span><span class="chip">持ち玉 250玉消費</span></div><div class="log-row"><span class="time">23:31</span><span class="action"><b>回転入力</b><span>+19回転</span></span><span class="chip">現金 1,000円</span></div></section>
+      </div><div class="bottom"><div class="input-row"><div class="input-main">▣　回転数を入力する</div><div class="event">＋ イベント</div></div><div class="nav"><span>ホーム</span><span>台選び</span><span class="active">記録開始</span><span>分析</span><span>設定</span></div></div></div>
+    </section>
+
+    <section>
+      <div class="variant-label"><b>B｜現在・累計分離型</b><span>残高確認を最優先</span></div>
+      <div class="phone"><div class="screen">
+        <div class="top"><div class="machine">eリコリス・リコイル #1<small><span class="live">● 実践中</span>　動作確認</small></div><div class="tools"><span class="tool">♧</span><span class="tool">⚙</span><span class="tool">1K</span></div></div>
+        <div class="tabs"><span class="active">記録</span><span>詳細データ</span><span>大当り履歴</span><span>機種設定</span></div>
+        <section class="card decision"><div class="decision-head"><div><div class="decision-kicker">見切りナビ</div><div class="decision-status">続行</div></div><div class="decision-right"><span class="prob">目標達成 82%</span><span class="reason-link">根拠 ›</span></div></div><div class="checks"><span class="done">3K ✓</span><span class="done">5K ✓</span><span class="done">10K ✓</span><span>20K</span></div><div class="decision-line"><b>11.0K</b><span>次は20K・あと9.0K（約2,250玉）</span></div><div class="decision-mini"><div>実測<b>20.0回/K</b></div><div>目標<b>18.7回/K</b></div></div></section>
+        <div class="section-title"><span>現在の残高</span><small>いま使える玉</small></div>
+        <div class="summary-cards"><div class="card summary-card actual"><span>持ち玉</span><b>3,480玉</b><small>現在は持ち玉遊技中</small></div><div class="card summary-card" style="border-color:rgba(178,139,255,.38)"><span>貯玉</span><b style="color:#b891ff">18,250玉</b><small>店舗に預けた残高</small></div></div>
+        <div class="section-title"><span>ここまでの投資</span><small>累計</small></div>
+        <div class="invest-3"><div class="invest-tile"><span>現金投資</span><b>6,000円</b></div><div class="invest-tile"><span>総投資</span><b>11,000円</b></div><div class="invest-tile primary"><span>実質投資</span><b>10,200円</b></div></div>
+        <p class="helper">使った持ち玉 1,250玉（5,000円相当）・上皿補正 −800円</p>
+        <div class="expect-grid"><div class="card expect"><span>期待値（1Kあたり）</span><b>+142円</b><small>上下限 −96～+380円</small></div><div class="card expect"><span>期待日当</span><b>+9,440円</b><small>8時間換算</small></div></div>
+        <div class="section-title"><span>直近の行動ログ</span><small>すべて見る（6件）›</small></div>
+        <section class="card log"><div class="log-row"><span class="time">23:38</span><span class="action"><b>回転入力</b><span>+21回転</span></span><span class="chip">持ち玉 250玉消費</span></div><div class="log-row"><span class="time">23:31</span><span class="action"><b>回転入力</b><span>+19回転</span></span><span class="chip">現金 1,000円</span></div><div class="log-row"><span class="time">23:20</span><span class="action"><b>スタート</b><span>0回転</span></span><span class="chip">持ち玉遊技</span></div></section>
+      </div><div class="bottom"><div class="input-row"><div class="input-main">▣　回転数を入力する</div><div class="event">＋ イベント</div></div><div class="nav"><span>ホーム</span><span>台選び</span><span class="active">記録開始</span><span>分析</span><span>設定</span></div></div></div>
+    </section>
+
+    <section>
+      <div class="variant-label"><b>C｜行動ログ統合型</b><span>何に使ったかを追いやすい</span></div>
+      <div class="phone"><div class="screen">
+        <div class="top"><div class="machine">eリコリス・リコイル #1<small><span class="live">● 実践中</span>　動作確認</small></div><div class="tools"><span class="tool">♧</span><span class="tool">⚙</span><span class="tool">1K</span></div></div>
+        <div class="tabs"><span class="active">記録</span><span>詳細データ</span><span>大当り履歴</span><span>機種設定</span></div>
+        <section class="card decision"><div class="decision-head"><div><div class="decision-kicker">見切りナビ</div><div class="decision-status">続行</div></div><div class="decision-right"><span class="prob">目標達成 82%</span><span class="reason-link">根拠 ›</span></div></div><div class="checks"><span class="done">3K ✓</span><span class="done">5K ✓</span><span class="done">10K ✓</span><span>20K</span></div><div class="decision-line"><b>11.0K</b><span>次は20K・あと9.0K（約2,250玉）</span></div><div class="decision-mini"><div>実測<b>20.0回/K</b></div><div>目標<b>18.7回/K</b></div></div></section>
+        <div class="section-title"><span>投資と残高</span><small>現在地</small></div>
+        <div class="summary-cards"><div class="card summary-card actual"><span>実質投資</span><b>10,200円</b><small>総投資11,000円 − 上皿800円</small></div><div class="card summary-card"><span>現在の持ち玉</span><b style="color:#5ce3a8">3,480玉</b><small>貯玉 18,250玉</small></div></div>
+        <div class="expect-grid"><div class="card expect"><span>期待値（1Kあたり）</span><b>+142円</b><small>期待時給 +1,180円</small></div><div class="card expect"><span>期待日当</span><b>+9,440円</b><small>8時間換算</small></div></div>
+        <div class="section-title"><span>直近の行動ログ</span><small>投資も同時表示</small></div>
+        <section class="card combined-log"><div class="combined-row"><span class="time">23:38</span><span class="combined-main"><b>回転入力 +21回</b><span>持ち玉で遊技</span></span><span class="amount mochi-color">−250玉</span></div><div class="combined-row"><span class="time">23:31</span><span class="combined-main"><b>回転入力 +19回</b><span>現金で遊技</span></span><span class="amount cash-color">+1,000円</span></div><div class="combined-row"><span class="time">23:24</span><span class="combined-main"><b>持ち玉へ切替</b><span>大当たり終了後</span></span><span class="amount mochi-color">3,730玉</span></div><div class="combined-row"><span class="time">23:20</span><span class="combined-main"><b>上皿補正</b><span>投資価値から差引</span></span><span class="amount adjust-color">−800円</span></div></section>
+        <div class="combined-total"><div><span>現金投資</span><b>6,000円</b></div><div><span>使った持ち玉</span><b style="color:#5ce3a8">1,250玉</b></div><div><span>総投資</span><b style="color:#62c9ff">11,000円</b></div></div>
+      </div><div class="bottom"><div class="input-row"><div class="input-main">▣　回転数を入力する</div><div class="event">＋ イベント</div></div><div class="nav"><span>ホーム</span><span>台選び</span><span class="active">記録開始</span><span>分析</span><span>設定</span></div></div></div>
+    </section>
+  </main>
+</body>
+</html>

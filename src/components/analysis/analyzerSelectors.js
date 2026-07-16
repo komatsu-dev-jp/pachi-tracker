@@ -10,9 +10,9 @@
 //   - storeName   : 店舗名
 //   - machineName : 機種名
 //   - stats       : logic.js の calc 結果から数値/文字列フィールドのみ保存したもの
-//       回転率/K   = stats.effectiveStart1K ?? stats.start1KCorrected ?? stats.start1K
-//       ボーダー差 = stats.effectiveBDiff   ?? stats.bDiffCorrected   ?? stats.bDiff
-//     （上記フォールバック順は既存 Tabs.jsx の表示ロジックと完全一致）
+//       回転率/K   = stats.start1K（投入玉ベースの物理的な回転率）
+//       ボーダー差 = stats.bDiff（物理回転率 − 理論ボーダー）
+//     持ち玉の交換価値で補正した値は期待値にのみ使い、台性能の推移には混ぜない。
 //   - 期待値(EV)  = stats.effectiveWorkAmount ?? stats.workAmount（getEvAmount と同方針）
 //   - investYen / recoveryYen : 実損益（recoveryYen - investYen、両方ゼロなら実損益なし）
 //
@@ -28,13 +28,13 @@ function isNum(v) {
   return typeof v === "number" && isFinite(v);
 }
 
-// 回転率/K の取得（既存 Tabs.jsx:456 と同一のフォールバック順）
+// 回転率/K の取得。生の物理回転率を優先する。
 //   有効な数値が一つも無ければ null（=未記録）を返す
 export function getSpinRate(a) {
   const s = a?.stats || {};
+  if (isNum(s.start1K)) return s.start1K;
   if (isNum(s.effectiveStart1K)) return s.effectiveStart1K;
   if (isNum(s.start1KCorrected)) return s.start1KCorrected;
-  if (isNum(s.start1K)) return s.start1K;
   return null;
 }
 
@@ -42,9 +42,9 @@ export function getSpinRate(a) {
 //   有効な数値が一つも無ければ null を返す
 export function getBorderDiff(a) {
   const s = a?.stats || {};
+  if (isNum(s.bDiff)) return s.bDiff;
   if (isNum(s.effectiveBDiff)) return s.effectiveBDiff;
   if (isNum(s.bDiffCorrected)) return s.bDiffCorrected;
-  if (isNum(s.bDiff)) return s.bDiff;
   return null;
 }
 

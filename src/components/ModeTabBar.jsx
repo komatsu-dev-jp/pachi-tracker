@@ -116,7 +116,8 @@ export default function ModeTabBar({ currentMode, onChange }) {
         borderTop: "1px solid color-mix(in srgb, var(--glass-line) 14%, transparent)",
         display: "flex",
         alignItems: "stretch",
-        paddingTop: 6,
+        height: "calc(76px + env(safe-area-inset-bottom))",
+        paddingTop: 4,
         paddingBottom: "calc(env(safe-area-inset-bottom) + 4px)",
         zIndex: 100,
       }}
@@ -163,7 +164,7 @@ export default function ModeTabBar({ currentMode, onChange }) {
         aria-current={recordActive ? "page" : undefined}
         style={{
           position: "absolute",
-          top: -24,
+          top: 4,
           left: "50%",
           transform: "translateX(-50%)",
           width: 52,

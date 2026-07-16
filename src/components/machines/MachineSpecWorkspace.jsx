@@ -466,6 +466,7 @@ function RegisterScreen({ machine, onSave, onBack }) {
     rushEntry: plainNum(machine.rushEntry),
     rushContinue: plainNum(machine.rushContinue),
     stdDev: plainNum(machine.stdDev),
+    rotationStdDevPerK: plainNum(machine.rotationStdDevPerK),
     manualHesoValue: plainNum(machine.manualHesoValue),
     mcExpectedDaily: plainNum(machine.mcExpectedDaily),
     mcWinRate: plainNum(machine.mcWinRate),
@@ -575,6 +576,7 @@ function RegisterScreen({ machine, onSave, onBack }) {
       rushEntry: form.rushEntry ? `${form.rushEntry}%` : machine.rushEntry,
       rushContinue: form.rushContinue ? `${form.rushContinue}%` : machine.rushContinue,
       stdDev: form.stdDev ? formatNumber(form.stdDev, machine.stdDev) : machine.stdDev,
+      rotationStdDevPerK: plainNum(form.rotationStdDevPerK),
       manualHesoValue: plainNum(form.manualHesoValue),
       mcExpectedDaily: plainNum(form.mcExpectedDaily),
       mcWinRate: plainNum(form.mcWinRate),
@@ -728,6 +730,7 @@ function RegisterScreen({ machine, onSave, onBack }) {
           <div className="ms-form-grid">
             <Field label="初期確率" value={form.initialProb} onChange={(v) => setField("initialProb", v)} />
             <Field label="ムラ係数" value={form.muraCoef} onChange={(v) => setField("muraCoef", v)} />
+            <Field label="1K回転率の標準偏差" value={form.rotationStdDevPerK} unit="回/K" onChange={(v) => setField("rotationStdDevPerK", v)} />
             <Field label="空間感応度" value={form.spatialSens} onChange={(v) => setField("spatialSens", v)} />
             <Field label="レジーム感応度" value={form.regimeSens} onChange={(v) => setField("regimeSens", v)} />
             <Field label="MC期待日当" value={form.mcExpectedDaily} unit="円" onChange={(v) => setField("mcExpectedDaily", v)} />
