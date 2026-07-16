@@ -82,15 +82,15 @@ function MachinePicker({ machines, onBack, onSelect, onUseUnregistered }) {
   }, [machines, query, sort, typeFilter]);
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="遊タイム機種を選択" style={{ position: "fixed", inset: 0, zIndex: 1101, display: "flex", alignItems: "flex-end", justifyContent: "center", background: "rgba(0,0,0,.72)" }}>
-      <div style={{ width: "min(480px, 100%)", height: "min(92dvh, 780px)", display: "flex", flexDirection: "column", borderRadius: "24px 24px 0 0", background: "var(--sm-bg)", border: "1px solid var(--sm-line-hi)", overflow: "hidden" }}>
+    <div role="dialog" aria-modal="true" aria-label="遊タイム機種を選択" style={{ position: "fixed", inset: 0, zIndex: 1101, display: "flex", alignItems: "flex-end", justifyContent: "center", overflow: "hidden", overscrollBehavior: "none", background: "rgba(0,0,0,.72)", touchAction: "none" }}>
+      <div style={{ width: "min(480px, 100%)", height: "min(780px, calc(100svh - 48px))", maxHeight: "calc(100% - 48px)", display: "flex", flexDirection: "column", contain: "layout paint", borderRadius: "24px 24px 0 0", background: "var(--sm-bg)", border: "1px solid var(--sm-line-hi)", overflow: "hidden", touchAction: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px 12px" }}>
           <button type="button" onClick={onBack} style={{ minHeight: 44, border: "none", borderRadius: 999, padding: "8px 14px", background: "var(--sm-card-hi)", color: "var(--sm-text)", fontSize: 13, fontWeight: 700 }}>戻る</button>
           <div style={{ fontSize: 15, fontWeight: 900, color: "var(--sm-text)" }}>機種を選択</div>
           <div style={{ minWidth: 56, padding: "6px 10px", borderRadius: 999, background: "var(--sm-card-hi)", color: "var(--sm-sub)", fontSize: 11, fontWeight: 700, textAlign: "center" }}>{filteredMachines.length}機種</div>
         </div>
 
-        <div aria-label="機種タイプ絞り込み" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "4px 16px 12px", scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}>
+        <div aria-label="機種タイプ絞り込み" style={{ display: "flex", gap: 8, overflowX: "auto", overscrollBehaviorX: "contain", padding: "4px 16px 12px", scrollbarWidth: "none", WebkitOverflowScrolling: "touch", touchAction: "pan-x" }}>
           {MACHINE_TYPE_FILTERS.map((filter) => {
             const active = typeFilter === filter.id;
             return (
@@ -108,7 +108,7 @@ function MachinePicker({ machines, onBack, onSelect, onUseUnregistered }) {
           </select>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto", minHeight: 0, paddingBottom: 12 }}>
+        <div style={{ flex: 1, overflowY: "auto", overscrollBehaviorY: "contain", minHeight: 0, paddingBottom: 12, scrollbarGutter: "stable", WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}>
           {filteredMachines.map((machine, index) => (
             <button key={machine.id || `${machine.name}-${index}`} type="button" onClick={() => onSelect(machine)} style={{ width: "100%", minHeight: 72, display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", border: "none", borderBottom: "1px solid var(--sm-line)", background: "transparent", color: "var(--sm-text)", textAlign: "left" }}>
               <MachineIcon machine={machine} />
@@ -319,13 +319,13 @@ export default function YutimeCalculatorSheet({
   }
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="遊タイム期待値計算" style={{ position: "fixed", inset: 0, zIndex: 1100, display: "flex", alignItems: "flex-end", justifyContent: "center", background: "rgba(0,0,0,.72)" }}>
-      <div style={{ width: "min(480px, 100%)", maxHeight: "92dvh", overflowY: "auto", borderRadius: "24px 24px 0 0", background: "var(--sm-bg)", border: "1px solid var(--sm-line-hi)", paddingBottom: "calc(18px + env(safe-area-inset-bottom))" }}>
-        <div style={{ position: "sticky", top: 0, zIndex: 2, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 14px", background: "var(--sm-bg)", borderBottom: "1px solid var(--sm-line)" }}>
+    <div role="dialog" aria-modal="true" aria-label="遊タイム期待値計算" style={{ position: "fixed", inset: 0, zIndex: 1100, display: "flex", alignItems: "flex-end", justifyContent: "center", overflow: "hidden", overscrollBehavior: "none", background: "rgba(0,0,0,.72)", touchAction: "none" }}>
+      <div style={{ width: "min(480px, 100%)", height: "min(780px, calc(100svh - 48px))", maxHeight: "calc(100% - 48px)", display: "flex", flexDirection: "column", contain: "layout paint", overflow: "hidden", borderRadius: "24px 24px 0 0", background: "var(--sm-bg)", border: "1px solid var(--sm-line-hi)", touchAction: "auto" }}>
+        <div style={{ zIndex: 2, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 14px", background: "var(--sm-bg)", borderBottom: "1px solid var(--sm-line)" }}>
           <div><div style={{ fontSize: 17, fontWeight: 900, color: "var(--sm-text)" }}>遊タイム期待値計算</div><div style={{ fontSize: 10, color: "var(--sm-sub)", marginTop: 3 }}>途中の通常当たりと到達率を含めます</div></div>
           <button type="button" aria-label="閉じる" onClick={onClose} style={{ width: 44, height: 44, borderRadius: 12, border: "1px solid var(--sm-line-hi)", background: "var(--sm-card)", color: "var(--sm-text)", fontSize: 20 }}>×</button>
         </div>
-        <div style={{ padding: 14, display: "grid", gap: 12 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overscrollBehaviorY: "contain", scrollbarGutter: "stable", WebkitOverflowScrolling: "touch", touchAction: "pan-y", padding: "14px 14px calc(18px + env(safe-area-inset-bottom))", display: "grid", alignContent: "start", gap: 12 }}>
           <section style={{ border: "1px solid color-mix(in srgb, var(--sm-cyan) 35%, var(--sm-line))", borderRadius: 14, background: "color-mix(in srgb, var(--sm-cyan) 7%, var(--sm-card))", overflow: "hidden" }}>
             <button type="button" onClick={() => setHelpOpen((open) => !open)} aria-expanded={helpOpen} style={{ width: "100%", minHeight: 48, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", border: "none", background: "transparent", color: "var(--sm-text)", fontSize: 13, fontWeight: 900, textAlign: "left" }}>
               <span>はじめに：遊タイム計算の使い方</span><span aria-hidden="true" style={{ color: "var(--sm-cyan)" }}>{helpOpen ? "−" : "＋"}</span>
