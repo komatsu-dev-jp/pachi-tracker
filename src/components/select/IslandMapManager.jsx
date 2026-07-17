@@ -15,13 +15,14 @@ import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
   islandCount,
   islandLayoutCells,
+  islandLayoutColumns,
   addIsland,
   removeIsland,
   updateIsland,
   moveIslandUp,
   moveIslandDown,
-  LAYOUT_COLS_MIN,
-  LAYOUT_COLS_MAX,
+  LAYOUT_ROWS_MIN,
+  LAYOUT_ROWS_MAX,
 } from "./hallMapSelectors";
 
 // ---- 配色（戦略マップ準拠の固定パレット）----
@@ -376,6 +377,7 @@ function ListCard({ island, index, expanded, onToggle, onEdit }) {
   const color = tagColor(index);
   const cells = expanded ? islandLayoutCells(island, MAX_CELLS) : [];
   const shownMachines = cells.filter((c) => !c.gap).length;
+  const gridCols = cells.length > 0 ? islandLayoutColumns(island, cells.length) : null;
   return (
     <div style={{ background: P.card, border: `1px solid ${expanded ? P.lineHi : P.line}`, borderRadius: 18, marginBottom: 10, overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "stretch" }}>
@@ -416,7 +418,7 @@ function ListCard({ island, index, expanded, onToggle, onEdit }) {
         <div style={{ padding: "2px 14px 14px" }}>
           <div style={{ fontSize: 10, color: P.sub, fontWeight: 700, margin: "4px 0 8px" }}>台番号一覧 ・ レイアウトプレビュー</div>
           {cells.length > 0 ? (
-            <CellGrid cols={island.cols}>
+            <CellGrid cols={gridCols}>
               {cells.map((c, p) => c.gap
                 ? <GapCell key={`gap-${p}`} />
                 : <NumberCell key={c.num} num={c.num} color={color} />)}
@@ -600,23 +602,35 @@ function ToolBtn({ label, onClick, disabled, danger }) {
   );
 }
 
+// 編集開始時の行数。保存済み rows を優先し、旧 cols 設定の島は見た目が変わらないよう行数へ換算する。
+function initialRows(island) {
+  if (island.rows) return island.rows;
+  const total = (Number(island.end) - Number(island.start) + 1) + (island.gaps?.length || 0);
+  if (island.cols) {
+    return Math.max(LAYOUT_ROWS_MIN, Math.min(LAYOUT_ROWS_MAX, Math.ceil(total / island.cols)));
+  }
+  return 2; // 既定は対面2行（島を上から見た並び）
+}
+
 function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown, onRemove }) {
   // 下書き編集 → 「保存」で確定（保存後に戦略マップへ反映）。
-  // cols（列数）と gaps（欠け位置）も下書きに含め、保存で島データへ永続化する。
+  // rows（行数）と gaps（欠け位置）も下書きに含め、保存で島データへ永続化する。
   const [draft, setDraft] = useState({
     name: island.name, machineName: island.machineName, start: island.start, end: island.end,
-    cols: island.cols ?? 6, gaps: Array.isArray(island.gaps) ? island.gaps : [],
+    rows: initialRows(island), gaps: Array.isArray(island.gaps) ? island.gaps : [],
   });
 
   const startN = Math.max(0, Math.round(Number(draft.start) || 0));
   const endN = Math.max(startN, Math.round(Number(draft.end) || startN));
   const count = endN - startN + 1;
-  const cols = Math.max(LAYOUT_COLS_MIN, Math.min(LAYOUT_COLS_MAX, Math.round(Number(draft.cols) || 6)));
+  const rows = Math.max(LAYOUT_ROWS_MIN, Math.min(LAYOUT_ROWS_MAX, Math.round(Number(draft.rows) || 2)));
   const color = tagColor(index);
 
   // プレビュー用セル（欠けを含む）。台番号は欠けを飛ばして連番のまま進む。
+  // 上から見た島マップ: 行数は固定で、台は横方向（左→右）に増えていく。
   const gapSet = new Set(draft.gaps);
   const totalCells = Math.min(count + draft.gaps.length, MAX_CELLS);
+  const cols = Math.max(1, Math.ceil(totalCells / rows)); // 横方向のセル数（台数から自動算出）
   const cells = [];
   {
     let n = startN;
@@ -632,8 +646,8 @@ function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown
     const e = Math.max(s, Math.round(Number(d.end) || s) + delta);
     return { ...d, end: e };
   });
-  const setCols = (v) => setDraft((d) => ({
-    ...d, cols: Math.max(LAYOUT_COLS_MIN, Math.min(LAYOUT_COLS_MAX, Math.round(Number(v) || 6))),
+  const setRows = (v) => setDraft((d) => ({
+    ...d, rows: Math.max(LAYOUT_ROWS_MIN, Math.min(LAYOUT_ROWS_MAX, Math.round(Number(v) || 2))),
   }));
   // 台セルの位置 p に欠けを挿入する（以降のセルは1つ後ろへずれる）。
   const insertGap = (p) => setDraft((d) => ({
@@ -656,7 +670,7 @@ function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown
             <div style={{ fontSize: 17, fontWeight: 900, color: P.text, letterSpacing: 0.4 }}>島を編集</div>
             <div style={{ fontSize: 10, color: P.sub, marginTop: 1 }}>レイアウト編集</div>
           </div>
-          <button className="b" onClick={() => onSave({ ...draft, start: startN, end: endN, cols })} aria-label="保存" style={pillBtn(cyanBtn)}>
+          <button className="b" onClick={() => onSave({ ...draft, start: startN, end: endN, rows, cols: null })} aria-label="保存" style={pillBtn(cyanBtn)}>
             <SaveIcon size={16} stroke="#04141a" /> 保存
           </button>
         </div>
@@ -688,30 +702,30 @@ function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <ToolBtn label="＋ 台追加" onClick={() => setEnd(1)} />
               <ToolBtn label="− 台削除" onClick={() => setEnd(-1)} disabled={count <= 0} />
-              <ToolBtn label="＋ 行追加" onClick={() => setEnd(cols)} />
-              {/* 列数コントロール（−/＋、数値は直接入力可・最大30列） */}
+              <ToolBtn label="＋ 列追加" onClick={() => setEnd(rows)} />
+              {/* 行数コントロール（−/＋、数値は直接入力可。対面なら2行） */}
               <div style={{ display: "flex", alignItems: "stretch", gap: 6 }}>
-                <ToolBtn label="−" onClick={() => setCols(cols - 1)} disabled={cols <= LAYOUT_COLS_MIN} />
+                <ToolBtn label="−" onClick={() => setRows(rows - 1)} disabled={rows <= LAYOUT_ROWS_MIN} />
                 <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
                   <input
-                    key={`cols-${cols}`}
+                    key={`rows-${rows}`}
                     type="number"
                     inputMode="numeric"
-                    min={LAYOUT_COLS_MIN}
-                    max={LAYOUT_COLS_MAX}
-                    defaultValue={cols}
-                    aria-label="列数"
+                    min={LAYOUT_ROWS_MIN}
+                    max={LAYOUT_ROWS_MAX}
+                    defaultValue={rows}
+                    aria-label="行数"
                     onFocus={(e) => { e.target.style.borderColor = P.cyan; }}
-                    onBlur={(e) => { e.target.style.borderColor = P.lineHi; setCols(e.target.value); }}
+                    onBlur={(e) => { e.target.style.borderColor = P.lineHi; setRows(e.target.value); }}
                     style={{
                       width: "100%", boxSizing: "border-box", minHeight: 30, background: P.bg,
                       border: `1px solid ${P.lineHi}`, borderRadius: 9, color: P.text, textAlign: "center",
                       fontFamily: MONO, fontSize: 14, fontWeight: 800, padding: "2px 4px", outline: "none",
                     }}
                   />
-                  <div style={{ fontSize: 8.5, color: P.sub, fontWeight: 700, marginTop: 1 }}>列数</div>
+                  <div style={{ fontSize: 8.5, color: P.sub, fontWeight: 700, marginTop: 1 }}>行数</div>
                 </div>
-                <ToolBtn label="＋" onClick={() => setCols(cols + 1)} disabled={cols >= LAYOUT_COLS_MAX} />
+                <ToolBtn label="＋" onClick={() => setRows(rows + 1)} disabled={rows >= LAYOUT_ROWS_MAX} />
               </div>
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
@@ -719,15 +733,15 @@ function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown
               <div style={{ flex: 1 }}><ToolBtn label="↓ 下へ並び替え" onClick={onMoveDown} disabled={index === total - 1} /></div>
             </div>
             <div style={{ fontSize: 10, color: P.sub, marginTop: 8, lineHeight: 1.6 }}>
-              ※ 列数と欠け位置はこの島のレイアウト設定として保存されます。プレビューの台をタップするとその位置に「欠け」（台のない空き）を入れられ、欠けをタップすると解除できます。台番号は欠けを飛ばして連番のまま維持されます。
+              ※ 島を上から見たマップです。「行数」は島の並び数（対面なら2行）で、台は横方向に増えていきます。行数と欠け位置はこの島のレイアウト設定として保存されます。プレビューの台をタップするとその位置に「欠け」（台のない空き）を入れられ、欠けをタップすると解除できます。台番号は欠けを飛ばして連番のまま維持されます。
             </div>
 
-            {/* レイアウトプレビュー（タップで欠けの挿入/解除） */}
+            {/* レイアウトプレビュー（上から見た島マップ・横スクロール・タップで欠けの挿入/解除） */}
             <div style={{ background: P.card, border: `1px solid ${P.line}`, borderRadius: 16, padding: 12, marginTop: 12 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                 <span style={{ fontSize: 11, color: P.subHi, fontWeight: 700 }}>レイアウトプレビュー</span>
                 <span style={{ fontSize: 10, color: P.sub, fontFamily: MONO }}>
-                  {cols}列{draft.gaps.length > 0 ? ` ・ 欠け${draft.gaps.length}` : ""}
+                  {rows}行×{cols}列{draft.gaps.length > 0 ? ` ・ 欠け${draft.gaps.length}` : ""}
                 </span>
               </div>
               {cells.length > 0 ? (

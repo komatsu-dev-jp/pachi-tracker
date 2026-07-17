@@ -7,16 +7,20 @@
 // 永続化キー: pt_hallMaps（既存キーの構造は一切変更しない・新規キーのみ追加）
 // スキーマ: { [storeId]: Island[] }
 //   Island = { id: string, name: string, start: number, end: number, machineName: string,
-//              cols?: number, gaps?: number[] }
+//              rows?: number, cols?: number, gaps?: number[] }
 //     start/end: 台番号範囲（昇順に正規化）
 //     machineName: 機種名（任意・空文字可）
-//     cols: レイアウト表示の列数（任意・1〜30）。未設定なら表示側の既定値を使う
+//     rows: レイアウト表示の行数（任意・1〜10）。島を上から見た並び数（対面なら2）。
+//           台は行方向（横）に増え、列数は台数から自動で決まる
+//     cols: レイアウト表示の列数（任意・1〜30）。rows 導入前の旧設定。rows があれば無視
 //     gaps: レイアウト上の欠け位置（任意・0始まりのセル位置）。台番号は消費しない
 //           （欠けがあっても台数 islandCount は start/end のみで決まる）
-//   cols / gaps は表示レイアウト専用の追加フィールドで、既存フィールドの意味は変えない。
+//   rows / cols / gaps は表示レイアウト専用の追加フィールドで、既存フィールドの意味は変えない。
 
 export const LAYOUT_COLS_MIN = 1;
 export const LAYOUT_COLS_MAX = 30;
+export const LAYOUT_ROWS_MIN = 1;
+export const LAYOUT_ROWS_MAX = 10;
 
 function num(v, fallback = 0) {
   const n = Number(v);
@@ -29,6 +33,14 @@ function normalizeCols(v) {
   const n = Math.round(num(v, NaN));
   if (!Number.isFinite(n)) return null;
   return Math.max(LAYOUT_COLS_MIN, Math.min(LAYOUT_COLS_MAX, n));
+}
+
+// 行数を 1〜10 の整数へ丸める。無効値は null（未設定扱い）。
+function normalizeRows(v) {
+  if (v == null || v === "") return null;
+  const n = Math.round(num(v, NaN));
+  if (!Number.isFinite(n)) return null;
+  return Math.max(LAYOUT_ROWS_MIN, Math.min(LAYOUT_ROWS_MAX, n));
 }
 
 // 欠け位置を昇順・重複なしへ正規化する。台数 count に対して
@@ -67,11 +79,23 @@ export function normalizeIsland(island, i = 0) {
     machineName: typeof src.machineName === "string" ? src.machineName : "",
   };
   // 表示レイアウト設定（任意フィールド）。未設定の島には付与せず既存データの形を保つ。
+  const rows = normalizeRows(src.rows);
+  if (rows != null) out.rows = rows;
   const cols = normalizeCols(src.cols);
   if (cols != null) out.cols = cols;
   const gaps = normalizeGaps(src.gaps, end - start + 1);
   if (gaps.length > 0) out.gaps = gaps;
   return out;
+}
+
+// 島の表示列数（横方向のセル数）を返す。rows（行数）指定を優先して台数から算出し、
+// 旧 cols 指定があればそれを使う。どちらも無ければ null（表示側の既定に任せる）。
+export function islandLayoutColumns(island, totalCells) {
+  const isl = normalizeIsland(island);
+  const total = Math.max(1, Math.round(num(totalCells, (isl.end - isl.start + 1) + (isl.gaps?.length || 0))));
+  if (isl.rows != null) return Math.max(1, Math.ceil(total / isl.rows));
+  if (isl.cols != null) return isl.cols;
+  return null;
 }
 
 // 島のレイアウトセル一覧を返す（欠けを含む・maxCells で打ち切り）。
