@@ -8,11 +8,14 @@ import {
   getStoreIslands,
   setStoreIslands,
   islandCount,
+  islandLayoutCells,
   addIsland,
   removeIsland,
   updateIsland,
   moveIslandUp,
   moveIslandDown,
+  LAYOUT_COLS_MIN,
+  LAYOUT_COLS_MAX,
 } from "../hallMapSelectors.js";
 
 let passed = 0;
@@ -125,6 +128,59 @@ test("moveIslandUp/Down は順序を入れ替える（端では不変）", () =>
   // 端は不変
   assert.deepStrictEqual(moveIslandUp(list, "a").map((x) => x.id), ["a", "b", "c"]);
   assert.deepStrictEqual(moveIslandDown(list, "c").map((x) => x.id), ["a", "b", "c"]);
+});
+
+test("normalizeIsland は cols を 1〜30 に丸め・未設定なら付与しない", () => {
+  assert.strictEqual(normalizeIsland({ start: 1, end: 10 }).cols, undefined);
+  assert.strictEqual(normalizeIsland({ start: 1, end: 10, cols: 20 }).cols, 20);
+  assert.strictEqual(normalizeIsland({ start: 1, end: 10, cols: 999 }).cols, LAYOUT_COLS_MAX);
+  assert.strictEqual(normalizeIsland({ start: 1, end: 10, cols: -3 }).cols, LAYOUT_COLS_MIN);
+  assert.strictEqual(normalizeIsland({ start: 1, end: 10, cols: "abc" }).cols, undefined);
+});
+
+test("normalizeIsland は gaps を昇順・重複なしに正規化し範囲外を捨てる", () => {
+  // 台数11（499〜509）。有効な欠けはセル総数の範囲内のみ。
+  const a = normalizeIsland({ start: 499, end: 509, gaps: [7, 7, 4, -1, 100] });
+  assert.deepStrictEqual(a.gaps, [4, 7]);
+  // 欠けなし・不正入力ではフィールド自体を付与しない
+  assert.strictEqual(normalizeIsland({ start: 1, end: 10 }).gaps, undefined);
+  assert.strictEqual(normalizeIsland({ start: 1, end: 10, gaps: [] }).gaps, undefined);
+  assert.strictEqual(normalizeIsland({ start: 1, end: 10, gaps: "x" }).gaps, undefined);
+});
+
+test("islandCount は欠けの有無に影響されない（台数は start/end のみで決まる）", () => {
+  assert.strictEqual(islandCount({ start: 499, end: 509, gaps: [7] }), 11);
+});
+
+test("islandLayoutCells は欠けを飛ばして連番のまま台番号を並べる", () => {
+  // 4/3/4 の並び（11台・4列想定・2行目の末尾が欠け）
+  const cells = islandLayoutCells({ start: 499, end: 509, cols: 4, gaps: [7] });
+  assert.strictEqual(cells.length, 12); // 11台 + 欠け1
+  assert.strictEqual(cells[6].num, 505);
+  assert.strictEqual(cells[7].gap, true);
+  assert.strictEqual(cells[8].num, 506); // 欠けを飛ばして連番が続く
+  assert.strictEqual(cells[11].num, 509);
+  assert.strictEqual(cells.filter((c) => !c.gap).length, 11);
+});
+
+test("islandLayoutCells は maxCells で打ち切れる", () => {
+  const cells = islandLayoutCells({ start: 1, end: 500 }, 200);
+  assert.strictEqual(cells.length, 200);
+  assert.strictEqual(cells[199].num, 200);
+});
+
+test("updateIsland で cols/gaps を保存・解除できる", () => {
+  const list = [{ id: "a", name: "1島", start: 499, end: 509, machineName: "" }];
+  const withLayout = updateIsland(list, "a", { cols: 20, gaps: [7] });
+  assert.strictEqual(withLayout[0].cols, 20);
+  assert.deepStrictEqual(withLayout[0].gaps, [7]);
+  // 触らない更新では維持される
+  const renamed = updateIsland(withLayout, "a", { name: "A島" });
+  assert.strictEqual(renamed[0].cols, 20);
+  assert.deepStrictEqual(renamed[0].gaps, [7]);
+  // 空配列で欠けを全解除できる
+  const cleared = updateIsland(withLayout, "a", { gaps: [] });
+  assert.strictEqual(cleared[0].gaps, undefined);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
