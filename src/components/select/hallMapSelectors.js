@@ -6,13 +6,43 @@
 //
 // 永続化キー: pt_hallMaps（既存キーの構造は一切変更しない・新規キーのみ追加）
 // スキーマ: { [storeId]: Island[] }
-//   Island = { id: string, name: string, start: number, end: number, machineName: string }
+//   Island = { id: string, name: string, start: number, end: number, machineName: string,
+//              cols?: number, gaps?: number[] }
 //     start/end: 台番号範囲（昇順に正規化）
 //     machineName: 機種名（任意・空文字可）
+//     cols: レイアウト表示の列数（任意・1〜30）。未設定なら表示側の既定値を使う
+//     gaps: レイアウト上の欠け位置（任意・0始まりのセル位置）。台番号は消費しない
+//           （欠けがあっても台数 islandCount は start/end のみで決まる）
+//   cols / gaps は表示レイアウト専用の追加フィールドで、既存フィールドの意味は変えない。
+
+export const LAYOUT_COLS_MIN = 1;
+export const LAYOUT_COLS_MAX = 30;
 
 function num(v, fallback = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
+}
+
+// 列数を 1〜30 の整数へ丸める。無効値は null（未設定扱い）。
+function normalizeCols(v) {
+  if (v == null || v === "") return null;
+  const n = Math.round(num(v, NaN));
+  if (!Number.isFinite(n)) return null;
+  return Math.max(LAYOUT_COLS_MIN, Math.min(LAYOUT_COLS_MAX, n));
+}
+
+// 欠け位置を昇順・重複なしへ正規化する。台数 count に対して
+// セル総数（count + 採用済み欠け数）の範囲内に収まる位置だけ残す。
+function normalizeGaps(gaps, count) {
+  if (!Array.isArray(gaps)) return [];
+  const sorted = [...new Set(
+    gaps.map((g) => Math.round(num(g, -1))).filter((g) => g >= 0)
+  )].sort((a, b) => a - b);
+  const kept = [];
+  for (const g of sorted) {
+    if (g < count + kept.length) kept.push(g);
+  }
+  return kept;
 }
 
 function makeId() {
@@ -29,13 +59,35 @@ export function normalizeIsland(island, i = 0) {
     start = end;
     end = t;
   }
-  return {
+  const out = {
     id: typeof src.id === "string" && src.id ? src.id : makeId(),
     name: typeof src.name === "string" ? src.name : "",
     start,
     end,
     machineName: typeof src.machineName === "string" ? src.machineName : "",
   };
+  // 表示レイアウト設定（任意フィールド）。未設定の島には付与せず既存データの形を保つ。
+  const cols = normalizeCols(src.cols);
+  if (cols != null) out.cols = cols;
+  const gaps = normalizeGaps(src.gaps, end - start + 1);
+  if (gaps.length > 0) out.gaps = gaps;
+  return out;
+}
+
+// 島のレイアウトセル一覧を返す（欠けを含む・maxCells で打ち切り）。
+// 要素は { num: 台番号 } または { gap: true }。台番号は欠けを飛ばして連番のまま進む。
+export function islandLayoutCells(island, maxCells = Infinity) {
+  const isl = normalizeIsland(island);
+  const count = isl.end - isl.start + 1;
+  const gapSet = new Set(isl.gaps || []);
+  const total = Math.min(count + gapSet.size, maxCells);
+  const cells = [];
+  let n = isl.start;
+  for (let p = 0; p < total; p++) {
+    if (gapSet.has(p)) cells.push({ gap: true });
+    else cells.push({ num: n++ });
+  }
+  return cells;
 }
 
 // 店舗1件分の島配列を正規化する。
