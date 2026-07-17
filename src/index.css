@@ -297,7 +297,8 @@
    戦略マップ（台選びタブ）デザイントークン
    StrategyMapDashboard のパレット定数 P が参照する。ダーク値 = 従来の固定値。
 ================================================================ */
-.strategy-map {
+.strategy-map,
+.yutime-sheet {
   --sm-bg: #050A14;
   --sm-card: #0B1220;
   --sm-card-hi: #0E1626;
@@ -316,7 +317,8 @@
   --sm-map-bg: #070D1A;
 }
 
-[data-theme="light"] .strategy-map {
+[data-theme="light"] .strategy-map,
+[data-theme="light"] .yutime-sheet {
   --sm-bg: #f2f5f9;
   --sm-card: #ffffff;
   --sm-card-hi: #eef2f7;

@@ -86,7 +86,7 @@ function MachinePicker({ machines, onBack, onSelect, onUseUnregistered }) {
   }, [machines, query, sort, typeFilter, yutimeFilter]);
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="遊タイム機種を選択" style={{ position: "fixed", inset: 0, zIndex: 1101, display: "flex", alignItems: "flex-end", justifyContent: "center", overflow: "hidden", overscrollBehavior: "none", background: "rgba(0,0,0,.72)", touchAction: "none" }}>
+    <div className="yutime-sheet" role="dialog" aria-modal="true" aria-label="遊タイム機種を選択" style={{ position: "fixed", inset: 0, zIndex: 1101, display: "flex", alignItems: "flex-end", justifyContent: "center", overflow: "hidden", overscrollBehavior: "none", background: "rgba(0,0,0,.72)", touchAction: "none" }}>
       <div style={{ width: "min(480px, 100%)", height: "min(780px, calc(100svh - 48px))", maxHeight: "calc(100% - 48px)", display: "flex", flexDirection: "column", contain: "layout paint", borderRadius: "24px 24px 0 0", background: "var(--sm-bg)", border: "1px solid var(--sm-line-hi)", overflow: "hidden", touchAction: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px 12px" }}>
           <button type="button" onClick={onBack} style={{ minHeight: 44, border: "none", borderRadius: 999, padding: "8px 14px", background: "var(--sm-card-hi)", color: "var(--sm-text)", fontSize: 13, fontWeight: 700 }}>戻る</button>
@@ -308,7 +308,11 @@ export default function YutimeCalculatorSheet({
       targetingEnabled: true,
     });
     S?.setYutimeDecision?.(null);
+    // 台選びから開始した場合も、保存後は回転入力の記録ページへ直接移動する。
+    // 記録内で詳細データなどを開いていた場合に備え、サブタブも「記録」へ戻す。
+    S?.setSessionSubTab?.("rot");
     onClose();
+    S?.setTab?.("rot");
   };
 
   const stopTargeting = () => {
@@ -350,7 +354,7 @@ export default function YutimeCalculatorSheet({
   }
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="遊タイム期待値計算" style={{ position: "fixed", inset: 0, zIndex: 1100, display: "flex", alignItems: "flex-end", justifyContent: "center", overflow: "hidden", overscrollBehavior: "none", background: "rgba(0,0,0,.72)", touchAction: "none" }}>
+    <div className="yutime-sheet" role="dialog" aria-modal="true" aria-label="遊タイム期待値計算" style={{ position: "fixed", inset: 0, zIndex: 1100, display: "flex", alignItems: "flex-end", justifyContent: "center", overflow: "hidden", overscrollBehavior: "none", background: "rgba(0,0,0,.72)", touchAction: "none" }}>
       <div style={{ width: "min(480px, 100%)", height: "min(780px, calc(100svh - 48px))", maxHeight: "calc(100% - 48px)", display: "flex", flexDirection: "column", contain: "layout paint", overflow: "hidden", borderRadius: "24px 24px 0 0", background: "var(--sm-bg)", border: "1px solid var(--sm-line-hi)", touchAction: "auto" }}>
         <div style={{ zIndex: 2, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 14px", background: "var(--sm-bg)", borderBottom: "1px solid var(--sm-line)" }}>
           <div><div style={{ fontSize: 17, fontWeight: 900, color: "var(--sm-text)" }}>遊タイム期待値計算</div><div style={{ fontSize: 10, color: "var(--sm-sub)", marginTop: 3 }}>途中の通常当たりと到達率を含めます</div></div>
