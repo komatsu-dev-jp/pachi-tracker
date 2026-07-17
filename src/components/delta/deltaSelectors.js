@@ -36,9 +36,10 @@ function parseNumberToken(value) {
 }
 
 // AI出力TSVをパースする。
-// 列順: 日付 / 店舗名 / 島名 / 機種名 / 台番号 / 通常回転数 / 総当り回数（7列）。
-// タブ区切りを優先し、7列にならない行は連続空白区切りで再試行する。
-// それでも7列にならない行・台番号や数値が数値化できない行はスキップして理由を集める。
+// 新形式の列順: 日付 / 店舗名 / 島名 / 機種名 / 台番号 / 差玉 / 通常回転数 / 総当り回数（8列）。
+// 旧形式（差玉なしの7列）も、端末内ピクセル解析の差玉を残すため後方互換で受け付ける。
+// タブ区切りを優先し、7/8列にならない行は連続空白区切りで再試行する。
+// それでも列数が合わない行・台番号や数値が数値化できない行はスキップして理由を集める。
 export function parseTaiDataText(text) {
   const rows = [];
   const skipped = [];
@@ -48,19 +49,23 @@ export function parseTaiDataText(text) {
     const line = rawLine.replace(/\s+$/, "");
     if (!line.trim()) continue; // 空行は静かに無視
 
-    // タブ区切り優先 → 7列でなければ連続空白で再試行
+    // タブ区切り優先 → 7/8列でなければ連続空白で再試行
     let cols = line.split("\t").map((c) => c.trim());
-    if (cols.length !== 7) {
+    if (cols.length !== 7 && cols.length !== 8) {
       const bySpace = line.trim().split(/\s+/);
-      if (bySpace.length === 7) cols = bySpace;
+      if (bySpace.length === 7 || bySpace.length === 8) cols = bySpace;
     }
 
-    if (cols.length !== 7) {
+    if (cols.length !== 7 && cols.length !== 8) {
       skipped.push({ line: line.trim(), reason: "列数不足" });
       continue;
     }
 
-    const [date, store, island, machineName, numRaw, spinsRaw, startsRaw] = cols;
+    const hasDelta = cols.length === 8;
+    const [date, store, island, machineName, numRaw] = cols;
+    const deltaRaw = hasDelta ? cols[5] : null;
+    const spinsRaw = cols[hasDelta ? 6 : 5];
+    const startsRaw = cols[hasDelta ? 7 : 6];
     const num = parseNumberToken(numRaw);
     if (num === null) {
       skipped.push({ line: line.trim(), reason: "台番号が数値化できない" });
@@ -68,12 +73,13 @@ export function parseTaiDataText(text) {
     }
     const normalSpins = parseIntLoose(spinsRaw);
     const totalStarts = parseIntLoose(startsRaw);
-    if (normalSpins === null || totalStarts === null) {
+    const val = hasDelta ? parseIntLoose(deltaRaw) : null;
+    if (normalSpins === null || totalStarts === null || (hasDelta && val === null)) {
       skipped.push({ line: line.trim(), reason: "数値が数値化できない" });
       continue;
     }
 
-    rows.push({
+    const parsedRow = {
       date: date.trim(),
       store: store.trim(),
       island: island.trim(),
@@ -81,7 +87,9 @@ export function parseTaiDataText(text) {
       num,
       normalSpins,
       totalStarts,
-    });
+    };
+    if (hasDelta) parsedRow.val = val;
+    rows.push(parsedRow);
   }
 
   return { rows, skipped };
@@ -89,8 +97,12 @@ export function parseTaiDataText(text) {
 
 // AI読み取り用プロンプト全文を返す（固定情報の日付・店舗名のみ動的に埋め込む）。
 export function buildOcrPrompt({ dateText = "", storeName = "" } = {}) {
-  return `あなたは画像内の表データを正確に文字起こしするアシスタントです。
+  return `あなたは複数の添付資料から、パチンコ台ごとのデータを正確に統合するアシスタントです。
 以下のルールを必ず厳守してください。
+【添付資料】
+・「台番号と差玉が分かる差玉データ」と「大当たり情報の画像またはPDF」を一緒に読み取る
+・台番号をキーに2つの資料を照合し、同じ台を1行にまとめる
+・片方の資料にしか存在しない台は推測で補わず、出力しない
 【出力形式】
 ・1行＝1台
 ・各項目は「タブ区切り」で出力する
@@ -103,8 +115,9 @@ export function buildOcrPrompt({ dateText = "", storeName = "" } = {}) {
 3.	島名
 4.	機種名
 5.	台番号
-6.	通常回転数（画像の「通常中スタート」の数値を抽出）
-7.	総当り回数（画像の「大当り回数」の数値を抽出）
+6.	差玉（差玉データの「○○番台 差玉」の数値。プラスは正数、マイナスは負数）
+7.	通常回転数（大当たり情報の「通常中スタート」の数値を抽出）
+8.	総当り回数（大当たり情報の「大当り回数」の数値を抽出）
 【重要ルール】
 ・列タイトル（見出し）は出力しない
 ・数値は半角数字で出力する
@@ -115,9 +128,9 @@ export function buildOcrPrompt({ dateText = "", storeName = "" } = {}) {
 ・「確率」「最大持玉」などの不要な列は出力しない
 ・説明文、補足文、前置きは一切書かない
 【出力例（形式のみ）】
-2026/02/13	スーパーキスケPAO	P北斗の拳強敵SSPA島	P北斗の拳強敵SSPA	267	1239	12
-2026/02/13	スーパーキスケPAO	P北斗の拳強敵SSPA島	P北斗の拳強敵SSPA	268	204	2
-では、画像内の表をすべてこの形式で出力してください。
+2026/02/13	スーパーキスケPAO	P北斗の拳強敵SSPA島	P北斗の拳強敵SSPA	267	-4500	1239	12
+2026/02/13	スーパーキスケPAO	P北斗の拳強敵SSPA島	P北斗の拳強敵SSPA	268	8200	204	2
+では、添付資料を台番号で照合し、すべてこの形式で出力してください。
 【固定情報】
 日付：${dateText}
 店舗名：${storeName}`;
@@ -140,7 +153,8 @@ export function assignNumbers(slots, numList) {
 }
 
 // 台番号（文字列化して照合）をキーに台データを結果行へマージする。
-// island / machineName / normalSpins / totalStarts を上書き付与し、マッチ数を返す。
+// island / machineName / val / normalSpins / totalStarts を上書き付与し、マッチ数を返す。
+// val が取り込まれた場合は、その差玉に合わせてランクも再計算する。
 export function mergeTaiData(rows, taiRows) {
   const list = Array.isArray(rows) ? rows : [];
   const tai = Array.isArray(taiRows) ? taiRows : [];
@@ -153,10 +167,14 @@ export function mergeTaiData(rows, taiRows) {
     const t = byNum.get(String(row.num));
     if (!t) return { ...row };
     matched += 1;
+    const hasImportedDelta = t.val != null && Number.isFinite(Number(t.val));
+    const mergedVal = hasImportedDelta ? Number(t.val) : row.val;
     return {
       ...row,
       island: t.island ?? row.island ?? "",
       machineName: t.machineName ?? row.machineName ?? "",
+      val: mergedVal,
+      rank: hasImportedDelta ? getRank(mergedVal).rank : row.rank,
       normalSpins: t.normalSpins ?? row.normalSpins ?? null,
       totalStarts: t.totalStarts ?? row.totalStarts ?? null,
     };

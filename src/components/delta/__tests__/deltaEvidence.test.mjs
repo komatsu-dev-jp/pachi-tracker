@@ -5,6 +5,7 @@ import {
   collectDeltaRows,
   resolveMachineStats,
   findMachineSpec,
+  buildRowDeltaEvidence,
 } from "../deltaEvidence.js";
 
 const machine = {
@@ -73,6 +74,29 @@ assert.equal(
   findMachineSpec(correctedMaster.name, [staleOverride], [correctedMaster]),
   correctedMaster,
   "差玉解析でも古い保存値より更新版マスタを優先する",
+);
+
+const aliasedMachine = {
+  ...machine,
+  name: "P北斗の拳 暴凶星",
+  aliases: ["P北斗の拳暴凶星SFPA"],
+};
+assert.equal(
+  findMachineSpec("Ｐ北斗の拳暴凶星ＳＦＰＡ", [], [aliasedMachine]),
+  aliasedMachine,
+  "全角型式名でもaliasesを使って機種マスタへ照合する",
+);
+
+const rowPrediction = buildRowDeltaEvidence(
+  { machineName: machine.name, normalSpins: 666, totalStarts: 17, val: 15000 },
+  [],
+  [machine],
+);
+assert.equal(rowPrediction.hasEstimate, true);
+assert.ok(rowPrediction.evidence.predictedRotation > 0);
+assert.equal(
+  buildRowDeltaEvidence({ machineName: "未登録機種", normalSpins: 100, totalStarts: 1, val: -1000 }, [], [machine]).reason,
+  "機種マスタ未登録",
 );
 
 console.log("deltaEvidence.test.mjs: all tests passed");
