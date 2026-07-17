@@ -979,6 +979,57 @@ body:has(.machine-register-screen) nav {
   box-shadow: 0 8px 18px rgba(0, 112, 120, 0.22);
 }
 
+.ms-yutime-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ms-yutime-grid > div {
+  padding: 12px;
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  border-radius: 12px;
+  background: rgba(34, 211, 238, 0.06);
+}
+
+.ms-yutime-grid span,
+.ms-yutime-source span {
+  display: block;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.ms-yutime-grid strong {
+  display: block;
+  margin-top: 5px;
+  color: #ecfeff;
+  font-size: 16px;
+}
+
+.ms-yutime-grid p,
+.ms-yutime-audit-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.ms-yutime-source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.ms-yutime-source a {
+  color: #22d3ee;
+  font-size: 12px;
+  font-weight: 850;
+}
+
 @media (max-width: 430px) {
   .ms-detail-header {
     padding-left: 16px;

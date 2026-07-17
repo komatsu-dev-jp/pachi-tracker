@@ -5045,9 +5045,380 @@ export const machineModelRegistry = Object.freeze(Object.fromEntries([
   modelUpdatedAt: "2026-07-13",
 })])));
 
+// 遊タイム監査レジストリ。
+// 搭載機だけでなく非搭載・対象外も明示し、新機種を根拠なく「非搭載」と自動判定しない。
+// 現在の98機種はすべて型式または機種別ページで2026-07-17に再確認済み。
+const equippedYutimeRegistry = Object.freeze({
+  "仮面ライダー轟音": Object.freeze({
+    triggerLowSpins: 950,
+    durationSpins: 1200,
+    expectedNetBalls: 6756,
+    sourceUrl: "https://nana-press.com/kaiseki/machine/234/6085/",
+    verifiedAt: "2026-07-17",
+    source: "master",
+  }),
+  "ジューシーハニー3": Object.freeze({
+    triggerLowSpins: 623,
+    durationSpins: 946,
+    expectedNetBalls: 4180,
+    sourceUrl: "https://www.p-world.co.jp/machine/database/9309",
+    verifiedAt: "2026-07-17",
+    source: "master",
+  }),
+  "大海物語5 甘デジ": Object.freeze({
+    triggerLowSpins: 299,
+    durationSpins: 379,
+    expectedNetBalls: 2925,
+    sourceUrl: "https://nana-press.com/kaiseki/machine/567/14614/",
+    verifiedAt: "2026-07-17",
+    source: "master",
+  }),
+  "Pとある魔術の禁書目録": Object.freeze({
+    triggerLowSpins: 800,
+    durationSpins: 1214,
+    expectedNetBalls: 4994,
+    sourceUrl: "https://nana-press.com/kaiseki/machine/206/5614/",
+    verifiedAt: "2026-07-17",
+    source: "master",
+  }),
+  "P大海物語5スペシャル": Object.freeze({
+    triggerLowSpins: 950,
+    durationSpins: 350,
+    expectedNetBalls: 3161.2,
+    sourceUrl: "https://pshort.jp/pachi/p_o_umi_monogatari_5_special_alta/",
+    verifiedAt: "2026-07-17",
+    source: "master",
+  }),
+  "PA大海物語5 Withアグネス・ラム": Object.freeze({
+    triggerLowSpins: 299,
+    durationSpins: 379,
+    expectedNetBalls: 2925,
+    sourceUrl: "https://nana-press.com/kaiseki/machine/567/14614/",
+    verifiedAt: "2026-07-17",
+    source: "master",
+  }),
+  "PA新海物語": Object.freeze({
+    triggerLowSpins: 299,
+    durationSpins: 379,
+    expectedNetBalls: null,
+    sourceUrl: "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20220603.pdf",
+    verifiedAt: "2026-07-17",
+    source: "master",
+  }),
+});
+
+const yutimeNotEquippedNames = new Set([
+  "P大海物語5 MTE2",
+  "エヴァンゲリオン15",
+  "e北斗の拳10",
+  "P真・花の慶次3",
+  "ルパン三世 消されたルパン",
+  "海物語IN沖縄5",
+  "海物語IN沖縄5 甘デジ",
+  "ガンダムSEED",
+  "Re:ゼロから始める異世界生活",
+  "P大工の源さん超韋駄天",
+  "e東京喰種W",
+  "e新世紀エヴァンゲリオン ～はじまりの記憶～",
+  "PAフィーバーからくりサーカス2YF",
+  "Pスーパー海物語IN沖縄6 LTP",
+  "eカケグルイ219ver.",
+  "eカケグルイ7500ver.",
+  "eひきこまり吸血姫の悶々",
+  "P犬夜叉3.0甘SPEC",
+  "eバイオハザード6",
+  "eリコリス・リコイル",
+  "PAスーパー海物語IN沖縄6 Withえなこ",
+  "Pフィーバー機動戦士ガンダムSEED LT-Light ver.",
+  "PA海物語 極JAPAN Withナギナミ",
+  "Pスーパー海物語IN沖縄6",
+  "PA海物語3R3",
+  "P海物語 極JAPAN",
+  "PA大海物語5ブラックLT99ver.",
+  "e大海物語5スペシャル",
+  "PAスーパー海物語IN地中海2",
+  "P大海物語5ブラック",
+  "e新海物語349",
+  "P大海物語5",
+  "PAスーパー海物語IN沖縄5 夜桜超旋風99ver.",
+  "Pスーパー海物語IN沖縄5 夜桜超旋風",
+  "PAスーパー海物語IN沖縄5 with アイマリン",
+  "Pスーパー海物語IN沖縄5 桜199ver.",
+  "e範馬刃牙 199ver.",
+  "P閃乱カグラ189大入りver.",
+  "e ULTRAMAN 4500超ライト",
+  "e盾の勇者の成り上がりアルティメット199ver.",
+  "PF彼女、お借りします LT-Light ver.",
+  "PFうたわれるもの LT-Light ver.",
+  "PA清流物語4ウキウキ79ver.",
+  "eようこそ実力至上主義の教室へ",
+  "e吉宗極乗3000ver.",
+  "Pリングにかけろ1 129ver.",
+  "eゴジラ対エヴァンゲリオン2 超デカゴールド",
+  "Pゴジラ対エヴァンゲリオン2 超デカシルバー",
+  "eソードアート・オンライン99Ver.",
+  "e真・北斗無双 第5章 夢幻闘双",
+  "eフィーバーBASTARD!! -暗黒の破壊神-",
+  "e牙狼11〜冴島大河〜魔戒BURST Ver.",
+  "e魔法少女まどか☆マギカ3 時間遡行",
+  "e北斗の拳11 暴凶星",
+  "e花の慶次～黄金の一撃",
+  "e仮面ライダー電王 デカヘソ239",
+  "eとある科学の超電磁砲 PHASE NEXT",
+  "eフィーバー炎炎ノ消防隊2 シンラver.",
+  "e真・一騎当千～軍神覚醒～ 396ver.",
+  "e 東京リベンジャーズ 聖夜決戦編",
+  "e真・北斗無双 第5章 ドデカSTART",
+  "eルパン三世 ONE COLLECTION 超ブチヌキLTver.",
+  "eぱちんこ押忍!番長 男の頂",
+  "Pフィーバーからくりサーカス2 運命ver.",
+  "eフィーバーからくりサーカス2 魔王ver.",
+  "eフィーバーキン肉マン",
+  "e牙狼12黄金騎士極限 XX-MJ",
+  "PフィーバークィーンⅡ YS",
+  "eルパン三世VSキャッツ・アイ 157ver. 極限突破ブッた斬り7500",
+  "eライザのアトリエ 常闇の女王と秘密の隠れ家 K3",
+  "e86-エイティシックス- MAM2",
+  "デカスタP戦国無双 100ver.",
+  "eまわるん超ワープ ギンギラパラダイス VIVA FESTA HTA2",
+  "eリング 最恐領域 RHA",
+  "e女神のカフェテラス JLZ",
+  "Pクイーンズブレイド奈落 ナナエル79Ver.",
+  "Pデビルマン THE FINAL",
+  "ぱちんこ シン・エヴァンゲリオン 129 LT ver.",
+  "eノーゲーム・ノーライフ 319Ver.",
+  "e聖戦士ダンバイン",
+  "eフィーバーブルーロック",
+  "eフィーバー戦姫絶唱シンフォギア4 キャロルver.",
+  "PAスーパー海物語IN JAPAN2 with 太鼓の達人",
+  "PA海物語3R2スペシャル",
+  "PAスーパー海物語IN地中海SBA",
+  "e 無職転生 ～異世界行ったら本気だす～",
+  "e結城友奈は勇者である～極限7500～",
+  "e 東京喰種 超デカ超一撃ver.",
+  "ぱちんこ 必殺仕事人Ⅵ",
+  "e ソードアート・オンライン アリシゼーション 夜空",
+]);
+
+const yutimeAuditSourceOverrides = Object.freeze({
+  "Re:ゼロから始める異世界生活": "https://psumma.jp/pachinko/50794/",
+  "e大海物語5スペシャル": "https://seastory.sakura-marche.com/p-oumi5sp/",
+  "PAスーパー海物語IN沖縄5 夜桜超旋風99ver.": "https://www.p-world.co.jp/machine/database/9748",
+  "Pスーパー海物語IN沖縄5 桜199ver.": "https://hisshobon.news/analyze/4641/",
+  "PフィーバークィーンⅡ YS": "https://p.hisshobon.jp/machine/4739/1/115009",
+  "デカスタP戦国無双 100ver.": "https://p.hisshobon.jp/machine/4745/1/115266",
+  "Pクイーンズブレイド奈落 ナナエル79Ver.": "https://nana-press.com/kaiseki/machine/1133/",
+  "Pデビルマン THE FINAL": "https://p-gabu.jp/guideworks/machinecontents/detail/6727/summarize",
+  "PA海物語3R2スペシャル": "https://seastory.sakura-marche.com/pa-seastory-3r2-sp/",
+  "PAスーパー海物語IN地中海SBA": "https://www.p-world.co.jp/machine/database/9145/",
+});
+
+export const machineYutimeRegistry = Object.freeze(Object.fromEntries(rawMachineDB.map((machine) => {
+  const equipped = equippedYutimeRegistry[machine.name];
+  const sourceUrl = equipped?.sourceUrl
+    || yutimeAuditSourceOverrides[machine.name]
+    || machine.sourceUrls?.[0]
+    || machineModelRegistry[machine.name]?.modelSourceUrl
+    || "";
+  if (equipped) {
+    return [machine.name, Object.freeze({
+      status: "equipped",
+      verifiedAt: "2026-07-17",
+      sourceUrl,
+      note: `低確率${equipped.triggerLowSpins}回転消化で時短${equipped.durationSpins}回転`,
+    })];
+  }
+  if (machine.name === "P NEW TOKIO ハカマタイプ") {
+    return [machine.name, Object.freeze({
+      status: "not-applicable",
+      verifiedAt: "2026-07-17",
+      sourceUrl,
+      note: "羽根物のため遊タイム対象外",
+    })];
+  }
+  if (yutimeNotEquippedNames.has(machine.name)) {
+    return [machine.name, Object.freeze({
+      status: "not-equipped",
+      verifiedAt: "2026-07-17",
+      sourceUrl,
+      note: "遊タイム非搭載",
+    })];
+  }
+  return [machine.name, Object.freeze({
+    status: "unverified",
+    verifiedAt: "",
+    sourceUrl,
+    note: "遊タイム搭載有無を未確認",
+  })];
+})));
+
+// 遊タイム画面専用の参照機種。
+// 98機種のP-EVIDENCE本体へ不完全な振分・標準偏差を混ぜず、確認できた発動条件だけを選択可能にする。
+// `expectedNetBalls` は「遊タイム突入後の平均獲得玉」を示す根拠がない限り null のままにする。
+export const yutimeReferenceMachines = Object.freeze([
+  {
+    id: "yutime-ref-agnes-premium",
+    name: "PA大海物語Withアグネス・ラム Premium Edition",
+    modelName: "PA大海物語アグネスプレミアRBA",
+    maker: "三洋",
+    type: "甘デジ",
+    introductionDate: "2026-09-07",
+    releaseStatus: "scheduled",
+    isYutimeReference: true,
+    yutime: { triggerLowSpins: 239, durationSpins: 10000, expectedNetBalls: null, sourceUrl: "https://g-net-ps.com/info/p0594/", verifiedAt: "2026-07-17", source: "reference" },
+  },
+  {
+    id: "yutime-ref-kabuki87",
+    name: "PA花の慶次～傾奇一転 87ver.",
+    modelName: "PA花の慶次～傾奇一転N",
+    maker: "ニューギン",
+    type: "甘デジ",
+    introductionDate: "2026-06-08",
+    isYutimeReference: true,
+    yutime: { triggerLowSpins: 260, durationSpins: 5000, expectedNetBalls: null, sourceUrl: "https://1geki.jp/pachinko/pa_hanakei_kabuki87/", verifiedAt: "2026-07-17", source: "reference", benefit: "RUSH終了後は残り185回転で到達" },
+  },
+  {
+    id: "yutime-ref-yasei6",
+    name: "PA野生の王国Ⅵ",
+    modelName: "PA野生の王国6N2",
+    maker: "ニューギン",
+    type: "甘デジ",
+    introductionDate: "2025-12-08",
+    isYutimeReference: true,
+    yutime: { triggerLowSpins: 299, durationSpins: 5000, expectedNetBalls: null, sourceUrl: "https://p-gabu.jp/guideworks/machinecontents/detail/6964/summarize", verifiedAt: "2026-07-17", source: "reference", benefit: "百獣の王TIME(∞)" },
+  },
+  {
+    id: "yutime-ref-higurashi99",
+    name: "PAひぐらしのなく頃に 輪廻転生99ver.",
+    modelName: "PAひぐらしのなく頃に・輪廻転生99FD-TH",
+    maker: "大一",
+    type: "甘デジ",
+    introductionDate: "2025-03-17",
+    isYutimeReference: true,
+    yutime: { triggerLowSpins: 199, durationSpins: 0, durationLabel: "実質次回大当りまで", expectedNetBalls: null, sourceUrl: "https://p-gabu.jp/guideworks/machinecontents/detail/6689", verifiedAt: "2026-07-17", source: "reference", benefit: "到達時はRUSH突入が濃厚" },
+  },
+  {
+    id: "yutime-ref-keiji-retsu99",
+    name: "PA花の慶次～裂 99ver.",
+    modelName: "PA花の慶次〜裂N3-VY",
+    maker: "ニューギン",
+    type: "甘デジ",
+    introductionDate: "2025-01-06",
+    isYutimeReference: true,
+    yutime: { triggerLowSpins: 299, durationSpins: 0, durationLabel: "実質次回大当りまで", expectedNetBalls: null, sourceUrl: "https://nana-press.com/kaiseki/machine/887/26399/", verifiedAt: "2026-07-17", source: "reference", benefit: "神速一騎駆へ突入" },
+  },
+  {
+    id: "yutime-ref-norimonomusume77",
+    name: "PA乗物娘 WITH CJD 2nd season 77ver.",
+    modelName: "PA乗物娘2N",
+    maker: "ニューギン",
+    type: "甘デジ",
+    introductionDate: "2026-02-02",
+    isYutimeReference: true,
+    yutime: { triggerLowSpins: 159, durationSpins: 10000, expectedNetBalls: null, sourceUrl: "https://1geki.jp/pachinko/pa_norimonom2_77/26/", verifiedAt: "2026-07-17", source: "reference" },
+  },
+  {
+    id: "yutime-ref-komakoma89st",
+    name: "PAコマコマ倶楽部 with 坂本冬美 89STver.",
+    modelName: "PAコマコマ倶楽部with坂本冬美VS1",
+    maker: "豊丸",
+    type: "甘デジ",
+    introductionDate: "2025-07-22",
+    isYutimeReference: true,
+    yutime: { triggerLowSpins: 265, durationSpins: 9999, expectedNetBalls: null, sourceUrl: "https://www.toyomaru.jp/machine/2025y/komakom89_sf.html", verifiedAt: "2026-07-17", source: "reference", benefit: "時短を含む265回転で発動" },
+  },
+  {
+    id: "yutime-ref-gogo-go5",
+    name: "P GO! GO! 郷 豪遊の5",
+    modelName: "P GO！GO！郷～豪遊の5～N-VYLT",
+    maker: "ニューギン",
+    type: "甘デジ",
+    introductionDate: "2024-12-02",
+    isYutimeReference: true,
+    yutime: { triggerLowSpins: 299, durationSpins: 10000, expectedNetBalls: null, sourceUrl: "https://pachiseven.jp/machines_v2/7071", verifiedAt: "2026-07-17", source: "reference", benefit: "LUCKY GO! GO! RUSHへ突入" },
+  },
+  {
+    id: "yutime-ref-hanahai49",
+    name: "P【超甘LT】華牌RR 1/49×99de遊タイム",
+    modelName: "P超甘LT華牌RRAX5",
+    maker: "豊丸",
+    type: "甘デジ",
+    introductionDate: "2026-01-05",
+    isYutimeReference: true,
+    yutime: { triggerLowSpins: 99, durationSpins: 10000, expectedNetBalls: null, sourceUrl: "https://1geki.jp/pachinko/p_hanahairr49_99deytime/", verifiedAt: "2026-07-17", source: "reference" },
+  },
+  {
+    id: "yutime-ref-shin-eva99-goraku",
+    name: "PAシン・エヴァンゲリオン 99 ごらくver.",
+    modelName: "PAシン・エヴァンゲリオンGO",
+    maker: "ビスティ",
+    type: "甘デジ",
+    introductionDate: "2025-02-03",
+    isYutimeReference: true,
+    yutime: { triggerLowSpins: 299, durationSpins: 10000, expectedNetBalls: null, sourceUrl: "https://www.dynam.jp/news/pdf/news_250114.pdf", verifiedAt: "2026-07-17", source: "reference", benefit: "時短を含む299回転で発動" },
+  },
+  {
+    id: "yutime-ref-natsuiro",
+    name: "eA夏色日記",
+    modelName: "eA夏色日記GO",
+    maker: "豊丸",
+    type: "甘デジ",
+    introductionDate: "2024-12-02",
+    isYutimeReference: true,
+    yutime: { triggerLowSpins: 220, durationSpins: 10000, expectedNetBalls: null, sourceUrl: "https://www.dynam.jp/pb/machine/ea_natuironikki/", verifiedAt: "2026-07-17", source: "reference" },
+  },
+  {
+    id: "yutime-ref-norimonomusume59",
+    name: "PA乗物娘 2nd season 59ver.",
+    modelName: "PA乗物娘2GO2",
+    maker: "ニューギン",
+    type: "甘デジ",
+    introductionDate: "2026-02-02",
+    isYutimeReference: true,
+    yutime: { triggerLowSpins: 160, durationSpins: 10000, expectedNetBalls: null, sourceUrl: "https://www.dynam.jp/news/pdf/news_260203.pdf", verifiedAt: "2026-07-17", source: "reference", benefit: "公式資料では低確率160回転で発動" },
+  },
+  {
+    id: "yutime-ref-komakoma89-loop",
+    name: "PAコマコマ倶楽部 89確変ループ10R極",
+    modelName: "PAコマコマ倶楽部with坂本冬美VLP1",
+    maker: "豊丸",
+    type: "甘デジ",
+    introductionDate: "2026-04-06",
+    isYutimeReference: true,
+    yutime: { triggerLowSpins: 265, durationSpins: 9999, expectedNetBalls: null, sourceUrl: "https://www.toyomaru.jp/machine/2026y/pkomakoma89loop.html", verifiedAt: "2026-07-17", source: "reference" },
+  },
+  {
+    id: "yutime-ref-planet-apollo",
+    name: "eAぷらねっとアポロGO",
+    modelName: "eAぷらねっとアポロGO2-X",
+    maker: "豊丸",
+    type: "甘デジ",
+    introductionDate: "2026-02-02",
+    isYutimeReference: true,
+    yutime: { triggerLowSpins: 242, durationSpins: 10000, expectedNetBalls: null, sourceUrl: "https://www.nikkansports.com/amusement/pachislot/news/202601050000911.html", verifiedAt: "2026-07-17", source: "reference" },
+  },
+].map((machine) => Object.freeze({
+  ...machine,
+  modelVerified: true,
+  modelUpdatedAt: "2026-07-17",
+  dataUpdatedAt: "2026-07-17",
+  yutime: Object.freeze(machine.yutime),
+  yutimeAudit: Object.freeze({
+    status: "equipped",
+    verifiedAt: "2026-07-17",
+    sourceUrl: machine.yutime.sourceUrl,
+    note: `低確率${machine.yutime.triggerLowSpins}回転消化で${machine.yutime.durationLabel || `時短${machine.yutime.durationSpins}回転`}`,
+  }),
+})));
+
 export const machineDB = rawMachineDB.map((machine) => ({
   ...machine,
   ...(machineModelRegistry[machine.name] || {}),
+  yutimeAudit: machineYutimeRegistry[machine.name],
+  ...(equippedYutimeRegistry[machine.name] ? {
+    yutime: equippedYutimeRegistry[machine.name],
+    dataUpdatedAt: "2026-07-17",
+  } : {}),
 }));
 
 // 機種に設定するスペック値を決定する（applyMachine / 稼働開始セットアップ共通）。
@@ -5103,6 +5474,23 @@ export function getEffectiveMachineList(customMachines = [], builtInMachines = m
   return [
     ...effectiveCustom,
     ...builtIns.filter((machine) => !customNames.has(machine.name)),
+  ];
+}
+
+// 遊タイム機種選択では、P-EVIDENCE本体98機種と発動条件だけ確認済みの参照機種をまとめる。
+// 同名・同型式が後から本体へ登録された場合は、本体側を優先して二重表示しない。
+export function getYutimeSelectionMachines(customMachines = []) {
+  const effectiveMachines = getEffectiveMachineList(customMachines);
+  const registeredKeys = new Set(effectiveMachines.flatMap((machine) => [
+    `name:${machine.name}`,
+    machine.modelName ? `model:${machine.modelName}` : null,
+  ].filter(Boolean)));
+  return [
+    ...effectiveMachines,
+    ...yutimeReferenceMachines.filter((machine) => (
+      !registeredKeys.has(`name:${machine.name}`)
+      && !registeredKeys.has(`model:${machine.modelName}`)
+    )),
   ];
 }
 

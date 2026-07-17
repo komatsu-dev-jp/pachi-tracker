@@ -268,9 +268,17 @@ export function normalizeMachine(data) {
       triggerLowSpins: rawAnyNum(data.yutime?.triggerLowSpins),
       durationSpins: rawAnyNum(data.yutime?.durationSpins),
       expectedNetBalls: rawAnyNum(data.yutime?.expectedNetBalls),
+      durationLabel: plainText(data.yutime?.durationLabel),
+      benefit: plainText(data.yutime?.benefit),
       sourceUrl: plainText(data.yutime?.sourceUrl),
       verifiedAt: plainText(data.yutime?.verifiedAt),
       source: plainText(data.yutime?.source) || (data.yutime ? "master" : ""),
+    },
+    yutimeAudit: {
+      status: plainText(data.yutimeAudit?.status) || "unverified",
+      verifiedAt: plainText(data.yutimeAudit?.verifiedAt),
+      sourceUrl: plainText(data.yutimeAudit?.sourceUrl),
+      note: plainText(data.yutimeAudit?.note),
     },
     manualHesoValue: rawAnyNum(data.manualHesoValue),
     mcExpectedDaily: rawAnyNum(data.mcExpectedDaily),
@@ -401,6 +409,8 @@ export function buildMachineOverride(rawSource, model) {
     !plainEq(modelYutime.triggerLowSpins, initYutime.triggerLowSpins) ||
     !plainEq(modelYutime.durationSpins, initYutime.durationSpins) ||
     !plainEq(modelYutime.expectedNetBalls, initYutime.expectedNetBalls) ||
+    !textEq(modelYutime.durationLabel, initYutime.durationLabel) ||
+    !textEq(modelYutime.benefit, initYutime.benefit) ||
     !textEq(modelYutime.sourceUrl, initYutime.sourceUrl) ||
     !textEq(modelYutime.verifiedAt, initYutime.verifiedAt);
   if (yutimeChanged) {
@@ -409,6 +419,8 @@ export function buildMachineOverride(rawSource, model) {
       triggerLowSpins,
       durationSpins: toNum(modelYutime.durationSpins),
       expectedNetBalls: modelYutime.expectedNetBalls === "" ? null : toNum(modelYutime.expectedNetBalls),
+      durationLabel: plainText(modelYutime.durationLabel),
+      benefit: plainText(modelYutime.benefit),
       sourceUrl: plainText(modelYutime.sourceUrl),
       verifiedAt: plainText(modelYutime.verifiedAt),
       source: "manual",

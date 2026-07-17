@@ -160,6 +160,8 @@ test("機種遊タイム設定を正規化", () => {
     triggerLowSpins: 950,
     durationSpins: 1200,
     expectedNetBalls: 7000,
+    durationLabel: "",
+    benefit: "",
     sourceUrl: "https://example.com",
     verifiedAt: "2026-07-14",
     source: "master",

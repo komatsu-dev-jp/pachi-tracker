@@ -280,6 +280,34 @@ function DetailScreen({ machine, synced, onToggleSync, onEdit, onBack, primaryAc
           <MetricCard label="RUSH継続率" value={machine.rushContinue} color="orange" />
         </section>
 
+        <section className="ms-panel ms-yutime-panel">
+          <div className="ms-panel-title-row">
+            <h2>遊タイム（b時短）</h2>
+            <Pill tone={machine.yutimeAudit?.status === "equipped" ? "success" : "sync"}>
+              {machine.yutimeAudit?.status === "equipped"
+                ? "搭載"
+                : machine.yutimeAudit?.status === "not-equipped"
+                  ? "非搭載・確認済み"
+                  : machine.yutimeAudit?.status === "not-applicable"
+                    ? "対象外"
+                    : "未確認"}
+            </Pill>
+          </div>
+          {machine.yutimeAudit?.status === "equipped" ? (
+            <div className="ms-yutime-grid">
+              <div><span>発動条件</span><strong>低確率 {machine.yutime.triggerLowSpins}回転</strong></div>
+              <div><span>時短・恩恵</span><strong>{machine.yutime.durationLabel || `${machine.yutime.durationSpins}回転`}</strong></div>
+              {machine.yutime.benefit && <p>{machine.yutime.benefit}</p>}
+            </div>
+          ) : (
+            <p className="ms-yutime-audit-note">{machine.yutimeAudit?.note || "遊タイム搭載有無を未確認です。"}</p>
+          )}
+          <div className="ms-yutime-source">
+            <span>確認日 {machine.yutimeAudit?.verifiedAt || "—"}</span>
+            {machine.yutimeAudit?.sourceUrl && <a href={machine.yutimeAudit.sourceUrl} target="_blank" rel="noreferrer">根拠ページ</a>}
+          </div>
+        </section>
+
         <section className="ms-panel">
           <h2>大当り振分サマリー</h2>
           <div className="ms-allocation-box">

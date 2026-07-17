@@ -224,6 +224,8 @@ export function normalizeYutimeSpec(spec) {
     triggerLowSpins: Math.max(0, Math.round(triggerLowSpins)),
     durationSpins: Math.max(0, Math.round(finiteNumber(spec.durationSpins) || 0)),
     expectedNetBalls: expected != null && expected >= 0 ? expected : null,
+    durationLabel: String(spec.durationLabel || "").trim(),
+    benefit: String(spec.benefit || "").trim(),
     sourceUrl: String(spec.sourceUrl || "").trim(),
     verifiedAt: String(spec.verifiedAt || "").trim(),
     source: String(spec.source || "master"),

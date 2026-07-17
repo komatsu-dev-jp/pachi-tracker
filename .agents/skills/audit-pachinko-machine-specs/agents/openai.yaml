@@ -1,0 +1,4 @@
+interface:
+  display_name: "パチンコ機種スペック監査"
+  short_description: "型式・振り分け・複数大当たり・標準偏差を安全に調査更新"
+  default_prompt: "Use $audit-pachinko-machine-specs to audit and safely update pachinko machine specifications in this project."

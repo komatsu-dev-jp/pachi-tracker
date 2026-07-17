@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { deriveSpecForMachine, searchMachines } from "../../machineDB";
+import { deriveSpecForMachine, getYutimeSelectionMachines } from "../../machineDB";
 import { MACHINE_SORT_OPTIONS, filterMachines, sortMachines } from "../../machineSort";
 import {
   calculateYutimeEV,
@@ -69,6 +69,7 @@ function MachineIcon({ machine }) {
 function MachinePicker({ machines, onBack, onSelect, onUseUnregistered }) {
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [yutimeFilter, setYutimeFilter] = useState("equipped");
   const [sort, setSort] = useState("default");
   const filteredMachines = useMemo(() => {
     const queryResults = query.trim()
@@ -78,8 +79,11 @@ function MachinePicker({ machines, onBack, onSelect, onUseUnregistered }) {
           .some((value) => String(value || "").normalize("NFKC").toLowerCase().includes(needle));
       })
       : machines;
-    return sortMachines(filterMachines(queryResults, { type: typeFilter }), sort);
-  }, [machines, query, sort, typeFilter]);
+    const statusResults = yutimeFilter === "all"
+      ? queryResults
+      : queryResults.filter((machine) => machine.yutimeAudit?.status === yutimeFilter);
+    return sortMachines(filterMachines(statusResults, { type: typeFilter }), sort);
+  }, [machines, query, sort, typeFilter, yutimeFilter]);
 
   return (
     <div role="dialog" aria-modal="true" aria-label="遊タイム機種を選択" style={{ position: "fixed", inset: 0, zIndex: 1101, display: "flex", alignItems: "flex-end", justifyContent: "center", overflow: "hidden", overscrollBehavior: "none", background: "rgba(0,0,0,.72)", touchAction: "none" }}>
@@ -88,6 +92,13 @@ function MachinePicker({ machines, onBack, onSelect, onUseUnregistered }) {
           <button type="button" onClick={onBack} style={{ minHeight: 44, border: "none", borderRadius: 999, padding: "8px 14px", background: "var(--sm-card-hi)", color: "var(--sm-text)", fontSize: 13, fontWeight: 700 }}>戻る</button>
           <div style={{ fontSize: 15, fontWeight: 900, color: "var(--sm-text)" }}>機種を選択</div>
           <div style={{ minWidth: 56, padding: "6px 10px", borderRadius: 999, background: "var(--sm-card-hi)", color: "var(--sm-sub)", fontSize: 11, fontWeight: 700, textAlign: "center" }}>{filteredMachines.length}機種</div>
+        </div>
+
+        <div aria-label="遊タイム搭載状態の絞り込み" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, padding: "0 16px 10px" }}>
+          {[["equipped", "搭載機のみ"], ["all", "98機種を含む全て"]].map(([id, text]) => {
+            const active = yutimeFilter === id;
+            return <button key={id} type="button" onClick={() => setYutimeFilter(id)} style={{ minHeight: 42, border: `1px solid ${active ? "var(--sm-cyan)" : "var(--sm-line)"}`, borderRadius: 10, background: active ? "color-mix(in srgb, var(--sm-cyan) 18%, var(--sm-card))" : "var(--sm-card)", color: "var(--sm-text)", fontSize: 12, fontWeight: 800 }}>{text}</button>;
+          })}
         </div>
 
         <div aria-label="機種タイプ絞り込み" style={{ display: "flex", gap: 8, overflowX: "auto", overscrollBehaviorX: "contain", padding: "4px 16px 12px", scrollbarWidth: "none", WebkitOverflowScrolling: "touch", touchAction: "pan-x" }}>
@@ -115,7 +126,15 @@ function MachinePicker({ machines, onBack, onSelect, onUseUnregistered }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ overflow: "hidden", color: "var(--sm-text)", fontSize: 15, fontWeight: 800, textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{machine.name}</div>
                 <div style={{ marginTop: 2, color: "var(--sm-sub)", fontSize: 12 }}>{machine.maker || "メーカー未設定"}{machine.prob || machine.synthProb ? `  ${machine.prob || `1/${machine.synthProb}`}` : ""}</div>
-                {machine.yutime && <div style={{ marginTop: 3, color: "var(--sm-cyan)", fontSize: 10, fontWeight: 800 }}>遊タイム発動条件あり</div>}
+                {machine.yutimeAudit?.status === "equipped" && (
+                  <div style={{ marginTop: 3, color: "var(--sm-cyan)", fontSize: 10, fontWeight: 800 }}>
+                    低確率{machine.yutime.triggerLowSpins}回転 → {machine.yutime.durationLabel || `時短${machine.yutime.durationSpins}回`}
+                    {machine.releaseStatus === "scheduled" ? "（導入予定）" : ""}
+                  </div>
+                )}
+                {machine.yutimeAudit?.status === "not-equipped" && <div style={{ marginTop: 3, color: "var(--sm-sub)", fontSize: 10, fontWeight: 700 }}>遊タイム非搭載・確認済み</div>}
+                {machine.yutimeAudit?.status === "not-applicable" && <div style={{ marginTop: 3, color: "var(--sm-sub)", fontSize: 10, fontWeight: 700 }}>遊タイム対象外</div>}
+                {(!machine.yutimeAudit || machine.yutimeAudit.status === "unverified") && <div style={{ marginTop: 3, color: "var(--sm-yellow)", fontSize: 10, fontWeight: 700 }}>搭載有無を未確認</div>}
               </div>
               <span aria-hidden="true" style={{ color: "var(--sm-sub)", fontSize: 18 }}>›</span>
             </button>
@@ -197,12 +216,16 @@ export default function YutimeCalculatorSheet({
   initialStart1K = null,
   onClose,
 }) {
-  const machines = useMemo(() => searchMachines("", S?.customMachines), [S?.customMachines]);
+  const machines = useMemo(() => getYutimeSelectionMachines(S?.customMachines), [S?.customMachines]);
   const initialMachine = useMemo(
-    () => searchMachines(initialMachineName, S?.customMachines).find((m) => m.name === initialMachineName)
-      || searchMachines(initialMachineName, S?.customMachines)[0]
+    () => machines.find((machine) => machine.name === initialMachineName)
+      || machines.find((machine) => (
+        initialMachineName
+        && [machine.name, machine.modelName, ...(machine.aliases || [])]
+          .some((value) => String(value || "").normalize("NFKC").toLowerCase().includes(initialMachineName.normalize("NFKC").toLowerCase()))
+      ))
       || null,
-    [initialMachineName, S?.customMachines],
+    [initialMachineName, machines],
   );
   const machineInitialSession = createYutimeSessionFromMachine(initialMachine, { assumedStart1K: initialMachine?.border1K || S?.border });
   const initialSession = suppliedInitialSession || machineInitialSession;
@@ -250,7 +273,8 @@ export default function YutimeCalculatorSheet({
     specSapo: S?.specSapo,
   };
   const result = calculateYutimeEV({
-    probabilityDenom: selectedMachine?.synthProb || S?.synthDenom,
+    // 選択機種の確率が未登録なら、現在遊技中の別機種の確率を誤用しない。
+    probabilityDenom: selectedMachine ? selectedMachine.synthProb : S?.synthDenom,
     triggerLowSpins: numberOrNull(triggerLowSpins),
     currentLowSpins: numberOrNull(currentLowSpins),
     start1K: numberOrNull(start1K),
@@ -278,6 +302,8 @@ export default function YutimeCalculatorSheet({
       assumedStart1K: Math.max(0, numberOrNull(start1K) || 0),
       sourceUrl,
       verifiedAt: selectedMachine?.yutime?.verifiedAt || "",
+      durationLabel: selectedMachine?.yutime?.durationLabel || "",
+      benefit: selectedMachine?.yutime?.benefit || "",
       source: selectedMachine?.yutime ? source : "manual",
       targetingEnabled: true,
     });
@@ -295,10 +321,15 @@ export default function YutimeCalculatorSheet({
   const label = (text) => <div style={{ marginBottom: 5, fontSize: 10, fontWeight: 800, color: "var(--sm-sub-hi)" }}>{text}</div>;
   const hasVerifiedTrigger = Boolean(selectedMachine?.yutime?.triggerLowSpins);
   const hasVerifiedExpectedBalls = selectedMachine?.yutime?.expectedNetBalls != null;
+  const auditStatus = selectedMachine?.yutimeAudit?.status;
   const machineStatus = !machineName.trim()
     ? { text: "機種を選択してください", color: "var(--sm-sub)" }
     : !selectedMachine
       ? { text: "未登録機種：手動入力", color: "var(--sm-yellow)" }
+      : auditStatus === "not-equipped"
+        ? { text: "遊タイム非搭載・確認済み", color: "var(--sm-sub)" }
+        : auditStatus === "not-applicable"
+          ? { text: "遊タイム対象外", color: "var(--sm-sub)" }
       : !hasVerifiedTrigger
         ? { text: "遊タイム情報：未確認", color: "var(--sm-yellow)" }
         : source === "manual"
@@ -358,6 +389,15 @@ export default function YutimeCalculatorSheet({
               </div>
               <span style={{ color: "var(--sm-cyan)", fontSize: 11, fontWeight: 800 }}>検索・変更</span>
             </button>
+            {selectedMachine?.yutimeAudit?.status === "equipped" && (
+              <div style={{ marginTop: 8, padding: "10px 11px", border: "1px solid color-mix(in srgb, var(--sm-cyan) 32%, var(--sm-line))", borderRadius: 11, background: "color-mix(in srgb, var(--sm-cyan) 7%, var(--sm-card))", color: "var(--sm-sub-hi)", fontSize: 10, lineHeight: 1.6 }}>
+                <div><strong style={{ color: "var(--sm-text)" }}>正式型式：</strong>{selectedMachine.modelName || "未登録"}</div>
+                <div><strong style={{ color: "var(--sm-text)" }}>発動条件：</strong>低確率{selectedMachine.yutime.triggerLowSpins}回転消化</div>
+                <div><strong style={{ color: "var(--sm-text)" }}>恩恵：</strong>{selectedMachine.yutime.durationLabel || `時短${selectedMachine.yutime.durationSpins}回転`}{selectedMachine.yutime.benefit ? `（${selectedMachine.yutime.benefit}）` : ""}</div>
+                <div><strong style={{ color: "var(--sm-text)" }}>確認日：</strong>{selectedMachine.yutime.verifiedAt || "未登録"}{selectedMachine.releaseStatus === "scheduled" ? "・導入予定機" : ""}</div>
+                {selectedMachine.yutime.sourceUrl && <a href={selectedMachine.yutime.sourceUrl} target="_blank" rel="noreferrer" style={{ color: "var(--sm-cyan)", fontWeight: 800 }}>根拠ページを確認</a>}
+              </div>
+            )}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>{label("現在の低確率カウント")}<input aria-label="現在カウント" type="number" min="0" inputMode="numeric" value={currentLowSpins} onChange={(e) => setCurrentLowSpins(e.target.value)} style={fieldStyle} /></div>
@@ -368,7 +408,7 @@ export default function YutimeCalculatorSheet({
           <div style={{ padding: 12, borderRadius: 13, border: "1px solid var(--sm-line)", background: "var(--sm-card-hi)" }}>
             <div style={{ fontSize: 11, fontWeight: 900, color: "var(--sm-cyan)", marginBottom: 4 }}>遊タイム条件</div>
             <div style={{ marginBottom: 9, color: machineStatus.color, fontSize: 10, fontWeight: 800 }}>{machineStatus.text}</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}><div>{label("発動回転数")}<input aria-label="発動回転数" type="number" min="0" value={triggerLowSpins} onChange={(e) => { setTriggerLowSpins(e.target.value); setSource("manual"); }} style={fieldStyle} /></div><div>{label("遊タイム回数")}<input aria-label="遊タイム回数" type="number" min="0" value={durationSpins} onChange={(e) => { setDurationSpins(e.target.value); setSource("manual"); }} style={fieldStyle} /></div></div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}><div>{label("発動回転数")}<input aria-label="発動回転数" type="number" min="0" value={triggerLowSpins} onChange={(e) => { setTriggerLowSpins(e.target.value); setSource("manual"); }} style={fieldStyle} /></div><div>{label("遊タイム回数")}<input aria-label="遊タイム回数" type="number" min="0" value={durationSpins} onChange={(e) => { setDurationSpins(e.target.value); setSource("manual"); }} placeholder={selectedMachine?.yutime?.durationLabel || "回数"} style={fieldStyle} /></div></div>
             <div style={{ marginTop: 10 }}>{label("遊タイム突入後の平均獲得玉（スルー込み）")}<input aria-label="遊タイム突入後の平均獲得玉" type="number" min="0" value={expectedNetBalls} onChange={(e) => { setExpectedNetBalls(e.target.value); setSource("manual"); }} placeholder={hasVerifiedExpectedBalls ? "自動入力" : "機種情報の確認が必要"} style={fieldStyle} /></div>
             <div style={{ marginTop: 7, padding: "9px 10px", borderRadius: 10, background: "var(--sm-card)", border: "1px solid var(--sm-line)", color: "var(--sm-sub-hi)", fontSize: 10, lineHeight: 1.6 }}>
               <strong style={{ color: "var(--sm-text)" }}>平均大当たり出玉そのものではありません。</strong><br />遊タイム突入後に得られる玉数を、当たり・連チャン・遊タイムスルー・電サポ中の増減まで含めて平均した値です。
