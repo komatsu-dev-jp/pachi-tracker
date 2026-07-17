@@ -3,12 +3,15 @@
 
 import assert from "node:assert";
 import {
+  LAYOUT_ROWS_MIN,
+  LAYOUT_ROWS_MAX,
   normalizeIsland,
   normalizeIslands,
   getStoreIslands,
   setStoreIslands,
   islandCount,
   islandLayoutCells,
+  islandLayoutColumns,
   addIsland,
   removeIsland,
   updateIsland,
@@ -181,6 +184,34 @@ test("updateIsland で cols/gaps を保存・解除できる", () => {
   // 空配列で欠けを全解除できる
   const cleared = updateIsland(withLayout, "a", { gaps: [] });
   assert.strictEqual(cleared[0].gaps, undefined);
+});
+
+test("normalizeIsland は rows を 1〜10 に丸め・未設定なら付与しない", () => {
+  assert.strictEqual(normalizeIsland({ start: 1, end: 10 }).rows, undefined);
+  assert.strictEqual(normalizeIsland({ start: 1, end: 10, rows: 2 }).rows, 2);
+  assert.strictEqual(normalizeIsland({ start: 1, end: 10, rows: 99 }).rows, LAYOUT_ROWS_MAX);
+  assert.strictEqual(normalizeIsland({ start: 1, end: 10, rows: 0 }).rows, LAYOUT_ROWS_MIN);
+  assert.strictEqual(normalizeIsland({ start: 1, end: 10, rows: "abc" }).rows, undefined);
+});
+
+test("islandLayoutColumns は行数から横方向の列数を算出する", () => {
+  // 24台・2行 → 12列（台は横方向に増える）
+  assert.strictEqual(islandLayoutColumns({ start: 499, end: 522, rows: 2 }), 12);
+  // 23台＋欠け1（セル24）・2行 → 12列
+  assert.strictEqual(islandLayoutColumns({ start: 499, end: 521, rows: 2, gaps: [11] }), 12);
+  // rows があれば旧 cols より優先
+  assert.strictEqual(islandLayoutColumns({ start: 1, end: 10, rows: 2, cols: 4 }), 5);
+  // rows 未設定なら旧 cols を使う
+  assert.strictEqual(islandLayoutColumns({ start: 1, end: 10, cols: 4 }), 4);
+  // どちらも無ければ null
+  assert.strictEqual(islandLayoutColumns({ start: 1, end: 10 }), null);
+});
+
+test("updateIsland で rows の保存と旧 cols の解除ができる", () => {
+  const list = [{ id: "a", name: "1島", start: 499, end: 522, machineName: "", cols: 20 }];
+  const next = updateIsland(list, "a", { rows: 2, cols: null });
+  assert.strictEqual(next[0].rows, 2);
+  assert.strictEqual(next[0].cols, undefined);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
