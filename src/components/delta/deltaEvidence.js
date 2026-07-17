@@ -25,17 +25,60 @@ function dataDate(value) {
   return match ? `${match[1]}-${match[2]}-${match[3]}` : "";
 }
 
+function normalizeMachineName(value) {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\s・･:：/／\\()（）\u005b\u005d［］【】「」『』.,，。_-]/g, "");
+}
+
+function machineNameVariants(machine = {}) {
+  return [machine?.name, ...(Array.isArray(machine?.aliases) ? machine.aliases : [])]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+}
+
+function machineNameScore(machine, inputName) {
+  const input = String(inputName ?? "").trim();
+  const normalizedInput = normalizeMachineName(input);
+  if (!normalizedInput) return 0;
+  let score = 0;
+  for (const variant of machineNameVariants(machine)) {
+    if (variant === input) return 3;
+    const normalizedVariant = normalizeMachineName(variant);
+    if (normalizedVariant === normalizedInput) score = Math.max(score, 2);
+    else if (
+      normalizedVariant.length >= 6 && normalizedInput.length >= 6 &&
+      (normalizedVariant.includes(normalizedInput) || normalizedInput.includes(normalizedVariant))
+    ) score = Math.max(score, 1);
+  }
+  return score;
+}
+
 export function findMachineSpec(machineName, customMachines = [], builtInMachines = []) {
   const name = String(machineName ?? "").trim();
-  const master = (builtInMachines || []).find((machine) => sameText(machine?.name, name));
-  const custom = (customMachines || []).find((machine) => sameText(machine?.name, name));
+  const scored = [
+    ...(customMachines || []).map((machine) => ({ machine, source: "custom", score: machineNameScore(machine, name) })),
+    ...(builtInMachines || []).map((machine) => ({ machine, source: "master", score: machineNameScore(machine, name) })),
+  ].filter((item) => item.score > 0);
+  if (!scored.length) return null;
+
+  const highestScore = Math.max(...scored.map((item) => item.score));
+  const matched = scored.filter((item) => item.score === highestScore);
+  // 部分一致は型式違いの誤照合を避けるため、同じ正規化機種名に絞れる場合だけ採用する。
+  if (highestScore === 1) {
+    const canonicalNames = new Set(matched.map((item) => normalizeMachineName(item.machine?.name)));
+    if (canonicalNames.size !== 1) return null;
+  }
+
+  const master = matched.find((item) => item.source === "master")?.machine;
+  const custom = matched.find((item) => item.source === "custom")?.machine;
   if (master && custom) {
     const masterDate = dataDate(master.dataUpdatedAt);
     const customDate = dataDate(custom.dataUpdatedAt);
     if (masterDate && (!customDate || masterDate > customDate)) return master;
   }
-  const candidates = [...(customMachines || []), ...(builtInMachines || [])]
-    .filter((machine) => sameText(machine?.name, name));
+  const candidates = matched.map((item) => item.machine);
   if (!candidates.length) return null;
   return [...candidates].sort((a, b) => {
     const score = (machine) =>
@@ -44,6 +87,31 @@ export function findMachineSpec(machineName, customMachines = [], builtInMachine
       (num(machine?.muraCoef) > 0 ? 1 : 0);
     return score(b) - score(a);
   })[0];
+}
+
+// 解析結果1台分を、機種マスタ照合から予測回転率まで一続きで評価する。
+// UI側は hasEstimate / reason を見るだけで「計算済み」か「不足項目あり」かを表示できる。
+export function buildRowDeltaEvidence(row = {}, customMachines = [], builtInMachines = [], options = {}) {
+  const machineName = String(row?.machineName || options.machineName || "").trim();
+  if (!machineName) {
+    return { hasEstimate: false, machine: null, estimate: null, evidence: null, reason: "機種名なし" };
+  }
+  const machine = findMachineSpec(machineName, customMachines, builtInMachines);
+  if (!machine) {
+    return { hasEstimate: false, machine: null, estimate: null, evidence: null, reason: "機種マスタ未登録" };
+  }
+  const estimate = estimateDeltaObservation(row, machine, options);
+  if (!estimate.valid) {
+    return { hasEstimate: false, machine, estimate, evidence: null, reason: estimate.reason || "計算データ不足" };
+  }
+  const evidence = buildDeltaEvidence([row], machine, options);
+  return {
+    hasEstimate: evidence.hasEstimate,
+    machine,
+    estimate,
+    evidence,
+    reason: evidence.hasEstimate ? "" : "計算データ不足",
+  };
 }
 
 export function machineBorder(machine = {}) {

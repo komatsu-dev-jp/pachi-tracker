@@ -12,6 +12,8 @@ import { C, f, sp, font, mono } from "../../constants";
 import { Card } from "../Atoms";
 import { getRankTone } from "./deltaEngine";
 import { TopBar } from "./DeltaAnalyzer";
+import { buildRowDeltaEvidence } from "./deltaEvidence";
+import { machineDB } from "../../machineDB";
 import {
   listScanDates,
   buildScanIndex,
@@ -169,7 +171,7 @@ function TrendSection({ trend, currentDate }) {
 }
 
 // ── 選択中セルの詳細パネル ──
-function DetailPanel({ cell, machineName, onClose, trend, currentDate }) {
+function DetailPanel({ cell, machineName, onClose, trend, currentDate, prediction }) {
   const row = cell.row;
   const hasTai = row && row.normalSpins != null && row.totalStarts != null;
   const tone = row ? getRankTone(row.rank) : null;
@@ -205,6 +207,23 @@ function DetailPanel({ cell, machineName, onClose, trend, currentDate }) {
                   回転数 {f(row.normalSpins)} / 当り {f(row.totalStarts)}回
                 </div>
               )}
+              {prediction?.evidence?.hasEstimate ? (
+                <div style={{
+                  marginTop: 8, padding: "8px 10px", borderRadius: 10,
+                  background: "color-mix(in srgb, var(--green) 10%, transparent)",
+                  border: "1px solid color-mix(in srgb, var(--green) 28%, transparent)",
+                  color: C.green, fontFamily: mono, fontSize: 12, fontWeight: 800, lineHeight: 1.6,
+                }}>
+                  予測回転率 {prediction.evidence.predictedRotation.toFixed(1)}回/K
+                  <br />
+                  ボーダー差 {prediction.evidence.borderDifference >= 0 ? "+" : ""}{prediction.evidence.borderDifference.toFixed(1)}
+                  <span style={{ color: C.subHi, marginLeft: 8 }}>信頼度 {Math.round(prediction.evidence.confidence * 100)}%</span>
+                </div>
+              ) : hasTai ? (
+                <div style={{ fontSize: 11, color: C.yellow, marginTop: 7, fontWeight: 700 }}>
+                  予測回転率: {prediction?.reason || "計算データ不足"}
+                </div>
+              ) : null}
             </>
           ) : (
             <div style={{ fontSize: 13, color: C.sub, marginTop: 6, fontWeight: 600 }}>
@@ -235,7 +254,7 @@ function DetailPanel({ cell, machineName, onClose, trend, currentDate }) {
 }
 
 // ── 島カード ──
-function IslandCard({ island, scanIndex, selectedNum, onSelect, onCloseDetail, fallbackMachineName, buildTrend, currentDate }) {
+function IslandCard({ island, scanIndex, selectedNum, onSelect, onCloseDetail, fallbackMachineName, buildTrend, currentDate, customMachines }) {
   const cells = useMemo(() => buildIslandOverlay(island, scanIndex), [island, scanIndex]);
   const selectedCell = useMemo(
     () => cells.find((c) => c.num === selectedNum) || null,
@@ -245,6 +264,17 @@ function IslandCard({ island, scanIndex, selectedNum, onSelect, onCloseDetail, f
   const trend = useMemo(
     () => (selectedCell && buildTrend ? buildTrend(selectedCell.num) : []),
     [selectedCell, buildTrend]
+  );
+  const selectedMachineName = selectedCell?.row?.machineName || island.machineName || fallbackMachineName || "";
+  const prediction = useMemo(
+    () => (selectedCell?.row
+      ? buildRowDeltaEvidence(
+          { ...selectedCell.row, machineName: selectedMachineName },
+          customMachines,
+          machineDB,
+        )
+      : null),
+    [selectedCell, selectedMachineName, customMachines]
   );
 
   return (
@@ -280,6 +310,7 @@ function IslandCard({ island, scanIndex, selectedNum, onSelect, onCloseDetail, f
             onClose={onCloseDetail}
             trend={trend}
             currentDate={currentDate}
+            prediction={prediction}
           />
         )}
       </div>
@@ -324,7 +355,7 @@ function LegendCard() {
 }
 
 // ════════════ ルート ════════════
-export default function DeltaMapView({ store, islands, scans, onClose }) {
+export default function DeltaMapView({ store, islands, scans, onClose, customMachines }) {
   const storeId = store?.id ?? null;
   const islandList = useMemo(() => (Array.isArray(islands) ? islands : []), [islands]);
   const scanList = useMemo(() => (Array.isArray(scans) ? scans : []), [scans]);
@@ -446,13 +477,14 @@ export default function DeltaMapView({ store, islands, scans, onClose }) {
                 fallbackMachineName={machineName}
                 buildTrend={buildTrend}
                 currentDate={currentDate}
+                customMachines={customMachines}
               />
             ))}
 
             <LegendCard />
 
             <div style={{ fontSize: 12, color: C.sub, textAlign: "center", padding: "0 8px 8px", fontWeight: 600 }}>
-              タップで台の詳細を表示（差玉・回転数）
+              タップで台の詳細を表示（差玉・回転数・予測回転率）
             </div>
           </>
         )}

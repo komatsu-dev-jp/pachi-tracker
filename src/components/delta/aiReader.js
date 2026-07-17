@@ -1,6 +1,7 @@
 // 差玉解析：APIキー設定者向けワンタップAI読み取りクライアント
 //
-// Anthropic Messages API をブラウザから直接呼び、台データ画像を TSV へ文字起こしする。
+// Anthropic Messages API をブラウザから直接呼び、差玉画像と大当たり情報（画像/PDF）を
+// 1回のリクエストで台番号ごとの TSV へ統合する。
 // 外部ライブラリは使わず fetch のみ。APIキー未設定時は呼ばれない（手動フローが従来どおり動く）。
 // 画像はAnthropic APIに送信される（端末内完結のピクセル解析とは別物）。
 // logic.js・rotRows とは無関係の独立データ。
@@ -49,6 +50,37 @@ export function prepareImageForAi(dataUrl) {
   });
 }
 
+// 画像またはPDFを Messages API の content block へ変換する。
+// 画像は従来どおり長辺を縮小し、PDFはレイアウトを保ったまま base64 document として送る。
+export async function prepareAttachmentForAi(attachment = {}) {
+  const dataUrl = String(attachment.dataUrl || "");
+  const mediaType = String(attachment.mediaType || attachment.type || "").toLowerCase();
+  const isPdf = mediaType === "application/pdf" || String(attachment.name || "").toLowerCase().endsWith(".pdf");
+
+  if (isPdf) {
+    const data = stripDataUrlPrefix(dataUrl);
+    if (!data) throw new Error("PDF読み込み失敗");
+    return {
+      type: "document",
+      source: { type: "base64", media_type: "application/pdf", data },
+    };
+  }
+
+  if (mediaType.startsWith("image/") || dataUrl.startsWith("data:image/")) {
+    const prepared = await prepareImageForAi(dataUrl);
+    return {
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: prepared.mediaType,
+        data: prepared.base64,
+      },
+    };
+  }
+
+  throw new Error("未対応のファイル形式");
+}
+
 // レスポンスJSONの content 配列から text ブロックを連結して返す（純粋関数）。
 // stop_reason === "refusal" の場合は { refused: true } を返す。
 export function extractText(responseJson) {
@@ -72,9 +104,9 @@ export function apiErrorMessage(status, errorType) {
     case 429:
       return "リクエストが集中しています。少し待って再試行してください";
     case 413:
-      return "画像サイズが大きすぎます";
+      return "添付ファイルのサイズが大きすぎます";
     case 400:
-      return "リクエストエラー（画像形式を確認してください）";
+      return "リクエストエラー（画像・PDF形式を確認してください）";
     case 500:
     case 529:
       return "AIサービスが混雑しています。少し待って再試行してください";
@@ -83,14 +115,17 @@ export function apiErrorMessage(status, errorType) {
   }
 }
 
-// 画像と読み取りプロンプトを Anthropic API に送り、文字起こしテキストを得る。
+// 複数の画像/PDFと読み取りプロンプトを Anthropic API に送り、統合済みテキストを得る。
 // 成功: { ok: true, text } / 失敗: { ok: false, message }
-export async function readTaiDataImage({ apiKey, dataUrl, prompt }) {
-  let prepared;
+export async function readTaiDataAttachments({ apiKey, attachments, prompt }) {
+  const files = Array.isArray(attachments) ? attachments.filter(Boolean) : [];
+  if (!files.length) return { ok: false, message: "差玉データと大当たり情報を選んでください" };
+
+  let contentBlocks;
   try {
-    prepared = await prepareImageForAi(dataUrl);
+    contentBlocks = await Promise.all(files.map((file) => prepareAttachmentForAi(file)));
   } catch {
-    return { ok: false, message: "画像の読み込みに失敗しました" };
+    return { ok: false, message: "画像またはPDFの読み込みに失敗しました" };
   }
 
   const body = {
@@ -100,14 +135,7 @@ export async function readTaiDataImage({ apiKey, dataUrl, prompt }) {
       {
         role: "user",
         content: [
-          {
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: prepared.mediaType,
-              data: prepared.base64,
-            },
-          },
+          ...contentBlocks,
           { type: "text", text: String(prompt || "") },
         ],
       },
@@ -147,4 +175,13 @@ export async function readTaiDataImage({ apiKey, dataUrl, prompt }) {
     return { ok: false, message: "AIが読み取りを辞退しました。手動貼り付けをご利用ください" };
   }
   return { ok: true, text: out.text };
+}
+
+// 旧呼び出しとの後方互換。単一画像でも従来どおり利用できる。
+export function readTaiDataImage({ apiKey, dataUrl, prompt }) {
+  return readTaiDataAttachments({
+    apiKey,
+    attachments: [{ dataUrl, mediaType: "image/*" }],
+    prompt,
+  });
 }

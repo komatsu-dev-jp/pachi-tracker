@@ -35,6 +35,19 @@ test("parseTaiData: 正常なタブ区切り2行", () => {
   });
 });
 
+test("parseTaiData: 差玉つき8列を台番号ごとに認識", () => {
+  const text =
+    "2026/02/13\tスーパーキスケPAO\t北斗島\tP北斗SSPA\t267\t-4,500\t1239\t12\n" +
+    "2026/02/13\tスーパーキスケPAO\t北斗島\tP北斗SSPA\t268\t８２００\t204\t2";
+  const { rows, skipped } = parseTaiDataText(text);
+  assert.strictEqual(skipped.length, 0);
+  assert.strictEqual(rows.length, 2);
+  assert.strictEqual(rows[0].val, -4500);
+  assert.strictEqual(rows[1].val, 8200);
+  assert.strictEqual(rows[0].normalSpins, 1239);
+  assert.strictEqual(rows[0].totalStarts, 12);
+});
+
 test("parseTaiData: 連続空白区切りで7列になる行を再試行で拾う", () => {
   const text = "2026/02/13 店A 島A 機種A 818 1580 15";
   const { rows, skipped } = parseTaiDataText(text);
@@ -138,6 +151,15 @@ test("mergeTaiData: 不一致はマッチ0で元行を保つ", () => {
   const { rows: merged, matched } = mergeTaiData(rows, tai);
   assert.strictEqual(matched, 0);
   assert.strictEqual(merged[0].val, 0);
+});
+
+test("mergeTaiData: AI差玉で既存差玉とランクを同時に更新", () => {
+  const rows = [{ num: "818", val: -12000, rank: getRank(-12000).rank }];
+  const tai = [{ num: "818", val: 26000, normalSpins: 1000, totalStarts: 15 }];
+  const { rows: merged, matched } = mergeTaiData(rows, tai);
+  assert.strictEqual(matched, 1);
+  assert.strictEqual(merged[0].val, 26000);
+  assert.strictEqual(merged[0].rank, getRank(26000).rank);
 });
 
 // ──────────── islandToNumbers ────────────

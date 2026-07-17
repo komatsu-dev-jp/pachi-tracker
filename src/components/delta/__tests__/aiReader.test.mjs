@@ -6,7 +6,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert";
-import { extractText, apiErrorMessage, AI_MODEL } from "../aiReader.js";
+import { extractText, apiErrorMessage, AI_MODEL, prepareAttachmentForAi } from "../aiReader.js";
 
 // ──────────── AI_MODEL（API仕様の固定確認） ────────────
 
@@ -53,11 +53,11 @@ test("apiErrorMessage: 429 はレート", () => {
 });
 
 test("apiErrorMessage: 413 は画像サイズ", () => {
-  assert.strictEqual(apiErrorMessage(413), "画像サイズが大きすぎます");
+  assert.strictEqual(apiErrorMessage(413), "添付ファイルのサイズが大きすぎます");
 });
 
 test("apiErrorMessage: 400 はリクエストエラー", () => {
-  assert.strictEqual(apiErrorMessage(400), "リクエストエラー（画像形式を確認してください）");
+  assert.strictEqual(apiErrorMessage(400), "リクエストエラー（画像・PDF形式を確認してください）");
 });
 
 test("apiErrorMessage: 500 / 529 は混雑", () => {
@@ -68,4 +68,16 @@ test("apiErrorMessage: 500 / 529 は混雑", () => {
 
 test("apiErrorMessage: その他はステータス番号付き", () => {
   assert.strictEqual(apiErrorMessage(418), "読み取りに失敗しました（エラー418）");
+});
+
+test("prepareAttachmentForAi: PDFをdocumentブロックへ変換", async () => {
+  const block = await prepareAttachmentForAi({
+    name: "大当たり情報.pdf",
+    mediaType: "application/pdf",
+    dataUrl: "data:application/pdf;base64,QUJD",
+  });
+  assert.deepStrictEqual(block, {
+    type: "document",
+    source: { type: "base64", media_type: "application/pdf", data: "QUJD" },
+  });
 });

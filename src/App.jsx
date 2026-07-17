@@ -1310,6 +1310,7 @@ export default function App() {
             onSaveScan={handleSaveDeltaScan}
             aiApiKey={typeof aiApiKey === "string" ? aiApiKey : ""}
             onChangeAiApiKey={setAiApiKey}
+            customMachines={Array.isArray(customMachines) ? customMachines : []}
           />
         )}
         {currentMode === "deltaMap" && (
@@ -1317,6 +1318,7 @@ export default function App() {
             store={deltaActiveStore}
             islands={deltaIslands}
             scans={Array.isArray(deltaScans) ? deltaScans : []}
+            customMachines={Array.isArray(customMachines) ? customMachines : []}
             onClose={() => setCurrentMode("home")}
           />
         )}

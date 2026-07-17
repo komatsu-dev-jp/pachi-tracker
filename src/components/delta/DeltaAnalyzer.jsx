@@ -20,7 +20,9 @@ import {
   buildSegmentsNumbers,
   makeScan,
 } from "./deltaSelectors";
-import { readTaiDataImage } from "./aiReader";
+import { readTaiDataAttachments } from "./aiReader";
+import { buildRowDeltaEvidence } from "./deltaEvidence";
+import { machineDB } from "../../machineDB";
 
 const TAP = 44; // 最小タップ領域
 const CTA = 48; // 下部固定CTA高さ
@@ -40,6 +42,19 @@ function loadImage(src) {
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error("画像読み込み失敗"));
     img.src = src;
+  });
+}
+
+function fileToAttachment(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => resolve({
+      dataUrl: event.target.result,
+      mediaType: file.type || (file.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : ""),
+      name: file.name,
+    });
+    reader.onerror = () => reject(new Error("ファイル読み込み失敗"));
+    reader.readAsDataURL(file);
   });
 }
 
@@ -495,7 +510,7 @@ function SegInput({ label, value, onChange, ph }) {
 }
 
 // ════════════ 解析結果 ════════════
-function ResultsStep({ rows, machineName, onBack, onSave, onOpenImport, saved }) {
+function ResultsStep({ rows, machineName, onBack, onSave, onOpenImport, saved, customMachines }) {
   const [sortBy, setSortBy] = useState("delta");
 
   const active = rows.filter((r) => r.val !== 0 || r.px > 10);
@@ -518,6 +533,19 @@ function ResultsStep({ rows, machineName, onBack, onSave, onOpenImport, saved })
     else arr.sort((a, b) => String(a.num).localeCompare(String(b.num), undefined, { numeric: true }));
     return arr;
   }, [rows, sortBy]);
+
+  const predictionByNum = useMemo(() => {
+    const map = new Map();
+    for (const row of rows) {
+      map.set(String(row.num), buildRowDeltaEvidence(
+        { ...row, machineName: row.machineName || machineName || "" },
+        customMachines,
+        machineDB,
+      ));
+    }
+    return map;
+  }, [rows, machineName, customMachines]);
+  const predictedCount = Array.from(predictionByNum.values()).filter((item) => item.hasEstimate).length;
 
   return (
     <>
@@ -576,6 +604,9 @@ function ResultsStep({ rows, machineName, onBack, onSave, onOpenImport, saved })
                 </div>
               ))}
             </div>
+            <div style={{ fontSize: 12, color: predictedCount > 0 ? C.green : C.sub, fontWeight: 700, marginTop: 10 }}>
+              予測回転率を計算済み {predictedCount}/{rows.length}台
+            </div>
           </div>
         </Card>
 
@@ -606,6 +637,8 @@ function ResultsStep({ rows, machineName, onBack, onSave, onOpenImport, saved })
         {sorted.map((r, i) => {
           const tone = getRankTone(r.rank);
           const hasTai = r.normalSpins != null && r.totalStarts != null;
+          const prediction = predictionByNum.get(String(r.num));
+          const predicted = prediction?.evidence;
           return (
             <div key={`${r.num}-${i}`} style={{
               display: "flex", alignItems: "center", gap: 12,
@@ -629,6 +662,18 @@ function ResultsStep({ rows, machineName, onBack, onSave, onOpenImport, saved })
                     回転数 {f(r.normalSpins)} / 当り {f(r.totalStarts)}回
                   </div>
                 )}
+                {predicted?.hasEstimate ? (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0 6px", fontSize: 11, color: C.green, fontFamily: mono, marginTop: 4, fontWeight: 800, lineHeight: 1.5 }}>
+                    <span style={{ whiteSpace: "nowrap" }}>予測 {predicted.predictedRotation.toFixed(1)}回/K</span>
+                    <span style={{ color: C.subHi, whiteSpace: "nowrap" }}>
+                      差 {predicted.borderDifference >= 0 ? "+" : ""}{predicted.borderDifference.toFixed(1)} / 信頼度 {Math.round(predicted.confidence * 100)}%
+                    </span>
+                  </div>
+                ) : hasTai ? (
+                  <div style={{ fontSize: 10, color: C.yellow, marginTop: 4, fontWeight: 700 }}>
+                    予測回転率: {prediction?.reason || "計算データ不足"}
+                  </div>
+                ) : null}
               </div>
               <div style={{ fontSize: 22, fontWeight: 900, fontFamily: mono, color: r.val >= 0 ? C.green : C.red, flexShrink: 0 }}>
                 {sp(r.val)}
@@ -647,7 +692,7 @@ function ResultsStep({ rows, machineName, onBack, onSave, onOpenImport, saved })
             color: C.text, fontSize: 14, fontWeight: 800, marginTop: 4, marginBottom: 12,
           }}
         >
-          台データを取り込む
+          差玉・大当たりデータを一括取り込み
         </button>
       </div>
     </>
@@ -669,21 +714,24 @@ function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiOk, setAiOk] = useState(false);
+  const [aiFileCount, setAiFileCount] = useState(0);
   // APIキー未設定時の導線展開、または設定済み時の変更フォーム表示。
   const [showKeyForm, setShowKeyForm] = useState(false);
   const [keyInput, setKeyInput] = useState("");
 
-  // 画像 dataURL を読み込んで AI 読み取りへ渡す。
-  const handleAiFile = (files) => {
-    const file = Array.from(files || []).find((fl) => fl.type.startsWith("image/"));
-    if (!file || aiBusy) return;
+  // 差玉画像と大当たり情報（画像/PDF）をまとめて読み込み、1回のAI処理へ渡す。
+  const handleAiFiles = async (files) => {
+    const supported = Array.from(files || []).filter((file) =>
+      file.type.startsWith("image/") || file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
+    );
+    if (!supported.length || aiBusy) return;
     setAiError("");
     setAiOk(false);
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const dataUrl = e.target.result;
-      setAiBusy(true);
-      const result = await readTaiDataImage({ apiKey: aiApiKey, dataUrl, prompt });
+    setAiFileCount(supported.length);
+    setAiBusy(true);
+    try {
+      const attachments = await Promise.all(supported.map((file) => fileToAttachment(file)));
+      const result = await readTaiDataAttachments({ apiKey: aiApiKey, attachments, prompt });
       setAiBusy(false);
       if (result.ok) {
         setText(result.text);
@@ -692,9 +740,10 @@ function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
       } else {
         setAiError(result.message || "読み取りに失敗しました");
       }
-    };
-    reader.onerror = () => setAiError("画像の読み込みに失敗しました");
-    reader.readAsDataURL(file);
+    } catch {
+      setAiBusy(false);
+      setAiError("画像またはPDFの読み込みに失敗しました");
+    }
   };
 
   const saveKey = () => {
@@ -736,7 +785,7 @@ function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
       <TopBar title="台データ取り込み" onBack={onBack} />
       <div style={scrollAreaStyle}>
         <div style={{ fontSize: 14, color: C.subHi, margin: "4px 2px 12px", fontWeight: 600 }}>
-          回転数・大当り回数をグラフ解析に統合します
+          差玉データと大当たり情報を台番号でまとめ、予測回転率まで計算します
         </div>
 
         {/* AI読み取りカード（APIキー設定者向け・ワンタップ自動化） */}
@@ -748,14 +797,15 @@ function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
                   AIでワンタップ読み取り
                 </div>
                 <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>
-                  台データ画像を選ぶと自動でTSV化します
+                  差玉画像と大当たり画像/PDFを同時に選ぶと、台番号ごとに一括統合します
                 </div>
                 <input
                   ref={aiFileRef}
                   type="file"
-                  accept="image/*"
+                  accept="image/*,application/pdf,.pdf"
+                  multiple
                   style={{ display: "none" }}
-                  onChange={(e) => { handleAiFile(e.target.files); e.target.value = ""; }}
+                  onChange={(e) => { handleAiFiles(e.target.files); e.target.value = ""; }}
                 />
                 <button
                   className="b"
@@ -769,7 +819,7 @@ function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
                     fontSize: 15, fontWeight: 900,
                   }}
                 >
-                  {aiBusy ? "読み取り中…" : "画像を選んで読み取る"}
+                  {aiBusy ? `読み取り中…（${aiFileCount}ファイル）` : "差玉＋大当たり資料をまとめて選ぶ"}
                 </button>
 
                 {aiOk && (
@@ -780,7 +830,7 @@ function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
                     borderRadius: 10, padding: "10px 12px", marginTop: 10,
                     fontSize: 13, color: C.green, fontWeight: 800,
                   }}>
-                    ✓ 読み取りました。内容を確認して統合してください
+                    ✓ {aiFileCount}ファイルを読み取りました。内容を確認して統合してください
                   </div>
                 )}
                 {aiError && (
@@ -802,7 +852,7 @@ function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
                   borderRadius: 10, padding: "10px 12px", marginTop: 10,
                   fontSize: 11, color: C.yellow, fontWeight: 700, lineHeight: 1.6,
                 }}>
-                  画像はAnthropic APIに送信されます（APIキーの利用料金が発生します）
+                  選んだ画像・PDFはAnthropic APIに送信されます（APIキーの利用料金が発生します）
                 </div>
 
                 {/* キー設定の変更/削除 */}
@@ -902,7 +952,7 @@ function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
               {copied ? "コピーしました ✓" : "プロンプトをコピー"}
             </button>
             <div style={{ fontSize: 11, color: C.sub, textAlign: "center", marginTop: 10 }}>
-              ChatGPT・Claude等に台データ画像と一緒に貼り付け
+              ChatGPT・Claude等に差玉資料と大当たり資料を一緒に添付
             </div>
           </div>
         </Card>
@@ -917,7 +967,7 @@ function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder={"2026/6/12\t店名\t島名\t機種名\t816\t1239\t12"}
+              placeholder={"2026/6/12\t店名\t島名\t機種名\t816\t-4500\t1239\t12"}
               style={{
                 width: "100%", minHeight: 140, boxSizing: "border-box",
                 background: C.surfaceHi, border: `1px solid ${C.border}`,
@@ -937,12 +987,16 @@ function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
               </div>
               <div style={{ display: "flex", fontSize: 11, color: C.sub, fontWeight: 700, padding: "0 2px 6px", borderBottom: `1px solid ${C.border}` }}>
                 <span style={{ flex: 1 }}>台番号</span>
+                <span style={{ flex: 1, textAlign: "right" }}>差玉</span>
                 <span style={{ flex: 1, textAlign: "right" }}>回転数</span>
-                <span style={{ flex: 1, textAlign: "right" }}>当り回数</span>
+                <span style={{ flex: 1, textAlign: "right" }}>当り</span>
               </div>
               {parsed.rows.slice(0, 3).map((r, i) => (
                 <div key={i} style={{ display: "flex", fontSize: 15, fontWeight: 800, color: C.text, fontFamily: mono, padding: "7px 2px" }}>
                   <span style={{ flex: 1 }}>{r.num}</span>
+                  <span style={{ flex: 1, textAlign: "right", color: r.val == null ? C.sub : r.val >= 0 ? C.green : C.red }}>
+                    {r.val == null ? "既存" : sp(r.val)}
+                  </span>
                   <span style={{ flex: 1, textAlign: "right" }}>{f(r.normalSpins)}</span>
                   <span style={{ flex: 1, textAlign: "right" }}>{f(r.totalStarts)}</span>
                 </div>
@@ -966,7 +1020,7 @@ function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
         )}
       </div>
       <BottomCta
-        label="解析結果に統合する"
+        label="差玉・大当たりを一度に統合する"
         onClick={() => onMerge(parsed.rows)}
         disabled={recognized === 0}
       />
@@ -1030,7 +1084,7 @@ function StepBadge({ n }) {
 }
 
 // ════════════ ルート ════════════
-export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiApiKey, onChangeAiApiKey }) {
+export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiApiKey, onChangeAiApiKey, customMachines }) {
   const [step, setStep] = useState("upload");
   const [images, setImages] = useState([]);
   const [slots, setSlots] = useState([]); // ピクセル解析の生スロット
@@ -1117,6 +1171,7 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
           onSave={handleSave}
           onOpenImport={() => setStep("import")}
           saved={saved}
+          customMachines={customMachines}
         />
       )}
       {step === "import" && (
