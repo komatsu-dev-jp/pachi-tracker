@@ -11,6 +11,7 @@ import { searchMachines } from "./machineDB";
 import { RotTab, SettingsTab } from "./components/Tabs";
 import ModeTabBar from "./components/ModeTabBar";
 import HomeDashboard from "./components/home/HomeDashboard";
+import { buildRiskSnapshot, findExactMachine } from "./components/home/homePlanningModel";
 import AnalysisDashboard from "./components/analysis/AnalysisDashboard";
 import ScoutDashboard from "./components/scout/ScoutDashboard";
 import StrategyMapDashboard from "./components/strategy/StrategyMapDashboard";
@@ -370,6 +371,15 @@ export default function App() {
   // 月間期待値目標（ホーム画面の目標カード用 / 円）
   // 既存ユーザーは保存値、未設定は 100,000 円をデフォルトとして表示する。
   const [monthlyEvTarget, setMonthlyEvTarget] = useLS("pt_monthlyEvTarget", 100000);
+  // ホーム画面v3: 月ごとの基本方針と、日ごとのリサーチ方針を別々に保存する。
+  // 月間方針は普段の基準、日別方針は前日に状況を見て上書きするためのもの。
+  const [monthlyPlayPlans, setMonthlyPlayPlans] = useLS("pt_monthlyPlayPlans", {});
+  const [dailyResearchPlans, setDailyResearchPlans] = useLS("pt_dailyResearchPlans", {});
+  const [planningNotificationPrefs, setPlanningNotificationPrefs] = useLS("pt_planningNotificationPrefs", {
+    enabled: true,
+    reminderTime: "20:00",
+    channel: "in-app",
+  });
 
   // ハンターランク（Phase 6 本実装版）
   // - XP トリガー: セッション完了 +50 / 大当たり +20 / 通常回転 1000 ごと +10 / 7日連続 +100
@@ -889,6 +899,11 @@ export default function App() {
     const safeStats = ev ? Object.fromEntries(
       Object.entries(ev).filter(([, v]) => typeof v === "number" || typeof v === "string")
     ) : {};
+    const exactMachineName = String(machineName || "").trim();
+    const matchedMachines = exactMachineName ? searchMachines(exactMachineName, customMachines) : [];
+    const matchedMachine = findExactMachine(matchedMachines, exactMachineName);
+    const riskBallValueYen = exRate > 0 ? 1000 / exRate : (Number(ballVal) > 0 ? Number(ballVal) : 4);
+    const riskSnapshot = buildRiskSnapshot({ machine: matchedMachine, ballValueYen: riskBallValueYen, capturedAt: now.toISOString() });
     const archive = {
       id: now.getTime(),
       date: localDateStr(now),
@@ -898,6 +913,7 @@ export default function App() {
       sesLog: JSON.parse(JSON.stringify(sesLog)),
       settings: { rentBalls, exRate, synthDenom, rotPerHour, border, ballVal },
       stats: safeStats,
+      riskSnapshot,
       totalTrayBalls: totalTrayBalls || 0,
       startRot: startRot || 0,
       storeName: String(storeName || ""),
@@ -1163,6 +1179,9 @@ export default function App() {
     customMachines, setCustomMachines,
     archives: economicArchives, setArchives,
     monthlyEvTarget, setMonthlyEvTarget,
+    monthlyPlayPlans, setMonthlyPlayPlans,
+    dailyResearchPlans, setDailyResearchPlans,
+    planningNotificationPrefs, setPlanningNotificationPrefs,
     ev, handleMoveTable, handleEndSession,
     theme, setTheme,
     // 外観

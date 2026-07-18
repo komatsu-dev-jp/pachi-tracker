@@ -1,4 +1,5 @@
-import { getActualPL, getEvAmount } from "../analysis/analysisSelectors.js";
+import { getEvAmount } from "../analysis/analysisSelectors.js";
+import { getRealPL } from "./homePlanningModel.js";
 
 const pad2 = (value) => String(value).padStart(2, "0");
 
@@ -10,34 +11,45 @@ export function buildMonthOverview(archives, target, now = new Date()) {
   const list = Array.isArray(archives) ? archives : [];
   const monthKey = monthKeyFor(now);
   const monthRecords = list.filter((item) => String(item?.date || "").startsWith(monthKey));
-  const actualRecords = monthRecords.filter((item) => getActualPL(item) != null);
+  const actualRecords = monthRecords.filter((item) => getRealPL(item) != null);
   const expected = monthRecords.reduce((sum, item) => sum + getEvAmount(item), 0);
-  const actual = actualRecords.reduce((sum, item) => sum + getActualPL(item), 0);
+  const comparableExpected = actualRecords.reduce((sum, item) => sum + getEvAmount(item), 0);
+  const actual = actualRecords.reduce((sum, item) => sum + getRealPL(item), 0);
   const safeTarget = Math.max(0, Math.floor(Number(target) || 0));
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const today = Math.min(now.getDate(), daysInMonth);
   const evByDay = new Map();
+  const actualByDay = new Map();
 
   for (const record of monthRecords) {
     const day = Number(String(record?.date || "").slice(8, 10));
     if (!Number.isInteger(day) || day < 1 || day > daysInMonth) continue;
     evByDay.set(day, (evByDay.get(day) || 0) + getEvAmount(record));
+    const realPL = getRealPL(record);
+    if (realPL != null) actualByDay.set(day, (actualByDay.get(day) || 0) + realPL);
   }
 
   let cumulative = 0;
+  let cumulativeActual = 0;
+  let hasCumulativeActual = false;
   const chartData = Array.from({ length: daysInMonth }, (_, index) => {
     const day = index + 1;
     if (day <= today) cumulative += evByDay.get(day) || 0;
+    if (day <= today && actualByDay.has(day)) {
+      cumulativeActual += actualByDay.get(day) || 0;
+      hasCumulativeActual = true;
+    }
     return {
       day,
       label: `${day}日`,
       cumulativeEv: day <= today ? Math.round(cumulative) : null,
+      cumulativeActual: day <= today && hasCumulativeActual ? Math.round(cumulativeActual) : null,
       targetPace: safeTarget > 0 ? Math.round((safeTarget * day) / daysInMonth) : null,
     };
   });
 
   const progress = safeTarget > 0 ? Math.max(0, Math.round((expected / safeTarget) * 100)) : 0;
-  const wins = actualRecords.filter((item) => getActualPL(item) > 0).length;
+  const wins = actualRecords.filter((item) => getRealPL(item) > 0).length;
 
   return {
     monthKey,
@@ -45,7 +57,11 @@ export function buildMonthOverview(archives, target, now = new Date()) {
     expected,
     actual,
     hasActual: actualRecords.length > 0,
-    variance: actual - expected,
+    variance: actual - comparableExpected,
+    actualExpectedGap: actualRecords.length ? actual - comparableExpected : null,
+    comparableExpected,
+    actualRecordCount: actualRecords.length,
+    actualCoverage: monthRecords.length ? Math.round((actualRecords.length / monthRecords.length) * 100) : 0,
     activeDays: new Set(monthRecords.map((item) => item?.date).filter(Boolean)).size,
     winSessionRate: actualRecords.length ? Math.round((wins / actualRecords.length) * 100) : 0,
     target: safeTarget,
