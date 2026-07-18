@@ -13,8 +13,9 @@
 //     rows: レイアウト表示の行数（任意・1〜10）。島を上から見た並び数（対面なら2）。
 //           台は行方向（横）に増え、列数は台数から自動で決まる
 //     cols: レイアウト表示の列数（任意・1〜30）。rows 導入前の旧設定。rows があれば無視
-//     gaps: レイアウト上の欠け位置（任意・0始まりのセル位置）。台番号は消費しない
-//           （欠けがあっても台数 islandCount は start/end のみで決まる）
+//     gaps: 欠け台番号（任意・start〜end の範囲内）。その番号の台は存在しない扱いで、
+//           レイアウト上は同じ位置に「欠」セルが残り、他の台の位置・番号は動かない。
+//           台数 islandCount は欠けを除いた実台数（end-start+1 − 欠け数）を返す
 //   rows / cols / gaps は表示レイアウト専用の追加フィールドで、既存フィールドの意味は変えない。
 
 export const LAYOUT_COLS_MIN = 1;
@@ -43,18 +44,12 @@ function normalizeRows(v) {
   return Math.max(LAYOUT_ROWS_MIN, Math.min(LAYOUT_ROWS_MAX, n));
 }
 
-// 欠け位置を昇順・重複なしへ正規化する。台数 count に対して
-// セル総数（count + 採用済み欠け数）の範囲内に収まる位置だけ残す。
-function normalizeGaps(gaps, count) {
+// 欠け台番号を昇順・重複なしへ正規化する。start〜end の範囲内の番号だけ残す。
+function normalizeGaps(gaps, start, end) {
   if (!Array.isArray(gaps)) return [];
-  const sorted = [...new Set(
-    gaps.map((g) => Math.round(num(g, -1))).filter((g) => g >= 0)
+  return [...new Set(
+    gaps.map((g) => Math.round(num(g, -1))).filter((g) => g >= start && g <= end)
   )].sort((a, b) => a - b);
-  const kept = [];
-  for (const g of sorted) {
-    if (g < count + kept.length) kept.push(g);
-  }
-  return kept;
 }
 
 function makeId() {
@@ -83,33 +78,35 @@ export function normalizeIsland(island, i = 0) {
   if (rows != null) out.rows = rows;
   const cols = normalizeCols(src.cols);
   if (cols != null) out.cols = cols;
-  const gaps = normalizeGaps(src.gaps, end - start + 1);
+  const gaps = normalizeGaps(src.gaps, start, end);
   if (gaps.length > 0) out.gaps = gaps;
   return out;
 }
 
-// 島の表示列数（横方向のセル数）を返す。rows（行数）指定を優先して台数から算出し、
+// 島の表示列数（横方向のセル数）を返す。rows（行数）指定を優先してセル数から算出し、
 // 旧 cols 指定があればそれを使う。どちらも無ければ null（表示側の既定に任せる）。
+// セル数は欠けを含む台番号範囲そのもの（end-start+1）。
 export function islandLayoutColumns(island, totalCells) {
   const isl = normalizeIsland(island);
-  const total = Math.max(1, Math.round(num(totalCells, (isl.end - isl.start + 1) + (isl.gaps?.length || 0))));
+  const total = Math.max(1, Math.round(num(totalCells, isl.end - isl.start + 1)));
   if (isl.rows != null) return Math.max(1, Math.ceil(total / isl.rows));
   if (isl.cols != null) return isl.cols;
   return null;
 }
 
 // 島のレイアウトセル一覧を返す（欠けを含む・maxCells で打ち切り）。
-// 要素は { num: 台番号 } または { gap: true }。台番号は欠けを飛ばして連番のまま進む。
+// 要素は { num: 台番号 } または { num: 台番号, gap: true }（その番号の台は存在しない）。
+// セル位置は台番号で固定され、欠けにしても他のセルは動かない。
 export function islandLayoutCells(island, maxCells = Infinity) {
   const isl = normalizeIsland(island);
   const count = isl.end - isl.start + 1;
   const gapSet = new Set(isl.gaps || []);
-  const total = Math.min(count + gapSet.size, maxCells);
+  const total = Math.min(count, maxCells);
   const cells = [];
-  let n = isl.start;
-  for (let p = 0; p < total; p++) {
-    if (gapSet.has(p)) cells.push({ gap: true });
-    else cells.push({ num: n++ });
+  for (let i = 0; i < total; i++) {
+    const n = isl.start + i;
+    if (gapSet.has(n)) cells.push({ num: n, gap: true });
+    else cells.push({ num: n });
   }
   return cells;
 }
@@ -147,11 +144,11 @@ export function setStoreIslands(hallMaps, storeId, islands) {
   return next;
 }
 
-// 島1件分の台数（範囲が有効なら end-start+1、無効なら0）。
+// 島1件分の実台数（範囲の台数から欠け台番号ぶんを除いた数。範囲が無効なら0）。
 export function islandCount(island) {
   const isl = normalizeIsland(island);
   if (isl.end < isl.start) return 0;
-  return isl.end - isl.start + 1;
+  return isl.end - isl.start + 1 - (isl.gaps?.length || 0);
 }
 
 // 末尾に新しい島を追加した配列を返す。既存末尾の続き番号を初期値にする。
