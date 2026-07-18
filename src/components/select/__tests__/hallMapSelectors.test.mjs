@@ -12,6 +12,7 @@ import {
   islandCount,
   islandLayoutCells,
   islandLayoutColumns,
+  islandRanges,
   addIsland,
   removeIsland,
   updateIsland,
@@ -215,6 +216,59 @@ test("updateIsland で rows の保存と旧 cols の解除ができる", () => {
   const next = updateIsland(list, "a", { rows: 2, cols: null });
   assert.strictEqual(next[0].rows, 2);
   assert.strictEqual(next[0].cols, undefined);
+});
+
+test("normalizeIsland は ranges（複数連番）を整列・結合し start/end を全体範囲にする", () => {
+  // 途中で連番が切れる島（479〜490 / 499〜509 / 546〜574）
+  const a = normalizeIsland({ ranges: [{ start: 546, end: 574 }, { start: 479, end: 490 }, { start: 499, end: 509 }] });
+  assert.deepStrictEqual(a.ranges, [
+    { start: 479, end: 490 },
+    { start: 499, end: 509 },
+    { start: 546, end: 574 },
+  ]);
+  assert.strictEqual(a.start, 479);
+  assert.strictEqual(a.end, 574);
+  // 重複・隣接する範囲は1つの連番へまとまり、1範囲になれば ranges を持たない
+  const b = normalizeIsland({ ranges: [{ start: 1, end: 10 }, { start: 11, end: 20 }] });
+  assert.strictEqual(b.ranges, undefined);
+  assert.strictEqual(b.start, 1);
+  assert.strictEqual(b.end, 20);
+});
+
+test("islandRanges は連番範囲一覧を返す（単一範囲は start/end から）", () => {
+  assert.deepStrictEqual(islandRanges({ start: 1, end: 10 }), [{ start: 1, end: 10 }]);
+  assert.deepStrictEqual(
+    islandRanges({ ranges: [{ start: 479, end: 490 }, { start: 499, end: 509 }] }),
+    [{ start: 479, end: 490 }, { start: 499, end: 509 }]
+  );
+});
+
+test("islandCount は全連番範囲の合計から欠けを除いた実台数を返す", () => {
+  const island = { ranges: [{ start: 479, end: 490 }, { start: 499, end: 509 }, { start: 546, end: 574 }] };
+  assert.strictEqual(islandCount(island), 12 + 11 + 29); // 52台（画像の島と同じ構成）
+  assert.strictEqual(islandCount({ ...island, gaps: [505] }), 51);
+});
+
+test("islandLayoutCells は連番の切れ目をまたいで1つの島としてつなげる", () => {
+  const cells = islandLayoutCells({ ranges: [{ start: 508, end: 509 }, { start: 546, end: 547 }] });
+  assert.deepStrictEqual(cells.map((c) => c.num), [508, 509, 546, 547]); // 509→546 へ番号が飛ぶ
+});
+
+test("欠けは2つ目以降の連番範囲内でも有効・範囲の隙間の番号は無効", () => {
+  const island = { ranges: [{ start: 479, end: 490 }, { start: 499, end: 509 }], gaps: [505, 495] };
+  // 495 は連番の隙間（存在しない番号帯）なので欠けとして保持しない
+  assert.deepStrictEqual(normalizeIsland(island).gaps, [505]);
+});
+
+test("updateIsland で start/end のみ更新すると複数連番は単一範囲へ戻る", () => {
+  const list = [{ id: "a", name: "1島", machineName: "", ranges: [{ start: 479, end: 490 }, { start: 499, end: 509 }] }];
+  const next = updateIsland(list, "a", { start: 1, end: 10 });
+  assert.strictEqual(next[0].ranges, undefined);
+  assert.strictEqual(next[0].start, 1);
+  assert.strictEqual(next[0].end, 10);
+  // 名前だけの更新では ranges を維持する
+  const renamed = updateIsland(list, "a", { name: "A島" });
+  assert.deepStrictEqual(renamed[0].ranges, [{ start: 479, end: 490 }, { start: 499, end: 509 }]);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
