@@ -10,7 +10,13 @@ import {
   validateSettingNumber,
 } from "../settingsUtils.js";
 import { sanitizeBackupKv, sanitizeLegacyBackupObject } from "../backupSafety.js";
-import { parseCsvRows, toCsvRow } from "../csv.js";
+import {
+  archiveIdentityKey,
+  createArchiveRecordId,
+  legacyArchiveContentKey,
+  parseCsvRows,
+  toCsvRow,
+} from "../csv.js";
 import {
   isNotificationEnabled,
   normalizeNotificationPrefs,
@@ -89,6 +95,34 @@ test("バックアップからPIN・ロック状態・APIキーを除外する",
 test("CSVはカンマ・改行・引用符を含む値を往復できる", () => {
   const values = ["店舗,本店", "愛媛\n松山", "メモに\"引用符\""];
   assert.deepEqual(parseCsvRows(toCsvRow(values)), [values]);
+});
+
+test("収支CSVは同じ内容でも記録IDが違えば別セッションとして識別する", () => {
+  const base = {
+    date: "2026-07-18",
+    storeName: "同じ店舗",
+    machineName: "同じ機種",
+    investYen: 10000,
+    recoveryYen: 12000,
+  };
+  const first = { ...base, id: 1, recordId: "session-a" };
+  const second = { ...base, id: 2, recordId: "session-b" };
+
+  assert.equal(legacyArchiveContentKey(first), legacyArchiveContentKey(second));
+  assert.notEqual(archiveIdentityKey(first), archiveIdentityKey(second));
+  assert.equal(
+    archiveIdentityKey(first),
+    archiveIdentityKey({ ...first, id: 999 }),
+    "端末内IDが変わってもCSVの記録IDを優先する",
+  );
+});
+
+test("新規収支記録IDは空でなく、連続生成しても重ならない", () => {
+  const first = createArchiveRecordId();
+  const second = createArchiveRecordId();
+  assert.ok(first);
+  assert.ok(second);
+  assert.notEqual(first, second);
 });
 
 test("数値設定は空欄・負数・不正文字を拒否し、小数を許可する", () => {
