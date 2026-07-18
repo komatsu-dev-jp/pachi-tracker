@@ -207,6 +207,7 @@ export function applyEconomicEV(ev = {}, {
 
 export function normalizeArchiveEconomics(archive) {
   if (!archive || typeof archive !== "object") return archive;
+  if (archive.gameType === "slot") return archive;
   if (Number(archive?.stats?.calculationVersion) >= ECONOMIC_CALCULATION_VERSION) return archive;
   const settings = archive.settings || {};
   const stats = applyEconomicEV(archive.stats || {}, {

@@ -15,12 +15,19 @@
 const hasActualMoney = (a) =>
   (Number(a?.investYen) || 0) > 0 || (Number(a?.recoveryYen) || 0) > 0;
 
+export function getArchiveGameType(a) {
+  return a?.gameType === "slot" ? "slot" : "pachinko";
+}
+
 export function getActualPL(a) {
   if (!hasActualMoney(a)) return null;
   return (Number(a.recoveryYen) || 0) - (Number(a.investYen) || 0);
 }
 
 export function getEvAmount(a) {
+  // スロットは現状、パチンコ用の仕事量・期待値を計算しない。
+  // 種別変更前の stats が古い保存データに残っていても集計へ混ぜない。
+  if (getArchiveGameType(a) === "slot") return 0;
   const ew = a?.stats?.effectiveWorkAmount;
   if (typeof ew === "number" && isFinite(ew)) return ew;
   const w = a?.stats?.workAmount;
@@ -31,10 +38,13 @@ export function getEvAmount(a) {
 //   回転数データが無い記録（手動追加など）は手入力の遊技時間 playMinutes をフォールバックに使う。
 //   これにより時間・時給の集計が手動記録でも成立する（既存の実践記録の値は不変）。
 export function archiveWorkMinutes(a) {
+  const manual = Number(a?.playMinutes) || 0;
+  // スロットの総ゲーム数はパチンコの netRot / rotPerHour と計算単位が異なるため、
+  // 保存された遊技時間だけを使用する。古いパチンコ回転データの混入も防げる。
+  if (getArchiveGameType(a) === "slot") return manual > 0 ? manual : 0;
   const netRot = Number(a?.stats?.netRot) || 0;
   const rph = Number(a?.settings?.rotPerHour) || 0;
   if (netRot > 0 && rph > 0) return (netRot / rph) * 60;
-  const manual = Number(a?.playMinutes) || 0;
   return manual > 0 ? manual : 0;
 }
 
@@ -44,6 +54,8 @@ export function archiveWorkMinutes(a) {
 //   （既存の大当たり履歴表示でも「合計投資 = investYen + chodamaYen」として加算済みの値）
 //   貯玉を消費していない archive は 0 を返す（従来計算と完全に同じ）。
 export function getChodamaPL(a) {
+  // 貯玉はパチンコ専用。種別変更前の値が残る旧データでもスロット収支から除外する。
+  if (getArchiveGameType(a) === "slot") return 0;
   const yen = Number(a?.chodamaYen) || 0;
   if (yen <= 0) return 0;
   return -yen;
@@ -78,9 +90,11 @@ function toWeekday(date) {
 //   dateStart : "YYYY-MM-DD"   （開始日含む、"" / 未指定 = 制限なし）
 //   dateEnd   : "YYYY-MM-DD"   （終了日含む、"" / 未指定 = 制限なし）
 //   weekdays  : number[]       （0=日..6=土、空配列 / 未指定 = 全曜日）
+//   gameType  : "pachinko" | "slot" | "all" （空文字 / 未指定も全種別）
 export function filterArchives(archives, opts = {}) {
   if (!Array.isArray(archives)) return [];
-  const { month, year, storeName, machineName, dateStart, dateEnd, weekdays } = opts;
+  const { month, year, storeName, machineName, dateStart, dateEnd, weekdays, gameType } = opts;
+  const selectedGameType = gameType === "pachinko" || gameType === "slot" ? gameType : "";
   const wdSet = Array.isArray(weekdays) && weekdays.length > 0 ? new Set(weekdays) : null;
   return archives.filter((a) => {
     if (!a || typeof a.date !== "string") return false;
@@ -90,6 +104,7 @@ export function filterArchives(archives, opts = {}) {
     if (dateEnd && a.date > dateEnd) return false;
     if (storeName && String(a.storeName || "") !== storeName) return false;
     if (machineName && String(a.machineName || "") !== machineName) return false;
+    if (selectedGameType && getArchiveGameType(a) !== selectedGameType) return false;
     if (wdSet) {
       const wd = toWeekday(a.date);
       if (wd == null || !wdSet.has(wd)) return false;
@@ -99,18 +114,22 @@ export function filterArchives(archives, opts = {}) {
 }
 
 // 日別集計（指定月内）
-//   返却: [{ date: "YYYY-MM-DD", actualPL, evAmount, sessions, hasActual }, ...]（昇順）
+//   返却: [{ date: "YYYY-MM-DD", actualPL, realPL, evAmount, sessions, hasActual }, ...]（昇順）
 export function aggregateByDay(archives, month, extraFilters = {}) {
   const filtered = filterArchives(archives, { ...extraFilters, month });
   const map = {};
   for (const a of filtered) {
     const d = a.date;
-    if (!map[d]) map[d] = { date: d, actualPL: 0, evAmount: 0, sessions: 0, hasActual: false, workMinutes: 0 };
+    if (!map[d]) map[d] = { date: d, actualPL: 0, realPL: 0, evAmount: 0, sessions: 0, hasActual: false, workMinutes: 0 };
     const pl = getActualPL(a);
     if (pl != null) {
       map[d].actualPL += pl;
+      map[d].realPL += pl;
       map[d].hasActual = true;
     }
+    const chodamaPL = getChodamaPL(a);
+    map[d].realPL += chodamaPL;
+    if (chodamaPL !== 0) map[d].hasActual = true;
     map[d].evAmount += getEvAmount(a);
     map[d].workMinutes += archiveWorkMinutes(a);
     map[d].sessions += 1;
@@ -119,7 +138,7 @@ export function aggregateByDay(archives, month, extraFilters = {}) {
 }
 
 // 月別集計（指定年内）
-//   返却: [{ month: "YYYY-MM", actualPL, evAmount, sessions, days, hasActual }, ...]（昇順）
+//   返却: [{ month: "YYYY-MM", actualPL, realPL, evAmount, sessions, days, hasActual }, ...]（昇順）
 export function aggregateByMonth(archives, year, extraFilters = {}) {
   const filtered = filterArchives(archives, { ...extraFilters, year });
   const map = {};
@@ -127,13 +146,17 @@ export function aggregateByMonth(archives, year, extraFilters = {}) {
     const m = toMonthKey(a.date);
     if (!m) continue;
     if (!map[m]) {
-      map[m] = { month: m, actualPL: 0, evAmount: 0, sessions: 0, hasActual: false, _days: new Set() };
+      map[m] = { month: m, actualPL: 0, realPL: 0, evAmount: 0, sessions: 0, hasActual: false, _days: new Set() };
     }
     const pl = getActualPL(a);
     if (pl != null) {
       map[m].actualPL += pl;
+      map[m].realPL += pl;
       map[m].hasActual = true;
     }
+    const chodamaPL = getChodamaPL(a);
+    map[m].realPL += chodamaPL;
+    if (chodamaPL !== 0) map[m].hasActual = true;
     map[m].evAmount += getEvAmount(a);
     map[m].sessions += 1;
     map[m]._days.add(a.date);
@@ -144,7 +167,7 @@ export function aggregateByMonth(archives, year, extraFilters = {}) {
 }
 
 // 年別集計（全件対象）
-//   返却: [{ year: "YYYY", actualPL, evAmount, sessions, days, hasActual }, ...]（昇順）
+//   返却: [{ year: "YYYY", actualPL, realPL, evAmount, sessions, days, hasActual }, ...]（昇順）
 export function aggregateByYear(archives, extraFilters = {}) {
   const filtered = filterArchives(archives, extraFilters);
   const map = {};
@@ -152,13 +175,17 @@ export function aggregateByYear(archives, extraFilters = {}) {
     const y = toYearKey(a.date);
     if (!y) continue;
     if (!map[y]) {
-      map[y] = { year: y, actualPL: 0, evAmount: 0, sessions: 0, hasActual: false, _days: new Set() };
+      map[y] = { year: y, actualPL: 0, realPL: 0, evAmount: 0, sessions: 0, hasActual: false, _days: new Set() };
     }
     const pl = getActualPL(a);
     if (pl != null) {
       map[y].actualPL += pl;
+      map[y].realPL += pl;
       map[y].hasActual = true;
     }
+    const chodamaPL = getChodamaPL(a);
+    map[y].realPL += chodamaPL;
+    if (chodamaPL !== 0) map[y].hasActual = true;
     map[y].evAmount += getEvAmount(a);
     map[y].sessions += 1;
     map[y]._days.add(a.date);

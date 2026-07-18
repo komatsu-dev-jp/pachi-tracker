@@ -23,7 +23,14 @@ import {
 } from "../sessionProjection";
 import { reconcileSegmentConsumption, clearPushCorrections, estimateSegmentGross, hasPushCorrections } from "../ballConsumption";
 import { createBackup, restoreBackup } from "../persistence";
-import { parseCsvRows, toCsvRow } from "../csv";
+import {
+    archiveIdentityKey,
+    createArchiveRecordId,
+    getArchiveRecordId,
+    legacyArchiveContentKey,
+    parseCsvRows,
+    toCsvRow,
+} from "../csv";
 import { validateSettingNumber } from "../settingsUtils";
 import {
     PACHINKO_RATE_PRESETS,
@@ -8514,11 +8521,18 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
     const [, setExpandedRot] = useState(null);
     // Edit form state (always declared — not conditional)
     const [editStore, setEditStore] = useState("");
+    const [editGameType, setEditGameType] = useState("pachinko");
+    const [editMachineName, setEditMachineName] = useState("");
     const [editMachineNum, setEditMachineNum] = useState("");
     const [editInvest, setEditInvest] = useState("");
     const [editRecovery, setEditRecovery] = useState("");
     const [editChodama, setEditChodama] = useState(""); // 貯玉残高（店舗の現在残高を編集）
     const [editPlayHours, setEditPlayHours] = useState(""); // 遊技時間（時間・手入力。実践記録が無い記録の稼働時間/時給に使用）
+    const [editSlotRate, setEditSlotRate] = useState("20");
+    const [editSlotGames, setEditSlotGames] = useState("");
+    const [editSlotBB, setEditSlotBB] = useState("");
+    const [editSlotRB, setEditSlotRB] = useState("");
+    const [editSlotAT, setEditSlotAT] = useState("");
     const [showEditStoreDD, setShowEditStoreDD] = useState(false);
     // Swipe delete state
     const [swipedId, setSwipedId] = useState(null);
@@ -8531,6 +8545,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
     const [showAllHistory, setShowAllHistory] = useState(false);
     // 過去日への手動記録追加フォーム（記録がない日を選択したときに使用）
     const [addFormOpen, setAddFormOpen] = useState(false);
+    const [addGameType, setAddGameType] = useState("pachinko");
     const [addStore, setAddStore] = useState("");
     const [addMachineName, setAddMachineName] = useState("");
     const [addMachineNum, setAddMachineNum] = useState("");
@@ -8538,6 +8553,11 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
     const [addRecovery, setAddRecovery] = useState("");
     const [addChodama, setAddChodama] = useState("");   // 貯玉残高（店舗へ登録・同期）
     const [addPlayHours, setAddPlayHours] = useState(""); // 遊技時間（時間・手入力）
+    const [addSlotRate, setAddSlotRate] = useState("20");
+    const [addSlotGames, setAddSlotGames] = useState("");
+    const [addSlotBB, setAddSlotBB] = useState("");
+    const [addSlotRB, setAddSlotRB] = useState("");
+    const [addSlotAT, setAddSlotAT] = useState("");
     const [showAddStoreDD, setShowAddStoreDD] = useState(false);
 
     // 日付を切り替えたら追加フォームを閉じる（入力途中の値は日付間で持ち越さない）
@@ -8785,18 +8805,32 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
         return store.id;
     };
 
+    const nonNegativeInt = (value) => Math.max(0, Math.round(Number(value) || 0));
+    const makeSlotStats = ({ rate, games, bb, rb, at }) => ({
+        rateYen: Math.max(0, Number(rate) || 20),
+        totalGames: nonNegativeInt(games),
+        bbCount: nonNegativeInt(bb),
+        rbCount: nonNegativeInt(rb),
+        atCount: nonNegativeInt(at),
+    });
+
     const saveManualArchive = () => {
         const inv = Math.max(0, Math.round(Number(addInvest) || 0));
         const rec = Math.max(0, Math.round(Number(addRecovery) || 0));
         if (!selectedDate || (inv <= 0 && rec <= 0)) return;
+        const gameType = addGameType === "slot" ? "slot" : "pachinko";
         const storeName = (addStore || "").trim();
         const storeObj = storeList.find(st => typeof st === "object" && st.name === storeName);
+        const archiveId = Date.now() + Math.random();
+        const recordId = createArchiveRecordId();
         // 貯玉残高を店舗へ登録・同期し、反映先の店舗 id を記録に紐付ける。
         const resolvedStoreId = syncChodamaToStore({
-            storeId: storeObj?.id ?? null, storeName, chodamaStr: addChodama,
+            storeId: storeObj?.id ?? null, storeName, chodamaStr: gameType === "slot" ? "" : addChodama,
         });
         S.setArchives(prev => [...prev, {
-            id: Date.now(),
+            id: archiveId,
+            recordId,
+            gameType,
             date: selectedDate,
             time: "",
             storeName,
@@ -8806,6 +8840,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
             investYen: inv,
             recoveryYen: rec,
             playMinutes: playHoursToMinutes(addPlayHours), // 遊技時間（分）。稼働時間/時給の集計に使用
+            ...(gameType === "slot" ? { slotStats: makeSlotStats({ rate: addSlotRate, games: addSlotGames, bb: addSlotBB, rb: addSlotRB, at: addSlotAT }) } : {}),
             settings: {},
             stats: {},
             rotRows: [],
@@ -8815,7 +8850,9 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
             startRot: 0,
             isManual: true,
         }]);
+        setSelectedArchiveId(archiveId);
         setAddFormOpen(false);
+        setAddGameType("pachinko");
         setShowAddStoreDD(false);
         setAddStore("");
         setAddMachineName("");
@@ -8824,25 +8861,63 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
         setAddRecovery("");
         setAddChodama("");
         setAddPlayHours("");
+        setAddSlotRate("20");
+        setAddSlotGames("");
+        setAddSlotBB("");
+        setAddSlotRB("");
+        setAddSlotAT("");
     };
 
     // ── 記録編集の保存（ArchiveDetail と focusMode 編集シートの共通処理） ──
     //   旧 ArchiveDetail 内 updateArchive を CalendarTab スコープへ持ち上げたもの（処理内容は不変）
     const applyArchiveEdits = (a, doReset) => {
+        const gameType = a.isManual
+            ? (editGameType === "slot" ? "slot" : "pachinko")
+            : (a.gameType === "slot" ? "slot" : "pachinko");
+        // パチンコからスロットへ変更した記録に、回転・大当り・期待値・遊タイム等を残さない。
+        // 古いCSV由来などで値が入っていても、種別変更時にまとめて安全な初期値へ戻す。
+        const slotOnlyArchive = gameType === "slot" ? {
+            settings: {},
+            stats: {},
+            rotRows: [],
+            jpLog: [],
+            sesLog: [],
+            totalTrayBalls: 0,
+            startRot: 0,
+            carriedInYen: 0,
+            initialChodama: 0,
+            finalChodama: 0,
+            chodamaYen: 0,
+            chodamaNetBalls: 0,
+            yutimeDecision: null,
+            decisionSnapshots: [],
+            riskSnapshot: null,
+            isMoveArchive: false,
+            sessionStartedAt: "",
+            sessionTargetEndAt: "",
+            sessionClosingTime: "",
+            sessionPlannedStart1K: 0,
+        } : {};
         // 貯玉残高を店舗へ登録・同期（未登録の店舗名なら新規登録）。反映先の店舗 id を記録へ紐付ける。
         const resolvedStoreId = syncChodamaToStore({
             storeId: a.storeId ?? null,
             storeName: editStore || a.storeName,
-            chodamaStr: editChodama,
+            chodamaStr: gameType === "slot" ? "" : editChodama,
         });
         S.setArchives(prev => prev.map(ar => ar.id !== a.id ? ar : {
             ...ar,
+            gameType,
             storeName: editStore,
             storeId: resolvedStoreId,
+            machineName: editMachineName.trim(),
             machineNum: editMachineNum,
             investYen: Number(editInvest) || 0,
             recoveryYen: Number(editRecovery) || 0,
             playMinutes: playHoursToMinutes(editPlayHours), // 遊技時間（分）。稼働時間/時給に使用
+            slotStats: gameType === "slot"
+                ? makeSlotStats({ rate: editSlotRate, games: editSlotGames, bb: editSlotBB, rb: editSlotRB, at: editSlotAT })
+                : null,
+            ...slotOnlyArchive,
         }));
         if (doReset) onReset();
         // 保存後は詳細ビューを閉じてカレンダー一覧に戻す（視覚的フィードバック）
@@ -8853,13 +8928,14 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
 
     // ── Inline summary card for an archive entry (reference app style) ──
     const SummaryCard = ({ a, onClick }) => {
-        const st = a.stats || {};
+        const isSlot = a.gameType === "slot";
+        const st = isSlot ? {} : (a.stats || {});
         const invest = a.investYen || 0;
         const recovery = a.recoveryYen || 0;
         // 貯玉消費（確定時に保存済み）: 円換算額と消費玉数。実収支では投資と同じくコストとして差し引く
         //   （analysisSelectors の getActualPL + getChodamaPL と同一の式。保存構造・logic.js は不変）
-        const chodamaYen = a.chodamaYen || 0;
-        const chodamaConsumedBalls = a.chodamaNetBalls < 0 ? -a.chodamaNetBalls : 0;
+        const chodamaYen = isSlot ? 0 : (a.chodamaYen || 0);
+        const chodamaConsumedBalls = !isSlot && a.chodamaNetBalls < 0 ? -a.chodamaNetBalls : 0;
         // 実収支 =（回収 − 投資）− 貯玉消費分。現金 or 貯玉いずれかの実データがある時のみ確定
         const hasActual = invest > 0 || recovery > 0 || chodamaYen > 0;
         const realPL = (recovery - invest) - chodamaYen;
@@ -8874,7 +8950,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
             : null;
         const displayName = a.machineName && a.machineName !== `1/${a.settings?.synthDenom}`
             ? a.machineName
-            : (a.machineName || `1/${a.settings?.synthDenom || "—"}`);
+            : (a.machineName || (isSlot ? "機種未入力" : `1/${a.settings?.synthDenom || "—"}`));
 
         return (
             <button className="b" onClick={onClick} style={{
@@ -8910,7 +8986,9 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                                     <span style={{ fontSize: 10, color: C.sub, opacity: 0.4 }}>·</span>
                                 </>
                             )}
-                            <span style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>4パチ</span>
+                            <span style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>
+                                {isSlot ? `${Number(a.slotStats?.rateYen) || 20}円スロット` : "4パチ"}
+                            </span>
                             {hours && (
                                 <>
                                     <span style={{ fontSize: 10, color: C.sub, opacity: 0.4 }}>·</span>
@@ -9057,7 +9135,11 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                     // timer 発火前に effect が再実行（クリーンアップ）されても未 seed 扱いになり、
                     // initialArchiveId でマウント時から選択済みのケース（focusMode）でも確実に初期化される。
                     prevSelectedRef.current = selectedArchiveId;
+                    const targetGameType = target.gameType === "slot" ? "slot" : "pachinko";
+                    const targetSlotStats = target.slotStats || {};
+                    setEditGameType(targetGameType);
                     setEditStore(String(target.storeName || ""));
+                    setEditMachineName(String(target.machineName || ""));
                     setEditMachineNum(String(target.machineNum || ""));
                     // 投資額は実践記録（回転数データ）から算出した値を初期表示する。
                     // makeArchive が保存した stats.rawInvest = deriveFromRows の現金投資累計。
@@ -9065,7 +9147,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                     // 算出値が無い古いアーカイブは従来の保存値 investYen をフォールバック表示。
                     const carriedIn = Math.round(target.carriedInYen || 0);
                     const derivedInvest = Math.round(target.stats?.rawInvest || 0) + carriedIn;
-                    setEditInvest(derivedInvest > 0 ? derivedInvest : (target.investYen || ""));
+                    setEditInvest(targetGameType === "slot" ? (target.investYen || "") : (derivedInvest > 0 ? derivedInvest : (target.investYen || "")));
                     setEditRecovery(target.recoveryYen || "");
                     // 貯玉残高はその店舗の現在残高を初期表示（店舗が特定できる場合のみ）
                     const tStore = (S.stores || []).find(st => typeof st === "object" &&
@@ -9074,6 +9156,11 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                     // 遊技時間: 保存済み playMinutes（分）を時間表記で初期表示（1桁小数、整数はそのまま）
                     const pm = Number(target.playMinutes) || 0;
                     setEditPlayHours(pm > 0 ? String(Math.round((pm / 60) * 10) / 10) : "");
+                    setEditSlotRate(String(Number(targetSlotStats.rateYen) || 20));
+                    setEditSlotGames(targetSlotStats.totalGames || "");
+                    setEditSlotBB(targetSlotStats.bbCount || "");
+                    setEditSlotRB(targetSlotStats.rbCount || "");
+                    setEditSlotAT(targetSlotStats.atCount || "");
                     setShowEditStoreDD(false);
                 }, 0);
                 return () => clearTimeout(timer);
@@ -9183,12 +9270,58 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                 })}
             </div>
         ) : null;
+        const gameTypeSelector = (value, setValue, disabled = false) => (
+            <div className="col-span-2">
+                <div className={labelCls}>遊技種別</div>
+                <div className="mt-1.5 grid grid-cols-2 gap-2">
+                    {[["pachinko", "パチンコ"], ["slot", "パチスロ"]].map(([type, text]) => {
+                        const active = value === type;
+                        return (
+                            <button key={type} type="button" disabled={disabled} onClick={() => setValue(type)} aria-pressed={active}
+                                className={`h-12 rounded-[11px] border text-[14px] font-black transition disabled:opacity-70 ${active
+                                    ? "border-[var(--at-cyan)] bg-[var(--at-cyan)]/12 text-[var(--at-cyan)]"
+                                    : "border-[var(--at-ln-hi)] bg-[var(--at-panel2)] text-[var(--at-mut)]"}`}>
+                                {text}
+                            </button>
+                        );
+                    })}
+                </div>
+                {disabled && <div className="mt-1 text-[9px] text-[var(--at-mut)]">実戦中に記録したデータはパチンコとして保存されます</div>}
+            </div>
+        );
+        const slotFields = ({ rate, setRate, games, setGames, bb, setBB, rb, setRB, at, setAT }) => (
+            <>
+                <div>
+                    <div className={labelCls}>貸メダル（円）</div>
+                    <select value={rate} onChange={e => setRate(e.target.value)} className={inputCls}>
+                        {[20, 10, 5, 2, 1].map(v => <option key={v} value={v}>{v}円スロット</option>)}
+                    </select>
+                </div>
+                <div>
+                    <div className={labelCls}>総ゲーム数</div>
+                    <input {...numProps} value={games} onChange={e => setGames(e.target.value)} placeholder="任意" className={inputCls} />
+                </div>
+                <div>
+                    <div className={labelCls}>BB回数</div>
+                    <input {...numProps} value={bb} onChange={e => setBB(e.target.value)} placeholder="任意" className={inputCls} />
+                </div>
+                <div>
+                    <div className={labelCls}>RB回数</div>
+                    <input {...numProps} value={rb} onChange={e => setRB(e.target.value)} placeholder="任意" className={inputCls} />
+                </div>
+                <div>
+                    <div className={labelCls}>AT・ART回数</div>
+                    <input {...numProps} value={at} onChange={e => setAT(e.target.value)} placeholder="任意" className={inputCls} />
+                </div>
+            </>
+        );
         return (
             <div className="mx-auto w-full max-w-[430px] px-5 pt-3">
-                {sel ? (
+                {sel && !addFormOpen ? (
                     <div className="space-y-3">
                         {/* この日の記録カード（複数ある日はリスト。タップで編集対象を切替） */}
                         {dateArchives.map(ar => {
+                            const isSlot = ar.gameType === "slot";
                             const inv = Number(ar.investYen) || 0;
                             const rec = Number(ar.recoveryYen) || 0;
                             const cy = Number(ar.chodamaYen) || 0;
@@ -9197,10 +9330,10 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                             const arSt = ar.stats || {};
                             const ev = Number(arSt.effectiveWorkAmount ?? arSt.workAmount) || 0;
                             const denom = ar.settings?.synthDenom;
-                            const name = ar.machineName && ar.machineName !== `1/${denom}` ? ar.machineName : (ar.machineName || `1/${denom || "—"}`);
+                            const name = ar.machineName && ar.machineName !== `1/${denom}` ? ar.machineName : (ar.machineName || (isSlot ? "機種未入力" : `1/${denom || "—"}`));
                             // 分析（MACHINE REPORT）へ飛べる実機種名のみを対象にする（合成分母フォールバックや未入力は除外）。
                             const realMachine = ar.machineName && ar.machineName !== `1/${denom}` ? ar.machineName : "";
-                            const canAnalyze = !!(onOpenMachine && realMachine);
+                            const canAnalyze = !!(!isSlot && onOpenMachine && realMachine);
                             const active = ar.id === sel.id;
                             return (
                                 <div key={ar.id}
@@ -9217,7 +9350,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                                         <div className="min-w-0 flex-1">
                                             <div className="truncate text-[14px] font-black text-[var(--at-strong)]">{name}</div>
                                             <div className="mt-0.5 truncate text-[10.5px] font-bold text-[var(--at-mut)]">
-                                                {[ar.storeName, ar.machineNum ? `${ar.machineNum}番台` : "", ev !== 0 ? `期待値 ${yenFmt(ev)}円` : ""].filter(Boolean).join(" / ") || "詳細未入力"}
+                                                {[isSlot ? "パチスロ" : "パチンコ", ar.storeName, ar.machineNum ? `${ar.machineNum}番台` : "", !isSlot && ev !== 0 ? `期待値 ${yenFmt(ev)}円` : ""].filter(Boolean).join(" / ") || "詳細未入力"}
                                             </div>
                                         </div>
                                         <div className={`shrink-0 font-mono text-[16px] font-black tabular-nums ${hasActual ? plCls(pl) : "text-[var(--at-faint)]"}`}>
@@ -9236,6 +9369,11 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                             );
                         })}
 
+                        <button type="button" onClick={() => setAddFormOpen(true)}
+                            className={`${cardCls} flex h-12 w-full items-center justify-center gap-2 border-dashed text-[13px] font-black text-[var(--at-cyan)]`}>
+                            <span className="text-[18px] leading-none">＋</span>別の遊技記録を追加
+                        </button>
+
                         {/* 編集フォーム（項目は既存の記録エディタと同一） */}
                         <div className={`${cardCls} p-4`}>
                             <div className="flex items-center gap-2 text-[12px] font-black text-[var(--at-subtle-hi)]">
@@ -9243,6 +9381,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                                 記録の編集
                             </div>
                             <div className="mt-3 grid grid-cols-2 gap-2.5">
+                                {gameTypeSelector(editGameType, setEditGameType, !sel.isManual)}
                                 <div className="col-span-2">
                                     <div className={labelCls}>店舗</div>
                                     <div className="relative">
@@ -9255,17 +9394,21 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                                     </div>
                                 </div>
                                 <div>
+                                    <div className={labelCls}>機種名</div>
+                                    <input value={editMachineName} onChange={e => setEditMachineName(e.target.value)} placeholder="任意" className={inputCls} />
+                                </div>
+                                <div>
                                     <div className={labelCls}>台番号</div>
                                     <input {...numProps} value={editMachineNum} onChange={e => setEditMachineNum(e.target.value)} placeholder="台番号" className={inputCls} />
                                 </div>
                                 <div>
                                     <div className={labelCls}>投資額（円）</div>
                                     <input {...numProps} value={editInvest} onChange={e => setEditInvest(e.target.value)} placeholder="10000" className={inputCls} />
-                                    {Math.round(sel.carriedInYen || 0) > 0 ? (
+                                    {editGameType !== "slot" && (Math.round(sel.carriedInYen || 0) > 0 ? (
                                         <div className="mt-1 text-[9px] text-[var(--at-mut)]">引き継ぎ玉 ¥{Math.round(sel.carriedInYen || 0).toLocaleString()} を含む</div>
                                     ) : Math.round(sel.stats?.rawInvest || 0) > 0 && (
                                         <div className="mt-1 text-[9px] text-[var(--at-mut)]">実践記録から自動反映</div>
-                                    )}
+                                    ))}
                                 </div>
                                 <div>
                                     <div className={labelCls}>回収額（円）</div>
@@ -9274,22 +9417,26 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                                 <div>
                                     <div className={labelCls}>遊技時間（時間）</div>
                                     <input {...decProps} value={editPlayHours} onChange={e => setEditPlayHours(e.target.value)} placeholder="例 3.5" className={inputCls} />
-                                    {(Number(sel.stats?.netRot) || 0) > 0 && (Number(sel.settings?.rotPerHour) || 0) > 0 && (
+                                    {editGameType !== "slot" && (Number(sel.stats?.netRot) || 0) > 0 && (Number(sel.settings?.rotPerHour) || 0) > 0 && (
                                         <div className="mt-1 text-[9px] text-[var(--at-mut)]">実践記録の回転数から自動算出中</div>
                                     )}
                                 </div>
-                                <div>
-                                    <div className={labelCls}>貯玉残高（玉）</div>
-                                    <input {...numProps} value={editChodama} onChange={e => setEditChodama(e.target.value)} placeholder="0" className={inputCls} />
-                                </div>
+                                {editGameType === "slot"
+                                    ? slotFields({ rate: editSlotRate, setRate: setEditSlotRate, games: editSlotGames, setGames: setEditSlotGames, bb: editSlotBB, setBB: setEditSlotBB, rb: editSlotRB, setRB: setEditSlotRB, at: editSlotAT, setAT: setEditSlotAT })
+                                    : (
+                                        <div>
+                                            <div className={labelCls}>貯玉残高（玉）</div>
+                                            <input {...numProps} value={editChodama} onChange={e => setEditChodama(e.target.value)} placeholder="0" className={inputCls} />
+                                        </div>
+                                    )}
                             </div>
-                            <div className="mt-2 text-[9px] text-[var(--at-mut)]">
+                            {editGameType !== "slot" && <div className="mt-2 text-[9px] text-[var(--at-mut)]">
                                 貯玉残高は{selHasChodamaStore ? `「${sel.storeName || ""}」の現在残高に同期されます` : "店舗の現在残高として登録されます（未登録の店舗は自動で追加）"}
-                            </div>
+                            </div>}
                         </div>
 
                         {/* EV詳細（既存 ArchiveDetail と同じ値の表示） */}
-                        {(sst.start1K > 0 || sst.ev1K || sst.wage) ? (
+                        {editGameType !== "slot" && (sst.start1K > 0 || sst.ev1K || sst.wage) ? (
                             <div className={`${cardCls} grid grid-cols-3 p-3 text-center`}>
                                 {[
                                     { l: "1Kスタート", v: sst.start1K > 0 ? `${f(sst.start1K, 1)}回/K` : "—" },
@@ -9305,10 +9452,12 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                         ) : null}
 
                         {/* 回転数データ・大当たり履歴（既存表示を残置）。上部の記録カードタップの自動スクロール先 */}
-                        <div ref={rotHistoryRef}>
-                            {renderRotHistory(sel)}
-                            {renderJpHistory(sel)}
-                        </div>
+                        {editGameType !== "slot" && (
+                            <div ref={rotHistoryRef}>
+                                {renderRotHistory(sel)}
+                                {renderJpHistory(sel)}
+                            </div>
+                        )}
 
                         {/* 削除（確認付き。削除後もシートに留まり、0件になれば追加フォームへ） */}
                         <div className={`${cardCls} flex items-center justify-between gap-3 p-3.5`}>
@@ -9337,8 +9486,11 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                     <div className="space-y-3">
                         {/* 記録なしの日: 追加フォームを最初から展開して表示（押し直し不要） */}
                         <div className={`${cardCls} p-4 text-center`}>
-                            <div className="text-[12px] font-bold text-[var(--at-mut)]">この日のデータはありません</div>
-                            <div className="mt-1.5 text-[10.5px] leading-relaxed text-[var(--at-faint2)]">そのまま入力して、後からこの日の収支を記録できます</div>
+                            <div className="text-[12px] font-bold text-[var(--at-mut)]">{dateArchives.length > 0 ? "別の遊技記録を追加" : "この日のデータはありません"}</div>
+                            <div className="mt-1.5 text-[10.5px] leading-relaxed text-[var(--at-faint2)]">パチンコ・パチスロを同じ日に複数件記録できます</div>
+                            {dateArchives.length > 0 && (
+                                <button type="button" onClick={() => setAddFormOpen(false)} className="mt-3 text-[11px] font-black text-[var(--at-cyan)]">編集へ戻る</button>
+                            )}
                         </div>
                         <div className={`${cardCls} p-4`}>
                             <div className="flex items-center gap-2 text-[12px] font-black text-[var(--at-subtle-hi)]">
@@ -9346,6 +9498,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                                 この日の記録を追加
                             </div>
                             <div className="mt-3 grid grid-cols-2 gap-2.5">
+                                {gameTypeSelector(addGameType, setAddGameType)}
                                 <div className="col-span-2">
                                     <div className={labelCls}>店舗</div>
                                     <div className="relative">
@@ -9377,12 +9530,18 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                                     <div className={labelCls}>遊技時間（時間）</div>
                                     <input {...decProps} value={addPlayHours} onChange={e => setAddPlayHours(e.target.value)} placeholder="例 3.5" className={inputCls} />
                                 </div>
-                                <div>
-                                    <div className={labelCls}>貯玉残高（玉）</div>
-                                    <input {...numProps} value={addChodama} onChange={e => setAddChodama(e.target.value)} placeholder="0" className={inputCls} />
-                                </div>
+                                {addGameType === "slot"
+                                    ? slotFields({ rate: addSlotRate, setRate: setAddSlotRate, games: addSlotGames, setGames: setAddSlotGames, bb: addSlotBB, setBB: setAddSlotBB, rb: addSlotRB, setRB: setAddSlotRB, at: addSlotAT, setAT: setAddSlotAT })
+                                    : (
+                                        <div>
+                                            <div className={labelCls}>貯玉残高（玉）</div>
+                                            <input {...numProps} value={addChodama} onChange={e => setAddChodama(e.target.value)} placeholder="0" className={inputCls} />
+                                        </div>
+                                    )}
                             </div>
-                            <div className="mt-2 text-[9px] text-[var(--at-mut)]">投資・回収のどちらかを入力すると追加できます。貯玉残高は店舗の現在残高として登録されます（未登録の店舗は自動で追加）。</div>
+                            <div className="mt-2 text-[9px] text-[var(--at-mut)]">
+                                投資・回収のどちらかを入力すると追加できます。{addGameType === "slot" ? "ゲーム数やボーナス回数は任意です。" : "貯玉残高は店舗の現在残高として登録されます。"}
+                            </div>
                         </div>
                         <div className="sticky bottom-0 -mx-1 bg-[linear-gradient(180deg,transparent,var(--at-page)_38%)] px-1 pb-16 pt-5">
                             <button type="button" disabled={!canAdd} onClick={() => { saveManualArchive(); if (onDone) onDone(); }}
@@ -10624,7 +10783,9 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
         }
     };
 
-    const archiveKey = (a) => `${a.date}|${a.storeName || ""}|${a.machineNum || ""}|${a.machineName || ""}|${a.investYen || 0}|${a.recoveryYen || 0}`;
+    // 「重複データを削除」は、従来どおり内容が同一の記録を検出する専用操作。
+    // CSV取り込み時の別セッション判定は、下段の archiveIdentityKey（記録ID）で個別に行う。
+    const archiveKey = (a) => legacyArchiveContentKey(a);
 
     const countDuplicateArchives = () => {
         const keyCount = {};
@@ -10642,7 +10803,8 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
             return;
         }
         const headers = [
-            "日付", "時刻", "店舗名", "台番号", "機種名",
+            "記録ID", "日付", "時刻", "遊技時間（分）", "店舗名", "台番号", "機種名",
+            "遊技種別", "貸メダル単価", "総ゲーム数", "BB回数", "RB回数", "AT・ART回数",
             "投資", "回収", "収支", "確率分母", "貸玉数", "換金率",
             "時間回転数", "ボーダー", "玉単価", "仕事量", "期待値/K", "1Kスタート", "総回転",
             "遊タイム期待値", "遊タイム残り回転", "遊タイム到達率", "遊タイム平均投資", "遊タイム到達必要資金",
@@ -10650,27 +10812,39 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
             "遊タイム回数", "遊タイム平均純増玉", "遊タイムデータ種別", "遊タイム根拠URL"
         ];
         const rows = archives.map(a => {
-            const st = a.stats || {};
+            const isSlot = a.gameType === "slot";
+            // スロット記録には、古いデータに残っているパチンコ専用値を出力しない。
+            const settings = isSlot ? {} : (a.settings || {});
+            const st = isSlot ? {} : (a.stats || {});
             const invest = a.investYen || 0;
             const recovery = a.recoveryYen || 0;
-            const yd = a.yutimeDecision || {};
+            const yd = isSlot ? {} : (a.yutimeDecision || {});
             const yr = yd.result || {};
             const ys = yd.spec || {};
+            const slotStats = a.slotStats || {};
             return toCsvRow([
+                getArchiveRecordId(a),
                 a.date || "",
                 a.time || "",
+                Math.max(0, Math.round(Number(a.playMinutes) || 0)),
                 a.storeName || "",
                 a.machineNum || "",
                 a.machineName || "",
+                isSlot ? "slot" : "pachinko",
+                isSlot ? (slotStats.rateYen || 20) : "",
+                isSlot ? (slotStats.totalGames || 0) : "",
+                isSlot ? (slotStats.bbCount || 0) : "",
+                isSlot ? (slotStats.rbCount || 0) : "",
+                isSlot ? (slotStats.atCount || 0) : "",
                 invest,
                 recovery,
                 recovery - invest,
-                a.settings?.synthDenom || "",
-                a.settings?.rentBalls || "",
-                a.settings?.exRate || "",
-                a.settings?.rotPerHour || "",
-                a.settings?.border || "",
-                a.settings?.ballVal || "",
+                settings.synthDenom || "",
+                settings.rentBalls || "",
+                settings.exRate || "",
+                settings.rotPerHour || "",
+                settings.border || "",
+                settings.ballVal || "",
                 Math.round(st.workAmount || 0),
                 Math.round(st.ev1K || 0),
                 st.start1K ? st.start1K.toFixed(2) : "",
@@ -10730,9 +10904,23 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                     if (date.includes("/")) date = date.replace(/\//g, "-");
                     if (!date) continue;
 
+                    // 「記録ID」が無い旧CSVは空のまま受け取り、後段で従来の内容比較を行う。
+                    const csvRecordId = getCol(cols, ["記録ID", "recordId"]).trim();
                     const time = getCol(cols, ["時刻", "time"]);
+                    const playMinutes = Math.max(0, Math.round(
+                        parseFloat(getCol(cols, ["遊技時間（分）", "遊技時間", "playMinutes"], "0")) || 0
+                    ));
                     const invest = parseFloat(getCol(cols, ["投資額", "投資", "invest"], "0")) || 0;
                     const recovery = parseFloat(getCol(cols, ["回収額", "回収", "recovery"], "0")) || 0;
+                    const gameTypeText = getCol(cols, ["遊技種別", "gameType"], "pachinko").toLowerCase();
+                    const gameType = ["slot", "パチスロ", "スロット"].includes(gameTypeText) ? "slot" : "pachinko";
+                    const slotStats = gameType === "slot" ? {
+                        rateYen: Math.max(0, parseFloat(getCol(cols, ["貸メダル単価", "slotRateYen"], "20")) || 20),
+                        totalGames: Math.max(0, Math.round(parseFloat(getCol(cols, ["総ゲーム数", "totalGames"], "0")) || 0)),
+                        bbCount: Math.max(0, Math.round(parseFloat(getCol(cols, ["BB回数", "bbCount"], "0")) || 0)),
+                        rbCount: Math.max(0, Math.round(parseFloat(getCol(cols, ["RB回数", "rbCount"], "0")) || 0)),
+                        atCount: Math.max(0, Math.round(parseFloat(getCol(cols, ["AT・ART回数", "atCount"], "0")) || 0)),
+                    } : null;
                     const synthDenom = parseFloat(getCol(cols, ["確率分母"], "319.6")) || 319.6;
                     const rentBalls = parseFloat(getCol(cols, ["貸玉数"], "250")) || 250;
                     const exRate = parseFloat(getCol(cols, ["換金率"], "250")) || 250;
@@ -10745,7 +10933,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                     const netRot = parseFloat(getCol(cols, ["総回転"], "0")) || 0;
                     const yutimeTrigger = parseFloat(getCol(cols, ["遊タイム発動回転"], "0")) || 0;
                     const yutimeEvText = getCol(cols, ["遊タイム期待値"], "");
-                    const hasYutime = yutimeTrigger > 0 || yutimeEvText !== "";
+                    const hasYutime = gameType !== "slot" && (yutimeTrigger > 0 || yutimeEvText !== "");
                     const yutimeDecision = hasYutime ? {
                         version: 2,
                         createdAt: `${date}T${time || "00:00"}:00`,
@@ -10773,21 +10961,26 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
 
                     newArchives.push({
                         id: Date.now() + i + Math.random(),
+                        recordId: csvRecordId,
+                        gameType,
                         date,
                         time,
+                        playMinutes,
                         storeName: getCol(cols, ["店舗名", "店舗"]).replace(/，/g, ","),
                         machineNum: getCol(cols, ["台番号"]),
                         machineName: getCol(cols, ["機種名", "機種"]).replace(/，/g, ","),
                         investYen: invest,
                         recoveryYen: recovery,
-                        settings: { synthDenom, rentBalls, exRate, rotPerHour, border, ballVal },
-                        stats: { workAmount, ev1K, start1K, netRot },
+                        settings: gameType === "slot" ? {} : { synthDenom, rentBalls, exRate, rotPerHour, border, ballVal },
+                        stats: gameType === "slot" ? {} : { workAmount, ev1K, start1K, netRot },
+                        slotStats,
                         rotRows: [],
                         jpLog: [],
                         sesLog: [],
                         totalTrayBalls: 0,
                         startRot: 0,
                         yutimeDecision,
+                        isManual: true,
                     });
                 }
 
@@ -10796,17 +10989,33 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                     return;
                 }
 
-                const importedArchives = newArchives.map(a => ({ ...a, isImported: true }));
                 const previous = Array.isArray(s.archives) ? s.archives : [];
                 const nonImported = previous.filter(a => !a.isImported);
-                const existingKeys = new Set(nonImported.map(archiveKey));
-                const seenKeys = new Set();
-                const dedupedImported = importedArchives.filter(a => {
-                    const key = archiveKey(a);
-                    if (existingKeys.has(key) || seenKeys.has(key)) return false;
-                    seenKeys.add(key);
-                    return true;
-                });
+                const existingIdentityKeys = new Set(nonImported.map(archiveIdentityKey));
+                const existingLegacyKeys = new Set(nonImported.map(legacyArchiveContentKey));
+                const seenIdentityKeys = new Set();
+                const seenLegacyKeys = new Set();
+                const dedupedImported = newArchives
+                    .filter(a => {
+                        if (a.recordId) {
+                            const key = archiveIdentityKey(a);
+                            if (existingIdentityKeys.has(key) || seenIdentityKeys.has(key)) return false;
+                            seenIdentityKeys.add(key);
+                            return true;
+                        }
+
+                        // 旧CSV（記録ID列なし）は、これまでと同じ内容比較で重複を避ける。
+                        const key = legacyArchiveContentKey(a);
+                        if (existingLegacyKeys.has(key) || seenLegacyKeys.has(key)) return false;
+                        seenLegacyKeys.add(key);
+                        return true;
+                    })
+                    // 一度取り込んだ旧CSVにも新しい固有IDを付け、次回の書き出し以降は安全に往復できるようにする。
+                    .map(a => ({
+                        ...a,
+                        recordId: a.recordId || createArchiveRecordId(),
+                        isImported: true,
+                    }));
                 s.setArchives([...nonImported, ...dedupedImported]);
                 showToast(`${dedupedImported.length}件の収支データをインポートしました`);
             } catch (err) {
