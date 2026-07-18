@@ -126,6 +126,10 @@ export default function App() {
   // TODO: 店舗一覧・店舗検索からの遷移導線は次ステップで実装（現状は見た目優先プロトタイプ）。
   const [storeDetailId, setStoreDetailId] = useState(null);
 
+  // ホームの「翌日プランを戦略で確認」から移動した時だけ使う、一度限りの引き継ぎ情報。
+  // localStorage には保存せず、通常の「台選び」タブでは現在選択中の店舗をそのまま使う。
+  const [strategyPlanContext, setStrategyPlanContext] = useState(null);
+
   // 分析モード内の期間サブタブ
   // "month" | "year" | "all" | "calendar"
   const [analysisTab, setAnalysisTab] = useLS("pt_analysisTab", "month");
@@ -1181,6 +1185,7 @@ export default function App() {
     monthlyEvTarget, setMonthlyEvTarget,
     monthlyPlayPlans, setMonthlyPlayPlans,
     dailyResearchPlans, setDailyResearchPlans,
+    strategyPlanContext, setStrategyPlanContext,
     planningNotificationPrefs, setPlanningNotificationPrefs,
     ev, handleMoveTable, handleEndSession,
     theme, setTheme,

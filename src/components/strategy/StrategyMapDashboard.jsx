@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { buildStrategyMap } from "./strategyMapData";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { buildStrategyMap, resolveStrategyPlanHandoff } from "./strategyMapData";
 import "./StrategyMapDashboard.css";
 import {
   P_EVIDENCE_DEMO_HALL_MAPS,
@@ -137,6 +137,49 @@ function Header({ data, updatedAt, onBack, onHelp }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function PlanHandoffBanner({ plan, match, storeName, hasData }) {
+  if (!plan?.targets?.length) return null;
+  const [, month, day] = String(plan.dateKey || "").split("-");
+  const period = plan.source === "daily" && month && day
+    ? `${Number(month)}/${Number(day)}の日次プラン`
+    : `${Number(String(plan.monthKey || "").split("-")[1]) || "今"}月の月間プラン`;
+  const backupNames = plan.backups.map((target) => target.name).filter(Boolean);
+  const needsReview = !plan.canPrioritize;
+  const minimumEv = Math.max(0, Number(plan.minExpectedValuePerHour) || 0);
+  const matchText = needsReview
+    ? "店舗や条件の変更後に候補の再確認が必要なため、戦略順位にはまだ反映していません"
+    : !hasData
+    ? "予定店舗の差玉データは未取得です"
+    : match?.matched < match?.total
+      ? `期待値${minimumEv.toLocaleString("ja-JP")}円/h以上を満たす候補は${match.matched}/${match.total}機種です`
+      : `候補は期待値${minimumEv.toLocaleString("ja-JP")}円/h以上を満たしています`;
+
+  return (
+    <section
+      aria-label="稼働プランの引き継ぎ"
+      style={{
+        margin: "4px 14px 0",
+        padding: "12px 14px",
+        borderRadius: 16,
+        border: "1px solid color-mix(in srgb, var(--sm-cyan) 48%, var(--sm-line))",
+        background: "linear-gradient(135deg, color-mix(in srgb, var(--sm-cyan) 14%, var(--sm-card)), var(--sm-card))",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ color: P.cyan, fontSize: 11, fontWeight: 900 }}>{period}を反映</span>
+        {storeName && <span style={{ marginLeft: "auto", color: P.subHi, fontSize: 10 }}>{storeName}</span>}
+      </div>
+      <div style={{ marginTop: 6, display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+        {plan.primary && <strong style={{ color: P.text, fontSize: 14 }}>本命 {plan.primary.name}</strong>}
+        {backupNames.length > 0 && <span style={{ color: P.subHi, fontSize: 11 }}>予備 {backupNames.join("・")}</span>}
+      </div>
+      <div style={{ marginTop: 6, color: P.sub, fontSize: 10, lineHeight: 1.5 }}>
+        {matchText}。{needsReview ? "ホームの月間プランで本命・予備を選び直してください。" : "判定が弱ければ予備、すべて弱ければ見送ります。"}
+      </div>
+    </section>
   );
 }
 
@@ -303,7 +346,15 @@ function Top5({ rows, selectedId, onSelect }) {
               </span>
               <span className="strategy-plan-machine">台{m.num}</span>
               <span className="strategy-plan-action">
-                {m.rank === 1 ? "最優先で確認" : m.verdict === "strong" ? "空いていれば確認" : "状況を見て判断"}
+                {m.planRole === "primary"
+                  ? "プラン本命を確認"
+                  : m.planRole === "backup"
+                    ? "予備候補を確認"
+                    : m.rank === 1
+                      ? "最優先で確認"
+                      : m.verdict === "strong"
+                        ? "空いていれば確認"
+                        : "状況を見て判断"}
               </span>
               <span className="strategy-plan-chevron" aria-hidden="true">›</span>
               <div className="strategy-plan-sub">
@@ -789,23 +840,51 @@ function Section({ title, sub, accent, children }) {
 
 // ============================ 本体 ============================
 export default function StrategyMapDashboard({ S, onBack }) {
+  const rootRef = useRef(null);
+  const [entryPlanContext] = useState(() => S?.strategyPlanContext || null);
+  const clearStrategyPlanContext = S?.setStrategyPlanContext;
   const playingNum = S?.sessionStarted ? S?.machineNum : null;
   const isDemo = import.meta.env.DEV && new URLSearchParams(window.location.search).get("pevidenceDemo") === "1";
   const savedScans = Array.isArray(S?.deltaScans) ? S.deltaScans : EMPTY_LIST;
   const savedCustomMachines = Array.isArray(S?.customMachines) ? S.customMachines : EMPTY_LIST;
+  const savedStores = Array.isArray(S?.stores) ? S.stores : EMPTY_LIST;
+  const savedMonthlyPlayPlans = S?.monthlyPlayPlans;
+  const savedDailyResearchPlans = S?.dailyResearchPlans;
   const deltaScans = useMemo(() => isDemo ? P_EVIDENCE_DEMO_SCANS : savedScans, [isDemo, savedScans]);
   const customMachines = useMemo(
     () => isDemo ? [P_EVIDENCE_DEMO_MACHINE, ...savedCustomMachines] : savedCustomMachines,
     [isDemo, savedCustomMachines],
   );
+  const availableStoreIds = useMemo(() => savedStores
+    .filter((store) => store && typeof store === "object")
+    .map((store) => store.id), [savedStores]);
+  const planHandoff = useMemo(() => (
+    isDemo || entryPlanContext?.source !== "home-plan"
+      ? null
+      : resolveStrategyPlanHandoff({
+        monthlyPlayPlans: savedMonthlyPlayPlans,
+        dailyResearchPlans: savedDailyResearchPlans,
+        targetDate: entryPlanContext.date,
+        availableStoreIds,
+      })
+  ), [isDemo, entryPlanContext, savedMonthlyPlayPlans, savedDailyResearchPlans, availableStoreIds]);
+  const strategyStoreId = isDemo
+    ? "pe-demo-store"
+    : planHandoff?.defaultStoreId ?? S?.selectedStoreId;
   const data = useMemo(() => buildStrategyMap({
     playingNum,
     liveDecision: S?.ev?.liveDecision || null,
     scans: deltaScans,
     customMachines,
     hallMaps: isDemo ? P_EVIDENCE_DEMO_HALL_MAPS : S?.hallMaps,
-    selectedStoreId: isDemo ? "pe-demo-store" : S?.selectedStoreId,
-  }), [playingNum, deltaScans, customMachines, isDemo, S?.hallMaps, S?.selectedStoreId, S?.ev?.liveDecision]);
+    selectedStoreId: strategyStoreId,
+    planHandoff,
+  }), [playingNum, deltaScans, customMachines, isDemo, S?.hallMaps, strategyStoreId, planHandoff, S?.ev?.liveDecision]);
+  const plannedStore = savedStores.find((item) => (
+    item && typeof item === "object" && planHandoff?.defaultStoreId != null
+      && String(item.id) === String(planHandoff.defaultStoreId)
+  ));
+  const plannedStoreName = plannedStore?.name || "";
   const updatedAt = useMemo(() => nowHM(), []);
   const [filter, setFilter] = useState("all");
   const [selectedId, setSelectedId] = useState(data.leadId);
@@ -814,6 +893,14 @@ export default function StrategyMapDashboard({ S, onBack }) {
   );
   const [helpOpen, setHelpOpen] = useState(false);
   const [yutimeOpen, setYutimeOpen] = useState(false);
+
+  useEffect(() => {
+    clearStrategyPlanContext?.(null);
+  }, [clearStrategyPlanContext]);
+
+  useEffect(() => {
+    rootRef.current?.closest("main")?.scrollTo({ top: 0, left: 0 });
+  }, []);
 
   const selected = data.all.find((m) => m.id === selectedId) || null;
   const effectiveActiveIslandId = data.islands.some((island) => island.id === activeIslandId)
@@ -836,8 +923,14 @@ export default function StrategyMapDashboard({ S, onBack }) {
   };
 
   return (
-    <div className="strategy-map" style={{ flex: 1, background: P.bg, color: P.text, fontFamily: FONT, paddingBottom: "calc(24px + env(safe-area-inset-bottom))" }}>
+    <div ref={rootRef} className="strategy-map" style={{ flex: 1, background: P.bg, color: P.text, fontFamily: FONT, paddingBottom: "calc(24px + env(safe-area-inset-bottom))" }}>
       <Header data={data} updatedAt={updatedAt} onBack={onBack} onHelp={() => setHelpOpen(true)} />
+      <PlanHandoffBanner
+        plan={planHandoff}
+        match={data.planMatch}
+        storeName={plannedStoreName}
+        hasData={data.total > 0}
+      />
       <div style={{ padding: "4px 14px 0" }}>
         <button
           type="button"
