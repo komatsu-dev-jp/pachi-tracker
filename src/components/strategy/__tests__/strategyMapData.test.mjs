@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildStrategyMap } from "../strategyMapData.js";
+import { buildStrategyMap, resolveStrategyPlanHandoff } from "../strategyMapData.js";
 
 const machine = {
   name: "検証機",
@@ -56,6 +56,256 @@ assert.equal(
   multiStoreMap.all[0].history.length, 2,
   "スパークラインの履歴に他店舗の同番号データを混ぜない"
 );
+
+// 選択店舗がある場合は、全店舗の最新日を選んでから絞るのではなく、店舗を絞ってから最新日を選ぶ
+const selectedOlderStoreMap = buildStrategyMap({
+  scans: multiStoreScans,
+  customMachines: [machine],
+  selectedStoreId: "s2",
+});
+assert.equal(selectedOlderStoreMap.total, 1, "選択店舗に最新スキャンがあれば日付が古くても表示する");
+assert.ok(
+  selectedOlderStoreMap.analytics.latestRows.every((row) => row.store === "s2"),
+  "選択店舗以外の新しいスキャンへ切り替わらない"
+);
+
+const primaryKey = "s1::候補機::P候補機";
+const backupKey = "s1::検証機::P検証機";
+const monthlyPlayPlans = {
+  "2026-07": {
+    version: 2,
+    status: "research-ready",
+    defaultStoreId: "s1",
+    researchPackageId: "balanced",
+    minExpectedValuePerHour: 500,
+    researchTargets: {
+      primaryMachineKey: backupKey,
+      backupMachineKeys: [primaryKey],
+    },
+    candidateSnapshot: {
+      candidates: [
+        { key: backupKey, name: "検証機", modelName: "P検証機" },
+        { key: primaryKey, name: "候補機", modelName: "P候補機" },
+      ],
+    },
+  },
+};
+const dailyResearchPlans = {
+  "2026-07-18": {
+    version: 2,
+    status: "research-ready",
+    date: "2026-07-18",
+    researchTargets: {
+      primaryMachineKey: backupKey,
+      backupMachineKeys: [primaryKey],
+    },
+  },
+  "2026-07-19": {
+    version: 2,
+    status: "research-ready",
+    date: "2026-07-19",
+    style: "stable",
+    researchTargets: {
+      primaryMachineKey: primaryKey,
+      backupMachineKeys: [backupKey],
+    },
+    candidateSnapshot: {
+      candidates: [{ key: primaryKey, name: "候補機", modelName: "P候補機" }],
+    },
+  },
+};
+const handoff = resolveStrategyPlanHandoff({
+  monthlyPlayPlans,
+  dailyResearchPlans,
+  now: new Date(2026, 6, 18, 12, 0, 0),
+});
+assert.equal(handoff.source, "daily");
+assert.equal(handoff.dateKey, "2026-07-19");
+assert.notEqual(handoff.primary.name, "検証機", "Homeの翌日準備導線では当日の古いプランより翌日を優先する");
+assert.equal(handoff.defaultStoreId, "s1", "日次に店舗がなければ月間の店舗を引き継ぐ");
+assert.equal(handoff.minExpectedValuePerHour, 500, "日次に最低時給期待値がなければ月間設定を引き継ぐ");
+assert.equal(handoff.canPrioritize, true);
+assert.equal(handoff.primary.name, "候補機", "日次の本命を月間より優先する");
+assert.deepEqual(handoff.backups.map((target) => target.name), ["検証機"]);
+const staleStoreHandoff = resolveStrategyPlanHandoff({
+  monthlyPlayPlans,
+  dailyResearchPlans,
+  now: new Date(2026, 6, 18, 12, 0, 0),
+  targetDate: "2026-07-19",
+  availableStoreIds: ["s2"],
+});
+assert.equal(staleStoreHandoff.hasValidStore, false);
+assert.equal(staleStoreHandoff.defaultStoreId, null, "削除済み店舗へ戦略画面を強制切替しない");
+assert.equal(staleStoreHandoff.status, "needs-review");
+assert.equal(staleStoreHandoff.canPrioritize, false, "有効な登録店舗がないプランを戦略順位へ反映しない");
+const todayFallbackHandoff = resolveStrategyPlanHandoff({
+  monthlyPlayPlans,
+  dailyResearchPlans: { "2026-07-18": dailyResearchPlans["2026-07-18"] },
+  now: new Date(2026, 6, 18, 12, 0, 0),
+});
+assert.equal(todayFallbackHandoff.dateKey, "2026-07-18", "翌日プランがなければ当日プランを使う");
+assert.equal(todayFallbackHandoff.primary.name, "検証機");
+const exactTodayHandoff = resolveStrategyPlanHandoff({
+  monthlyPlayPlans,
+  dailyResearchPlans,
+  now: new Date(2026, 6, 18, 12, 0, 0),
+  targetDate: "2026-07-18",
+});
+assert.equal(exactTodayHandoff.dateKey, "2026-07-18", "指定した日だけを日次プランとして引き継ぐ");
+assert.equal(exactTodayHandoff.primary.name, "検証機", "指定日に翌日のプランを混ぜない");
+const exactMissingHandoff = resolveStrategyPlanHandoff({
+  monthlyPlayPlans,
+  dailyResearchPlans,
+  now: new Date(2026, 6, 18, 12, 0, 0),
+  targetDate: "2026-07-20",
+});
+assert.equal(exactMissingHandoff.source, "monthly", "指定日に日次プランがなければ同月の月間プランだけを使う");
+assert.equal(exactMissingHandoff.dateKey, "", "指定日以外の日次プランへフォールバックしない");
+assert.equal(exactMissingHandoff.primary.name, "検証機");
+const draftHandoff = resolveStrategyPlanHandoff({
+  monthlyPlayPlans: {
+    "2026-07": { ...monthlyPlayPlans["2026-07"], status: "draft" },
+  },
+  targetDate: "2026-07-20",
+});
+assert.equal(draftHandoff.canPrioritize, false, "下書きプランは戦略順位へ反映しない");
+const noPrimaryHandoff = resolveStrategyPlanHandoff({
+  monthlyPlayPlans: {
+    "2026-07": {
+      ...monthlyPlayPlans["2026-07"],
+      researchTargets: { primaryMachineKey: "", backupMachineKeys: [primaryKey] },
+    },
+  },
+  targetDate: "2026-07-20",
+});
+assert.equal(noPrimaryHandoff.canPrioritize, false, "本命未選択のプランは戦略順位へ反映しない");
+const skipHandoff = resolveStrategyPlanHandoff({
+  monthlyPlayPlans,
+  dailyResearchPlans: {
+    "2026-07-19": {
+      version: 2,
+      status: "skip",
+      style: "skip",
+      defaultStoreId: "s1",
+      researchTargets: monthlyPlayPlans["2026-07"].researchTargets,
+    },
+  },
+  now: new Date(2026, 6, 18, 12, 0, 0),
+});
+assert.equal(skipHandoff.targets.length, 0, "見送り日には月間の本命・予備を戦略順位へ引き継がない");
+assert.equal(
+  resolveStrategyPlanHandoff({
+    monthlyPlayPlans: { "2026-07": { baseStyle: "balanced" } },
+    dailyResearchPlans: { "2026-07-19": { style: "stable" } },
+    now: new Date(2026, 6, 18, 12, 0, 0),
+  }),
+  null,
+  "System v2の項目がない旧プランでは従来の戦略順位を変えない"
+);
+
+const candidateMachine = {
+  name: "候補機",
+  modelName: "P候補機",
+  aliases: ["候補機別名"],
+  border1K: 17,
+  avgPayoutPerHit: 1400,
+  stdDev: 6000,
+};
+const rankingScans = scans.map((scan) => ({
+  ...scan,
+  rows: [
+    { ...scan.rows[0], normalSpins: 900, totalStarts: 12, val: 5000 },
+    { num: "201", machineName: "候補機", island: "2島", normalSpins: 900, totalStarts: 12, val: 5000 },
+    { num: "202", machineName: "候補機", island: "2島", normalSpins: 500, totalStarts: 4, val: -2000 },
+  ],
+}));
+const plannedMap = buildStrategyMap({
+  scans: rankingScans,
+  customMachines: [machine, candidateMachine],
+  selectedStoreId: handoff.defaultStoreId,
+  planHandoff: handoff,
+});
+assert.equal(plannedMap.top5[0].machineName, "候補機", "日次の本命機種を戦略確認順の先頭にする");
+assert.equal(plannedMap.top5[0].planRole, "primary");
+assert.equal(
+  plannedMap.top5[0].score,
+  Math.max(...plannedMap.all.filter((row) => row.machineName === "候補機").map((row) => row.score)),
+  "本命機種に複数台ある場合は機種内で最も評価が高い台を先頭にする"
+);
+assert.equal(plannedMap.top5.find((row) => row.machineName === "検証機")?.planRole, "backup");
+assert.deepEqual(plannedMap.planMatch, { matched: 2, total: 2 });
+
+const unplannedMap = buildStrategyMap({
+  scans: rankingScans,
+  customMachines: [machine, candidateMachine],
+  selectedStoreId: "s1",
+});
+const highMinimumMap = buildStrategyMap({
+  scans: rankingScans,
+  customMachines: [machine, candidateMachine],
+  selectedStoreId: "s1",
+  planHandoff: { ...handoff, minExpectedValuePerHour: Number.MAX_SAFE_INTEGER },
+});
+assert.ok(highMinimumMap.all.every((row) => row.planRole === null && row.planPriority === null));
+assert.equal(highMinimumMap.planMatch.matched, 0, "最低時給期待値を下回る予定機種を優先扱いしない");
+assert.deepEqual(
+  highMinimumMap.top5.map((row) => row.id),
+  unplannedMap.top5.map((row) => row.id),
+  "最低時給期待値を満たす候補がなければ通常の判定順を保つ"
+);
+
+const needsReviewHandoff = resolveStrategyPlanHandoff({
+  monthlyPlayPlans: {
+    "2026-07": { ...monthlyPlayPlans["2026-07"], status: "needs-review" },
+  },
+  targetDate: "2026-07-20",
+  now: new Date(2026, 6, 18, 12, 0, 0),
+});
+assert.equal(needsReviewHandoff.status, "needs-review");
+assert.equal(needsReviewHandoff.canPrioritize, false);
+assert.equal(needsReviewHandoff.targets.length, 2, "再確認画面に候補名を残す");
+const needsReviewMap = buildStrategyMap({
+  scans: rankingScans,
+  customMachines: [machine, candidateMachine],
+  selectedStoreId: "s1",
+  planHandoff: needsReviewHandoff,
+});
+assert.ok(needsReviewMap.all.every((row) => row.planRole === null && row.planPriority === null));
+assert.equal(needsReviewMap.planMatch.matched, 0, "再確認待ちの古い候補を戦略順位へ反映しない");
+assert.deepEqual(needsReviewMap.top5.map((row) => row.id), unplannedMap.top5.map((row) => row.id));
+
+const aliasScans = rankingScans.map((scan) => ({
+  ...scan,
+  rows: scan.rows.map((row) => row.machineName === "候補機"
+    ? { ...row, machineName: "候補機別名" }
+    : row),
+}));
+const aliasMap = buildStrategyMap({
+  scans: aliasScans,
+  customMachines: [machine, candidateMachine],
+  selectedStoreId: "s1",
+  planHandoff: handoff,
+});
+assert.equal(aliasMap.top5[0].machineName, "候補機別名");
+assert.equal(aliasMap.top5[0].planRole, "primary", "機種マスターの別名でも本命へ一致させる");
+assert.deepEqual(aliasMap.planMatch, { matched: 2, total: 2 });
+
+const noDataMap = buildStrategyMap({
+  scans: [{
+    id: "nodata",
+    storeId: "s1",
+    storeName: "検証店",
+    date: "2026-07-02",
+    rows: [{ num: "301", machineName: "候補機", island: "3島", normalSpins: 0, totalStarts: 0, val: 0 }],
+  }],
+  customMachines: [candidateMachine],
+  selectedStoreId: "s1",
+  planHandoff: { ...handoff, minExpectedValuePerHour: 0 },
+});
+assert.equal(noDataMap.all[0].verdict, "nodata");
+assert.equal(noDataMap.all[0].planRole, null, "データ不足の予定機種を優先扱いしない");
+assert.equal(noDataMap.all[0].planEvaluation, "insufficient-data");
+assert.equal(noDataMap.top5.length, 0, "データ不足の予定機種をTOP5へ強制表示しない");
 
 const hallMaps = {
   s1: [

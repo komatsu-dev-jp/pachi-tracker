@@ -31,7 +31,7 @@ function evPerHourOf(rotation, border) {
   return Math.round(evPerK * (210 / rotation));
 }
 
-function emptyMap(playingNum) {
+function emptyMap(playingNum, planHandoff = null) {
   return {
     source: "delta",
     machineName: "差玉データなし",
@@ -50,20 +50,180 @@ function emptyMap(playingNum) {
     aiProfile: { overall: { rate: 0, count: 0 }, profiles: [] },
     nextMap: [],
     islandStats: [],
+    planHandoff,
+    planMatch: { matched: 0, total: planHandoff?.targets?.length || 0 },
   };
 }
 
-function latestScanGroup(scans) {
+function scanStoreKey(scan) {
+  return String(scan?.storeId ?? scan?.storeName ?? "");
+}
+
+function latestScanGroup(scans, selectedStoreId = null) {
   const valid = (scans || []).filter((scan) => Array.isArray(scan?.rows) && scan.rows.length);
-  if (!valid.length) return [];
-  const latest = [...valid].sort((a, b) =>
+  const scoped = selectedStoreId == null
+    ? valid
+    : valid.filter((scan) => scanStoreKey(scan) === String(selectedStoreId));
+  if (!scoped.length) return [];
+  const latest = [...scoped].sort((a, b) =>
     String(b.date || "").localeCompare(String(a.date || "")) ||
     String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
   )[0];
-  return valid.filter((scan) =>
-    String(scan.storeId ?? scan.storeName ?? "") === String(latest.storeId ?? latest.storeName ?? "") &&
+  return scoped.filter((scan) =>
+    scanStoreKey(scan) === scanStoreKey(latest) &&
     String(scan.date || "") === String(latest.date || "")
   );
+}
+
+function localDateKey(value = new Date()) {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function nextDateKey(value = new Date()) {
+  const date = value instanceof Date ? new Date(value) : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  date.setDate(date.getDate() + 1);
+  return localDateKey(date);
+}
+
+function candidateFromKey(key) {
+  const parts = String(key || "").split("::");
+  return {
+    key: String(key || ""),
+    name: parts.length >= 2 ? parts.at(-2) : String(key || ""),
+    modelName: parts.length >= 3 ? parts.at(-1) : "",
+  };
+}
+
+function mergeSnapshotCandidates(dailyPlan, monthlyPlan) {
+  const rows = [
+    ...(Array.isArray(dailyPlan?.candidateSnapshot?.candidates) ? dailyPlan.candidateSnapshot.candidates : []),
+    ...(Array.isArray(monthlyPlan?.candidateSnapshot?.candidates) ? monthlyPlan.candidateSnapshot.candidates : []),
+  ];
+  const byKey = new Map();
+  for (const row of rows) {
+    const key = String(row?.key || "");
+    if (key && !byKey.has(key)) byKey.set(key, row);
+  }
+  return byKey;
+}
+
+/**
+ * 月間・日次の System v2 プランを、戦略マップが扱える1つの引き継ぎ情報へまとめる。
+ * 日次に未設定の項目は月間から継承し、旧形式のプランしかない場合も従来どおり null を返す。
+ */
+export function resolveStrategyPlanHandoff({
+  monthlyPlayPlans = {},
+  dailyResearchPlans = {},
+  now = new Date(),
+  targetDate = "",
+  availableStoreIds = null,
+} = {}) {
+  const todayKey = localDateKey(now);
+  const tomorrowKey = nextDateKey(now);
+  const requestedDateKey = localDateKey(targetDate);
+  // Home の「店舗データと期待値を確認する」は翌日の準備導線なので、翌日プランを先に使う。
+  // 翌日分がなければ、戦略タブを直接開いた場合に備えて当日分へフォールバックする。
+  const dailyKey = requestedDateKey
+    ? (dailyResearchPlans?.[requestedDateKey] ? requestedDateKey : "")
+    : dailyResearchPlans?.[tomorrowKey]
+      ? tomorrowKey
+      : dailyResearchPlans?.[todayKey]
+        ? todayKey
+        : "";
+  const dailyPlan = dailyKey ? dailyResearchPlans[dailyKey] : null;
+  const monthKey = (dailyKey || requestedDateKey || todayKey).slice(0, 7);
+  const monthlyPlan = monthlyPlayPlans?.[monthKey] || null;
+  if (!dailyPlan && !monthlyPlan) return null;
+
+  const dailySkip = dailyPlan?.status === "skip" || dailyPlan?.style === "skip" || dailyPlan?.researchPackageId === "skip";
+  const researchTargets = dailySkip ? null : dailyPlan?.researchTargets || monthlyPlan?.researchTargets || null;
+  const primaryKey = String(researchTargets?.primaryMachineKey || "");
+  const backupKeys = Array.isArray(researchTargets?.backupMachineKeys)
+    ? [...new Set(researchTargets.backupMachineKeys.map(String).filter(Boolean))].filter((key) => key !== primaryKey)
+    : [];
+  const candidateByKey = mergeSnapshotCandidates(dailyPlan, monthlyPlan);
+  const makeTarget = (key, role, priority) => {
+    const snapshot = candidateByKey.get(key);
+    const fallback = candidateFromKey(key);
+    return {
+      key,
+      role,
+      priority,
+      name: String(snapshot?.name || fallback.name || ""),
+      modelName: String(snapshot?.modelName || fallback.modelName || ""),
+    };
+  };
+  const targets = [
+    ...(primaryKey ? [makeTarget(primaryKey, "primary", 0)] : []),
+    ...backupKeys.map((key, index) => makeTarget(key, "backup", index + 1)),
+  ];
+  const requestedStoreId = dailyPlan?.defaultStoreId ?? monthlyPlan?.defaultStoreId ?? null;
+  const hasSystemV2Fields = Boolean(requestedStoreId != null || targets.length || dailyPlan?.candidateSnapshot || monthlyPlan?.candidateSnapshot);
+  if (!hasSystemV2Fields) return null;
+
+  const hasValidStore = requestedStoreId != null && (
+    !Array.isArray(availableStoreIds)
+    || availableStoreIds.some((storeId) => String(storeId) === String(requestedStoreId))
+  );
+
+  const savedStatus = dailySkip
+    ? "skip"
+    : dailyPlan?.status || monthlyPlan?.status || "";
+  const status = !dailySkip && !hasValidStore ? "needs-review" : savedStatus;
+  const minExpectedValuePerHour = Math.max(0, Number(
+    dailyPlan?.minExpectedValuePerHour ?? monthlyPlan?.minExpectedValuePerHour ?? 0
+  ) || 0);
+
+  return {
+    source: dailyPlan ? "daily" : "monthly",
+    dateKey: dailyKey || "",
+    monthKey,
+    defaultStoreId: hasValidStore ? requestedStoreId : null,
+    requestedStoreId,
+    hasValidStore,
+    packageId: dailyPlan?.researchPackageId
+      || dailyPlan?.style
+      || monthlyPlan?.researchPackageId
+      || monthlyPlan?.baseStyle
+      || "",
+    status,
+    canPrioritize: status === "research-ready" && hasValidStore && Boolean(primaryKey),
+    minExpectedValuePerHour,
+    targets,
+    primary: targets.find((target) => target.role === "primary") || null,
+    backups: targets.filter((target) => target.role === "backup"),
+  };
+}
+
+function normalizeMachineIdentity(value) {
+  return String(value || "").trim().toLocaleLowerCase("ja-JP");
+}
+
+function planTargetForMachine(machineName, planHandoff, machineSpec = null) {
+  if (!planHandoff?.canPrioritize) return null;
+  const machineIdentities = new Set([
+    machineName,
+    machineSpec?.name,
+    machineSpec?.modelName,
+    ...(Array.isArray(machineSpec?.aliases) ? machineSpec.aliases : []),
+  ].map(normalizeMachineIdentity).filter(Boolean));
+  if (!machineIdentities.size) return null;
+  return (planHandoff?.targets || []).find((target) => (
+    [target?.name, target?.modelName]
+      .map(normalizeMachineIdentity)
+      .filter(Boolean)
+      .some((identity) => machineIdentities.has(identity))
+  )) || null;
+}
+
+function compareStrategyPriority(a, b) {
+  const aPriority = Number.isFinite(a.planPriority) ? a.planPriority : Number.POSITIVE_INFINITY;
+  const bPriority = Number.isFinite(b.planPriority) ? b.planPriority : Number.POSITIVE_INFINITY;
+  return aPriority - bPriority || b.score - a.score || b.confidence - a.confidence;
 }
 
 function historyFor(scans, machineName, num, machine) {
@@ -148,9 +308,10 @@ export function buildStrategyMap({
   customMachines = [],
   hallMaps = {},
   selectedStoreId = null,
+  planHandoff = null,
 } = {}) {
-  const currentScans = latestScanGroup(scans);
-  if (!currentScans.length) return emptyMap(playingNum);
+  const currentScans = latestScanGroup(scans, selectedStoreId);
+  if (!currentScans.length) return emptyMap(playingNum, planHandoff);
 
   const analysisStoreId = currentScans[0]?.storeId ?? selectedStoreId;
   const hallIslands = getStoreIslands(hallMaps, analysisStoreId);
@@ -203,6 +364,11 @@ export function buildStrategyMap({
     // スパークラインも表示中店舗の履歴だけを使う（他店舗の同番号を混ぜない）
     const history = historyFor(storeScans, machineName, row.num, machineSpec);
     const isPlaying = playingNum != null && String(row.num) === String(playingNum);
+    const planTarget = planTargetForMachine(machineName, planHandoff, machineSpec);
+    const evPerHour = pe?.valid ? pe.hourly : evPerHourOf(predictedRotation, trueBorder);
+    const minPlanEv = Math.max(0, Number(planHandoff?.minExpectedValuePerHour) || 0);
+    const hasPlanEvidence = verdict !== "nodata";
+    const planEligible = Boolean(planTarget && hasPlanEvidence && evPerHour >= minPlanEv);
     const machine = {
       id: `m-${machineName}-${row.num}`,
       num: Number(row.num) || row.num,
@@ -214,7 +380,7 @@ export function buildStrategyMap({
       borderDiff,
       goodMachineScore: round1(pe?.valid ? pe.score : evidence.goodMachineScore),
       score: 0,
-      evPerHour: pe?.valid ? pe.hourly : evPerHourOf(predictedRotation, trueBorder),
+      evPerHour,
       verdict,
       isStar: verdict === "strong" && (pe?.valid ? pe.score : evidence.goodMachineScore) >= 50,
       isPlaying,
@@ -249,6 +415,15 @@ export function buildStrategyMap({
         item.machineName === machineName &&
         String(item.store ?? "") === rowStore
       )?.prediction || "データ収集中",
+      planRole: planEligible ? planTarget.role : null,
+      planPriority: planEligible ? planTarget.priority : null,
+      planEvaluation: !planTarget
+        ? null
+        : !hasPlanEvidence
+          ? "insufficient-data"
+          : evPerHour < minPlanEv
+            ? "below-minimum-ev"
+            : "eligible",
     };
     machine.score = scoreOf(machine);
     if (!islandMap.has(islandId)) islandMap.set(islandId, { id: islandId, name: islandName, machines: [] });
@@ -262,15 +437,18 @@ export function buildStrategyMap({
   }));
   const islands = applyHallLayout(analyzedIslands, hallIslands);
   const all = islands.flatMap((island) => island.machines);
-  if (!all.length) return emptyMap(playingNum);
-  const candidates = all.filter((machine) => machine.verdict === "strong");
+  if (!all.length) return emptyMap(playingNum, planHandoff);
+  const candidates = all
+    .filter((machine) => machine.verdict === "strong")
+    .sort(compareStrategyPriority);
   const top5 = [...all]
     .filter((machine) => machine.verdict !== "nodata")
-    .sort((a, b) => b.score - a.score)
+    .sort(compareStrategyPriority)
     .slice(0, 5)
     .map((machine, index) => ({ ...machine, rank: index + 1 }));
   const lead = top5[0] || [...all].sort((a, b) => b.confidence - a.confidence)[0];
   const machineNames = [...new Set(all.map((machine) => machine.machineName))];
+  const matchedPlanTargets = new Set(all.filter((machine) => machine.planRole).map((machine) => machine.planPriority));
   const islandAvgRot = (id) => {
     const list = all.filter((machine) => machine.islandId === id && machine.rot > 0);
     return list.length ? round1(list.reduce((sum, machine) => sum + machine.rot, 0) / list.length) : 0;
@@ -298,5 +476,10 @@ export function buildStrategyMap({
     aiProfile: analytics.aiProfile,
     nextMap: analytics.nextMap,
     islandStats: analytics.islandStats,
+    planHandoff,
+    planMatch: {
+      matched: matchedPlanTargets.size,
+      total: planHandoff?.targets?.length || 0,
+    },
   };
 }

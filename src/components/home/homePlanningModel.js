@@ -6,23 +6,49 @@ export const CENTRAL_80_Z = 1.2815515655446004;
 export const PLAY_STYLES = Object.freeze({
   stable: Object.freeze({
     id: "stable",
-    label: "安定重視",
-    shortLabel: "ブレ小さめ",
-    description: "標準偏差が低い機種から、条件の良い台を探します。",
+    label: "安定リサーチ",
+    shortLabel: "安定 70%",
+    description: "ブレ小さめの機種を中心に、標準帯も比較します。",
+    allocation: Object.freeze({ stable: 70, balanced: 30, high: 0 }),
+    candidateTiers: Object.freeze(["stable", "stable", "stable", "balanced", "balanced"]),
   }),
   balanced: Object.freeze({
     id: "balanced",
     label: "バランス",
-    shortLabel: "収益と安定",
-    description: "安定性と期待値の両方を見て、候補を比較します。",
+    shortLabel: "安定 40%",
+    description: "安定帯と標準帯を軸に、高変動も少しだけ比較します。",
+    allocation: Object.freeze({ stable: 40, balanced: 40, high: 20 }),
+    candidateTiers: Object.freeze(["stable", "balanced", "stable", "balanced", "high"]),
   }),
   ev: Object.freeze({
     id: "ev",
-    label: "期待値優先",
-    shortLabel: "高変動も許容",
-    description: "ブレの大きさを確認したうえで、高変動機も候補に含めます。",
+    label: "変動許容",
+    shortLabel: "高変動 50%",
+    description: "荒れやすい機種を広く比較します。期待値条件とは別の設定です。",
+    allocation: Object.freeze({ stable: 20, balanced: 30, high: 50 }),
+    candidateTiers: Object.freeze(["high", "balanced", "high", "stable", "high"]),
   }),
 });
+
+export const MAX_RESEARCH_BACKUPS = 2;
+
+export function buildResearchAllocation(packageId, plannedDates, standardHours) {
+  const researchPackage = PLAY_STYLES[packageId] || PLAY_STYLES.balanced;
+  const dayCount = Array.isArray(plannedDates) ? plannedDates.length : 0;
+  const totalMinutes = Math.max(0, Math.round(dayCount * Math.max(0, Number(standardHours) || 0) * 60));
+  const stableMinutes = Math.round(totalMinutes * researchPackage.allocation.stable / 100);
+  const balancedMinutes = Math.round(totalMinutes * researchPackage.allocation.balanced / 100);
+  return {
+    packageId: researchPackage.id,
+    dayCount,
+    totalMinutes,
+    minutesByTier: {
+      stable: stableMinutes,
+      balanced: balancedMinutes,
+      high: Math.max(0, totalMinutes - stableMinutes - balancedMinutes),
+    },
+  };
+}
 
 const finitePositive = (value) => {
   const n = Number(value);
@@ -108,85 +134,169 @@ export function classifyMachineVolatility(stdDev, reference) {
   return { tier: "high", percentile, label: "ブレ大きめ" };
 }
 
-function machineIdentity(machine) {
-  return [machine?.name, machine?.modelName, ...(Array.isArray(machine?.aliases) ? machine.aliases : [])]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+export function getResearchCandidateKey(machine, storeId = "any") {
+  const name = String(machine?.name || "").trim();
+  const modelName = String(machine?.modelName || "").trim();
+  return name || modelName ? `${String(storeId || "any")}::${name}::${modelName}` : "";
 }
 
-function preferredScore(machine, styleId) {
-  const identity = machineIdentity(machine);
-  if (styleId === "stable") {
-    if (identity.includes("海物語")) return 0;
-    if (identity.includes("甘デジ")) return 1;
-    return 2;
-  }
-  if (styleId === "ev") {
-    if (identity.includes("牙狼")) return 0;
-    if (identity.includes("エヴァンゲリオン")) return 1;
-    return 2;
-  }
-  if (identity.includes("海物語")) return 0;
-  return 1;
-}
-
-export function buildStyleCandidates(machines, styleId = "balanced", limit = 3) {
-  const list = Array.isArray(machines) ? machines : [];
-  const reference = buildVolatilityReference(list);
-  const rows = list
-    .filter((machine) => machine?.stdDevMethod === "p-evidence-branching-v2" && finitePositive(machine?.stdDev) != null)
-    .map((machine) => ({
-      machine,
-      risk: classifyMachineVolatility(machine.stdDev, reference),
-    }));
-
-  if (styleId === "ev") {
-    // 「期待値優先」は高変動機だけを勧める意味ではない。
-    // 店舗データが無い段階では、安定・標準・高変動を1台ずつ比較候補にして、
-    // 実際の期待値順位は店舗データ取得後に決める。
-    const tierOrder = ["high", "balanced", "stable"];
-    const selected = tierOrder.flatMap((tier) => {
-      const tierRows = rows.filter((row) => row.risk.tier === tier);
-      tierRows.sort((a, b) => {
-        const preferred = preferredScore(a.machine, tier === "high" ? "ev" : tier) - preferredScore(b.machine, tier === "high" ? "ev" : tier);
-        if (preferred !== 0) return preferred;
-        if (tier === "high") return Number(b.machine.stdDev) - Number(a.machine.stdDev);
-        if (tier === "stable") return Number(a.machine.stdDev) - Number(b.machine.stdDev);
-        return Math.abs(Number(a.machine.stdDev) - 16000) - Math.abs(Number(b.machine.stdDev) - 16000);
-      });
-      return tierRows.slice(0, 1);
-    });
-    return selected.slice(0, Math.max(0, limit)).map(({ machine, risk }) => ({
-      name: machine.name,
-      modelName: machine.modelName || "型式確認中",
-      stdDev: Number(machine.stdDev),
-      riskTier: risk.tier,
-      riskLabel: risk.label,
-      sourceUrl: machine.modelSourceUrl || machine.sourceUrls?.[0] || null,
-    }));
-  }
-
-  const allowed = styleId === "stable"
-    ? new Set(["stable"])
-    : new Set(["stable", "balanced"]);
-
-  const scoped = rows.filter((row) => allowed.has(row.risk.tier));
-  scoped.sort((a, b) => {
-    const preferred = preferredScore(a.machine, styleId) - preferredScore(b.machine, styleId);
-    if (preferred !== 0) return preferred;
-    if (styleId === "stable") return Number(a.machine.stdDev) - Number(b.machine.stdDev);
-    return Math.abs(Number(a.machine.stdDev) - 16000) - Math.abs(Number(b.machine.stdDev) - 16000);
+function sortRiskBucket(rows, tier) {
+  return [...rows].sort((a, b) => {
+    if (tier === "stable") return Number(a.machine.stdDev) - Number(b.machine.stdDev);
+    if (tier === "high") return Number(b.machine.stdDev) - Number(a.machine.stdDev);
+    const centerGap = Math.abs(Number(a.risk.percentile) - 0.5) - Math.abs(Number(b.risk.percentile) - 0.5);
+    if (centerGap !== 0) return centerGap;
+    return Number(a.machine.stdDev) - Number(b.machine.stdDev);
   });
+}
 
-  return scoped.slice(0, Math.max(0, limit)).map(({ machine, risk }) => ({
+function candidateFromRow(row, packageId, storeId) {
+  const { machine, risk } = row;
+  return {
+    key: getResearchCandidateKey(machine, storeId),
     name: machine.name,
     modelName: machine.modelName || "型式確認中",
     stdDev: Number(machine.stdDev),
     riskTier: risk.tier,
     riskLabel: risk.label,
+    reason: `${PLAY_STYLES[packageId]?.label || PLAY_STYLES.balanced.label}の${risk.label}枠`,
+    installationStatus: "unverified",
+    sourceDate: machine.dataUpdatedAt || machine.modelUpdatedAt || "",
     sourceUrl: machine.modelSourceUrl || machine.sourceUrls?.[0] || null,
-  }));
+  };
+}
+
+export function buildResearchPackageCandidates(machines, packageId = "balanced", limit = 5, { storeId = "any" } = {}) {
+  const list = Array.isArray(machines) ? machines : [];
+  const reference = buildVolatilityReference(list);
+  const researchPackage = PLAY_STYLES[packageId] || PLAY_STYLES.balanced;
+  const rows = list
+    .filter((machine) => machine?.stdDevMethod === "p-evidence-branching-v2" && finitePositive(machine?.stdDev) != null)
+    .map((machine) => ({
+      machine,
+      risk: classifyMachineVolatility(machine.stdDev, reference),
+    }))
+    .filter((row) => row.risk.tier !== "unknown" && getResearchCandidateKey(row.machine, storeId));
+
+  const buckets = {
+    stable: sortRiskBucket(rows.filter((row) => row.risk.tier === "stable"), "stable"),
+    balanced: sortRiskBucket(rows.filter((row) => row.risk.tier === "balanced"), "balanced"),
+    high: sortRiskBucket(rows.filter((row) => row.risk.tier === "high"), "high"),
+  };
+  const selected = [];
+  const used = new Set();
+  const requestedLimit = Math.max(0, Math.floor(Number(limit) || 0));
+
+  for (let index = 0; index < requestedLimit; index += 1) {
+    const tier = researchPackage.candidateTiers[index % researchPackage.candidateTiers.length];
+    const next = buckets[tier].find((row) => !used.has(getResearchCandidateKey(row.machine, storeId)));
+    if (!next) continue;
+    used.add(getResearchCandidateKey(next.machine, storeId));
+    selected.push(next);
+  }
+
+  if (selected.length < requestedLimit) {
+    const fallbackTierOrder = packageId === "stable"
+      ? ["stable", "balanced"]
+      : packageId === "ev"
+        ? ["high", "balanced", "stable"]
+        : ["balanced", "stable", "high"];
+    for (const tier of fallbackTierOrder) {
+      for (const row of buckets[tier]) {
+        const key = getResearchCandidateKey(row.machine, storeId);
+        if (used.has(key)) continue;
+        used.add(key);
+        selected.push(row);
+        if (selected.length >= requestedLimit) break;
+      }
+      if (selected.length >= requestedLimit) break;
+    }
+  }
+
+  return selected.map((row) => candidateFromRow(row, researchPackage.id, storeId));
+}
+
+export function buildStyleCandidates(machines, styleId = "balanced", limit = 3) {
+  return buildResearchPackageCandidates(machines, styleId, limit);
+}
+
+export function buildDailyResearchSelection(
+  machines,
+  packageId,
+  basePlan = null,
+  { storeId = null } = {}
+) {
+  if (packageId === "skip") {
+    return {
+      status: "skip",
+      researchTargets: normalizeResearchTargets(),
+      candidates: [],
+      inherited: false,
+    };
+  }
+
+  const normalizedPackageId = PLAY_STYLES[packageId] ? packageId : "balanced";
+  const hasValidStore = storeId != null && String(storeId) !== "any";
+  const generated = buildResearchPackageCandidates(machines, normalizedPackageId, 5, { storeId: storeId || "any" });
+  const basePackageId = basePlan?.researchPackageId || basePlan?.baseStyle || "balanced";
+  const baseTargets = normalizeResearchTargets(basePlan?.researchTargets);
+  const sameStore = hasValidStore && String(basePlan?.defaultStoreId ?? storeId) === String(storeId);
+  const canInherit = normalizedPackageId === basePackageId
+    && sameStore
+    && basePlan?.status === "research-ready"
+    && Boolean(baseTargets.primaryMachineKey);
+
+  const candidatesByKey = new Map();
+  if (canInherit && Array.isArray(basePlan?.candidateSnapshot?.candidates)) {
+    basePlan.candidateSnapshot.candidates.forEach((candidate) => {
+      if (candidate?.key) candidatesByKey.set(candidate.key, candidate);
+    });
+  }
+  generated.forEach((candidate) => candidatesByKey.set(candidate.key, candidate));
+
+  return {
+    status: canInherit && hasValidStore ? "research-ready" : "needs-review",
+    researchTargets: canInherit ? baseTargets : normalizeResearchTargets(),
+    candidates: [...candidatesByKey.values()],
+    inherited: canInherit,
+  };
+}
+
+export function normalizeResearchTargets(targets) {
+  const primaryMachineKey = String(targets?.primaryMachineKey || "");
+  const backupMachineKeys = [...new Set(Array.isArray(targets?.backupMachineKeys) ? targets.backupMachineKeys.map(String).filter(Boolean) : [])]
+    .filter((key) => key !== primaryMachineKey)
+    .slice(0, MAX_RESEARCH_BACKUPS);
+  const selected = new Set([primaryMachineKey, ...backupMachineKeys].filter(Boolean));
+  const excludedMachineKeys = [...new Set(Array.isArray(targets?.excludedMachineKeys) ? targets.excludedMachineKeys.map(String).filter(Boolean) : [])]
+    .filter((key) => !selected.has(key));
+  return { primaryMachineKey, backupMachineKeys, excludedMachineKeys };
+}
+
+export function getResearchTargetRole(targets, candidateKey) {
+  const normalized = normalizeResearchTargets(targets);
+  if (normalized.primaryMachineKey === candidateKey) return "primary";
+  if (normalized.backupMachineKeys.includes(candidateKey)) return "backup";
+  if (normalized.excludedMachineKeys.includes(candidateKey)) return "excluded";
+  return "candidate";
+}
+
+export function updateResearchTargets(targets, candidateKey, role) {
+  const key = String(candidateKey || "");
+  const current = normalizeResearchTargets(targets);
+  if (!key) return current;
+
+  const next = {
+    primaryMachineKey: current.primaryMachineKey === key ? "" : current.primaryMachineKey,
+    backupMachineKeys: current.backupMachineKeys.filter((item) => item !== key),
+    excludedMachineKeys: current.excludedMachineKeys.filter((item) => item !== key),
+  };
+  const currentRole = getResearchTargetRole(current, key);
+  if (currentRole === role) return next;
+  if (role === "primary") next.primaryMachineKey = key;
+  if (role === "backup" && next.backupMachineKeys.length < MAX_RESEARCH_BACKUPS) next.backupMachineKeys.push(key);
+  if (role === "excluded") next.excludedMachineKeys.push(key);
+  return normalizeResearchTargets(next);
 }
 
 function findMachineForArchive(archive, machines) {
