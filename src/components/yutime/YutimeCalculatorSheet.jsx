@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { localDateStr } from "../../constants";
 import { deriveSpecForMachine, getYutimeSelectionMachines } from "../../machineDB";
 import { MACHINE_SORT_OPTIONS, filterMachines, sortMachines } from "../../machineSort";
 import {
@@ -214,6 +215,8 @@ export default function YutimeCalculatorSheet({
   initialSession: suppliedInitialSession = null,
   initialCurrentLowSpins = 0,
   initialStart1K = null,
+  confirmLabel = "この条件で遊タイム狙いを開始",
+  onConfirm = null,
   onClose,
 }) {
   const machines = useMemo(() => getYutimeSelectionMachines(S?.customMachines), [S?.customMachines]);
@@ -294,21 +297,94 @@ export default function YutimeCalculatorSheet({
   const saveForSession = () => {
     const trigger = numberOrNull(triggerLowSpins);
     if (!(trigger > 0)) return;
-    S?.setYutimeSession?.({
-      machineName: machineName.trim(),
+    const normalizedMachineName = machineName.trim();
+    const normalizedCurrentLowSpins = Math.max(0, Math.round(numberOrNull(currentLowSpins) || 0));
+    const assumedStart1K = Math.max(0, numberOrNull(start1K) || 0);
+    const session = {
+      machineName: normalizedMachineName,
       triggerLowSpins: Math.round(trigger),
       durationSpins: Math.max(0, Math.round(numberOrNull(durationSpins) || 0)),
       expectedNetBalls: numberOrNull(expectedNetBalls),
-      assumedStart1K: Math.max(0, numberOrNull(start1K) || 0),
+      assumedStart1K,
       sourceUrl,
       verifiedAt: selectedMachine?.yutime?.verifiedAt || "",
       durationLabel: selectedMachine?.yutime?.durationLabel || "",
       benefit: selectedMachine?.yutime?.benefit || "",
       source: selectedMachine?.yutime ? source : "manual",
       targetingEnabled: true,
-    });
-    S?.setYutimeDecision?.(null);
-    // 台選びから開始した場合も、保存後は回転入力の記録ページへ直接移動する。
+    };
+    const now = new Date();
+    const decision = {
+      version: 2,
+      createdAt: now.toISOString(),
+      machineName: normalizedMachineName,
+      currentLowSpins: normalizedCurrentLowSpins,
+      assumedStart1K,
+      rateSource: "assumed",
+      playMode,
+      spec: session,
+      result,
+    };
+    const confirmation = {
+      machineName: normalizedMachineName,
+      selectedMachine,
+      machineSpec,
+      session,
+      decision,
+      currentLowSpins: normalizedCurrentLowSpins,
+      assumedStart1K,
+      playMode,
+    };
+
+    // 台移動から開いた場合は、現在の台を変更せず移動先の一時設定として返す。
+    if (typeof onConfirm === "function") {
+      onConfirm(confirmation);
+      onClose();
+      return;
+    }
+
+    S?.setYutimeSession?.(session);
+    S?.setYutimeDecision?.(decision);
+
+    // 台選びから開始した場合は開始行も同時に作る。
+    // これが無いと記録ページが「未開始」のままになり、遊タイムカードも表示されない。
+    if (!S?.sessionStarted) {
+      if (normalizedMachineName) S?.setMachineName?.(normalizedMachineName);
+      if (selectedMachine?.synthProb > 0) S?.setSynthDenom?.(selectedMachine.synthProb);
+      if (machineSpec?.spec1R != null) S?.setSpec1R?.(machineSpec.spec1R);
+      if (machineSpec?.specAvgRounds != null) S?.setSpecAvgRounds?.(machineSpec.specAvgRounds);
+      if (machineSpec?.specSapo != null) S?.setSpecSapo?.(machineSpec.specSapo);
+
+      const currentMochiBalls = Math.max(0, Number(S?.currentMochiBalls) || 0);
+      const currentChodama = Math.max(0, Number(S?.currentChodama) || 0);
+      S?.setStartRot?.(normalizedCurrentLowSpins);
+      S?.setStartGameCount?.(normalizedCurrentLowSpins);
+      S?.setPlayMode?.(playMode);
+      S?.setInitialMochiBalls?.(currentMochiBalls);
+      S?.setInitialChodama?.(currentChodama);
+      S?.setJpLog?.([]);
+      S?.setSesLog?.([{
+        type: "スタート",
+        time: now.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
+        rot: normalizedCurrentLowSpins,
+      }]);
+      S?.setRotRows?.([{
+        type: "start",
+        cumRot: normalizedCurrentLowSpins,
+        yutimeLowSpins: normalizedCurrentLowSpins,
+        mode: playMode,
+        mochiBalls: currentMochiBalls,
+        chodamaBalls: currentChodama,
+      }]);
+      S?.setSessionStartDate?.(localDateStr(now));
+      S?.setSessionStartedAt?.(now.toISOString());
+      S?.setSessionTargetEndAt?.("");
+      S?.setSessionClosingTime?.("");
+      S?.setSessionPlannedStart1K?.(assumedStart1K);
+      S?.setSessionStarted?.(true);
+    }
+
+    // 保存後は回転入力の記録ページへ直接移動する。
     // 記録内で詳細データなどを開いていた場合に備え、サブタブも「記録」へ戻す。
     S?.setSessionSubTab?.("rot");
     onClose();
@@ -420,7 +496,7 @@ export default function YutimeCalculatorSheet({
             <div style={{ marginTop: 8, fontSize: 10, color: "var(--sm-sub)", lineHeight: 1.5 }}>各項目は確認後に手動修正できます。{sourceUrl && <><br /><a href={sourceUrl} target="_blank" rel="noreferrer" style={{ color: "var(--sm-cyan)" }}>登録済みの根拠を確認</a></>}</div>
           </div>
           <Result result={result} mode={playMode} />
-          <button type="button" onClick={saveForSession} style={{ minHeight: 48, border: "none", borderRadius: 13, background: "linear-gradient(180deg, var(--sm-cyan-hi), var(--sm-cyan))", color: "var(--sm-on-cyan)", fontSize: 14, fontWeight: 900 }}>この条件で遊タイム狙いを開始</button>
+          <button type="button" onClick={saveForSession} style={{ minHeight: 48, border: "none", borderRadius: 13, background: "linear-gradient(180deg, var(--sm-cyan-hi), var(--sm-cyan))", color: "var(--sm-on-cyan)", fontSize: 14, fontWeight: 900 }}>{confirmLabel}</button>
           {isCurrentTarget && (
             <button type="button" onClick={stopTargeting} style={{ minHeight: 44, borderRadius: 13, border: "1px solid var(--sm-line-hi)", background: "var(--sm-card)", color: "var(--sm-sub-hi)", fontSize: 12, fontWeight: 800 }}>遊タイム狙いを解除</button>
           )}
