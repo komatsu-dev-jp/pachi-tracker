@@ -10,6 +10,8 @@
 // 移植元はゼロ線・グリッド間隔を「画像の最初のグラフ帯」だけから推定し全行に流用していたが、
 // 先頭の帯が切れたグラフや黒帯だと、その画像の全台の差玉が数倍に化けるズレが起きていた。
 // このため較正を「行ごと」に行い、あり得ない較正値は既定値へ戻す妥当性チェックを追加した。
+// また、スクロール撮影で画像の上下端に切れて写った行は、差玉がでたらめになるうえ
+// 台番号の割り当てを後ろへズラすため、行として扱わず除外する。
 // 較正・差玉算出の数式と閾値そのものは移植元から変更していない。
 
 // ── ランク定義（21段階・移植元の min 値と rank 名は変更禁止） ──
@@ -93,7 +95,16 @@ export function runAnalysis(data, w, h) {
     if (merged.length && s - merged[merged.length-1][1] < 25) merged[merged.length-1][1] = e;
     else merged.push([s, e]);
   }
-  const graphRows = merged.filter(([s,e]) => e-s >= 60);
+  const allRows = merged.filter(([s,e]) => e-s >= 60);
+  // スクロール撮影で画像の上下端に切れて写った行を除外する。
+  // 完全な行の高さ（中央値）より明らかに低く、画像の端に接している行が対象。
+  const heights = allRows.map(([s, e]) => e - s + 1).sort((a, b) => a - b);
+  const medH = heights.length ? heights[(heights.length / 2) | 0] : 0;
+  const graphRows = allRows.filter(([s, e]) => {
+    const cut = (s <= 2 || e >= h - 3) && (e - s + 1) < medH * 0.9;
+    if (cut) log(`上下端で切れた行を除外 (y=${s}..${e})`);
+    return !cut;
+  });
   log(`${graphRows.length}行 (${graphRows.length*2}台)`);
   if (!graphRows.length) return { results: [], logs, error: "グラフ行なし" };
 

@@ -12,6 +12,7 @@ import {
   islandToNumbers,
   buildSegmentsNumbers,
   filterGraphSlots,
+  dropOverlapSlots,
   pruneScans,
 } from "../deltaSelectors.js";
 import { getRank, RANKS, runAnalysis } from "../deltaEngine.js";
@@ -244,7 +245,64 @@ test("filterGraphSlots: 除外後の割り当てで台番号がズレない", ()
   ]);
 });
 
+// ──────────── dropOverlapSlots ────────────
+
+test("dropOverlapSlots: 前画像の末尾と一致する先頭行を重複として取り除く", () => {
+  const prev = [
+    { val: 100, px: 50 }, { val: 200, px: 60 },
+    { val: 300, px: 70 }, { val: 400, px: 80 }, // 末尾の行（重なって次画像にも写った）
+  ];
+  const next = [
+    { val: 300, px: 70 }, { val: 400, px: 80 }, // 重複行
+    { val: 500, px: 90 }, { val: 600, px: 95 },
+  ];
+  assert.deepStrictEqual(dropOverlapSlots(prev, next).map((s) => s.val), [500, 600]);
+});
+
+test("dropOverlapSlots: 2行分の重なりも取り除く・一致しなければそのまま", () => {
+  const prev = [
+    { val: 100, px: 50 }, { val: 200, px: 60 },
+    { val: 300, px: 70 }, { val: 400, px: 80 },
+  ];
+  const next2 = [
+    { val: 100, px: 50 }, { val: 200, px: 60 },
+    { val: 300, px: 70 }, { val: 400, px: 80 },
+    { val: 500, px: 90 }, { val: 600, px: 95 },
+  ];
+  assert.deepStrictEqual(dropOverlapSlots(prev, next2).map((s) => s.val), [500, 600]);
+  const noMatch = [{ val: 999, px: 11 }, { val: 888, px: 12 }];
+  assert.strictEqual(dropOverlapSlots(prev, noMatch).length, 2);
+});
+
+test("dropOverlapSlots: 全て空（px=0）の行の一致は偶然として取り除かない", () => {
+  const prev = [{ val: 0, px: 0 }, { val: 0, px: 0 }];
+  const next = [{ val: 0, px: 0 }, { val: 0, px: 0 }, { val: 500, px: 90 }, { val: 600, px: 95 }];
+  assert.strictEqual(dropOverlapSlots(prev, next).length, 4);
+});
+
 // ──────────── runAnalysis（行ごと較正） ────────────
+
+test("runAnalysis: 画像の上下端で切れた行は除外される（台番号ズレ防止）", () => {
+  // 上端に切れた行（下側スライバー・黄色いラベルだけが写った状態を模擬）＋正常な行
+  const w = 200, h = 600;
+  const d = new Uint8ClampedArray(w * h * 4).fill(255);
+  const set = (x, y, r, g, b) => { const i = (y * w + x) * 4; d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = 255; };
+  const fillRow = (y, r, g, b) => { for (let x = 0; x < w; x++) set(x, y, r, g, b); };
+  // 切れた行: y=0..79（画像上端に接する・完全な行より低い）に黄色い画素あり
+  for (let y = 0; y <= 79; y++) fillRow(y, 20, 20, 20);
+  for (let lx = 10; lx <= 60; lx++) set(105 + lx, 40, 255, 255, 0);
+  // 正常な行: y=200..430（グリッド線・ゼロ線・+10,000の黄色い線）
+  for (let y = 200; y <= 430; y++) fillRow(y, 20, 20, 20);
+  for (const ly of [16, 49, 82, 148, 181, 214]) fillRow(200 + ly, 90, 90, 90);
+  fillRow(200 + 115, 200, 200, 200);
+  for (let lx = 10; lx <= 60; lx++) set(105 + lx, 200 + 82, 255, 255, 0);
+
+  const { results } = runAnalysis(d, w, h);
+  // 切れた行はスロット自体が生成されず、正常な行の2列のみ
+  assert.strictEqual(results.length, 2);
+  assert.strictEqual(results[0].px, 0);      // 左列は空
+  assert.strictEqual(results[1].val, 10000); // 右列は+10,000
+});
 
 test("runAnalysis: 崩れた行が混ざっても他の行の差玉が狂わない（行ごと較正）", () => {
   // 合成画像: 行A=グリッド線の無い暗帯（黒帯誤検出を模擬）、行B=正常なグラフ帯。
