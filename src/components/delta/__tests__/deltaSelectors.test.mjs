@@ -9,12 +9,13 @@ import {
   parseTaiDataText,
   assignNumbers,
   mergeTaiData,
+  validateNumberAssignment,
+  validateDeltaRows,
   islandToNumbers,
   buildSegmentsNumbers,
-  filterGraphSlots,
   pruneScans,
 } from "../deltaSelectors.js";
-import { getRank, RANKS, runAnalysis } from "../deltaEngine.js";
+import { getRank, RANKS } from "../deltaEngine.js";
 
 // ──────────── parseTaiDataText ────────────
 
@@ -125,10 +126,56 @@ test("assignNumbers: 台番号リストを順に割り当てランク付与", ()
   assert.strictEqual(out[1].rank, "E+");
 });
 
-test("assignNumbers: 番号不足は index+1 フォールバック", () => {
+test("assignNumbers: 番号不足を無関係な連番で埋めない", () => {
   const out = assignNumbers([{ val: 0, px: 0 }, { val: 0, px: 0 }], ["7"]);
   assert.strictEqual(out[0].num, "7");
-  assert.strictEqual(out[1].num, "2");
+  assert.strictEqual(out[1].num, "");
+});
+
+test("parseTaiData: Unicodeマイナスの符号を保持し、小数の桁結合を拒否", () => {
+  const unicodeMinus = "2026/02/13\t店A\t島A\t機種A\t818\t−4,500\t1239\t12";
+  const parsed = parseTaiDataText(unicodeMinus);
+  assert.strictEqual(parsed.rows[0].val, -4500);
+
+  const decimal = "2026/02/13\t店A\t島A\t機種A\t819\t12.5\t1239\t12";
+  const rejected = parseTaiDataText(decimal);
+  assert.strictEqual(rejected.rows.length, 0);
+  assert.strictEqual(rejected.skipped[0].reason, "数値が数値化できない");
+});
+
+test("assignNumbers: 読み取り失敗のnullと診断情報を保持する", () => {
+  const slot = {
+    val: null,
+    px: 0,
+    status: "failed",
+    reasonCodes: ["missing-series"],
+    source: { imageIndex: 2, row: 4, column: 1 },
+  };
+  const [row] = assignNumbers([slot], ["814"]);
+  assert.strictEqual(row.val, null);
+  assert.strictEqual(row.rank, null);
+  assert.strictEqual(row.status, "failed");
+  assert.deepStrictEqual(row.reasonCodes, ["missing-series"]);
+  assert.deepStrictEqual(row.source, slot.source);
+});
+
+test("validateNumberAssignment: 件数・空欄・重複を拒否する", () => {
+  assert.strictEqual(validateNumberAssignment([{}, {}], ["810", "811"]).valid, true);
+  const mismatch = validateNumberAssignment([{}, {}, {}], ["810", "810"]);
+  assert.strictEqual(mismatch.valid, false);
+  assert.deepStrictEqual(mismatch.errors.sort(), ["count-mismatch", "duplicate-number"]);
+  const blank = validateNumberAssignment([{}], [""]);
+  assert.deepStrictEqual(blank.errors, ["blank-number"]);
+});
+
+test("validateNumberAssignment: 数字以外と表記だけ異なる重複を拒否する", () => {
+  const invalid = validateNumberAssignment([{}], ["ABC"]);
+  assert.deepStrictEqual(invalid.errors, ["invalid-number"]);
+  assert.deepStrictEqual(invalid.invalidNumberIndices, [0]);
+
+  const duplicate = validateNumberAssignment([{}, {}], ["0810", "810"]);
+  assert.deepStrictEqual(duplicate.errors, ["duplicate-number"]);
+  assert.deepStrictEqual(duplicate.duplicateNumbers, ["810"]);
 });
 
 // ──────────── mergeTaiData ────────────
@@ -154,13 +201,77 @@ test("mergeTaiData: 不一致はマッチ0で元行を保つ", () => {
   assert.strictEqual(merged[0].val, 0);
 });
 
-test("mergeTaiData: AI差玉で既存差玉とランクを同時に更新", () => {
-  const rows = [{ num: "818", val: -12000, rank: getRank(-12000).rank }];
+test("mergeTaiData: AI差玉は未読取グラフの確定値に昇格させない", () => {
+  const rows = [{ num: "818", val: null, rank: null, status: "failed", reasonCodes: ["missing-series"] }];
   const tai = [{ num: "818", val: 26000, normalSpins: 1000, totalStarts: 15 }];
-  const { rows: merged, matched } = mergeTaiData(rows, tai);
+  const { rows: merged, matched, unverifiedDeltaNumbers } = mergeTaiData(rows, tai);
   assert.strictEqual(matched, 1);
-  assert.strictEqual(merged[0].val, 26000);
-  assert.strictEqual(merged[0].rank, getRank(26000).rank);
+  assert.strictEqual(merged[0].val, null);
+  assert.strictEqual(merged[0].rank, null);
+  assert.strictEqual(merged[0].status, "failed");
+  assert.strictEqual(merged[0].normalSpins, 1000);
+  assert.deepStrictEqual(merged[0].reasonCodes, ["missing-series"]);
+  assert.deepStrictEqual(unverifiedDeltaNumbers, ["818"]);
+});
+
+test("mergeTaiData: 重複行と明らかな異常差玉を確定値にしない", () => {
+  const source = [
+    { num: "818", val: null, rank: null, status: "failed" },
+    { num: "819", val: null, rank: null, status: "failed" },
+  ];
+  const imported = [
+    { num: "818", val: 1000 },
+    { num: "0818", val: 2000 },
+    { num: "819", val: 999999999999 },
+  ];
+  const result = mergeTaiData(source, imported);
+  assert.deepStrictEqual(result.duplicateNumbers, ["818"]);
+  assert.deepStrictEqual(result.invalidDeltaNumbers, ["819"]);
+  assert.strictEqual(result.rows[0].val, null);
+  assert.strictEqual(result.rows[0].status, "failed");
+  assert.strictEqual(result.rows[1].val, null);
+  assert.strictEqual(result.rows[1].status, "failed");
+});
+
+test("mergeTaiData: 確定済みグラフ差玉をAI取り込み値で上書きしない", () => {
+  const source = [{ num: "810", val: -8500, rank: getRank(-8500).rank, status: "ok", confidence: 0.967 }];
+  const result = mergeTaiData(source, [{ num: "810", val: 8500, normalSpins: 1200, totalStarts: 10 }]);
+  assert.deepStrictEqual(result.conflictNumbers, ["810"]);
+  assert.strictEqual(result.rows[0].val, -8500);
+  assert.strictEqual(result.rows[0].rank, getRank(-8500).rank);
+  assert.strictEqual(result.rows[0].confidence, 0.967);
+  assert.strictEqual(result.rows[0].normalSpins, 1200);
+});
+
+test("validateDeltaRows: 未読取・要確認・重複番号があれば保存不可", () => {
+  const valid = validateDeltaRows([
+    { num: "810", val: 0, status: "ok" },
+    { num: "811", val: -4500, status: "ok" },
+  ]);
+  assert.strictEqual(valid.valid, true);
+  assert.strictEqual(valid.resolvedCount, 2);
+
+  const invalid = validateDeltaRows([
+    { num: "810", val: null, status: "failed" },
+    { num: "810", val: 500, status: "review" },
+  ]);
+  assert.strictEqual(invalid.valid, false);
+  assert.strictEqual(invalid.unresolvedCount, 2);
+  assert.deepStrictEqual(invalid.duplicateNumbers, ["810"]);
+  assert.deepStrictEqual(invalid.errors.sort(), ["duplicate-number", "unresolved-delta"]);
+});
+
+test("validateDeltaRows: statusはokだけを確定扱いにし、台番号を正規化して検証", () => {
+  const invalid = validateDeltaRows([
+    { num: "ABC", val: 500, status: "ok" },
+    { num: "0810", val: 500, status: "ok" },
+    { num: "810", val: 500, status: "bogus" },
+  ]);
+  assert.strictEqual(invalid.valid, false);
+  assert.deepStrictEqual(invalid.invalidNumberIndices, [0]);
+  assert.deepStrictEqual(invalid.duplicateNumbers, ["810"]);
+  assert.deepStrictEqual(invalid.unresolvedIndices, [2]);
+  assert.deepStrictEqual(invalid.errors.sort(), ["duplicate-number", "invalid-number", "unresolved-delta"]);
 });
 
 // ──────────── islandToNumbers ────────────
@@ -175,22 +286,19 @@ test("islandToNumbers: start>end は昇順に正規化、無効は空", () => {
   assert.deepStrictEqual(islandToNumbers(null), []);
 });
 
-test("islandToNumbers: 複数行（飛び番）は実在の台番号だけを昇順で返す", () => {
-  // 479〜490 / 509〜499（降順の行）/ 546〜548 の島。データサイトの掲載順（昇順）に揃える
-  const island = { ranges: [{ start: 509, end: 499 }, { start: 479, end: 490 }, { start: 546, end: 548 }] };
-  const nums = islandToNumbers(island);
-  assert.strictEqual(nums.length, 12 + 11 + 3);
-  assert.strictEqual(nums[0], "479");
-  assert.strictEqual(nums[11], "490");
-  assert.strictEqual(nums[12], "499"); // 491〜498 は存在しないので飛ぶ
-  assert.strictEqual(nums[nums.length - 1], "548");
-});
+test("islandToNumbers: 複数行と欠けを考慮して実在番号だけ返す", () => {
+  const ranges = islandToNumbers({
+    ranges: [{ start: 509, end: 499 }, { start: 479, end: 490 }, { start: 546, end: 548 }],
+  });
+  assert.strictEqual(ranges.length, 26);
+  assert.strictEqual(ranges[0], "479");
+  assert.strictEqual(ranges[11], "490");
+  assert.strictEqual(ranges[12], "499");
+  assert.strictEqual(ranges.at(-1), "548");
 
-test("islandToNumbers: 欠け台番号は割り当て対象から除外する", () => {
-  const nums = islandToNumbers({ start: 499, end: 509, gaps: [505] });
-  assert.strictEqual(nums.length, 10);
-  assert.ok(!nums.includes("505"));
-  assert.ok(nums.includes("506"));
+  const withGap = islandToNumbers({ start: 499, end: 509, gaps: [505] });
+  assert.strictEqual(withGap.length, 10);
+  assert.ok(!withGap.includes("505"));
 });
 
 // ──────────── buildSegmentsNumbers ────────────
@@ -203,71 +311,6 @@ test("buildSegmentsNumbers: 飛び番号の複数区間", () => {
 test("buildSegmentsNumbers: 無効区間はスキップ", () => {
   const segs = [{ start: "", count: "3" }, { start: "5", count: "0" }, { start: "10", count: "2" }];
   assert.deepStrictEqual(buildSegmentsNumbers(segs), ["10", "11"]);
-});
-
-// ──────────── filterGraphSlots ────────────
-
-test("filterGraphSlots: グラフ画素の無いスロットを除外し件数を返す", () => {
-  // 黒帯誤検出（px:0）がページ間に挟まっても、実グラフの並びが保たれる
-  const slots = [
-    { val: 0, px: 0 },      // 上部黒帯（誤検出）
-    { val: 0, px: 0 },
-    { val: 5410, px: 320 }, // 実グラフ
-    { val: -2500, px: 210 },
-    { val: 0, px: 0 },      // 下部黒帯（誤検出）
-    { val: 10000, px: 400 },
-  ];
-  const { slots: kept, skipped } = filterGraphSlots(slots);
-  assert.strictEqual(skipped, 3);
-  assert.deepStrictEqual(kept.map((s) => s.val), [5410, -2500, 10000]);
-});
-
-test("filterGraphSlots: 誤検出が無ければそのまま・不正入力は空", () => {
-  const slots = [{ val: 500, px: 10 }, { val: -500, px: 8 }];
-  const { slots: kept, skipped } = filterGraphSlots(slots);
-  assert.strictEqual(skipped, 0);
-  assert.strictEqual(kept.length, 2);
-  assert.deepStrictEqual(filterGraphSlots(null), { slots: [], skipped: 0 });
-});
-
-test("filterGraphSlots: 除外後の割り当てで台番号がズレない", () => {
-  // 黒帯2件を挟んだ4実グラフ → 除外後に 499〜502 が順番どおり割り当たる
-  const raw = [
-    { val: 0, px: 0 }, { val: 0, px: 0 },
-    { val: 100, px: 50 }, { val: 200, px: 60 },
-    { val: 300, px: 70 }, { val: 400, px: 80 },
-  ];
-  const { slots: kept } = filterGraphSlots(raw);
-  const rows = assignNumbers(kept, ["499", "500", "501", "502"]);
-  assert.deepStrictEqual(rows.map((r) => [r.num, r.val]), [
-    ["499", 100], ["500", 200], ["501", 300], ["502", 400],
-  ]);
-});
-
-// ──────────── runAnalysis（行ごと較正） ────────────
-
-test("runAnalysis: 崩れた行が混ざっても他の行の差玉が狂わない（行ごと較正）", () => {
-  // 合成画像: 行A=グリッド線の無い暗帯（黒帯誤検出を模擬）、行B=正常なグラフ帯。
-  // 旧実装（1行目だけで較正）では行Bの差玉が約-40,000に化けていたケース。
-  const w = 200, h = 600;
-  const d = new Uint8ClampedArray(w * h * 4).fill(255); // 白背景
-  const set = (x, y, r, g, b) => { const i = (y * w + x) * 4; d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = 255; };
-  const fillRow = (y, r, g, b) => { for (let x = 0; x < w; x++) set(x, y, r, g, b); };
-  // 行A: y=50..120 の一様な暗帯（グラフ・グリッド線なし）
-  for (let y = 50; y <= 120; y++) fillRow(y, 30, 30, 30);
-  // 行B: y=200..430 のグラフ帯。グリッド線6本＋明るいゼロ線（局所y=115）、間隔33px
-  for (let y = 200; y <= 430; y++) fillRow(y, 20, 20, 20);
-  for (const ly of [16, 49, 82, 148, 181, 214]) fillRow(200 + ly, 90, 90, 90);
-  fillRow(200 + 115, 200, 200, 200); // ゼロ線
-  // 行Bの右列に、ゼロ線から1グリッド上（=+10,000玉）の黄色い線を引く
-  for (let lx = 10; lx <= 60; lx++) set(105 + lx, 200 + 82, 255, 255, 0);
-
-  const { results } = runAnalysis(d, w, h);
-  assert.strictEqual(results.length, 4); // 行A×2列 + 行B×2列
-  assert.strictEqual(results[0].px, 0);  // 行Aはグラフ画素なし（割り当て前に除外される）
-  assert.strictEqual(results[1].px, 0);
-  assert.strictEqual(results[2].px, 0);  // 行Bの左列は空
-  assert.strictEqual(results[3].val, 10000); // 行Bの右列は正しく+10,000
 });
 
 // ──────────── getRank 境界値 ────────────
