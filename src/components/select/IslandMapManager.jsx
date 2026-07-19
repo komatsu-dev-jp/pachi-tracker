@@ -16,6 +16,7 @@ import {
   islandCount,
   islandLayoutCells,
   islandLayoutColumns,
+  islandLayoutRows,
   islandRanges,
   addIsland,
   removeIsland,
@@ -351,6 +352,19 @@ function GapCell({ num, onClick }) {
   return <div style={style}>{label}</div>;
 }
 
+// 行モードのレイアウト表示。全行を1つの横スクロール内に重ね、列位置を揃える。
+function RowsGrid({ rows, cols, renderCell }) {
+  return (
+    <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none", display: "grid", gap: 5 }}>
+      {rows.map((row, i) => (
+        <div key={i} style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(44px, 1fr))`, gap: 5 }}>
+          {row.map(renderCell)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // レイアウトセルのグリッド（列数指定時は横スクロール可能なプレビュー枠内で表示）。
 function CellGrid({ cols, children }) {
   if (cols) {
@@ -373,6 +387,7 @@ function CellGrid({ cols, children }) {
 function ListCard({ island, index, expanded, onToggle, onEdit }) {
   const count = islandCount(island);
   const color = tagColor(index);
+  const rowsCells = expanded && island.ranges ? islandLayoutRows(island, MAX_CELLS) : null;
   const cells = expanded ? islandLayoutCells(island, MAX_CELLS) : [];
   const shownMachines = cells.filter((c) => !c.gap).length;
   const gridCols = cells.length > 0 ? islandLayoutColumns(island, cells.length) : null;
@@ -415,7 +430,12 @@ function ListCard({ island, index, expanded, onToggle, onEdit }) {
       {expanded && (
         <div style={{ padding: "2px 14px 14px" }}>
           <div style={{ fontSize: 10, color: P.sub, fontWeight: 700, margin: "4px 0 8px" }}>台番号一覧 ・ レイアウトプレビュー</div>
-          {cells.length > 0 ? (
+          {rowsCells ? (
+            <RowsGrid rows={rowsCells} cols={gridCols}
+              renderCell={(c) => c.gap
+                ? <GapCell key={c.num} num={c.num} />
+                : <NumberCell key={c.num} num={c.num} color={color} />} />
+          ) : cells.length > 0 ? (
             <CellGrid cols={gridCols}>
               {cells.map((c) => c.gap
                 ? <GapCell key={c.num} num={c.num} />
@@ -586,6 +606,13 @@ function EditField({ label, value, onCommit, placeholder, ariaLabel, mono }) {
   );
 }
 
+// 昇順/降順入れ替えボタン（左端と右端の値を交換する）。
+const swapBtnStyle = {
+  minHeight: 46, minWidth: 46, borderRadius: 12, border: `1px solid ${P.lineHi}`,
+  background: P.cardHi, color: P.text, fontSize: 16, fontWeight: 900,
+  cursor: "pointer", WebkitTapHighlightColor: "transparent",
+};
+
 function ToolBtn({ label, onClick, disabled, danger }) {
   return (
     <button className="b" onClick={onClick} disabled={disabled} aria-label={label}
@@ -612,7 +639,8 @@ function initialRows(island) {
   return 2; // 既定は対面2行（島を上から見た並び）
 }
 
-// 下書き中の追加連番範囲（文字列のまま保持）から、有効な数値範囲だけを取り出す。
+// 下書き中の追加行（文字列のまま保持）から、有効な数値範囲だけを取り出す。
+// 左端＞右端の行は降順としてそのまま保つ。
 function validExtraRanges(extra) {
   const out = [];
   for (const r of extra) {
@@ -620,10 +648,18 @@ function validExtraRanges(extra) {
     const eRaw = String(r.end ?? "").trim();
     if (sRaw === "" && eRaw === "") continue;
     const s = Math.max(0, Math.round(Number(sRaw) || 0));
-    const e = Math.max(s, Math.round(Number(eRaw === "" ? sRaw : eRaw) || s));
+    const e = eRaw === "" ? s : Math.max(0, Math.round(Number(eRaw) || 0));
     out.push({ start: s, end: e });
   }
   return out;
+}
+
+// 行の右端を delta 台ぶん、その行の方向へ伸縮させた新しい右端を返す。
+function extendRange(s, e, delta) {
+  const dir = s <= e ? 1 : -1;
+  const ne = e + dir * delta;
+  if (dir > 0) return Math.max(s, ne);
+  return Math.min(s, Math.max(0, ne));
 }
 
 function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown, onRemove }) {
@@ -638,30 +674,39 @@ function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown
   });
 
   const startN = Math.max(0, Math.round(Number(draft.start) || 0));
-  const endN = Math.max(startN, Math.round(Number(draft.end) || startN));
+  const endN = Math.max(0, Math.round(Number(String(draft.end).trim() === "" ? startN : draft.end) || 0));
   const rows = Math.max(LAYOUT_ROWS_MIN, Math.min(LAYOUT_ROWS_MAX, Math.round(Number(draft.rows) || 2)));
   const color = tagColor(index);
 
-  // 全連番範囲（先頭範囲＋追加範囲）。プレビューは入力順につなげて表示する。
+  // 全行（1行目＋追加行）。行の並び＝入力順、左端＞右端の行は降順。
   const segsAll = [{ start: startN, end: endN }, ...validExtraRanges(draft.extra)];
-  const count = segsAll.reduce((a, seg) => a + (seg.end - seg.start + 1), 0);
+  const rowMode = draft.extra.length > 0; // 行を追加している場合は行ごとのマップ表示
+  const count = segsAll.reduce((a, seg) => a + Math.abs(seg.end - seg.start) + 1, 0);
 
   // プレビュー用セル（上から見た島マップ）。セル位置は台番号で固定され、
   // 欠けにしても他のセルは一切動かない（タップでその場トグル）。
-  const inRanges = (n) => segsAll.some((seg) => n >= seg.start && n <= seg.end);
-  const gaps = draft.gaps.filter(inRanges); // 連番範囲内の欠け台番号のみ有効
+  const inRanges = (n) => segsAll.some((seg) =>
+    n >= Math.min(seg.start, seg.end) && n <= Math.max(seg.start, seg.end));
+  const gaps = draft.gaps.filter(inRanges); // 行の範囲内の欠け台番号のみ有効
   const gapSet = new Set(gaps);
   const machines = count - gaps.length; // 実台数（欠けを除く）
   const totalCells = Math.min(count, MAX_CELLS);
-  const cols = Math.max(1, Math.ceil(totalCells / rows)); // 横方向のセル数（範囲から自動算出）
-  const cells = [];
-  for (const seg of segsAll) {
-    for (let n = seg.start; n <= seg.end && cells.length < totalCells; n++) {
-      cells.push(gapSet.has(n) ? { num: n, gap: true } : { num: n });
+  const cols = rowMode
+    ? Math.max(1, ...segsAll.map((seg) => Math.abs(seg.end - seg.start) + 1)) // 最長の行に揃える
+    : Math.max(1, Math.ceil(totalCells / rows)); // 行数指定から自動算出
+  let usedCells = 0;
+  const previewRows = segsAll.map((seg) => {
+    const dir = seg.start <= seg.end ? 1 : -1;
+    const row = [];
+    for (let n = seg.start; (dir > 0 ? n <= seg.end : n >= seg.end) && usedCells < MAX_CELLS; n += dir) {
+      usedCells++;
+      row.push(gapSet.has(n) ? { num: n, gap: true } : { num: n });
     }
-  }
+    return row;
+  });
+  const cells = previewRows.flat();
 
-  // 台追加/削除は最後の連番範囲の終了番号を増減する（追加範囲が無ければ先頭範囲）。
+  // 台追加/削除は最後の行の右端を、その行の方向へ増減する。
   const bumpEnd = (delta) => setDraft((d) => {
     const extra = [...d.extra];
     for (let i = extra.length - 1; i >= 0; i--) {
@@ -669,14 +714,39 @@ function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown
       if (sRaw === "") continue;
       const s = Math.max(0, Math.round(Number(sRaw) || 0));
       const eRaw = String(extra[i].end ?? "").trim();
-      const e = Math.max(s, Math.round(Number(eRaw === "" ? sRaw : eRaw) || s));
-      extra[i] = { ...extra[i], end: Math.max(s, e + delta) };
+      const e = eRaw === "" ? s : Math.max(0, Math.round(Number(eRaw) || 0));
+      extra[i] = { ...extra[i], end: extendRange(s, e, delta) };
       return { ...d, extra };
     }
     const s = Math.max(0, Math.round(Number(d.start) || 0));
-    const e = Math.max(s, Math.round(Number(d.end) || s) + delta);
-    return { ...d, end: e };
+    const e = Math.max(0, Math.round(Number(String(d.end).trim() === "" ? s : d.end) || 0));
+    return { ...d, end: extendRange(s, e, delta) };
   });
+  // 列追加: 行モードでは全行の右端を1台ずつ伸ばし、単一範囲では行数ぶん台を足す。
+  const addColumn = () => {
+    if (draft.extra.length === 0) {
+      bumpEnd(rows);
+      return;
+    }
+    setDraft((d) => {
+      const extra = d.extra.map((r) => {
+        const sRaw = String(r.start ?? "").trim();
+        if (sRaw === "") return r;
+        const s = Math.max(0, Math.round(Number(sRaw) || 0));
+        const eRaw = String(r.end ?? "").trim();
+        const e = eRaw === "" ? s : Math.max(0, Math.round(Number(eRaw) || 0));
+        return { ...r, end: extendRange(s, e, 1) };
+      });
+      const s = Math.max(0, Math.round(Number(d.start) || 0));
+      const e = Math.max(0, Math.round(Number(String(d.end).trim() === "" ? s : d.end) || 0));
+      return { ...d, end: extendRange(s, e, 1), extra };
+    });
+  };
+  // 昇順/降順の入れ替え（左端と右端の値を交換。間違えてもワンタップで戻せる）。
+  const swapPrimary = () => setDraft((d) => ({ ...d, start: d.end, end: d.start }));
+  const swapExtra = (i) => setDraft((d) => ({
+    ...d, extra: d.extra.map((r, j) => (j === i ? { ...r, start: r.end, end: r.start } : r)),
+  }));
   const setRows = (v) => setDraft((d) => ({
     ...d, rows: Math.max(LAYOUT_ROWS_MIN, Math.min(LAYOUT_ROWS_MAX, Math.round(Number(v) || 2))),
   }));
@@ -719,23 +789,25 @@ function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown
               <EditField label="島名" value={draft.name} placeholder="例：1島" onCommit={(v) => setDraft((d) => ({ ...d, name: v }))} />
               <EditField label="機種名" value={draft.machineName} placeholder="例：東京喰種" onCommit={(v) => setDraft((d) => ({ ...d, machineName: v }))} />
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr auto", gap: 10, alignItems: "end" }}>
-              <EditField label="開始番号" value={draft.start} mono onCommit={(v) => setDraft((d) => ({ ...d, start: v }))} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr auto auto", gap: 8, alignItems: "end" }}>
+              <EditField key={`ps-${draft.start}`} label={rowMode ? "左端（1行目）" : "開始番号"} value={draft.start} mono onCommit={(v) => setDraft((d) => ({ ...d, start: v }))} />
               <span style={{ fontSize: 15, color: P.sub, fontWeight: 800, paddingBottom: 12 }}>〜</span>
-              <EditField label="終了番号" value={draft.end} mono onCommit={(v) => setDraft((d) => ({ ...d, end: v }))} />
+              <EditField key={`pe-${draft.end}`} label={rowMode ? "右端" : "終了番号"} value={draft.end} mono onCommit={(v) => setDraft((d) => ({ ...d, end: v }))} />
+              <button className="b" onClick={swapPrimary} aria-label="1行目の左右を入れ替え" style={swapBtnStyle}>⇅</button>
               <div style={{ textAlign: "center", paddingBottom: 4 }}>
                 <div style={{ fontSize: 10.5, color: P.sub, fontWeight: 700, marginBottom: 5 }}>台数</div>
                 <div style={{ minHeight: 46, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 900, color: P.cyan, fontFamily: MONO }}>{machines}</div>
               </div>
             </div>
 
-            {/* 追加の連番範囲（連番が途中で切れる島用。例: 479〜490 の後に 499〜509 が続く） */}
+            {/* 追加の行（対面の裏側・番号が飛ぶ島用）。左端＞右端なら降順の行になる */}
             {draft.extra.map((r, i) => (
-              <div key={`extra-${i}-${draft.extra.length}`} style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr auto", gap: 10, alignItems: "end" }}>
-                <EditField label={`開始番号（連番${i + 2}）`} value={r.start} placeholder="例：546" mono onCommit={(v) => setExtra(i, { start: v })} />
+              <div key={`extra-${i}-${draft.extra.length}-${r.start}-${r.end}`} style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr auto auto", gap: 8, alignItems: "end" }}>
+                <EditField label={`左端（${i + 2}行目）`} value={r.start} placeholder="例：546" mono onCommit={(v) => setExtra(i, { start: v })} />
                 <span style={{ fontSize: 15, color: P.sub, fontWeight: 800, paddingBottom: 12 }}>〜</span>
-                <EditField label="終了番号" value={r.end} placeholder="例：574" mono onCommit={(v) => setExtra(i, { end: v })} />
-                <button className="b" onClick={() => removeExtra(i)} aria-label={`連番${i + 2}を削除`}
+                <EditField label="右端" value={r.end} placeholder="例：574" mono onCommit={(v) => setExtra(i, { end: v })} />
+                <button className="b" onClick={() => swapExtra(i)} aria-label={`${i + 2}行目の左右を入れ替え`} style={swapBtnStyle}>⇅</button>
+                <button className="b" onClick={() => removeExtra(i)} aria-label={`${i + 2}行目を削除`}
                   style={{
                     minHeight: 46, minWidth: 46, borderRadius: 12, border: "1px solid rgba(239,68,68,0.4)",
                     background: "rgba(239,68,68,0.12)", color: P.red, fontSize: 16, fontWeight: 900,
@@ -745,10 +817,10 @@ function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown
                 </button>
               </div>
             ))}
-            <ToolBtn label="＋ 連番範囲を追加（番号が飛ぶ島）" onClick={addExtra} />
-            {draft.extra.length > 0 && (
+            <ToolBtn label="＋ 行を追加（対面・番号が飛ぶ島）" onClick={addExtra} />
+            {rowMode && (
               <div style={{ fontSize: 10, color: P.sub, lineHeight: 1.6, marginTop: -4 }}>
-                ※ 連番が途中で切れる島（例: 479〜490 → 499〜509 → 546〜574）は範囲を分けて登録します。レイアウトは切れ目をまたいで1つの島としてつながります。
+                ※ 1行＝上から見た島の並び1本分。各行の左端・右端に角台の番号を入れると、間を自動で埋めてマップを作ります。左端＞右端なら降順（例: 509〜499）。「⇅」で昇順/降順を入れ替えられます。
               </div>
             )}
           </div>
@@ -760,31 +832,37 @@ function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <ToolBtn label="＋ 台追加" onClick={() => bumpEnd(1)} />
               <ToolBtn label="− 台削除" onClick={() => bumpEnd(-1)} disabled={count <= 0} />
-              <ToolBtn label="＋ 列追加" onClick={() => bumpEnd(rows)} />
-              {/* 行数コントロール（−/＋、数値は直接入力可。対面なら2行） */}
-              <div style={{ display: "flex", alignItems: "stretch", gap: 6 }}>
-                <ToolBtn label="−" onClick={() => setRows(rows - 1)} disabled={rows <= LAYOUT_ROWS_MIN} />
-                <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                  <input
-                    key={`rows-${rows}`}
-                    type="number"
-                    inputMode="numeric"
-                    min={LAYOUT_ROWS_MIN}
-                    max={LAYOUT_ROWS_MAX}
-                    defaultValue={rows}
-                    aria-label="行数"
-                    onFocus={(e) => { e.target.style.borderColor = P.cyan; }}
-                    onBlur={(e) => { e.target.style.borderColor = P.lineHi; setRows(e.target.value); }}
-                    style={{
-                      width: "100%", boxSizing: "border-box", minHeight: 30, background: P.bg,
-                      border: `1px solid ${P.lineHi}`, borderRadius: 9, color: P.text, textAlign: "center",
-                      fontFamily: MONO, fontSize: 14, fontWeight: 800, padding: "2px 4px", outline: "none",
-                    }}
-                  />
-                  <div style={{ fontSize: 8.5, color: P.sub, fontWeight: 700, marginTop: 1 }}>行数</div>
+              <ToolBtn label="＋ 列追加" onClick={addColumn} />
+              {/* 行数コントロール（−/＋、数値は直接入力可。対面なら2行）。行モードでは行数＝入力した行の数 */}
+              {rowMode ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 46, borderRadius: 12, border: `1px dashed ${P.lineHi}`, color: P.sub, fontSize: 12, fontWeight: 800, fontFamily: FONT }}>
+                  行数 {segsAll.length}（行の数）
                 </div>
-                <ToolBtn label="＋" onClick={() => setRows(rows + 1)} disabled={rows >= LAYOUT_ROWS_MAX} />
-              </div>
+              ) : (
+                <div style={{ display: "flex", alignItems: "stretch", gap: 6 }}>
+                  <ToolBtn label="−" onClick={() => setRows(rows - 1)} disabled={rows <= LAYOUT_ROWS_MIN} />
+                  <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                    <input
+                      key={`rows-${rows}`}
+                      type="number"
+                      inputMode="numeric"
+                      min={LAYOUT_ROWS_MIN}
+                      max={LAYOUT_ROWS_MAX}
+                      defaultValue={rows}
+                      aria-label="行数"
+                      onFocus={(e) => { e.target.style.borderColor = P.cyan; }}
+                      onBlur={(e) => { e.target.style.borderColor = P.lineHi; setRows(e.target.value); }}
+                      style={{
+                        width: "100%", boxSizing: "border-box", minHeight: 30, background: P.bg,
+                        border: `1px solid ${P.lineHi}`, borderRadius: 9, color: P.text, textAlign: "center",
+                        fontFamily: MONO, fontSize: 14, fontWeight: 800, padding: "2px 4px", outline: "none",
+                      }}
+                    />
+                    <div style={{ fontSize: 8.5, color: P.sub, fontWeight: 700, marginTop: 1 }}>行数</div>
+                  </div>
+                  <ToolBtn label="＋" onClick={() => setRows(rows + 1)} disabled={rows >= LAYOUT_ROWS_MAX} />
+                </div>
+              )}
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
               <div style={{ flex: 1 }}><ToolBtn label="↑ 上へ並び替え" onClick={onMoveUp} disabled={index === 0} /></div>
@@ -799,10 +877,16 @@ function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                 <span style={{ fontSize: 11, color: P.subHi, fontWeight: 700 }}>レイアウトプレビュー</span>
                 <span style={{ fontSize: 10, color: P.sub, fontFamily: MONO }}>
-                  {rows}行×{cols}列{gaps.length > 0 ? ` ・ 欠け${gaps.length}` : ""}
+                  {rowMode ? segsAll.length : rows}行×{cols}列{gaps.length > 0 ? ` ・ 欠け${gaps.length}` : ""}
                 </span>
               </div>
-              {cells.length > 0 ? (
+              {rowMode ? (
+                <RowsGrid rows={previewRows} cols={cols}
+                  renderCell={(c) => c.gap
+                    ? <GapCell key={c.num} num={c.num} onClick={() => toggleGap(c.num)} />
+                    : <NumberCell key={c.num} num={c.num} color={color}
+                        onClick={() => toggleGap(c.num)} ariaLabel={`${c.num}を欠けにする`} />} />
+              ) : cells.length > 0 ? (
                 <CellGrid cols={cols}>
                   {cells.map((c) => c.gap
                     ? <GapCell key={c.num} num={c.num} onClick={() => toggleGap(c.num)} />
