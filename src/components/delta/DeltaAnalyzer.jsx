@@ -383,7 +383,7 @@ function NumbersStep({ slotCount, islands, onConfirm, onBack }) {
                         {isl.name}{isl.machineName ? ` ${isl.machineName}` : ""}
                       </div>
                       <div style={{ fontSize: 12, color: C.sub, fontFamily: mono, marginTop: 2 }}>
-                        {isl.start}〜{isl.end}（{cnt}台）
+                        {isl.start}〜{isl.end}（{cnt}台{isl.ranges ? "・飛び番" : ""}）
                       </div>
                     </div>
                     <button

@@ -174,6 +174,24 @@ test("islandToNumbers: start>end は昇順に正規化、無効は空", () => {
   assert.deepStrictEqual(islandToNumbers(null), []);
 });
 
+test("islandToNumbers: 複数行（飛び番）は実在の台番号だけを昇順で返す", () => {
+  // 479〜490 / 509〜499（降順の行）/ 546〜548 の島。データサイトの掲載順（昇順）に揃える
+  const island = { ranges: [{ start: 509, end: 499 }, { start: 479, end: 490 }, { start: 546, end: 548 }] };
+  const nums = islandToNumbers(island);
+  assert.strictEqual(nums.length, 12 + 11 + 3);
+  assert.strictEqual(nums[0], "479");
+  assert.strictEqual(nums[11], "490");
+  assert.strictEqual(nums[12], "499"); // 491〜498 は存在しないので飛ぶ
+  assert.strictEqual(nums[nums.length - 1], "548");
+});
+
+test("islandToNumbers: 欠け台番号は割り当て対象から除外する", () => {
+  const nums = islandToNumbers({ start: 499, end: 509, gaps: [505] });
+  assert.strictEqual(nums.length, 10);
+  assert.ok(!nums.includes("505"));
+  assert.ok(nums.includes("506"));
+});
+
 // ──────────── buildSegmentsNumbers ────────────
 
 test("buildSegmentsNumbers: 飛び番号の複数区間", () => {

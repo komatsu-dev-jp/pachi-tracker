@@ -5,6 +5,7 @@
 // logic.js とは無関係の独立データ。rotRows は迂回しない。
 
 import { getRank } from "./deltaEngine.js";
+import { islandLayoutCells } from "../select/hallMapSelectors.js";
 
 // 端末ローカルの "YYYY-MM-DD"（node テストからも使うため本モジュール内に定義）
 function toLocalDay(d) {
@@ -182,17 +183,19 @@ export function mergeTaiData(rows, taiRows) {
   return { rows: merged, matched };
 }
 
-// ホールマップの島（{start,end}）から台番号配列を生成する。
+// ホールマップの島から台番号配列を生成する。
+// 複数行（ranges）・欠け（gaps）を考慮した実在の台番号だけを、
+// データサイトの掲載順に合わせて昇順で返す。
 export function islandToNumbers(island) {
   if (!island || typeof island !== "object") return [];
-  const start = Number(island.start);
-  const end = Number(island.end);
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return [];
-  const lo = Math.min(start, end);
-  const hi = Math.max(start, end);
-  const nums = [];
-  for (let n = lo; n <= hi; n++) nums.push(String(n));
-  return nums;
+  const hasRanges = Array.isArray(island.ranges) && island.ranges.length > 0;
+  if (!hasRanges && (!Number.isFinite(Number(island.start)) || !Number.isFinite(Number(island.end)))) {
+    return [];
+  }
+  const nums = islandLayoutCells(island)
+    .filter((cell) => !cell.gap)
+    .map((cell) => cell.num);
+  return [...new Set(nums)].sort((a, b) => a - b).map(String);
 }
 
 // 手動区間 [{start,count}] から台番号配列を生成する（移植元 generateNums と同等）。
