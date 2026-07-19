@@ -1,5 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { applyStrategyPlanEntryContext, buildStrategyMap, resolveStrategyPlanHandoff } from "./strategyMapData";
+import {
+  applyStrategyPlanEntryContext,
+  buildStrategyMap,
+  buildStrategyPlanContext,
+  resolveStrategyPlanHandoff,
+} from "./strategyMapData";
+import { localDateStr } from "../../constants";
 import "./StrategyMapDashboard.css";
 import {
   P_EVIDENCE_DEMO_HALL_MAPS,
@@ -59,6 +65,34 @@ function signed(n, d = 0) {
 function nowHM() {
   const d = new Date();
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+const PROFIT_CHANCE_PENDING = {
+  "model-unverified": "正式型式の確認待ち",
+  "stddev-unverified": "ブレ幅の確認待ち",
+  "plan-missing": "予定時間の設定待ち",
+  "rotation-range-missing": "予測回転率の幅待ち",
+  "low-confidence": "店舗データ不足",
+  "data-missing": "店舗データ待ち",
+};
+
+function profitChanceText(machine) {
+  if (machine?.profitChanceStatus === "ready" && machine.profitChanceLow != null && machine.profitChanceHigh != null) {
+    return `${fmt(machine.profitChanceLow)}〜${fmt(machine.profitChanceHigh)}%`;
+  }
+  return PROFIT_CHANCE_PENDING[machine?.profitChanceStatus] || "算定待ち";
+}
+
+function profitChanceCenterText(machine) {
+  return machine?.profitChanceStatus === "ready" && machine.winRate != null
+    ? `基準予測${fmt(machine.winRate)}%`
+    : null;
+}
+
+function payoutSummary(machine) {
+  if (machine?.initialAvgPayout != null) return { label: "初回平均", value: `${fmt(machine.initialAvgPayout)}玉` };
+  if (machine?.avgPayoutPerHit != null) return { label: "1回平均", value: `${fmt(machine.avgPayoutPerHit)}玉` };
+  return { label: "平均出玉", value: "確認待ち" };
 }
 
 // ============================ ヘッダー ============================
@@ -197,6 +231,8 @@ const HELP_GROUPS = [
       { name: "ボーダー", simple: "長く遊んだときに、プラスとマイナスの境目になる回転率です。", read: "予測回転率がボーダーを上回る台を探します。例：ボーダー18、予測20なら、1,000円で約2回多く回る予想です。" },
       { name: "信頼度・確信度", simple: "予想を、どれくらい信用してよいかの目安です。", read: "データが少ないと低く、投入玉や日数が増えると高くなります。高くても未来を保証する数字ではありません。" },
       { name: "良台スコア", simple: "回転率の良さと、データの確かさを1つにまとめた点数です。", read: "高いほど候補ですが、釘変化や明日締め確率が危険な場合は点数を下げます。" },
+      { name: "収支プラス見込み", simple: "予定時間の終了時に、収支が0円を超える確率の概算幅です。", read: "本日の予定時間、予測回転率の上下幅、交換率、検証済みの機種ブレから正規近似で計算します。勝利を保証せず、短時間や荒い機種ほど誤差が大きくなります。" },
+      { name: "初当たり1回以上", simple: "予定回転数の中で、初当たりを1回以上引く理論上の確率です。", read: "大当たり確率と予定回転数だけで計算します。初当たりを引いても最終収支がプラスとは限らないため、収支プラス見込みとは別の数字です。" },
     ],
   },
   {
@@ -331,46 +367,23 @@ function Tabs({ active, onChange }) {
   );
 }
 
-// ============================ 本日のTOP5 ============================
-function Top5({ rows, selectedId, onSelect }) {
+// ============================ A 選択台の今日の見込み ============================
+function SelectedOutcomeSection({ machine, islandAvgRot, plan }) {
+  if (!machine) return null;
+  const v = VERDICT[machine.verdict];
   return (
-    <Section title="本日の立ち回りプラン" accent={P.cyan} sub="上から順に確認">
-      <div className="strategy-plan-list">
-        {rows.map((m) => {
-          const v = VERDICT[m.verdict];
-          const on = selectedId === m.id;
-          return (
-            <button
-              key={m.id}
-              onClick={() => onSelect(m.id)}
-              className="strategy-plan-row"
-              style={{ borderColor: on ? P.cyan : P.line, boxShadow: on ? "0 0 0 2px rgba(6,182,212,.16)" : "none" }}
-            >
-              <span className="strategy-plan-rank" style={{ color: v.color, borderColor: v.color }}>{m.rank}</span>
-              <span className="strategy-plan-verdict" style={{ color: v.color, borderColor: v.color }}>
-                {m.isStar ? "★ " : ""}{v.label}
-              </span>
-              <span className="strategy-plan-machine">台{m.num}</span>
-              <span className="strategy-plan-action">
-                {m.planRole === "primary"
-                  ? "プラン本命を確認"
-                  : m.planRole === "backup"
-                    ? "予備候補を確認"
-                    : m.goalThresholdActive && m.goalEligible
-                      ? "目標条件を満たす候補"
-                    : m.rank === 1
-                      ? "最優先で確認"
-                      : m.verdict === "strong"
-                        ? "空いていれば確認"
-                        : "状況を見て判断"}
-              </span>
-              <span className="strategy-plan-chevron" aria-hidden="true">›</span>
-              <div className="strategy-plan-sub">
-                予測 {fmt(m.rot, 1)}/k ・ {signed(m.evPerHour)}円/h ・ 玉単価差 {m.unitPriceAvailable ? `${signed(m.unitPrice, 2)}円/回` : "算出待ち"} ・ 信頼度 {m.confidence}%
-              </div>
-            </button>
-          );
-        })}
+    <Section title="選択台の今日の見込み" accent={v.color} sub="選んだ1台を詳しく確認">
+      <div className="strategy-a-shell">
+        {plan && (
+          <div className={`strategy-plan-context ${plan.hasSavedPlan ? "is-saved" : ""}`}>
+            <span><strong>{plan.sourceLabel}</strong><b>{plan.styleLabel}</b></span>
+            <span>{plan.isSkip ? "本日は稼働しない設定" : `${fmt(plan.plannedHours, 1)}時間・約${fmt(plan.sessionSpins)}回転`}</span>
+            <span>現金上限 {plan.cashLimit > 0 ? `${fmt(plan.cashLimit)}円` : "未設定"}</span>
+            <span>交換目安 1玉{fmt(plan.ballValueYen, 2)}円</span>
+            <em>現金上限による途中終了は、収支プラス見込みに含みません</em>
+          </div>
+        )}
+        <SelectedDetailCard machine={machine} islandAvgRot={islandAvgRot} plan={plan} />
       </div>
     </Section>
   );
@@ -678,7 +691,7 @@ function RevenuePoint({ label, value, tone }) {
   );
 }
 
-function RevenueOutlook({ machine }) {
+function RevenueOutlook({ machine, plan }) {
   return (
     <div className="strategy-revenue-card">
       <div className="strategy-revenue-head">
@@ -692,28 +705,57 @@ function RevenueOutlook({ machine }) {
         <RevenuePoint label="上振れ" value={machine.hourlyHigh} tone="high" />
       </div>
       <div className="strategy-revenue-line">
-        <div className="strategy-revenue-label"><strong>日当</strong><span>2,200回転</span></div>
+        <div className="strategy-revenue-label"><strong>予定収支</strong><span>{fmt(plan?.sessionSpins ?? machine.plannedSpins)}回転</span></div>
         <RevenuePoint label="下振れ" value={machine.dailyLow} tone="low" />
         <RevenuePoint label="期待" value={machine.daily} tone="expected" />
         <RevenuePoint label="上振れ" value={machine.dailyHigh} tone="high" />
       </div>
       <div className="strategy-luck-risk">
         <div className="strategy-luck-title"><strong>運によるブレ</strong><span>大当たりが早い・遅いことで揺れる目安</span></div>
-        <div><span>1時間</span><b>±{fmt(Math.abs(machine.hourlyRisk))}円</b></div>
-        <div><span>1日</span><b>±{fmt(Math.abs(machine.dailyRisk))}円</b></div>
+        <div><span>1時間</span><b>{machine.hourlyRisk == null ? "算定待ち" : `±${fmt(Math.abs(machine.hourlyRisk))}円`}</b></div>
+        <div><span>予定全体</span><b>{machine.dailyRisk == null ? "算定待ち" : `±${fmt(Math.abs(machine.dailyRisk))}円`}</b></div>
       </div>
     </div>
   );
 }
 
-function SelectedDetail({ machine, islandAvgRot }) {
+function OutcomeOverview({ machine, plan }) {
+  const chanceReady = machine.profitChanceStatus === "ready";
+  const payout = payoutSummary(machine);
+  const hitRate = machine.atLeastOneHitRate == null ? null : Math.round(machine.atLeastOneHitRate * 100);
+  return (
+    <div className={`strategy-outcome-card ${chanceReady ? "is-ready" : "is-pending"}`}>
+      <div className="strategy-outcome-hero">
+        <span><small>予定終了時の</small><strong>収支プラス見込み</strong></span>
+        <b>{profitChanceText(machine)}</b>
+        <em>{chanceReady ? `${profitChanceCenterText(machine)}・${fmt(plan?.plannedHours, 1)}時間の固定時間モデル・概算` : "不足データが揃うまで数値を表示しません"}</em>
+      </div>
+      <div className="strategy-outcome-specs">
+        <span><small>通常時初当たり</small><b>{machine.jackpotLabel || "—"}</b></span>
+        <span><small>{payout.label}</small><b>{payout.value}</b></span>
+        <span><small>RUSH平均</small><b>{machine.rushAvgPayout == null ? "—" : `${fmt(machine.rushAvgPayout)}玉`}</b></span>
+        <span><small>突入 / 継続</small><b>{machine.rushEntryRate == null ? "—" : `${fmt(machine.rushEntryRate, 1)}% / ${machine.rushContinueRate == null ? "—" : `${fmt(machine.rushContinueRate, 1)}%`}`}</b></span>
+      </div>
+      <div className="strategy-outcome-hit">
+        <span>予定{fmt(plan?.sessionSpins ?? machine.plannedSpins)}回転で初当たり1回以上</span>
+        <b>{hitRate == null ? "算定待ち" : `約${fmt(hitRate)}%`}</b>
+      </div>
+      <p>初当たり確率と収支プラス見込みは別の指標です。後者は正規近似による概算で、短時間・荒い機種ほど誤差が大きくなります。</p>
+    </div>
+  );
+}
+
+function SelectedDetailCard({ machine, islandAvgRot, plan }) {
   if (!machine) return null;
   const v = VERDICT[machine.verdict];
   const diff = Math.round((machine.rot - islandAvgRot(machine.islandId)) * 10) / 10;
+  const seatThreshold = Math.ceil((Number(machine.border || 0) + 0.5) * 10) / 10;
+  const recommendation = plan?.isSkip
+    ? "本日見送り"
+    : machine.profitChanceStatus === "ready" ? v.reco : "要確認";
+  const recommendationColor = plan?.isSkip || machine.profitChanceStatus !== "ready" ? P.yellow : v.color;
   return (
-    <Section title="選択台詳細" accent={v.color}>
-      <div style={{ padding: "0 14px 4px" }}>
-        <div style={{ background: P.card, border: `1px solid color-mix(in srgb, ${v.color} 30%, ${P.line})`, borderRadius: RADIUS, padding: 14 }}>
+    <div className="strategy-selected-detail-card" style={{ background: P.card, border: `1px solid color-mix(in srgb, ${v.color} 30%, ${P.line})`, borderRadius: RADIUS, padding: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
               <span style={{ fontSize: 22, fontWeight: 900, color: P.text, fontFamily: MONO }}>台{machine.num}</span>
@@ -723,18 +765,31 @@ function SelectedDetail({ machine, islandAvgRot }) {
               style={{
                 fontSize: 12,
                 fontWeight: 900,
-                color: v.color,
-                background: `color-mix(in srgb, ${v.color} 16%, transparent)`,
-                border: `1px solid color-mix(in srgb, ${v.color} 38%, transparent)`,
+                color: recommendationColor,
+                background: `color-mix(in srgb, ${recommendationColor} 16%, transparent)`,
+                border: `1px solid color-mix(in srgb, ${recommendationColor} 38%, transparent)`,
                 borderRadius: 999,
                 padding: "5px 12px",
               }}
             >
-              {v.reco}
+              {recommendation}
             </span>
           </div>
 
-          <RevenueOutlook machine={machine} />
+          <OutcomeOverview machine={machine} plan={plan} />
+          <RevenueOutlook machine={machine} plan={plan} />
+
+          {plan?.isSkip ? (
+            <div className="strategy-a-decision is-skip">
+              <div><span>本日の判断</span><b>プランが「見送り」に設定されています</b></div>
+            </div>
+          ) : (
+            <div className="strategy-a-decision">
+              <div><span>座る目安</span><b>試し打ちで1,000円あたり{fmt(seatThreshold, 1)}回以上</b></div>
+              <i aria-hidden="true">→</i>
+              <div><span>見送る目安</span><b>基準未満・締め傾向・データ不足</b></div>
+            </div>
+          )}
 
           <div className="strategy-detail-main">
             <div className="strategy-detail-primary">
@@ -754,7 +809,6 @@ function SelectedDetail({ machine, islandAvgRot }) {
           <div className="strategy-detail-secondary">
             <DetailMetric label="EMA（最近重視）" value={fmt(machine.ema, 1)} unit="/k" color={P.cyan} />
             <DetailMetric label="明日締め確率" value={fmt(machine.tomorrowTight)} unit="%" color={machine.tomorrowTight >= 60 ? P.red : P.yellow} />
-            <DetailMetric label="勝てる確率" value={fmt(machine.winRate)} unit="%" color={machine.winRate >= 50 ? P.green : P.red} />
             <DetailMetric label="玉単価差" value={machine.unitPriceAvailable ? signed(machine.unitPrice, 2) : "—"} unit={machine.unitPriceAvailable ? "円/回" : ""} color={machine.unitPriceAvailable && machine.unitPrice < 0 ? P.red : P.green} />
             <DetailMetric label="シャープ比" value={fmt(machine.sharpe, 2)} unit="" color={P.subHi} />
           </div>
@@ -768,9 +822,7 @@ function SelectedDetail({ machine, islandAvgRot }) {
             </div>
             {machine.regimeStart && <div style={{ marginTop: 4, fontSize: 10, lineHeight: 1.6, color: P.sub }}>今の状態は{machine.regimeStart}から</div>}
           </div>
-        </div>
-      </div>
-    </Section>
+    </div>
   );
 }
 
@@ -805,33 +857,6 @@ function LearningSummary({ data, selected }) {
   );
 }
 
-function PortfolioPlan({ portfolio }) {
-  const rows = portfolio?.plan || [];
-  if (!rows.length) return null;
-  return (
-    <Section title="8時間の優先順位" accent={P.green} sub="利益÷ブレで配分">
-      <div style={{ padding: "0 14px", display: "grid", gap: 7 }}>
-        {rows.slice(0, 5).map((row) => (
-          <div key={`${row.machineName}-${row.number}`} style={{ display: "grid", gridTemplateColumns: "34px 1fr auto", alignItems: "center", gap: 9, padding: "10px 11px", borderRadius: 14, background: P.card, border: `1px solid ${P.line}` }}>
-            <div style={{ width: 30, height: 30, borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(34,197,94,.13)", color: P.green, fontSize: 12, fontWeight: 900 }}>{row.rank}</div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 900, color: P.text }}>台{row.number} <span style={{ fontSize: 9, color: P.subHi }}>{row.action}</span></div>
-              <div style={{ marginTop: 3, fontSize: 9, color: P.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.machineName}</div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 12, fontWeight: 900, color: P.green, fontFamily: MONO }}>{fmt(row.hours, 1)}時間</div>
-              <div style={{ marginTop: 2, fontSize: 9, color: P.sub }}>{signed(row.expectedProfit)}円</div>
-            </div>
-          </div>
-        ))}
-        <div style={{ padding: "7px 2px 0", fontSize: 10, color: P.subHi, textAlign: "right" }}>
-          合計 {fmt(portfolio.totalHours, 1)}時間 ／ 期待 {signed(portfolio.expectedProfit)}円
-        </div>
-      </div>
-    </Section>
-  );
-}
-
 // ============================ 共通セクション枠 ============================
 function Section({ title, sub, accent, children }) {
   return (
@@ -858,6 +883,12 @@ export default function StrategyMapDashboard({ S, onBack }) {
   const savedStores = Array.isArray(S?.stores) ? S.stores : EMPTY_LIST;
   const savedMonthlyPlayPlans = S?.monthlyPlayPlans;
   const savedDailyResearchPlans = S?.dailyResearchPlans;
+  const selectedStoreId = S?.selectedStoreId;
+  const exchangeRateRaw = S?.exRate;
+  const ballValueRaw = S?.ballVal;
+  const rotationsPerHour = S?.rotPerHour;
+  const savedHallMaps = S?.hallMaps;
+  const liveDecision = S?.ev?.liveDecision || null;
   const deltaScans = useMemo(() => isDemo ? P_EVIDENCE_DEMO_SCANS : savedScans, [isDemo, savedScans]);
   const customMachines = useMemo(
     () => isDemo ? [P_EVIDENCE_DEMO_MACHINE, ...savedCustomMachines] : savedCustomMachines,
@@ -882,16 +913,33 @@ export default function StrategyMapDashboard({ S, onBack }) {
   ), [isDemo, entryPlanContext, savedMonthlyPlayPlans, savedDailyResearchPlans, availableStoreIds]);
   const strategyStoreId = isDemo
     ? "pe-demo-store"
-    : planHandoff?.defaultStoreId ?? S?.selectedStoreId;
+    : planHandoff?.defaultStoreId ?? selectedStoreId;
+  const strategyPlan = useMemo(() => {
+    const date = entryPlanContext?.date || localDateStr(new Date());
+    const selectedStore = savedStores.find((store) => String(store?.id) === String(strategyStoreId)) || null;
+    const exchangeRate = Number(selectedStore?.exRate ?? exchangeRateRaw);
+    const fallbackBallValue = Number(ballValueRaw);
+    const ballValueYen = exchangeRate > 0 ? 1000 / exchangeRate : (fallbackBallValue > 0 ? fallbackBallValue : 4);
+    return buildStrategyPlanContext({
+      date,
+      dailyResearchPlans: savedDailyResearchPlans,
+      monthlyPlayPlans: savedMonthlyPlayPlans,
+      spinsPerHour: rotationsPerHour,
+      defaultHours: isDemo ? 3 : 6,
+      defaultCashLimit: 0,
+      ballValueYen: isDemo ? 4 : ballValueYen,
+    });
+  }, [entryPlanContext, savedStores, strategyStoreId, exchangeRateRaw, ballValueRaw, savedDailyResearchPlans, savedMonthlyPlayPlans, rotationsPerHour, isDemo]);
   const data = useMemo(() => buildStrategyMap({
     playingNum,
-    liveDecision: S?.ev?.liveDecision || null,
+    liveDecision,
     scans: deltaScans,
     customMachines,
-    hallMaps: isDemo ? P_EVIDENCE_DEMO_HALL_MAPS : S?.hallMaps,
+    hallMaps: isDemo ? P_EVIDENCE_DEMO_HALL_MAPS : savedHallMaps,
     selectedStoreId: strategyStoreId,
     planHandoff,
-  }), [playingNum, deltaScans, customMachines, isDemo, S?.hallMaps, strategyStoreId, planHandoff, S?.ev?.liveDecision]);
+    plan: strategyPlan,
+  }), [playingNum, liveDecision, deltaScans, customMachines, isDemo, savedHallMaps, strategyStoreId, planHandoff, strategyPlan]);
   const plannedStore = savedStores.find((item) => (
     item && typeof item === "object" && planHandoff?.defaultStoreId != null
       && String(item.id) === String(planHandoff.defaultStoreId)
@@ -981,10 +1029,8 @@ export default function StrategyMapDashboard({ S, onBack }) {
         onChangeIsland={changeIsland}
         onSelect={selectMachine}
       />
-      <SelectedDetail machine={selected} islandAvgRot={data.islandAvgRot} />
-      <Top5 rows={data.top5} selectedId={selectedId} onSelect={selectMachine} />
+      <SelectedOutcomeSection machine={selected} islandAvgRot={data.islandAvgRot} plan={data.plan} />
       <LearningSummary data={data} selected={selected} />
-      <PortfolioPlan portfolio={data.portfolio} />
       {helpOpen && <HelpSheet onClose={() => setHelpOpen(false)} />}
       {yutimeOpen && (
         <YutimeCalculatorSheet

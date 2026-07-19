@@ -7,7 +7,11 @@ import {
   collectDeltaRows,
   findMachineSpec,
 } from "../delta/deltaEvidence.js";
-import { buildPEvidenceAnalytics } from "../evidence/pevidenceAnalytics.js";
+import {
+  buildPEvidenceAnalytics,
+  normalCdf,
+  outwardPercentBand,
+} from "../evidence/pevidenceAnalytics.js";
 import { getStoreIslands } from "../select/hallMapSelectors.js";
 
 function round1(value) {
@@ -31,7 +35,53 @@ function evPerHourOf(rotation, border) {
   return Math.round(evPerK * (210 / rotation));
 }
 
-function emptyMap(playingNum, planHandoff = null) {
+const PLAN_STYLE_LABELS = Object.freeze({
+  stable: "安定重視",
+  balanced: "バランス",
+  ev: "期待値優先",
+  skip: "見送り",
+});
+
+function positive(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+export function buildStrategyPlanContext({
+  date = "",
+  dailyResearchPlans = {},
+  monthlyPlayPlans = {},
+  spinsPerHour = 210,
+  defaultHours = 6,
+  defaultCashLimit = 0,
+  ballValueYen = 4,
+} = {}) {
+  const dateKey = String(date || "");
+  const daily = dailyResearchPlans?.[dateKey] || null;
+  const monthly = monthlyPlayPlans?.[dateKey.slice(0, 7)] || null;
+  const styleId = daily?.style || monthly?.baseStyle || "balanced";
+  const isSkip = styleId === "skip";
+  const plannedHours = isSkip ? 0 : positive(daily?.standardHours ?? monthly?.standardHours, positive(defaultHours, 6));
+  const hourlySpins = positive(spinsPerHour, 210);
+  const cashLimit = Math.max(0, Number(daily?.cashLimit ?? monthly?.cashLimit ?? defaultCashLimit) || 0);
+  const source = daily ? "daily" : monthly ? "monthly" : "default";
+  return {
+    date: dateKey,
+    source,
+    sourceLabel: daily ? "本日プラン" : monthly ? "月間プラン" : "標準設定",
+    hasSavedPlan: Boolean(daily || monthly),
+    styleId,
+    styleLabel: PLAN_STYLE_LABELS[styleId] || PLAN_STYLE_LABELS.balanced,
+    isSkip,
+    plannedHours,
+    spinsPerHour: hourlySpins,
+    sessionSpins: isSkip ? 0 : Math.round(plannedHours * hourlySpins),
+    cashLimit,
+    ballValueYen: positive(ballValueYen, 4),
+  };
+}
+
+function emptyMap(playingNum, planHandoff = null, plan = null) {
   return {
     source: "delta",
     machineName: "差玉データなし",
@@ -51,6 +101,7 @@ function emptyMap(playingNum, planHandoff = null) {
     nextMap: [],
     islandStats: [],
     planHandoff,
+    plan,
     planMatch: { matched: 0, total: planHandoff?.targets?.length || 0 },
   };
 }
@@ -340,9 +391,10 @@ export function buildStrategyMap({
   hallMaps = {},
   selectedStoreId = null,
   planHandoff = null,
+  plan = null,
 } = {}) {
   const currentScans = latestScanGroup(scans, selectedStoreId);
-  if (!currentScans.length) return emptyMap(playingNum, planHandoff);
+  if (!currentScans.length) return emptyMap(playingNum, planHandoff, plan);
 
   const analysisStoreId = currentScans[0]?.storeId ?? selectedStoreId;
   const hallIslands = getStoreIslands(hallMaps, analysisStoreId);
@@ -352,7 +404,17 @@ export function buildStrategyMap({
   const storeScans = (scans || []).filter((scan) =>
     String(scan?.storeId ?? scan?.storeName ?? "") === analysisStoreKey
   );
-  const analytics = buildPEvidenceAnalytics({ scans: storeScans, customMachines, islands: hallIslands });
+  const analytics = buildPEvidenceAnalytics({
+    scans: storeScans,
+    customMachines,
+    islands: hallIslands,
+    params: plan ? {
+      spinsPerHour: plan.spinsPerHour,
+      sessionSpins: plan.sessionSpins,
+      portfolioHours: plan.plannedHours,
+      ballValueYen: plan.ballValueYen,
+    } : {},
+  });
   const analyticsByMachine = new Map(analytics.latestRows.map((item) => [
     `${item.store}___${item.machineName}___${item.num}`,
     item,
@@ -395,6 +457,19 @@ export function buildStrategyMap({
     // スパークラインも表示中店舗の履歴だけを使う（他店舗の同番号を混ぜない）
     const history = historyFor(storeScans, machineName, row.num, machineSpec);
     const isPlaying = playingNum != null && String(row.num) === String(playingNum);
+    // この台・この店舗の直接観測区間を、予定時間の収支シナリオへ使う。
+    // 長期学習側の区間は釘変化検知用の累積誤差も含むため、役割を分ける。
+    const scenarioLowRotation = evidence.hasEstimate ? evidence.predictedLow : pe?.predictedLow;
+    const scenarioHighRotation = evidence.hasEstimate ? evidence.predictedHigh : pe?.predictedHigh;
+    const lowUnitPrice = scenarioLowRotation > 0 && trueBorder > 0 ? 1000 / trueBorder - 1000 / scenarioLowRotation : null;
+    const highUnitPrice = scenarioHighRotation > 0 && trueBorder > 0 ? 1000 / trueBorder - 1000 / scenarioHighRotation : null;
+    const scenarioHourlyLow = lowUnitPrice == null ? null : Math.round(lowUnitPrice * analytics.params.spinsPerHour);
+    const scenarioHourlyHigh = highUnitPrice == null ? null : Math.round(highUnitPrice * analytics.params.spinsPerHour);
+    const scenarioDailyLow = lowUnitPrice == null ? null : Math.round(lowUnitPrice * analytics.params.sessionSpins);
+    const scenarioDailyHigh = highUnitPrice == null ? null : Math.round(highUnitPrice * analytics.params.sessionSpins);
+    const scenarioChanceBand = pe?.profitChanceStatus === "ready" && pe?.dailyRisk > 0 && scenarioDailyLow != null && scenarioDailyHigh != null
+      ? outwardPercentBand(normalCdf(scenarioDailyLow / pe.dailyRisk), normalCdf(scenarioDailyHigh / pe.dailyRisk))
+      : null;
     const planTarget = planTargetForMachine(machineName, planHandoff, machineSpec);
     const evPerHour = pe?.valid ? pe.hourly : evPerHourOf(predictedRotation, trueBorder);
     const minPlanEv = Math.max(0, Number(planHandoff?.minExpectedValuePerHour) || 0);
@@ -432,16 +507,30 @@ export function buildStrategyMap({
       tomorrowTight: Math.round((pe?.tightProbability || 0) * 100),
       weekdayTight: Math.round((pe?.weekdayTightRate || 0) * 100),
       weekdaySamples: pe?.weekdaySampleCount || 0,
-      winRate: Math.round((pe?.winRate || 0) * 100),
+      winRate: pe?.winRate == null ? null : Math.round(pe.winRate * 100),
+      profitChanceLow: scenarioChanceBand?.low ?? pe?.winRateBandLow ?? null,
+      profitChanceHigh: scenarioChanceBand?.high ?? pe?.winRateBandHigh ?? null,
+      profitChanceStatus: pe?.profitChanceStatus || "data-missing",
+      profitChanceMethod: pe?.profitChanceMethod || null,
+      jackpotLabel: pe?.jackpotLabel || machineSpec.prob || null,
+      jackpotDenominator: pe?.jackpotDenominator ?? (Number(machineSpec.synthProb) > 0 ? Number(machineSpec.synthProb) : null),
+      atLeastOneHitRate: pe?.atLeastOneHitRate ?? null,
+      initialAvgPayout: pe?.initialAvgPayout ?? null,
+      rushAvgPayout: pe?.rushAvgPayout ?? null,
+      avgPayoutPerHit: pe?.avgPayoutPerHit ?? (Number(machineSpec.avgPayoutPerHit) > 0 ? Math.round(Number(machineSpec.avgPayoutPerHit)) : null),
+      rushEntryRate: pe?.rushEntryRate ?? null,
+      rushContinueRate: pe?.rushContinueRate ?? null,
+      plannedSpins: pe?.plannedSpins ?? plan?.sessionSpins ?? null,
+      modelName: machineSpec.modelName || null,
       unitPrice: pe?.unitPrice || 0,
       unitPriceAvailable: Boolean(pe?.valid),
       daily: pe?.daily || 0,
-      hourlyLow: pe?.hourlyLow || 0,
-      hourlyHigh: pe?.hourlyHigh || 0,
-      dailyLow: pe?.dailyLow || 0,
-      dailyHigh: pe?.dailyHigh || 0,
-      hourlyRisk: pe?.hourlyRisk || 0,
-      dailyRisk: pe?.dailyRisk || 0,
+      hourlyLow: scenarioHourlyLow ?? pe?.hourlyLow ?? null,
+      hourlyHigh: scenarioHourlyHigh ?? pe?.hourlyHigh ?? null,
+      dailyLow: scenarioDailyLow ?? pe?.dailyLow ?? null,
+      dailyHigh: scenarioDailyHigh ?? pe?.dailyHigh ?? null,
+      hourlyRisk: pe?.hourlyRisk ?? null,
+      dailyRisk: pe?.dailyRisk ?? null,
       sharpe: round1(pe?.sharpe || 0),
       spatialAlert: pe?.spatial?.label || "隣接情報なし",
       oppositeAlert: pe?.opposite?.label || "対面情報なし",
@@ -472,7 +561,7 @@ export function buildStrategyMap({
   }));
   const islands = applyHallLayout(analyzedIslands, hallIslands);
   const all = islands.flatMap((island) => island.machines);
-  if (!all.length) return emptyMap(playingNum, planHandoff);
+  if (!all.length) return emptyMap(playingNum, planHandoff, plan);
   const candidates = all
     .filter((machine) => machine.verdict === "strong")
     .sort(compareStrategyPriority);
@@ -512,6 +601,7 @@ export function buildStrategyMap({
     nextMap: analytics.nextMap,
     islandStats: analytics.islandStats,
     planHandoff,
+    plan,
     planMatch: {
       matched: matchedPlanTargets.size,
       total: planHandoff?.targets?.length || 0,

@@ -3,11 +3,32 @@ import { buildPEvidenceAnalytics, pevidenceInternals, PE_PARAMS } from "../pevid
 
 const machine = {
   name: "テスト機",
+  modelName: "Pテスト機TEST",
+  modelVerified: true,
   border1K: 18,
+  prob: "1/319.6",
+  synthProb: 319.6,
   avgPayoutPerHit: 1400,
+  hesoAvgPayout: 450,
+  rushAvgPayout: 1500,
+  rushEntryRate: 60,
+  rushContinueRate: 81,
+  allocationVerified: true,
   stdDev: 4000,
+  stdDevMethod: "p-evidence-branching-v2",
   muraCoef: 50000,
 };
+
+assert.ok(Math.abs(pevidenceInternals.normalCdf(0) - 0.5) < 1e-7);
+assert.ok(Math.abs(pevidenceInternals.normalCdf(1) - 0.84134) < 1e-4, "標準正規分布のz=1を過大評価しない");
+assert.ok(Math.abs(pevidenceInternals.normalCdf(-1) - 0.15866) < 1e-4);
+assert.ok(Math.abs(pevidenceInternals.normalCdf(1) + pevidenceInternals.normalCdf(-1) - 1) < 1e-7);
+assert.equal(pevidenceInternals.atLeastOneHitProbability(0, 319.6), 0);
+assert.equal(pevidenceInternals.atLeastOneHitProbability(100, 0), null);
+assert.ok(Math.abs(pevidenceInternals.atLeastOneHitProbability(750, 319.6) - 0.9045) < 0.001);
+assert.deepEqual(pevidenceInternals.outwardPercentBand(0.511, 0.543), { low: 50, high: 55 });
+assert.equal(pevidenceInternals.hasExactMachineIdentity(machine, "テスト機"), true);
+assert.equal(pevidenceInternals.hasExactMachineIdentity(machine, "テスト"), false, "部分一致だけでは勝率算定へ進めない");
 
 function rowForRate(num, rate, date, island = "A島", event = "") {
   const spins = 720;
@@ -84,7 +105,17 @@ for (const row of result.latestRows) {
     row.predictedHigh - row.predictedLow >= 2 * 1.96 * (1 - row.confidence) * 2 - 1e-9,
     "予測レンジは事前分散ぶんの幅を下回らない",
   );
-  assert.ok(row.winRate >= 0 && row.winRate <= 1);
+  if (row.profitChanceStatus === "ready") {
+    assert.ok(row.winRate >= 0 && row.winRate <= 1);
+    assert.ok(row.winRateLow <= row.winRateHigh);
+    assert.ok(row.winRateBandLow <= Math.round(row.winRate * 100));
+    assert.ok(row.winRateBandHigh >= Math.round(row.winRate * 100));
+    assert.equal(row.profitChanceMethod, "normal-approx-v1");
+  } else {
+    assert.equal(row.profitChanceStatus, "low-confidence");
+    assert.equal(row.winRate, null, "信頼度20%未満は数値を表示しない");
+  }
+  assert.ok(row.atLeastOneHitRate > 0 && row.atLeastOneHitRate < 1);
   assert.ok(row.tightProbability >= 0 && row.tightProbability <= 1);
   assert.ok(Number.isFinite(row.hourly));
   assert.ok(Number.isFinite(row.hourlyLow));
@@ -134,6 +165,15 @@ const unknownResult = buildPEvidenceAnalytics({
 assert.equal(unknownResult.latestRows.length, 1);
 assert.equal(unknownResult.latestRows[0].valid, false, "平均出玉なし+大当りありは無効データ");
 assert.equal(unknownResult.portfolio.plan.length, 0);
+
+const unverifiedRiskResult = buildPEvidenceAnalytics({
+  scans: scans.slice(0, 1),
+  customMachines: [{ ...machine, name: "テスト機", modelVerified: false }],
+  params: { sessionSpins: 750, spinsPerHour: 250 },
+});
+assert.equal(unverifiedRiskResult.latestRows[0].profitChanceStatus, "model-unverified");
+assert.equal(unverifiedRiskResult.latestRows[0].winRate, null, "型式未確認では収支プラス確率を出さない");
+assert.equal(unverifiedRiskResult.latestRows[0].dailyRisk, null, "仮の標準偏差へフォールバックしない");
 
 // ポートフォリオと翌日予測は、最新スキャン日にデータがある台だけを対象にする
 const staleScans = [];

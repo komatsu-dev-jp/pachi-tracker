@@ -1,11 +1,26 @@
 import assert from "node:assert/strict";
-import { applyStrategyPlanEntryContext, buildStrategyMap, resolveStrategyPlanHandoff } from "../strategyMapData.js";
+import {
+  applyStrategyPlanEntryContext,
+  buildStrategyMap,
+  buildStrategyPlanContext,
+  resolveStrategyPlanHandoff,
+} from "../strategyMapData.js";
 
 const machine = {
   name: "検証機",
+  modelName: "P検証機TEST",
+  modelVerified: true,
   border1K: 17,
+  prob: "1/319.6",
+  synthProb: 319.6,
   avgPayoutPerHit: 1400,
+  hesoAvgPayout: 450,
+  rushAvgPayout: 1500,
+  rushEntryRate: 60,
+  rushContinueRate: 81,
+  allocationVerified: true,
   stdDev: 6000,
+  stdDevMethod: "p-evidence-branching-v2",
 };
 const scans = [
   {
@@ -23,7 +38,13 @@ assert.equal(empty.total, 0);
 assert.equal(empty.top5.length, 0);
 
 const liveDecision = { action: "collecting", actionLabel: "次の判定まで計測", nextCheckpointK: 3 };
-const map = buildStrategyMap({ scans, customMachines: [machine], playingNum: 101, liveDecision });
+const plan = buildStrategyPlanContext({
+  date: "2026-07-02",
+  dailyResearchPlans: { "2026-07-02": { style: "stable", standardHours: 3, cashLimit: 30000 } },
+  spinsPerHour: 250,
+  ballValueYen: 4,
+});
+const map = buildStrategyMap({ scans, customMachines: [machine], playingNum: 101, liveDecision, plan });
 assert.equal(map.source, "delta");
 assert.equal(map.total, 1);
 assert.equal(map.all[0].num, 101);
@@ -33,6 +54,19 @@ assert.equal(map.all[0].evidence.observationCount, 2);
 assert.ok(map.all[0].rot > 0);
 assert.ok(map.all[0].confidence >= 0 && map.all[0].confidence <= 100);
 assert.equal(map.all[0].history.length, 2);
+assert.equal(map.plan.source, "daily");
+assert.equal(map.plan.plannedHours, 3);
+assert.equal(map.plan.sessionSpins, 750);
+assert.equal(map.all[0].jackpotLabel, "1/319.6");
+assert.equal(map.all[0].initialAvgPayout, 450);
+assert.ok(map.all[0].atLeastOneHitRate > 0.9 && map.all[0].atLeastOneHitRate < 0.91);
+assert.equal(map.all[0].profitChanceStatus, "ready");
+assert.ok(map.all[0].profitChanceLow <= map.all[0].profitChanceHigh);
+assert.equal(
+  map.all[0].dailyLow,
+  Math.round((1000 / map.all[0].border - 1000 / map.all[0].evidence.predictedLow) * plan.sessionSpins),
+  "収支シナリオは台・店舗の直接観測区間を使う",
+);
 
 // 別店舗のスキャンが混ざっていても、解析・推奨は表示中の店舗に限定される
 const multiStoreScans = [
