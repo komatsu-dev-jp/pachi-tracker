@@ -9,9 +9,11 @@
 //   Island = { id: string, name: string, start: number, end: number, machineName: string,
 //              ranges?: {start,end}[], rows?: number, cols?: number, gaps?: number[] }
 //     start/end: 台番号範囲（昇順に正規化）。ranges がある場合は全連番を包む範囲（最小〜最大）
-//     ranges: 連番が途中で切れる島用の連番範囲一覧（任意・2件以上のときのみ保持）。
-//             例: 479〜490 / 499〜509 / 546〜574 を1つの島として扱う。
-//             昇順に整列し、重複・隣接する範囲は1つへまとめる
+//     ranges: 行ごとの連番範囲一覧（任意）。島を上から見た行の並び順で保持し、
+//             各行は { start: 左端の台番号, end: 右端の台番号 }。start > end なら降順の行
+//             （例: 1行目 509〜499（降順）/ 2行目 479〜490 / 3行目 546〜574）。
+//             行の並び・方向が情報なのでソート・結合はしない。
+//             2行以上、または1行でも降順のときのみ保持する（昇順1行は start/end に畳む）
 //     machineName: 機種名（任意・空文字可）
 //     rows: レイアウト表示の行数（任意・1〜10）。島を上から見た並び数（対面なら2）。
 //           台は行方向（横）に増え、列数は台数から自動で決まる
@@ -47,43 +49,30 @@ function normalizeRows(v) {
   return Math.max(LAYOUT_ROWS_MIN, Math.min(LAYOUT_ROWS_MAX, n));
 }
 
-// 連番範囲一覧を正規化する。各範囲を 0 以上・昇順に揃え、開始順に整列し、
-// 重複・隣接（end+1 == 次の start）する範囲は1つの連番へまとめる。
+// 行（連番範囲）一覧を正規化する。各行は 0 以上の整数に丸めるだけで、
+// 並び順（＝島を上から見た行の順）と方向（start > end は降順）はそのまま保つ。
 function normalizeRanges(ranges) {
   if (!Array.isArray(ranges)) return [];
-  const segs = ranges
+  return ranges
     .map((r) => {
       if (!r || typeof r !== "object") return null;
-      let s = Math.round(num(r.start, NaN));
-      let e = Math.round(num(r.end, NaN));
+      const s = Math.round(num(r.start, NaN));
+      const e = Math.round(num(r.end, NaN));
       if (!Number.isFinite(s) || !Number.isFinite(e)) return null;
-      s = Math.max(0, s);
-      e = Math.max(0, e);
-      if (e < s) {
-        const t = s;
-        s = e;
-        e = t;
-      }
-      return { start: s, end: e };
+      return { start: Math.max(0, s), end: Math.max(0, e) };
     })
-    .filter(Boolean)
-    .sort((a, b) => a.start - b.start);
-  const merged = [];
-  for (const seg of segs) {
-    const last = merged[merged.length - 1];
-    if (last && seg.start <= last.end + 1) last.end = Math.max(last.end, seg.end);
-    else merged.push({ ...seg });
-  }
-  return merged;
+    .filter(Boolean);
 }
 
-// 欠け台番号を昇順・重複なしへ正規化する。いずれかの連番範囲内の番号だけ残す。
+// 欠け台番号を昇順・重複なしへ正規化する。いずれかの行の範囲内の番号だけ残す。
 function normalizeGaps(gaps, segs) {
   if (!Array.isArray(gaps)) return [];
   return [...new Set(
     gaps
       .map((g) => Math.round(num(g, -1)))
-      .filter((g) => segs.some((seg) => g >= seg.start && g <= seg.end))
+      .filter((g) => segs.some((seg) =>
+        g >= Math.min(seg.start, seg.end) && g <= Math.max(seg.start, seg.end)
+      ))
   )].sort((a, b) => a - b);
 }
 
@@ -104,8 +93,8 @@ export function normalizeIsland(island, i = 0) {
   }
   const segs = normalizeRanges(src.ranges);
   if (segs.length > 0) {
-    start = segs[0].start;
-    end = segs[segs.length - 1].end;
+    start = Math.min(...segs.map((seg) => Math.min(seg.start, seg.end)));
+    end = Math.max(...segs.map((seg) => Math.max(seg.start, seg.end)));
   }
   const out = {
     id: typeof src.id === "string" && src.id ? src.id : makeId(),
@@ -114,8 +103,8 @@ export function normalizeIsland(island, i = 0) {
     end,
     machineName: typeof src.machineName === "string" ? src.machineName : "",
   };
-  // 連番が1つにまとまる場合は ranges を持たず、従来どおり start/end のみで表す。
-  if (segs.length > 1) out.ranges = segs;
+  // 昇順1行だけなら ranges を持たず、従来どおり start/end のみで表す。
+  if (segs.length > 1 || (segs.length === 1 && segs[0].start > segs[0].end)) out.ranges = segs;
   // 表示レイアウト設定（任意フィールド）。未設定の島には付与せず既存データの形を保つ。
   const rows = normalizeRows(src.rows);
   if (rows != null) out.rows = rows;
@@ -132,14 +121,15 @@ export function islandRanges(island) {
   return isl.ranges ? isl.ranges : [{ start: isl.start, end: isl.end }];
 }
 
-// 島の表示列数（横方向のセル数）を返す。rows（行数）指定を優先してセル数から算出し、
-// 旧 cols 指定があればそれを使う。どちらも無ければ null（表示側の既定に任せる）。
-// セル数は欠けを含む全連番範囲の台数。
+// 島の表示列数（横方向のセル数）を返す。
+// 行モード（ranges あり）では最長の行の台数。それ以外は rows（行数）指定を優先して
+// セル数から算出し、旧 cols 指定があればそれを使う。どちらも無ければ null。
 export function islandLayoutColumns(island, totalCells) {
   const isl = normalizeIsland(island);
-  const segs = isl.ranges ? isl.ranges : [{ start: isl.start, end: isl.end }];
-  const segTotal = segs.reduce((a, seg) => a + (seg.end - seg.start + 1), 0);
-  const total = Math.max(1, Math.round(num(totalCells, segTotal)));
+  if (isl.ranges) {
+    return Math.max(1, ...isl.ranges.map((seg) => Math.abs(seg.end - seg.start) + 1));
+  }
+  const total = Math.max(1, Math.round(num(totalCells, isl.end - isl.start + 1)));
   if (isl.rows != null) return Math.max(1, Math.ceil(total / isl.rows));
   if (isl.cols != null) return isl.cols;
   return null;
@@ -148,20 +138,30 @@ export function islandLayoutColumns(island, totalCells) {
 // 島のレイアウトセル一覧を返す（欠けを含む・maxCells で打ち切り）。
 // 要素は { num: 台番号 } または { num: 台番号, gap: true }（その番号の台は存在しない）。
 // セル位置は台番号で固定され、欠けにしても他のセルは動かない。
-// 複数連番の島は範囲を順につなげて並べる（番号は切れ目で飛ぶ）。
+// 複数行の島は行を順につなげて並べ、降順の行は番号が下がる方向にそのまま進む。
 export function islandLayoutCells(island, maxCells = Infinity) {
+  const rows = islandLayoutRows(island, maxCells);
+  return rows.flat();
+}
+
+// 島の行ごとのレイアウトセル一覧を返す（欠けを含む・全体で maxCells 打ち切り）。
+// 各行は左端→右端の順のセル配列で、降順の行（start > end）は番号が下がっていく。
+export function islandLayoutRows(island, maxCells = Infinity) {
   const isl = normalizeIsland(island);
   const segs = isl.ranges ? isl.ranges : [{ start: isl.start, end: isl.end }];
   const gapSet = new Set(isl.gaps || []);
-  const cells = [];
-  for (const seg of segs) {
-    for (let n = seg.start; n <= seg.end; n++) {
-      if (cells.length >= maxCells) return cells;
-      if (gapSet.has(n)) cells.push({ num: n, gap: true });
-      else cells.push({ num: n });
+  let used = 0;
+  return segs.map((seg) => {
+    const dir = seg.start <= seg.end ? 1 : -1;
+    const row = [];
+    for (let n = seg.start; dir > 0 ? n <= seg.end : n >= seg.end; n += dir) {
+      if (used >= maxCells) break;
+      used++;
+      if (gapSet.has(n)) row.push({ num: n, gap: true });
+      else row.push({ num: n });
     }
-  }
-  return cells;
+    return row;
+  });
 }
 
 // 店舗1件分の島配列を正規化する。
@@ -197,12 +197,12 @@ export function setStoreIslands(hallMaps, storeId, islands) {
   return next;
 }
 
-// 島1件分の実台数（全連番範囲の台数から欠け台番号ぶんを除いた数。範囲が無効なら0）。
+// 島1件分の実台数（全行の台数から欠け台番号ぶんを除いた数。範囲が無効なら0）。
 export function islandCount(island) {
   const isl = normalizeIsland(island);
   if (isl.end < isl.start) return 0;
   const segs = isl.ranges ? isl.ranges : [{ start: isl.start, end: isl.end }];
-  const total = segs.reduce((a, seg) => a + (seg.end - seg.start + 1), 0);
+  const total = segs.reduce((a, seg) => a + Math.abs(seg.end - seg.start) + 1, 0);
   return total - (isl.gaps?.length || 0);
 }
 

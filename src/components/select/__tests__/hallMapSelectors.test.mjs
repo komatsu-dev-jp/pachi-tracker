@@ -5,6 +5,7 @@ import assert from "node:assert";
 import {
   LAYOUT_ROWS_MIN,
   LAYOUT_ROWS_MAX,
+  islandLayoutRows,
   normalizeIsland,
   normalizeIslands,
   getStoreIslands,
@@ -218,21 +219,39 @@ test("updateIsland で rows の保存と旧 cols の解除ができる", () => {
   assert.strictEqual(next[0].cols, undefined);
 });
 
-test("normalizeIsland は ranges（複数連番）を整列・結合し start/end を全体範囲にする", () => {
-  // 途中で連番が切れる島（479〜490 / 499〜509 / 546〜574）
-  const a = normalizeIsland({ ranges: [{ start: 546, end: 574 }, { start: 479, end: 490 }, { start: 499, end: 509 }] });
+test("normalizeIsland は ranges（行一覧）の並びと方向を保ち start/end を全体範囲にする", () => {
+  // 1行目が降順（509〜499）の島。行の並び順はそのまま保持される
+  const a = normalizeIsland({ ranges: [{ start: 509, end: 499 }, { start: 479, end: 490 }, { start: 546, end: 574 }] });
   assert.deepStrictEqual(a.ranges, [
+    { start: 509, end: 499 },
     { start: 479, end: 490 },
-    { start: 499, end: 509 },
     { start: 546, end: 574 },
   ]);
   assert.strictEqual(a.start, 479);
   assert.strictEqual(a.end, 574);
-  // 重複・隣接する範囲は1つの連番へまとまり、1範囲になれば ranges を持たない
-  const b = normalizeIsland({ ranges: [{ start: 1, end: 10 }, { start: 11, end: 20 }] });
+  // 昇順1行だけなら ranges を持たず start/end に畳む
+  const b = normalizeIsland({ ranges: [{ start: 1, end: 10 }] });
   assert.strictEqual(b.ranges, undefined);
   assert.strictEqual(b.start, 1);
-  assert.strictEqual(b.end, 20);
+  assert.strictEqual(b.end, 10);
+  // 降順1行は方向が情報なので ranges を保持する
+  const c = normalizeIsland({ ranges: [{ start: 10, end: 1 }] });
+  assert.deepStrictEqual(c.ranges, [{ start: 10, end: 1 }]);
+  assert.strictEqual(c.start, 1);
+  assert.strictEqual(c.end, 10);
+});
+
+test("islandLayoutRows は行ごとに左端→右端の順でセルを返す（降順対応）", () => {
+  const island = { ranges: [{ start: 509, end: 507 }, { start: 546, end: 548 }], gaps: [508] };
+  const rows = islandLayoutRows(island);
+  assert.strictEqual(rows.length, 2);
+  assert.deepStrictEqual(rows[0].map((c) => c.num), [509, 508, 507]); // 降順の行
+  assert.strictEqual(rows[0][1].gap, true); // 508 は欠け
+  assert.deepStrictEqual(rows[1].map((c) => c.num), [546, 547, 548]); // 昇順の行
+});
+
+test("islandCount は降順の行でも正しく数える", () => {
+  assert.strictEqual(islandCount({ ranges: [{ start: 509, end: 499 }] }), 11);
 });
 
 test("islandRanges は連番範囲一覧を返す（単一範囲は start/end から）", () => {
