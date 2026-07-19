@@ -147,6 +147,29 @@ export function filterGraphSlots(slots) {
   return { slots: kept, skipped: list.length - kept.length };
 }
 
+// スクロール撮影の重なりで、直前の画像の末尾と同じ行が次の画像の先頭に写り込むことがある。
+// 直前画像の末尾と次画像の先頭で（差玉・グラフ画素数が）完全一致する行のまとまりを
+// 重複とみなし、次画像側から取り除く。全て空（px=0）の行だけの一致は偶然のため対象外。
+export function dropOverlapSlots(prevSlots, nextSlots, maxRows = 5) {
+  const prev = Array.isArray(prevSlots) ? prevSlots : [];
+  const next = Array.isArray(nextSlots) ? nextSlots : [];
+  const same = (a, b) =>
+    a && b && (Number(a.val) || 0) === (Number(b.val) || 0) && (Number(a.px) || 0) === (Number(b.px) || 0);
+  const maxK = Math.min(maxRows, (prev.length / 2) | 0, (next.length / 2) | 0);
+  for (let k = maxK; k >= 1; k--) {
+    let eq = true;
+    let hasInk = false;
+    for (let i = 0; i < k * 2; i++) {
+      const p = prev[prev.length - k * 2 + i];
+      const n = next[i];
+      if (!same(p, n)) { eq = false; break; }
+      if ((Number(p?.px) || 0) > 0) hasInk = true;
+    }
+    if (eq && hasInk) return next.slice(k * 2);
+  }
+  return next;
+}
+
 // 解析スロット配列に台番号配列を割り当て、{num,val,px,rank} 行を作る。
 // rank はランク名文字列（例: "S+"）。numList が足りない箇所は連番フォールバック（index+1）。
 export function assignNumbers(slots, numList) {

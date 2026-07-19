@@ -19,6 +19,7 @@ import {
   islandToNumbers,
   buildSegmentsNumbers,
   filterGraphSlots,
+  dropOverlapSlots,
   makeScan,
 } from "./deltaSelectors";
 import { readTaiDataAttachments } from "./aiReader";
@@ -61,6 +62,7 @@ function fileToAttachment(file) {
 
 async function analyzeImages(images, onProgress) {
   const allResults = [];
+  let prevResults = []; // 直前画像の生スロット（スクロール重なりの重複除去用）
   for (let i = 0; i < images.length; i++) {
     onProgress?.(i + 1, images.length);
     try {
@@ -74,7 +76,11 @@ async function analyzeImages(images, onProgress) {
       ctx.drawImage(img, 0, 0);
       const id = ctx.getImageData(0, 0, img.width, img.height);
       const r = runAnalysis(id.data, img.width, img.height);
-      if (!r.error) allResults.push(...r.results);
+      if (!r.error) {
+        // 前の画像と重なって写った行を取り除いてから連結する
+        allResults.push(...dropOverlapSlots(prevResults, r.results));
+        prevResults = r.results;
+      }
     } catch {
       // 読み込み失敗画像はスキップ（解析対象から外す）
     }
