@@ -459,6 +459,76 @@
   padding: 0 14px 4px;
 }
 
+.strategy-plan-context {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 5px 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--sm-line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--sm-cyan) 6%, var(--sm-card));
+  color: var(--sm-sub-hi);
+  font-size: 11px;
+}
+
+.strategy-plan-context.is-saved { border-color: color-mix(in srgb, var(--sm-cyan) 34%, var(--sm-line)); }
+.strategy-plan-context > span { min-width: 0; }
+.strategy-plan-context > span:first-child { display: flex; align-items: center; gap: 7px; color: var(--sm-text); }
+.strategy-plan-context > span:first-child strong { color: var(--sm-cyan); font-size: 11px; }
+.strategy-plan-context > span:first-child b { font-size: 12px; }
+.strategy-plan-context > em { grid-column: 1 / -1; color: var(--sm-sub-hi); font-size: 10px; font-style: normal; line-height: 1.5; }
+
+.strategy-a-shell {
+  display: grid;
+  gap: 12px;
+  padding: 0 14px 4px;
+}
+
+.strategy-selected-detail-card { min-width: 0; }
+
+.strategy-a-decision {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--sm-green) 32%, var(--sm-line));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--sm-green) 7%, var(--sm-bg));
+}
+
+.strategy-a-decision > div { min-width: 0; }
+.strategy-a-decision span { display: block; color: var(--sm-sub-hi); font-size: 10px; }
+.strategy-a-decision b { display: block; margin-top: 4px; color: var(--sm-text); font-size: 12px; line-height: 1.5; }
+.strategy-a-decision i { align-self: center; color: var(--sm-cyan); font-size: 18px; font-style: normal; }
+.strategy-a-decision.is-skip { display: block; border-color: color-mix(in srgb, var(--sm-yellow) 42%, var(--sm-line)); background: color-mix(in srgb, var(--sm-yellow) 7%, var(--sm-bg)); }
+
+.strategy-outcome-card {
+  margin-bottom: 10px;
+  padding: 12px;
+  border: 1px solid var(--sm-line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--sm-cyan) 5%, var(--sm-bg));
+}
+
+.strategy-outcome-card.is-ready { border-color: color-mix(in srgb, var(--sm-green) 34%, var(--sm-line)); }
+.strategy-outcome-hero { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 3px 10px; }
+.strategy-outcome-hero > span { display: flex; flex-direction: column; gap: 1px; }
+.strategy-outcome-hero > span small { color: var(--sm-sub); font-size: 8px; }
+.strategy-outcome-hero > span strong { color: var(--sm-text); font-size: 12px; }
+.strategy-outcome-hero > b { grid-row: 1 / 3; grid-column: 2; color: var(--sm-green); font-family: var(--font-mono); font-size: 23px; white-space: nowrap; }
+.strategy-outcome-card.is-pending .strategy-outcome-hero > b { color: var(--sm-sub-hi); font-size: 13px; }
+.strategy-outcome-hero > em { grid-column: 1 / -1; color: var(--sm-sub); font-size: 8px; font-style: normal; }
+.strategy-outcome-specs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; margin-top: 10px; }
+.strategy-outcome-specs > span { min-width: 0; padding: 7px 6px; border: 1px solid var(--sm-line); border-radius: 10px; background: var(--sm-card); }
+.strategy-outcome-specs small { display: block; color: var(--sm-sub); font-size: 7px; }
+.strategy-outcome-specs b { display: block; overflow: hidden; margin-top: 3px; color: var(--sm-text); font-family: var(--font-mono); font-size: 9px; white-space: nowrap; text-overflow: ellipsis; }
+.strategy-outcome-hit { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 7px; padding: 7px 8px; border-radius: 10px; background: var(--sm-card); color: var(--sm-sub-hi); font-size: 8px; }
+.strategy-outcome-hit b { color: var(--sm-cyan); font-family: var(--font-mono); font-size: 11px; white-space: nowrap; }
+.strategy-outcome-card > p { margin: 8px 0 0; color: var(--sm-sub); font-size: 8px; line-height: 1.55; }
+
 .strategy-plan-row {
   min-height: 62px;
   width: 100%;
@@ -511,6 +581,10 @@
   .strategy-plan-row { grid-template-columns: 34px 70px 1fr 18px; }
   .strategy-plan-action { display: none; }
   .strategy-plan-sub { grid-column: 3 / 4; }
+  .strategy-plan-context { grid-template-columns: 1fr auto; }
+  .strategy-a-decision { grid-template-columns: 1fr; }
+  .strategy-a-decision i { justify-self: center; transform: rotate(90deg); }
+  .strategy-outcome-specs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (min-width: 700px) {

@@ -27,6 +27,7 @@ export const PE_PARAMS = Object.freeze({
   portfolioHours: 8,
   spinsPerHour: 210,
   sessionSpins: 2200,
+  riskReferenceSpins: 2200,
   priorHalfLifeBalls: 7000,
   defaultPriorBalls: 50000,
   graphStepBalls: 500,
@@ -47,7 +48,7 @@ function round(value, digits = 2) {
   return Math.round(num(value) * p) / p;
 }
 
-function normalCdf(x) {
+export function normalCdf(x) {
   if (x < -10) return 0;
   if (x > 10) return 1;
   const a1 = 0.254829592;
@@ -57,10 +58,47 @@ function normalCdf(x) {
   const a5 = 1.061405429;
   const p = 0.3275911;
   const sign = x < 0 ? -1 : 1;
-  const ax = Math.abs(x);
+  // normal CDF = 0.5 * (1 + erf(x / sqrt(2))).
+  // The previous implementation passed x directly to the erf approximation,
+  // which overstated positive probabilities (for example, z=1 became 92.1%).
+  const ax = Math.abs(x) / Math.SQRT2;
   const t = 1 / (1 + p * ax);
   const erf = sign * (1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-ax * ax));
   return 0.5 * (1 + erf);
+}
+
+function atLeastOneHitProbability(spins, denominator) {
+  const n = Math.max(0, num(spins));
+  const d = num(denominator);
+  if (!(d > 0)) return null;
+  if (n === 0) return 0;
+  return 1 - ((1 - 1 / d) ** n);
+}
+
+export function outwardPercentBand(low, high, step = 5) {
+  if (!Number.isFinite(low) || !Number.isFinite(high)) return null;
+  const lo = Math.min(low, high) * 100;
+  const hi = Math.max(low, high) * 100;
+  const safeStep = Math.max(1, num(step, 5));
+  // 0% / 100% は保証に見えるため、概算表示では使わない。
+  return {
+    low: clamp(Math.floor(lo / safeStep) * safeStep, 1, 99),
+    high: clamp(Math.ceil(hi / safeStep) * safeStep, 1, 99),
+  };
+}
+
+function normalizedMachineIdentity(value) {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\s・･:：/／\\()（）\u005b\u005d［］【】「」『』.,，。_-]/g, "");
+}
+
+function hasExactMachineIdentity(machine, inputName) {
+  const input = normalizedMachineIdentity(inputName);
+  if (!input) return false;
+  return [machine?.name, machine?.modelName, ...(Array.isArray(machine?.aliases) ? machine.aliases : [])]
+    .some((value) => normalizedMachineIdentity(value) === input);
 }
 
 function dateKey(value) {
@@ -522,11 +560,48 @@ function economics(row, params) {
   const daily = unitPrice * params.sessionSpins;
   const lowUnit = row.predictedLow > 0 ? 1000 / border - 1000 / row.predictedLow : 0;
   const highUnit = row.predictedHigh > 0 ? 1000 / border - 1000 / row.predictedHigh : 0;
-  // ここでの stdDev は「1日分の出玉ブレ（結果のリスク）」としての利用。
-  // low/high（回転率の推定誤差に基づく信頼区間）とは役割が別なので、意図的に統一しない。
-  const machineSdYen = Math.max(1, num(row.estimate?.stats?.stdDev, 3000) * params.ballValueYen);
-  const hourlyRisk = machineSdYen * Math.sqrt(params.spinsPerHour / params.sessionSpins);
-  const winRate = normalCdf(daily / machineSdYen);
+  // 収支プラス見込みには、機種マスタで検証済みの標準偏差だけを使う。
+  // resolveMachineStats() の補完値は差玉から回転率を推定する内部用途に限り、
+  // 利用者へ見せる勝率へは流用しない。
+  const machine = row.machine || {};
+  const exactModelReady = machine.modelVerified === true
+    && Boolean(machine.modelName)
+    && hasExactMachineIdentity(machine, row.machineName);
+  const volatilityReady = exactModelReady
+    && machine.stdDevMethod === "p-evidence-branching-v2"
+    && num(machine.stdDev) > 0;
+  const referenceSpins = Math.max(1, num(params.riskReferenceSpins, 2200));
+  const sessionSpins = Math.max(0, num(params.sessionSpins));
+  const spinsPerHour = Math.max(0, num(params.spinsPerHour));
+  const ballValueYen = Math.max(0, num(params.ballValueYen));
+  const referenceRiskYen = volatilityReady && ballValueYen > 0
+    ? num(machine.stdDev) * ballValueYen
+    : null;
+  const hourlyRisk = referenceRiskYen == null || spinsPerHour <= 0
+    ? null
+    : referenceRiskYen * Math.sqrt(spinsPerHour / referenceSpins);
+  const sessionRisk = referenceRiskYen == null || sessionSpins <= 0
+    ? null
+    : referenceRiskYen * Math.sqrt(sessionSpins / referenceSpins);
+
+  let profitChanceStatus = "ready";
+  if (!exactModelReady) profitChanceStatus = "model-unverified";
+  else if (!volatilityReady) profitChanceStatus = "stddev-unverified";
+  else if (!(sessionSpins > 0) || !(ballValueYen > 0)) profitChanceStatus = "plan-missing";
+  else if (!(row.predictedLow > 0) || !(row.predictedHigh > 0)) profitChanceStatus = "rotation-range-missing";
+  else if (row.confidence < 0.2) profitChanceStatus = "low-confidence";
+
+  const winRate = profitChanceStatus === "ready" ? normalCdf(daily / sessionRisk) : null;
+  const winRateLow = profitChanceStatus === "ready" ? normalCdf((lowUnit * sessionSpins) / sessionRisk) : null;
+  const winRateHigh = profitChanceStatus === "ready" ? normalCdf((highUnit * sessionSpins) / sessionRisk) : null;
+  const winRateBand = outwardPercentBand(winRateLow, winRateHigh);
+  const jackpotDenominator = num(machine.synthProb) > 0 ? num(machine.synthProb) : null;
+  const initialAvgPayout = machine.allocationVerified === true && num(machine.hesoAvgPayout) > 0
+    ? Math.round(num(machine.hesoAvgPayout))
+    : null;
+  const rushAvgPayout = machine.allocationVerified === true && num(machine.rushAvgPayout) > 0
+    ? Math.round(num(machine.rushAvgPayout))
+    : null;
   return {
     unitPrice: round(unitPrice),
     hourly: Math.round(hourly),
@@ -535,9 +610,24 @@ function economics(row, params) {
     daily: Math.round(daily),
     dailyLow: Math.round(lowUnit * params.sessionSpins),
     dailyHigh: Math.round(highUnit * params.sessionSpins),
-    hourlyRisk: Math.round(hourlyRisk),
-    dailyRisk: Math.round(machineSdYen),
+    hourlyRisk: hourlyRisk == null ? null : Math.round(hourlyRisk),
+    dailyRisk: sessionRisk == null ? null : Math.round(sessionRisk),
     winRate,
+    winRateLow,
+    winRateHigh,
+    winRateBandLow: winRateBand?.low ?? null,
+    winRateBandHigh: winRateBand?.high ?? null,
+    profitChanceStatus,
+    profitChanceMethod: profitChanceStatus === "ready" ? "normal-approx-v1" : null,
+    jackpotDenominator,
+    jackpotLabel: jackpotDenominator ? `1/${round(jackpotDenominator, 1)}` : (machine.prob || null),
+    atLeastOneHitRate: jackpotDenominator == null ? null : atLeastOneHitProbability(sessionSpins, jackpotDenominator),
+    initialAvgPayout,
+    rushAvgPayout,
+    avgPayoutPerHit: num(machine.avgPayoutPerHit) > 0 ? Math.round(num(machine.avgPayoutPerHit)) : null,
+    rushEntryRate: num(machine.rushEntryRate) > 0 ? num(machine.rushEntryRate) : null,
+    rushContinueRate: num(machine.rushContinueRate) > 0 ? num(machine.rushContinueRate) : null,
+    plannedSpins: sessionSpins,
     sharpe: hourlyRisk > 0 ? hourly / hourlyRisk : 0,
   };
 }
@@ -668,7 +758,7 @@ function applyDecision(latest, profiles, markov, spatial, opposite, params) {
 function buildPortfolio(rows, params) {
   // 信頼度不足（nodata）の台を時間配分へ推奨しない。strong / watch のみ対象。
   const candidates = rows
-    .filter((row) => row.valid && row.hourly > 0 && (row.verdict === "strong" || row.verdict === "watch") && !row.nailAlert.includes("締め"))
+    .filter((row) => row.valid && row.hourly > 0 && row.hourlyRisk > 0 && (row.verdict === "strong" || row.verdict === "watch") && !row.nailAlert.includes("締め"))
     .sort((a, b) => b.sharpe - a.sharpe)
     .slice(0, 10);
   const totalSharpe = candidates.reduce((sum, row) => sum + Math.max(0, row.sharpe), 0);
@@ -748,4 +838,7 @@ export const pevidenceInternals = {
   estimateDaily,
   buildOppositePairs,
   normalCdf,
+  atLeastOneHitProbability,
+  outwardPercentBand,
+  hasExactMachineIdentity,
 };

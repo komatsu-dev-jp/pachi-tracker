@@ -3,9 +3,20 @@
 
 export const P_EVIDENCE_DEMO_MACHINE = {
   name: "P-EVIDENCEデモ機",
+  modelName: "P-EVIDENCE-DEMO",
+  modelVerified: true,
   border1K: 18,
+  prob: "1/319.6",
+  synthProb: 319.6,
   avgPayoutPerHit: 1400,
-  stdDev: 4000,
+  hesoAvgPayout: 450,
+  rushAvgPayout: 1500,
+  rushEntryRate: 60,
+  rushContinueRate: 81,
+  allocationVerified: true,
+  stdDev: 18000,
+  stdDevMethod: "p-evidence-branching-v2",
+  stdDevLabel: "画面確認用デモ値",
   muraCoef: 50000,
 };
 
