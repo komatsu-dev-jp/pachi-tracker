@@ -1,10 +1,16 @@
 // 差玉解析：ピクセル解析エンジン＋ランク定義（純粋関数）
 //
 // 移植元: pachinko-rank-analyzer の App.jsx。
-// RANKS / getRank / runAnalysis は移植元のロジック・数式・閾値を一切変更せず移植している。
+// RANKS / getRank は移植元のロジック・数式・閾値を一切変更せず移植している。
 // （logic.js とは無関係の独立した解析データ。rotRows は迂回しない。）
 //
 // 出玉推移グラフのスクリーンショットをピクセル解析し、各台の差玉を推定する。
+//
+// 2026-07-19 変更（ユーザー指示による精度改善）:
+// 移植元はゼロ線・グリッド間隔を「画像の最初のグラフ帯」だけから推定し全行に流用していたが、
+// 先頭の帯が切れたグラフや黒帯だと、その画像の全台の差玉が数倍に化けるズレが起きていた。
+// このため較正を「行ごと」に行い、あり得ない較正値は既定値へ戻す妥当性チェックを追加した。
+// 較正・差玉算出の数式と閾値そのものは移植元から変更していない。
 
 // ── ランク定義（21段階・移植元の min 値と rank 名は変更禁止） ──
 export const RANKS = [
@@ -92,36 +98,45 @@ export function runAnalysis(data, w, h) {
   if (!graphRows.length) return { results: [], logs, error: "グラフ行なし" };
 
   const midX = (w/2)|0;
-  const [r0s, r0e] = graphRows[0];
-  const bH = r0e - r0s + 1;
-  const bB = new Float32Array(bH);
-  for (let ly = 0; ly < bH; ly++) {
-    let s = 0, c = 0;
-    for (let x = 10; x < midX-5; x++) { const i = ((r0s+ly)*w+x)*4; s += (data[i]+data[i+1]+data[i+2])/3; c++; }
-    bB[ly] = s / c;
-  }
-  const gls = [];
-  for (let y = 3; y < bH-3; y++) {
-    const nb = (bB[y-2]+bB[y-1])/2;
-    if (bB[y] > Math.max(nb,25)*1.2 && bB[y] > 33) gls.push({y, b:bB[y]});
-  }
-  const mG = [];
-  for (const g of gls) { if (mG.length && g.y-mG[mG.length-1].y<5) { if(g.b>mG[mG.length-1].b)mG[mG.length-1]=g; } else mG.push(g); }
-  let zeroY, gridSp;
-  if (mG.length >= 3) {
-    const bs = mG.map(g=>g.b).sort((a,b)=>a-b);
-    const medB = bs[(bs.length/2)|0];
-    const maxI = mG.reduce((mi,g,i,a)=>(g.b>a[mi].b?i:mi),0);
-    zeroY = mG[maxI].b > medB*2 ? mG[maxI].y : (() => { const sp=mG.slice(1).map((g,i)=>g.y-mG[i].y).sort((a,b)=>a-b); gridSp=sp[(sp.length/2)|0]; return mG[0].y+3*gridSp; })();
-    const nS = mG.filter(g=>g.b<medB*2).map(g=>g.y);
-    if (nS.length>=2) { const sp=nS.slice(1).map((y,i)=>y-nS[i]).sort((a,b)=>a-b); gridSp=sp[(sp.length/2)|0]; }
-    else if (!gridSp) { const sp=mG.slice(1).map((g,i)=>g.y-mG[i].y).sort((a,b)=>a-b); gridSp=sp[(sp.length/2)|0]; }
-  } else { zeroY=bH*0.54; gridSp=bH/6.5; }
-  log(`zero=${zeroY|0} grid=${gridSp?.toFixed(1)}px`);
+  // 行（グラフ帯）ごとにゼロ線とグリッド間隔を較正する。
+  // 1行目だけで全行を較正すると、切れた行・黒帯が画像内の全台を狂わせるため。
+  // 内部の推定式・閾値は移植元と同一。
+  const calibrate = (yS, yE) => {
+    const bH = yE - yS + 1;
+    const bB = new Float32Array(bH);
+    for (let ly = 0; ly < bH; ly++) {
+      let s = 0, c = 0;
+      for (let x = 10; x < midX-5; x++) { const i = ((yS+ly)*w+x)*4; s += (data[i]+data[i+1]+data[i+2])/3; c++; }
+      bB[ly] = s / c;
+    }
+    const gls = [];
+    for (let y = 3; y < bH-3; y++) {
+      const nb = (bB[y-2]+bB[y-1])/2;
+      if (bB[y] > Math.max(nb,25)*1.2 && bB[y] > 33) gls.push({y, b:bB[y]});
+    }
+    const mG = [];
+    for (const g of gls) { if (mG.length && g.y-mG[mG.length-1].y<5) { if(g.b>mG[mG.length-1].b)mG[mG.length-1]=g; } else mG.push(g); }
+    let zeroY, gridSp;
+    if (mG.length >= 3) {
+      const bs = mG.map(g=>g.b).sort((a,b)=>a-b);
+      const medB = bs[(bs.length/2)|0];
+      const maxI = mG.reduce((mi,g,i,a)=>(g.b>a[mi].b?i:mi),0);
+      zeroY = mG[maxI].b > medB*2 ? mG[maxI].y : (() => { const sp=mG.slice(1).map((g,i)=>g.y-mG[i].y).sort((a,b)=>a-b); gridSp=sp[(sp.length/2)|0]; return mG[0].y+3*gridSp; })();
+      const nS = mG.filter(g=>g.b<medB*2).map(g=>g.y);
+      if (nS.length>=2) { const sp=nS.slice(1).map((y,i)=>y-nS[i]).sort((a,b)=>a-b); gridSp=sp[(sp.length/2)|0]; }
+      else if (!gridSp) { const sp=mG.slice(1).map((g,i)=>g.y-mG[i].y).sort((a,b)=>a-b); gridSp=sp[(sp.length/2)|0]; }
+    } else { zeroY=bH*0.54; gridSp=bH/6.5; }
+    // 妥当性チェック: 縦軸±30,000・グリッド6〜7本の構造上あり得ない較正値は既定値へ戻す。
+    if (!Number.isFinite(gridSp) || gridSp < bH/12 || gridSp > bH/3) gridSp = bH/6.5;
+    if (!Number.isFinite(zeroY) || zeroY < bH*0.2 || zeroY > bH*0.9) zeroY = bH*0.54;
+    return { zeroY, gridSp };
+  };
 
   const fm = Math.max(3, (w*0.015)|0);
   const results = [];
   for (let ri = 0; ri < graphRows.length; ri++) {
+    const { zeroY, gridSp } = calibrate(graphRows[ri][0], graphRows[ri][1]);
+    log(`行${ri+1}: zero=${zeroY|0} grid=${gridSp.toFixed(1)}px`);
     for (let col = 0; col < 2; col++) {
       const [yS, yE] = graphRows[ri];
       const gH = yE-yS+1;
