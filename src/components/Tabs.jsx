@@ -770,7 +770,19 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     const [moveMachineNum, setMoveMachineNum] = useState("");
     // 移動先の開始回転数（新台の台データ表示値。稼働開始時の「開始回転数」と同じ意味）
     const [moveStartRot, setMoveStartRot] = useState("");
+    const [moveYutimeTarget, setMoveYutimeTarget] = useState(null);
+    const [showMoveYutimeCalculator, setShowMoveYutimeCalculator] = useState(false);
     const movePickedMachineRef = useRef(null);
+    const clearMoveYutimeTarget = () => {
+        setMoveYutimeTarget(null);
+        const picked = movePickedMachineRef.current;
+        if (picked?.yutimeSession?.targetingEnabled) {
+            movePickedMachineRef.current = {
+                ...picked,
+                yutimeSession: { ...picked.yutimeSession, targetingEnabled: false },
+            };
+        }
+    };
     // 記録モード イベントメニュー（FAB から開く）
     const [showEventMenu, setShowEventMenu] = useState(false);
     // テンキーの直近入力履歴（表示専用・店内での再入力ヒント）
@@ -2313,6 +2325,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     if (machinePickerFor === "move") {
                                         // 台移動モーダル：即時にstateを書き換えず、移動確定時に反映するため ref に退避
                                         setMoveMachineName(m.name);
+                                        setMoveYutimeTarget(null);
                                         movePickedMachineRef.current = {
                                             synthDenom: m.synthProb,
                                             spec1R: spec.spec1R,
@@ -2378,6 +2391,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                 if (machinePickerFor === "move") {
                                     // 台移動：機種名だけ確定（スペックは直前の台の値を保持）
                                     setMoveMachineName(machineQuery.trim());
+                                    setMoveYutimeTarget(null);
                                     movePickedMachineRef.current = null;
                                 } else {
                                     setSetupMachineName(machineQuery.trim());
@@ -3235,6 +3249,8 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                         setMoveMachineName("");
                                         setMoveMachineNum("");
                                         setMoveStartRot("");
+                                        setMoveYutimeTarget(null);
+                                        setShowMoveYutimeCalculator(false);
                                         movePickedMachineRef.current = null;
                                         setShowMoveModal(true);
                                     }}
@@ -5397,7 +5413,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             {/* Move Modal */}
             {showMoveModal && (
                 <div style={{ position: "fixed", inset: 0, background: "rgba(17,24,39,0.45)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
-                    <Card style={{ width: "100%", maxWidth: 320, padding: 20 }}>
+                    <Card style={{ width: "100%", maxWidth: 320, maxHeight: "calc(100dvh - 40px)", overflowY: "auto", padding: 20 }}>
                         <SecLabel label="台移動" />
                         <div style={{ fontSize: 12, color: C.sub, marginBottom: 12, lineHeight: 1.6 }}>
                             現在のデータを保存して新しい台へ移動します。<br />
@@ -5442,11 +5458,43 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     type="tel"
                                     inputMode="numeric"
                                     value={moveStartRot}
-                                    onChange={e => setMoveStartRot(e.target.value)}
+                                    onChange={e => {
+                                        setMoveStartRot(e.target.value);
+                                        clearMoveYutimeTarget();
+                                    }}
                                     placeholder="0"
                                     style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "12px 14px", fontSize: 18, color: C.text, fontFamily: mono, outline: "none", textAlign: "center" }}
                                 />
                             </div>
+                        </div>
+                        <div style={{ marginBottom: 14, padding: 12, borderRadius: 12, background: moveYutimeTarget ? `${C.blue}14` : C.surfaceHi, border: `1px solid ${moveYutimeTarget ? `${C.blue}66` : C.border}` }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+                                <div>
+                                    <div style={{ fontSize: 11, color: moveYutimeTarget ? C.blue : C.text, fontWeight: 800 }}>遊タイム狙い（任意）</div>
+                                    <div style={{ marginTop: 2, fontSize: 9, color: C.sub }}>狙う場合だけ計算条件を設定します</div>
+                                </div>
+                                {moveYutimeTarget && (
+                                    <button type="button" className="b" onClick={clearMoveYutimeTarget} style={{ minHeight: 36, padding: "6px 10px", borderRadius: 9, border: `1px solid ${C.border}`, background: C.bg, color: C.sub, fontSize: 10, fontWeight: 700 }}>
+                                        解除
+                                    </button>
+                                )}
+                            </div>
+                            {moveYutimeTarget && (
+                                <div style={{ marginBottom: 8, color: C.sub, fontSize: 10, lineHeight: 1.55 }}>
+                                    開始 {moveYutimeTarget.currentLowSpins.toLocaleString()}回 ・ 想定1K {moveYutimeTarget.assumedStart1K || "—"}回/K
+                                    <br />発動 {moveYutimeTarget.session.triggerLowSpins.toLocaleString()}回 ・ {moveYutimeTarget.decision?.result?.valid ? `期待値 ${Math.round(moveYutimeTarget.decision.result.selectedEV).toLocaleString()}円` : "期待出玉などの確認が必要"}
+                                </div>
+                            )}
+                            <button
+                                type="button"
+                                className="b"
+                                disabled={!moveMachineName.trim()}
+                                onClick={() => setShowMoveYutimeCalculator(true)}
+                                style={{ width: "100%", minHeight: 44, borderRadius: 10, border: `1px solid ${C.blue}`, background: moveMachineName.trim() ? `${C.blue}1f` : C.bg, color: moveMachineName.trim() ? C.blue : C.sub, fontSize: 12, fontWeight: 800, opacity: moveMachineName.trim() ? 1 : 0.55 }}
+                            >
+                                {moveYutimeTarget ? "遊タイム条件を変更" : "遊タイム狙いを設定"}
+                            </button>
+                            {!moveMachineName.trim() && <div style={{ marginTop: 6, color: C.sub, fontSize: 9 }}>先に移動先の機種を選択してください</div>}
                         </div>
                         <div style={{ marginBottom: 14 }}>
                             <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>移動前の持ち玉（玉）</div>
@@ -5465,13 +5513,24 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             <Btn label="移動する" onClick={() => {
                                 const mochi = Math.max(0, Math.round(Number(moveMochiBalls) || 0));
                                 const picked = movePickedMachineRef.current;
+                                const yutimeLowSpins = moveYutimeTarget?.currentLowSpins
+                                    ?? Math.max(0, Math.round(Number(moveStartRot) || 0));
                                 const dest = {
                                     machineName: (moveMachineName || "").trim(),
                                     machineNum: (moveMachineNum || "").trim(),
                                     startRot: Math.max(0, Math.round(Number(moveStartRot) || 0)),
                                     ...(picked || {}),
-                                    yutimeLowSpins: Math.max(0, Math.round(Number(moveStartRot) || 0)),
+                                    yutimeSession: moveYutimeTarget?.session || picked?.yutimeSession || null,
+                                    yutimeLowSpins,
                                 };
+                                if (moveYutimeTarget?.decision) {
+                                    dest.yutimeDecision = {
+                                        ...moveYutimeTarget.decision,
+                                        machineName: dest.machineName,
+                                        currentLowSpins: yutimeLowSpins,
+                                        spec: dest.yutimeSession,
+                                    };
+                                }
                                 if (isYutimeTargetingSession(dest.yutimeSession)) {
                                     const moveResult = calculateYutimeEV({
                                         probabilityDenom: dest.synthDenom || S.synthDenom,
@@ -5488,7 +5547,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                         exRate: S.exRate,
                                         playMode: S.currentMochiBalls > 0 ? "mochi" : S.currentChodama > 0 ? "chodama" : "cash",
                                     });
-                                    dest.yutimeDecision = {
+                                    dest.yutimeDecision = dest.yutimeDecision || {
                                         version: 2,
                                         createdAt: new Date().toISOString(),
                                         machineName: dest.machineName,
@@ -5501,11 +5560,41 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     };
                                 }
                                 setShowMoveModal(false);
+                                setMoveYutimeTarget(null);
                                 S.handleMoveTable(mochi, dest);
                             }} bg={C.purple} fg="#fff" bd="none" />
                         </div>
                     </Card>
                 </div>
+            )}
+
+            {showMoveYutimeCalculator && (
+                <YutimeCalculatorSheet
+                    S={S}
+                    initialMachineName={moveYutimeTarget?.machineName || moveMachineName}
+                    initialSession={moveYutimeTarget?.session || movePickedMachineRef.current?.yutimeSession || null}
+                    initialCurrentLowSpins={moveYutimeTarget?.currentLowSpins ?? Math.max(0, Math.round(Number(moveStartRot) || 0))}
+                    initialStart1K={moveYutimeTarget?.assumedStart1K || movePickedMachineRef.current?.yutimeSession?.assumedStart1K || null}
+                    confirmLabel="この条件を台移動に設定"
+                    onConfirm={(confirmation) => {
+                        const selected = confirmation.selectedMachine;
+                        const selectedSpec = confirmation.machineSpec;
+                        setMoveMachineName(confirmation.machineName);
+                        setMoveStartRot(String(confirmation.currentLowSpins));
+                        movePickedMachineRef.current = {
+                            ...(movePickedMachineRef.current || {}),
+                            ...(selected?.synthProb > 0 ? { synthDenom: selected.synthProb } : {}),
+                            ...(selectedSpec?.spec1R != null ? { spec1R: selectedSpec.spec1R } : {}),
+                            ...(selectedSpec?.specAvgRounds != null ? { specAvgRounds: selectedSpec.specAvgRounds } : {}),
+                            ...(selectedSpec?.specSapo != null ? { specSapo: selectedSpec.specSapo } : {}),
+                            yutimeSession: confirmation.session,
+                            yutimeLowSpins: confirmation.currentLowSpins,
+                        };
+                        setMoveYutimeTarget(confirmation);
+                        setShowMoveYutimeCalculator(false);
+                    }}
+                    onClose={() => setShowMoveYutimeCalculator(false)}
+                />
             )}
 
             {/* 機種選択ボトムシート（台移動モーダルから開く。稼働開始と同じUIを共用） */}
