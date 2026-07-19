@@ -14,7 +14,7 @@ import {
   filterGraphSlots,
   pruneScans,
 } from "../deltaSelectors.js";
-import { getRank, RANKS } from "../deltaEngine.js";
+import { getRank, RANKS, runAnalysis } from "../deltaEngine.js";
 
 // ──────────── parseTaiDataText ────────────
 
@@ -242,6 +242,32 @@ test("filterGraphSlots: 除外後の割り当てで台番号がズレない", ()
   assert.deepStrictEqual(rows.map((r) => [r.num, r.val]), [
     ["499", 100], ["500", 200], ["501", 300], ["502", 400],
   ]);
+});
+
+// ──────────── runAnalysis（行ごと較正） ────────────
+
+test("runAnalysis: 崩れた行が混ざっても他の行の差玉が狂わない（行ごと較正）", () => {
+  // 合成画像: 行A=グリッド線の無い暗帯（黒帯誤検出を模擬）、行B=正常なグラフ帯。
+  // 旧実装（1行目だけで較正）では行Bの差玉が約-40,000に化けていたケース。
+  const w = 200, h = 600;
+  const d = new Uint8ClampedArray(w * h * 4).fill(255); // 白背景
+  const set = (x, y, r, g, b) => { const i = (y * w + x) * 4; d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = 255; };
+  const fillRow = (y, r, g, b) => { for (let x = 0; x < w; x++) set(x, y, r, g, b); };
+  // 行A: y=50..120 の一様な暗帯（グラフ・グリッド線なし）
+  for (let y = 50; y <= 120; y++) fillRow(y, 30, 30, 30);
+  // 行B: y=200..430 のグラフ帯。グリッド線6本＋明るいゼロ線（局所y=115）、間隔33px
+  for (let y = 200; y <= 430; y++) fillRow(y, 20, 20, 20);
+  for (const ly of [16, 49, 82, 148, 181, 214]) fillRow(200 + ly, 90, 90, 90);
+  fillRow(200 + 115, 200, 200, 200); // ゼロ線
+  // 行Bの右列に、ゼロ線から1グリッド上（=+10,000玉）の黄色い線を引く
+  for (let lx = 10; lx <= 60; lx++) set(105 + lx, 200 + 82, 255, 255, 0);
+
+  const { results } = runAnalysis(d, w, h);
+  assert.strictEqual(results.length, 4); // 行A×2列 + 行B×2列
+  assert.strictEqual(results[0].px, 0);  // 行Aはグラフ画素なし（割り当て前に除外される）
+  assert.strictEqual(results[1].px, 0);
+  assert.strictEqual(results[2].px, 0);  // 行Bの左列は空
+  assert.strictEqual(results[3].val, 10000); // 行Bの右列は正しく+10,000
 });
 
 // ──────────── getRank 境界値 ────────────
