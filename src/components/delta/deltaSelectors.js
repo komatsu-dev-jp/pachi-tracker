@@ -137,6 +137,16 @@ export function buildOcrPrompt({ dateText = "", storeName = "" } = {}) {
 店舗名：${storeName}`;
 }
 
+// 解析スロットから「グラフ画素が1つも無いスロット」を除外する。
+// 画面上下の黒帯や空きマスが誤ってグラフ行として検出されると px=0 のスロットになり、
+// そのままでは以降の台番号割り当てが全てズレるため、割り当て前に取り除く。
+// 除外件数もあわせて返す（UIで確認表示するため）。
+export function filterGraphSlots(slots) {
+  const list = Array.isArray(slots) ? slots : [];
+  const kept = list.filter((slot) => (Number(slot?.px) || 0) > 0);
+  return { slots: kept, skipped: list.length - kept.length };
+}
+
 // 解析スロット配列に台番号配列を割り当て、{num,val,px,rank} 行を作る。
 // rank はランク名文字列（例: "S+"）。numList が足りない箇所は連番フォールバック（index+1）。
 export function assignNumbers(slots, numList) {

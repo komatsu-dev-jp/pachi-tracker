@@ -11,6 +11,7 @@ import {
   mergeTaiData,
   islandToNumbers,
   buildSegmentsNumbers,
+  filterGraphSlots,
   pruneScans,
 } from "../deltaSelectors.js";
 import { getRank, RANKS } from "../deltaEngine.js";
@@ -202,6 +203,45 @@ test("buildSegmentsNumbers: 飛び番号の複数区間", () => {
 test("buildSegmentsNumbers: 無効区間はスキップ", () => {
   const segs = [{ start: "", count: "3" }, { start: "5", count: "0" }, { start: "10", count: "2" }];
   assert.deepStrictEqual(buildSegmentsNumbers(segs), ["10", "11"]);
+});
+
+// ──────────── filterGraphSlots ────────────
+
+test("filterGraphSlots: グラフ画素の無いスロットを除外し件数を返す", () => {
+  // 黒帯誤検出（px:0）がページ間に挟まっても、実グラフの並びが保たれる
+  const slots = [
+    { val: 0, px: 0 },      // 上部黒帯（誤検出）
+    { val: 0, px: 0 },
+    { val: 5410, px: 320 }, // 実グラフ
+    { val: -2500, px: 210 },
+    { val: 0, px: 0 },      // 下部黒帯（誤検出）
+    { val: 10000, px: 400 },
+  ];
+  const { slots: kept, skipped } = filterGraphSlots(slots);
+  assert.strictEqual(skipped, 3);
+  assert.deepStrictEqual(kept.map((s) => s.val), [5410, -2500, 10000]);
+});
+
+test("filterGraphSlots: 誤検出が無ければそのまま・不正入力は空", () => {
+  const slots = [{ val: 500, px: 10 }, { val: -500, px: 8 }];
+  const { slots: kept, skipped } = filterGraphSlots(slots);
+  assert.strictEqual(skipped, 0);
+  assert.strictEqual(kept.length, 2);
+  assert.deepStrictEqual(filterGraphSlots(null), { slots: [], skipped: 0 });
+});
+
+test("filterGraphSlots: 除外後の割り当てで台番号がズレない", () => {
+  // 黒帯2件を挟んだ4実グラフ → 除外後に 499〜502 が順番どおり割り当たる
+  const raw = [
+    { val: 0, px: 0 }, { val: 0, px: 0 },
+    { val: 100, px: 50 }, { val: 200, px: 60 },
+    { val: 300, px: 70 }, { val: 400, px: 80 },
+  ];
+  const { slots: kept } = filterGraphSlots(raw);
+  const rows = assignNumbers(kept, ["499", "500", "501", "502"]);
+  assert.deepStrictEqual(rows.map((r) => [r.num, r.val]), [
+    ["499", 100], ["500", 200], ["501", 300], ["502", 400],
+  ]);
 });
 
 // ──────────── getRank 境界値 ────────────

@@ -18,6 +18,7 @@ import {
   mergeTaiData,
   islandToNumbers,
   buildSegmentsNumbers,
+  filterGraphSlots,
   makeScan,
 } from "./deltaSelectors";
 import { readTaiDataAttachments } from "./aiReader";
@@ -186,11 +187,10 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
     setProgress({ i: 0, n: images.length });
     const results = await analyzeImages(images, (i, n) => setProgress({ i, n }));
     setBusy(false);
-    if (!results.length) {
+    // グラフ画素の無い誤検出だけだった場合も「検出できず」として扱う
+    if (!results.length || !onAnalyze(results)) {
       setNoResult(true);
-      return;
     }
-    onAnalyze(results);
   };
 
   return (
@@ -318,7 +318,7 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
 }
 
 // ════════════ 台番号割り当て ════════════
-function NumbersStep({ slotCount, islands, onConfirm, onBack }) {
+function NumbersStep({ slotCount, skipped, islands, onConfirm, onBack }) {
   const [pickedIslandId, setPickedIslandId] = useState(null);
   const [segments, setSegments] = useState([{ start: "", count: String(slotCount) }]);
 
@@ -358,6 +358,19 @@ function NumbersStep({ slotCount, islands, onConfirm, onBack }) {
         <div style={{ fontSize: 14, color: C.subHi, margin: "4px 2px 12px", fontWeight: 600 }}>
           検出された{slotCount}台に台番号を割り当てます
         </div>
+        {skipped > 0 && (
+          <div style={{
+            display: "flex", gap: 8, alignItems: "flex-start",
+            background: "color-mix(in srgb, var(--yellow) 10%, transparent)",
+            border: `1px solid color-mix(in srgb, var(--yellow) 30%, transparent)`,
+            borderRadius: 12, padding: "10px 12px", marginBottom: 12,
+          }}>
+            <span style={{ fontSize: 14, color: C.yellow }}>ℹ</span>
+            <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.6 }}>
+              グラフの無い検出<b style={{ color: C.yellow }}>{skipped}件</b>（画面の黒帯・空きマスなど）を除外しました。台番号のズレを防ぐための処理です。
+            </div>
+          </div>
+        )}
 
         {/* ホールマップから選ぶ */}
         {islands && islands.length > 0 && (
@@ -510,8 +523,15 @@ function SegInput({ label, value, onChange, ph }) {
 }
 
 // ════════════ 解析結果 ════════════
-function ResultsStep({ rows, machineName, onBack, onSave, onOpenImport, saved, customMachines }) {
+function ResultsStep({ rows, machineName, skipped, onBack, onSave, onOpenImport, saved, customMachines }) {
   const [sortBy, setSortBy] = useState("delta");
+
+  // 割り当て確認用: 先頭・末尾の台番号（データサイトの先頭・末尾グラフと突き合わせる）
+  const numRange = useMemo(() => {
+    const nums = rows.map((r) => parseInt(r.num, 10)).filter(Number.isFinite);
+    if (!nums.length) return null;
+    return { first: Math.min(...nums), last: Math.max(...nums) };
+  }, [rows]);
 
   const active = rows.filter((r) => r.val !== 0 || r.px > 10);
   const avg = active.length ? Math.round(active.reduce((s, r) => s + r.val, 0) / active.length) : 0;
@@ -570,6 +590,24 @@ function ResultsStep({ rows, machineName, onBack, onSave, onOpenImport, saved, c
         )}
       />
       <div style={scrollAreaStyle}>
+        {/* 割り当て確認の警告（誤検出を除外した場合のみ表示） */}
+        {skipped > 0 && numRange && (
+          <div style={{
+            display: "flex", gap: 8, alignItems: "flex-start",
+            background: "color-mix(in srgb, var(--yellow) 10%, transparent)",
+            border: `1px solid color-mix(in srgb, var(--yellow) 30%, transparent)`,
+            borderRadius: 12, padding: "10px 12px", marginBottom: 12,
+          }}>
+            <span style={{ fontSize: 14, color: C.yellow }}>⚠</span>
+            <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.6 }}>
+              グラフの無い検出{skipped}件を除外して割り当てました。台番号順に並べ替え、
+              先頭<b style={{ color: C.yellow, fontFamily: mono }}>{numRange.first}</b>・
+              末尾<b style={{ color: C.yellow, fontFamily: mono }}>{numRange.last}</b>の差玉が
+              実際のグラフと一致しているか確認してください。
+            </div>
+          </div>
+        )}
+
         {/* サマリーカード */}
         <Card style={{ marginBottom: 12 }}>
           <div style={{ padding: "14px" }}>
@@ -1087,7 +1125,8 @@ function StepBadge({ n }) {
 export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiApiKey, onChangeAiApiKey, customMachines }) {
   const [step, setStep] = useState("upload");
   const [images, setImages] = useState([]);
-  const [slots, setSlots] = useState([]); // ピクセル解析の生スロット
+  const [slots, setSlots] = useState([]); // グラフ画素のある解析スロット（誤検出は除外済み）
+  const [skipped, setSkipped] = useState(0); // 除外した「グラフ無し」誤検出の件数
   const [rows, setRows] = useState([]);   // 台番号割り当て後の結果行
   const [saved, setSaved] = useState(false);
   const [toast, setToast] = useState("");
@@ -1099,9 +1138,16 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
   }, [rows]);
 
   const handleAnalyzed = (results) => {
-    setSlots(results);
-    if (results.length > 0) setStep("numbers");
-    // 0台のときは upload に留まる（やり直し可能）
+    // 黒帯・空きマス由来の「グラフ無し」誤検出を除外してから割り当てへ進む
+    //（除外しないと以降の台番号が全てズレる）。
+    const { slots: graphSlots, skipped: skippedCount } = filterGraphSlots(results);
+    setSlots(graphSlots);
+    setSkipped(skippedCount);
+    if (graphSlots.length > 0) {
+      setStep("numbers");
+      return true;
+    }
+    return false; // 0台のときは upload に留まる（やり直し可能）
   };
 
   const handleConfirmNumbers = (numbers) => {
@@ -1158,6 +1204,7 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
       {step === "numbers" && (
         <NumbersStep
           slotCount={slots.length}
+          skipped={skipped}
           islands={islands}
           onConfirm={handleConfirmNumbers}
           onBack={() => setStep("upload")}
@@ -1167,6 +1214,7 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
         <ResultsStep
           rows={rows}
           machineName={machineName}
+          skipped={skipped}
           onBack={() => setStep("numbers")}
           onSave={handleSave}
           onOpenImport={() => setStep("import")}
