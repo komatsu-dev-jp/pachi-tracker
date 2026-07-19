@@ -11,14 +11,16 @@ import React, { useMemo, useRef, useState } from "react";
 import { C, f, sp, font, mono, localDateStr } from "../../constants";
 import { Card } from "../Atoms";
 import { runAnalysis, getRankTone } from "./deltaEngine";
+import { attachMachineNumbersToSlots, combineMachineNumberPages } from "./machineNumberOcr";
 import {
   parseTaiDataText,
   buildOcrPrompt,
   assignNumbers,
   mergeTaiData,
+  validateNumberAssignment,
+  validateDeltaRows,
   islandToNumbers,
   buildSegmentsNumbers,
-  filterGraphSlots,
   makeScan,
 } from "./deltaSelectors";
 import { readTaiDataAttachments } from "./aiReader";
@@ -60,7 +62,8 @@ function fileToAttachment(file) {
 }
 
 async function analyzeImages(images, onProgress) {
-  const allResults = [];
+  const reports = [];
+  const numberPages = [];
   for (let i = 0; i < images.length; i++) {
     onProgress?.(i + 1, images.length);
     try {
@@ -74,12 +77,58 @@ async function analyzeImages(images, onProgress) {
       ctx.drawImage(img, 0, 0);
       const id = ctx.getImageData(0, 0, img.width, img.height);
       const r = runAnalysis(id.data, img.width, img.height);
-      if (!r.error) allResults.push(...r.results);
-    } catch {
-      // 読み込み失敗画像はスキップ（解析対象から外す）
+      const rawResults = Array.isArray(r.results) ? r.results : [];
+      const numberOcr = rawResults.length
+        ? attachMachineNumbersToSlots(id.data, img.width, img.height, rawResults)
+        : { accepted: false, reasonCodes: ["empty-page"], numbers: [], slots: rawResults };
+      const imageResults = numberOcr.slots.map((slot, panelIndex) => ({
+        ...slot,
+        source: {
+          ...(slot?.source || {}),
+          imageIndex: i,
+          imageName: images[i].name || `画像${i + 1}`,
+          panelIndex,
+          row: slot?.row,
+          column: slot?.column,
+        },
+      }));
+      numberPages.push({ ...numberOcr, slots: imageResults });
+      reports.push({
+        imageIndex: i,
+        name: images[i].name || `画像${i + 1}`,
+        total: imageResults.length,
+        readable: imageResults.filter((slot) => Number.isFinite(slot?.val) && slot?.status !== "failed").length,
+        review: imageResults.filter((slot) => slot?.status === "review").length,
+        missing: imageResults.filter((slot) => !Number.isFinite(slot?.val) || slot?.status === "failed").length,
+        machineNumberOcrAccepted: numberOcr.accepted,
+        machineNumbers: numberOcr.accepted ? numberOcr.numbers : [],
+        machineNumberCandidates: numberOcr.candidates || [],
+        machineNumberOcrReasons: numberOcr.reasonCodes || [],
+        error: r.error || null,
+      });
+    } catch (error) {
+      numberPages.push({ accepted: false, status: "failed", reasonCodes: ["image-error"], slots: [] });
+      reports.push({
+        imageIndex: i,
+        name: images[i].name || `画像${i + 1}`,
+        total: 0,
+        readable: 0,
+        review: 0,
+        missing: 0,
+        machineNumberOcrAccepted: false,
+        machineNumbers: [],
+        machineNumberCandidates: [],
+        machineNumberOcrReasons: ["image-error"],
+        error: error instanceof Error ? error.message : "画像読み込み失敗",
+      });
     }
   }
-  return allResults;
+  const combinedNumbers = combineMachineNumberPages(numberPages);
+  return {
+    slots: combinedNumbers.slots,
+    reports,
+    numberOcr: combinedNumbers,
+  };
 }
 
 // ── 共通ヘッダー（戻る44px） ──
@@ -167,9 +216,24 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
     arr.forEach((file, idx) => {
       const reader = new FileReader();
       reader.onload = (e) => {
-        next[idx] = { dataUrl: e.target.result, name: file.name };
+        next[idx] = {
+          dataUrl: e.target.result,
+          name: file.name,
+          id: `${file.name}:${file.size}:${file.lastModified}`,
+        };
         loaded += 1;
-        if (loaded === arr.length) setImages((p) => [...p, ...next.filter(Boolean)]);
+        if (loaded === arr.length) {
+          setImages((p) => {
+            const known = new Set(p.map((item) => item.id || item.dataUrl));
+            const additions = next.filter(Boolean).filter((item) => {
+              const key = item.id || item.dataUrl;
+              if (known.has(key)) return false;
+              known.add(key);
+              return true;
+            });
+            return [...p, ...additions];
+          });
+        }
       };
       reader.readAsDataURL(file);
     });
@@ -180,17 +244,29 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
     setImages((p) => p.filter((_, j) => j !== i));
   };
 
+  const moveImage = (from, to) => {
+    if (to < 0 || to >= images.length || from === to) return;
+    setNoResult(false);
+    setImages((current) => {
+      const nextImages = [...current];
+      const [picked] = nextImages.splice(from, 1);
+      nextImages.splice(to, 0, picked);
+      return nextImages;
+    });
+  };
+
   const start = async () => {
     if (!images.length || busy) return;
     setBusy(true);
     setNoResult(false);
     setProgress({ i: 0, n: images.length });
-    const results = await analyzeImages(images, (i, n) => setProgress({ i, n }));
+    const analysis = await analyzeImages(images, (i, n) => setProgress({ i, n }));
     setBusy(false);
-    // グラフ画素の無い誤検出だけだった場合も「検出できず」として扱う
-    if (!results.length || !onAnalyze(results)) {
+    if (!analysis.slots.length) {
       setNoResult(true);
+      return;
     }
+    onAnalyze(analysis);
   };
 
   return (
@@ -243,11 +319,17 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
         {/* 追加済みサムネイル */}
         {images.length > 0 && (
           <>
-            <div style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: "4px 2px 8px" }}>追加済みの画像</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: "4px 2px 2px" }}>追加済みの画像</div>
+            <div style={{ fontSize: 11, color: C.yellow, lineHeight: 1.5, margin: "0 2px 8px", fontWeight: 700 }}>
+              台番号は画像内の表示から自動照合します。読めない画像は撮り直しになります
+            </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
               {images.map((img, i) => (
-                <div key={i} style={{ position: "relative" }}>
-                  <img src={img.dataUrl} alt="" style={{ width: 84, height: 84, objectFit: "cover", borderRadius: 12, border: `1px solid ${C.border}` }} />
+                <div key={img.id || `${img.name}-${i}`} style={{ position: "relative", width: 96 }}>
+                  <div style={{ position: "absolute", top: 5, left: 5, zIndex: 1, minWidth: 24, height: 24, borderRadius: 12, background: C.blue, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900 }}>
+                    {i + 1}
+                  </div>
+                  <img src={img.dataUrl} alt="" style={{ width: 96, height: 84, objectFit: "cover", borderRadius: 12, border: `1px solid ${C.border}` }} />
                   <button
                     className="b"
                     aria-label="この画像を削除"
@@ -262,6 +344,29 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
                   >
                     <span style={{ background: C.surface, borderRadius: "50%", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${C.borderHi}`, fontSize: 13 }}>×</span>
                   </button>
+                  <div title={img.name} style={{ fontSize: 10, color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 3 }}>
+                    {img.name}
+                  </div>
+                  <div style={{ display: "flex", gap: 4, marginTop: 3 }}>
+                    <button
+                      className="b"
+                      aria-label="この画像を前へ移動"
+                      disabled={i === 0}
+                      onClick={() => moveImage(i, i - 1)}
+                      style={{ flex: 1, minWidth: TAP, minHeight: TAP, borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: i === 0 ? C.sub : C.text, fontSize: 17 }}
+                    >
+                      ←
+                    </button>
+                    <button
+                      className="b"
+                      aria-label="この画像を後ろへ移動"
+                      disabled={i === images.length - 1}
+                      onClick={() => moveImage(i, i + 1)}
+                      style={{ flex: 1, minWidth: TAP, minHeight: TAP, borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: i === images.length - 1 ? C.sub : C.text, fontSize: 17 }}
+                    >
+                      →
+                    </button>
+                  </div>
                 </div>
               ))}
               <button
@@ -317,10 +422,33 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
   );
 }
 
+function formatNumberRanges(values) {
+  const nums = (Array.isArray(values) ? values : [])
+    .map((value) => Number.parseInt(value, 10))
+    .filter(Number.isFinite);
+  if (!nums.length) return "未設定";
+  const ranges = [];
+  let start = nums[0];
+  let previous = nums[0];
+  for (let i = 1; i <= nums.length; i++) {
+    const current = nums[i];
+    if (current === previous + 1) {
+      previous = current;
+      continue;
+    }
+    ranges.push(start === previous ? String(start) : `${start}〜${previous}`);
+    start = current;
+    previous = current;
+  }
+  return ranges.join(" ／ ");
+}
+
 // ════════════ 台番号割り当て ════════════
-function NumbersStep({ slotCount, skipped, islands, onConfirm, onBack }) {
+function NumbersStep({ slots, reports, numberOcr, islands, onConfirm, onBack }) {
+  const slotCount = slots.length;
   const [pickedIslandId, setPickedIslandId] = useState(null);
   const [segments, setSegments] = useState([{ start: "", count: String(slotCount) }]);
+  const [orderConfirmed, setOrderConfirmed] = useState(false);
 
   const pickedIsland = useMemo(
     () => (islands || []).find((isl) => isl.id === pickedIslandId) || null,
@@ -328,50 +456,109 @@ function NumbersStep({ slotCount, skipped, islands, onConfirm, onBack }) {
   );
 
   // 確定する台番号配列。島選択中は島番号、未選択時は手動区間。
-  const numbers = useMemo(() => {
-    if (pickedIsland) return islandToNumbers(pickedIsland).slice(0, slotCount);
+  const manualNumbers = useMemo(() => {
+    if (pickedIsland) return islandToNumbers(pickedIsland);
     return buildSegmentsNumbers(segments);
-  }, [pickedIsland, segments, slotCount]);
+  }, [pickedIsland, segments]);
+  const numbers = numberOcr?.accepted ? numberOcr.numbers : manualNumbers;
+
+  const numberValidation = useMemo(
+    () => validateNumberAssignment(slots, numbers),
+    [slots, numbers]
+  );
+  const readableCount = slots.filter((slot) => Number.isFinite(slot?.val) && slot?.status !== "failed").length;
+  const reviewCount = slots.filter((slot) => slot?.status === "review").length;
+  const missingCount = slots.filter((slot) => !Number.isFinite(slot?.val) || slot?.status === "failed").length;
+  const reportErrorCount = (Array.isArray(reports) ? reports : [])
+    .filter((report) => report?.error || !Number(report?.total)).length;
+  const hasOcrConflict = (numberOcr?.duplicateMachineNumbers || []).length > 0;
+
+  const sourceAssignments = useMemo(() => {
+    const list = Array.isArray(reports) ? reports : [];
+    return list.map((report, index) => {
+      const cursor = list
+        .slice(0, index)
+        .reduce((sum, item) => sum + (Number(item?.total) || 0), 0);
+      const count = Number(report?.total) || 0;
+      const assigned = report.machineNumberOcrAccepted
+        ? report.machineNumbers
+        : numbers.slice(cursor, cursor + count);
+      return { ...report, assigned };
+    });
+  }, [reports, numbers]);
 
   const updateSeg = (idx, field, val) => {
     setPickedIslandId(null);
+    setOrderConfirmed(false);
     setSegments((p) => { const n = [...p]; n[idx] = { ...n[idx], [field]: val }; return n; });
   };
   const addSeg = () => {
     setPickedIslandId(null);
+    setOrderConfirmed(false);
     const used = segments.reduce((s, seg) => s + (parseInt(seg.count, 10) || 0), 0);
     const rem = slotCount - used;
     setSegments((p) => [...p, { start: "", count: rem > 0 ? String(rem) : "" }]);
   };
   const removeSeg = (idx) => {
     if (segments.length <= 1) return;
+    setOrderConfirmed(false);
     setSegments((p) => p.filter((_, i) => i !== idx));
   };
 
-  // 島選択時は検出台数と異なってもよい（少ない方に合わせる）。手動設定時は従来どおり一致が必須。
-  const valid = pickedIsland ? numbers.length > 0 : numbers.length === slotCount;
+  const valid = numberValidation.valid
+    && (numberOcr ? numberOcr.accepted : orderConfirmed)
+    && reportErrorCount === 0
+    && !hasOcrConflict;
 
   return (
     <>
       <TopBar title="台番号の設定" onBack={onBack} />
       <div style={scrollAreaStyle}>
         <div style={{ fontSize: 14, color: C.subHi, margin: "4px 2px 12px", fontWeight: 600 }}>
-          検出された{slotCount}台に台番号を割り当てます
+          {numberOcr?.accepted
+            ? `画像内の台番号を${slotCount}台すべて自動照合しました`
+            : `検出された${slotCount}台に台番号を割り当てます`}
         </div>
-        {skipped > 0 && (
-          <div style={{
-            display: "flex", gap: 8, alignItems: "flex-start",
-            background: "color-mix(in srgb, var(--yellow) 10%, transparent)",
-            border: `1px solid color-mix(in srgb, var(--yellow) 30%, transparent)`,
-            borderRadius: 12, padding: "10px 12px", marginBottom: 12,
-          }}>
-            <span style={{ fontSize: 14, color: C.yellow }}>ℹ</span>
+
+        {numberOcr?.accepted && (
+          <div style={{ background: "color-mix(in srgb, var(--green) 12%, transparent)", border: `1px solid color-mix(in srgb, var(--green) 38%, transparent)`, borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
+            <div style={{ fontSize: 14, color: C.green, fontWeight: 900, marginBottom: 4 }}>
+              台番号OCR {numberOcr.numbers.length}/{slotCount}台 読み取り完了
+            </div>
             <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.6 }}>
-              グラフの無い検出<b style={{ color: C.yellow }}>{skipped}件</b>（画面の黒帯・空きマスなど）を除外しました。台番号のズレを防ぐための処理です。
+              各グラフ直上の番号を直接読み、重複がないことを確認しました。画像の選択順には依存しません。
             </div>
           </div>
         )}
 
+        {numberOcr && !numberOcr.accepted && (
+          <div style={{ background: "color-mix(in srgb, var(--red) 12%, transparent)", border: `1px solid color-mix(in srgb, var(--red) 38%, transparent)`, borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
+            <div style={{ fontSize: 14, color: C.red, fontWeight: 900, marginBottom: 4 }}>
+              台番号を安全に照合できません
+            </div>
+            <div style={{ fontSize: 12, color: C.red, lineHeight: 1.6, fontWeight: 700 }}>
+              手入力の連番では途中ずれを防げないため確定できません。台番号とグラフ全体が見える画像へ撮り直してください。
+            </div>
+          </div>
+        )}
+
+        <Card style={{ marginBottom: 12 }}>
+          <div style={{ padding: "12px 14px" }}>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontFamily: mono, fontWeight: 900, marginBottom: missingCount || reviewCount ? 8 : 0 }}>
+              <span style={{ color: C.text }}>検出 {slotCount}台</span>
+              <span style={{ color: C.green }}>読取 {readableCount}台</span>
+              {missingCount > 0 && <span style={{ color: C.red }}>折れ線なし {missingCount}台</span>}
+              {reviewCount > 0 && <span style={{ color: C.yellow }}>要確認 {reviewCount}台</span>}
+            </div>
+            {missingCount > 0 && (
+              <div style={{ fontSize: 12, color: C.red, lineHeight: 1.6, fontWeight: 700 }}>
+                折れ線が画像に描かれていない台は0玉にしません。未読取のまま保持し、全台がそろうまで保存を止めます。
+              </div>
+            )}
+          </div>
+        </Card>
+
+        {!numberOcr && <>
         {/* ホールマップから選ぶ */}
         {islands && islands.length > 0 && (
           <Card style={{ marginBottom: 12 }}>
@@ -396,12 +583,15 @@ function NumbersStep({ slotCount, skipped, islands, onConfirm, onBack }) {
                         {isl.name}{isl.machineName ? ` ${isl.machineName}` : ""}
                       </div>
                       <div style={{ fontSize: 12, color: C.sub, fontFamily: mono, marginTop: 2 }}>
-                        {isl.start}〜{isl.end}（{cnt}台{isl.ranges ? "・飛び番" : ""}）
+                        {isl.start}〜{isl.end}（{cnt}台）
                       </div>
                     </div>
                     <button
                       className="b"
-                      onClick={() => setPickedIslandId(picked ? null : isl.id)}
+                      onClick={() => {
+                        setPickedIslandId(picked ? null : isl.id);
+                        setOrderConfirmed(false);
+                      }}
                       style={{
                         minHeight: TAP, minWidth: 64, borderRadius: 10, padding: "0 14px",
                         border: picked ? "none" : `1px solid ${C.blue}`,
@@ -414,8 +604,8 @@ function NumbersStep({ slotCount, skipped, islands, onConfirm, onBack }) {
                     </button>
                   </div>
                   {picked && mismatch && (
-                    <div style={{ fontSize: 11, color: C.yellow, marginTop: 6, fontWeight: 700 }}>
-                      検出{slotCount}台に対し{cnt}台分（少ない方に合わせます）
+                    <div style={{ fontSize: 11, color: C.red, marginTop: 6, fontWeight: 700 }}>
+                      検出{slotCount}台に対し{cnt}台です。件数が一致しないため確定できません
                     </div>
                   )}
                 </div>
@@ -474,6 +664,8 @@ function NumbersStep({ slotCount, skipped, islands, onConfirm, onBack }) {
           </div>
         </Card>
 
+        </>}
+
         {/* プレビュー */}
         {numbers.length > 0 && (
           <div style={{ fontSize: 13, color: C.subHi, fontFamily: mono, lineHeight: 1.7, padding: "0 4px 8px", wordBreak: "break-all" }}>
@@ -488,6 +680,78 @@ function NumbersStep({ slotCount, skipped, islands, onConfirm, onBack }) {
             <span style={{ color: C.sub }}>（{numbers.length}台）</span>
           </div>
         )}
+
+        {!numberValidation.valid && numbers.length > 0 && (
+          <div style={{ fontSize: 12, color: C.red, lineHeight: 1.6, fontWeight: 700, margin: "0 4px 12px" }}>
+            {numberValidation.numberCount !== numberValidation.slotCount && `台番号は検出数と同じ${slotCount}台分が必要です。`}
+            {numberValidation.invalidNumberIndices.length > 0 && " 台番号は数字だけで入力してください。"}
+            {numberValidation.duplicateNumbers.length > 0 && ` 重複番号: ${numberValidation.duplicateNumbers.join(", ")}`}
+          </div>
+        )}
+
+        {sourceAssignments.length > 0 && (
+          <Card style={{ marginBottom: 12 }}>
+            <div style={{ padding: "12px 14px 6px", fontSize: 14, fontWeight: 800, color: C.text }}>
+              画像と台番号の対応
+            </div>
+            {sourceAssignments.map((report, index) => (
+              <div key={`${report.imageIndex}-${report.name}`} style={{ padding: "8px 14px", borderTop: index ? `1px solid ${C.border}` : "none" }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                  <span style={{ color: C.blue, fontFamily: mono, fontWeight: 900 }}>{index + 1}</span>
+                  <span title={report.name} style={{ flex: 1, minWidth: 0, fontSize: 12, color: C.text, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {report.name}
+                  </span>
+                  <span style={{ fontSize: 11, color: report.total ? C.subHi : C.yellow, fontFamily: mono }}>
+                    {report.total ? `${report.total}台` : "グラフなし"}
+                  </span>
+                </div>
+                {report.total > 0 && (
+                  <div style={{ fontSize: 12, color: C.subHi, fontFamily: mono, marginTop: 4 }}>
+                    台番号 {formatNumberRanges(report.assigned)} ・ 読取 {report.readable}/{report.total}
+                  </div>
+                )}
+              </div>
+            ))}
+            <div style={{ padding: "8px 14px 12px", fontSize: 11, color: C.sub, lineHeight: 1.5 }}>
+              {numberOcr
+                ? numberOcr.accepted
+                  ? "各画像に表示された台番号で照合済みです。"
+                  : "グラフなし、または台番号を読めない画像を戻って確認してください。"
+                : "順番が違う場合は、戻って画像の「←」「→」で並べ替えてください。"}
+            </div>
+          </Card>
+        )}
+
+        {reportErrorCount > 0 && (
+          <div style={{ fontSize: 12, color: C.red, lineHeight: 1.6, fontWeight: 700, margin: "0 4px 12px" }}>
+            グラフを読めなかった画像が{reportErrorCount}枚あります。画像を戻って削除するか、グラフが表示された画像へ差し替えてください。
+          </div>
+        )}
+
+        {hasOcrConflict && (
+          <div style={{ fontSize: 12, color: C.red, lineHeight: 1.6, fontWeight: 700, margin: "0 4px 12px" }}>
+            同じ台番号を複数の画像で検出しました（{numberOcr.duplicateMachineNumbers.join(", ")}）。重複画像を外すまで確定できません。
+          </div>
+        )}
+
+        {!numberOcr && <button
+          className="b"
+          type="button"
+          onClick={() => setOrderConfirmed((current) => !current)}
+          style={{
+            width: "100%", minHeight: TAP, borderRadius: 12, marginBottom: 12,
+            border: `1px solid ${orderConfirmed ? C.blue : C.borderHi}`,
+            background: orderConfirmed ? "color-mix(in srgb, var(--blue) 12%, transparent)" : C.surface,
+            color: orderConfirmed ? C.blue : C.text,
+            display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
+            textAlign: "left", fontSize: 13, fontWeight: 800,
+          }}
+        >
+          <span aria-hidden="true" style={{ width: 24, height: 24, borderRadius: 7, border: `2px solid ${orderConfirmed ? C.blue : C.borderHi}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            {orderConfirmed ? "✓" : ""}
+          </span>
+          画像の並びと台番号の対応を確認しました
+        </button>}
       </div>
       <BottomCta
         label="この台番号で確定"
@@ -523,33 +787,38 @@ function SegInput({ label, value, onChange, ph }) {
 }
 
 // ════════════ 解析結果 ════════════
-function ResultsStep({ rows, machineName, skipped, onBack, onSave, onOpenImport, saved, customMachines }) {
+function hasResolvedDelta(row) {
+  return row?.val !== null && row?.val !== undefined && row?.val !== "" &&
+    Number.isFinite(Number(row.val)) && row?.status === "ok";
+}
+
+function ResultsStep({ rows, machineName, onBack, onSave, onOpenImport, saved, customMachines }) {
   const [sortBy, setSortBy] = useState("delta");
 
-  // 割り当て確認用: 先頭・末尾の台番号（データサイトの先頭・末尾グラフと突き合わせる）
-  const numRange = useMemo(() => {
-    const nums = rows.map((r) => parseInt(r.num, 10)).filter(Number.isFinite);
-    if (!nums.length) return null;
-    return { first: Math.min(...nums), last: Math.max(...nums) };
-  }, [rows]);
-
-  const active = rows.filter((r) => r.val !== 0 || r.px > 10);
-  const avg = active.length ? Math.round(active.reduce((s, r) => s + r.val, 0) / active.length) : 0;
+  const rowValidation = useMemo(() => validateDeltaRows(rows), [rows]);
+  const resolvedRows = useMemo(() => rows.filter(hasResolvedDelta), [rows]);
+  const active = resolvedRows.filter((r) => r.val !== 0 || r.px > 10 || r.valueSource === "import");
+  const avg = active.length ? Math.round(active.reduce((s, r) => s + Number(r.val), 0) / active.length) : 0;
   const plus = active.filter((r) => r.val > 0).length;
   const minus = active.filter((r) => r.val < 0).length;
 
   const distribution = useMemo(() => {
     const map = new Map();
-    rows.forEach((r) => {
+    resolvedRows.forEach((r) => {
       const name = r.rank;
       map.set(name, (map.get(name) || 0) + 1);
     });
     return Array.from(map.entries()).map(([rank, count]) => ({ rank, count, tone: getRankTone(rank) }));
-  }, [rows]);
+  }, [resolvedRows]);
 
   const sorted = useMemo(() => {
     const arr = [...rows];
-    if (sortBy === "delta") arr.sort((a, b) => b.val - a.val);
+    if (sortBy === "delta") arr.sort((a, b) => {
+      const aResolved = hasResolvedDelta(a);
+      const bResolved = hasResolvedDelta(b);
+      if (aResolved !== bResolved) return aResolved ? -1 : 1;
+      return aResolved ? Number(b.val) - Number(a.val) : 0;
+    });
     else arr.sort((a, b) => String(a.num).localeCompare(String(b.num), undefined, { numeric: true }));
     return arr;
   }, [rows, sortBy]);
@@ -557,6 +826,10 @@ function ResultsStep({ rows, machineName, skipped, onBack, onSave, onOpenImport,
   const predictionByNum = useMemo(() => {
     const map = new Map();
     for (const row of rows) {
+      if (!hasResolvedDelta(row)) {
+        map.set(String(row.num), { hasEstimate: false, reason: row?.status === "review" ? "差玉の確認待ち" : "差玉未読取" });
+        continue;
+      }
       map.set(String(row.num), buildRowDeltaEvidence(
         { ...row, machineName: row.machineName || machineName || "" },
         customMachines,
@@ -566,6 +839,7 @@ function ResultsStep({ rows, machineName, skipped, onBack, onSave, onOpenImport,
     return map;
   }, [rows, machineName, customMachines]);
   const predictedCount = Array.from(predictionByNum.values()).filter((item) => item.hasEstimate).length;
+  const saveDisabled = saved || !rowValidation.valid;
 
   return (
     <>
@@ -575,39 +849,21 @@ function ResultsStep({ rows, machineName, skipped, onBack, onSave, onOpenImport,
         right={(
           <button
             className="b"
-            onClick={saved ? undefined : onSave}
-            disabled={saved}
+            onClick={saveDisabled ? undefined : onSave}
+            disabled={saveDisabled}
             style={{
               minHeight: TAP, minWidth: 64, borderRadius: 12, padding: "0 14px",
-              border: saved ? "none" : `1px solid ${C.blue}`,
+              border: saved ? "none" : `1px solid ${rowValidation.valid ? C.blue : C.border}`,
               background: saved ? "color-mix(in srgb, var(--green) 16%, transparent)" : "transparent",
-              color: saved ? C.green : C.blue,
+              color: saved ? C.green : rowValidation.valid ? C.blue : C.sub,
               fontSize: 14, fontWeight: 800,
             }}
           >
-            {saved ? "保存済み ✓" : "保存"}
+            {saved ? "保存済み ✓" : rowValidation.valid ? "保存" : "保存不可"}
           </button>
         )}
       />
       <div style={scrollAreaStyle}>
-        {/* 割り当て確認の警告（誤検出を除外した場合のみ表示） */}
-        {skipped > 0 && numRange && (
-          <div style={{
-            display: "flex", gap: 8, alignItems: "flex-start",
-            background: "color-mix(in srgb, var(--yellow) 10%, transparent)",
-            border: `1px solid color-mix(in srgb, var(--yellow) 30%, transparent)`,
-            borderRadius: 12, padding: "10px 12px", marginBottom: 12,
-          }}>
-            <span style={{ fontSize: 14, color: C.yellow }}>⚠</span>
-            <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.6 }}>
-              グラフの無い検出{skipped}件を除外して割り当てました。台番号順に並べ替え、
-              先頭<b style={{ color: C.yellow, fontFamily: mono }}>{numRange.first}</b>・
-              末尾<b style={{ color: C.yellow, fontFamily: mono }}>{numRange.last}</b>の差玉が
-              実際のグラフと一致しているか確認してください。
-            </div>
-          </div>
-        )}
-
         {/* サマリーカード */}
         <Card style={{ marginBottom: 12 }}>
           <div style={{ padding: "14px" }}>
@@ -626,7 +882,7 @@ function ResultsStep({ rows, machineName, skipped, onBack, onSave, onOpenImport,
             {/* ランク分布の横帯バー */}
             <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", marginBottom: 10 }}>
               {distribution.map((d) => (
-                <div key={d.rank} style={{ width: `${(d.count / Math.max(1, rows.length)) * 100}%`, background: d.tone.color }} />
+                <div key={d.rank} style={{ width: `${(d.count / Math.max(1, resolvedRows.length)) * 100}%`, background: d.tone.color }} />
               ))}
             </div>
             {/* ランク×件数チップ */}
@@ -643,10 +899,27 @@ function ResultsStep({ rows, machineName, skipped, onBack, onSave, onOpenImport,
               ))}
             </div>
             <div style={{ fontSize: 12, color: predictedCount > 0 ? C.green : C.sub, fontWeight: 700, marginTop: 10 }}>
-              予測回転率を計算済み {predictedCount}/{rows.length}台
+              読取 {rowValidation.resolvedCount}/{rows.length}台 ・ 予測回転率 {predictedCount}台
             </div>
           </div>
         </Card>
+
+        {!rowValidation.valid && (
+          <div style={{
+            background: "color-mix(in srgb, var(--red) 12%, transparent)",
+            border: `1px solid color-mix(in srgb, var(--red) 38%, transparent)`,
+            borderRadius: 14, padding: "12px 14px", marginBottom: 12,
+          }}>
+            <div style={{ fontSize: 14, color: C.red, fontWeight: 900, marginBottom: 5 }}>
+              未解決のため保存できません
+            </div>
+            <div style={{ fontSize: 12, color: C.red, lineHeight: 1.65, fontWeight: 700 }}>
+              {rowValidation.unresolvedCount > 0 && `差玉を読めない台が${rowValidation.unresolvedCount}台あります。折れ線が画面に表示された状態で撮り直してください。取り込み値だけでは差玉を確定しません。`}
+              {rowValidation.duplicateNumbers.length > 0 && ` 重複台番号: ${rowValidation.duplicateNumbers.join(", ")}`}
+              {rowValidation.blankNumberIndices.length > 0 && " 台番号が空欄の行があります。"}
+            </div>
+          </div>
+        )}
 
         {/* 並び替えトグル */}
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
@@ -673,7 +946,10 @@ function ResultsStep({ rows, machineName, skipped, onBack, onSave, onOpenImport,
 
         {/* 結果カードリスト */}
         {sorted.map((r, i) => {
-          const tone = getRankTone(r.rank);
+          const resolved = hasResolvedDelta(r);
+          const tone = resolved
+            ? getRankTone(r.rank)
+            : { color: r.status === "review" ? C.yellow : C.red, bg: r.status === "review" ? "color-mix(in srgb, var(--yellow) 14%, transparent)" : "color-mix(in srgb, var(--red) 12%, transparent)" };
           const hasTai = r.normalSpins != null && r.totalStarts != null;
           const prediction = predictionByNum.get(String(r.num));
           const predicted = prediction?.evidence;
@@ -688,13 +964,21 @@ function ResultsStep({ rows, machineName, skipped, onBack, onSave, onOpenImport,
                 background: tone.bg, border: `1px solid color-mix(in srgb, ${tone.color} 40%, transparent)`,
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
-                <span style={{ fontSize: 20, fontWeight: 900, color: tone.color, fontFamily: mono }}>{r.rank}</span>
+                <span style={{ fontSize: resolved ? 20 : 12, fontWeight: 900, color: tone.color, fontFamily: mono }}>
+                  {resolved ? r.rank : r.status === "review" ? "確認" : "未読取"}
+                </span>
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 19, fontWeight: 800, color: C.text }}>台{r.num}</div>
                 <div style={{ fontSize: 12, color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {r.machineName || machineName || "—"}
                 </div>
+                {!resolved && (
+                  <div style={{ fontSize: 10, color: tone.color, marginTop: 3, fontWeight: 800, lineHeight: 1.45 }}>
+                    {r.status === "review" ? "折れ線の終点を確認してください" : "元画像に折れ線が描画されていません"}
+                    {Number.isInteger(r.source?.imageIndex) ? `（画像${r.source.imageIndex + 1}${Number.isInteger(r.source?.row) ? `・${r.source.row + 1}行目` : ""}）` : ""}
+                  </div>
+                )}
                 {hasTai && (
                   <div style={{ fontSize: 11, color: C.subHi, fontFamily: mono, marginTop: 2 }}>
                     回転数 {f(r.normalSpins)} / 当り {f(r.totalStarts)}回
@@ -713,8 +997,8 @@ function ResultsStep({ rows, machineName, skipped, onBack, onSave, onOpenImport,
                   </div>
                 ) : null}
               </div>
-              <div style={{ fontSize: 22, fontWeight: 900, fontFamily: mono, color: r.val >= 0 ? C.green : C.red, flexShrink: 0 }}>
-                {sp(r.val)}
+              <div style={{ fontSize: resolved ? 22 : 15, fontWeight: 900, fontFamily: mono, color: resolved ? (r.val >= 0 ? C.green : C.red) : tone.color, flexShrink: 0 }}>
+                {resolved ? sp(r.val) : "—"}
               </div>
             </div>
           );
@@ -730,15 +1014,49 @@ function ResultsStep({ rows, machineName, skipped, onBack, onSave, onOpenImport,
             color: C.text, fontSize: 14, fontWeight: 800, marginTop: 4, marginBottom: 12,
           }}
         >
-          差玉・大当たりデータを一括取り込み
+          大当たり・回転数データを一括取り込み
         </button>
       </div>
     </>
   );
 }
 
+function parseEditableInteger(value) {
+  const normalized = String(value ?? "")
+    .normalize("NFKC")
+    .replace(/[，,]/g, "")
+    .trim();
+  if (!/^-?\d+$/.test(normalized)) return null;
+  const parsed = Number.parseInt(normalized, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function preparePdfRows(rows) {
+  const valid = [];
+  let invalidCount = 0;
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const num = parseEditableInteger(row?.num);
+    const normalSpins = parseEditableInteger(row?.normalSpins);
+    const totalStarts = parseEditableInteger(row?.totalStarts);
+    if (num === null || normalSpins === null || totalStarts === null) {
+      invalidCount += 1;
+      continue;
+    }
+    const machineName = String(row?.machineName || "").trim();
+    valid.push({
+      ...row,
+      num: String(num),
+      machineName,
+      island: machineName ? `${machineName}島` : "",
+      normalSpins,
+      totalStarts,
+    });
+  }
+  return { rows: valid, invalidCount };
+}
+
 // ════════════ 台データ取り込み ════════════
-function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
+function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
   const prompt = useMemo(
     () => buildOcrPrompt({ dateText: todaySlash(), storeName: store?.name || "" }),
     [store]
@@ -746,6 +1064,14 @@ function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
   const promptHead = useMemo(() => prompt.split("\n").slice(0, 2).join("\n"), [prompt]);
   const [copied, setCopied] = useState(false);
   const [text, setText] = useState("");
+
+  const pdfFileRef = useRef(null);
+  const [pdfRows, setPdfRows] = useState([]);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfError, setPdfError] = useState("");
+  const [pdfSummary, setPdfSummary] = useState(null);
+  const [pdfFilter, setPdfFilter] = useState("");
+  const [showAllPdfRows, setShowAllPdfRows] = useState(false);
 
   const hasKey = typeof aiApiKey === "string" && aiApiKey.trim() !== "";
   const aiFileRef = useRef(null);
@@ -756,6 +1082,60 @@ function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
   // APIキー未設定時の導線展開、または設定済み時の変更フォーム表示。
   const [showKeyForm, setShowKeyForm] = useState(false);
   const [keyInput, setKeyInput] = useState("");
+
+  // サイトセブンPDFは文字情報を持つため、外部APIへ送らずブラウザ内で読み取る。
+  const handleLocalPdfFiles = async (files) => {
+    const supported = Array.from(files || []).filter((file) =>
+      file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
+    );
+    if (!supported.length || pdfBusy) return;
+
+    setPdfBusy(true);
+    setPdfError("");
+    setPdfSummary(null);
+    setPdfFilter("");
+    setShowAllPdfRows(false);
+    try {
+      // PDF.jsはこの操作をした時だけ読み込み、通常画面の起動を重くしない。
+      const { readSiteSevenPdf } = await import("./siteSevenPdfReader.js");
+      const results = [];
+      for (const file of supported) {
+        const parsedPdf = await readSiteSevenPdf(file, {
+          dateText: todaySlash(),
+          storeName: store?.name || "",
+        });
+        results.push(parsedPdf);
+      }
+
+      const byNumber = new Map();
+      let skippedCount = 0;
+      let duplicateCount = 0;
+      for (const result of results) {
+        skippedCount += result.skipped.length;
+        duplicateCount += result.duplicates.length;
+        for (const row of result.rows) byNumber.set(String(row.num), row);
+      }
+      const nextRows = Array.from(byNumber.values());
+      setPdfRows(nextRows);
+      setPdfSummary({
+        fileCount: supported.length,
+        rowCount: nextRows.length,
+        skippedCount,
+        duplicateCount,
+      });
+    } catch (error) {
+      setPdfRows([]);
+      setPdfError(error instanceof Error ? error.message : "PDFの読み取りに失敗しました");
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
+  const changePdfRow = (index, field, value) => {
+    setPdfRows((current) => current.map((row, rowIndex) =>
+      rowIndex === index ? { ...row, [field]: value } : row
+    ));
+  };
 
   // 差玉画像と大当たり情報（画像/PDF）をまとめて読み込み、1回のAI処理へ渡す。
   const handleAiFiles = async (files) => {
@@ -799,7 +1179,36 @@ function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
   const maskedKey = hasKey ? `${aiApiKey.trim().slice(0, 7)}••••` : "";
 
   const parsed = useMemo(() => parseTaiDataText(text), [text]);
-  const recognized = parsed.rows.length;
+  const preparedPdf = useMemo(() => preparePdfRows(pdfRows), [pdfRows]);
+  // PDFを基本にし、手動貼り付けまたはAI出力が同じ台番号にあれば後者を優先する。
+  const importRows = useMemo(() => {
+    const byNumber = new Map();
+    for (const row of preparedPdf.rows) byNumber.set(String(row.num), row);
+    for (const row of parsed.rows) byNumber.set(String(row.num), row);
+    return Array.from(byNumber.values());
+  }, [preparedPdf.rows, parsed.rows]);
+  const recognized = importRows.length;
+  const deltaNumberSet = useMemo(
+    () => new Set((Array.isArray(deltaRows) ? deltaRows : []).map((row) => String(row.num))),
+    [deltaRows]
+  );
+  const pdfMatchedCount = useMemo(
+    () => preparedPdf.rows.filter((row) => deltaNumberSet.has(String(row.num))).length,
+    [preparedPdf.rows, deltaNumberSet]
+  );
+  const pdfReviewEntries = useMemo(() => {
+    const query = pdfFilter.trim().toLowerCase();
+    const entries = pdfRows.map((row, index) => ({ row, index }));
+    const matchingDelta = entries.filter(({ row }) => deltaNumberSet.has(String(row.num)));
+    const base = matchingDelta.length ? matchingDelta : entries;
+    if (query) {
+      return entries.filter(({ row }) =>
+        String(row.num).toLowerCase().includes(query) ||
+        String(row.machineName || "").toLowerCase().includes(query)
+      );
+    }
+    return showAllPdfRows ? base : base.slice(0, 12);
+  }, [pdfRows, pdfFilter, showAllPdfRows, deltaNumberSet]);
 
   const copyPrompt = async () => {
     try {
@@ -826,16 +1235,212 @@ function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
           差玉データと大当たり情報を台番号でまとめ、予測回転率まで計算します
         </div>
 
-        {/* AI読み取りカード（APIキー設定者向け・ワンタップ自動化） */}
+        {/* サイトセブンPDFの端末内読み取り。個人版の主経路でAPIは不要。 */}
+        <Card style={{ marginBottom: 12 }}>
+          <div style={{ padding: "14px" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 900, color: C.text }}>
+                  サイトセブンPDFを読み取る
+                </div>
+                <div style={{ fontSize: 11, color: C.sub, marginTop: 3, lineHeight: 1.6 }}>
+                  PDFから台番号・機種名・通常中スタート・大当り回数を取得し、前画面の差玉と照合します
+                </div>
+              </div>
+              <span style={{
+                flexShrink: 0, borderRadius: 999, padding: "5px 8px",
+                background: "color-mix(in srgb, var(--green) 14%, transparent)",
+                border: `1px solid color-mix(in srgb, var(--green) 35%, transparent)`,
+                color: C.green, fontSize: 10, fontWeight: 900,
+              }}>
+                API不要
+              </span>
+            </div>
+
+            <div style={{
+              marginTop: 10, padding: "9px 11px", borderRadius: 10,
+              background: C.surfaceHi, border: `1px solid ${C.border}`,
+              color: C.subHi, fontSize: 11, lineHeight: 1.6,
+            }}>
+              選んだPDFは外部へ送信せず、この端末の中だけで処理します。差玉画像は先に解析しておけば、最後のボタン1回で統合できます。
+            </div>
+
+            <input
+              ref={pdfFileRef}
+              type="file"
+              accept="application/pdf,.pdf"
+              multiple
+              style={{ display: "none" }}
+              onChange={(e) => { handleLocalPdfFiles(e.target.files); e.target.value = ""; }}
+            />
+            <button
+              className="b"
+              onClick={pdfBusy ? undefined : () => pdfFileRef.current?.click()}
+              disabled={pdfBusy}
+              style={{
+                width: "100%", minHeight: CTA, borderRadius: 12, marginTop: 12,
+                border: "none", background: pdfBusy ? C.surfaceHi : C.blue,
+                color: pdfBusy ? C.sub : "#fff", fontSize: 15, fontWeight: 900,
+              }}
+            >
+              {pdfBusy ? "PDFを端末内で読み取り中…" : "大当たりPDFを選ぶ"}
+            </button>
+
+            {pdfSummary && (
+              <div style={{
+                background: "color-mix(in srgb, var(--green) 14%, transparent)",
+                border: `1px solid color-mix(in srgb, var(--green) 35%, transparent)`,
+                borderRadius: 10, padding: "10px 12px", marginTop: 10,
+                fontSize: 13, color: C.green, fontWeight: 800, lineHeight: 1.6,
+              }}>
+                ✓ {pdfSummary.fileCount}ファイルから{pdfSummary.rowCount}台を読み取り
+                {deltaNumberSet.size > 0 && `／差玉と${pdfMatchedCount}台一致`}
+                {(pdfSummary.skippedCount > 0 || pdfSummary.duplicateCount > 0) && (
+                  <div style={{ color: C.yellow, fontSize: 11, marginTop: 4 }}>
+                    要確認：未認識{pdfSummary.skippedCount}行・重複{pdfSummary.duplicateCount}台
+                  </div>
+                )}
+              </div>
+            )}
+            {pdfError && (
+              <div style={{
+                background: "color-mix(in srgb, var(--red) 12%, transparent)",
+                border: `1px solid color-mix(in srgb, var(--red) 35%, transparent)`,
+                borderRadius: 10, padding: "10px 12px", marginTop: 10,
+                fontSize: 12, color: C.red, fontWeight: 700, lineHeight: 1.6,
+              }}>
+                ⚠ {pdfError}
+              </div>
+            )}
+          </div>
+        </Card>
+
+        {/* PDF読み取り結果の修正。検索または全台表示で100台規模にも対応する。 */}
+        {pdfRows.length > 0 && (
+          <Card style={{ marginBottom: 12 }}>
+            <div style={{ padding: "14px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 900, color: C.text }}>読み取り結果を確認・修正</div>
+                  <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>
+                    間違いがあれば数字や機種名を直接直せます
+                  </div>
+                </div>
+                <span style={{ color: C.green, fontSize: 12, fontWeight: 900 }}>{preparedPdf.rows.length}台</span>
+              </div>
+
+              <input
+                value={pdfFilter}
+                onChange={(e) => setPdfFilter(e.target.value)}
+                placeholder="台番号・機種名で検索"
+                style={{
+                  width: "100%", minHeight: TAP, boxSizing: "border-box", marginTop: 10,
+                  borderRadius: 10, border: `1px solid ${C.border}`,
+                  background: C.surfaceHi, color: C.text, padding: "0 12px", fontSize: 13,
+                }}
+              />
+
+              <div style={{ display: "grid", gap: 9, marginTop: 10 }}>
+                {pdfReviewEntries.map(({ row, index }) => (
+                  <div key={`${index}-${row.num}`} style={{
+                    padding: 10, borderRadius: 11, background: C.surfaceHi,
+                    border: `1px solid ${C.border}`,
+                  }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "82px minmax(0, 1fr)", gap: 8 }}>
+                      <label style={{ fontSize: 10, color: C.sub, fontWeight: 700 }}>
+                        台番号
+                        <input
+                          inputMode="numeric"
+                          value={row.num}
+                          onChange={(e) => changePdfRow(index, "num", e.target.value)}
+                          style={{
+                            width: "100%", height: 38, boxSizing: "border-box", marginTop: 3,
+                            borderRadius: 8, border: `1px solid ${C.borderHi}`,
+                            background: C.bg, color: C.text, padding: "0 8px", fontFamily: mono, fontWeight: 900,
+                          }}
+                        />
+                      </label>
+                      <label style={{ fontSize: 10, color: C.sub, fontWeight: 700, minWidth: 0 }}>
+                        機種名
+                        <input
+                          value={row.machineName || ""}
+                          onChange={(e) => changePdfRow(index, "machineName", e.target.value)}
+                          style={{
+                            width: "100%", height: 38, boxSizing: "border-box", marginTop: 3,
+                            borderRadius: 8, border: `1px solid ${C.borderHi}`,
+                            background: C.bg, color: C.text, padding: "0 8px", fontSize: 12,
+                          }}
+                        />
+                      </label>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+                      <label style={{ fontSize: 10, color: C.sub, fontWeight: 700 }}>
+                        通常中スタート
+                        <input
+                          inputMode="numeric"
+                          value={row.normalSpins}
+                          onChange={(e) => changePdfRow(index, "normalSpins", e.target.value)}
+                          style={{
+                            width: "100%", height: 38, boxSizing: "border-box", marginTop: 3,
+                            borderRadius: 8, border: `1px solid ${C.borderHi}`,
+                            background: C.bg, color: C.text, padding: "0 8px", fontFamily: mono, fontWeight: 800,
+                          }}
+                        />
+                      </label>
+                      <label style={{ fontSize: 10, color: C.sub, fontWeight: 700 }}>
+                        大当り回数
+                        <input
+                          inputMode="numeric"
+                          value={row.totalStarts}
+                          onChange={(e) => changePdfRow(index, "totalStarts", e.target.value)}
+                          style={{
+                            width: "100%", height: 38, boxSizing: "border-box", marginTop: 3,
+                            borderRadius: 8, border: `1px solid ${C.borderHi}`,
+                            background: C.bg, color: C.text, padding: "0 8px", fontFamily: mono, fontWeight: 800,
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {!pdfFilter && (pdfMatchedCount || pdfRows.length) > 12 && (
+                <button
+                  className="b"
+                  onClick={() => setShowAllPdfRows((current) => !current)}
+                  style={{
+                    width: "100%", minHeight: TAP, marginTop: 10, borderRadius: 10,
+                    border: `1px solid ${C.border}`, background: "transparent",
+                    color: C.subHi, fontSize: 12, fontWeight: 800,
+                  }}
+                >
+                  {showAllPdfRows ? "先頭12台だけ表示" : `全${pdfMatchedCount || pdfRows.length}台を表示`}
+                </button>
+              )}
+              {preparedPdf.invalidCount > 0 && (
+                <div style={{ color: C.red, fontSize: 11, fontWeight: 700, marginTop: 8 }}>
+                  ⚠ 数字が空欄の{preparedPdf.invalidCount}台は統合されません
+                </div>
+              )}
+            </div>
+          </Card>
+        )}
+
+        <div style={{ fontSize: 11, color: C.sub, fontWeight: 800, margin: "18px 2px 8px" }}>
+          PDFで読めない場合だけ使う補助機能
+        </div>
+
+        {/* AI読み取りカード（任意の補助経路） */}
         <Card style={{ marginBottom: 12 }}>
           <div style={{ padding: "14px" }}>
             {hasKey ? (
               <>
                 <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>
-                  AIでワンタップ読み取り
+                  AI補助読み取り（任意）
                 </div>
                 <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>
-                  差玉画像と大当たり画像/PDFを同時に選ぶと、台番号ごとに一括統合します
+                  画像だけの資料や通常と異なるPDFを読む時だけ使います。サイトセブンPDFには不要です
                 </div>
                 <input
                   ref={aiFileRef}
@@ -942,7 +1547,7 @@ function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
                   }}
                 >
                   <span style={{ color: C.blue }}>✦</span>
-                  AIワンタップ読み取りを使う（APIキー設定）
+                  AI補助を使う（任意・APIキーが必要）
                 </button>
                 {showKeyForm && (
                   <ApiKeyForm
@@ -956,13 +1561,13 @@ function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
           </div>
         </Card>
 
-        {/* ステップ1 */}
+        {/* 手動補助ステップ1 */}
         <Card style={{ marginBottom: 12 }}>
           <div style={{ padding: "14px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
               <StepBadge n="1" />
               <div>
-                <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>読み取りプロンプトをコピー</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>外部AI用プロンプトをコピー</div>
                 <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>日付と店舗名は自動で埋め込み済み</div>
               </div>
             </div>
@@ -995,12 +1600,12 @@ function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
           </div>
         </Card>
 
-        {/* ステップ2 */}
+        {/* 手動補助ステップ2 */}
         <Card style={{ marginBottom: 12 }}>
           <div style={{ padding: "14px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
               <StepBadge n="2" />
-              <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>AIの出力を貼り付け</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>外部AIの出力を貼り付け</div>
             </div>
             <textarea
               value={text}
@@ -1029,7 +1634,7 @@ function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
                 <span style={{ flex: 1, textAlign: "right" }}>回転数</span>
                 <span style={{ flex: 1, textAlign: "right" }}>当り</span>
               </div>
-              {parsed.rows.slice(0, 3).map((r, i) => (
+              {importRows.slice(0, 3).map((r, i) => (
                 <div key={i} style={{ display: "flex", fontSize: 15, fontWeight: 800, color: C.text, fontFamily: mono, padding: "7px 2px" }}>
                   <span style={{ flex: 1 }}>{r.num}</span>
                   <span style={{ flex: 1, textAlign: "right", color: r.val == null ? C.sub : r.val >= 0 ? C.green : C.red }}>
@@ -1058,8 +1663,8 @@ function ImportStep({ store, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
         )}
       </div>
       <BottomCta
-        label="差玉・大当たりを一度に統合する"
-        onClick={() => onMerge(parsed.rows)}
+        label="PDFと差玉を台番号で統合する"
+        onClick={() => onMerge(importRows)}
         disabled={recognized === 0}
       />
     </>
@@ -1125,8 +1730,9 @@ function StepBadge({ n }) {
 export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiApiKey, onChangeAiApiKey, customMachines }) {
   const [step, setStep] = useState("upload");
   const [images, setImages] = useState([]);
-  const [slots, setSlots] = useState([]); // グラフ画素のある解析スロット（誤検出は除外済み）
-  const [skipped, setSkipped] = useState(0); // 除外した「グラフ無し」誤検出の件数
+  const [slots, setSlots] = useState([]); // ピクセル解析の生スロット
+  const [analysisReports, setAnalysisReports] = useState([]);
+  const [analysisNumberOcr, setAnalysisNumberOcr] = useState(null);
   const [rows, setRows] = useState([]);   // 台番号割り当て後の結果行
   const [saved, setSaved] = useState(false);
   const [toast, setToast] = useState("");
@@ -1137,28 +1743,39 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
     return withName?.machineName || "";
   }, [rows]);
 
-  const handleAnalyzed = (results) => {
-    // 黒帯・空きマス由来の「グラフ無し」誤検出を除外してから割り当てへ進む
-    //（除外しないと以降の台番号が全てズレる）。
-    const { slots: graphSlots, skipped: skippedCount } = filterGraphSlots(results);
-    setSlots(graphSlots);
-    setSkipped(skippedCount);
-    if (graphSlots.length > 0) {
-      setStep("numbers");
-      return true;
-    }
-    return false; // 0台のときは upload に留まる（やり直し可能）
+  const handleAnalyzed = (analysis) => {
+    const results = Array.isArray(analysis) ? analysis : (analysis?.slots || []);
+    setSlots(results);
+    setAnalysisReports(Array.isArray(analysis?.reports) ? analysis.reports : []);
+    setAnalysisNumberOcr(analysis?.numberOcr || null);
+    if (results.length > 0) setStep("numbers");
+    // 0台のときは upload に留まる（やり直し可能）
   };
 
   const handleConfirmNumbers = (numbers) => {
-    // 島の台数が検出台数より少ない場合は、スロットを先頭から numbers.length 件に切り詰めて割り当てる。
-    const useSlots = numbers.length < slots.length ? slots.slice(0, numbers.length) : slots;
-    setRows(assignNumbers(useSlots, numbers));
+    const validation = validateNumberAssignment(slots, numbers);
+    const hasImageError = analysisReports.some((report) => report?.error || !Number(report?.total));
+    const hasOcrConflict = (analysisNumberOcr?.duplicateMachineNumbers || []).length > 0;
+    const ocrOrderMismatch = analysisNumberOcr?.accepted && slots.some((slot, index) => (
+      String(slot?.machineNumber || "") !== String(numbers[index] || "")
+    ));
+    if (!analysisNumberOcr?.accepted || !validation.valid || hasImageError || hasOcrConflict || ocrOrderMismatch) {
+      setToast("検出台数と台番号を1台ずつ一致させてください");
+      setTimeout(() => setToast(""), 3000);
+      return;
+    }
+    setRows(assignNumbers(slots, numbers));
     setSaved(false);
     setStep("results");
   };
 
   const handleSave = () => {
+    const validation = validateDeltaRows(rows);
+    if (!validation.valid) {
+      setToast(`未読取または要確認が${validation.unresolvedCount}台あるため保存できません`);
+      setTimeout(() => setToast(""), 3000);
+      return;
+    }
     const scan = makeScan({
       storeId: store?.id ?? null,
       storeName: store?.name || "",
@@ -1171,11 +1788,25 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
   };
 
   const handleMerge = (taiRows) => {
-    const { rows: merged, matched } = mergeTaiData(rows, taiRows);
+    const {
+      rows: merged,
+      matched,
+      duplicateNumbers,
+      invalidDeltaNumbers,
+      conflictNumbers,
+      unverifiedDeltaNumbers,
+    } = mergeTaiData(rows, taiRows);
     setRows(merged);
     setSaved(false);
     setStep("results");
-    setToast(`${matched}台に統合しました`);
+    const remaining = validateDeltaRows(merged).unresolvedCount;
+    const warnings = [
+      duplicateNumbers.length ? `重複 ${duplicateNumbers.length}台` : "",
+      invalidDeltaNumbers.length ? `異常値 ${invalidDeltaNumbers.length}台` : "",
+      conflictNumbers.length ? `グラフ値と不一致 ${conflictNumbers.length}台` : "",
+      unverifiedDeltaNumbers.length ? `差玉は未確定 ${unverifiedDeltaNumbers.length}台` : "",
+    ].filter(Boolean).join("・");
+    setToast(`${matched}台に統合しました${remaining ? `（未解決 ${remaining}台${warnings ? `・${warnings}` : ""}）` : ""}`);
     setTimeout(() => setToast(""), 3000);
   };
 
@@ -1196,15 +1827,23 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
         <UploadStep
           store={store}
           images={images}
-          setImages={setImages}
+          setImages={(updater) => {
+            setImages(updater);
+            setSlots([]);
+            setAnalysisReports([]);
+            setAnalysisNumberOcr(null);
+            setRows([]);
+            setSaved(false);
+          }}
           onAnalyze={handleAnalyzed}
           onClose={onClose}
         />
       )}
       {step === "numbers" && (
         <NumbersStep
-          slotCount={slots.length}
-          skipped={skipped}
+          slots={slots}
+          reports={analysisReports}
+          numberOcr={analysisNumberOcr}
           islands={islands}
           onConfirm={handleConfirmNumbers}
           onBack={() => setStep("upload")}
@@ -1214,7 +1853,6 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
         <ResultsStep
           rows={rows}
           machineName={machineName}
-          skipped={skipped}
           onBack={() => setStep("numbers")}
           onSave={handleSave}
           onOpenImport={() => setStep("import")}
@@ -1225,6 +1863,7 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
       {step === "import" && (
         <ImportStep
           store={store}
+          rows={rows}
           onBack={() => setStep("results")}
           onMerge={handleMerge}
           aiApiKey={aiApiKey}

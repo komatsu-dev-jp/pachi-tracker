@@ -13,12 +13,14 @@
     "slack:inbox": "node scripts/slack-inbox.mjs",
     "test:slack": "node --test scripts/__tests__/slack-notify.test.mjs",
     "test:slack-inbox": "node --test scripts/__tests__/slack-inbox.test.mjs",
-    "test:settings": "node --test src/__tests__/settings-safety.test.mjs"
+    "test:settings": "node --test src/__tests__/settings-safety.test.mjs",
+    "test:delta": "node --test src/components/delta/__tests__/*.test.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.1",
     "dexie": "^4.4.2",
     "lucide-react": "^1.21.0",
+    "pdfjs-dist": "^6.1.200",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "recharts": "^3.8.1",
@@ -26,6 +28,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@napi-rs/canvas": "^1.0.2",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",

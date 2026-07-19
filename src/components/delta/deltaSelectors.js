@@ -5,7 +5,6 @@
 // logic.js とは無関係の独立データ。rotRows は迂回しない。
 
 import { getRank } from "./deltaEngine.js";
-import { islandLayoutCells } from "../select/hallMapSelectors.js";
 
 // 端末ローカルの "YYYY-MM-DD"（node テストからも使うため本モジュール内に定義）
 function toLocalDay(d) {
@@ -15,25 +14,36 @@ function toLocalDay(d) {
   return `${y}-${m}-${day}`;
 }
 
-// 全角数字→半角、カンマ除去をして整数化する。失敗時は null。
-function toHalfWidth(str) {
-  return String(str ?? "").replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+// 全角数字・各種マイナスを正規化し、整数だけを受け付ける。失敗時は null。
+// 小数点や単位を単純削除すると「12.5→125」「−4500→+4500」の誤変換になるため、
+// 許可する記号を明示してから厳密に検証する。
+function normalizeIntegerToken(value) {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .replace(/[−‐‑‒–—―﹣]/g, "-")
+    .replace(/[,，]/g, "")
+    .replace(/[\s\u00a0]/g, "")
+    .trim();
 }
 
 function parseIntLoose(value) {
-  const half = toHalfWidth(value).replace(/,/g, "").replace(/，/g, "");
-  const cleaned = half.replace(/[^0-9-]/g, "");
-  if (!cleaned || cleaned === "-") return null;
-  const n = parseInt(cleaned, 10);
-  return Number.isNaN(n) ? null : n;
+  const normalized = normalizeIntegerToken(value);
+  if (!/^[+-]?\d+$/.test(normalized)) return null;
+  const n = Number(normalized);
+  return Number.isSafeInteger(n) ? n : null;
 }
 
 // 台番号は数値化できるが、表示は読み取り原文（全角→半角化）を保つ。
 function parseNumberToken(value) {
-  const half = toHalfWidth(value).replace(/,/g, "").replace(/，/g, "").trim();
-  const n = parseIntLoose(half);
+  const n = parseIntLoose(value);
   if (n === null) return null;
   return String(n);
+}
+
+// 台番号は数値として同じ表記（例: 0810 と 810）を同一番号へ正規化する。
+export function normalizeMachineNumber(value) {
+  const parsed = parseIntLoose(value);
+  return parsed !== null && parsed >= 0 ? String(parsed) : null;
 }
 
 // AI出力TSVをパースする。
@@ -137,30 +147,85 @@ export function buildOcrPrompt({ dateText = "", storeName = "" } = {}) {
 店舗名：${storeName}`;
 }
 
-// 解析スロットから「グラフ画素が1つも無いスロット」を除外する。
-// 画面上下の黒帯や空きマスが誤ってグラフ行として検出されると px=0 のスロットになり、
-// そのままでは以降の台番号割り当てが全てズレるため、割り当て前に取り除く。
-// 除外件数もあわせて返す（UIで確認表示するため）。
-export function filterGraphSlots(slots) {
-  const list = Array.isArray(slots) ? slots : [];
-  const kept = list.filter((slot) => (Number(slot?.px) || 0) > 0);
-  return { slots: kept, skipped: list.length - kept.length };
+function finiteDelta(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
-// 解析スロット配列に台番号配列を割り当て、{num,val,px,rank} 行を作る。
-// rank はランク名文字列（例: "S+"）。numList が足りない箇所は連番フォールバック（index+1）。
+// 取り込み値はユーザー確認後に使うが、桁欠落・列ずれを確定値にしないため
+// 日次の1台差玉として明らかに異常な値と小数は拒否する。
+export const MAX_IMPORTED_DELTA_ABS = 500000;
+
+function safeImportedDelta(value) {
+  const parsed = finiteDelta(value);
+  if (parsed === null || !Number.isSafeInteger(parsed) || Math.abs(parsed) > MAX_IMPORTED_DELTA_ABS) return null;
+  return parsed;
+}
+
+// 解析スロット配列に台番号配列を割り当てる。
+// 読み取り失敗（val:null）は0玉へ変換せず、原因・画像位置などの診断情報も保持する。
+// 台番号が不足した場合も無関係な連番で埋めず、空欄のまま検証側へ渡す。
 export function assignNumbers(slots, numList) {
   const list = Array.isArray(slots) ? slots : [];
   const nums = Array.isArray(numList) ? numList : [];
   return list.map((slot, i) => {
-    const val = Number(slot?.val) || 0;
+    const val = finiteDelta(slot?.val);
     return {
-      num: nums[i] != null ? String(nums[i]) : String(i + 1),
+      ...(slot && typeof slot === "object" ? slot : {}),
+      num: normalizeMachineNumber(nums[i]) || "",
       val,
       px: Number(slot?.px) || 0,
-      rank: getRank(val).rank,
+      rank: val === null ? null : getRank(val).rank,
+      status: val === null ? (slot?.status || "failed") : (slot?.status || "ok"),
     };
   });
+}
+
+// 台番号と検出枠が1対1で対応しているかを、確定前に検証する。
+export function validateNumberAssignment(slots, numList) {
+  const list = Array.isArray(slots) ? slots : [];
+  const rawNumbers = Array.isArray(numList) ? numList : [];
+  const nums = rawNumbers.map(normalizeMachineNumber);
+  const blankIndices = [];
+  const invalidNumberIndices = [];
+  const seen = new Map();
+
+  rawNumbers.forEach((rawNumber, index) => {
+    const raw = String(rawNumber ?? "").trim();
+    const num = nums[index];
+    if (!raw) {
+      blankIndices.push(index);
+      return;
+    }
+    if (num === null) {
+      invalidNumberIndices.push(index);
+      return;
+    }
+    const indices = seen.get(num) || [];
+    indices.push(index);
+    seen.set(num, indices);
+  });
+
+  const duplicateNumbers = Array.from(seen.entries())
+    .filter(([, indices]) => indices.length > 1)
+    .map(([num]) => num);
+  const errors = [];
+  if (nums.length !== list.length) errors.push("count-mismatch");
+  if (blankIndices.length) errors.push("blank-number");
+  if (invalidNumberIndices.length) errors.push("invalid-number");
+  if (duplicateNumbers.length) errors.push("duplicate-number");
+
+  return {
+    valid: errors.length === 0,
+    slotCount: list.length,
+    numberCount: nums.length,
+    normalizedNumbers: nums,
+    blankIndices,
+    invalidNumberIndices,
+    duplicateNumbers,
+    errors,
+  };
 }
 
 // 台番号（文字列化して照合）をキーに台データを結果行へマージする。
@@ -169,42 +234,138 @@ export function assignNumbers(slots, numList) {
 export function mergeTaiData(rows, taiRows) {
   const list = Array.isArray(rows) ? rows : [];
   const tai = Array.isArray(taiRows) ? taiRows : [];
-  const byNum = new Map();
+  const groupedByNum = new Map();
   for (const t of tai) {
-    if (t && t.num != null) byNum.set(String(t.num), t);
+    const normalized = normalizeMachineNumber(t?.num);
+    if (!t || normalized === null) continue;
+    const entries = groupedByNum.get(normalized) || [];
+    entries.push(t);
+    groupedByNum.set(normalized, entries);
   }
+  const duplicateNumbers = [...groupedByNum.entries()]
+    .filter(([, entries]) => entries.length > 1)
+    .map(([number]) => number);
+  const byNum = new Map(
+    [...groupedByNum.entries()].filter(([, entries]) => entries.length === 1)
+      .map(([number, entries]) => [number, entries[0]]),
+  );
+  const invalidDeltaNumbers = new Set();
+  const conflictNumbers = new Set();
+  const unverifiedDeltaNumbers = new Set();
   let matched = 0;
   const merged = list.map((row) => {
-    const t = byNum.get(String(row.num));
+    const t = byNum.get(normalizeMachineNumber(row?.num));
     if (!t) return { ...row };
     matched += 1;
-    const hasImportedDelta = t.val != null && Number.isFinite(Number(t.val));
-    const mergedVal = hasImportedDelta ? Number(t.val) : row.val;
+    const importedDelta = t.val != null ? safeImportedDelta(t.val) : null;
+    const existingDelta = finiteDelta(row?.val);
+    const hasTrustedDelta = row?.status === "ok" && existingDelta !== null;
+    // AI/TSVの差玉は折れ線の代用品として自動確定しない。回転数などだけ統合し、
+    // missing/review は元画像を撮り直すまでその状態を維持する。
+    const hasImportedDelta = false;
+    if (t.val != null && importedDelta === null) invalidDeltaNumbers.add(normalizeMachineNumber(row?.num));
+    if (!hasTrustedDelta && importedDelta !== null) unverifiedDeltaNumbers.add(normalizeMachineNumber(row?.num));
+    if (hasTrustedDelta && importedDelta !== null && importedDelta !== existingDelta) {
+      conflictNumbers.add(normalizeMachineNumber(row?.num));
+    }
+    const mergedVal = hasImportedDelta ? importedDelta : row.val;
     return {
       ...row,
       island: t.island ?? row.island ?? "",
       machineName: t.machineName ?? row.machineName ?? "",
       val: mergedVal,
       rank: hasImportedDelta ? getRank(mergedVal).rank : row.rank,
+      status: hasImportedDelta ? "ok" : row.status,
+      valueSource: hasImportedDelta ? "import" : row.valueSource,
+      confidence: hasImportedDelta ? 1 : row.confidence,
+      reasonCodes: hasImportedDelta ? [] : row.reasonCodes,
       normalSpins: t.normalSpins ?? row.normalSpins ?? null,
       totalStarts: t.totalStarts ?? row.totalStarts ?? null,
     };
   });
-  return { rows: merged, matched };
+  return {
+    rows: merged,
+    matched,
+    duplicateNumbers,
+    invalidDeltaNumbers: [...invalidDeltaNumbers],
+    conflictNumbers: [...conflictNumbers],
+    unverifiedDeltaNumbers: [...unverifiedDeltaNumbers],
+  };
+}
+
+// 保存対象の全行に、一意な台番号と確定済みの差玉があるかを検証する。
+// failed/review は推測保存を防ぐため未解決として扱う。
+export function validateDeltaRows(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const rawNumbers = list.map((row) => String(row?.num ?? "").trim());
+  const numbers = rawNumbers.map(normalizeMachineNumber);
+  const blankNumberIndices = [];
+  const invalidNumberIndices = [];
+  const unresolvedIndices = [];
+  const seen = new Map();
+
+  list.forEach((row, index) => {
+    const num = numbers[index];
+    if (!rawNumbers[index]) blankNumberIndices.push(index);
+    else if (num === null) invalidNumberIndices.push(index);
+    else {
+      const indices = seen.get(num) || [];
+      indices.push(index);
+      seen.set(num, indices);
+    }
+
+    const value = finiteDelta(row?.val);
+    if (value === null || row?.status !== "ok") {
+      unresolvedIndices.push(index);
+    }
+  });
+
+  const duplicateNumbers = Array.from(seen.entries())
+    .filter(([, indices]) => indices.length > 1)
+    .map(([num]) => num);
+  const errors = [];
+  if (!list.length) errors.push("empty");
+  if (blankNumberIndices.length) errors.push("blank-number");
+  if (invalidNumberIndices.length) errors.push("invalid-number");
+  if (duplicateNumbers.length) errors.push("duplicate-number");
+  if (unresolvedIndices.length) errors.push("unresolved-delta");
+
+  return {
+    valid: errors.length === 0,
+    total: list.length,
+    resolvedCount: list.length - unresolvedIndices.length,
+    unresolvedCount: unresolvedIndices.length,
+    unresolvedIndices,
+    blankNumberIndices,
+    invalidNumberIndices,
+    duplicateNumbers,
+    errors,
+  };
 }
 
 // ホールマップの島から台番号配列を生成する。
-// 複数行（ranges）・欠け（gaps）を考慮した実在の台番号だけを、
-// データサイトの掲載順に合わせて昇順で返す。
+// 複数行（ranges）・欠け（gaps）を考慮した実在の台番号だけを昇順で返す。
 export function islandToNumbers(island) {
   if (!island || typeof island !== "object") return [];
   const hasRanges = Array.isArray(island.ranges) && island.ranges.length > 0;
   if (!hasRanges && (!Number.isFinite(Number(island.start)) || !Number.isFinite(Number(island.end)))) {
     return [];
   }
-  const nums = islandLayoutCells(island)
-    .filter((cell) => !cell.gap)
-    .map((cell) => cell.num);
+  const ranges = hasRanges ? island.ranges : [{ start: island.start, end: island.end }];
+  const gaps = new Set((Array.isArray(island.gaps) ? island.gaps : [])
+    .map(Number)
+    .filter(Number.isFinite));
+  const nums = [];
+  for (const range of ranges) {
+    const start = Number(range?.start);
+    const end = Number(range?.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+    const low = Math.min(start, end);
+    const high = Math.max(start, end);
+    for (let number = low; number <= high; number += 1) {
+      if (!gaps.has(number)) nums.push(number);
+    }
+  }
   return [...new Set(nums)].sort((a, b) => a - b).map(String);
 }
 
