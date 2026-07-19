@@ -1,4 +1,4 @@
-import { getActualPL, getChodamaPL, getEvAmount } from "../analysis/analysisSelectors.js";
+import { archiveWorkMinutes, getActualPL, getChodamaPL, getEvAmount } from "../analysis/analysisSelectors.js";
 
 export const STANDARD_SESSION_SPINS = 2200;
 export const CENTRAL_80_Z = 1.2815515655446004;
@@ -54,6 +54,114 @@ const finitePositive = (value) => {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? n : null;
 };
+
+const roundUpTo = (value, step = 1) => {
+  const safeStep = finitePositive(step) ?? 1;
+  return Math.ceil(Math.max(0, Number(value) || 0) / safeStep) * safeStep;
+};
+
+const localDateKey = (value = new Date()) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+};
+
+const isValidDateKey = (value) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(String(value || ""))) return false;
+  const [year, month, day] = String(value).split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+};
+
+export const DEFAULT_PLANNING_SPINS_PER_HOUR = 210;
+
+export function buildGoalBackcast({
+  target = 0,
+  currentExpected = 0,
+  plannedDates = [],
+  archives = [],
+  dailyPlans = {},
+  standardHours = 6,
+  spinsPerHour = DEFAULT_PLANNING_SPINS_PER_HOUR,
+  now = new Date(),
+} = {}) {
+  const safeTarget = Math.max(0, Math.floor(Number(target) || 0));
+  const safeCurrentExpected = Math.round(Number(currentExpected) || 0);
+  const safeHours = finitePositive(standardHours) ?? 6;
+  const safeSpinsPerHour = finitePositive(spinsPerHour) ?? DEFAULT_PLANNING_SPINS_PER_HOUR;
+  const todayKey = localDateKey(now);
+  const monthKey = todayKey.slice(0, 7);
+  const normalizedDates = [...new Set((Array.isArray(plannedDates) ? plannedDates : [])
+    .map(String)
+    .filter((date) => isValidDateKey(date) && date.startsWith(monthKey)))]
+    .sort();
+  const activeDates = normalizedDates.filter((date) => dailyPlans?.[date]?.status !== "skip");
+  const workedMinutesToday = (Array.isArray(archives) ? archives : [])
+    .filter((archive) => String(archive?.date || "") === todayKey)
+    .reduce((sum, archive) => sum + archiveWorkMinutes(archive), 0);
+  const remainingDates = activeDates
+    .filter((date) => date >= todayKey)
+    .map((date) => {
+      const plannedHours = finitePositive(dailyPlans?.[date]?.standardHours) ?? safeHours;
+      const workedHours = date === todayKey ? workedMinutesToday / 60 : 0;
+      return {
+        date,
+        plannedHours,
+        workedHours,
+        remainingHours: Math.max(0, plannedHours - workedHours),
+      };
+    });
+  const availableDates = remainingDates.filter((row) => row.remainingHours > 0);
+  const remainingExpected = Math.max(0, safeTarget - safeCurrentExpected);
+  const achieved = safeTarget > 0 && remainingExpected === 0;
+  const remainingSessionCount = availableDates.length;
+  const remainingHours = availableDates.reduce((sum, row) => sum + row.remainingHours, 0);
+  const requiredHourlyEv = achieved
+    ? 0
+    : remainingHours > 0
+      ? roundUpTo(remainingExpected / remainingHours, 100)
+      : null;
+  const requiredSessionEv = achieved
+    ? 0
+    : availableDates[0] && requiredHourlyEv != null
+      ? Math.min(remainingExpected, roundUpTo(requiredHourlyEv * availableDates[0].remainingHours, 100))
+      : null;
+  const requiredUnitPrice = requiredHourlyEv == null
+    ? null
+    : Math.ceil((requiredHourlyEv / safeSpinsPerHour) * 100) / 100;
+  const elapsedScheduledCount = activeDates.filter((date) => date < todayKey).length;
+  const targetPaceNow = activeDates.length > 0
+    ? Math.round((safeTarget * elapsedScheduledCount) / activeDates.length)
+    : null;
+
+  return {
+    status: safeTarget <= 0
+      ? "needs-target"
+      : achieved
+        ? "achieved"
+        : remainingHours > 0
+          ? "ready"
+          : remainingDates.length > 0
+            ? "no-capacity"
+            : "needs-schedule",
+    target: safeTarget,
+    currentExpected: safeCurrentExpected,
+    remainingExpected,
+    plannedSessionCount: activeDates.length,
+    remainingSessionCount,
+    remainingHours,
+    nextDate: availableDates[0]?.date || "",
+    nextRemainingHours: availableDates[0]?.remainingHours || 0,
+    isToday: availableDates[0]?.date === todayKey,
+    standardHours: safeHours,
+    spinsPerHour: safeSpinsPerHour,
+    requiredSessionEv,
+    requiredHourlyEv,
+    requiredUnitPrice,
+    targetPaceNow,
+    paceGap: targetPaceNow == null ? null : safeCurrentExpected - targetPaceNow,
+  };
+}
 
 export function getRealPL(archive) {
   const cash = getActualPL(archive);
@@ -150,20 +258,115 @@ function sortRiskBucket(rows, tier) {
   });
 }
 
-function candidateFromRow(row, packageId, storeId) {
+export function isMachineRiskVerified(machine) {
+  return machine?.stdDevMethod === "p-evidence-branching-v2" && finitePositive(machine?.stdDev) != null;
+}
+
+function candidateFromRow(row, packageId, storeId, { recommended = true } = {}) {
   const { machine, risk } = row;
+  const riskVerified = isMachineRiskVerified(machine) && risk?.tier !== "unknown";
   return {
     key: getResearchCandidateKey(machine, storeId),
     name: machine.name,
     modelName: machine.modelName || "型式確認中",
-    stdDev: Number(machine.stdDev),
-    riskTier: risk.tier,
-    riskLabel: risk.label,
-    reason: `${PLAY_STYLES[packageId]?.label || PLAY_STYLES.balanced.label}の${risk.label}枠`,
+    aliases: Array.isArray(machine.aliases) ? machine.aliases.filter(Boolean) : [],
+    maker: machine.maker || "",
+    machineType: machine.type || "",
+    stdDev: riskVerified ? Number(machine.stdDev) : null,
+    riskVerified,
+    riskTier: riskVerified ? risk.tier : "unknown",
+    riskLabel: riskVerified ? risk.label : "ブレ未検証",
+    reason: recommended
+      ? `${PLAY_STYLES[packageId]?.label || PLAY_STYLES.balanced.label}の${risk.label}枠`
+      : riskVerified
+        ? `${risk.label}の登録機種`
+        : "機種マスター登録済み",
+    recommended,
     installationStatus: "unverified",
+    unitPriceStatus: "store-data-required",
     sourceDate: machine.dataUpdatedAt || machine.modelUpdatedAt || "",
     sourceUrl: machine.modelSourceUrl || machine.sourceUrls?.[0] || null,
   };
+}
+
+export function normalizeMachineSearch(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .toLocaleLowerCase("ja-JP")
+    .replace(/[\s‐‑‒–—―_/・･()（）[\]【】「」『』.．-]+/gu, "");
+}
+
+function machineSearchScore(machine, query) {
+  if (!query) return 0;
+  const values = [
+    machine?.name,
+    machine?.modelName,
+    machine?.maker,
+    machine?.type,
+    ...(Array.isArray(machine?.aliases) ? machine.aliases : []),
+  ]
+    .map(normalizeMachineSearch)
+    .filter(Boolean);
+  if (values.some((value) => value === query)) return 0;
+  if (values.some((value) => value.startsWith(query))) return 1;
+  if (values.some((value) => value.includes(query))) return 2;
+  return null;
+}
+
+export function buildMachineCatalogCandidates(machines, {
+  storeId = "any",
+  query = "",
+  riskTier = "all",
+} = {}) {
+  const list = Array.isArray(machines) ? machines : [];
+  const reference = buildVolatilityReference(list);
+  const normalizedQuery = normalizeMachineSearch(query);
+  const seen = new Set();
+  const rows = [];
+
+  for (const machine of list) {
+    const key = getResearchCandidateKey(machine, storeId);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const risk = isMachineRiskVerified(machine)
+      ? classifyMachineVolatility(machine.stdDev, reference)
+      : { tier: "unknown", percentile: null, label: "ブレ未検証" };
+    if (riskTier !== "all" && risk.tier !== riskTier) continue;
+    const searchScore = machineSearchScore(machine, normalizedQuery);
+    if (searchScore == null) continue;
+    rows.push({ machine, risk, searchScore });
+  }
+
+  return rows
+    .sort((a, b) => (
+      a.searchScore - b.searchScore
+      || String(a.machine.name || a.machine.modelName || "").localeCompare(
+        String(b.machine.name || b.machine.modelName || ""),
+        "ja",
+        { numeric: true, sensitivity: "base" }
+      )
+    ))
+    .map((row) => candidateFromRow(row, "balanced", storeId, { recommended: false }));
+}
+
+export function buildPinnedResearchCandidates({
+  selectedKeys = [],
+  catalogCandidates = [],
+  visibleCandidates = [],
+} = {}) {
+  const catalogByKey = new Map((Array.isArray(catalogCandidates) ? catalogCandidates : [])
+    .map((candidate) => [String(candidate?.key || ""), candidate])
+    .filter(([key]) => key));
+  const visibleKeys = new Set((Array.isArray(visibleCandidates) ? visibleCandidates : [])
+    .map((candidate) => String(candidate?.key || ""))
+    .filter(Boolean));
+  const seen = new Set();
+
+  return (Array.isArray(selectedKeys) ? selectedKeys : [])
+    .map(String)
+    .filter((key) => key && !seen.has(key) && seen.add(key) && !visibleKeys.has(key))
+    .map((key) => catalogByKey.get(key))
+    .filter(Boolean);
 }
 
 export function buildResearchPackageCandidates(machines, packageId = "balanced", limit = 5, { storeId = "any" } = {}) {
@@ -171,7 +374,7 @@ export function buildResearchPackageCandidates(machines, packageId = "balanced",
   const reference = buildVolatilityReference(list);
   const researchPackage = PLAY_STYLES[packageId] || PLAY_STYLES.balanced;
   const rows = list
-    .filter((machine) => machine?.stdDevMethod === "p-evidence-branching-v2" && finitePositive(machine?.stdDev) != null)
+    .filter(isMachineRiskVerified)
     .map((machine) => ({
       machine,
       risk: classifyMachineVolatility(machine.stdDev, reference),

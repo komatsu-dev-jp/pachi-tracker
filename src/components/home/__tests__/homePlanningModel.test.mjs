@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildGoalBackcast,
+  buildMachineCatalogCandidates,
   buildMonthProjection,
+  buildPinnedResearchCandidates,
   buildDailyResearchSelection,
   buildResearchAllocation,
   buildResearchPackageCandidates,
@@ -13,6 +16,7 @@ import {
   getResearchTargetRole,
   getRealPL,
   normalizeResearchTargets,
+  normalizeMachineSearch,
   PLAY_STYLES,
   updateResearchTargets,
 } from "../homePlanningModel.js";
@@ -22,6 +26,107 @@ const verifiedMachine = (name, stdDev, modelName = `${name}-MODEL`) => ({
   modelName,
   stdDev,
   stdDevMethod: "p-evidence-branching-v2",
+});
+
+test("全機種検索は未検証機種も隠さず、名前・型式・別名・メーカーを正規化して探せる", () => {
+  const machines = [
+    { ...verifiedMachine("e新世紀エヴァンゲリオン17", 21000, "eエヴァ17-K") , maker: "ビスティ", aliases: ["エヴァ17"] },
+    { name: "エヴァンゲリオン15", modelName: "Pエヴァ15", maker: "ビスティ", type: "ミドル" },
+    { name: "P大海物語5", modelName: "P大海5", maker: "三洋", type: "ハイミドル" },
+  ];
+  const all = buildMachineCatalogCandidates(machines, { storeId: "store-1" });
+  assert.equal(all.length, 3);
+  assert.equal(all.find((row) => row.name === "エヴァンゲリオン15")?.riskVerified, false);
+  assert.equal(all.find((row) => row.name === "エヴァンゲリオン15")?.stdDev, null);
+  assert.equal(buildMachineCatalogCandidates(machines, { query: "エヴァ １７", storeId: "store-1" })[0]?.name, "e新世紀エヴァンゲリオン17");
+  assert.equal(buildMachineCatalogCandidates(machines, { query: "三洋", storeId: "store-1" })[0]?.name, "P大海物語5");
+  assert.equal(buildMachineCatalogCandidates(machines, { riskTier: "unknown", storeId: "store-1" }).length, 2);
+  assert.equal(normalizeMachineSearch(" e-エヴァ １７（K） "), "eエヴァ17k");
+});
+
+test("選択済み機種はスタイルや検索結果から外れても固定表示できる", () => {
+  const catalog = [
+    { key: "store::stable", name: "安定機" },
+    { key: "store::high", name: "高変動機" },
+  ];
+  const pinned = buildPinnedResearchCandidates({
+    selectedKeys: ["store::high", "store::high"],
+    catalogCandidates: catalog,
+    visibleCandidates: [catalog[0]],
+  });
+  assert.deepEqual(pinned.map((candidate) => candidate.key), ["store::high"]);
+  assert.deepEqual(buildPinnedResearchCandidates({
+    selectedKeys: ["store::stable"],
+    catalogCandidates: catalog,
+    visibleCandidates: catalog,
+  }), []);
+});
+
+test("月間目標は残り予定日から次回必要期待値・時給・玉単価差を逆算する", () => {
+  const result = buildGoalBackcast({
+    target: 100000,
+    currentExpected: 40000,
+    plannedDates: ["2026-07-17", "2026-07-18", "2026-07-20", "2026-07-25"],
+    standardHours: 5,
+    spinsPerHour: 210,
+    now: new Date(2026, 6, 18, 12),
+  });
+  assert.equal(result.status, "ready");
+  assert.equal(result.remainingExpected, 60000);
+  assert.equal(result.remainingSessionCount, 3);
+  assert.equal(result.nextDate, "2026-07-18");
+  assert.equal(result.isToday, true);
+  assert.equal(result.requiredSessionEv, 20000);
+  assert.equal(result.requiredHourlyEv, 4000);
+  assert.equal(result.requiredUnitPrice, 19.05);
+  assert.equal(result.targetPaceNow, 25000);
+  assert.equal(result.paceGap, 15000);
+});
+
+test("残り予定日がなければ無理な日割りをせず、目標達成済みなら必要額を0にする", () => {
+  const needsSchedule = buildGoalBackcast({
+    target: 30000,
+    currentExpected: 10000,
+    plannedDates: ["2026-07-01"],
+    now: new Date(2026, 6, 18),
+  });
+  assert.equal(needsSchedule.status, "needs-schedule");
+  assert.equal(needsSchedule.requiredSessionEv, null);
+  assert.equal(needsSchedule.requiredUnitPrice, null);
+
+  const achieved = buildGoalBackcast({
+    target: 30000,
+    currentExpected: 35000,
+    plannedDates: [],
+    now: new Date(2026, 6, 18),
+  });
+  assert.equal(achieved.status, "achieved");
+  assert.equal(achieved.requiredSessionEv, 0);
+  assert.equal(achieved.requiredHourlyEv, 0);
+});
+
+test("今日の消化時間と見送り日を除き、残り時間へ必要期待値を再配分する", () => {
+  const result = buildGoalBackcast({
+    target: 100000,
+    currentExpected: 20000,
+    plannedDates: ["2026-07-18", "2026-07-20", "2026-07-22", "2026-02-31"],
+    archives: [{
+      date: "2026-07-18",
+      settings: { rotPerHour: 250 },
+      stats: { netRot: 500 },
+    }],
+    dailyPlans: { "2026-07-22": { status: "skip" } },
+    standardHours: 6,
+    spinsPerHour: 210,
+    now: new Date(2026, 6, 18, 12),
+  });
+  assert.equal(result.plannedSessionCount, 2);
+  assert.equal(result.remainingSessionCount, 2);
+  assert.equal(result.remainingHours, 10);
+  assert.equal(result.nextRemainingHours, 4);
+  assert.equal(result.requiredHourlyEv, 8000);
+  assert.equal(result.requiredSessionEv, 32000);
+  assert.equal(result.requiredUnitPrice, 38.1);
 });
 
 test("実収支は現金収支と貯玉消費を合わせ、実データなしはnullにする", () => {

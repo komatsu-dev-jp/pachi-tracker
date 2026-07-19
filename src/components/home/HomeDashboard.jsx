@@ -47,11 +47,15 @@ import {
 } from "./homeDashboardModel";
 import {
   buildDailyResearchSelection,
+  buildGoalBackcast,
+  buildMachineCatalogCandidates,
   buildMonthProjection,
+  buildPinnedResearchCandidates,
   buildResearchAllocation,
   buildResearchPackageCandidates,
   getResearchTargetRole,
   getRealPL,
+  DEFAULT_PLANNING_SPINS_PER_HOUR,
   MAX_RESEARCH_BACKUPS,
   normalizeResearchTargets,
   PLAY_STYLES,
@@ -69,6 +73,11 @@ const compactYen = (value) => {
   if (Math.abs(n) >= 10000) return `${Math.round(n / 10000)}万`;
   if (Math.abs(n) >= 1000) return `${Math.round(n / 1000)}千`;
   return String(Math.round(n));
+};
+
+const unitPriceDiff = (value) => {
+  const n = Number(value) || 0;
+  return `${n >= 0 ? "+" : ""}${n.toFixed(2)}円/回`;
 };
 
 function AppMark() {
@@ -109,7 +118,7 @@ function SectionTitle({ icon: Icon, children, aside }) {
   );
 }
 
-function MonthlySummaryCard({ overview, projection, plan, onEdit, onDetail }) {
+function MonthlySummaryCard({ overview, projection, plan, goalBackcast, onEdit, onDetail }) {
   const progressWidth = Math.min(100, Math.max(0, overview.progress));
   const gap = projection.actualExpectedGap;
   const actualIncomplete = projection.actualRecordCount < projection.recordCount;
@@ -170,6 +179,8 @@ function MonthlySummaryCard({ overview, projection, plan, onEdit, onDetail }) {
       <div className="home-progress" aria-label={`月間期待値目標の達成率 ${overview.progress}%`}>
         <i style={{ width: `${progressWidth}%` }} />
       </div>
+
+      <GoalBackcastPanel backcast={goalBackcast} compact />
 
       <div className="home-chart-heading">
         <span>今月の推移と月末見込み</span>
@@ -280,22 +291,73 @@ function ResearchAllocation({ researchPackage, plannedDates, standardHours }) {
   );
 }
 
-function PlanCandidateRow({ candidate, role, needsReview, onSelectRole, backupDisabled = false }) {
-  const roleLabel = role === "primary" ? "本命候補" : role === "backup" ? "予備" : role === "excluded" ? "除外" : "未選択";
+function GoalBackcastPanel({ backcast, compact = false }) {
+  if (!backcast) return null;
+  const nextLabel = backcast.isToday
+    ? "今日あと必要な期待値"
+    : backcast.nextDate
+      ? `次回 ${monthDayLabel(backcast.nextDate)} の必要目安`
+      : "次回の必要目安";
+  const hours = Number(backcast.remainingHours || 0);
+  const hoursLabel = Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
+  const paceLabel = backcast.paceGap == null
+    ? "予定日の登録後に判定"
+    : backcast.paceGap > 0
+      ? `計画ペースより ${yen(backcast.paceGap)} 先行`
+      : backcast.paceGap < 0
+        ? `計画ペースまで ${yen(Math.abs(backcast.paceGap))}`
+        : "計画ペースどおり";
+
   return (
-    <article className={`home-plan-candidate ${role !== "candidate" ? `is-${role}` : ""} ${needsReview ? "needs-review" : ""}`}>
+    <div className={`home-goal-backcast ${compact ? "is-compact" : ""} is-${backcast.status}`} aria-live="polite">
+      <div className="home-goal-backcast__head">
+        <span><Target size={15} />月間目標から自動逆算</span>
+        <em>{backcast.status === "ready" ? paceLabel : backcast.status === "achieved" ? "目標達成" : "設定が必要"}</em>
+      </div>
+      {backcast.status === "ready" ? (
+        <>
+          <div className="home-goal-backcast__hero">
+            <span>{nextLabel}</span>
+            <strong>{yen(backcast.requiredSessionEv)}</strong>
+            <small>残り {backcast.remainingSessionCount}日・{hoursLabel}時間へ再配分</small>
+          </div>
+          <div className="home-goal-backcast__metrics">
+            <span><small>必要時給</small><strong>{yen(backcast.requiredHourlyEv)}/h</strong></span>
+            <span><small>必要玉単価差</small><strong>{unitPriceDiff(backcast.requiredUnitPrice)}</strong></span>
+            <span><small>目標まで残り</small><strong>{yen(backcast.remainingExpected)}</strong></span>
+          </div>
+          <p>店舗の差玉データ取得後、この必要時給以上の台を優先します。玉単価差は{backcast.spinsPerHour}回転/時で換算しています。</p>
+        </>
+      ) : backcast.status === "achieved" ? (
+        <div className="home-goal-backcast__state"><CheckCircle2 size={21} /><span><strong>月間期待値目標を達成しています</strong><small>無理に稼働を増やさず、条件が良い台だけを確認できます。</small></span></div>
+      ) : (
+        <div className="home-goal-backcast__state"><CalendarDays size={21} /><span><strong>{backcast.status === "needs-target" ? "期待値目標を入力してください" : backcast.status === "no-capacity" ? "予定時間を使い切っています" : "これからの稼働予定日を追加してください"}</strong><small>目標と残り時間が決まると、次回必要額・必要時給・必要玉単価差を表示します。</small></span></div>
+      )}
+    </div>
+  );
+}
+
+function PlanCandidateRow({ candidate, role, needsReview, pinnedSelection = false, onSelectRole, backupDisabled = false }) {
+  const roleLabel = role === "primary" ? "本命候補" : role === "backup" ? "予備" : role === "excluded" ? "除外" : "未選択";
+  const riskVerified = candidate.riskVerified ?? (candidate.riskTier !== "unknown" && Number(candidate.stdDev) > 0);
+  return (
+    <article className={`home-plan-candidate ${role !== "candidate" ? `is-${role}` : ""} ${needsReview ? "needs-review" : ""} ${pinnedSelection ? "is-pinned-selection" : ""}`}>
       <div className="home-plan-candidate__heading">
-        <span className={`home-plan-candidate__role is-${role}`}>{roleLabel}</span>
-        <span className={`home-risk-badge is-${candidate.riskTier}`}>
-          <small>{candidate.riskLabel}</small>
-          <strong>{Number(candidate.stdDev).toLocaleString("ja-JP")}玉</strong>
+        <span className={`home-plan-candidate__role is-${role}`}>{roleLabel}{candidate.recommended && role === "candidate" ? "・おすすめ" : ""}</span>
+        <span className={`home-risk-badge is-${riskVerified ? candidate.riskTier : "unknown"}`}>
+          <small>{riskVerified ? candidate.riskLabel : "ブレ未検証"}</small>
+          <strong>{riskVerified ? `${Number(candidate.stdDev).toLocaleString("ja-JP")}玉` : "—"}</strong>
         </span>
       </div>
       <strong className="home-plan-candidate__name">{candidate.name}</strong>
       <small className="home-plan-candidate__model">{candidate.modelName}</small>
+      <div className="home-plan-candidate__facts">
+        <span>{[candidate.maker, candidate.machineType].filter(Boolean).join("・") || "機種マスター登録済み"}</span>
+        <em>期待玉単価差 店舗データ後</em>
+      </div>
       <div className="home-plan-candidate__meta">
-        <span>{candidate.reason || "リサーチ候補"}・標準偏差確認済{candidate.sourceDate ? `（${candidate.sourceDate}更新）` : ""}</span>
-        <em>{needsReview ? "条件変更・再確認が必要" : "設置未確認"}</em>
+        <span>{candidate.reason || "リサーチ候補"}・{riskVerified ? "標準偏差確認済" : "標準偏差は未検証"}{candidate.sourceDate ? `（${candidate.sourceDate}更新）` : ""}</span>
+        <em>{needsReview ? "条件変更・再確認が必要" : pinnedSelection ? "選択中・表示条件外" : "設置未確認"}</em>
       </div>
       <div className="home-plan-candidate__actions" aria-label={`${candidate.name}の役割`}>
         {[
@@ -319,14 +381,14 @@ function PlanCandidateRow({ candidate, role, needsReview, onSelectRole, backupDi
   );
 }
 
-function PlanEditor({ current, monthKey, target, prefs, machines, stores, selectedStoreId, onClose, onSave, onOpenStores }) {
+function PlanEditor({ current, monthKey, target, currentExpected, archives, dailyPlans, now, prefs, machines, stores, selectedStoreId, onClose, onSave, onOpenStores }) {
   const dialogRef = useRef(null);
   const onCloseRef = useRef(onClose);
   const [targetValue, setTargetValue] = useState(() => String(Math.max(0, Math.floor(Number(current?.expectedTarget ?? target) || 0))));
   const [styleId, setStyleId] = useState(current?.researchPackageId || current?.baseStyle || "balanced");
   const [standardHours, setStandardHours] = useState(String(current?.standardHours ?? 6));
   const [cashLimit, setCashLimit] = useState(String(current?.cashLimit ?? 30000));
-  const [minExpectedValuePerHour, setMinExpectedValuePerHour] = useState(String(Math.max(0, Number(current?.minExpectedValuePerHour) || 0)));
+  const [manualMinExpectedValuePerHour, setManualMinExpectedValuePerHour] = useState(String(Math.max(0, Number(current?.manualMinExpectedValuePerHour ?? current?.minExpectedValuePerHour) || 0)));
   const [reminderTime, setReminderTime] = useState(current?.reminderTime || prefs?.reminderTime || "20:00");
   const [plannedDates, setPlannedDates] = useState(() => Array.isArray(current?.plannedDates) ? current.plannedDates : []);
   const initialStoreId = current?.defaultStoreId ?? selectedStoreId ?? stores[0]?.id ?? "";
@@ -337,14 +399,51 @@ function PlanEditor({ current, monthKey, target, prefs, machines, stores, select
     Array.isArray(current?.candidateSnapshot?.candidates) ? current.candidateSnapshot.candidates : []
   ));
   const [newDate, setNewDate] = useState("");
+  const [candidateView, setCandidateView] = useState("recommended");
+  const [candidateQuery, setCandidateQuery] = useState("");
+  const [candidateRiskFilter, setCandidateRiskFilter] = useState("all");
+  const [candidateLimit, setCandidateLimit] = useState(20);
   const parsedTarget = Math.max(0, Math.floor(Number(targetValue) || 0));
   const selectedStore = stores.find((store) => String(store?.id) === storeKey) || null;
   const researchPackage = PLAY_STYLES[styleId] || PLAY_STYLES.balanced;
-  const candidates = useMemo(
+  const goalBackcast = useMemo(() => buildGoalBackcast({
+    target: parsedTarget,
+    currentExpected,
+    plannedDates,
+    archives,
+    dailyPlans,
+    standardHours,
+    spinsPerHour: DEFAULT_PLANNING_SPINS_PER_HOUR,
+    now,
+  }), [archives, currentExpected, dailyPlans, now, parsedTarget, plannedDates, standardHours]);
+  const manualMinimumHourly = Math.max(0, Number(manualMinExpectedValuePerHour) || 0);
+  const effectiveMinimumHourly = Math.max(manualMinimumHourly, Number(goalBackcast.requiredHourlyEv) || 0);
+  const recommendedCandidates = useMemo(
     () => selectedStore ? buildResearchPackageCandidates(machines, styleId, 5, { storeId: selectedStore.id }) : [],
     [machines, selectedStore, styleId]
   );
-  const currentCandidateKeys = useMemo(() => new Set(candidates.map((candidate) => candidate.key)), [candidates]);
+  const catalogCandidates = useMemo(
+    () => selectedStore ? buildMachineCatalogCandidates(machines, { storeId: selectedStore.id }) : [],
+    [machines, selectedStore]
+  );
+  const recommendedByKey = useMemo(() => new Map(recommendedCandidates.map((candidate) => [candidate.key, candidate])), [recommendedCandidates]);
+  const filteredCatalogCandidates = useMemo(() => (
+    selectedStore
+      ? buildMachineCatalogCandidates(machines, {
+        storeId: selectedStore.id,
+        query: candidateQuery,
+        riskTier: candidateRiskFilter,
+      }).map((candidate) => {
+        const recommended = recommendedByKey.get(candidate.key);
+        return recommended ? { ...candidate, recommended: true, reason: recommended.reason } : candidate;
+      })
+      : []
+  ), [candidateQuery, candidateRiskFilter, machines, recommendedByKey, selectedStore]);
+  const candidateResults = candidateView === "recommended" && !candidateQuery && candidateRiskFilter === "all"
+    ? recommendedCandidates
+    : filteredCatalogCandidates;
+  const candidates = candidateResults.slice(0, candidateLimit);
+  const currentCandidateKeys = useMemo(() => new Set(catalogCandidates.map((candidate) => candidate.key)), [catalogCandidates]);
   const selectedKeys = useMemo(() => [
     researchTargets.primaryMachineKey,
     ...researchTargets.backupMachineKeys,
@@ -352,6 +451,11 @@ function PlanEditor({ current, monthKey, target, prefs, machines, stores, select
   const needsReviewKeys = selectedKeys.filter((key) => !currentCandidateKeys.has(key));
   const rememberedByKey = useMemo(() => new Map(candidateMemory.map((candidate) => [candidate.key, candidate])), [candidateMemory]);
   const staleCandidates = needsReviewKeys.map((key) => rememberedByKey.get(key)).filter(Boolean);
+  const pinnedCandidates = buildPinnedResearchCandidates({
+    selectedKeys,
+    catalogCandidates,
+    visibleCandidates: candidates,
+  });
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -376,7 +480,7 @@ function PlanEditor({ current, monthKey, target, prefs, machines, stores, select
     if (nextStyleId === styleId) return;
     setCandidateMemory((previous) => {
       const byKey = new Map(previous.map((candidate) => [candidate.key, candidate]));
-      candidates.forEach((candidate) => byKey.set(candidate.key, candidate));
+      recommendedCandidates.forEach((candidate) => byKey.set(candidate.key, candidate));
       return [...byKey.values()];
     });
     setStyleId(nextStyleId);
@@ -386,7 +490,7 @@ function PlanEditor({ current, monthKey, target, prefs, machines, stores, select
   const handleStoreChange = (event) => {
     setCandidateMemory((previous) => {
       const byKey = new Map(previous.map((candidate) => [candidate.key, candidate]));
-      candidates.forEach((candidate) => byKey.set(candidate.key, candidate));
+      recommendedCandidates.forEach((candidate) => byKey.set(candidate.key, candidate));
       return [...byKey.values()];
     });
     setStoreKey(event.target.value);
@@ -405,6 +509,11 @@ function PlanEditor({ current, monthKey, target, prefs, machines, stores, select
       setSelectionMessage("予備は2機種までです。現在の予備を1つ解除してから選んでください。");
       return;
     }
+    setCandidateMemory((previous) => {
+      const byKey = new Map(previous.map((item) => [item.key, item]));
+      byKey.set(candidate.key, candidate);
+      return [...byKey.values()];
+    });
     setResearchTargets(next);
     setSelectionMessage(`${candidate.name}を${role === "primary" ? "本命候補" : role === "backup" ? "予備" : "除外"}${getResearchTargetRole(before, candidate.key) === role ? "から解除" : "に設定"}しました。`);
   };
@@ -421,27 +530,32 @@ function PlanEditor({ current, monthKey, target, prefs, machines, stores, select
   const savePlan = () => {
     const normalizedTargets = normalizeResearchTargets(researchTargets);
     const snapshots = new Map(candidateMemory.map((candidate) => [candidate.key, candidate]));
-    candidates.forEach((candidate) => snapshots.set(candidate.key, candidate));
+    recommendedCandidates.forEach((candidate) => snapshots.set(candidate.key, candidate));
     const isReady = Boolean(selectedStore && normalizedTargets.primaryMachineKey && needsReviewKeys.length === 0);
     onSave({
-      version: 2,
+      version: 3,
       monthKey,
       status: isReady ? "research-ready" : needsReviewKeys.length ? "needs-review" : "draft",
       expectedTarget: parsedTarget,
       researchPackageId: styleId,
       baseStyle: styleId,
       volatilityTolerance: styleId === "stable" ? "low" : styleId === "ev" ? "high" : "medium",
-      minExpectedValuePerHour: Math.max(0, Number(minExpectedValuePerHour) || 0),
-      expectedValuePolicy: "minimum-hourly-after-store-analysis",
+      manualMinExpectedValuePerHour: manualMinimumHourly,
+      minExpectedValuePerHour: effectiveMinimumHourly,
+      expectedValuePolicy: "goal-backcast-or-manual-floor-after-store-analysis",
       standardHours: Math.max(1, Number(standardHours) || 6),
       cashLimit: Math.max(0, Number(cashLimit) || 0),
       reminderTime,
       defaultStoreId: selectedStore?.id ?? null,
       plannedDates,
+      goalBackcast: {
+        ...goalBackcast,
+        calculatedAt: new Date().toISOString(),
+      },
       researchTargets: normalizedTargets,
       candidateSnapshot: {
         generatedAt: new Date().toISOString(),
-        algorithmVersion: "home-plan-hybrid-v1",
+        algorithmVersion: "home-plan-hybrid-v2",
         storeDataStatus: "installation-unverified",
         candidates: [...snapshots.values()],
       },
@@ -456,35 +570,75 @@ function PlanEditor({ current, monthKey, target, prefs, machines, stores, select
         <div className="home-target-sheet__heading">
           <div>
             <h2 id="home-plan-title">今月の稼働プラン</h2>
-            <p id="home-plan-description">リサーチ配分を選ぶと、同じ画面で対応機種を選べます。</p>
+            <p id="home-plan-description">月間目標から必要条件を逆算し、登録済みの全機種から本命を選べます。</p>
           </div>
           <button type="button" onClick={onClose} aria-label="閉じる"><X size={20} /></button>
         </div>
 
         <div className="home-plan-field">
-          <span>1. 月間のリサーチ配分</span>
+          <span>1. 月間目標と稼働予定</span>
+          <div className="home-plan-fields-grid">
+            <label className="home-target-input">
+              <span>月間の期待値目標</span>
+              <div><input type="number" min="0" inputMode="numeric" value={targetValue} onChange={(event) => setTargetValue(event.target.value.replace(/[^\d]/g, ""))} /><em>円</em></div>
+            </label>
+            <label className="home-target-input">
+              <span>1日の標準時間</span>
+              <div><input type="number" min="1" max="16" inputMode="decimal" value={standardHours} onChange={(event) => setStandardHours(event.target.value)} /><em>時間</em></div>
+            </label>
+          </div>
+          <div className="home-date-add home-date-add--plan">
+            <input type="date" value={newDate} min={`${monthKey}-01`} max={`${monthKey}-31`} onChange={(event) => setNewDate(event.target.value)} />
+            <button type="button" onClick={addDate}><Plus size={15} />稼働日を追加</button>
+          </div>
+          <div className="home-date-chips">
+            {plannedDates.length === 0 && <small>これから稼働する日を入れると、1日あたりの必要期待値を計算できます。</small>}
+            {plannedDates.map((date) => (
+              <button type="button" key={date} onClick={() => setPlannedDates((previous) => previous.filter((item) => item !== date))}>
+                {Number(date.slice(5, 7))}/{Number(date.slice(8, 10))}<Trash2 size={12} />
+              </button>
+            ))}
+          </div>
+          <GoalBackcastPanel backcast={goalBackcast} />
+          <div className="home-plan-fields-grid home-plan-secondary-fields">
+            <label className="home-target-input">
+              <span>1日の現金上限</span>
+              <div><input type="number" min="0" inputMode="numeric" value={cashLimit} onChange={(event) => setCashLimit(event.target.value.replace(/[^\d]/g, ""))} /><em>円</em></div>
+            </label>
+            <label className="home-target-input">
+              <span>前日の確認時刻</span>
+              <div><input type="time" value={reminderTime} onChange={(event) => setReminderTime(event.target.value)} /></div>
+            </label>
+          </div>
+        </div>
+
+        <div className="home-plan-field">
+          <span>2. 荒れ方の配分</span>
           <StylePicker value={styleId} onChange={handlePackageChange} />
           <small>{researchPackage.description} 「安定」はブレの小ささで、利益を保証する意味ではありません。</small>
           <ResearchAllocation researchPackage={researchPackage} plannedDates={plannedDates} standardHours={standardHours} />
         </div>
 
-        <div className="home-plan-fields-grid home-plan-research-conditions">
-          <label className="home-plan-select-field">
-            <span>調査する店舗</span>
-            <select value={storeKey} onChange={handleStoreChange}>
-              <option value="">店舗を選択</option>
-              {stores.map((store) => <option key={String(store?.id)} value={String(store?.id)}>{store?.name || "名称未設定"}</option>)}
-            </select>
-          </label>
-          <label className="home-target-input">
-            <span>本命にする最低時給期待値</span>
-            <div><input type="number" min="0" inputMode="numeric" value={minExpectedValuePerHour} onChange={(event) => setMinExpectedValuePerHour(event.target.value.replace(/[^\d]/g, ""))} /><em>円/h</em></div>
-          </label>
+        <div className="home-plan-field">
+          <span>3. 店舗と期待値条件</span>
+          <div className="home-plan-fields-grid home-plan-research-conditions">
+            <label className="home-plan-select-field">
+              <span>調査する店舗</span>
+              <select value={storeKey} onChange={handleStoreChange}>
+                <option value="">店舗を選択</option>
+                {stores.map((store) => <option key={String(store?.id)} value={String(store?.id)}>{store?.name || "名称未設定"}</option>)}
+              </select>
+            </label>
+            <label className="home-target-input">
+              <span>任意の最低時給ライン</span>
+              <div><input type="number" min="0" inputMode="numeric" value={manualMinExpectedValuePerHour} onChange={(event) => setManualMinExpectedValuePerHour(event.target.value.replace(/[^\d]/g, ""))} /><em>円/h</em></div>
+            </label>
+          </div>
+          <small className="home-plan-condition-note">自動逆算と任意ラインの高い方、{yen(effectiveMinimumHourly)}/h以上を候補条件にします。判定は店舗データ取得後です。</small>
         </div>
-        <small className="home-plan-condition-note">期待値条件は店舗データ取得後に判定します。高変動＝高期待値ではありません。</small>
 
         <div className="home-plan-field home-plan-candidates-section">
-          <span>2. 今月リサーチする機種</span>
+          <span>4. 今月リサーチする機種</span>
           {!selectedStore ? (
             <div className="home-plan-empty">
               <Store size={22} />
@@ -492,75 +646,77 @@ function PlanEditor({ current, monthKey, target, prefs, machines, stores, select
               <span>店舗を基準に候補を保存するため、未選択では本命候補を作りません。</span>
               {stores.length === 0 && <button type="button" onClick={onOpenStores}>店舗を登録する</button>}
             </div>
-          ) : candidates.length === 0 ? (
+          ) : catalogCandidates.length === 0 ? (
             <div className="home-plan-empty">
               <Search size={22} />
-              <strong>標準偏差を確認できる候補がありません</strong>
-              <span>条件を変更するか、機種データの更新後にもう一度確認してください。</span>
+              <strong>登録済みの機種がありません</strong>
+              <span>設定から機種を登録すると、この画面で検索・選択できます。</span>
+              <button type="button" onClick={onOpenStores}>設定を開く</button>
             </div>
           ) : (
             <>
+              <div className="home-machine-picker-tabs" role="tablist" aria-label="機種候補の表示範囲">
+                <button type="button" role="tab" aria-selected={candidateView === "recommended"} className={candidateView === "recommended" ? "is-selected" : ""} onClick={() => { setCandidateView("recommended"); setCandidateQuery(""); setCandidateRiskFilter("all"); setCandidateLimit(20); }}>おすすめ {recommendedCandidates.length}</button>
+                <button type="button" role="tab" aria-selected={candidateView === "all"} className={candidateView === "all" ? "is-selected" : ""} onClick={() => { setCandidateView("all"); setCandidateLimit(20); }}>登録済み全{catalogCandidates.length}機種</button>
+              </div>
+              <label className="home-machine-search">
+                <Search size={16} />
+                <input aria-label="機種を検索" value={candidateQuery} onChange={(event) => { setCandidateQuery(event.target.value); setCandidateView("all"); setCandidateLimit(20); }} placeholder="機種名・型式・別名・メーカーで検索" />
+                {candidateQuery && <button type="button" onClick={() => setCandidateQuery("")} aria-label="検索をクリア"><X size={14} /></button>}
+              </label>
+              <div className="home-machine-risk-filters" aria-label="荒れ方で絞り込む">
+                {[["all", "すべて"], ["stable", "ブレ小"], ["balanced", "標準"], ["high", "ブレ大"], ["unknown", "未検証"]].map(([value, label]) => (
+                  <button type="button" key={value} className={candidateRiskFilter === value ? "is-selected" : ""} onClick={() => { setCandidateRiskFilter(value); setCandidateView("all"); setCandidateLimit(20); }}>{label}</button>
+                ))}
+              </div>
               <div className="home-plan-candidate-summary">
-                <span>{selectedStore.name}・条件適合順</span>
-                <em>機種マスタ参考候補／設置・期待値は未確認</em>
+                <span>{candidateView === "recommended" && !candidateQuery && candidateRiskFilter === "all" ? `${selectedStore.name}・配分に合う参考候補` : `検索結果 ${candidateResults.length}/${catalogCandidates.length}機種`}</span>
+                <em>設置・店舗期待値は未確認</em>
                 <strong>本命 {researchTargets.primaryMachineKey ? 1 : 0}/1 / 予備 {researchTargets.backupMachineKeys.length}/{MAX_RESEARCH_BACKUPS}</strong>
               </div>
+              <p className="home-machine-picker-note">おすすめは検証済み標準偏差から自動抽出しています。全機種では未検証機種も隠さず選べますが、自動推薦には含めません。</p>
               {needsReviewKeys.length > 0 && (
                 <div className="home-plan-review-warning">
                   <ShieldCheck size={15} />
-                  <span>条件変更前の選択を残しています。解除するか、新しい候補へ設定し直してください。</span>
+                  <span>店舗変更前の選択を残しています。解除するか、新しい店舗用に設定し直してください。</span>
                   <button type="button" onClick={clearNeedsReview}>条件外を解除</button>
                 </div>
               )}
-              <div className="home-plan-candidate-list">
-                {staleCandidates.map((candidate) => (
-                  <PlanCandidateRow key={`stale-${candidate.key}`} candidate={candidate} role={getResearchTargetRole(researchTargets, candidate.key)} needsReview onSelectRole={handleCandidateRole} />
-                ))}
-                {candidates.map((candidate) => (
-                  <PlanCandidateRow key={candidate.key} candidate={candidate} role={getResearchTargetRole(researchTargets, candidate.key)} needsReview={false} onSelectRole={handleCandidateRole} />
-                ))}
-              </div>
+              {candidateResults.length === 0 && staleCandidates.length === 0 && pinnedCandidates.length === 0 ? (
+                <div className="home-plan-empty home-plan-empty--search">
+                  <Search size={22} />
+                  <strong>一致する機種がありません</strong>
+                  <span>検索語や荒れ方の条件を変えるか、設定から機種を追加してください。</span>
+                  <button type="button" onClick={() => { setCandidateQuery(""); setCandidateRiskFilter("all"); }}>条件をリセット</button>
+                </div>
+              ) : (
+                <>
+                  {candidateResults.length === 0 && <p className="home-machine-picker-note">検索条件に一致する追加候補はありません。選択中の機種は下に固定表示しています。</p>}
+                  <div className="home-plan-candidate-list">
+                    {(staleCandidates.length > 0 || pinnedCandidates.length > 0) && (
+                      <div className="home-plan-pinned-note"><CheckCircle2 size={14} />選択中の機種は、検索やスタイルを変えてもここに固定表示します。</div>
+                    )}
+                    {staleCandidates.map((candidate) => (
+                      <PlanCandidateRow key={`stale-${candidate.key}`} candidate={candidate} role={getResearchTargetRole(researchTargets, candidate.key)} needsReview onSelectRole={handleCandidateRole} />
+                    ))}
+                    {pinnedCandidates.map((candidate) => (
+                      <PlanCandidateRow key={`pinned-${candidate.key}`} candidate={candidate} role={getResearchTargetRole(researchTargets, candidate.key)} pinnedSelection onSelectRole={handleCandidateRole} />
+                    ))}
+                    {candidates.map((candidate) => {
+                      const role = getResearchTargetRole(researchTargets, candidate.key);
+                      const backupDisabled = role !== "backup" && researchTargets.backupMachineKeys.length >= MAX_RESEARCH_BACKUPS;
+                      return <PlanCandidateRow key={candidate.key} candidate={candidate} role={role} needsReview={false} backupDisabled={backupDisabled} onSelectRole={handleCandidateRole} />;
+                    })}
+                  </div>
+                </>
+              )}
+              {candidateResults.length > candidates.length && <button type="button" className="home-machine-load-more" onClick={() => setCandidateLimit((value) => value + 20)}>さらに20機種を表示（残り{candidateResults.length - candidates.length}）</button>}
               <div className="home-plan-selection-message" aria-live="polite">{selectionMessage || "本命候補は1機種、予備は2機種まで選べます。もう一度押すと解除できます。"}</div>
             </>
           )}
         </div>
 
-        <div className="home-plan-fields-grid">
-          <label className="home-target-input">
-            <span>期待値目標</span>
-            <div><input type="number" min="0" inputMode="numeric" value={targetValue} onChange={(event) => setTargetValue(event.target.value.replace(/[^\d]/g, ""))} /><em>円</em></div>
-          </label>
-          <label className="home-target-input">
-            <span>1日の標準時間</span>
-            <div><input type="number" min="1" max="16" inputMode="decimal" value={standardHours} onChange={(event) => setStandardHours(event.target.value)} /><em>時間</em></div>
-          </label>
-          <label className="home-target-input">
-            <span>1日の現金上限</span>
-            <div><input type="number" min="0" inputMode="numeric" value={cashLimit} onChange={(event) => setCashLimit(event.target.value.replace(/[^\d]/g, ""))} /><em>円</em></div>
-          </label>
-          <label className="home-target-input">
-            <span>前日の確認時刻</span>
-            <div><input type="time" value={reminderTime} onChange={(event) => setReminderTime(event.target.value)} /></div>
-          </label>
-        </div>
-
-        <div className="home-plan-field">
-          <span>稼働予定日</span>
-          <div className="home-date-add">
-            <input type="date" value={newDate} min={`${monthKey}-01`} max={`${monthKey}-31`} onChange={(event) => setNewDate(event.target.value)} />
-            <button type="button" onClick={addDate}><Plus size={15} />追加</button>
-          </div>
-          <div className="home-date-chips">
-            {plannedDates.length === 0 && <small>予定日を入れると、その前日にリサーチ方針を確認できます。</small>}
-            {plannedDates.map((date) => (
-              <button type="button" key={date} onClick={() => setPlannedDates((previous) => previous.filter((item) => item !== date))}>
-                {Number(date.slice(5, 7))}/{Number(date.slice(8, 10))}<Trash2 size={12} />
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="home-plan-note"><Bell size={14} />予定日前日にアプリを開くと、設定時刻からホームへ確認カードを表示します。端末へのプッシュ通知ではありません。</div>
+        <div className="home-plan-note"><Bell size={14} />予定日前日にアプリを開くと確認カードを表示します。店舗スキャン後は必要時給と期待玉単価差を満たす台を優先します。</div>
         <div className="home-target-sheet__actions">
           <button type="button" className="is-cancel" onClick={onClose}>キャンセル</button>
           <button type="button" className="is-save" onClick={savePlan}>このプランを保存</button>
@@ -603,7 +759,7 @@ function monthDayLabel(dateString) {
   return month && day ? `${month}/${day}` : "明日";
 }
 
-function DailyResearchCard({ date, plan, basePlan, machines, storeId, storeName, onSelect, onSelectCandidate, onOpenStrategy, onOpenStores }) {
+function DailyResearchCard({ date, plan, basePlan, goalBackcast, machines, storeId, storeName, onSelect, onSelectCandidate, onOpenStrategy, onOpenStores }) {
   const baseStyle = basePlan?.researchPackageId || basePlan?.baseStyle || "balanced";
   const selectedStyleId = plan?.style || baseStyle;
   const selectedStyle = PLAY_STYLES[selectedStyleId] || PLAY_STYLES.balanced;
@@ -659,6 +815,7 @@ function DailyResearchCard({ date, plan, basePlan, machines, storeId, storeName,
             <span><WalletCards size={12} />現金上限 {yen(plan?.cashLimit ?? basePlan?.cashLimit ?? 0)}</span>
             <em>当日の条件が弱ければ使い切らず見送り</em>
           </div>
+          <GoalBackcastPanel backcast={goalBackcast} compact />
 
           <div className="home-research-scope">
             <span>{storeName ? `${storeName}の店舗データを次に確認` : "登録店舗を選ぶと店舗単位で確認できます"}</span>
@@ -841,6 +998,7 @@ export default function HomeDashboard({ S }) {
   const customMachinesRaw = S?.customMachines;
   const selectedStoreId = S?.selectedStoreId;
   const deltaScansRaw = S?.deltaScans;
+  const dailyResearchPlansRaw = S?.dailyResearchPlans;
   const archives = useMemo(() => Array.isArray(archivesRaw) ? archivesRaw : [], [archivesRaw]);
   const stores = useMemo(() => Array.isArray(storesRaw) ? storesRaw.filter(Boolean) : [], [storesRaw]);
   const machines = useMemo(() => getEffectiveMachineList(customMachinesRaw), [customMachinesRaw]);
@@ -886,9 +1044,37 @@ export default function HomeDashboard({ S }) {
     [overviewArchives, S?.monthlyEvTarget, now]
   );
   const monthPlan = S?.monthlyPlayPlans?.[monthOverview.monthKey] || null;
+  const monthGoalBackcast = useMemo(() => buildGoalBackcast({
+    target: monthPlan?.expectedTarget ?? monthOverview.target,
+    currentExpected: monthOverview.expected,
+    plannedDates: monthPlan?.plannedDates,
+    archives: overviewArchives,
+    dailyPlans: dailyResearchPlansRaw,
+    standardHours: monthPlan?.standardHours ?? 6,
+    spinsPerHour: DEFAULT_PLANNING_SPINS_PER_HOUR,
+    now,
+  }), [dailyResearchPlansRaw, monthOverview.expected, monthOverview.target, monthPlan, now, overviewArchives]);
   const tomorrowMonthPlan = S?.monthlyPlayPlans?.[tomorrowStr.slice(0, 7)] || null;
   const tomorrowBasePlan = tomorrowMonthPlan || monthPlan;
-  const dailyPlan = S?.dailyResearchPlans?.[tomorrowStr] || null;
+  const tomorrowGoalBackcast = useMemo(() => {
+    const [year, month, day] = tomorrowStr.split("-").map(Number);
+    const planningNow = new Date(year, month - 1, day, 0, 0, 0);
+    const planningMonthKey = tomorrowStr.slice(0, 7);
+    const accumulated = overviewArchives
+      .filter((archive) => String(archive?.date || "").startsWith(planningMonthKey))
+      .reduce((sum, archive) => sum + getEvAmount(archive), 0);
+    return buildGoalBackcast({
+      target: tomorrowBasePlan?.expectedTarget ?? (planningMonthKey === monthOverview.monthKey ? monthOverview.target : 0),
+      currentExpected: accumulated,
+      plannedDates: tomorrowBasePlan?.plannedDates,
+      archives: overviewArchives,
+      dailyPlans: dailyResearchPlansRaw,
+      standardHours: tomorrowBasePlan?.standardHours ?? 6,
+      spinsPerHour: DEFAULT_PLANNING_SPINS_PER_HOUR,
+      now: planningNow,
+    });
+  }, [dailyResearchPlansRaw, monthOverview.monthKey, monthOverview.target, overviewArchives, tomorrowBasePlan, tomorrowStr]);
+  const dailyPlan = dailyResearchPlansRaw?.[tomorrowStr] || null;
   const tomorrowScheduled = Boolean(tomorrowBasePlan?.plannedDates?.includes(tomorrowStr));
   const reminderTime = tomorrowBasePlan?.reminderTime || S?.planningNotificationPrefs?.reminderTime || "20:00";
   const [reminderHour, reminderMinute] = reminderTime.split(":").map(Number);
@@ -1069,11 +1255,16 @@ export default function HomeDashboard({ S }) {
         source: styleId === (tomorrowBasePlan?.researchPackageId || tomorrowBasePlan?.baseStyle) ? "monthly-plan" : "daily-override",
         storeId: dailyStoreId,
         defaultStoreId: dailyStoreId,
-        minExpectedValuePerHour: Number(tomorrowBasePlan?.minExpectedValuePerHour) || 0,
+        manualMinExpectedValuePerHour: Number(tomorrowBasePlan?.manualMinExpectedValuePerHour) || 0,
+        minExpectedValuePerHour: Math.max(
+          Number(tomorrowBasePlan?.manualMinExpectedValuePerHour ?? tomorrowBasePlan?.minExpectedValuePerHour) || 0,
+          Number(tomorrowGoalBackcast?.requiredHourlyEv) || 0
+        ),
+        goalBackcast: tomorrowGoalBackcast,
         researchTargets: selection.researchTargets,
         candidateSnapshot: styleId === "skip" ? null : {
           generatedAt: createdAt,
-          algorithmVersion: "home-plan-hybrid-v1",
+          algorithmVersion: "home-plan-hybrid-v2",
           storeDataStatus: "installation-unverified",
           candidates: selection.candidates,
         },
@@ -1140,7 +1331,7 @@ export default function HomeDashboard({ S }) {
         <p>{greeting[1]}</p>
       </header>
 
-      <MonthlySummaryCard overview={monthOverview} projection={monthProjection} plan={monthPlan} onEdit={() => setPlanEditorOpen(true)} onDetail={goAnalysis} />
+      <MonthlySummaryCard overview={monthOverview} projection={monthProjection} plan={monthPlan} goalBackcast={monthGoalBackcast} onEdit={() => setPlanEditorOpen(true)} onDetail={goAnalysis} />
       <NextActionCard action={nextAction} onOpen={handleNextAction} />
       {showReminderPreview && (
         <PlanningReminderPreview
@@ -1155,6 +1346,7 @@ export default function HomeDashboard({ S }) {
           date={tomorrowStr}
           plan={dailyPlan}
           basePlan={tomorrowBasePlan}
+          goalBackcast={tomorrowGoalBackcast}
           machines={machines}
           storeId={tomorrowPlanStore?.id}
           storeName={tomorrowPlanStore?.name}
@@ -1163,7 +1355,16 @@ export default function HomeDashboard({ S }) {
           onOpenStores={() => S?.setTab?.("settings")}
           onOpenStrategy={() => {
             if (tomorrowPlanStore?.id != null) S?.setSelectedStoreId?.(tomorrowPlanStore.id);
-            S?.setStrategyPlanContext?.({ source: "home-plan", date: tomorrowStr });
+            S?.setStrategyPlanContext?.({
+              source: "home-plan",
+              date: tomorrowStr,
+              minExpectedValuePerHour: Math.max(
+                Number(tomorrowBasePlan?.manualMinExpectedValuePerHour ?? tomorrowBasePlan?.minExpectedValuePerHour) || 0,
+                Number(tomorrowGoalBackcast?.requiredHourlyEv) || 0
+              ),
+              requiredUnitPrice: tomorrowGoalBackcast?.requiredUnitPrice ?? null,
+              requiredSessionEv: tomorrowGoalBackcast?.requiredSessionEv ?? null,
+            });
             S?.setTab?.("strategy");
           }}
         />
@@ -1178,6 +1379,10 @@ export default function HomeDashboard({ S }) {
           current={monthPlan}
           monthKey={monthOverview.monthKey}
           target={monthOverview.target}
+          currentExpected={monthOverview.expected}
+          archives={overviewArchives}
+          dailyPlans={dailyResearchPlansRaw}
+          now={now}
           prefs={S?.planningNotificationPrefs}
           machines={machines}
           stores={stores}

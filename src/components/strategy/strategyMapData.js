@@ -177,6 +177,7 @@ export function resolveStrategyPlanHandoff({
   const minExpectedValuePerHour = Math.max(0, Number(
     dailyPlan?.minExpectedValuePerHour ?? monthlyPlan?.minExpectedValuePerHour ?? 0
   ) || 0);
+  const goalBackcast = dailyPlan?.goalBackcast || monthlyPlan?.goalBackcast || null;
 
   return {
     source: dailyPlan ? "daily" : "monthly",
@@ -193,9 +194,38 @@ export function resolveStrategyPlanHandoff({
     status,
     canPrioritize: status === "research-ready" && hasValidStore && Boolean(primaryKey),
     minExpectedValuePerHour,
+    requiredUnitPrice: goalBackcast?.requiredUnitPrice != null && Number.isFinite(Number(goalBackcast.requiredUnitPrice))
+      ? Number(goalBackcast.requiredUnitPrice)
+      : null,
+    requiredSessionEv: goalBackcast?.requiredSessionEv != null && Number.isFinite(Number(goalBackcast.requiredSessionEv))
+      ? Number(goalBackcast.requiredSessionEv)
+      : null,
     targets,
     primary: targets.find((target) => target.role === "primary") || null,
     backups: targets.filter((target) => target.role === "backup"),
+  };
+}
+
+export function applyStrategyPlanEntryContext(planHandoff, entryContext) {
+  if (!planHandoff) return null;
+  if (!entryContext || typeof entryContext !== "object") return planHandoff;
+  const finiteContextValue = (value) => value == null || !Number.isFinite(Number(value)) ? null : Number(value);
+  const hasMinimum = Object.prototype.hasOwnProperty.call(entryContext, "minExpectedValuePerHour")
+    && Number.isFinite(Number(entryContext.minExpectedValuePerHour));
+  const hasRequiredUnitPrice = Object.prototype.hasOwnProperty.call(entryContext, "requiredUnitPrice");
+  const hasRequiredSessionEv = Object.prototype.hasOwnProperty.call(entryContext, "requiredSessionEv");
+
+  return {
+    ...planHandoff,
+    minExpectedValuePerHour: hasMinimum
+      ? Math.max(0, Number(entryContext.minExpectedValuePerHour))
+      : planHandoff.minExpectedValuePerHour,
+    requiredUnitPrice: hasRequiredUnitPrice
+      ? finiteContextValue(entryContext.requiredUnitPrice)
+      : planHandoff.requiredUnitPrice,
+    requiredSessionEv: hasRequiredSessionEv
+      ? finiteContextValue(entryContext.requiredSessionEv)
+      : planHandoff.requiredSessionEv,
   };
 }
 
@@ -221,9 +251,10 @@ function planTargetForMachine(machineName, planHandoff, machineSpec = null) {
 }
 
 function compareStrategyPriority(a, b) {
+  const goalGap = Number(!a.goalEligible) - Number(!b.goalEligible);
   const aPriority = Number.isFinite(a.planPriority) ? a.planPriority : Number.POSITIVE_INFINITY;
   const bPriority = Number.isFinite(b.planPriority) ? b.planPriority : Number.POSITIVE_INFINITY;
-  return aPriority - bPriority || b.score - a.score || b.confidence - a.confidence;
+  return goalGap || aPriority - bPriority || b.score - a.score || b.confidence - a.confidence || b.evPerHour - a.evPerHour;
 }
 
 function historyFor(scans, machineName, num, machine) {
@@ -368,7 +399,8 @@ export function buildStrategyMap({
     const evPerHour = pe?.valid ? pe.hourly : evPerHourOf(predictedRotation, trueBorder);
     const minPlanEv = Math.max(0, Number(planHandoff?.minExpectedValuePerHour) || 0);
     const hasPlanEvidence = verdict !== "nodata";
-    const planEligible = Boolean(planTarget && hasPlanEvidence && evPerHour >= minPlanEv);
+    const goalEligible = planHandoff ? Boolean(hasPlanEvidence && evPerHour >= minPlanEv) : true;
+    const planEligible = Boolean(planTarget && goalEligible);
     const machine = {
       id: `m-${machineName}-${row.num}`,
       num: Number(row.num) || row.num,
@@ -381,6 +413,8 @@ export function buildStrategyMap({
       goodMachineScore: round1(pe?.valid ? pe.score : evidence.goodMachineScore),
       score: 0,
       evPerHour,
+      goalEligible,
+      goalThresholdActive: Boolean(planHandoff),
       verdict,
       isStar: verdict === "strong" && (pe?.valid ? pe.score : evidence.goodMachineScore) >= 50,
       isPlaying,
@@ -400,6 +434,7 @@ export function buildStrategyMap({
       weekdaySamples: pe?.weekdaySampleCount || 0,
       winRate: Math.round((pe?.winRate || 0) * 100),
       unitPrice: pe?.unitPrice || 0,
+      unitPriceAvailable: Boolean(pe?.valid),
       daily: pe?.daily || 0,
       hourlyLow: pe?.hourlyLow || 0,
       hourlyHigh: pe?.hourlyHigh || 0,
