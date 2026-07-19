@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildStrategyMap, resolveStrategyPlanHandoff } from "../strategyMapData.js";
+import { applyStrategyPlanEntryContext, buildStrategyMap, resolveStrategyPlanHandoff } from "../strategyMapData.js";
 
 const machine = {
   name: "検証機",
@@ -78,6 +78,7 @@ const monthlyPlayPlans = {
     defaultStoreId: "s1",
     researchPackageId: "balanced",
     minExpectedValuePerHour: 500,
+    goalBackcast: { requiredUnitPrice: 2.38, requiredSessionEv: 6000 },
     researchTargets: {
       primaryMachineKey: backupKey,
       backupMachineKeys: [primaryKey],
@@ -124,9 +125,19 @@ assert.equal(handoff.dateKey, "2026-07-19");
 assert.notEqual(handoff.primary.name, "検証機", "Homeの翌日準備導線では当日の古いプランより翌日を優先する");
 assert.equal(handoff.defaultStoreId, "s1", "日次に店舗がなければ月間の店舗を引き継ぐ");
 assert.equal(handoff.minExpectedValuePerHour, 500, "日次に最低時給期待値がなければ月間設定を引き継ぐ");
+assert.equal(handoff.requiredUnitPrice, 2.38, "必要玉単価差を戦略画面へ引き継ぐ");
+assert.equal(handoff.requiredSessionEv, 6000, "次回必要期待値を戦略画面へ引き継ぐ");
 assert.equal(handoff.canPrioritize, true);
 assert.equal(handoff.primary.name, "候補機", "日次の本命を月間より優先する");
 assert.deepEqual(handoff.backups.map((target) => target.name), ["検証機"]);
+const refreshedHandoff = applyStrategyPlanEntryContext(handoff, {
+  minExpectedValuePerHour: 0,
+  requiredUnitPrice: null,
+  requiredSessionEv: 0,
+});
+assert.equal(refreshedHandoff.minExpectedValuePerHour, 0, "最新逆算が下がった時は保存時の高い閾値を残さない");
+assert.equal(refreshedHandoff.requiredUnitPrice, null, "最新計算で算出不能なら古い玉単価差を表示しない");
+assert.equal(refreshedHandoff.requiredSessionEv, 0);
 const staleStoreHandoff = resolveStrategyPlanHandoff({
   monthlyPlayPlans,
   dailyResearchPlans,
@@ -305,6 +316,7 @@ const noDataMap = buildStrategyMap({
 assert.equal(noDataMap.all[0].verdict, "nodata");
 assert.equal(noDataMap.all[0].planRole, null, "データ不足の予定機種を優先扱いしない");
 assert.equal(noDataMap.all[0].planEvaluation, "insufficient-data");
+assert.equal(noDataMap.all[0].unitPriceAvailable, false, "算出できない玉単価差を0円と表示しない");
 assert.equal(noDataMap.top5.length, 0, "データ不足の予定機種をTOP5へ強制表示しない");
 
 const hallMaps = {

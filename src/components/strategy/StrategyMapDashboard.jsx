@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { buildStrategyMap, resolveStrategyPlanHandoff } from "./strategyMapData";
+import { applyStrategyPlanEntryContext, buildStrategyMap, resolveStrategyPlanHandoff } from "./strategyMapData";
 import "./StrategyMapDashboard.css";
 import {
   P_EVIDENCE_DEMO_HALL_MAPS,
@@ -176,6 +176,12 @@ function PlanHandoffBanner({ plan, match, storeName, hasData }) {
         {plan.primary && <strong style={{ color: P.text, fontSize: 14 }}>本命 {plan.primary.name}</strong>}
         {backupNames.length > 0 && <span style={{ color: P.subHi, fontSize: 11 }}>予備 {backupNames.join("・")}</span>}
       </div>
+      {(plan.requiredSessionEv != null || plan.requiredUnitPrice != null) && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 7 }}>
+          {plan.requiredSessionEv != null && <span style={{ padding: "4px 7px", borderRadius: 999, color: P.green, background: "color-mix(in srgb, var(--sm-green) 12%, transparent)", fontSize: 10, fontWeight: 800 }}>次回必要 {signed(plan.requiredSessionEv)}円</span>}
+          {plan.requiredUnitPrice != null && <span style={{ padding: "4px 7px", borderRadius: 999, color: P.cyan, background: "color-mix(in srgb, var(--sm-cyan) 12%, transparent)", fontSize: 10, fontWeight: 800 }}>必要玉単価差 {signed(plan.requiredUnitPrice, 2)}円/回</span>}
+        </div>
+      )}
       <div style={{ marginTop: 6, color: P.sub, fontSize: 10, lineHeight: 1.5 }}>
         {matchText}。{needsReview ? "ホームの月間プランで本命・予備を選び直してください。" : "判定が弱ければ予備、すべて弱ければ見送ります。"}
       </div>
@@ -350,6 +356,8 @@ function Top5({ rows, selectedId, onSelect }) {
                   ? "プラン本命を確認"
                   : m.planRole === "backup"
                     ? "予備候補を確認"
+                    : m.goalThresholdActive && m.goalEligible
+                      ? "目標条件を満たす候補"
                     : m.rank === 1
                       ? "最優先で確認"
                       : m.verdict === "strong"
@@ -358,7 +366,7 @@ function Top5({ rows, selectedId, onSelect }) {
               </span>
               <span className="strategy-plan-chevron" aria-hidden="true">›</span>
               <div className="strategy-plan-sub">
-                予測 {fmt(m.rot, 1)}/k ・ {signed(m.evPerHour)}円/h ・ 信頼度 {m.confidence}%
+                予測 {fmt(m.rot, 1)}/k ・ {signed(m.evPerHour)}円/h ・ 玉単価差 {m.unitPriceAvailable ? `${signed(m.unitPrice, 2)}円/回` : "算出待ち"} ・ 信頼度 {m.confidence}%
               </div>
             </button>
           );
@@ -747,7 +755,7 @@ function SelectedDetail({ machine, islandAvgRot }) {
             <DetailMetric label="EMA（最近重視）" value={fmt(machine.ema, 1)} unit="/k" color={P.cyan} />
             <DetailMetric label="明日締め確率" value={fmt(machine.tomorrowTight)} unit="%" color={machine.tomorrowTight >= 60 ? P.red : P.yellow} />
             <DetailMetric label="勝てる確率" value={fmt(machine.winRate)} unit="%" color={machine.winRate >= 50 ? P.green : P.red} />
-            <DetailMetric label="玉単価差" value={signed(machine.unitPrice, 2)} unit="円/回" color={machine.unitPrice >= 0 ? P.green : P.red} />
+            <DetailMetric label="玉単価差" value={machine.unitPriceAvailable ? signed(machine.unitPrice, 2) : "—"} unit={machine.unitPriceAvailable ? "円/回" : ""} color={machine.unitPriceAvailable && machine.unitPrice < 0 ? P.red : P.green} />
             <DetailMetric label="シャープ比" value={fmt(machine.sharpe, 2)} unit="" color={P.subHi} />
           </div>
 
@@ -861,12 +869,16 @@ export default function StrategyMapDashboard({ S, onBack }) {
   const planHandoff = useMemo(() => (
     isDemo || entryPlanContext?.source !== "home-plan"
       ? null
-      : resolveStrategyPlanHandoff({
-        monthlyPlayPlans: savedMonthlyPlayPlans,
-        dailyResearchPlans: savedDailyResearchPlans,
-        targetDate: entryPlanContext.date,
-        availableStoreIds,
-      })
+      : (() => {
+        const resolved = resolveStrategyPlanHandoff({
+          monthlyPlayPlans: savedMonthlyPlayPlans,
+          dailyResearchPlans: savedDailyResearchPlans,
+          targetDate: entryPlanContext.date,
+          availableStoreIds,
+        });
+        if (!resolved) return null;
+        return applyStrategyPlanEntryContext(resolved, entryPlanContext);
+      })()
   ), [isDemo, entryPlanContext, savedMonthlyPlayPlans, savedDailyResearchPlans, availableStoreIds]);
   const strategyStoreId = isDemo
     ? "pe-demo-store"
