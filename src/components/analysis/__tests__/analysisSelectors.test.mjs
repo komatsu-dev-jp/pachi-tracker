@@ -11,12 +11,15 @@ import {
   aggregateByDay,
   aggregateByMonth,
   aggregateByYear,
+  archiveWorkMinutes,
   buildDailyChartPoints,
   buildMonthlyChartPoints,
   buildYearlyChartPoints,
   filterArchives,
   getActualPL,
+  getArchiveGameType,
   getChodamaPL,
+  getEvAmount,
   getMachineHamariList,
   isFilterActive,
   listAvailableMachines,
@@ -120,6 +123,47 @@ test("filter: year フィルタが効く", () => {
   ];
   assert.strictEqual(filterArchives(list, { year: "2026" }).length, 2);
 });
+test("filter: 旧記録と不明な種別はパチンコとして扱う", () => {
+  assert.strictEqual(getArchiveGameType({}), "pachinko");
+  assert.strictEqual(getArchiveGameType({ gameType: "other" }), "pachinko");
+  assert.strictEqual(getArchiveGameType({ gameType: "slot" }), "slot");
+});
+test("filter: gameType でパチンコ・スロットを絞り込める", () => {
+  const list = [
+    { date: "2026-05-01", machineName: "旧パチンコ記録" },
+    { date: "2026-05-02", gameType: "pachinko", machineName: "パチンコ" },
+    { date: "2026-05-03", gameType: "slot", machineName: "スロット" },
+  ];
+  assert.deepStrictEqual(
+    filterArchives(list, { gameType: "pachinko" }).map((a) => a.machineName),
+    ["旧パチンコ記録", "パチンコ"],
+  );
+  assert.deepStrictEqual(
+    filterArchives(list, { gameType: "slot" }).map((a) => a.machineName),
+    ["スロット"],
+  );
+  assert.strictEqual(filterArchives(list, { gameType: "all" }).length, 3);
+  assert.strictEqual(filterArchives(list, { gameType: "" }).length, 3);
+});
+test("slot: 種別変更前のパチンコ期待値・回転・貯玉を集計しない", () => {
+  const staleSlot = {
+    date: "2026-05-04",
+    gameType: "slot",
+    playMinutes: 120,
+    chodamaYen: 5000,
+    settings: { rotPerHour: 250 },
+    stats: { netRot: 1000, workAmount: 3000, effectiveWorkAmount: 4000 },
+  };
+
+  assert.strictEqual(getEvAmount(staleSlot), 0);
+  assert.strictEqual(archiveWorkMinutes(staleSlot), 120);
+  assert.strictEqual(getChodamaPL(staleSlot), 0);
+
+  const summary = summarize([staleSlot]);
+  assert.strictEqual(summary.evAmount, 0);
+  assert.strictEqual(summary.workHours, 2);
+  assert.strictEqual(summary.totalChodamaPL, 0);
+});
 
 // ──────────── 日／月／年集計 ────────────
 test("aggregate: 同一日複数 archive が日別で合算される", () => {
@@ -144,6 +188,43 @@ test("aggregate: 月別 / 年別が一致する", () => {
   const yearTotal = year.find((y) => y.year === "2026");
   const monthsTotal = months.reduce((s, m) => s + m.actualPL, 0);
   assert.strictEqual(yearTotal.actualPL, monthsTotal);
+});
+test("aggregate: 全種別を合算し、スロット収支だけでも集計できる", () => {
+  const list = [
+    { date: "2026-05-01", investYen: 1000, recoveryYen: 3000 }, // 旧パチンコ +2000
+    { date: "2026-05-01", gameType: "slot", investYen: 5000, recoveryYen: 2000 }, // スロット -3000
+  ];
+  const all = aggregateByDay(list, "2026-05");
+  assert.strictEqual(all[0].actualPL, -1000);
+  assert.strictEqual(all[0].realPL, -1000);
+  assert.strictEqual(all[0].sessions, 2);
+
+  const slot = aggregateByDay(list, "2026-05", { gameType: "slot" });
+  assert.strictEqual(slot[0].actualPL, -3000);
+  assert.strictEqual(slot[0].realPL, -3000);
+  assert.strictEqual(slot[0].sessions, 1);
+});
+test("aggregate: realPL は貯玉を含み、貯玉だけでも hasActual=true", () => {
+  const list = [
+    { date: "2026-05-01", investYen: 1000, recoveryYen: 3000, chodamaYen: 1000 },
+    { date: "2026-05-02", investYen: 0, recoveryYen: 0, chodamaYen: 3000 },
+  ];
+  const days = aggregateByDay(list, "2026-05");
+  assert.strictEqual(days[0].actualPL, 2000);
+  assert.strictEqual(days[0].realPL, 1000);
+  assert.strictEqual(days[1].actualPL, 0);
+  assert.strictEqual(days[1].realPL, -3000);
+  assert.strictEqual(days[1].hasActual, true);
+
+  const month = aggregateByMonth(list, "2026")[0];
+  assert.strictEqual(month.actualPL, 2000);
+  assert.strictEqual(month.realPL, -2000);
+  assert.strictEqual(month.hasActual, true);
+
+  const year = aggregateByYear(list)[0];
+  assert.strictEqual(year.actualPL, 2000);
+  assert.strictEqual(year.realPL, -2000);
+  assert.strictEqual(year.hasActual, true);
 });
 
 // ──────────── 機種別 TOP5 ────────────

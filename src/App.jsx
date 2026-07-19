@@ -130,8 +130,8 @@ export default function App() {
   // localStorage には保存せず、通常の「台選び」タブでは現在選択中の店舗をそのまま使う。
   const [strategyPlanContext, setStrategyPlanContext] = useState(null);
 
-  // 分析モード内の期間サブタブ
-  // "month" | "year" | "all" | "calendar"
+  // 分析モード内の表示範囲
+  // "month" | "year" | "all" | "analyzer"
   const [analysisTab, setAnalysisTab] = useLS("pt_analysisTab", "month");
 
   // 分析モードの絞り込み条件（AND 条件で結合）
@@ -140,12 +140,14 @@ export default function App() {
   //   dateStart    : "YYYY-MM-DD" 開始日（含む、"" = 制限なし）
   //   dateEnd      : "YYYY-MM-DD" 終了日（含む、"" = 制限なし）
   //   weekdays     : 曜日（0=日..6=土の配列、[] = 全曜日）
+  //   gameType     : "all" | "pachinko" | "slot"（旧記録はパチンコ扱い）
   const [analysisFilters, setAnalysisFilters] = useLS("pt_analysisFilters", {
     storeName: "",
     machineName: "",
     dateStart: "",
     dateEnd: "",
     weekdays: [],
+    gameType: "all",
   });
 
   // 後方互換: Tabs.jsx 内の S.setTab("rot" | "calendar" | "settings") を新モードへ変換
@@ -910,6 +912,9 @@ export default function App() {
     const riskSnapshot = buildRiskSnapshot({ machine: matchedMachine, ballValueYen: riskBallValueYen, capturedAt: now.toISOString() });
     const archive = {
       id: now.getTime(),
+      // 回転数・大当たりを記録する既存フローはパチンコ専用。
+      // スロットは収支カレンダーの手動記録から独立して追加する。
+      gameType: "pachinko",
       date: localDateStr(now),
       time: now.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
       rotRows: JSON.parse(JSON.stringify(rotRows)),

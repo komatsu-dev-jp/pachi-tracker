@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   BarChart3,
   CalendarDays,
   CalendarRange,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
@@ -50,10 +51,10 @@ import { getSpinRate } from "./analyzerSelectors";
 // 表示の切替（月別/年別/通算/分析+）はヘッダーの期間ラベルをタップして開く
 // プルダウンメニュー（VIEW_MENU）でまとめて選ぶ。
 const VIEW_MENU = [
-  { id: "month", label: "月別カレンダー", desc: "日別の収支ヒートマップ", Icon: CalendarDays },
-  { id: "year", label: "年別", desc: "月ごとのパフォーマンス", Icon: CalendarRange },
-  { id: "all", label: "通算", desc: "全期間の合計", Icon: Sigma },
-  { id: "analyzer", label: "分析+", desc: "機種・店舗・グラフ分析", Icon: BarChart3 },
+  { id: "month", label: "月別", desc: "日ごとの収支をカレンダーで確認", Icon: CalendarDays },
+  { id: "year", label: "年別", desc: "月ごとの収支を比較", Icon: CalendarRange },
+  { id: "all", label: "通算", desc: "すべての記録を合計", Icon: Sigma },
+  { id: "analyzer", label: "詳細分析", desc: "機種・店舗ごとの成績", Icon: BarChart3 },
 ];
 
 // 記録ゼロ時に表示するデモ用の日別収支（モックアップ準拠の表示値）。
@@ -108,9 +109,22 @@ const fmt = (value) => Math.round(Number(value) || 0).toLocaleString("ja-JP");
 const signed = (value) => `${Number(value) > 0 ? "+" : ""}${fmt(value)}`;
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 const moneyClass = (value) => Number(value) >= 0 ? "text-[var(--at-pos)]" : "text-[var(--at-neg)]";
-// カレンダーセル金額のフォントサイズ（桁数で自動段階調整し、実額のまま枠内に収める）
-const cellAmountSize = (text) =>
-  text.length <= 7 ? "text-[11px]" : text.length === 8 ? "text-[10px]" : "text-[9px]";
+// カレンダーセル金額のフォントサイズ（桁数と画面幅で段階調整し、実額のまま枠内に収める）。
+// 320px 幅でも「+100,000」相当まで収まるよう、日付サイズは変えず金額だけを縮小する。
+const cellAmountSize = (text) => {
+  if (text.length <= 5) return "text-[10px] min-[360px]:text-[12px]";
+  if (text.length <= 6) return "text-[9px] min-[360px]:text-[11px]";
+  if (text.length <= 7) return "text-[8px] min-[360px]:text-[10px]";
+  if (text.length <= 8) return "text-[7px] min-[360px]:text-[9px]";
+  if (text.length <= 9) return "text-[6px] min-[360px]:text-[8px]";
+  return "text-[5px] min-[360px]:text-[7px]";
+};
+const shareCellAmountSize = (text) => {
+  if (text.length <= 5) return "text-[8px]";
+  if (text.length <= 6) return "text-[7px]";
+  if (text.length <= 8) return "text-[6px]";
+  return "text-[5px]";
+};
 const card = "rounded-[14px] border border-[var(--at-ln-md)] bg-[image:var(--at-card-grad)] shadow-[var(--at-card-shadow2)]";
 const label = "text-[11px] font-semibold tracking-[.04em] text-[var(--at-mut)]";
 
@@ -119,7 +133,8 @@ function buildRealDays(archives, month) {
     aggregateByDay(archives, month).map((row) => [
       Number(row.date.slice(8, 10)),
       {
-        actual: row.hasActual ? row.actualPL : 0,
+        // 月間ヒーローと同じく、現金収支に貯玉消費を含めた実質収支を使う。
+        actual: row.hasActual ? (row.realPL ?? row.actualPL) : 0,
         ev: row.evAmount,
         date: row.date,
         hours: (row.workMinutes || 0) / 60,
@@ -176,7 +191,7 @@ function buildPeriodTrend(archives, periodTab, year, month, dayMap) {
   let actual = 0;
   let ev = 0;
   return source.map((row) => {
-    actual += row.actualPL || 0;
+    actual += row.realPL ?? row.actualPL ?? 0;
     ev += row.evAmount || 0;
     return {
       day: periodTab === "year" ? `${Number(row.month.slice(5))}月` : row.year,
@@ -192,7 +207,7 @@ function buildPeriodRows(archives, periodTab, year) {
     return aggregateByMonth(archives, String(year)).map((row) => ({
       key: row.month,
       label: `${Number(row.month.slice(5))}月`,
-      actual: row.actualPL,
+      actual: row.realPL ?? row.actualPL,
       ev: row.evAmount,
       days: row.days,
     }));
@@ -200,7 +215,7 @@ function buildPeriodRows(archives, periodTab, year) {
   return aggregateByYear(archives).map((row) => ({
     key: row.year,
     label: `${row.year}年`,
-    actual: row.actualPL,
+    actual: row.realPL ?? row.actualPL,
     ev: row.evAmount,
     days: row.days,
   }));
@@ -234,30 +249,47 @@ function ActionButton({ children, onClick, active = false }) {
   );
 }
 
-// 常設の表示切替ピル（月別/年別/通算/分析）。ヘッダー直下に固定表示し、
-// どの画面からも1タップで切替できる（5b 常設タブ＋期間スクラバー 採用。旧ヘッダープルダウンは廃止）。
-const PILL_LABELS = { month: "月別", year: "年別", all: "通算", analyzer: "分析" };
-function MonthPillTabs({ current, onSelect }) {
+// 常設4タブをやめ、年月見出しから開く1枚のメニューへ集約する。
+// 画面の縦幅をカレンダーへ戻しつつ、月ジャンプと表示範囲の変更は残す。
+function ViewMenuSheet({ current, monthValue, onSelect, onMonthChange, onClose }) {
   return (
-    <div className="flex gap-1.5">
-      {VIEW_MENU.map((item) => {
-        const active = current === item.id;
-        return (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => onSelect(item.id)}
-            aria-pressed={active}
-            className={`flex min-h-10 flex-1 items-center justify-center rounded-full text-[13px] font-bold transition ${
-              active
-                ? "bg-[var(--at-cyan)] text-[var(--at-page)]"
-                : "border border-[var(--at-ln-md)] text-[var(--at-mut)]"
-            }`}
-          >
-            {PILL_LABELS[item.id]}
+    <div className="fixed inset-0 z-[320] flex items-end justify-center bg-black/70 px-3 pb-[max(12px,env(safe-area-inset-bottom))] backdrop-blur-sm" onClick={onClose}>
+      <section className="w-full max-w-[430px] rounded-[22px] border border-[var(--at-ln-hi)] bg-[var(--at-panel)] p-4 shadow-[var(--at-menu-shadow)]" onClick={(event) => event.stopPropagation()}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-[18px] font-black text-[var(--at-strong)]">表示を切り替える</h2>
+            <p className="mt-0.5 text-[11px] text-[var(--at-mut)]">普段は月別カレンダーだけを大きく表示します</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="閉じる" className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--at-ln-md)] text-[var(--at-subtle)]">
+            <X className="h-5 w-5" />
           </button>
-        );
-      })}
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          {VIEW_MENU.map((item) => {
+            const active = current === item.id;
+            const Icon = item.Icon;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onSelect(item.id)}
+                aria-pressed={active}
+                className={`min-h-[88px] rounded-2xl border p-3 text-left transition ${active
+                  ? "border-[var(--at-cyan)] bg-[var(--at-cyan)]/12"
+                  : "border-[var(--at-ln-md)] bg-[var(--at-panel2)]"}`}
+              >
+                <Icon className={`h-5 w-5 ${active ? "text-[var(--at-cyan)]" : "text-[var(--at-mut)]"}`} />
+                <div className="mt-2 text-[14px] font-black text-[var(--at-strong)]">{item.label}</div>
+                <div className="mt-0.5 text-[10px] leading-relaxed text-[var(--at-mut)]">{item.desc}</div>
+              </button>
+            );
+          })}
+        </div>
+        <label className="mt-4 block rounded-2xl border border-[var(--at-ln-md)] bg-[var(--at-panel2)] p-3">
+          <span className="text-[11px] font-bold text-[var(--at-mut)]">表示する月へ移動</span>
+          <input type="month" value={monthValue} onChange={(event) => onMonthChange(event.target.value)} className="mt-2 h-12 w-full rounded-xl border border-[var(--at-ln-hi)] bg-[var(--at-page)] px-3 text-[16px] font-black text-[var(--at-strong)] [color-scheme:dark]" />
+        </label>
+      </section>
     </div>
   );
 }
@@ -298,80 +330,6 @@ function MonthHero({ actual, ev, diff, winRate }) {
         </div>
       </div>
     </section>
-  );
-}
-
-// 期間スクラバー（5b 常設タブ＋期間スクラバー）。現在月を中心に前後の月チップを横スクロール表示し、
-// タップで直接その月へジャンプできる（ヘッダーの‹›が1ヶ月ずつの送りなのに対し、離れた月へ一気に移動する用途）。
-// 各チップの金額は既存 summarize().totalRealPL をそのまま表示するだけで、計算ロジックには未介入。
-const SCRUB_MONTHS_BEFORE = 5;
-const SCRUB_MONTHS_AFTER = 2;
-function MonthScrubber({ monthOffset, baseDate, archives, filters, isDemo, currentActual, onSelect }) {
-  const scrollRef = useRef(null);
-
-  const items = useMemo(() => {
-    const list = [];
-    for (let o = monthOffset - SCRUB_MONTHS_BEFORE; o <= monthOffset + SCRUB_MONTHS_AFTER; o++) {
-      const d = new Date(baseDate.getFullYear(), baseDate.getMonth() + o, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const isCurrent = o === monthOffset;
-      const crossesYear = d.getFullYear() !== baseDate.getFullYear();
-      let hasData = false;
-      let value = 0;
-      if (isCurrent) {
-        hasData = true;
-        value = currentActual;
-      } else if (!isDemo) {
-        const s = summarize(archives, { ...filters, month: key });
-        hasData = (s.sessions || 0) > 0;
-        value = s.totalRealPL || 0;
-      }
-      list.push({
-        offset: o,
-        isCurrent,
-        label: isCurrent || crossesYear ? `${d.getFullYear()}年${d.getMonth() + 1}月` : `${d.getMonth() + 1}月`,
-        hasData,
-        value,
-      });
-    }
-    return list;
-  }, [archives, baseDate, currentActual, filters, isDemo, monthOffset]);
-
-  useEffect(() => {
-    const current = scrollRef.current?.querySelector('[data-current="true"]');
-    current?.scrollIntoView({ inline: "center", block: "nearest" });
-  }, [monthOffset]);
-
-  return (
-    <div
-      ref={scrollRef}
-      className="-mx-0.5 flex gap-2 overflow-x-auto px-0.5 pb-0.5"
-      // 親<main>のonTouchStart/onTouchEndは横スワイプで月送り(goPeriod)を発火するため、
-      // スクラバー内のドラッグ操作（チップの横スクロール）が伝播して誤って月移動しないよう遮断する。
-      onTouchStart={(e) => e.stopPropagation()}
-      onTouchEnd={(e) => e.stopPropagation()}
-    >
-      {items.map((item) => (
-        <button
-          key={item.offset}
-          type="button"
-          data-current={item.isCurrent}
-          onClick={() => onSelect(item.offset)}
-          className={`flex shrink-0 flex-col items-center gap-0.5 rounded-2xl border px-3.5 py-2.5 transition ${
-            item.isCurrent
-              ? "border-[var(--at-cyan)] bg-[var(--at-cyan)]/12 text-[var(--at-strong)]"
-              : "border-[var(--at-ln-md)] text-[var(--at-mut)]"
-          }`}
-        >
-          <span className={`whitespace-nowrap text-[12px] ${item.isCurrent ? "font-black" : "font-extrabold"}`}>{item.label}</span>
-          <span className={`whitespace-nowrap font-mono text-[9px] font-extrabold tabular-nums ${
-            item.hasData ? moneyClass(item.value) : "text-[var(--at-faint2)]"
-          }`}>
-            {item.hasData ? signed(item.value) : "記録なし"}
-          </span>
-        </button>
-      ))}
-    </div>
   );
 }
 
@@ -461,14 +419,14 @@ function CalendarCell({ day, row, selected, weekday, onSelect }) {
     <button
       type="button"
       onClick={() => onSelect(day)}
-      className={`relative flex aspect-square min-w-0 flex-col items-start overflow-hidden rounded-[8px] border px-0 pb-1 pt-1.5 transition ${heat} ${
+      className={`relative flex aspect-square min-w-0 flex-col items-start overflow-hidden rounded-[7px] border px-0 pb-1.5 pt-1.5 transition ${heat} ${
         selected ? "z-10 border-[var(--at-cyan)] shadow-[0_0_0_1px_var(--at-cyan)]" : ""
       }`}
     >
       {/* 日付は左上。金額は日付の下に配置（実額のまま表示し、桁数に応じてフォントサイズを段階調整して枠内に収める）。 */}
-      <span className={`pl-1 text-[13px] font-bold leading-none ${dayColor}`}>{day}</span>
+      <span className={`pl-1.5 text-[18px] font-black leading-none tracking-[-.03em] ${dayColor}`}>{day}</span>
       {hasAmount && (
-        <span className={`mt-auto w-full text-center font-black leading-none tracking-[-.03em] tabular-nums ${cellAmountSize(amountText)} ${moneyClass(amount)}`}>{amountText}</span>
+        <span className={`mt-auto block w-full max-w-full overflow-hidden whitespace-nowrap text-center font-black leading-none tracking-[-.08em] tabular-nums ${cellAmountSize(amountText)} ${moneyClass(amount)}`}>{amountText}</span>
       )}
     </button>
   );
@@ -481,6 +439,8 @@ function CalendarCell({ day, row, selected, weekday, onSelect }) {
 // タップで既存の「記録を編集」導線（記録エディタ遷移）を開く。
 function DaySessionCard({ archive, onOpen }) {
   const st = archive.stats || {};
+  const isSlot = archive.gameType === "slot";
+  const slotStats = archive.slotStats || {};
   const invest = Number(archive.investYen) || 0;
   const recovery = Number(archive.recoveryYen) || 0;
   const chodamaYen = Number(archive.chodamaYen) || 0;
@@ -493,16 +453,25 @@ function DaySessionCard({ archive, onOpen }) {
   const denom = archive.settings?.synthDenom;
   const machineName = archive.machineName && archive.machineName !== `1/${denom}`
     ? archive.machineName
-    : (archive.machineName || `1/${denom || "—"}`);
+    : (archive.machineName || (isSlot ? "機種未入力" : `1/${denom || "—"}`));
   const ballVal = Number(archive.settings?.ballVal) || 0;
-  const rateLabel = ballVal > 0 ? `${Number.isInteger(ballVal) ? ballVal : ballVal.toFixed(1)}パチ` : "";
-  const subLabel = [archive.machineNum ? `${archive.machineNum}番台` : "", rateLabel].filter(Boolean).join(" / ");
+  const rateLabel = isSlot
+    ? `${Number(slotStats.rateYen) || 20}円スロ`
+    : (ballVal > 0 ? `${Number.isInteger(ballVal) ? ballVal : ballVal.toFixed(1)}パチ` : "");
+  const subLabel = [isSlot ? "パチスロ" : "パチンコ", archive.machineNum ? `${archive.machineNum}番台` : "", rateLabel].filter(Boolean).join(" / ");
   const evCls = hasEv ? (ev >= 0 ? "text-[var(--at-cyan)]" : "text-[var(--at-neg)]") : "text-[var(--at-faint)]";
+  const slotBonus = [
+    Number(slotStats.bbCount) > 0 ? `BB ${Number(slotStats.bbCount)}` : "",
+    Number(slotStats.rbCount) > 0 ? `RB ${Number(slotStats.rbCount)}` : "",
+    Number(slotStats.atCount) > 0 ? `AT ${Number(slotStats.atCount)}` : "",
+  ].filter(Boolean).join(" / ") || "—";
   const middle = [
     { label: "投資", value: `${fmt(invest)}円`, cls: "text-[var(--at-strong)]" },
     { label: "回収", value: `${fmt(recovery)}円`, cls: "text-[var(--at-strong)]" },
     { label: "収支", value: `${signed(actual)}円`, cls: moneyClass(actual) },
-    { label: "期待値", value: hasEv ? `${signed(ev)}円` : "—", cls: evCls },
+    isSlot
+      ? { label: "ボーナス", value: slotBonus, cls: "text-[var(--at-strong)]" }
+      : { label: "期待値", value: hasEv ? `${signed(ev)}円` : "—", cls: evCls },
   ];
   return (
     <button type="button" onClick={onOpen} className={`${card} mt-2 block w-full p-3.5 text-left`}>
@@ -515,9 +484,10 @@ function DaySessionCard({ archive, onOpen }) {
         </div>
         <div className="flex shrink-0 items-center gap-2.5">
           <div className="text-right">
-            <div className="text-[10px] font-semibold text-[var(--at-mut)]">期待値</div>
-            <div className={`whitespace-nowrap font-mono text-[17px] font-black tabular-nums ${evCls}`}>
-              {hasEv ? signed(ev) : "—"}{hasEv && <span className="text-[9px]">円</span>}
+            <div className="text-[10px] font-semibold text-[var(--at-mut)]">{isSlot ? "総ゲーム" : "期待値"}</div>
+            <div className={`whitespace-nowrap font-mono text-[17px] font-black tabular-nums ${isSlot ? "text-[var(--at-cyan)]" : evCls}`}>
+              {isSlot ? fmt(slotStats.totalGames) : (hasEv ? signed(ev) : "—")}
+              {isSlot ? <span className="text-[9px]">G</span> : (hasEv && <span className="text-[9px]">円</span>)}
             </div>
           </div>
           <div className="border-l border-[var(--at-ln)] pl-2.5 text-right">
@@ -597,23 +567,23 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay, year, month }) {
   const count = new Date(year, month, 0).getDate();
   const cells = [...Array(blanks).fill(null), ...Array.from({ length: count }, (_, i) => i + 1)];
   return (
-    <section className={`${card} p-2`}>
+    <section className={`${card} -mx-2 p-2.5`}>
       {/* 見出し（凡例は廃止しシンプルに）。 */}
-      <div className="mb-3 flex items-center justify-between gap-2 px-1.5">
+      <div className="mb-4 flex items-center justify-between gap-2 px-1.5 pt-0.5">
         <div className="flex items-center gap-2">
           <CalendarDays className="h-5 w-5 shrink-0 text-[var(--at-cyan)]" />
-          <h2 className="text-[14px] font-black tracking-[.02em] text-[var(--at-strong)]">日別ヒートマップ</h2>
+          <h2 className="text-[16px] font-black tracking-[.02em] text-[var(--at-strong)]">収支カレンダー</h2>
         </div>
-        <span className="shrink-0 text-[10px] font-bold text-[var(--at-mut)]">タップで日別詳細</span>
+        <span className="shrink-0 text-[11px] font-bold text-[var(--at-mut)]">日付をタップ</span>
       </div>
       {/* 曜日見出し。日曜は赤系・土曜は青系。セルと同じ7列・同じ余白で整列。 */}
-      <div className="grid grid-cols-7 gap-0.5 px-0 text-center text-[11px] font-bold text-[var(--at-mut3)]">
+      <div className="grid grid-cols-7 gap-1 px-0 text-center text-[13px] font-black text-[var(--at-mut3)]">
         {WEEKDAYS.map((day, index) => (
           <span key={day} className={index === 0 ? "text-[var(--at-sun)]" : index === 6 ? "text-[var(--at-sat)]" : ""}>{day}</span>
         ))}
       </div>
       {/* 角丸の独立セルを gap で並べる（選択日はシアンのグロー枠）。 */}
-      <div className="mt-1.5 grid grid-cols-7 gap-0.5">
+      <div className="mt-2 grid grid-cols-7 gap-1">
         {cells.map((day, index) => day
           ? (
             <CalendarCell
@@ -625,7 +595,7 @@ function CalendarPanel({ dayMap, selectedDay, setSelectedDay, year, month }) {
               onSelect={setSelectedDay}
             />
           )
-          : <div key={`blank-${index}`} className="aspect-square rounded-[8px] border border-[var(--at-ln-soft)] bg-[var(--at-cellbg)]" />)}
+          : <div key={`blank-${index}`} className="aspect-square rounded-[7px] border border-[var(--at-ln-soft)] bg-[var(--at-cellbg)]" />)}
       </div>
     </section>
   );
@@ -814,21 +784,41 @@ function ShareCTA({ onShare, title = "今月の結果を共有", subtitle = "月
 function FilterPanel({ stores, machines, filters, setFilters, onClose }) {
   return (
     <div className={`${card} mb-2 grid gap-2 p-3 sm:grid-cols-2`}>
+      <div className="sm:col-span-2">
+        <div className={label}>遊技種別</div>
+        <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+          {[
+            ["all", "すべて"],
+            ["pachinko", "パチンコ"],
+            ["slot", "パチスロ"],
+          ].map(([value, text]) => {
+            const active = (filters.gameType || "all") === value;
+            return (
+              <button key={value} type="button" onClick={() => setFilters({ ...filters, gameType: value })} aria-pressed={active}
+                className={`h-10 rounded-xl border text-[12px] font-black ${active
+                  ? "border-[var(--at-cyan)] bg-[var(--at-cyan)]/12 text-[var(--at-cyan)]"
+                  : "border-[var(--at-ln-md)] bg-[var(--at-panel2)] text-[var(--at-mut)]"}`}>
+                {text}
+              </button>
+            );
+          })}
+        </div>
+      </div>
       <div>
         <label className={label}>店舗</label>
-        <select value={filters.storeName || ""} onChange={(e) => setFilters({ ...filters, storeName: e.target.value })} className="mt-1 h-9 w-full rounded-md border border-[var(--at-ln-md)] bg-[var(--at-panel)] px-2 text-[10px] text-[var(--at-strong)]">
+        <select value={filters.storeName || ""} onChange={(e) => setFilters({ ...filters, storeName: e.target.value })} className="mt-1 h-11 w-full rounded-lg border border-[var(--at-ln-md)] bg-[var(--at-panel)] px-2 text-[13px] font-bold text-[var(--at-strong)]">
           <option value="">すべての店舗</option>
           {stores.map((store) => <option key={store} value={store}>{store}</option>)}
         </select>
       </div>
       <div>
         <label className={label}>機種</label>
-        <select value={filters.machineName || ""} onChange={(e) => setFilters({ ...filters, machineName: e.target.value })} className="mt-1 h-9 w-full rounded-md border border-[var(--at-ln-md)] bg-[var(--at-panel)] px-2 text-[10px] text-[var(--at-strong)]">
+        <select value={filters.machineName || ""} onChange={(e) => setFilters({ ...filters, machineName: e.target.value })} className="mt-1 h-11 w-full rounded-lg border border-[var(--at-ln-md)] bg-[var(--at-panel)] px-2 text-[13px] font-bold text-[var(--at-strong)]">
           <option value="">すべての機種</option>
           {machines.map((machine) => <option key={machine} value={machine}>{machine}</option>)}
         </select>
       </div>
-      <button type="button" onClick={onClose} className="text-left text-[9px] font-bold text-[var(--at-cyan)]">絞り込みを閉じる</button>
+      <button type="button" onClick={onClose} className="h-9 text-left text-[11px] font-bold text-[var(--at-cyan)] sm:col-span-2">絞り込みを閉じる</button>
     </div>
   );
 }
@@ -848,19 +838,20 @@ function ShareMiniCalendar({ year, month, dayMap }) {
     return "bg-[#f4f4f2]";
   };
   return (
-    <div className="mt-5 grid grid-cols-7 gap-[3px]">
+    <div className="mt-5 grid grid-cols-7 gap-1">
       {WEEKDAYS.map((day) => (
-        <span key={day} className="pb-0.5 text-center text-[7px] font-bold text-[#9aa3b2]">{day}</span>
+        <span key={day} className="pb-1 text-center text-[10px] font-black text-[#7d8797]">{day}</span>
       ))}
       {cells.map((day, index) => {
         if (!day) return <div key={`blank-${index}`} />;
         const row = dayMap[day];
         const hasAmount = row && Number(row.actual) !== 0;
+        const amountText = hasAmount ? signed(row.actual) : "";
         return (
-          <div key={day} className={`flex min-h-[26px] flex-col rounded-[4px] px-0.5 py-0.5 ${row ? heatTone(row.actual) : "bg-[#f6f6f4]"}`}>
-            <span className="text-[7px] font-bold leading-none text-[#5b6475]">{day}</span>
+          <div key={day} className={`flex min-h-[38px] min-w-0 flex-col overflow-hidden rounded-[6px] px-0.5 py-1 ${row ? heatTone(row.actual) : "bg-[#f6f6f4]"}`}>
+            <span className="text-[12px] font-black leading-none text-[#333b49]">{day}</span>
             {hasAmount && (
-              <span className={`mt-auto text-center font-mono text-[6px] font-black leading-none tracking-[-.02em] ${moneyTone(row.actual)}`}>{signed(row.actual)}</span>
+              <span className={`mt-auto block w-full max-w-full overflow-hidden whitespace-nowrap text-center font-mono font-black leading-none tracking-[-.1em] ${shareCellAmountSize(amountText)} ${moneyTone(row.actual)}`}>{amountText}</span>
             )}
           </div>
         );
@@ -869,17 +860,118 @@ function ShareMiniCalendar({ year, month, dayMap }) {
   );
 }
 
+function createShareImageBlob({ year, month, actual, winRate, days, dayMap }) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1080;
+  canvas.height = 1350;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return Promise.reject(new Error("画像を作成できませんでした"));
+  const font = 'system-ui, -apple-system, "Hiragino Sans", "Yu Gothic", sans-serif';
+  const mono = 'ui-monospace, "SFMono-Regular", Menlo, monospace';
+  const blanks = new Date(year, month - 1, 1).getDay();
+  const count = new Date(year, month, 0).getDate();
+  const rows = Math.ceil((blanks + count) / 7);
+
+  ctx.fillStyle = "#f7f8fb";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#4aa9df";
+  ctx.fillRect(0, 0, canvas.width, 300);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffffff";
+  ctx.font = `800 54px ${font}`;
+  ctx.fillText(`${year}年 ${month}月`, 540, 105);
+  ctx.font = `900 82px ${mono}`;
+  ctx.fillText(`${signed(actual)}円`, 540, 212);
+  ctx.font = `700 28px ${font}`;
+  ctx.fillStyle = "rgba(255,255,255,.9)";
+  ctx.fillText(`勝率 ${Math.round(winRate)}%  ・  稼働 ${days}日`, 540, 266);
+
+  const left = 36;
+  const top = 340;
+  const width = 1008;
+  const cellW = width / 7;
+  const headerH = 62;
+  const rowH = Math.min(150, (900 - headerH) / rows);
+  ctx.font = `800 28px ${font}`;
+  WEEKDAYS.forEach((weekday, index) => {
+    ctx.fillStyle = index === 0 ? "#dc5264" : index === 6 ? "#2c78d2" : "#5b6475";
+    ctx.fillText(weekday, left + cellW * index + cellW / 2, top + 40);
+  });
+  for (let rowIndex = 0; rowIndex < rows; rowIndex += 1) {
+    for (let column = 0; column < 7; column += 1) {
+      const day = rowIndex * 7 + column - blanks + 1;
+      if (day < 1 || day > count) continue;
+      const x = left + column * cellW + 4;
+      const y = top + headerH + rowIndex * rowH + 4;
+      const row = dayMap[day];
+      const amount = Number(row?.actual) || 0;
+      ctx.fillStyle = amount > 0 ? "#e8f1ff" : amount < 0 ? "#fff0f2" : "#ffffff";
+      ctx.beginPath();
+      ctx.roundRect(x, y, cellW - 8, rowH - 8, 12);
+      ctx.fill();
+      ctx.textAlign = "left";
+      ctx.fillStyle = column === 0 ? "#dc5264" : column === 6 ? "#2c78d2" : "#111827";
+      ctx.font = `900 42px ${font}`;
+      ctx.fillText(String(day), x + 15, y + 48);
+      if (amount !== 0) {
+        ctx.textAlign = "center";
+        ctx.fillStyle = amount > 0 ? "#195fc5" : "#df364e";
+        ctx.font = `900 28px ${mono}`;
+        ctx.fillText(signed(amount), x + (cellW - 8) / 2, y + rowH - 30);
+      }
+    }
+  }
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#8b95a5";
+  ctx.font = `800 25px ${font}`;
+  ctx.fillText("PachiTracker ・ 遊技収支記録", 540, 1310);
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("画像を作成できませんでした")), "image/png");
+  });
+}
+
 function ShareCard({ year, month, actual, ev, winRate, days, dayMap, onClose }) {
   const mainTone = actual >= 0 ? "text-[#1a8f4c]" : "text-[#d6394c]";
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+
+  const shareImage = async () => {
+    if (busy) return;
+    setBusy(true);
+    setStatus("");
+    try {
+      const blob = await createShareImageBlob({ year, month, actual, winRate, days, dayMap });
+      const file = new File([blob], `収支カレンダー-${year}-${String(month).padStart(2, "0")}.png`, { type: "image/png" });
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        setStatus("端末の共有画面を開いています…");
+        await navigator.share({ title: `${year}年${month}月の収支`, files: [file] });
+        setStatus("共有画面を開きました");
+      } else {
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = file.name;
+        anchor.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setStatus("画像を保存しました");
+      }
+    } catch (error) {
+      if (error?.name !== "AbortError") setStatus("共有できませんでした。もう一度お試しください");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 p-5 backdrop-blur-md" onClick={onClose}>
-      <div className="w-full max-w-[340px]" onClick={(event) => event.stopPropagation()}>
-        <div className="relative overflow-hidden rounded-[20px] border border-black/[0.06] bg-[#fbfbf9] p-6 text-[#1c2230] shadow-[0_30px_90px_rgba(0,0,0,.55)]">
+      <div className="w-full max-w-[370px]" onClick={(event) => event.stopPropagation()}>
+        <div className="relative max-h-[72vh] overflow-y-auto rounded-[20px] border border-black/[0.06] bg-[#fbfbf9] p-5 text-[#1c2230] shadow-[0_30px_90px_rgba(0,0,0,.55)]">
           <button type="button" onClick={onClose} className="absolute right-4 top-4 text-[#aab0bd]"><X className="h-5 w-5" /></button>
           <div className="text-center">
-            <div className="font-serif text-[15px] tracking-[.12em] text-[#2c3444]">{year}年{month}月</div>
+            <div className="text-[19px] font-black tracking-[.06em] text-[#2c3444]">{year}年{month}月</div>
             <div className="mt-4 text-[10px] font-bold tracking-[.24em] text-[#9aa3b2]">実質収支</div>
-            <div className={`mt-1 font-mono text-[34px] font-black tracking-[-.03em] ${mainTone}`}>{signed(actual)}円</div>
+            <div className={`mt-1 font-mono text-[38px] font-black tracking-[-.04em] ${mainTone}`}>{signed(actual)}円</div>
           </div>
           <div className="mt-5 grid grid-cols-3 rounded-2xl border border-black/[0.06] bg-white py-3">
             <div className="px-2 text-center">
@@ -898,7 +990,13 @@ function ShareCard({ year, month, actual, ev, winRate, days, dayMap, onClose }) 
           <ShareMiniCalendar year={year} month={month} dayMap={dayMap} />
           <div className="mt-5 text-center text-[10px] font-black tracking-[.28em] text-[#aab0bd]">PachiTracker</div>
         </div>
-        <button type="button" onClick={onClose} className="mt-3 h-11 w-full rounded-xl bg-[#16C8FF] text-[12px] font-black text-[#03101c]">カードを閉じる</button>
+        {status && <div className="mt-2 text-center text-[11px] font-bold text-white/80">{status}</div>}
+        <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+          <button type="button" onClick={shareImage} disabled={busy} className="h-12 rounded-xl bg-[#16C8FF] px-4 text-[14px] font-black text-[#03101c] disabled:opacity-60">
+            {busy ? (status ? "共有画面を確認" : "画像を作成中…") : "画像を共有・保存"}
+          </button>
+          <button type="button" onClick={onClose} className="h-12 rounded-xl border border-white/20 px-4 text-[13px] font-black text-white">閉じる</button>
+        </div>
       </div>
     </div>
   );
@@ -954,46 +1052,56 @@ function MonthDetailContent({ chartData, score, stats }) {
   );
 }
 
-// 画面ヘッダー。左に前の月（‹）、中央に期間ラベル＋次の月（›）、右端に「月次詳細」トグルボタン（月別のみ）。
-// 月別/年別/通算/分析+ の切替は常設ピル（MonthPillTabs、ヘッダー直下）に統合したため、
-// ヘッダー側のタップ式プルダウンは廃止した（5b 常設タブ＋期間スクラバー 採用に伴う変更）。
-function HeaderBar({ title, onPrev, onNext, navDisabled, onToggleDetail, detailActive }) {
+// 年月を主役にした1段ヘッダー。表示範囲は中央見出しから、絞り込みと月次詳細は右のアイコンから開く。
+function HeaderBar({
+  title,
+  onPrev,
+  onNext,
+  navDisabled,
+  onToggleDetail,
+  detailActive,
+  onOpenViewMenu,
+  onOpenFilter,
+  filterActive,
+}) {
   const hasNav = Boolean(onPrev && onNext);
   return (
-    <div className="relative z-40 mb-3 flex h-12 shrink-0 items-center justify-between">
-      {/* 左：前の月（カレンダーのフリックと併存）。 */}
+    <div className="relative z-40 mb-2 flex h-14 shrink-0 items-center justify-between">
       {hasNav ? (
-        <button type="button" onClick={onPrev} disabled={navDisabled} aria-label="前へ" className="flex h-10 w-10 items-center justify-center rounded-xl text-[var(--at-subtle)] disabled:opacity-20">
+        <button type="button" onClick={onPrev} disabled={navDisabled} aria-label="前へ" className="flex h-11 w-11 items-center justify-center rounded-xl text-[var(--at-subtle)] disabled:opacity-20">
           <ChevronLeft className="h-6 w-6" />
         </button>
-      ) : <span className="h-10 w-10 shrink-0" />}
+      ) : <span className="h-11 w-11 shrink-0" />}
 
-      {/* 中央：期間ラベル＋次の月（絶対配置で中央寄せ）。 */}
-      <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-1">
-        <h1 className="whitespace-nowrap px-1.5 py-0.5 text-[21px] font-black tracking-[.01em] text-[var(--at-strong)]">{title}</h1>
+      <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-0.5">
+        <button type="button" onClick={onOpenViewMenu} aria-label="表示範囲を変更" className="flex min-h-11 items-center gap-1 rounded-xl px-1.5 text-[var(--at-strong)]">
+          <h1 className="whitespace-nowrap text-[clamp(18px,5.7vw,22px)] font-black tracking-[-.01em]">{title}</h1>
+          <ChevronDown className="h-4 w-4 text-[var(--at-mut)]" />
+        </button>
         {hasNav && (
-          <button type="button" onClick={onNext} disabled={navDisabled} aria-label="次へ" className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--at-subtle)] disabled:opacity-20">
+          <button type="button" onClick={onNext} disabled={navDisabled} aria-label="次へ" className="flex h-9 w-8 items-center justify-center rounded-lg text-[var(--at-subtle)] disabled:opacity-20">
             <ChevronRight className="h-5 w-5" />
           </button>
         )}
       </div>
 
-      {/* 右：月次詳細トグル（月別のみ）。押すとカレンダーと月次詳細を同一画面で切り替える。 */}
-      {onToggleDetail ? (
-        <button
-          type="button"
-          onClick={onToggleDetail}
-          aria-pressed={detailActive}
-          className={`flex h-10 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-[12px] font-bold transition ${
-            detailActive
-              ? "border-[var(--at-cyan)] bg-[var(--at-cyan)]/12 text-[var(--at-cyan)] shadow-[0_0_18px_rgba(22,200,255,.18)]"
-              : "border-[var(--at-ln-hi)] bg-[var(--at-panel2)] text-[var(--at-subtle-hi)]"
-          }`}
-        >
-          <BarChart3 className="h-[18px] w-[18px]" />
-          月次詳細
+      <div className="flex shrink-0 items-center gap-1">
+        {onToggleDetail && (
+          <button type="button" onClick={onToggleDetail} aria-pressed={detailActive} aria-label="月次詳細"
+            className={`flex h-10 w-10 items-center justify-center rounded-xl border transition ${detailActive
+              ? "border-[var(--at-cyan)] bg-[var(--at-cyan)]/12 text-[var(--at-cyan)]"
+              : "border-[var(--at-ln-hi)] bg-[var(--at-panel2)] text-[var(--at-subtle-hi)]"}`}>
+            <BarChart3 className="h-[19px] w-[19px]" />
+          </button>
+        )}
+        <button type="button" onClick={onOpenFilter} aria-pressed={filterActive} aria-label="絞り込み"
+          className={`relative flex h-10 w-10 items-center justify-center rounded-xl border transition ${filterActive
+            ? "border-[var(--at-cyan)] bg-[var(--at-cyan)]/12 text-[var(--at-cyan)]"
+            : "border-[var(--at-ln-hi)] bg-[var(--at-panel2)] text-[var(--at-subtle-hi)]"}`}>
+          <Filter className="h-[18px] w-[18px]" />
+          {filterActive && <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[var(--at-cyan)]" />}
         </button>
-      ) : <span className="h-10 w-10 shrink-0" />}
+      </div>
     </div>
   );
 }
@@ -1374,10 +1482,11 @@ export default function AnalysisDashboard({
   // 旧上位タブ「カレンダー」(記録エディタ単独タブ)の永続値は廃止。月別として扱う。
   const periodTab = rawPeriodTab === "calendar" ? "month" : rawPeriodTab;
   const setPeriodTab = onChangePeriodTab || setInternalTab;
-  const [internalFilters, setInternalFilters] = useState({ storeName: "", machineName: "", dateStart: "", dateEnd: "", weekdays: [] });
+  const [internalFilters, setInternalFilters] = useState({ storeName: "", machineName: "", dateStart: "", dateEnd: "", weekdays: [], gameType: "all" });
   const filters = externalFilters || internalFilters;
   const setFilters = onChangeFilters || setInternalFilters;
   const [filterOpen, setFilterOpen] = useState(false);
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const [selectedDay, setSelectedDay] = useState(14);
   const [shareOpen, setShareOpen] = useState(false);
   const [monthOffset, setMonthOffset] = useState(0);
@@ -1401,6 +1510,8 @@ export default function AnalysisDashboard({
     setSlideDir("fade");
     setPeriodTab(id);
     setDetailView(false);
+    setShareOpen(false);
+    setViewMenuOpen(false);
   };
 
   // 月次詳細トグル（カレンダー⇄収支グラフ＋成績）。切替はフェード遷移。
@@ -1422,6 +1533,19 @@ export default function AnalysisDashboard({
     if (offset === monthOffset) return;
     setSlideDir(offset > monthOffset ? "next" : "prev");
     setMonthOffset(offset);
+  };
+
+  const jumpToMonth = (value) => {
+    const match = /^(\d{4})-(\d{2})$/.exec(value || "");
+    if (!match) return;
+    const targetYear = Number(match[1]);
+    const targetMonth = Number(match[2]) - 1;
+    const offset = (targetYear - baseDate.getFullYear()) * 12 + (targetMonth - baseDate.getMonth());
+    setPeriodTab("month");
+    setDetailView(false);
+    setShareOpen(false);
+    gotoMonth(offset);
+    setViewMenuOpen(false);
   };
 
   // 横スワイプ（フリック）で月送り。縦スクロールを阻害しないよう横優勢時のみ反応。
@@ -1478,6 +1602,14 @@ export default function AnalysisDashboard({
   const stores = useMemo(() => isDemo ? DEMO_STORES : buildStoreRanking(filtered), [filtered, isDemo]);
   const storeOptions = useMemo(() => listAvailableStores(archives), [archives]);
   const machineOptions = useMemo(() => listAvailableMachines(archives), [archives]);
+  const filterActive = Boolean(
+    (filters.gameType && filters.gameType !== "all")
+    || filters.storeName
+    || filters.machineName
+    || filters.dateStart
+    || filters.dateEnd
+    || (Array.isArray(filters.weekdays) && filters.weekdays.length > 0),
+  );
   const actual = isDemo ? -11704 : summary.totalRealPL;
   const ev = isDemo ? 2934 : summary.evAmount;
   const winRate = isDemo ? 67 : Math.round(summary.winRate || 0);
@@ -1492,7 +1624,7 @@ export default function AnalysisDashboard({
       ? `${year}年`
       : periodTab === "all"
         ? "通算"
-        : "分析+";
+        : "詳細分析";
   const selectedDateLabel = `${month}月${selectedDay}日（${WEEKDAYS[new Date(year, month - 1, selectedDay).getDay()]}）`;
   const selectedDateStr = `${year}-${String(month).padStart(2, "0")}-${String(selectedDay).padStart(2, "0")}`;
   // 選択日の実践記録（日別詳細のカード表示用）。デモ表示中は実カードを出さない。
@@ -1632,9 +1764,13 @@ export default function AnalysisDashboard({
   if (periodTab === "analyzer") {
     return (
       <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--at-page)] text-[var(--at-strong)]">
-        <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-5 pt-4">
-          <HeaderBar title={headerTitle} />
-          <MonthPillTabs current={periodTab} onSelect={handleSelectView} />
+        <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-4 pt-3">
+          <HeaderBar
+            title={headerTitle}
+            onOpenViewMenu={() => setViewMenuOpen(true)}
+            onOpenFilter={() => setFilterOpen((value) => !value)}
+            filterActive={filterActive}
+          />
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain pb-12">
             {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
             <MachinePodium rows={machines} />
@@ -1643,6 +1779,7 @@ export default function AnalysisDashboard({
             <AnalyzerView archives={archives} extraFilters={filters} onSelectMachine={setMachineDetailName} />
           </div>
         </div>
+        {viewMenuOpen && <ViewMenuSheet current={periodTab} monthValue={monthKey} onSelect={handleSelectView} onMonthChange={jumpToMonth} onClose={() => setViewMenuOpen(false)} />}
       </div>
     );
   }
@@ -1653,7 +1790,7 @@ export default function AnalysisDashboard({
           clip がそのまま効き、スクロールボックスを作らずに横方向をハードクリップする。これにより月送り
           スライド（.month-pane-*）の一時的な横はみ出しや幅超過要素が、rubber-band 可能な祖先（.analytics-terminal）
           へ伝播して「画面全体が左へパンしたまま固定される」現象を根元で遮断する。 */}
-      <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col overflow-x-clip px-5 pt-4">
+      <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col overflow-x-clip px-4 pt-3">
         {/* 左の ‹ ／ 右側の › と中央ラベル横の › で月（年別は年）送り。
             右端の「月次詳細」ボタンでカレンダーと収支グラフ＋成績を同一画面で切り替える（月別のみ）。 */}
         <HeaderBar
@@ -1663,9 +1800,10 @@ export default function AnalysisDashboard({
           navDisabled={periodTab === "all"}
           onToggleDetail={periodTab === "month" ? toggleDetailView : undefined}
           detailActive={detailView}
+          onOpenViewMenu={() => setViewMenuOpen(true)}
+          onOpenFilter={() => setFilterOpen((value) => !value)}
+          filterActive={filterActive}
         />
-        {/* 常設ピル：月別/年別/通算/分析+ をどの画面からも1タップで切替（5b 常設タブ＋期間スクラバー 採用）。 */}
-        <MonthPillTabs current={periodTab} onSelect={handleSelectView} />
 
         {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
 
@@ -1685,19 +1823,11 @@ export default function AnalysisDashboard({
                 <MonthDetailContent chartData={summaryChart} score={summaryScore} stats={summaryStats} />
               ) : (
                 <>
-                  {/* 期間スクラバー＋ヒーロー数値（勝率リング付き）＋日別ヒートマップ＋選択日詳細。 */}
-                  <MonthScrubber
-                    monthOffset={monthOffset}
-                    baseDate={baseDate}
-                    archives={archives}
-                    filters={filters}
-                    isDemo={isDemo}
-                    currentActual={actual}
-                    onSelect={gotoMonth}
-                  />
+                  {/* 月間数値＋大きな収支カレンダー＋選択日詳細。月一覧チップは年月メニューへ移動した。 */}
                   <MonthHero actual={actual} ev={ev} diff={monthDiff} winRate={winRate} />
                   <CalendarPanel dayMap={dayMap} selectedDay={selectedDay} setSelectedDay={setSelectedDay} year={year} month={month} />
                   <DayDetail dateLabel={selectedDateLabel} row={dayMap[selectedDay]} archives={dayArchives} onEditRecords={(archiveId = null) => setRecordsDay({ day: selectedDateStr, archiveId })} />
+                  <ShareCTA onShare={() => setShareOpen(true)} title="今月のカレンダーを共有" subtitle="店舗名や台番号を含まない画像を作成します" />
                 </>
               )
             ) : (
@@ -1706,13 +1836,13 @@ export default function AnalysisDashboard({
                 <PeriodBreakdownPanel periodTab={periodTab} rows={periodRows} isDemo={isDemo} />
                 <TrendPanel data={trend} />
                 <Kpis summary={summary} isDemo={isDemo} />
-                <ShareCTA onShare={() => setShareOpen(true)} title="成果を共有" subtitle="収支カードをSNSに投稿できます" />
               </>
             )}
           </div>
         </main>
       </div>
-      {shareOpen && <ShareCard year={year} month={month} actual={actual} ev={ev} winRate={winRate} days={days} dayMap={dayMap} onClose={() => setShareOpen(false)} />}
+      {viewMenuOpen && <ViewMenuSheet current={periodTab} monthValue={monthKey} onSelect={handleSelectView} onMonthChange={jumpToMonth} onClose={() => setViewMenuOpen(false)} />}
+      {shareOpen && periodTab === "month" && <ShareCard year={year} month={month} actual={actual} ev={ev} winRate={winRate} days={days} dayMap={dayMap} onClose={() => setShareOpen(false)} />}
     </div>
   );
 }

@@ -16,6 +16,7 @@ import {
   islandCount,
   islandLayoutCells,
   islandLayoutColumns,
+  islandRanges,
   addIsland,
   removeIsland,
   updateIsland,
@@ -63,15 +64,6 @@ function nowStamp() {
   const d = new Date();
   const p = (x) => String(x).padStart(2, "0");
   return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-// 島の台番号一覧（[start..end]）。上限で打ち切る。
-function machineNumbers(island) {
-  const start = Number(island?.start) || 0;
-  const total = islandCount(island);
-  const cells = Math.max(0, Math.min(total, MAX_CELLS));
-  const out = [];
-  for (let i = 0; i < cells; i++) out.push(start + i);
-  return out;
 }
 
 // ============================ アイコン ============================
@@ -333,18 +325,24 @@ function NumberCell({ num, color, onClick, ariaLabel }) {
   return <div style={style}>{label}</div>;
 }
 
-// 欠けセル（台が存在しない位置）。onClick を渡すとタップで解除できる。
-function GapCell({ onClick }) {
+// 欠けセル（その台番号の台が存在しない）。位置は台セルと同じまま薄く表示し、
+// onClick を渡すとタップで台に戻せる。
+function GapCell({ num, onClick }) {
   const style = {
     aspectRatio: "1 / 1", minWidth: 0, borderRadius: 8,
     border: `1px dashed ${P.lineHi}`, background: "transparent",
-    display: "flex", alignItems: "center", justifyContent: "center",
-    boxSizing: "border-box", padding: 0,
+    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+    boxSizing: "border-box", padding: 0, gap: 1,
   };
-  const label = <span style={{ fontSize: 10, fontWeight: 700, color: P.sub }}>欠</span>;
+  const label = (
+    <>
+      <span style={{ fontSize: 10, fontWeight: 700, color: P.sub, fontFamily: MONO, textDecoration: "line-through" }}>{num}</span>
+      <span style={{ fontSize: 8.5, fontWeight: 700, color: P.sub }}>欠</span>
+    </>
+  );
   if (onClick) {
     return (
-      <button className="b" onClick={onClick} aria-label="この欠けを解除"
+      <button className="b" onClick={onClick} aria-label={`${num}を台に戻す`}
         style={{ ...style, cursor: "pointer", WebkitTapHighlightColor: "transparent" }}>
         {label}
       </button>
@@ -398,7 +396,7 @@ function ListCard({ island, index, expanded, onToggle, onEdit }) {
           </div>
           <div style={{ textAlign: "right", flexShrink: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 900, color: P.text, fontFamily: MONO }}>{island.start}〜{island.end}</div>
-            <div style={{ fontSize: 10, color: P.sub, marginTop: 2, fontWeight: 700 }}>{count}台</div>
+            <div style={{ fontSize: 10, color: P.sub, marginTop: 2, fontWeight: 700 }}>{count}台{island.ranges ? "・飛び番" : ""}</div>
           </div>
           <span style={{ flexShrink: 0, color: P.sub, transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.2s ease" }}>
             <ChevronIcon size={18} stroke={P.sub} />
@@ -419,8 +417,8 @@ function ListCard({ island, index, expanded, onToggle, onEdit }) {
           <div style={{ fontSize: 10, color: P.sub, fontWeight: 700, margin: "4px 0 8px" }}>台番号一覧 ・ レイアウトプレビュー</div>
           {cells.length > 0 ? (
             <CellGrid cols={gridCols}>
-              {cells.map((c, p) => c.gap
-                ? <GapCell key={`gap-${p}`} />
+              {cells.map((c) => c.gap
+                ? <GapCell key={c.num} num={c.num} />
                 : <NumberCell key={c.num} num={c.num} color={color} />)}
             </CellGrid>
           ) : (
@@ -447,7 +445,7 @@ function LayoutHall({ islands }) {
       }}>
         {islands.map((isl, i) => {
           const color = tagColor(i);
-          const nums = machineNumbers(isl);
+          const layoutCells = islandLayoutCells(isl, MAX_CELLS);
           return (
             <div key={isl.id} style={{ flex: "1 0 150px", minWidth: 150, background: P.cardHi, border: `1px solid ${P.line}`, borderRadius: 14, padding: "9px 9px 10px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -457,7 +455,9 @@ function LayoutHall({ islands }) {
               </div>
               <div style={{ fontSize: 9.5, color: P.sub, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{isl.machineName || "機種未設定"}</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 4, marginTop: 8 }}>
-                {nums.map((n) => <NumberCell key={n} num={n} color={color} />)}
+                {layoutCells.map((c) => c.gap
+                  ? <GapCell key={c.num} num={c.num} />
+                  : <NumberCell key={c.num} num={c.num} color={color} />)}
               </div>
             </div>
           );
@@ -605,43 +605,74 @@ function ToolBtn({ label, onClick, disabled, danger }) {
 // 編集開始時の行数。保存済み rows を優先し、旧 cols 設定の島は見た目が変わらないよう行数へ換算する。
 function initialRows(island) {
   if (island.rows) return island.rows;
-  const total = (Number(island.end) - Number(island.start) + 1) + (island.gaps?.length || 0);
+  const total = islandCount(island) + (island.gaps?.length || 0); // 欠けを含む全セル数
   if (island.cols) {
     return Math.max(LAYOUT_ROWS_MIN, Math.min(LAYOUT_ROWS_MAX, Math.ceil(total / island.cols)));
   }
   return 2; // 既定は対面2行（島を上から見た並び）
 }
 
+// 下書き中の追加連番範囲（文字列のまま保持）から、有効な数値範囲だけを取り出す。
+function validExtraRanges(extra) {
+  const out = [];
+  for (const r of extra) {
+    const sRaw = String(r.start ?? "").trim();
+    const eRaw = String(r.end ?? "").trim();
+    if (sRaw === "" && eRaw === "") continue;
+    const s = Math.max(0, Math.round(Number(sRaw) || 0));
+    const e = Math.max(s, Math.round(Number(eRaw === "" ? sRaw : eRaw) || s));
+    out.push({ start: s, end: e });
+  }
+  return out;
+}
+
 function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown, onRemove }) {
   // 下書き編集 → 「保存」で確定（保存後に戦略マップへ反映）。
-  // rows（行数）と gaps（欠け位置）も下書きに含め、保存で島データへ永続化する。
+  // rows（行数）・gaps（欠け台番号）・extra（追加の連番範囲）も下書きに含め、保存で島データへ永続化する。
+  const segs0 = islandRanges(island);
   const [draft, setDraft] = useState({
-    name: island.name, machineName: island.machineName, start: island.start, end: island.end,
+    name: island.name, machineName: island.machineName,
+    start: segs0[0].start, end: segs0[0].end,
+    extra: segs0.slice(1), // 2つ目以降の連番範囲（連番が途中で切れる島用）
     rows: initialRows(island), gaps: Array.isArray(island.gaps) ? island.gaps : [],
   });
 
   const startN = Math.max(0, Math.round(Number(draft.start) || 0));
   const endN = Math.max(startN, Math.round(Number(draft.end) || startN));
-  const count = endN - startN + 1;
   const rows = Math.max(LAYOUT_ROWS_MIN, Math.min(LAYOUT_ROWS_MAX, Math.round(Number(draft.rows) || 2)));
   const color = tagColor(index);
 
-  // プレビュー用セル（欠けを含む）。台番号は欠けを飛ばして連番のまま進む。
-  // 上から見た島マップ: 行数は固定で、台は横方向（左→右）に増えていく。
-  const gapSet = new Set(draft.gaps);
-  const totalCells = Math.min(count + draft.gaps.length, MAX_CELLS);
-  const cols = Math.max(1, Math.ceil(totalCells / rows)); // 横方向のセル数（台数から自動算出）
+  // 全連番範囲（先頭範囲＋追加範囲）。プレビューは入力順につなげて表示する。
+  const segsAll = [{ start: startN, end: endN }, ...validExtraRanges(draft.extra)];
+  const count = segsAll.reduce((a, seg) => a + (seg.end - seg.start + 1), 0);
+
+  // プレビュー用セル（上から見た島マップ）。セル位置は台番号で固定され、
+  // 欠けにしても他のセルは一切動かない（タップでその場トグル）。
+  const inRanges = (n) => segsAll.some((seg) => n >= seg.start && n <= seg.end);
+  const gaps = draft.gaps.filter(inRanges); // 連番範囲内の欠け台番号のみ有効
+  const gapSet = new Set(gaps);
+  const machines = count - gaps.length; // 実台数（欠けを除く）
+  const totalCells = Math.min(count, MAX_CELLS);
+  const cols = Math.max(1, Math.ceil(totalCells / rows)); // 横方向のセル数（範囲から自動算出）
   const cells = [];
-  {
-    let n = startN;
-    for (let p = 0; p < totalCells; p++) {
-      if (gapSet.has(p)) cells.push({ gap: true, pos: p });
-      else cells.push({ num: n++, pos: p });
+  for (const seg of segsAll) {
+    for (let n = seg.start; n <= seg.end && cells.length < totalCells; n++) {
+      cells.push(gapSet.has(n) ? { num: n, gap: true } : { num: n });
     }
   }
-  const shownMachines = cells.filter((c) => !c.gap).length;
 
-  const setEnd = (delta) => setDraft((d) => {
+  // 台追加/削除は最後の連番範囲の終了番号を増減する（追加範囲が無ければ先頭範囲）。
+  const bumpEnd = (delta) => setDraft((d) => {
+    const extra = [...d.extra];
+    for (let i = extra.length - 1; i >= 0; i--) {
+      const sRaw = String(extra[i].start ?? "").trim();
+      if (sRaw === "") continue;
+      const s = Math.max(0, Math.round(Number(sRaw) || 0));
+      const eRaw = String(extra[i].end ?? "").trim();
+      const e = Math.max(s, Math.round(Number(eRaw === "" ? sRaw : eRaw) || s));
+      extra[i] = { ...extra[i], end: Math.max(s, e + delta) };
+      return { ...d, extra };
+    }
     const s = Math.max(0, Math.round(Number(d.start) || 0));
     const e = Math.max(s, Math.round(Number(d.end) || s) + delta);
     return { ...d, end: e };
@@ -649,13 +680,17 @@ function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown
   const setRows = (v) => setDraft((d) => ({
     ...d, rows: Math.max(LAYOUT_ROWS_MIN, Math.min(LAYOUT_ROWS_MAX, Math.round(Number(v) || 2))),
   }));
-  // 台セルの位置 p に欠けを挿入する（以降のセルは1つ後ろへずれる）。
-  const insertGap = (p) => setDraft((d) => ({
-    ...d, gaps: [...d.gaps.map((g) => (g >= p ? g + 1 : g)), p].sort((a, b) => a - b),
+  const setExtra = (i, patch) => setDraft((d) => ({
+    ...d, extra: d.extra.map((r, j) => (j === i ? { ...r, ...patch } : r)),
   }));
-  // 位置 p の欠けを解除する（以降のセルは1つ前へ詰まる）。
-  const removeGap = (p) => setDraft((d) => ({
-    ...d, gaps: d.gaps.filter((g) => g !== p).map((g) => (g > p ? g - 1 : g)),
+  const addExtra = () => setDraft((d) => ({ ...d, extra: [...d.extra, { start: "", end: "" }] }));
+  const removeExtra = (i) => setDraft((d) => ({ ...d, extra: d.extra.filter((_, j) => j !== i) }));
+  // 台番号 n の欠けをその場でトグルする（他のセルは動かない）。
+  const toggleGap = (n) => setDraft((d) => ({
+    ...d,
+    gaps: d.gaps.includes(n)
+      ? d.gaps.filter((g) => g !== n)
+      : [...d.gaps, n].sort((a, b) => a - b),
   }));
 
   return (
@@ -670,7 +705,7 @@ function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown
             <div style={{ fontSize: 17, fontWeight: 900, color: P.text, letterSpacing: 0.4 }}>島を編集</div>
             <div style={{ fontSize: 10, color: P.sub, marginTop: 1 }}>レイアウト編集</div>
           </div>
-          <button className="b" onClick={() => onSave({ ...draft, start: startN, end: endN, rows, cols: null })} aria-label="保存" style={pillBtn(cyanBtn)}>
+          <button className="b" onClick={() => onSave({ ...draft, start: startN, end: endN, ranges: segsAll, rows, gaps, cols: null })} aria-label="保存" style={pillBtn(cyanBtn)}>
             <SaveIcon size={16} stroke="#04141a" /> 保存
           </button>
         </div>
@@ -690,9 +725,32 @@ function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown
               <EditField label="終了番号" value={draft.end} mono onCommit={(v) => setDraft((d) => ({ ...d, end: v }))} />
               <div style={{ textAlign: "center", paddingBottom: 4 }}>
                 <div style={{ fontSize: 10.5, color: P.sub, fontWeight: 700, marginBottom: 5 }}>台数</div>
-                <div style={{ minHeight: 46, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 900, color: P.cyan, fontFamily: MONO }}>{count}</div>
+                <div style={{ minHeight: 46, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 900, color: P.cyan, fontFamily: MONO }}>{machines}</div>
               </div>
             </div>
+
+            {/* 追加の連番範囲（連番が途中で切れる島用。例: 479〜490 の後に 499〜509 が続く） */}
+            {draft.extra.map((r, i) => (
+              <div key={`extra-${i}-${draft.extra.length}`} style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr auto", gap: 10, alignItems: "end" }}>
+                <EditField label={`開始番号（連番${i + 2}）`} value={r.start} placeholder="例：546" mono onCommit={(v) => setExtra(i, { start: v })} />
+                <span style={{ fontSize: 15, color: P.sub, fontWeight: 800, paddingBottom: 12 }}>〜</span>
+                <EditField label="終了番号" value={r.end} placeholder="例：574" mono onCommit={(v) => setExtra(i, { end: v })} />
+                <button className="b" onClick={() => removeExtra(i)} aria-label={`連番${i + 2}を削除`}
+                  style={{
+                    minHeight: 46, minWidth: 46, borderRadius: 12, border: "1px solid rgba(239,68,68,0.4)",
+                    background: "rgba(239,68,68,0.12)", color: P.red, fontSize: 16, fontWeight: 900,
+                    cursor: "pointer", WebkitTapHighlightColor: "transparent",
+                  }}>
+                  ✕
+                </button>
+              </div>
+            ))}
+            <ToolBtn label="＋ 連番範囲を追加（番号が飛ぶ島）" onClick={addExtra} />
+            {draft.extra.length > 0 && (
+              <div style={{ fontSize: 10, color: P.sub, lineHeight: 1.6, marginTop: -4 }}>
+                ※ 連番が途中で切れる島（例: 479〜490 → 499〜509 → 546〜574）は範囲を分けて登録します。レイアウトは切れ目をまたいで1つの島としてつながります。
+              </div>
+            )}
           </div>
         </div>
 
@@ -700,9 +758,9 @@ function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown
         <Section title="レイアウト編集">
           <div style={{ padding: "0 14px" }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <ToolBtn label="＋ 台追加" onClick={() => setEnd(1)} />
-              <ToolBtn label="− 台削除" onClick={() => setEnd(-1)} disabled={count <= 0} />
-              <ToolBtn label="＋ 列追加" onClick={() => setEnd(rows)} />
+              <ToolBtn label="＋ 台追加" onClick={() => bumpEnd(1)} />
+              <ToolBtn label="− 台削除" onClick={() => bumpEnd(-1)} disabled={count <= 0} />
+              <ToolBtn label="＋ 列追加" onClick={() => bumpEnd(rows)} />
               {/* 行数コントロール（−/＋、数値は直接入力可。対面なら2行） */}
               <div style={{ display: "flex", alignItems: "stretch", gap: 6 }}>
                 <ToolBtn label="−" onClick={() => setRows(rows - 1)} disabled={rows <= LAYOUT_ROWS_MIN} />
@@ -733,7 +791,7 @@ function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown
               <div style={{ flex: 1 }}><ToolBtn label="↓ 下へ並び替え" onClick={onMoveDown} disabled={index === total - 1} /></div>
             </div>
             <div style={{ fontSize: 10, color: P.sub, marginTop: 8, lineHeight: 1.6 }}>
-              ※ 島を上から見たマップです。「行数」は島の並び数（対面なら2行）で、台は横方向に増えていきます。行数と欠け位置はこの島のレイアウト設定として保存されます。プレビューの台をタップするとその位置に「欠け」（台のない空き）を入れられ、欠けをタップすると解除できます。台番号は欠けを飛ばして連番のまま維持されます。
+              ※ 島を上から見たマップです。「行数」は島の並び数（対面なら2行）で、台は横方向に増えていきます。プレビューの台をタップするとその台がその場で「欠け」（存在しない台）になり、もう一度タップすると元に戻ります。他の台の位置や番号は動きません。行数と欠けはこの島の設定として保存され、台数は欠けを除いた実台数になります。
             </div>
 
             {/* レイアウトプレビュー（上から見た島マップ・横スクロール・タップで欠けの挿入/解除） */}
@@ -741,21 +799,21 @@ function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                 <span style={{ fontSize: 11, color: P.subHi, fontWeight: 700 }}>レイアウトプレビュー</span>
                 <span style={{ fontSize: 10, color: P.sub, fontFamily: MONO }}>
-                  {rows}行×{cols}列{draft.gaps.length > 0 ? ` ・ 欠け${draft.gaps.length}` : ""}
+                  {rows}行×{cols}列{gaps.length > 0 ? ` ・ 欠け${gaps.length}` : ""}
                 </span>
               </div>
               {cells.length > 0 ? (
                 <CellGrid cols={cols}>
                   {cells.map((c) => c.gap
-                    ? <GapCell key={`gap-${c.pos}`} onClick={() => removeGap(c.pos)} />
-                    : <NumberCell key={`num-${c.pos}`} num={c.num} color={color}
-                        onClick={() => insertGap(c.pos)} ariaLabel={`${c.num}の位置に欠けを挿入`} />)}
+                    ? <GapCell key={c.num} num={c.num} onClick={() => toggleGap(c.num)} />
+                    : <NumberCell key={c.num} num={c.num} color={color}
+                        onClick={() => toggleGap(c.num)} ariaLabel={`${c.num}を欠けにする`} />)}
                 </CellGrid>
               ) : (
                 <div style={{ fontSize: 11, color: P.sub }}>台番号範囲が未設定です。</div>
               )}
-              {count > shownMachines && (
-                <div style={{ fontSize: 9, color: P.sub, marginTop: 6, textAlign: "right" }}>※ 表示は先頭{shownMachines}台まで</div>
+              {count > totalCells && (
+                <div style={{ fontSize: 9, color: P.sub, marginTop: 6, textAlign: "right" }}>※ 表示は先頭{totalCells}台分まで</div>
               )}
             </div>
           </div>
