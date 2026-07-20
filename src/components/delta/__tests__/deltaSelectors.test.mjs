@@ -10,9 +10,14 @@ import {
   assignNumbers,
   mergeTaiData,
   validateNumberAssignment,
+  validateReviewedNumberAssignment,
+  isResolvedDeltaRow,
+  isDeltaValueWithinConstraint,
+  updateDeltaReview,
   validateDeltaRows,
   islandToNumbers,
   buildSegmentsNumbers,
+  makeScan,
   pruneScans,
 } from "../deltaSelectors.js";
 import { getRank, RANKS } from "../deltaEngine.js";
@@ -178,6 +183,37 @@ test("validateNumberAssignment: 数字以外と表記だけ異なる重複を拒
   assert.deepStrictEqual(duplicate.duplicateNumbers, ["810"]);
 });
 
+test("validateReviewedNumberAssignment: 枠ごとに合格したOCR候補だけを上書き禁止にする", () => {
+  const slots = [
+    { machineNumberCandidate: "563", machineNumberOcr: { accepted: true, candidate: "563" } },
+    { machineNumberCandidate: "565", machineNumberOcr: { accepted: false, candidate: "565" } },
+    { machineNumberCandidate: "586", machineNumberOcr: { accepted: false, candidate: "586" } },
+  ];
+
+  const corrected = validateReviewedNumberAssignment(slots, ["563", "564", "566"]);
+  assert.strictEqual(corrected.valid, true);
+  assert.deepStrictEqual(corrected.trustedCandidates, ["563", null, null]);
+  assert.deepStrictEqual(corrected.mismatchIndices, []);
+  assert.deepStrictEqual(corrected.mismatches, []);
+
+  const overwritten = validateReviewedNumberAssignment(slots, ["562", "564", "566"]);
+  assert.strictEqual(overwritten.valid, false);
+  assert.deepStrictEqual(overwritten.mismatchIndices, [0]);
+  assert.deepStrictEqual(overwritten.mismatches, [{ index: 0, expected: "563", actual: "562" }]);
+  assert.ok(overwritten.errors.includes("ocr-candidate-mismatch"));
+});
+
+test("validateReviewedNumberAssignment: 手修正後も件数・不正値・重複の検証を維持する", () => {
+  const slots = [
+    { machineNumberOcr: { accepted: false, candidate: null } },
+    { machineNumberOcr: { accepted: false, candidate: "586" } },
+  ];
+  const result = validateReviewedNumberAssignment(slots, ["566", "0566"]);
+  assert.strictEqual(result.valid, false);
+  assert.deepStrictEqual(result.duplicateNumbers, ["566"]);
+  assert.ok(result.errors.includes("duplicate-number"));
+});
+
 // ──────────── mergeTaiData ────────────
 
 test("mergeTaiData: 台番号一致で回転数等をマージ", () => {
@@ -257,11 +293,13 @@ test("validateDeltaRows: 未読取・要確認・重複番号があれば保存�
   ]);
   assert.strictEqual(invalid.valid, false);
   assert.strictEqual(invalid.unresolvedCount, 2);
+  assert.deepStrictEqual(invalid.pendingReviewIndices, [1]);
+  assert.deepStrictEqual(invalid.missingIndices, [0]);
   assert.deepStrictEqual(invalid.duplicateNumbers, ["810"]);
   assert.deepStrictEqual(invalid.errors.sort(), ["duplicate-number", "unresolved-delta"]);
 });
 
-test("validateDeltaRows: statusはokだけを確定扱いにし、台番号を正規化して検証", () => {
+test("validateDeltaRows: 不正statusを未解決扱いにし、台番号を正規化して検証", () => {
   const invalid = validateDeltaRows([
     { num: "ABC", val: 500, status: "ok" },
     { num: "0810", val: 500, status: "ok" },
@@ -271,7 +309,126 @@ test("validateDeltaRows: statusはokだけを確定扱いにし、台番号を�
   assert.deepStrictEqual(invalid.invalidNumberIndices, [0]);
   assert.deepStrictEqual(invalid.duplicateNumbers, ["810"]);
   assert.deepStrictEqual(invalid.unresolvedIndices, [2]);
+  assert.deepStrictEqual(invalid.invalidStatusIndices, [2]);
   assert.deepStrictEqual(invalid.errors.sort(), ["duplicate-number", "invalid-number", "unresolved-delta"]);
+});
+
+test("validateDeltaRows: 有限値を明示確認したreviewだけを確定扱いにする", () => {
+  const result = validateDeltaRows([
+    { num: "499", val: 28000, status: "review", reviewConfirmed: true },
+    { num: "503", val: -2000, status: "review", reviewConfirmed: false },
+    { num: "508", val: -3500, status: "review", reviewConfirmed: "true" },
+    { num: "509", val: 1500, status: "ok" },
+    { num: "510", val: null, status: "review", reviewConfirmed: true },
+  ]);
+
+  assert.strictEqual(result.valid, false);
+  assert.strictEqual(result.resolvedCount, 2);
+  assert.deepStrictEqual(result.confirmedReviewIndices, [0]);
+  assert.deepStrictEqual(result.pendingReviewIndices, [1, 2]);
+  assert.deepStrictEqual(result.missingIndices, [4]);
+  assert.deepStrictEqual(result.unresolvedIndices, [1, 2, 4]);
+  assert.strictEqual(isResolvedDeltaRow({ val: 28000, status: "review", reviewConfirmed: true }), true);
+  assert.strictEqual(isResolvedDeltaRow({ val: 28000, status: "review", reviewConfirmed: "true" }), false);
+  assert.strictEqual(isResolvedDeltaRow({ val: null, status: "review", reviewConfirmed: true }), false);
+});
+
+test("validateDeltaRows: 上下端で切れた終点は画像から分かる境界値を満たすまで保存不可", () => {
+  const lowerBound = {
+    num: "574",
+    val: 29500,
+    status: "review",
+    reviewConfirmed: true,
+    valueConstraint: { kind: "lower-bound", boundary: "top", value: 30000 },
+  };
+  const upperBound = {
+    num: "575",
+    val: -29500,
+    status: "review",
+    reviewConfirmed: true,
+    valueConstraint: { kind: "upper-bound", boundary: "bottom", value: -30000 },
+  };
+
+  assert.strictEqual(isDeltaValueWithinConstraint(lowerBound), false);
+  assert.strictEqual(isDeltaValueWithinConstraint(lowerBound, 30000), true);
+  assert.strictEqual(isDeltaValueWithinConstraint(upperBound), false);
+  assert.strictEqual(isDeltaValueWithinConstraint(upperBound, -30000), true);
+  assert.strictEqual(isResolvedDeltaRow(lowerBound), false);
+
+  const invalid = validateDeltaRows([lowerBound, upperBound]);
+  assert.strictEqual(invalid.valid, false);
+  assert.deepStrictEqual(invalid.pendingReviewIndices, [0, 1]);
+});
+
+test("updateDeltaReview: 候補値・ランク・明示確認の監査情報を不変更新する", () => {
+  const original = {
+    num: "499",
+    val: 28000,
+    rank: getRank(28000).rank,
+    status: "review",
+    reviewConfirmed: false,
+    reasonCodes: ["clipped-series"],
+  };
+  const reviewed = updateDeltaReview(original, {
+    value: 29000,
+    confirmed: true,
+    reviewedAt: "2026-07-20T03:00:00.000Z",
+  });
+
+  assert.notStrictEqual(reviewed, original);
+  assert.strictEqual(original.val, 28000);
+  assert.strictEqual(reviewed.val, 29000);
+  assert.strictEqual(reviewed.rank, getRank(29000).rank);
+  assert.strictEqual(reviewed.status, "review");
+  assert.strictEqual(reviewed.reviewConfirmed, true);
+  assert.strictEqual(reviewed.reviewedAt, "2026-07-20T03:00:00.000Z");
+  assert.strictEqual(reviewed.valueSource, "manual-review");
+  assert.deepStrictEqual(reviewed.reasonCodes, ["clipped-series"]);
+  assert.strictEqual(isResolvedDeltaRow(reviewed), true);
+
+  const changedAgain = updateDeltaReview(reviewed, { value: 28500 });
+  assert.strictEqual(changedAgain.reviewConfirmed, false);
+  assert.strictEqual(changedAgain.reviewedAt, null);
+  assert.strictEqual(changedAgain.valueSource, "manual-review-candidate");
+  assert.strictEqual(isResolvedDeltaRow(changedAgain), false);
+});
+
+test("updateDeltaReview: 候補値が有限でなければ確認済みにせずfailedへ戻す", () => {
+  const result = updateDeltaReview(
+    { num: "503", val: -2000, status: "review" },
+    { value: "読取不能", confirmed: true, reviewedAt: "2026-07-20T03:00:00.000Z" },
+  );
+  assert.strictEqual(result.val, null);
+  assert.strictEqual(result.rank, null);
+  assert.strictEqual(result.status, "failed");
+  assert.strictEqual(result.reviewConfirmed, false);
+  assert.strictEqual(result.reviewedAt, null);
+});
+
+test("updateDeltaReview: 境界制約に反する候補は確認済みにせず、境界以上なら確定する", () => {
+  const row = {
+    num: "574",
+    val: 29500,
+    status: "review",
+    valueConstraint: { kind: "lower-bound", boundary: "top", value: 30000 },
+  };
+  const rejected = updateDeltaReview(row, {
+    value: 29500,
+    confirmed: true,
+    reviewedAt: "2026-07-20T03:00:00.000Z",
+  });
+  assert.strictEqual(rejected.reviewConfirmed, false);
+  assert.strictEqual(rejected.reviewedAt, null);
+  assert.strictEqual(isResolvedDeltaRow(rejected), false);
+
+  const confirmed = updateDeltaReview(row, {
+    value: 30000,
+    confirmed: true,
+    reviewedAt: "2026-07-20T03:01:00.000Z",
+  });
+  assert.strictEqual(confirmed.reviewConfirmed, true);
+  assert.strictEqual(confirmed.reviewedAt, "2026-07-20T03:01:00.000Z");
+  assert.strictEqual(isResolvedDeltaRow(confirmed), true);
 });
 
 // ──────────── islandToNumbers ────────────
@@ -331,6 +488,40 @@ test("getRank: 極小値は G", () => {
 test("getRank: 極大値は SS / RANKS は21定義", () => {
   assert.strictEqual(getRank(999999).rank, "SS");
   assert.strictEqual(RANKS.length, 21);
+});
+
+test("makeScan: OCRの全試行を保存せず、判定に必要な要約だけ残す", () => {
+  const sourceRow = {
+    num: "566",
+    val: 18000,
+    status: "ok",
+    machineNumberOcr: {
+      accepted: true,
+      status: "ok",
+      candidate: "566",
+      confidence: 0.91,
+      digits: [{ candidate: "5", bestDistance: 0.1 }],
+      ensemble: {
+        candidate: "566",
+        votes: 2,
+        attempts: [
+          { darkThreshold: 110, candidate: "566" },
+          { darkThreshold: 125, candidate: "566" },
+        ],
+      },
+    },
+  };
+
+  const scan = makeScan({ id: "compact", date: "2026-07-20", rows: [sourceRow] });
+  assert.notStrictEqual(scan.rows[0], sourceRow);
+  assert.strictEqual("digits" in scan.rows[0].machineNumberOcr, false);
+  assert.deepStrictEqual(scan.rows[0].machineNumberOcr.ensemble, {
+    candidate: "566",
+    votes: 2,
+    attemptCount: 2,
+  });
+  assert.strictEqual("attempts" in scan.rows[0].machineNumberOcr.ensemble, false);
+  assert.strictEqual(sourceRow.machineNumberOcr.ensemble.attempts.length, 2);
 });
 
 // ---- pruneScans（スキャン保持ポリシー） ----

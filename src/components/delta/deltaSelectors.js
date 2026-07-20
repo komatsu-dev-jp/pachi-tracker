@@ -228,6 +228,42 @@ export function validateNumberAssignment(slots, numList) {
   };
 }
 
+// ページ全体のOCRが不合格でも、各枠で合格した候補だけは信頼済みとして保護する。
+// OCR不合格枠は手修正を許すが、合格済み候補と異なる番号への上書きは拒否する。
+export function validateReviewedNumberAssignment(slots, numList) {
+  const list = Array.isArray(slots) ? slots : [];
+  const base = validateNumberAssignment(list, numList);
+  const trustedCandidates = list.map((slot) => (
+    slot?.machineNumberOcr?.accepted === true
+      ? normalizeMachineNumber(
+        slot?.machineNumberOcr?.candidate
+        ?? slot?.machineNumberCandidate
+        ?? slot?.machineNumber,
+      )
+      : null
+  ));
+  const mismatches = [];
+
+  trustedCandidates.forEach((candidate, index) => {
+    if (candidate === null) return;
+    const actual = base.normalizedNumbers[index] ?? null;
+    if (actual !== candidate) mismatches.push({ index, expected: candidate, actual });
+  });
+  const mismatchIndices = mismatches.map(({ index }) => index);
+
+  const errors = [...base.errors];
+  if (mismatchIndices.length) errors.push("ocr-candidate-mismatch");
+
+  return {
+    ...base,
+    valid: errors.length === 0,
+    errors,
+    trustedCandidates,
+    mismatchIndices,
+    mismatches,
+  };
+}
+
 // 台番号（文字列化して照合）をキーに台データを結果行へマージする。
 // island / machineName / val / normalSpins / totalStarts を上書き付与し、マッチ数を返す。
 // val が取り込まれた場合は、その差玉に合わせてランクも再計算する。
@@ -293,8 +329,67 @@ export function mergeTaiData(rows, taiRows) {
   };
 }
 
+// グラフ上端・下端で終点が切れた場合は、画像から分かる下限／上限も満たす必要がある。
+export function isDeltaValueWithinConstraint(row, candidateValue = row?.val) {
+  const value = finiteDelta(candidateValue);
+  if (value === null) return false;
+  const constraint = row?.valueConstraint;
+  if (!constraint) return true;
+  const boundaryValue = finiteDelta(constraint.value);
+  if (boundaryValue === null) return false;
+  if (constraint.kind === "lower-bound") return value >= boundaryValue;
+  if (constraint.kind === "upper-bound") return value <= boundaryValue;
+  return false;
+}
+
+// 通常の解析成功、または有限値を利用者が明示確認した review だけを確定値とする。
+// reviewConfirmed は文字列等を許容せず boolean の true だけを受け付ける。
+export function isResolvedDeltaRow(row) {
+  const value = finiteDelta(row?.val);
+  return value !== null && isDeltaValueWithinConstraint(row, value) && (
+    row?.status === "ok"
+    || (row?.status === "review" && row?.reviewConfirmed === true)
+  );
+}
+
+// 要確認行の候補値と確認状態を不変更新する。
+// 候補値を変更した場合、同じ呼び出しで再確認しない限り以前の確認を解除する。
+// reviewedAt は呼び出し側で生成した時刻を渡し、テスト可能な純粋関数に保つ。
+export function updateDeltaReview(row, { value: nextValue, confirmed, reviewedAt } = {}) {
+  const source = row && typeof row === "object" ? row : {};
+  const hasValueUpdate = nextValue !== undefined;
+  const previousValue = finiteDelta(source.val);
+  const value = finiteDelta(hasValueUpdate ? nextValue : source.val);
+  const valueChanged = hasValueUpdate && value !== previousValue;
+  const hasConfirmationUpdate = confirmed !== undefined;
+  const requestedConfirmation = hasConfirmationUpdate
+    ? confirmed === true
+    : (!valueChanged && source.reviewConfirmed === true);
+  const reviewConfirmed = value !== null
+    && isDeltaValueWithinConstraint(source, value)
+    && requestedConfirmation;
+  const auditTime = reviewConfirmed
+    ? String(reviewedAt ?? source.reviewedAt ?? "").trim() || null
+    : null;
+  const valueSource = reviewConfirmed
+    ? "manual-review"
+    : valueChanged
+      ? "manual-review-candidate"
+      : source.valueSource;
+
+  return {
+    ...source,
+    val: value,
+    rank: value === null ? null : getRank(value).rank,
+    status: value === null ? "failed" : "review",
+    reviewConfirmed,
+    reviewedAt: auditTime,
+    valueSource,
+  };
+}
+
 // 保存対象の全行に、一意な台番号と確定済みの差玉があるかを検証する。
-// failed/review は推測保存を防ぐため未解決として扱う。
+// 未確認review・欠損値・不正statusを区別して、UIが確認待ちだけを案内できるようにする。
 export function validateDeltaRows(rows) {
   const list = Array.isArray(rows) ? rows : [];
   const rawNumbers = list.map((row) => String(row?.num ?? "").trim());
@@ -302,6 +397,10 @@ export function validateDeltaRows(rows) {
   const blankNumberIndices = [];
   const invalidNumberIndices = [];
   const unresolvedIndices = [];
+  const pendingReviewIndices = [];
+  const confirmedReviewIndices = [];
+  const missingIndices = [];
+  const invalidStatusIndices = [];
   const seen = new Map();
 
   list.forEach((row, index) => {
@@ -315,9 +414,15 @@ export function validateDeltaRows(rows) {
     }
 
     const value = finiteDelta(row?.val);
-    if (value === null || row?.status !== "ok") {
-      unresolvedIndices.push(index);
+    if (isResolvedDeltaRow(row)) {
+      if (row?.status === "review") confirmedReviewIndices.push(index);
+      return;
     }
+
+    unresolvedIndices.push(index);
+    if (row?.status === "review" && value !== null) pendingReviewIndices.push(index);
+    else if (value === null || row?.status === "failed") missingIndices.push(index);
+    else invalidStatusIndices.push(index);
   });
 
   const duplicateNumbers = Array.from(seen.entries())
@@ -336,6 +441,10 @@ export function validateDeltaRows(rows) {
     resolvedCount: list.length - unresolvedIndices.length,
     unresolvedCount: unresolvedIndices.length,
     unresolvedIndices,
+    pendingReviewIndices,
+    confirmedReviewIndices,
+    missingIndices,
+    invalidStatusIndices,
     blankNumberIndices,
     invalidNumberIndices,
     duplicateNumbers,
@@ -382,6 +491,34 @@ export function buildSegmentsNumbers(segments) {
   return nums;
 }
 
+// OCRの閾値ごとの全試行や文字ごとの距離は、その場の判定にだけ必要な診断情報。
+// localStorageへは結論・票数・試行数だけ残し、1スキャンごとの容量肥大を防ぐ。
+function compactMachineNumberOcrForStorage(machineNumberOcr) {
+  if (!machineNumberOcr || typeof machineNumberOcr !== "object") return machineNumberOcr;
+  const { digits: _digits, ensemble, ...rest } = machineNumberOcr;
+  if (!ensemble || typeof ensemble !== "object") return rest;
+  const attemptCount = Array.isArray(ensemble.attempts)
+    ? ensemble.attempts.length
+    : Math.max(0, Number(ensemble.attemptCount) || 0);
+  return {
+    ...rest,
+    ensemble: {
+      candidate: ensemble.candidate ?? null,
+      votes: Math.max(0, Number(ensemble.votes) || 0),
+      attemptCount,
+    },
+  };
+}
+
+function compactDeltaRowForStorage(row) {
+  if (!row || typeof row !== "object") return row;
+  if (!("machineNumberOcr" in row)) return { ...row };
+  return {
+    ...row,
+    machineNumberOcr: compactMachineNumberOcrForStorage(row.machineNumberOcr),
+  };
+}
+
 // 保存用スキャンレコードを生成する。
 // スキーマ: { id, storeId, storeName, date("YYYY-MM-DD"), machineName, rows, createdAt }
 export function makeScan({ id, storeId = null, storeName = "", date, machineName = "", rows = [] } = {}) {
@@ -395,7 +532,7 @@ export function makeScan({ id, storeId = null, storeName = "", date, machineName
     storeName: storeName || "",
     date: day,
     machineName: machineName || "",
-    rows: Array.isArray(rows) ? rows : [],
+    rows: Array.isArray(rows) ? rows.map(compactDeltaRowForStorage) : [],
     createdAt,
   };
 }
