@@ -228,6 +228,184 @@ export async function readSiteSevenCsv(file, options = {}) {
   };
 }
 
+export function parseSiteSevenEditableInteger(value) {
+  const normalized = normalizeCell(value).replace(/[，,]/gu, "");
+  if (!/^-?\d+$/u.test(normalized)) return null;
+  const parsed = Number.parseInt(normalized, 10);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+export function prepareSiteSevenImportedRows(rows, { expectedNumbers = [] } = {}) {
+  const candidates = [];
+  let invalidCount = 0;
+  let reviewPendingCount = 0;
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (row?.reviewRequired && !row?.reviewConfirmed) {
+      reviewPendingCount += 1;
+      continue;
+    }
+    const num = parseSiteSevenEditableInteger(row?.num);
+    const normalSpins = parseSiteSevenEditableInteger(row?.normalSpins);
+    const totalStarts = parseSiteSevenEditableInteger(row?.totalStarts);
+    if (num === null || num <= 0 || normalSpins === null || normalSpins < 0
+      || totalStarts === null || totalStarts < 0) {
+      invalidCount += 1;
+      continue;
+    }
+    const machineName = String(row?.machineName || "").trim();
+    candidates.push({
+      ...row,
+      num: String(num),
+      machineName,
+      island: machineName ? `${machineName}島` : "",
+      normalSpins,
+      totalStarts,
+    });
+  }
+  const expectedSet = new Set((Array.isArray(expectedNumbers) ? expectedNumbers : [])
+    .map((value) => parseSiteSevenEditableInteger(value))
+    .filter((value) => value !== null && value > 0)
+    .map(String));
+  const counts = new Map();
+  for (const row of candidates) counts.set(row.num, (counts.get(row.num) || 0) + 1);
+  const duplicateNumbers = new Set([...counts.entries()]
+    .filter(([, count]) => count > 1)
+    .map(([num]) => num));
+  const unexpectedNumbers = new Set(candidates
+    .map((row) => row.num)
+    .filter((num) => expectedSet.size > 0 && !expectedSet.has(num)));
+  const valid = candidates.filter((row) => (
+    !duplicateNumbers.has(row.num) && !unexpectedNumbers.has(row.num)
+  ));
+  return {
+    rows: valid,
+    invalidCount,
+    reviewPendingCount,
+    duplicateCount: duplicateNumbers.size,
+    duplicateNumbers: [...duplicateNumbers],
+    unexpectedCount: unexpectedNumbers.size,
+    unexpectedNumbers: [...unexpectedNumbers],
+  };
+}
+
+const SITE_SEVEN_SOURCE_PRIORITY = Object.freeze({ pdf: 3, csv: 3, image: 1 });
+
+function sameImportedValues(left, right) {
+  return String(left?.normalSpins ?? "") === String(right?.normalSpins ?? "")
+    && String(left?.totalStarts ?? "") === String(right?.totalStarts ?? "");
+}
+
+function appendReviewReason(row, reason) {
+  const reasons = [row?.reviewReason, reason].filter(Boolean);
+  return {
+    ...row,
+    reviewRequired: true,
+    reviewConfirmed: false,
+    reviewReason: [...new Set(reasons)].join("。"),
+  };
+}
+
+export function mergeSiteSevenParsedResults(resultEntries, { expectedNumbers = [] } = {}) {
+  const entries = (Array.isArray(resultEntries) ? resultEntries : [])
+    .map((entry, index) => ({ ...entry, index }))
+    .sort((left, right) => (
+      (SITE_SEVEN_SOURCE_PRIORITY[right.kind] || 0)
+      - (SITE_SEVEN_SOURCE_PRIORITY[left.kind] || 0)
+      || left.index - right.index
+    ));
+  const rows = [];
+  const firstIndexByNumber = new Map();
+  let duplicateCount = 0;
+  let sourceSkippedCount = 0;
+
+  for (const { result, kind } of entries) {
+    const sourceDuplicates = Array.isArray(result?.duplicates) ? result.duplicates : [];
+    const sourceDuplicateNumbers = new Set(sourceDuplicates
+      .map((duplicate) => parseSiteSevenEditableInteger(duplicate?.num))
+      .filter((num) => num !== null && num >= 0)
+      .map(String));
+    sourceSkippedCount += Array.isArray(result?.skipped) ? result.skipped.length : 0;
+    duplicateCount += sourceDuplicates.length;
+    for (const rawRow of result?.rows || []) {
+      const parsedNum = parseSiteSevenEditableInteger(rawRow?.num);
+      let candidate = {
+        ...rawRow,
+        num: parsedNum === null ? String(rawRow?.num ?? "") : String(parsedNum),
+        importKind: kind,
+        reviewConfirmed: rawRow?.reviewConfirmed === true,
+      };
+      if (parsedNum !== null && sourceDuplicateNumbers.has(String(parsedNum))) {
+        candidate = appendReviewReason(
+          candidate,
+          `元資料内で台${parsedNum}が重複しています。採用する数値を確認してください`
+        );
+      }
+      if (parsedNum === null || parsedNum < 0) {
+        rows.push(candidate);
+        continue;
+      }
+
+      const key = String(parsedNum);
+      const existingIndex = firstIndexByNumber.get(key);
+      if (existingIndex === undefined) {
+        firstIndexByNumber.set(key, rows.length);
+        rows.push(candidate);
+        continue;
+      }
+
+      duplicateCount += 1;
+      const existing = rows[existingIndex];
+      if (sameImportedValues(existing, candidate)) {
+        if (!existing.machineName && candidate.machineName) {
+          rows[existingIndex] = { ...existing, machineName: candidate.machineName };
+        }
+        continue;
+      }
+
+      // 同じ写真内で台番号が重複した要確認行は両方を残し、利用者が正しい台番号へ直せるようにする。
+      if (existing.importKind === "image" && candidate.importKind === "image"
+        && existing.reviewRequired && candidate.reviewRequired) {
+        rows.push(candidate);
+        continue;
+      }
+
+      const conflictReason = `台${key}の数値が${existing.importKind.toUpperCase()}と${String(kind).toUpperCase()}で一致しません。元資料を確認してください`;
+      rows[existingIndex] = appendReviewReason(existing, conflictReason);
+    }
+  }
+
+  const expected = [...new Set((Array.isArray(expectedNumbers) ? expectedNumbers : [])
+    .map((value) => parseSiteSevenEditableInteger(value))
+    .filter((value) => value !== null && value >= 0)
+    .map(String))];
+  const recognizedCount = rows.length;
+  const missingNumbers = expected.filter((num) => !rows.some((row) => String(row.num) === num));
+  const placeholderCount = Math.max(0, expected.length - rows.length);
+  for (const num of missingNumbers.slice(0, placeholderCount)) {
+    rows.push({
+      num,
+      normalSpins: "",
+      totalStarts: "",
+      machineName: "",
+      island: "",
+      sourceType: "missing-placeholder",
+      importKind: "image",
+      reviewRequired: true,
+      reviewConfirmed: false,
+      reviewReason: `選択した資料から台${num}の行を確認できませんでした。元資料を見て数値を入力してください`,
+    });
+  }
+
+  return {
+    rows,
+    duplicateCount,
+    sourceSkippedCount,
+    recognizedCount,
+    reviewCount: rows.filter((row) => row.reviewRequired && !row.reviewConfirmed).length,
+    missingNumbers,
+  };
+}
+
 export function classifySiteSevenFile(file) {
   const name = String(file?.name || "").toLowerCase();
   const type = String(file?.type || "").toLowerCase();
@@ -236,25 +414,4 @@ export function classifySiteSevenFile(file) {
   if (["text/csv", "text/tab-separated-values", "application/vnd.ms-excel"].includes(type)
     || /\.(?:csv|tsv)$/u.test(name)) return "csv";
   return null;
-}
-
-export function buildSiteSevenImageOcrPrompt({ dateText = "", storeName = "", expectedNumbers = [] } = {}) {
-  const numbers = (Array.isArray(expectedNumbers) ? expectedNumbers : [])
-    .map((value) => String(value ?? "").trim())
-    .filter((value) => /^\d+$/u.test(value));
-  const numberHint = numbers.length
-    ? `\n【照合対象の台番号】\n${numbers.join(", ")}\nこの一覧は照合だけに使い、画像にない行を作らないでください。`
-    : "";
-  return `添付画像はサイトセブンの台データ表です。画像に実際に表示されている各台を正確に読み取ってください。
-【出力形式】
-・1行につき1台、タブ区切り7列
-・列順は 日付 / 店舗名 / 島名 / 機種名 / 台番号 / 通常回転数 / 総当り回数
-・見出し、説明、Markdown、コードブロックは出力しない
-・日付は「${dateText}」、店舗名は「${storeName}」を全行に入れる
-・通常回転数は「通常中スタート」の列を使う
-・総当り回数は「大当り回数」の列を使い、「初当り回数」と取り違えない
-・機種名が画像にない場合、島名と機種名は空欄のままタブ2つで表す
-・平均行とチェックボックス列は出力しない
-・読めない数字を推測しない。1項目でも確実に読めない行は出力しない
-・全角数字やカンマは使わず半角整数にする${numberHint}`;
 }

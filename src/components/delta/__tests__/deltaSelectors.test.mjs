@@ -229,6 +229,34 @@ test("mergeTaiData: 台番号一致で回転数等をマージ", () => {
   assert.strictEqual(merged[1].normalSpins, undefined);
 });
 
+test("mergeTaiData: 写真OCRの空欄で既存機種名を消さず、確認履歴を残す", () => {
+  const rows = [{ num: "818", val: 1000, island: "既存島", machineName: "既存機種" }];
+  const tai = [{
+    num: "818",
+    island: "",
+    machineName: " ",
+    normalSpins: 1239,
+    totalStarts: 12,
+    sourceFile: "table.jpg",
+    sourceLine: 3,
+    sourceType: "local-image-ocr",
+    ocrConfidence: 0.82,
+    reviewRequired: true,
+    reviewConfirmed: true,
+  }];
+  const { rows: merged } = mergeTaiData(rows, tai);
+  assert.strictEqual(merged[0].island, "既存島");
+  assert.strictEqual(merged[0].machineName, "既存機種");
+  assert.deepStrictEqual(merged[0].taiImportAudit, {
+    sourceFile: "table.jpg",
+    sourceLine: 3,
+    sourceType: "local-image-ocr",
+    ocrConfidence: 0.82,
+    reviewRequired: true,
+    reviewConfirmed: true,
+  });
+});
+
 test("mergeTaiData: 不一致はマッチ0で元行を保つ", () => {
   const rows = [{ num: "1", val: 0 }];
   const tai = [{ num: "999", normalSpins: 100, totalStarts: 1 }];

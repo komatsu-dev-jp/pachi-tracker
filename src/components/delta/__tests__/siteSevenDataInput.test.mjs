@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildSiteSevenImageOcrPrompt,
   classifySiteSevenFile,
   decodeSiteSevenCsvBytes,
+  mergeSiteSevenParsedResults,
   parseDelimitedRows,
   parseSiteSevenCsvText,
+  prepareSiteSevenImportedRows,
   readSiteSevenCsv,
 } from "../siteSevenDataInput.js";
 
@@ -116,15 +117,112 @@ test("classifySiteSevenFile: PDF・写真・CSVだけを分類する", () => {
   assert.equal(classifySiteSevenFile({ name: "memo.txt", type: "text/plain" }), null);
 });
 
-test("buildSiteSevenImageOcrPrompt: 列の取り違えと台番号の推測を禁止する", () => {
-  const prompt = buildSiteSevenImageOcrPrompt({
-    dateText: "2026/07/20",
-    storeName: "スーパーキスケPAO",
-    expectedNumbers: [479, 480],
-  });
-  assert.match(prompt, /通常中スタート/);
-  assert.match(prompt, /「大当り回数」の列/);
-  assert.match(prompt, /初当り回数.*取り違えない/);
-  assert.match(prompt, /479, 480/);
-  assert.match(prompt, /画像にない行を作らない/);
+test("mergeSiteSevenParsedResults: 写真はPDFの確定値を上書きせず、不一致だけ要確認にする", () => {
+  const merged = mergeSiteSevenParsedResults([
+    {
+      kind: "image",
+      result: { rows: [{ num: "479", normalSpins: "1109", totalStarts: "14", reviewRequired: false }] },
+    },
+    {
+      kind: "pdf",
+      result: { rows: [{ num: "479", normalSpins: 1104, totalStarts: 14 }] },
+    },
+  ], { expectedNumbers: [479] });
+
+  assert.equal(merged.rows.length, 1);
+  assert.equal(merged.rows[0].normalSpins, 1104);
+  assert.equal(merged.rows[0].reviewRequired, true);
+  assert.match(merged.rows[0].reviewReason, /一致しません/);
+});
+
+test("mergeSiteSevenParsedResults: 同じ値なら低信頼写真を無視してPDFを採用する", () => {
+  const merged = mergeSiteSevenParsedResults([
+    {
+      kind: "image",
+      result: { rows: [{ num: "479", normalSpins: "1104", totalStarts: "14", reviewRequired: true }] },
+    },
+    {
+      kind: "pdf",
+      result: { rows: [{ num: "479", normalSpins: 1104, totalStarts: 14 }] },
+    },
+  ], { expectedNumbers: [479] });
+
+  assert.equal(merged.rows.length, 1);
+  assert.equal(Boolean(merged.rows[0].reviewRequired), false);
+  assert.equal(merged.rows[0].importKind, "pdf");
+});
+
+test("mergeSiteSevenParsedResults: CSV・PDF内の重複台は確認前に統合しない", () => {
+  for (const kind of ["csv", "pdf"]) {
+    const merged = mergeSiteSevenParsedResults([{
+      kind,
+      result: {
+        rows: [{ num: "479", normalSpins: 1104, totalStarts: 14 }],
+        duplicates: [{ num: "479", lineNumber: 4 }],
+      },
+    }], { expectedNumbers: [479] });
+
+    assert.equal(merged.rows[0].reviewRequired, true);
+    assert.equal(merged.rows[0].reviewConfirmed, false);
+    assert.match(merged.rows[0].reviewReason, /元資料内.*重複/);
+    const prepared = prepareSiteSevenImportedRows(merged.rows, { expectedNumbers: [479] });
+    assert.equal(prepared.rows.length, 0);
+    assert.equal(prepared.reviewPendingCount, 1);
+  }
+});
+
+test("mergeSiteSevenParsedResults: 分割写真20/20/12相当を全体で照合する", () => {
+  const expectedNumbers = [479, 480, 481, 482, 483];
+  const makeRows = (numbers) => numbers.map((num) => ({
+    num: String(num), normalSpins: "100", totalStarts: "1", reviewRequired: false,
+  }));
+  const merged = mergeSiteSevenParsedResults([
+    { kind: "image", result: { rows: makeRows([479, 480]) } },
+    { kind: "image", result: { rows: makeRows([481, 482]) } },
+    { kind: "image", result: { rows: makeRows([483]) } },
+  ], { expectedNumbers });
+
+  assert.equal(merged.rows.length, 5);
+  assert.equal(merged.recognizedCount, 5);
+  assert.equal(merged.reviewCount, 0);
+  assert.deepEqual(merged.missingNumbers, []);
+});
+
+test("mergeSiteSevenParsedResults: 行が不足した場合は入力可能な要確認行を補う", () => {
+  const merged = mergeSiteSevenParsedResults([
+    {
+      kind: "image",
+      result: { rows: [{ num: "479", normalSpins: "1104", totalStarts: "14" }] },
+    },
+  ], { expectedNumbers: [479, 480] });
+
+  assert.equal(merged.rows.length, 2);
+  assert.equal(merged.recognizedCount, 1);
+  assert.equal(merged.rows[1].num, "480");
+  assert.equal(merged.rows[1].reviewRequired, true);
+  assert.equal(merged.rows[1].normalSpins, "");
+});
+
+test("prepareSiteSevenImportedRows: 要確認行は確認前に統合せず、確認後だけ採用する", () => {
+  const pending = { num: "479", normalSpins: "1104", totalStarts: "14", reviewRequired: true };
+  const before = prepareSiteSevenImportedRows([pending]);
+  assert.equal(before.rows.length, 0);
+  assert.equal(before.reviewPendingCount, 1);
+
+  const after = prepareSiteSevenImportedRows([{ ...pending, reviewConfirmed: true }]);
+  assert.equal(after.rows.length, 1);
+  assert.equal(after.rows[0].normalSpins, 1104);
+  assert.equal(after.rows[0].totalStarts, 14);
+});
+
+test("prepareSiteSevenImportedRows: 確認済みでも重複台番号や差玉側にない台を統合しない", () => {
+  const result = prepareSiteSevenImportedRows([
+    { num: "479", normalSpins: "1104", totalStarts: "14", reviewRequired: true, reviewConfirmed: true },
+    { num: "479", normalSpins: "999", totalStarts: "9", reviewRequired: true, reviewConfirmed: true },
+    { num: "999", normalSpins: "100", totalStarts: "1", reviewRequired: true, reviewConfirmed: true },
+  ], { expectedNumbers: [479, 480] });
+
+  assert.equal(result.rows.length, 0);
+  assert.deepEqual(result.duplicateNumbers, ["479"]);
+  assert.deepEqual(result.unexpectedNumbers, ["999"]);
 });
