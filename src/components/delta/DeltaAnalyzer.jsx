@@ -28,6 +28,7 @@ import {
   makeScan,
 } from "./deltaSelectors";
 import { readTaiDataAttachments } from "./aiReader";
+import { buildSiteSevenImageOcrPrompt, classifySiteSevenFile, readSiteSevenCsv } from "./siteSevenDataInput";
 import { buildRowDeltaEvidence } from "./deltaEvidence";
 import { machineDB } from "../../machineDB";
 
@@ -1244,7 +1245,7 @@ function parseEditableInteger(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function preparePdfRows(rows) {
+function prepareImportedRows(rows) {
   const valid = [];
   let invalidCount = 0;
   for (const row of Array.isArray(rows) ? rows : []) {
@@ -1278,13 +1279,13 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
   const [copied, setCopied] = useState(false);
   const [text, setText] = useState("");
 
-  const pdfFileRef = useRef(null);
-  const [pdfRows, setPdfRows] = useState([]);
-  const [pdfBusy, setPdfBusy] = useState(false);
-  const [pdfError, setPdfError] = useState("");
-  const [pdfSummary, setPdfSummary] = useState(null);
-  const [pdfFilter, setPdfFilter] = useState("");
-  const [showAllPdfRows, setShowAllPdfRows] = useState(false);
+  const dataFileRef = useRef(null);
+  const [dataRows, setDataRows] = useState([]);
+  const [dataBusy, setDataBusy] = useState(false);
+  const [dataError, setDataError] = useState("");
+  const [dataSummary, setDataSummary] = useState(null);
+  const [dataFilter, setDataFilter] = useState("");
+  const [showAllDataRows, setShowAllDataRows] = useState(false);
 
   const hasKey = typeof aiApiKey === "string" && aiApiKey.trim() !== "";
   const aiFileRef = useRef(null);
@@ -1296,56 +1297,114 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
   const [showKeyForm, setShowKeyForm] = useState(false);
   const [keyInput, setKeyInput] = useState("");
 
-  // サイトセブンPDFは文字情報を持つため、外部APIへ送らずブラウザ内で読み取る。
-  const handleLocalPdfFiles = async (files) => {
-    const supported = Array.from(files || []).filter((file) =>
-      file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
-    );
-    if (!supported.length || pdfBusy) return;
+  // PDF/CSVは端末内で解析し、写真だけを設定済みのAI補助へ送る。
+  const handleSiteSevenFiles = async (files) => {
+    const selected = Array.from(files || []);
+    const classified = selected
+      .map((file) => ({ file, kind: classifySiteSevenFile(file) }))
+      .filter((entry) => entry.kind);
+    if (!classified.length || dataBusy) {
+      if (selected.length) setDataError("PDF・JPEG/PNG/WebP画像・CSVのいずれかを選んでください");
+      return;
+    }
 
-    setPdfBusy(true);
-    setPdfError("");
-    setPdfSummary(null);
-    setPdfFilter("");
-    setShowAllPdfRows(false);
+    const pdfFiles = classified.filter(({ kind }) => kind === "pdf").map(({ file }) => file);
+    const csvFiles = classified.filter(({ kind }) => kind === "csv").map(({ file }) => file);
+    const imageFiles = classified.filter(({ kind }) => kind === "image").map(({ file }) => file);
+
+    setDataBusy(true);
+    setDataError("");
+    setDataSummary(null);
+    setDataFilter("");
+    setShowAllDataRows(false);
     try {
-      // PDF.jsはこの操作をした時だけ読み込み、通常画面の起動を重くしない。
-      const { readSiteSevenPdf } = await import("./siteSevenPdfReader.js");
       const results = [];
-      for (const file of supported) {
-        const parsedPdf = await readSiteSevenPdf(file, {
+
+      if (pdfFiles.length) {
+        // PDF.jsはこの操作をした時だけ読み込み、通常画面の起動を重くしない。
+        const { readSiteSevenPdf } = await import("./siteSevenPdfReader.js");
+        for (const file of pdfFiles) {
+          const parsedPdf = await readSiteSevenPdf(file, {
+            dateText: todaySlash(),
+            storeName: store?.name || "",
+          });
+          results.push(parsedPdf);
+        }
+      }
+
+      if (csvFiles.length) {
+        for (const file of csvFiles) {
+          const parsedCsv = await readSiteSevenCsv(file, {
+            dateText: todaySlash(),
+            storeName: store?.name || "",
+          });
+          results.push(parsedCsv);
+        }
+      }
+
+      let pendingImageCount = 0;
+      if (imageFiles.length && hasKey) {
+        const attachments = await Promise.all(imageFiles.map((file) => fileToAttachment(file)));
+        const imagePrompt = buildSiteSevenImageOcrPrompt({
           dateText: todaySlash(),
           storeName: store?.name || "",
+          expectedNumbers: (Array.isArray(deltaRows) ? deltaRows : []).map((row) => row?.num),
         });
-        results.push(parsedPdf);
+        const imageResult = await readTaiDataAttachments({
+          apiKey: aiApiKey,
+          attachments,
+          prompt: imagePrompt,
+        });
+        if (!imageResult.ok) throw new Error(imageResult.message || "写真の読み取りに失敗しました");
+        const parsedImage = parseTaiDataText(imageResult.text);
+        if (!parsedImage.rows.length) {
+          throw new Error("写真から台データを確認できませんでした。表全体が鮮明に入るよう撮影してください");
+        }
+        results.push({ ...parsedImage, duplicates: [] });
+      } else if (imageFiles.length) {
+        pendingImageCount = imageFiles.length;
+        setShowKeyForm(true);
       }
 
       const byNumber = new Map();
       let skippedCount = 0;
       let duplicateCount = 0;
       for (const result of results) {
-        skippedCount += result.skipped.length;
-        duplicateCount += result.duplicates.length;
-        for (const row of result.rows) byNumber.set(String(row.num), row);
+        skippedCount += Array.isArray(result.skipped) ? result.skipped.length : 0;
+        duplicateCount += Array.isArray(result.duplicates) ? result.duplicates.length : 0;
+        for (const row of result.rows || []) {
+          if (byNumber.has(String(row.num))) duplicateCount += 1;
+          byNumber.set(String(row.num), row);
+        }
       }
       const nextRows = Array.from(byNumber.values());
-      setPdfRows(nextRows);
-      setPdfSummary({
-        fileCount: supported.length,
+      if (!nextRows.length && pendingImageCount) {
+        throw new Error("写真の文字読み取りにはAI補助のAPIキーが必要です。下の設定欄から登録後、もう一度写真を選んでください");
+      }
+      setDataRows(nextRows);
+      setDataSummary({
+        fileCount: classified.length - pendingImageCount,
         rowCount: nextRows.length,
         skippedCount,
         duplicateCount,
+        pdfCount: pdfFiles.length,
+        csvCount: csvFiles.length,
+        imageCount: imageFiles.length - pendingImageCount,
+        pendingImageCount,
       });
+      if (pendingImageCount) {
+        setDataError(`写真${pendingImageCount}枚はまだ読んでいません。AI補助のAPIキーを設定してから、写真をもう一度選んでください`);
+      }
     } catch (error) {
-      setPdfRows([]);
-      setPdfError(error instanceof Error ? error.message : "PDFの読み取りに失敗しました");
+      setDataRows([]);
+      setDataError(error instanceof Error ? error.message : "台データの読み取りに失敗しました");
     } finally {
-      setPdfBusy(false);
+      setDataBusy(false);
     }
   };
 
-  const changePdfRow = (index, field, value) => {
-    setPdfRows((current) => current.map((row, rowIndex) =>
+  const changeDataRow = (index, field, value) => {
+    setDataRows((current) => current.map((row, rowIndex) =>
       rowIndex === index ? { ...row, [field]: value } : row
     ));
   };
@@ -1392,26 +1451,26 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
   const maskedKey = hasKey ? `${aiApiKey.trim().slice(0, 7)}••••` : "";
 
   const parsed = useMemo(() => parseTaiDataText(text), [text]);
-  const preparedPdf = useMemo(() => preparePdfRows(pdfRows), [pdfRows]);
-  // PDFを基本にし、手動貼り付けまたはAI出力が同じ台番号にあれば後者を優先する。
+  const preparedData = useMemo(() => prepareImportedRows(dataRows), [dataRows]);
+  // 選択ファイルを基本にし、手動貼り付けまたはAI出力が同じ台番号にあれば後者を優先する。
   const importRows = useMemo(() => {
     const byNumber = new Map();
-    for (const row of preparedPdf.rows) byNumber.set(String(row.num), row);
+    for (const row of preparedData.rows) byNumber.set(String(row.num), row);
     for (const row of parsed.rows) byNumber.set(String(row.num), row);
     return Array.from(byNumber.values());
-  }, [preparedPdf.rows, parsed.rows]);
+  }, [preparedData.rows, parsed.rows]);
   const recognized = importRows.length;
   const deltaNumberSet = useMemo(
     () => new Set((Array.isArray(deltaRows) ? deltaRows : []).map((row) => String(row.num))),
     [deltaRows]
   );
-  const pdfMatchedCount = useMemo(
-    () => preparedPdf.rows.filter((row) => deltaNumberSet.has(String(row.num))).length,
-    [preparedPdf.rows, deltaNumberSet]
+  const dataMatchedCount = useMemo(
+    () => preparedData.rows.filter((row) => deltaNumberSet.has(String(row.num))).length,
+    [preparedData.rows, deltaNumberSet]
   );
-  const pdfReviewEntries = useMemo(() => {
-    const query = pdfFilter.trim().toLowerCase();
-    const entries = pdfRows.map((row, index) => ({ row, index }));
+  const dataReviewEntries = useMemo(() => {
+    const query = dataFilter.trim().toLowerCase();
+    const entries = dataRows.map((row, index) => ({ row, index }));
     const matchingDelta = entries.filter(({ row }) => deltaNumberSet.has(String(row.num)));
     const base = matchingDelta.length ? matchingDelta : entries;
     if (query) {
@@ -1420,8 +1479,15 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
         String(row.machineName || "").toLowerCase().includes(query)
       );
     }
-    return showAllPdfRows ? base : base.slice(0, 12);
-  }, [pdfRows, pdfFilter, showAllPdfRows, deltaNumberSet]);
+    return showAllDataRows ? base : base.slice(0, 12);
+  }, [dataRows, dataFilter, showAllDataRows, deltaNumberSet]);
+  const dataSourceSummary = dataSummary
+    ? [
+        dataSummary.pdfCount > 0 ? `PDF ${dataSummary.pdfCount}` : "",
+        dataSummary.imageCount > 0 ? `写真 ${dataSummary.imageCount}` : "",
+        dataSummary.csvCount > 0 ? `CSV ${dataSummary.csvCount}` : "",
+      ].filter(Boolean).join("・")
+    : "";
 
   const copyPrompt = async () => {
     try {
@@ -1448,16 +1514,16 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
           差玉データと大当たり情報を台番号でまとめ、予測回転率まで計算します
         </div>
 
-        {/* サイトセブンPDFの端末内読み取り。個人版の主経路でAPIは不要。 */}
+        {/* サイトセブン台データの主経路。PDF/CSVは端末内、写真だけAI補助を使う。 */}
         <Card style={{ marginBottom: 12 }}>
           <div style={{ padding: "14px" }}>
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
               <div>
                 <div style={{ fontSize: 16, fontWeight: 900, color: C.text }}>
-                  サイトセブンPDFを読み取る
+                  サイトセブンの台データを読み取る
                 </div>
                 <div style={{ fontSize: 11, color: C.sub, marginTop: 3, lineHeight: 1.6 }}>
-                  PDFから台番号・機種名・通常中スタート・大当り回数を取得し、前画面の差玉と照合します
+                  PDF・写真・CSVから台番号・通常中スタート・大当り回数を取得し、前画面の差玉と照合します
                 </div>
               </div>
               <span style={{
@@ -1466,7 +1532,7 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
                 border: `1px solid color-mix(in srgb, var(--green) 35%, transparent)`,
                 color: C.green, fontSize: 10, fontWeight: 900,
               }}>
-                API不要
+                PDF・CSVはAPI不要
               </span>
             </div>
 
@@ -1475,61 +1541,61 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
               background: C.surfaceHi, border: `1px solid ${C.border}`,
               color: C.subHi, fontSize: 11, lineHeight: 1.6,
             }}>
-              選んだPDFは外部へ送信せず、この端末の中だけで処理します。差玉画像は先に解析しておけば、最後のボタン1回で統合できます。
+              PDFとCSVは外部へ送信せず、この端末の中だけで処理します。写真の文字読み取りだけAI補助を使うため、APIキーの設定が必要です。
             </div>
 
             <input
-              ref={pdfFileRef}
+              ref={dataFileRef}
               type="file"
-              accept="application/pdf,.pdf"
+              accept="application/pdf,.pdf,image/*,.jpg,.jpeg,.png,.webp,text/csv,text/tab-separated-values,application/vnd.ms-excel,.csv,.tsv"
               multiple
               style={{ display: "none" }}
-              onChange={(e) => { handleLocalPdfFiles(e.target.files); e.target.value = ""; }}
+              onChange={(e) => { handleSiteSevenFiles(e.target.files); e.target.value = ""; }}
             />
             <button
               className="b"
-              onClick={pdfBusy ? undefined : () => pdfFileRef.current?.click()}
-              disabled={pdfBusy}
+              onClick={dataBusy ? undefined : () => dataFileRef.current?.click()}
+              disabled={dataBusy}
               style={{
                 width: "100%", minHeight: CTA, borderRadius: 12, marginTop: 12,
-                border: "none", background: pdfBusy ? C.surfaceHi : C.blue,
-                color: pdfBusy ? C.sub : "#fff", fontSize: 15, fontWeight: 900,
+                border: "none", background: dataBusy ? C.surfaceHi : C.blue,
+                color: dataBusy ? C.sub : "#fff", fontSize: 15, fontWeight: 900,
               }}
             >
-              {pdfBusy ? "PDFを端末内で読み取り中…" : "大当たりPDFを選ぶ"}
+              {dataBusy ? "台データを読み取り中…" : "PDF・写真・CSVを選ぶ"}
             </button>
 
-            {pdfSummary && (
+            {dataSummary && (
               <div style={{
                 background: "color-mix(in srgb, var(--green) 14%, transparent)",
                 border: `1px solid color-mix(in srgb, var(--green) 35%, transparent)`,
                 borderRadius: 10, padding: "10px 12px", marginTop: 10,
                 fontSize: 13, color: C.green, fontWeight: 800, lineHeight: 1.6,
               }}>
-                ✓ {pdfSummary.fileCount}ファイルから{pdfSummary.rowCount}台を読み取り
-                {deltaNumberSet.size > 0 && `／差玉と${pdfMatchedCount}台一致`}
-                {(pdfSummary.skippedCount > 0 || pdfSummary.duplicateCount > 0) && (
+                ✓ {dataSummary.fileCount}ファイル（{dataSourceSummary}）から{dataSummary.rowCount}台を読み取り
+                {deltaNumberSet.size > 0 && `／差玉と${dataMatchedCount}台一致`}
+                {(dataSummary.skippedCount > 0 || dataSummary.duplicateCount > 0) && (
                   <div style={{ color: C.yellow, fontSize: 11, marginTop: 4 }}>
-                    要確認：未認識{pdfSummary.skippedCount}行・重複{pdfSummary.duplicateCount}台
+                    要確認：未認識{dataSummary.skippedCount}行・重複{dataSummary.duplicateCount}台
                   </div>
                 )}
               </div>
             )}
-            {pdfError && (
+            {dataError && (
               <div style={{
                 background: "color-mix(in srgb, var(--red) 12%, transparent)",
                 border: `1px solid color-mix(in srgb, var(--red) 35%, transparent)`,
                 borderRadius: 10, padding: "10px 12px", marginTop: 10,
                 fontSize: 12, color: C.red, fontWeight: 700, lineHeight: 1.6,
               }}>
-                ⚠ {pdfError}
+                ⚠ {dataError}
               </div>
             )}
           </div>
         </Card>
 
-        {/* PDF読み取り結果の修正。検索または全台表示で100台規模にも対応する。 */}
-        {pdfRows.length > 0 && (
+        {/* 読み取り結果の修正。検索または全台表示で100台規模にも対応する。 */}
+        {dataRows.length > 0 && (
           <Card style={{ marginBottom: 12 }}>
             <div style={{ padding: "14px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -1539,12 +1605,12 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
                     間違いがあれば数字や機種名を直接直せます
                   </div>
                 </div>
-                <span style={{ color: C.green, fontSize: 12, fontWeight: 900 }}>{preparedPdf.rows.length}台</span>
+                <span style={{ color: C.green, fontSize: 12, fontWeight: 900 }}>{preparedData.rows.length}台</span>
               </div>
 
               <input
-                value={pdfFilter}
-                onChange={(e) => setPdfFilter(e.target.value)}
+                value={dataFilter}
+                onChange={(e) => setDataFilter(e.target.value)}
                 placeholder="台番号・機種名で検索"
                 style={{
                   width: "100%", minHeight: TAP, boxSizing: "border-box", marginTop: 10,
@@ -1554,7 +1620,7 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
               />
 
               <div style={{ display: "grid", gap: 9, marginTop: 10 }}>
-                {pdfReviewEntries.map(({ row, index }) => (
+                {dataReviewEntries.map(({ row, index }) => (
                   <div key={`${index}-${row.num}`} style={{
                     padding: 10, borderRadius: 11, background: C.surfaceHi,
                     border: `1px solid ${C.border}`,
@@ -1565,7 +1631,7 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
                         <input
                           inputMode="numeric"
                           value={row.num}
-                          onChange={(e) => changePdfRow(index, "num", e.target.value)}
+                          onChange={(e) => changeDataRow(index, "num", e.target.value)}
                           style={{
                             width: "100%", height: 38, boxSizing: "border-box", marginTop: 3,
                             borderRadius: 8, border: `1px solid ${C.borderHi}`,
@@ -1577,7 +1643,7 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
                         機種名
                         <input
                           value={row.machineName || ""}
-                          onChange={(e) => changePdfRow(index, "machineName", e.target.value)}
+                          onChange={(e) => changeDataRow(index, "machineName", e.target.value)}
                           style={{
                             width: "100%", height: 38, boxSizing: "border-box", marginTop: 3,
                             borderRadius: 8, border: `1px solid ${C.borderHi}`,
@@ -1592,7 +1658,7 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
                         <input
                           inputMode="numeric"
                           value={row.normalSpins}
-                          onChange={(e) => changePdfRow(index, "normalSpins", e.target.value)}
+                          onChange={(e) => changeDataRow(index, "normalSpins", e.target.value)}
                           style={{
                             width: "100%", height: 38, boxSizing: "border-box", marginTop: 3,
                             borderRadius: 8, border: `1px solid ${C.borderHi}`,
@@ -1605,7 +1671,7 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
                         <input
                           inputMode="numeric"
                           value={row.totalStarts}
-                          onChange={(e) => changePdfRow(index, "totalStarts", e.target.value)}
+                          onChange={(e) => changeDataRow(index, "totalStarts", e.target.value)}
                           style={{
                             width: "100%", height: 38, boxSizing: "border-box", marginTop: 3,
                             borderRadius: 8, border: `1px solid ${C.borderHi}`,
@@ -1618,22 +1684,22 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
                 ))}
               </div>
 
-              {!pdfFilter && (pdfMatchedCount || pdfRows.length) > 12 && (
+              {!dataFilter && (dataMatchedCount || dataRows.length) > 12 && (
                 <button
                   className="b"
-                  onClick={() => setShowAllPdfRows((current) => !current)}
+                  onClick={() => setShowAllDataRows((current) => !current)}
                   style={{
                     width: "100%", minHeight: TAP, marginTop: 10, borderRadius: 10,
                     border: `1px solid ${C.border}`, background: "transparent",
                     color: C.subHi, fontSize: 12, fontWeight: 800,
                   }}
                 >
-                  {showAllPdfRows ? "先頭12台だけ表示" : `全${pdfMatchedCount || pdfRows.length}台を表示`}
+                  {showAllDataRows ? "先頭12台だけ表示" : `全${dataMatchedCount || dataRows.length}台を表示`}
                 </button>
               )}
-              {preparedPdf.invalidCount > 0 && (
+              {preparedData.invalidCount > 0 && (
                 <div style={{ color: C.red, fontSize: 11, fontWeight: 700, marginTop: 8 }}>
-                  ⚠ 数字が空欄の{preparedPdf.invalidCount}台は統合されません
+                  ⚠ 数字が空欄の{preparedData.invalidCount}台は統合されません
                 </div>
               )}
             </div>
@@ -1641,7 +1707,7 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
         )}
 
         <div style={{ fontSize: 11, color: C.sub, fontWeight: 800, margin: "18px 2px 8px" }}>
-          PDFで読めない場合だけ使う補助機能
+          自動で読めない場合に使う補助機能
         </div>
 
         {/* AI読み取りカード（任意の補助経路） */}
@@ -1653,7 +1719,7 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
                   AI補助読み取り（任意）
                 </div>
                 <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>
-                  画像だけの資料や通常と異なるPDFを読む時だけ使います。サイトセブンPDFには不要です
+                  差玉資料と大当たり資料をまとめて再解析する場合に使います
                 </div>
                 <input
                   ref={aiFileRef}
@@ -1876,7 +1942,7 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
         )}
       </div>
       <BottomCta
-        label="PDFと差玉を台番号で統合する"
+        label="台データと差玉を台番号で統合する"
         onClick={() => onMerge(importRows)}
         disabled={recognized === 0}
       />
