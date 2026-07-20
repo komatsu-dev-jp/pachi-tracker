@@ -6,6 +6,7 @@ import {
   calculateYutimeEV,
   createYutimeSessionFromMachine,
   deriveNormalExpectedNetBalls,
+  resolveYutimeStartAction,
 } from "./yutimeCalculator";
 
 const fieldStyle = {
@@ -291,13 +292,14 @@ export default function YutimeCalculatorSheet({
   const currentSession = S?.activeYutimeSession || S?.yutimeSession;
   const isCurrentTarget = Boolean(
     currentSession?.targetingEnabled === true
-    && (!currentSession.machineName || !machineName.trim() || currentSession.machineName === machineName.trim())
+    && (!currentSession.machineName || currentSession.machineName === machineName.trim())
   );
 
   const saveForSession = () => {
     const trigger = numberOrNull(triggerLowSpins);
     if (!(trigger > 0)) return;
     const normalizedMachineName = machineName.trim();
+    if (!normalizedMachineName) return;
     const normalizedCurrentLowSpins = Math.max(0, Math.round(numberOrNull(currentLowSpins) || 0));
     const assumedStart1K = Math.max(0, numberOrNull(start1K) || 0);
     const session = {
@@ -343,18 +345,52 @@ export default function YutimeCalculatorSheet({
       return;
     }
 
+    const startAction = resolveYutimeStartAction({
+      sessionStarted: S?.sessionStarted,
+      currentMachineName: S?.machineName,
+      nextMachineName: normalizedMachineName,
+      rotRows: S?.rotRows,
+      jpLog: S?.jpLog,
+    });
+    const selectedSynthDenom = selectedMachine
+      ? (Number(selectedMachine.synthProb) > 0 ? Number(selectedMachine.synthProb) : 0)
+      : undefined;
+    const selectedSpec1R = selectedMachine ? (machineSpec?.spec1R ?? 0) : undefined;
+    const selectedSpecAvgRounds = selectedMachine ? (machineSpec?.specAvgRounds ?? 0) : undefined;
+    const selectedSpecSapo = selectedMachine ? (machineSpec?.specSapo ?? 0) : undefined;
+
+    // 回転記録がある別機種からの開始は、旧台を保存して正式な台移動として扱う。
+    if (startAction === "move" && typeof S?.handleMoveTable === "function") {
+      S.handleMoveTable(Math.max(0, Number(S?.currentMochiBalls) || 0), {
+        machineName: normalizedMachineName,
+        startRot: normalizedCurrentLowSpins,
+        yutimeLowSpins: normalizedCurrentLowSpins,
+        yutimeSession: session,
+        yutimeDecision: decision,
+        ...(selectedSynthDenom !== undefined ? { synthDenom: selectedSynthDenom } : {}),
+        ...(selectedSpec1R !== undefined ? { spec1R: selectedSpec1R } : {}),
+        ...(selectedSpecAvgRounds !== undefined ? { specAvgRounds: selectedSpecAvgRounds } : {}),
+        ...(selectedSpecSapo !== undefined ? { specSapo: selectedSpecSapo } : {}),
+      });
+      S?.setSessionSubTab?.("rot");
+      onClose();
+      S?.setTab?.("rot");
+      return;
+    }
+
     S?.setYutimeSession?.(session);
     S?.setYutimeDecision?.(decision);
 
+    // 機種名だけでなくスペックも選択機種へ揃える。未調査値は0にして前機種を残さない。
+    S?.setMachineName?.(normalizedMachineName);
+    if (selectedSynthDenom !== undefined) S?.setSynthDenom?.(selectedSynthDenom);
+    if (selectedSpec1R !== undefined) S?.setSpec1R?.(selectedSpec1R);
+    if (selectedSpecAvgRounds !== undefined) S?.setSpecAvgRounds?.(selectedSpecAvgRounds);
+    if (selectedSpecSapo !== undefined) S?.setSpecSapo?.(selectedSpecSapo);
+
     // 台選びから開始した場合は開始行も同時に作る。
     // これが無いと記録ページが「未開始」のままになり、遊タイムカードも表示されない。
-    if (!S?.sessionStarted) {
-      if (normalizedMachineName) S?.setMachineName?.(normalizedMachineName);
-      if (selectedMachine?.synthProb > 0) S?.setSynthDenom?.(selectedMachine.synthProb);
-      if (machineSpec?.spec1R != null) S?.setSpec1R?.(machineSpec.spec1R);
-      if (machineSpec?.specAvgRounds != null) S?.setSpecAvgRounds?.(machineSpec.specAvgRounds);
-      if (machineSpec?.specSapo != null) S?.setSpecSapo?.(machineSpec.specSapo);
-
+    if (startAction === "start" || startAction === "replace") {
       const currentMochiBalls = Math.max(0, Number(S?.currentMochiBalls) || 0);
       const currentChodama = Math.max(0, Number(S?.currentChodama) || 0);
       S?.setStartRot?.(normalizedCurrentLowSpins);
@@ -401,6 +437,7 @@ export default function YutimeCalculatorSheet({
   const label = (text) => <div style={{ marginBottom: 5, fontSize: 10, fontWeight: 800, color: "var(--sm-sub-hi)" }}>{text}</div>;
   const hasVerifiedTrigger = Boolean(selectedMachine?.yutime?.triggerLowSpins);
   const hasVerifiedExpectedBalls = selectedMachine?.yutime?.expectedNetBalls != null;
+  const canConfirm = Boolean(machineName.trim() && Number(numberOrNull(triggerLowSpins)) > 0);
   const auditStatus = selectedMachine?.yutimeAudit?.status;
   const machineStatus = !machineName.trim()
     ? { text: "機種を選択してください", color: "var(--sm-sub)" }
@@ -496,7 +533,7 @@ export default function YutimeCalculatorSheet({
             <div style={{ marginTop: 8, fontSize: 10, color: "var(--sm-sub)", lineHeight: 1.5 }}>各項目は確認後に手動修正できます。{sourceUrl && <><br /><a href={sourceUrl} target="_blank" rel="noreferrer" style={{ color: "var(--sm-cyan)" }}>登録済みの根拠を確認</a></>}</div>
           </div>
           <Result result={result} mode={playMode} />
-          <button type="button" onClick={saveForSession} style={{ minHeight: 48, border: "none", borderRadius: 13, background: "linear-gradient(180deg, var(--sm-cyan-hi), var(--sm-cyan))", color: "var(--sm-on-cyan)", fontSize: 14, fontWeight: 900 }}>{confirmLabel}</button>
+          <button type="button" disabled={!canConfirm} onClick={saveForSession} style={{ minHeight: 48, border: "none", borderRadius: 13, background: canConfirm ? "linear-gradient(180deg, var(--sm-cyan-hi), var(--sm-cyan))" : "var(--sm-card-hi)", color: canConfirm ? "var(--sm-on-cyan)" : "var(--sm-sub)", fontSize: 14, fontWeight: 900, opacity: canConfirm ? 1 : 0.65 }}>{confirmLabel}</button>
           {isCurrentTarget && (
             <button type="button" onClick={stopTargeting} style={{ minHeight: 44, borderRadius: 13, border: "1px solid var(--sm-line-hi)", background: "var(--sm-card)", color: "var(--sm-sub-hi)", fontSize: 12, fontWeight: 800 }}>遊タイム狙いを解除</button>
           )}
