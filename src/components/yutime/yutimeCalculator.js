@@ -252,3 +252,24 @@ export function isYutimeTargetingSession(session) {
     && session.targetingEnabled === true
   );
 }
+
+// 遊タイム計算から記録を開始するとき、既存セッションをどう扱うかを決める。
+// 記録が空なら誤って残った前機種を上書きし、入力済みなら台移動として保存する。
+export function resolveYutimeStartAction({
+  sessionStarted = false,
+  currentMachineName = "",
+  nextMachineName = "",
+  rotRows = [],
+  jpLog = [],
+} = {}) {
+  if (!sessionStarted) return "start";
+
+  const hasRecordedActivity = (Array.isArray(rotRows) && rotRows.some((row) => row?.type !== "start"))
+    || (Array.isArray(jpLog) && jpLog.length > 0);
+  if (!hasRecordedActivity) return "replace";
+
+  const currentName = String(currentMachineName || "").trim();
+  const nextName = String(nextMachineName || "").trim();
+  if (currentName && nextName && currentName !== nextName) return "move";
+  return "update";
+}

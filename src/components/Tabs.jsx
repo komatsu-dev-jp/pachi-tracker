@@ -494,19 +494,24 @@ function effectiveEv(ev = {}) {
 // - 遊タイム非搭載機では描画しない
 // - 実戦中に必要な「残り回転・到達必要資金・到達率」だけをコンパクトに表示する
 // - カード全体をタップすると、台選び画面と同じ詳細計算シートを開く
-function YutimeEvCard({ result, spec, rateSource = "assumed", playMode = "cash", onOpen }) {
+function YutimeEvCard({ result, spec, currentLowSpins = 0, rateSource = "assumed", playMode = "cash", onOpen }) {
     if (!isYutimeTargetingSession(spec)) return null;
     const isHeld = playMode === "mochi" || playMode === "chodama";
     const modeLabel = playMode === "chodama" ? "貯玉" : isHeld ? "持ち玉" : "現金";
     const canCompute = Boolean(result?.valid);
     const missingPayout = result?.missing?.includes("yutimeExpectedNetBalls");
     const statusLabel = rateSource === "measured" ? "実測" : "暫定";
-    const remainingLabel = canCompute ? result.remainingSpins.toLocaleString("ja-JP") : "—";
+    const fallbackRemaining = Number(spec?.triggerLowSpins) > 0
+        ? Math.max(0, Math.round(Number(spec.triggerLowSpins) - Math.max(0, Number(currentLowSpins) || 0)))
+        : null;
+    const remainingLabel = canCompute
+        ? result.remainingSpins.toLocaleString("ja-JP")
+        : fallbackRemaining == null ? "—" : fallbackRemaining.toLocaleString("ja-JP");
     const arrivalLabel = canCompute ? Math.ceil(result.selectedArrivalInvestment).toLocaleString("ja-JP") : "—";
     const reachLabel = canCompute ? `${(result.reachProbability * 100).toFixed(1)}%` : "—";
     const ariaLabel = canCompute
         ? `遊タイム詳細。残り${remainingLabel}回、到達必要資金${arrivalLabel}円、到達率${reachLabel}`
-        : `遊タイム詳細。${missingPayout ? "期待出玉の入力が必要" : "設定の確認が必要"}`;
+        : `遊タイム詳細。残り${remainingLabel}回。${missingPayout ? "期待出玉の入力が必要" : "設定の確認が必要"}`;
 
     return (
         <button className="b" type="button" onClick={onOpen} aria-label={ariaLabel} style={{
@@ -3108,6 +3113,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         <YutimeEvCard
                             result={S.yutimeLive}
                             spec={S.activeYutimeSession}
+                            currentLowSpins={S.currentYutimeLowSpins}
                             rateSource={S.yutimeRateSource}
                             playMode={S.playMode}
                             onOpen={() => setShowYutimeCalculator(true)}
