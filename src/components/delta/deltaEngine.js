@@ -480,15 +480,53 @@ function publicCalibration(calibration) {
   };
 }
 
-function isSeriesClipped(series, calibration) {
-  if (!series || !calibration) return false;
+function classifySeriesBoundaryContact(series, calibration) {
+  if (!series || !calibration) {
+    return { endpointBoundary: null, historicalBoundaries: [] };
+  }
   const { plotTopY, plotBottomY, gridSpacing } = calibration;
-  if (!Number.isFinite(plotTopY) || !Number.isFinite(plotBottomY)) return false;
-  const tolerance = Math.max(1.5, gridSpacing * 0.05);
-  return series.endpoint.localY <= plotTopY + tolerance
-    || series.endpoint.localY >= plotBottomY - tolerance
-    || series.bounds.minY <= plotTopY + tolerance
-    || series.bounds.maxY >= plotBottomY - tolerance;
+  if (!Number.isFinite(plotTopY) || !Number.isFinite(plotBottomY)
+    || !Number.isFinite(gridSpacing)) {
+    return { endpointBoundary: null, historicalBoundaries: [] };
+  }
+
+  // A trace is several pixels thick after screenshots and JPEG compression. The
+  // endpoint uses its robust median, so keep the same narrow tolerance as the path:
+  // a nearby historical pixel must not turn an otherwise visible endpoint into a
+  // clipped value.
+  const pathTolerance = Math.max(1.5, gridSpacing * 0.05);
+  const endpointTolerance = pathTolerance;
+  const endpointTopDistance = series.endpoint.localY - plotTopY;
+  const endpointBottomDistance = plotBottomY - series.endpoint.localY;
+  const endpointNearTop = endpointTopDistance <= endpointTolerance;
+  const endpointNearBottom = endpointBottomDistance <= endpointTolerance;
+  let endpointBoundary = null;
+  if (endpointNearTop || endpointNearBottom) {
+    endpointBoundary = endpointTopDistance <= endpointBottomDistance ? "top" : "bottom";
+  }
+
+  const touchedTop = series.bounds.minY <= plotTopY + pathTolerance;
+  const touchedBottom = series.bounds.maxY >= plotBottomY - pathTolerance;
+  const historicalBoundaries = [];
+  if (touchedTop && endpointBoundary !== "top") historicalBoundaries.push("top");
+  if (touchedBottom && endpointBoundary !== "bottom") historicalBoundaries.push("bottom");
+  return { endpointBoundary, historicalBoundaries };
+}
+
+function clippedValueConstraint(calibration, boundary) {
+  if (boundary !== "top" && boundary !== "bottom") return null;
+  const boundaryY = boundary === "top" ? calibration.plotTopY : calibration.plotBottomY;
+  if (!Number.isFinite(boundaryY) || !Number.isFinite(calibration.zeroY)
+    || !Number.isFinite(calibration.gridSpacing) || calibration.gridSpacing <= 0) {
+    return null;
+  }
+  const rawBoundaryValue = ((calibration.zeroY - boundaryY) / calibration.gridSpacing) * 10000;
+  const roundedBoundaryValue = Math.round(rawBoundaryValue / 500) * 500;
+  return {
+    kind: boundary === "top" ? "lower-bound" : "upper-bound",
+    boundary,
+    value: Object.is(roundedBoundaryValue, -0) ? 0 : roundedBoundaryValue,
+  };
 }
 
 function failedSeriesResult(panel, calibration) {
@@ -499,6 +537,7 @@ function failedSeriesResult(panel, calibration) {
     reasonCodes: ["missing-series"],
     calibration: publicCalibration(calibration),
     endpoint: null,
+    valueConstraint: null,
     px: 0,
     bbox: { ...panel.bbox },
     row: panel.row,
@@ -598,6 +637,7 @@ export function runAnalysis(data, w, h) {
         reasonCodes: ["missing-calibration"],
         calibration: null,
         endpoint: series.endpoint,
+        valueConstraint: null,
         px: series.px,
         bbox: { ...panel.bbox },
         row: panel.row,
@@ -614,14 +654,24 @@ export function runAnalysis(data, w, h) {
     const reasonCodes = [];
     if (calibration.source === "image-median") reasonCodes.push("fallback-calibration");
     const isShortSeries = series.span < panel.bbox.width * 0.12;
-    const isClipped = isSeriesClipped(series, calibration);
+    const boundaryContact = classifySeriesBoundaryContact(series, calibration);
+    const isEndpointClipped = Boolean(boundaryContact.endpointBoundary);
+    const valueConstraint = clippedValueConstraint(calibration, boundaryContact.endpointBoundary);
     if (isShortSeries) reasonCodes.push("short-series");
-    if (isClipped) reasonCodes.push("clipped-series");
+    if (boundaryContact.historicalBoundaries.length) {
+      reasonCodes.push("historical-boundary-contact");
+    }
+    if (isEndpointClipped) {
+      reasonCodes.push(`endpoint-clipped-${boundaryContact.endpointBoundary}`);
+      // Keep the former reason for callers that have not learned the more precise
+      // top/bottom reason yet.
+      reasonCodes.push("clipped-series");
+    }
     if (confidence < 0.7) reasonCodes.push("low-confidence");
     const status = confidence >= 0.7
       && calibration.source === "panel"
       && !isShortSeries
-      && !isClipped
+      && !isEndpointClipped
       ? "ok"
       : "review";
     diagnostics.analysis[status] += 1;
@@ -633,6 +683,7 @@ export function runAnalysis(data, w, h) {
       reasonCodes,
       calibration: publicCalibration(calibration),
       endpoint: series.endpoint,
+      valueConstraint,
       px: series.px,
       bbox: { ...panel.bbox },
       row: panel.row,

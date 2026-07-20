@@ -16,6 +16,7 @@ export const MACHINE_NUMBER_OCR_CONFIG = Object.freeze({
   maximumDistance: 0.25,
   minimumMargin: 0.015,
   darkThreshold: DARK_THRESHOLD,
+  darkThresholds: Object.freeze([100, 115, 120, 130, 145, 160]),
 });
 
 // 804px幅のSiteSeven画像から採取した数字フォントの二値テンプレート。
@@ -93,6 +94,10 @@ function finiteBox(panel) {
 }
 
 function sampleChannel(data, width, height, x, y, channel) {
+  // 先頭行では台番号ラベルが画像上端ぎりぎりに置かれ、理論上の切り出し枠が
+  // 数pxだけ画像外へ出ることがある。画像外を端の画素で引き延ばすと黒文字が
+  // 増殖するため、白背景として補完する。
+  if (x < 0 || y < 0 || x > width - 1 || y > height - 1) return 255;
   const x0 = Math.max(0, Math.min(width - 1, Math.floor(x)));
   const y0 = Math.max(0, Math.min(height - 1, Math.floor(y)));
   const x1 = Math.min(width - 1, x0 + 1);
@@ -116,8 +121,14 @@ function createLabelMask(data, imageWidth, imageHeight, bbox, threshold) {
   const cropY = bbox.y - LABEL_TOP_FROM_PANEL * scale;
   const cropRight = cropX + cropWidth;
   const cropBottom = cropY + cropHeight;
-  if (scale < 0.2 || scale > 4 || cropX < -0.5 || cropY < -0.5
-    || cropRight > imageWidth + 0.5 || cropBottom > imageHeight + 0.5) {
+  const horizontalPadding = cropWidth * 0.2;
+  const verticalPadding = cropHeight * 0.45;
+  const hasIntersection = cropRight > 0 && cropBottom > 0
+    && cropX < imageWidth && cropY < imageHeight;
+  if (scale < 0.2 || scale > 4 || !hasIntersection
+    || cropX < -horizontalPadding || cropY < -verticalPadding
+    || cropRight > imageWidth + horizontalPadding
+    || cropBottom > imageHeight + verticalPadding) {
     return { mask: null, bbox: { x: cropX, y: cropY, width: cropWidth, height: cropHeight } };
   }
 
@@ -282,7 +293,7 @@ function failedPanel(reasonCodes, labelBbox = null, extra = {}) {
   };
 }
 
-export function readPanelMachineNumber(data, width, height, panel, options = {}) {
+function readPanelMachineNumberAtThreshold(data, width, height, panel, options = {}) {
   if (!data || !Number.isInteger(width) || !Number.isInteger(height)
     || width < 2 || height < 2 || data.length < width * height * 4) {
     return failedPanel(["invalid-image"]);
@@ -330,6 +341,114 @@ export function readPanelMachineNumber(data, width, height, panel, options = {})
   };
 }
 
+function compactAttempt(attempt, darkThreshold) {
+  return {
+    darkThreshold,
+    accepted: attempt.accepted,
+    candidate: attempt.candidate,
+    confidence: attempt.confidence,
+    bestDistance: attempt.bestDistance,
+    margin: attempt.margin,
+    reasonCodes: attempt.reasonCodes,
+    componentCount: attempt.componentCount,
+  };
+}
+
+function mostFrequentCandidate(attempts) {
+  const counts = new Map();
+  for (const attempt of attempts) {
+    if (!/^\d{3}$/.test(String(attempt?.candidate || ""))) continue;
+    counts.set(attempt.candidate, (counts.get(attempt.candidate) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0]?.[0] || null;
+}
+
+// JPEG縮小画像では1つの閾値だけだと「5」と「8」の穴が潰れるなど、同じ数字が
+// 二値化条件だけで入れ替わる。複数閾値で同じ候補が再現した場合だけ自動確定し、
+// 合意しない候補は手動照合用に残す。
+export function readPanelMachineNumber(data, width, height, panel, options = {}) {
+  if (Number.isFinite(options.darkThreshold)) {
+    return readPanelMachineNumberAtThreshold(data, width, height, panel, options);
+  }
+
+  const bbox = finiteBox(panel);
+  if (!bbox || !data || !Number.isInteger(width) || !Number.isInteger(height)
+    || width < 2 || height < 2 || data.length < width * height * 4) {
+    return readPanelMachineNumberAtThreshold(data, width, height, panel, {
+      ...options,
+      darkThreshold: MACHINE_NUMBER_OCR_CONFIG.darkThreshold,
+    });
+  }
+
+  const thresholds = Array.isArray(options.darkThresholds) && options.darkThresholds.length
+    ? options.darkThresholds.filter(Number.isFinite)
+    : MACHINE_NUMBER_OCR_CONFIG.darkThresholds;
+  const attempts = thresholds.map((darkThreshold) => ({
+    darkThreshold,
+    result: readPanelMachineNumberAtThreshold(data, width, height, panel, {
+      ...options,
+      darkThreshold,
+    }),
+  }));
+  const acceptedAttempts = attempts.filter((attempt) => attempt.result.accepted);
+  const acceptedCandidates = new Set(acceptedAttempts.map((attempt) => attempt.result.candidate));
+  const preferredCandidate = mostFrequentCandidate(acceptedAttempts.map((attempt) => attempt.result));
+  const preferredVotes = acceptedAttempts.filter((attempt) => (
+    attempt.result.candidate === preferredCandidate
+  ));
+  const scale = bbox.width / REFERENCE_PANEL_WIDTH;
+  const minimumVotes = scale < 0.75 ? 2 : 1;
+
+  if (preferredCandidate && acceptedCandidates.size === 1 && preferredVotes.length >= minimumVotes) {
+    const best = [...preferredVotes].sort((left, right) => (
+      right.result.confidence - left.result.confidence
+      || left.result.bestDistance - right.result.bestDistance
+    ))[0].result;
+    return {
+      ...best,
+      accepted: true,
+      status: "ok",
+      reasonCodes: [],
+      ensemble: {
+        candidate: preferredCandidate,
+        votes: preferredVotes.length,
+        attempts: attempts.map((attempt) => compactAttempt(attempt.result, attempt.darkThreshold)),
+      },
+    };
+  }
+
+  const allResults = attempts.map((attempt) => attempt.result);
+  const fallbackCandidate = preferredCandidate || mostFrequentCandidate(allResults);
+  const fallbackPool = allResults.filter((result) => (
+    fallbackCandidate ? result.candidate === fallbackCandidate : true
+  ));
+  const fallback = [...fallbackPool].sort((left, right) => (
+    Number(right.accepted) - Number(left.accepted)
+    || (Number.isFinite(left.bestDistance) ? left.bestDistance : Infinity)
+      - (Number.isFinite(right.bestDistance) ? right.bestDistance : Infinity)
+    || right.confidence - left.confidence
+  ))[0] || failedPanel(["threshold-ensemble-unresolved"]);
+  const reasonCodes = [...fallback.reasonCodes];
+  if (acceptedCandidates.size > 1) reasonCodes.push("threshold-disagreement");
+  else if (preferredCandidate && preferredVotes.length < minimumVotes) {
+    reasonCodes.push("insufficient-threshold-consensus");
+  } else reasonCodes.push("threshold-ensemble-unresolved");
+
+  return {
+    ...fallback,
+    accepted: false,
+    status: fallbackCandidate ? "review" : "failed",
+    candidate: fallbackCandidate,
+    reasonCodes: [...new Set(reasonCodes)],
+    ensemble: {
+      candidate: fallbackCandidate,
+      votes: preferredVotes.length,
+      attempts: attempts.map((attempt) => compactAttempt(attempt.result, attempt.darkThreshold)),
+    },
+  };
+}
+
 function duplicateValues(values) {
   const counts = new Map();
   for (const value of values) {
@@ -349,13 +468,16 @@ export function recognizeMachineNumberPage(data, width, height, panels, options 
       candidates: [],
       numbers: [],
       duplicateNumbers: [],
+      recognizedCount: 0,
       slots: [],
     };
   }
 
   let slots = sourcePanels.map((panel) => readPanelMachineNumber(data, width, height, panel, options));
   const candidates = slots.map((slot) => slot.candidate);
-  const duplicateNumbers = duplicateValues(candidates);
+  const duplicateNumbers = duplicateValues(slots.map((slot) => (
+    slot.accepted ? slot.candidate : null
+  )));
   if (duplicateNumbers.length) {
     slots = slots.map((slot) => (
       duplicateNumbers.includes(slot.candidate)
@@ -372,6 +494,7 @@ export function recognizeMachineNumberPage(data, width, height, panels, options 
     status: accepted ? "ok" : "review",
     reasonCodes,
     candidates,
+    recognizedCount: slots.filter((slot) => slot.accepted).length,
     // ページ全件合格前の候補を保存処理が誤用しないよう、numbers は合格時だけ返す。
     numbers: accepted ? candidates : [],
     duplicateNumbers,
@@ -408,6 +531,8 @@ export function combineMachineNumberPages(pages) {
       failedPageIndices: [],
       unresolvedIndices: [],
       duplicateNumbers: [],
+      duplicateMachineNumbers: [],
+      recognizedCount: 0,
       candidates: [],
       numbers: [],
       slots: [],
@@ -425,13 +550,23 @@ export function combineMachineNumberPages(pages) {
         ?? slot?.machineNumberOcr?.candidate
         ?? slot?.machineNumber,
       );
-      entries.push({ slot, candidate, pageIndex, pageSlotIndex, originalIndex: entries.length });
+      const trustedCandidate = (page?.accepted || slot?.machineNumberOcr?.accepted)
+        ? candidate
+        : "";
+      entries.push({
+        slot,
+        candidate,
+        trustedCandidate,
+        pageIndex,
+        pageSlotIndex,
+        originalIndex: entries.length,
+      });
     });
   });
 
-  const duplicateNumbers = duplicateValues(entries.map((entry) => entry.candidate));
+  const duplicateNumbers = duplicateValues(entries.map((entry) => entry.trustedCandidate));
   const unresolvedIndices = entries
-    .filter((entry) => !entry.candidate)
+    .filter((entry) => !entry.trustedCandidate)
     .map((entry) => entry.originalIndex);
   const reasonCodes = [];
   if (failedPageIndices.length) reasonCodes.push("unresolved-page");
@@ -463,6 +598,8 @@ export function combineMachineNumberPages(pages) {
     failedPageIndices,
     unresolvedIndices,
     duplicateNumbers,
+    duplicateMachineNumbers: duplicateNumbers,
+    recognizedCount: entries.filter((entry) => entry.trustedCandidate).length,
     candidates,
     numbers: accepted ? candidates : [],
     slots,

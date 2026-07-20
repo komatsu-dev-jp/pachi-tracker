@@ -18,7 +18,11 @@ import {
   assignNumbers,
   mergeTaiData,
   validateNumberAssignment,
+  validateReviewedNumberAssignment,
   validateDeltaRows,
+  isResolvedDeltaRow,
+  isDeltaValueWithinConstraint,
+  updateDeltaReview,
   islandToNumbers,
   buildSegmentsNumbers,
   makeScan,
@@ -90,6 +94,8 @@ async function analyzeImages(images, onProgress) {
           panelIndex,
           row: slot?.row,
           column: slot?.column,
+          imageWidth: img.width,
+          imageHeight: img.height,
         },
       }));
       numberPages.push({ ...numberOcr, slots: imageResults });
@@ -101,6 +107,7 @@ async function analyzeImages(images, onProgress) {
         review: imageResults.filter((slot) => slot?.status === "review").length,
         missing: imageResults.filter((slot) => !Number.isFinite(slot?.val) || slot?.status === "failed").length,
         machineNumberOcrAccepted: numberOcr.accepted,
+        machineNumberOcrAcceptedCount: numberOcr.recognizedCount || 0,
         machineNumbers: numberOcr.accepted ? numberOcr.numbers : [],
         machineNumberCandidates: numberOcr.candidates || [],
         machineNumberOcrReasons: numberOcr.reasonCodes || [],
@@ -116,6 +123,7 @@ async function analyzeImages(images, onProgress) {
         review: 0,
         missing: 0,
         machineNumberOcrAccepted: false,
+        machineNumberOcrAcceptedCount: 0,
         machineNumbers: [],
         machineNumberCandidates: [],
         machineNumberOcrReasons: ["image-error"],
@@ -471,7 +479,17 @@ function NumbersStep({ slots, reports, numberOcr, islands, onConfirm, onBack }) 
   const missingCount = slots.filter((slot) => !Number.isFinite(slot?.val) || slot?.status === "failed").length;
   const reportErrorCount = (Array.isArray(reports) ? reports : [])
     .filter((report) => report?.error || !Number(report?.total)).length;
-  const hasOcrConflict = (numberOcr?.duplicateMachineNumbers || []).length > 0;
+  const recognizedNumberCount = numberOcr?.recognizedCount
+    ?? slots.filter((slot) => slot?.machineNumberOcr?.accepted).length;
+  const reviewedNumberAssignment = useMemo(
+    () => validateReviewedNumberAssignment(slots, numbers),
+    [slots, numbers],
+  );
+  const trustedOcrMismatches = reviewedNumberAssignment.mismatches;
+  const duplicateOcrNumbers = numberOcr?.duplicateNumbers
+    || numberOcr?.duplicateMachineNumbers
+    || [];
+  const hasOcrConflict = duplicateOcrNumbers.length > 0;
 
   const sourceAssignments = useMemo(() => {
     const list = Array.isArray(reports) ? reports : [];
@@ -506,7 +524,8 @@ function NumbersStep({ slots, reports, numberOcr, islands, onConfirm, onBack }) 
   };
 
   const valid = numberValidation.valid
-    && (numberOcr ? numberOcr.accepted : orderConfirmed)
+    && (numberOcr?.accepted || orderConfirmed)
+    && trustedOcrMismatches.length === 0
     && reportErrorCount === 0
     && !hasOcrConflict;
 
@@ -532,12 +551,13 @@ function NumbersStep({ slots, reports, numberOcr, islands, onConfirm, onBack }) 
         )}
 
         {numberOcr && !numberOcr.accepted && (
-          <div style={{ background: "color-mix(in srgb, var(--red) 12%, transparent)", border: `1px solid color-mix(in srgb, var(--red) 38%, transparent)`, borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
-            <div style={{ fontSize: 14, color: C.red, fontWeight: 900, marginBottom: 4 }}>
-              台番号を安全に照合できません
+          <div style={{ background: "color-mix(in srgb, var(--yellow) 12%, transparent)", border: `1px solid color-mix(in srgb, var(--yellow) 38%, transparent)`, borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
+            <div style={{ fontSize: 14, color: C.yellow, fontWeight: 900, marginBottom: 4 }}>
+              台番号OCRは一部のみ成功（{recognizedNumberCount}/{slotCount}台）
             </div>
-            <div style={{ fontSize: 12, color: C.red, lineHeight: 1.6, fontWeight: 700 }}>
-              手入力の連番では途中ずれを防げないため確定できません。台番号とグラフ全体が見える画像へ撮り直してください。
+            <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.65, fontWeight: 700 }}>
+              小さい文字を無理に推測しません。下の島または区間で番号を割り当て、画像ごとの範囲を確認してください。
+              OCRで確実に読めた番号と1台でも矛盾する場合は確定できません。
             </div>
           </div>
         )}
@@ -558,7 +578,7 @@ function NumbersStep({ slots, reports, numberOcr, islands, onConfirm, onBack }) 
           </div>
         </Card>
 
-        {!numberOcr && <>
+        {!numberOcr?.accepted && <>
         {/* ホールマップから選ぶ */}
         {islands && islands.length > 0 && (
           <Card style={{ marginBottom: 12 }}>
@@ -707,7 +727,8 @@ function NumbersStep({ slots, reports, numberOcr, islands, onConfirm, onBack }) 
                 </div>
                 {report.total > 0 && (
                   <div style={{ fontSize: 12, color: C.subHi, fontFamily: mono, marginTop: 4 }}>
-                    台番号 {formatNumberRanges(report.assigned)} ・ 読取 {report.readable}/{report.total}
+                    台番号 {formatNumberRanges(report.assigned)} ・ グラフ {report.readable}/{report.total}
+                    {!report.machineNumberOcrAccepted && ` ・ 番号OCR ${report.machineNumberOcrAcceptedCount || 0}/${report.total}`}
                   </div>
                 )}
               </div>
@@ -716,7 +737,7 @@ function NumbersStep({ slots, reports, numberOcr, islands, onConfirm, onBack }) 
               {numberOcr
                 ? numberOcr.accepted
                   ? "各画像に表示された台番号で照合済みです。"
-                  : "グラフなし、または台番号を読めない画像を戻って確認してください。"
+                  : "手動で割り当てた範囲を画像ごとに表示しています。番号が飛ぶ位置も確認してください。"
                 : "順番が違う場合は、戻って画像の「←」「→」で並べ替えてください。"}
             </div>
           </Card>
@@ -730,11 +751,18 @@ function NumbersStep({ slots, reports, numberOcr, islands, onConfirm, onBack }) 
 
         {hasOcrConflict && (
           <div style={{ fontSize: 12, color: C.red, lineHeight: 1.6, fontWeight: 700, margin: "0 4px 12px" }}>
-            同じ台番号を複数の画像で検出しました（{numberOcr.duplicateMachineNumbers.join(", ")}）。重複画像を外すまで確定できません。
+            同じ台番号を複数の画像で検出しました（{duplicateOcrNumbers.join(", ")}）。重複画像を外すまで確定できません。
           </div>
         )}
 
-        {!numberOcr && <button
+        {trustedOcrMismatches.length > 0 && (
+          <div style={{ fontSize: 12, color: C.red, lineHeight: 1.6, fontWeight: 700, margin: "0 4px 12px" }}>
+            OCRで確実に読めた番号と手動設定が{trustedOcrMismatches.length}台で一致しません。
+            {trustedOcrMismatches.slice(0, 4).map((item) => ` ${item.index + 1}台目: ${item.actual || "空欄"}→${item.expected}`).join("、")}
+          </div>
+        )}
+
+        {!numberOcr?.accepted && <button
           className="b"
           type="button"
           onClick={() => setOrderConfirmed((current) => !current)}
@@ -750,12 +778,15 @@ function NumbersStep({ slots, reports, numberOcr, islands, onConfirm, onBack }) 
           <span aria-hidden="true" style={{ width: 24, height: 24, borderRadius: 7, border: `2px solid ${orderConfirmed ? C.blue : C.borderHi}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             {orderConfirmed ? "✓" : ""}
           </span>
-          画像の並びと台番号の対応を確認しました
+          各画像のグラフと台番号の対応を1台ずつ確認しました
         </button>}
       </div>
       <BottomCta
         label="この台番号で確定"
-        onClick={() => onConfirm(numbers)}
+        onClick={() => onConfirm(numbers, {
+          manualVerified: !numberOcr?.accepted && orderConfirmed,
+          trustedOcrMismatches,
+        })}
         disabled={!valid}
       />
     </>
@@ -788,11 +819,148 @@ function SegInput({ label, value, onChange, ph }) {
 
 // ════════════ 解析結果 ════════════
 function hasResolvedDelta(row) {
-  return row?.val !== null && row?.val !== undefined && row?.val !== "" &&
-    Number.isFinite(Number(row.val)) && row?.status === "ok";
+  return isResolvedDeltaRow(row);
 }
 
-function ResultsStep({ rows, machineName, onBack, onSave, onOpenImport, saved, customMachines }) {
+function reviewReasonText(row) {
+  const reasons = Array.isArray(row?.reasonCodes) ? row.reasonCodes : [];
+  if (reasons.includes("endpoint-clipped-top")) {
+    return "終点がグラフ上限で切れています。表示値よりプラス側へ大きい可能性があります。";
+  }
+  if (reasons.includes("endpoint-clipped-bottom")) {
+    return "終点がグラフ下限で切れています。表示値よりマイナス側へ大きい可能性があります。";
+  }
+  if (reasons.includes("short-series")) {
+    return "折れ線が短いため、終点位置を元画像と照らし合わせてください。";
+  }
+  if (reasons.includes("fallback-calibration")) {
+    return "この枠だけ目盛りを十分に読めず、同じ画像の目盛りを参照しています。";
+  }
+  return "候補差玉と折れ線の終点を元画像で確認してください。";
+}
+
+function constraintText(row) {
+  const constraint = row?.valueConstraint;
+  if (!constraint || !Number.isFinite(Number(constraint.value))) return "";
+  if (constraint.kind === "lower-bound") return `${sp(Number(constraint.value))}玉以上の入力が必要です`;
+  if (constraint.kind === "upper-bound") return `${sp(Number(constraint.value))}玉以下の入力が必要です`;
+  return "";
+}
+
+function GraphReviewPreview({ row, image }) {
+  const bbox = row?.bbox;
+  const imageWidth = Number(row?.source?.imageWidth);
+  const imageHeight = Number(row?.source?.imageHeight);
+  if (!image?.dataUrl || !bbox || ![bbox.x, bbox.y, bbox.width, bbox.height, imageWidth, imageHeight].every(Number.isFinite)) {
+    return null;
+  }
+  const topPadding = Math.min(bbox.y, Math.max(18, Math.round(bbox.height * 0.24)));
+  const cropX = Math.max(0, bbox.x);
+  const cropY = Math.max(0, bbox.y - topPadding);
+  const cropWidth = Math.min(imageWidth - cropX, bbox.width);
+  const cropHeight = Math.min(imageHeight - cropY, bbox.height + topPadding);
+  if (!(cropWidth > 0) || !(cropHeight > 0)) return null;
+
+  return (
+    <div style={{
+      position: "relative", width: "100%", maxWidth: 340,
+      aspectRatio: `${cropWidth} / ${cropHeight}`,
+      overflow: "hidden", borderRadius: 10,
+      border: `1px solid ${C.borderHi}`, background: "#fff",
+    }}>
+      <img
+        src={image.dataUrl}
+        alt={`台${row.num}の確認用グラフ`}
+        style={{
+          position: "absolute",
+          width: `${(imageWidth / cropWidth) * 100}%`,
+          maxWidth: "none",
+          left: `${(-cropX / cropWidth) * 100}%`,
+          top: `${(-cropY / cropHeight) * 100}%`,
+          pointerEvents: "none",
+          userSelect: "none",
+        }}
+      />
+    </div>
+  );
+}
+
+function ReviewValueEditor({ row, onUpdate }) {
+  const [draft, setDraft] = useState(String(row?.val ?? ""));
+  const normalized = draft.normalize("NFKC").replace(/[−‐‑‒–—―﹣]/g, "-").replace(/[,，\s]/g, "");
+  const numericValid = /^[+-]?\d+$/.test(normalized) && Number.isSafeInteger(Number(normalized));
+  const parsedValue = numericValid ? Number(normalized) : null;
+  const constraintValid = numericValid && isDeltaValueWithinConstraint(row, parsedValue);
+  const valid = numericValid && constraintValid;
+  const commit = () => {
+    if (!valid) return;
+    const value = parsedValue;
+    if (value !== Number(row?.val)) onUpdate({ value });
+  };
+  const reviewConfirmed = row?.reviewConfirmed === true
+    && isDeltaValueWithinConstraint(row, row?.val);
+  const toggleConfirmation = () => {
+    if (reviewConfirmed) {
+      onUpdate({ confirmed: false });
+      return;
+    }
+    // 入力中の値と確認操作を同時に渡す。無効な下書きのときに、
+    // ひとつ前の候補値だけを誤って確認済みにしないための保存ガード。
+    if (valid) onUpdate({ value: parsedValue, confirmed: true });
+  };
+  return (
+    <>
+      <div style={{ flex: 1, minWidth: 132 }}>
+        <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, marginBottom: 4 }}>確認後の差玉</div>
+        <input
+          type="text"
+          inputMode="numeric"
+          value={draft}
+          disabled={reviewConfirmed}
+          aria-label={`台${row?.num}の確認後差玉`}
+          aria-invalid={!valid}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+          }}
+          style={{
+            width: "100%", minHeight: TAP, boxSizing: "border-box",
+            borderRadius: 10, border: `1px solid ${valid ? C.borderHi : C.red}`,
+            background: reviewConfirmed ? C.surface : C.surfaceHi,
+            color: C.text, fontSize: 18, fontFamily: mono, fontWeight: 900,
+            padding: "0 10px", opacity: reviewConfirmed ? 0.72 : 1,
+          }}
+        />
+        {!valid && !reviewConfirmed && (
+          <div role="alert" style={{ color: C.red, fontSize: 10, fontWeight: 800, marginTop: 4 }}>
+            {numericValid ? constraintText(row) || "許可された範囲で入力してください" : "数字で入力してください"}
+          </div>
+        )}
+      </div>
+      <button
+        className="b"
+        type="button"
+        role="checkbox"
+        aria-checked={reviewConfirmed}
+        disabled={!reviewConfirmed && !valid}
+        onClick={toggleConfirmation}
+        style={{
+          flex: "1 1 170px", minHeight: TAP, borderRadius: 10,
+          border: `1px solid ${reviewConfirmed ? C.green : valid ? C.yellow : C.border}`,
+          background: reviewConfirmed ? "color-mix(in srgb, var(--green) 13%, transparent)" : "color-mix(in srgb, var(--yellow) 10%, transparent)",
+          color: reviewConfirmed ? C.green : valid ? C.yellow : C.sub,
+          fontSize: 12, fontWeight: 900, padding: "8px 10px",
+          opacity: !reviewConfirmed && !valid ? 0.6 : 1,
+        }}
+      >
+        {reviewConfirmed ? "✓ この値で確認済み" : "この値を目視確認して確定"}
+      </button>
+    </>
+  );
+}
+
+function ResultsStep({ rows, images, machineName, onBack, onSave, onOpenImport, onUpdateReview, saved, customMachines }) {
   const [sortBy, setSortBy] = useState("delta");
 
   const rowValidation = useMemo(() => validateDeltaRows(rows), [rows]);
@@ -839,6 +1007,9 @@ function ResultsStep({ rows, machineName, onBack, onSave, onOpenImport, saved, c
     return map;
   }, [rows, machineName, customMachines]);
   const predictedCount = Array.from(predictionByNum.values()).filter((item) => item.hasEstimate).length;
+  const pendingReviewCount = rowValidation.pendingReviewIndices.length;
+  const confirmedReviewCount = rowValidation.confirmedReviewIndices.length;
+  const missingDeltaCount = rowValidation.missingIndices.length;
   const saveDisabled = saved || !rowValidation.valid;
 
   return (
@@ -859,7 +1030,13 @@ function ResultsStep({ rows, machineName, onBack, onSave, onOpenImport, saved, c
               fontSize: 14, fontWeight: 800,
             }}
           >
-            {saved ? "保存済み ✓" : rowValidation.valid ? "保存" : "保存不可"}
+            {saved
+              ? "保存済み ✓"
+              : rowValidation.valid
+                ? "保存"
+                : pendingReviewCount > 0 && missingDeltaCount === 0
+                  ? `確認待ち${pendingReviewCount}`
+                  : "保存不可"}
           </button>
         )}
       />
@@ -900,21 +1077,27 @@ function ResultsStep({ rows, machineName, onBack, onSave, onOpenImport, saved, c
             </div>
             <div style={{ fontSize: 12, color: predictedCount > 0 ? C.green : C.sub, fontWeight: 700, marginTop: 10 }}>
               読取 {rowValidation.resolvedCount}/{rows.length}台 ・ 予測回転率 {predictedCount}台
+              {confirmedReviewCount > 0 && ` ・ 目視確認済み ${confirmedReviewCount}台`}
             </div>
           </div>
         </Card>
 
         {!rowValidation.valid && (
           <div style={{
-            background: "color-mix(in srgb, var(--red) 12%, transparent)",
-            border: `1px solid color-mix(in srgb, var(--red) 38%, transparent)`,
+            background: pendingReviewCount > 0 && missingDeltaCount === 0
+              ? "color-mix(in srgb, var(--yellow) 12%, transparent)"
+              : "color-mix(in srgb, var(--red) 12%, transparent)",
+            border: `1px solid color-mix(in srgb, ${pendingReviewCount > 0 && missingDeltaCount === 0 ? "var(--yellow)" : "var(--red)"} 38%, transparent)`,
             borderRadius: 14, padding: "12px 14px", marginBottom: 12,
           }}>
-            <div style={{ fontSize: 14, color: C.red, fontWeight: 900, marginBottom: 5 }}>
-              未解決のため保存できません
+            <div style={{ fontSize: 14, color: pendingReviewCount > 0 && missingDeltaCount === 0 ? C.yellow : C.red, fontWeight: 900, marginBottom: 5 }}>
+              {pendingReviewCount > 0 && missingDeltaCount === 0
+                ? `候補値を目視確認してください（残り${pendingReviewCount}台）`
+                : "未解決のため保存できません"}
             </div>
-            <div style={{ fontSize: 12, color: C.red, lineHeight: 1.65, fontWeight: 700 }}>
-              {rowValidation.unresolvedCount > 0 && `差玉を読めない台が${rowValidation.unresolvedCount}台あります。折れ線が画面に表示された状態で撮り直してください。取り込み値だけでは差玉を確定しません。`}
+            <div style={{ fontSize: 12, color: pendingReviewCount > 0 && missingDeltaCount === 0 ? C.subHi : C.red, lineHeight: 1.65, fontWeight: 700 }}>
+              {pendingReviewCount > 0 && `候補差玉と元グラフを照合し、各カードの「この値で確認済み」をチェックしてください。`}
+              {missingDeltaCount > 0 && ` 折れ線を読めない台が${missingDeltaCount}台あります。折れ線が表示された画像へ撮り直してください。`}
               {rowValidation.duplicateNumbers.length > 0 && ` 重複台番号: ${rowValidation.duplicateNumbers.join(", ")}`}
               {rowValidation.blankNumberIndices.length > 0 && " 台番号が空欄の行があります。"}
             </div>
@@ -947,59 +1130,89 @@ function ResultsStep({ rows, machineName, onBack, onSave, onOpenImport, saved, c
         {/* 結果カードリスト */}
         {sorted.map((r, i) => {
           const resolved = hasResolvedDelta(r);
+          const isReview = r.status === "review";
+          const reviewConfirmed = isReview && resolved && r.reviewConfirmed === true;
           const tone = resolved
             ? getRankTone(r.rank)
-            : { color: r.status === "review" ? C.yellow : C.red, bg: r.status === "review" ? "color-mix(in srgb, var(--yellow) 14%, transparent)" : "color-mix(in srgb, var(--red) 12%, transparent)" };
+            : { color: isReview ? C.yellow : C.red, bg: isReview ? "color-mix(in srgb, var(--yellow) 14%, transparent)" : "color-mix(in srgb, var(--red) 12%, transparent)" };
           const hasTai = r.normalSpins != null && r.totalStarts != null;
           const prediction = predictionByNum.get(String(r.num));
           const predicted = prediction?.evidence;
+          const sourceImage = Number.isInteger(r.source?.imageIndex)
+            ? images?.[r.source.imageIndex]
+            : null;
+          const boundWarning = constraintText(r);
           return (
-            <div key={`${r.num}-${i}`} style={{
-              display: "flex", alignItems: "center", gap: 12,
+            <div key={`${r.num}-${r.source?.imageIndex ?? "x"}-${r.source?.panelIndex ?? i}`} style={{
               background: C.surface, border: `1px solid ${C.border}`,
               borderRadius: 16, padding: "12px 14px", marginBottom: 10,
             }}>
-              <div style={{
-                width: 56, height: 56, borderRadius: 12, flexShrink: 0,
-                background: tone.bg, border: `1px solid color-mix(in srgb, ${tone.color} 40%, transparent)`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>
-                <span style={{ fontSize: resolved ? 20 : 12, fontWeight: 900, color: tone.color, fontFamily: mono }}>
-                  {resolved ? r.rank : r.status === "review" ? "確認" : "未読取"}
-                </span>
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 19, fontWeight: 800, color: C.text }}>台{r.num}</div>
-                <div style={{ fontSize: 12, color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {r.machineName || machineName || "—"}
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{
+                  width: 56, height: 56, borderRadius: 12, flexShrink: 0,
+                  background: tone.bg, border: `1px solid color-mix(in srgb, ${tone.color} 40%, transparent)`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <span style={{ fontSize: resolved && !reviewConfirmed ? 20 : 11, fontWeight: 900, color: tone.color, fontFamily: mono, textAlign: "center", lineHeight: 1.25 }}>
+                    {reviewConfirmed ? "確認済" : resolved ? r.rank : isReview ? "要確認" : "未読取"}
+                  </span>
                 </div>
-                {!resolved && (
-                  <div style={{ fontSize: 10, color: tone.color, marginTop: 3, fontWeight: 800, lineHeight: 1.45 }}>
-                    {r.status === "review" ? "折れ線の終点を確認してください" : "元画像に折れ線が描画されていません"}
-                    {Number.isInteger(r.source?.imageIndex) ? `（画像${r.source.imageIndex + 1}${Number.isInteger(r.source?.row) ? `・${r.source.row + 1}行目` : ""}）` : ""}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 19, fontWeight: 800, color: C.text }}>台{r.num}</div>
+                  <div style={{ fontSize: 12, color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {r.machineName || machineName || "—"}
                   </div>
-                )}
-                {hasTai && (
-                  <div style={{ fontSize: 11, color: C.subHi, fontFamily: mono, marginTop: 2 }}>
-                    回転数 {f(r.normalSpins)} / 当り {f(r.totalStarts)}回
-                  </div>
-                )}
-                {predicted?.hasEstimate ? (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0 6px", fontSize: 11, color: C.green, fontFamily: mono, marginTop: 4, fontWeight: 800, lineHeight: 1.5 }}>
-                    <span style={{ whiteSpace: "nowrap" }}>予測 {predicted.predictedRotation.toFixed(1)}回/K</span>
-                    <span style={{ color: C.subHi, whiteSpace: "nowrap" }}>
-                      差 {predicted.borderDifference >= 0 ? "+" : ""}{predicted.borderDifference.toFixed(1)} / 信頼度 {Math.round(predicted.confidence * 100)}%
-                    </span>
-                  </div>
-                ) : hasTai ? (
-                  <div style={{ fontSize: 10, color: C.yellow, marginTop: 4, fontWeight: 700 }}>
-                    予測回転率: {prediction?.reason || "計算データ不足"}
-                  </div>
-                ) : null}
+                  {!resolved && !isReview && (
+                    <div style={{ fontSize: 10, color: tone.color, marginTop: 3, fontWeight: 800, lineHeight: 1.45 }}>
+                      元画像に折れ線が描画されていません
+                      {Number.isInteger(r.source?.imageIndex) ? `（画像${r.source.imageIndex + 1}${Number.isInteger(r.source?.row) ? `・${r.source.row + 1}行目` : ""}）` : ""}
+                    </div>
+                  )}
+                  {hasTai && (
+                    <div style={{ fontSize: 11, color: C.subHi, fontFamily: mono, marginTop: 2 }}>
+                      回転数 {f(r.normalSpins)} / 当り {f(r.totalStarts)}回
+                    </div>
+                  )}
+                  {predicted?.hasEstimate ? (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0 6px", fontSize: 11, color: C.green, fontFamily: mono, marginTop: 4, fontWeight: 800, lineHeight: 1.5 }}>
+                      <span style={{ whiteSpace: "nowrap" }}>予測 {predicted.predictedRotation.toFixed(1)}回/K</span>
+                      <span style={{ color: C.subHi, whiteSpace: "nowrap" }}>
+                        差 {predicted.borderDifference >= 0 ? "+" : ""}{predicted.borderDifference.toFixed(1)} / 信頼度 {Math.round(predicted.confidence * 100)}%
+                      </span>
+                    </div>
+                  ) : hasTai ? (
+                    <div style={{ fontSize: 10, color: C.yellow, marginTop: 4, fontWeight: 700 }}>
+                      予測回転率: {prediction?.reason || "計算データ不足"}
+                    </div>
+                  ) : null}
+                </div>
+                <div style={{ fontSize: resolved || isReview ? 21 : 15, fontWeight: 900, fontFamily: mono, color: resolved ? (r.val >= 0 ? C.green : C.red) : tone.color, flexShrink: 0, textAlign: "right" }}>
+                  {resolved || isReview ? sp(r.val) : "—"}
+                  {isReview && !reviewConfirmed && <div style={{ fontSize: 9, color: C.yellow, marginTop: 2 }}>候補値</div>}
+                </div>
               </div>
-              <div style={{ fontSize: resolved ? 22 : 15, fontWeight: 900, fontFamily: mono, color: resolved ? (r.val >= 0 ? C.green : C.red) : tone.color, flexShrink: 0 }}>
-                {resolved ? sp(r.val) : "—"}
-              </div>
+
+              {isReview && (
+                <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
+                  <GraphReviewPreview row={r} image={sourceImage} />
+                  <div style={{ fontSize: 12, color: reviewConfirmed ? C.green : C.yellow, lineHeight: 1.6, fontWeight: 800, marginTop: 9 }}>
+                    {reviewReasonText(r)}
+                    {boundWarning && <div style={{ color: C.red }}>{boundWarning}</div>}
+                    {Number.isInteger(r.source?.imageIndex) && (
+                      <div style={{ color: C.subHi, fontWeight: 700 }}>
+                        画像{r.source.imageIndex + 1}{Number.isInteger(r.source?.row) ? `・${r.source.row + 1}行目` : ""}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginTop: 10 }}>
+                    <ReviewValueEditor
+                      key={r.num}
+                      row={r}
+                      onUpdate={(update) => onUpdateReview?.(r.num, update)}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
@@ -1752,19 +1965,30 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
     // 0台のときは upload に留まる（やり直し可能）
   };
 
-  const handleConfirmNumbers = (numbers) => {
+  const handleConfirmNumbers = (numbers, options = {}) => {
     const validation = validateNumberAssignment(slots, numbers);
+    const reviewedNumberAssignment = validateReviewedNumberAssignment(slots, numbers);
     const hasImageError = analysisReports.some((report) => report?.error || !Number(report?.total));
-    const hasOcrConflict = (analysisNumberOcr?.duplicateMachineNumbers || []).length > 0;
+    const hasOcrConflict = (
+      analysisNumberOcr?.duplicateNumbers
+      || analysisNumberOcr?.duplicateMachineNumbers
+      || []
+    ).length > 0;
     const ocrOrderMismatch = analysisNumberOcr?.accepted && slots.some((slot, index) => (
       String(slot?.machineNumber || "") !== String(numbers[index] || "")
     ));
-    if (!analysisNumberOcr?.accepted || !validation.valid || hasImageError || hasOcrConflict || ocrOrderMismatch) {
+    const numberSourceAccepted = analysisNumberOcr?.accepted
+      || (options.manualVerified === true && reviewedNumberAssignment.mismatchIndices.length === 0);
+    if (!numberSourceAccepted || !validation.valid || hasImageError || hasOcrConflict || ocrOrderMismatch) {
       setToast("検出台数と台番号を1台ずつ一致させてください");
       setTimeout(() => setToast(""), 3000);
       return;
     }
-    setRows(assignNumbers(slots, numbers));
+    setRows(assignNumbers(slots, numbers).map((row) => ({
+      ...row,
+      machineNumberSource: analysisNumberOcr?.accepted ? "ocr" : "manual-verified",
+      machineNumberVerified: true,
+    })));
     setSaved(false);
     setStep("results");
   };
@@ -1785,6 +2009,18 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
     });
     onSaveScan?.(scan);
     setSaved(true);
+  };
+
+  const handleUpdateReview = (machineNumber, update = {}) => {
+    setRows((current) => current.map((row) => (
+      String(row?.num) === String(machineNumber)
+        ? updateDeltaReview(row, {
+          ...update,
+          reviewedAt: update.confirmed === true ? new Date().toISOString() : undefined,
+        })
+        : row
+    )));
+    setSaved(false);
   };
 
   const handleMerge = (taiRows) => {
@@ -1852,10 +2088,12 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
       {step === "results" && (
         <ResultsStep
           rows={rows}
+          images={images}
           machineName={machineName}
           onBack={() => setStep("numbers")}
           onSave={handleSave}
           onOpenImport={() => setStep("import")}
+          onUpdateReview={handleUpdateReview}
           saved={saved}
           customMachines={customMachines}
         />
