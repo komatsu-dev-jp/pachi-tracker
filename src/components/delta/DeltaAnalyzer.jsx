@@ -28,7 +28,13 @@ import {
   makeScan,
 } from "./deltaSelectors";
 import { readTaiDataAttachments } from "./aiReader";
-import { buildSiteSevenImageOcrPrompt, classifySiteSevenFile, readSiteSevenCsv } from "./siteSevenDataInput";
+import {
+  classifySiteSevenFile,
+  mergeSiteSevenParsedResults,
+  parseSiteSevenEditableInteger,
+  prepareSiteSevenImportedRows,
+  readSiteSevenCsv,
+} from "./siteSevenDataInput";
 import { buildRowDeltaEvidence } from "./deltaEvidence";
 import { machineDB } from "../../machineDB";
 
@@ -1235,38 +1241,15 @@ function ResultsStep({ rows, images, machineName, onBack, onSave, onOpenImport, 
   );
 }
 
-function parseEditableInteger(value) {
-  const normalized = String(value ?? "")
-    .normalize("NFKC")
-    .replace(/[，,]/g, "")
-    .trim();
-  if (!/^-?\d+$/.test(normalized)) return null;
-  const parsed = Number.parseInt(normalized, 10);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function prepareImportedRows(rows) {
-  const valid = [];
-  let invalidCount = 0;
-  for (const row of Array.isArray(rows) ? rows : []) {
-    const num = parseEditableInteger(row?.num);
-    const normalSpins = parseEditableInteger(row?.normalSpins);
-    const totalStarts = parseEditableInteger(row?.totalStarts);
-    if (num === null || normalSpins === null || totalStarts === null) {
-      invalidCount += 1;
-      continue;
-    }
-    const machineName = String(row?.machineName || "").trim();
-    valid.push({
-      ...row,
-      num: String(num),
-      machineName,
-      island: machineName ? `${machineName}島` : "",
-      normalSpins,
-      totalStarts,
-    });
-  }
-  return { rows: valid, invalidCount };
+function canConfirmSiteSevenRow(row, rowIndex, rows, expectedNumberSet) {
+  const values = [row?.num, row?.normalSpins, row?.totalStarts]
+    .map((value) => parseSiteSevenEditableInteger(value));
+  if (values.some((value) => value === null || value < 0) || values[0] <= 0) return false;
+  const num = String(values[0]);
+  if (expectedNumberSet.size > 0 && !expectedNumberSet.has(num)) return false;
+  return (Array.isArray(rows) ? rows : []).every((other, otherIndex) => (
+    otherIndex === rowIndex || String(parseSiteSevenEditableInteger(other?.num)) !== num
+  ));
 }
 
 // ════════════ 台データ取り込み ════════════
@@ -1280,6 +1263,7 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
   const [text, setText] = useState("");
 
   const dataFileRef = useRef(null);
+  const dataRequestIdRef = useRef(0);
   const [dataRows, setDataRows] = useState([]);
   const [dataBusy, setDataBusy] = useState(false);
   const [dataError, setDataError] = useState("");
@@ -1289,6 +1273,7 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
 
   const hasKey = typeof aiApiKey === "string" && aiApiKey.trim() !== "";
   const aiFileRef = useRef(null);
+  const aiRequestIdRef = useRef(0);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiOk, setAiOk] = useState(false);
@@ -1297,13 +1282,13 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
   const [showKeyForm, setShowKeyForm] = useState(false);
   const [keyInput, setKeyInput] = useState("");
 
-  // PDF/CSVは端末内で解析し、写真だけを設定済みのAI補助へ送る。
+  // PDF・CSV・写真をすべて端末内で解析する。写真にも外部APIは使わない。
   const handleSiteSevenFiles = async (files) => {
     const selected = Array.from(files || []);
     const classified = selected
       .map((file) => ({ file, kind: classifySiteSevenFile(file) }))
       .filter((entry) => entry.kind);
-    if (!classified.length || dataBusy) {
+    if (!classified.length || dataBusy || aiBusy) {
       if (selected.length) setDataError("PDF・JPEG/PNG/WebP画像・CSVのいずれかを選んでください");
       return;
     }
@@ -1311,102 +1296,131 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
     const pdfFiles = classified.filter(({ kind }) => kind === "pdf").map(({ file }) => file);
     const csvFiles = classified.filter(({ kind }) => kind === "csv").map(({ file }) => file);
     const imageFiles = classified.filter(({ kind }) => kind === "image").map(({ file }) => file);
+    const requestId = ++dataRequestIdRef.current;
+    aiRequestIdRef.current += 1;
 
     setDataBusy(true);
+    setAiBusy(false);
+    setDataRows([]);
     setDataError("");
     setDataSummary(null);
     setDataFilter("");
     setShowAllDataRows(false);
+    setText("");
     try {
       const results = [];
+      const failedFiles = [];
+      const rememberFailure = (file, error) => {
+        failedFiles.push({
+          name: file?.name || "名称不明のファイル",
+          message: error instanceof Error ? error.message : "読み取りに失敗しました",
+        });
+      };
 
       if (pdfFiles.length) {
         // PDF.jsはこの操作をした時だけ読み込み、通常画面の起動を重くしない。
         const { readSiteSevenPdf } = await import("./siteSevenPdfReader.js");
         for (const file of pdfFiles) {
-          const parsedPdf = await readSiteSevenPdf(file, {
-            dateText: todaySlash(),
-            storeName: store?.name || "",
-          });
-          results.push(parsedPdf);
+          try {
+            const parsedPdf = await readSiteSevenPdf(file, {
+              dateText: todaySlash(),
+              storeName: store?.name || "",
+            });
+            results.push({ result: parsedPdf, kind: "pdf" });
+          } catch (error) {
+            rememberFailure(file, error);
+          }
         }
       }
 
       if (csvFiles.length) {
         for (const file of csvFiles) {
-          const parsedCsv = await readSiteSevenCsv(file, {
-            dateText: todaySlash(),
-            storeName: store?.name || "",
-          });
-          results.push(parsedCsv);
+          try {
+            const parsedCsv = await readSiteSevenCsv(file, {
+              dateText: todaySlash(),
+              storeName: store?.name || "",
+            });
+            results.push({ result: parsedCsv, kind: "csv" });
+          } catch (error) {
+            rememberFailure(file, error);
+          }
         }
       }
 
-      let pendingImageCount = 0;
-      if (imageFiles.length && hasKey) {
-        const attachments = await Promise.all(imageFiles.map((file) => fileToAttachment(file)));
-        const imagePrompt = buildSiteSevenImageOcrPrompt({
-          dateText: todaySlash(),
-          storeName: store?.name || "",
-          expectedNumbers: (Array.isArray(deltaRows) ? deltaRows : []).map((row) => row?.num),
-        });
-        const imageResult = await readTaiDataAttachments({
-          apiKey: aiApiKey,
-          attachments,
-          prompt: imagePrompt,
-        });
-        if (!imageResult.ok) throw new Error(imageResult.message || "写真の読み取りに失敗しました");
-        const parsedImage = parseTaiDataText(imageResult.text);
-        if (!parsedImage.rows.length) {
-          throw new Error("写真から台データを確認できませんでした。表全体が鮮明に入るよう撮影してください");
+      let degradedImageCount = 0;
+      if (imageFiles.length) {
+        // 数字字体テンプレートを含むため、写真を選んだ時だけOCRコードを読み込む。
+        const { readSiteSevenImage } = await import("./siteSevenImageOcr.js");
+        const expectedNumbers = (Array.isArray(deltaRows) ? deltaRows : []).map((row) => row?.num);
+        for (const file of imageFiles) {
+          try {
+            const parsedImage = await readSiteSevenImage(file, {
+              dateText: todaySlash(),
+              storeName: store?.name || "",
+              expectedNumbers,
+            });
+            if (parsedImage.degradedImage) degradedImageCount += 1;
+            results.push({ result: parsedImage, kind: "image" });
+          } catch (error) {
+            rememberFailure(file, error);
+          }
         }
-        results.push({ ...parsedImage, duplicates: [] });
-      } else if (imageFiles.length) {
-        pendingImageCount = imageFiles.length;
-        setShowKeyForm(true);
       }
 
-      const byNumber = new Map();
-      let skippedCount = 0;
-      let duplicateCount = 0;
-      for (const result of results) {
-        skippedCount += Array.isArray(result.skipped) ? result.skipped.length : 0;
-        duplicateCount += Array.isArray(result.duplicates) ? result.duplicates.length : 0;
-        for (const row of result.rows || []) {
-          if (byNumber.has(String(row.num))) duplicateCount += 1;
-          byNumber.set(String(row.num), row);
-        }
+      const expectedNumbers = (Array.isArray(deltaRows) ? deltaRows : []).map((row) => row?.num);
+      if (!results.length) {
+        const failureDetail = failedFiles[0]
+          ? `（${failedFiles[0].name}：${failedFiles[0].message}）`
+          : "";
+        throw new Error(`選んだファイルを1件も読み取れませんでした${failureDetail}`);
       }
-      const nextRows = Array.from(byNumber.values());
-      if (!nextRows.length && pendingImageCount) {
-        throw new Error("写真の文字読み取りにはAI補助のAPIキーが必要です。下の設定欄から登録後、もう一度写真を選んでください");
+      const mergedResults = mergeSiteSevenParsedResults(results, { expectedNumbers });
+      const nextRows = mergedResults.rows;
+      if (!nextRows.length) {
+        const failureDetail = failedFiles[0]
+          ? `（${failedFiles[0].name}：${failedFiles[0].message}）`
+          : "";
+        throw new Error(`選んだファイルから台データを確認できませんでした${failureDetail}`);
       }
+      if (requestId !== dataRequestIdRef.current) return;
       setDataRows(nextRows);
       setDataSummary({
-        fileCount: classified.length - pendingImageCount,
-        rowCount: nextRows.length,
-        skippedCount,
-        duplicateCount,
-        pdfCount: pdfFiles.length,
-        csvCount: csvFiles.length,
-        imageCount: imageFiles.length - pendingImageCount,
-        pendingImageCount,
+        fileCount: results.length,
+        rowCount: mergedResults.recognizedCount,
+        skippedCount: mergedResults.reviewCount,
+        duplicateCount: mergedResults.duplicateCount,
+        missingCount: mergedResults.missingNumbers.length,
+        pdfCount: results.filter((entry) => entry.kind === "pdf").length,
+        csvCount: results.filter((entry) => entry.kind === "csv").length,
+        imageCount: results.filter((entry) => entry.kind === "image").length,
+        degradedImageCount,
+        failedFileCount: failedFiles.length,
       });
-      if (pendingImageCount) {
-        setDataError(`写真${pendingImageCount}枚はまだ読んでいません。AI補助のAPIキーを設定してから、写真をもう一度選んでください`);
+      if (failedFiles.length) {
+        setDataError(`読み取れないファイルが${failedFiles.length}件ありました。成功したファイルの結果は残しています。${failedFiles.map((item) => `${item.name}：${item.message}`).join("／")}`);
       }
     } catch (error) {
+      if (requestId !== dataRequestIdRef.current) return;
       setDataRows([]);
       setDataError(error instanceof Error ? error.message : "台データの読み取りに失敗しました");
     } finally {
-      setDataBusy(false);
+      if (requestId === dataRequestIdRef.current) setDataBusy(false);
     }
   };
 
   const changeDataRow = (index, field, value) => {
     setDataRows((current) => current.map((row, rowIndex) =>
-      rowIndex === index ? { ...row, [field]: value } : row
+      rowIndex === index
+        ? { ...row, [field]: value, reviewConfirmed: false }
+        : row
     ));
+  };
+  const confirmDataRow = (index, checked) => {
+    setDataRows((current) => current.map((row, rowIndex) => {
+      if (rowIndex !== index) return row;
+      const canConfirm = canConfirmSiteSevenRow(row, rowIndex, current, deltaNumberSet);
+      return { ...row, reviewConfirmed: checked && canConfirm };
+    }));
   };
 
   // 差玉画像と大当たり情報（画像/PDF）をまとめて読み込み、1回のAI処理へ渡す。
@@ -1414,15 +1428,22 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
     const supported = Array.from(files || []).filter((file) =>
       file.type.startsWith("image/") || file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
     );
-    if (!supported.length || aiBusy) return;
+    if (!supported.length || aiBusy || dataBusy) return;
+    const requestId = ++aiRequestIdRef.current;
     setAiError("");
     setAiOk(false);
     setAiFileCount(supported.length);
     setAiBusy(true);
+    dataRequestIdRef.current += 1;
+    setDataBusy(false);
+    setDataRows([]);
+    setDataSummary(null);
+    setDataError("");
+    setText("");
     try {
       const attachments = await Promise.all(supported.map((file) => fileToAttachment(file)));
       const result = await readTaiDataAttachments({ apiKey: aiApiKey, attachments, prompt });
-      setAiBusy(false);
+      if (requestId !== aiRequestIdRef.current) return;
       if (result.ok) {
         setText(result.text);
         setAiOk(true);
@@ -1431,8 +1452,10 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
         setAiError(result.message || "読み取りに失敗しました");
       }
     } catch {
-      setAiBusy(false);
+      if (requestId !== aiRequestIdRef.current) return;
       setAiError("画像またはPDFの読み込みに失敗しました");
+    } finally {
+      if (requestId === aiRequestIdRef.current) setAiBusy(false);
     }
   };
 
@@ -1451,35 +1474,52 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
   const maskedKey = hasKey ? `${aiApiKey.trim().slice(0, 7)}••••` : "";
 
   const parsed = useMemo(() => parseTaiDataText(text), [text]);
-  const preparedData = useMemo(() => prepareImportedRows(dataRows), [dataRows]);
-  // 選択ファイルを基本にし、手動貼り付けまたはAI出力が同じ台番号にあれば後者を優先する。
+  const expectedDataNumbers = useMemo(
+    () => (Array.isArray(deltaRows) ? deltaRows : []).map((row) => row?.num),
+    [deltaRows]
+  );
+  const preparedData = useMemo(() => prepareSiteSevenImportedRows(dataRows, {
+    expectedNumbers: expectedDataNumbers,
+  }), [dataRows, expectedDataNumbers]);
+  const preparedText = useMemo(() => prepareSiteSevenImportedRows(parsed.rows, {
+    expectedNumbers: expectedDataNumbers,
+  }), [parsed.rows, expectedDataNumbers]);
+  // 手動・外部AIの値より、画面で確認した端末内ファイルの値を優先する。
   const importRows = useMemo(() => {
     const byNumber = new Map();
+    for (const row of preparedText.rows) byNumber.set(String(row.num), row);
     for (const row of preparedData.rows) byNumber.set(String(row.num), row);
-    for (const row of parsed.rows) byNumber.set(String(row.num), row);
     return Array.from(byNumber.values());
-  }, [preparedData.rows, parsed.rows]);
+  }, [preparedData.rows, preparedText.rows]);
   const recognized = importRows.length;
   const deltaNumberSet = useMemo(
     () => new Set((Array.isArray(deltaRows) ? deltaRows : []).map((row) => String(row.num))),
     [deltaRows]
   );
   const dataMatchedCount = useMemo(
-    () => preparedData.rows.filter((row) => deltaNumberSet.has(String(row.num))).length,
-    [preparedData.rows, deltaNumberSet]
+    () => dataRows.filter((row) => row.sourceType !== "missing-placeholder"
+      && deltaNumberSet.has(String(row.num))).length,
+    [dataRows, deltaNumberSet]
   );
   const dataReviewEntries = useMemo(() => {
     const query = dataFilter.trim().toLowerCase();
-    const entries = dataRows.map((row, index) => ({ row, index }));
-    const matchingDelta = entries.filter(({ row }) => deltaNumberSet.has(String(row.num)));
-    const base = matchingDelta.length ? matchingDelta : entries;
+    const entries = dataRows
+      .map((row, index) => ({ row, index }))
+      .sort((left, right) => {
+        const leftPending = left.row.reviewRequired && !left.row.reviewConfirmed ? 0 : 1;
+        const rightPending = right.row.reviewRequired && !right.row.reviewConfirmed ? 0 : 1;
+        if (leftPending !== rightPending) return leftPending - rightPending;
+        const leftMatched = deltaNumberSet.has(String(left.row.num)) ? 1 : 0;
+        const rightMatched = deltaNumberSet.has(String(right.row.num)) ? 1 : 0;
+        return leftMatched - rightMatched || left.index - right.index;
+      });
     if (query) {
       return entries.filter(({ row }) =>
         String(row.num).toLowerCase().includes(query) ||
         String(row.machineName || "").toLowerCase().includes(query)
       );
     }
-    return showAllDataRows ? base : base.slice(0, 12);
+    return showAllDataRows ? entries : entries.slice(0, 12);
   }, [dataRows, dataFilter, showAllDataRows, deltaNumberSet]);
   const dataSourceSummary = dataSummary
     ? [
@@ -1514,7 +1554,7 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
           差玉データと大当たり情報を台番号でまとめ、予測回転率まで計算します
         </div>
 
-        {/* サイトセブン台データの主経路。PDF/CSVは端末内、写真だけAI補助を使う。 */}
+        {/* サイトセブン台データの主経路。PDF・CSV・写真をすべて端末内で読む。 */}
         <Card style={{ marginBottom: 12 }}>
           <div style={{ padding: "14px" }}>
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
@@ -1532,7 +1572,7 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
                 border: `1px solid color-mix(in srgb, var(--green) 35%, transparent)`,
                 color: C.green, fontSize: 10, fontWeight: 900,
               }}>
-                PDF・CSVはAPI不要
+                すべてAPI不要・無料
               </span>
             </div>
 
@@ -1541,7 +1581,7 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
               background: C.surfaceHi, border: `1px solid ${C.border}`,
               color: C.subHi, fontSize: 11, lineHeight: 1.6,
             }}>
-              PDFとCSVは外部へ送信せず、この端末の中だけで処理します。写真の文字読み取りだけAI補助を使うため、APIキーの設定が必要です。
+              PDF・写真・CSVは外部へ送信せず、この端末の中だけで処理します。APIキーや追加料金は必要ありません。
             </div>
 
             <input
@@ -1554,15 +1594,15 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
             />
             <button
               className="b"
-              onClick={dataBusy ? undefined : () => dataFileRef.current?.click()}
-              disabled={dataBusy}
+              onClick={dataBusy || aiBusy ? undefined : () => dataFileRef.current?.click()}
+              disabled={dataBusy || aiBusy}
               style={{
                 width: "100%", minHeight: CTA, borderRadius: 12, marginTop: 12,
-                border: "none", background: dataBusy ? C.surfaceHi : C.blue,
-                color: dataBusy ? C.sub : "#fff", fontSize: 15, fontWeight: 900,
+                border: "none", background: dataBusy || aiBusy ? C.surfaceHi : C.blue,
+                color: dataBusy || aiBusy ? C.sub : "#fff", fontSize: 15, fontWeight: 900,
               }}
             >
-              {dataBusy ? "台データを読み取り中…" : "PDF・写真・CSVを選ぶ"}
+              {dataBusy ? "台データを読み取り中…" : aiBusy ? "外部AIの完了を待っています…" : "PDF・写真・CSVを選ぶ"}
             </button>
 
             {dataSummary && (
@@ -1576,7 +1616,17 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
                 {deltaNumberSet.size > 0 && `／差玉と${dataMatchedCount}台一致`}
                 {(dataSummary.skippedCount > 0 || dataSummary.duplicateCount > 0) && (
                   <div style={{ color: C.yellow, fontSize: 11, marginTop: 4 }}>
-                    要確認：未認識{dataSummary.skippedCount}行・重複{dataSummary.duplicateCount}台
+                    要確認：目視確認が必要な台{dataSummary.skippedCount}台・重複{dataSummary.duplicateCount}台
+                  </div>
+                )}
+                {dataSummary.degradedImageCount > 0 && (
+                  <div style={{ color: C.yellow, fontSize: 11, marginTop: 4 }}>
+                    圧縮または低解像度を検出しました。可能なら加工前の元画像を選んでください
+                  </div>
+                )}
+                {dataSummary.missingCount > 0 && (
+                  <div style={{ color: C.yellow, fontSize: 11, marginTop: 4 }}>
+                    資料で確認できなかった{dataSummary.missingCount}台は、元資料を見て入力・確認してください
                   </div>
                 )}
               </div>
@@ -1621,10 +1671,41 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
 
               <div style={{ display: "grid", gap: 9, marginTop: 10 }}>
                 {dataReviewEntries.map(({ row, index }) => (
-                  <div key={`${index}-${row.num}`} style={{
+                  <div key={index} style={{
                     padding: 10, borderRadius: 11, background: C.surfaceHi,
-                    border: `1px solid ${C.border}`,
+                    border: `1px solid ${row.reviewRequired && !row.reviewConfirmed ? C.yellow : C.border}`,
                   }}>
+                    {(row.sourceFile || row.sourceLine || Number.isFinite(row.ocrConfidence)) && (
+                      <div style={{ fontSize: 10, color: C.sub, marginBottom: 7, lineHeight: 1.5 }}>
+                        {row.sourceFile || "選択した資料"}
+                        {row.sourceLine ? `・画像内${row.sourceLine}行目` : ""}
+                        {Number.isFinite(row.ocrConfidence)
+                          ? `・読取信頼度${Math.round(row.ocrConfidence * 100)}%`
+                          : ""}
+                      </div>
+                    )}
+                    {row.reviewRequired && (
+                      <div style={{
+                        marginBottom: 9, padding: "8px 9px", borderRadius: 8,
+                        background: "color-mix(in srgb, var(--yellow) 10%, transparent)",
+                        color: row.reviewConfirmed ? C.green : C.yellow,
+                        fontSize: 11, lineHeight: 1.55, fontWeight: 800,
+                      }}>
+                        <div>{row.reviewReason || "写真の数字を目視確認してください"}</div>
+                        <label style={{
+                          display: "flex", alignItems: "center", gap: 8, marginTop: 6,
+                          minHeight: 32, cursor: "pointer",
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(row.reviewConfirmed)}
+                            disabled={!canConfirmSiteSevenRow(row, index, dataRows, deltaNumberSet)}
+                            onChange={(e) => confirmDataRow(index, e.target.checked)}
+                          />
+                          この台の数字を目視確認済みにする
+                        </label>
+                      </div>
+                    )}
                     <div style={{ display: "grid", gridTemplateColumns: "82px minmax(0, 1fr)", gap: 8 }}>
                       <label style={{ fontSize: 10, color: C.sub, fontWeight: 700 }}>
                         台番号
@@ -1684,7 +1765,7 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
                 ))}
               </div>
 
-              {!dataFilter && (dataMatchedCount || dataRows.length) > 12 && (
+              {!dataFilter && dataRows.length > 12 && (
                 <button
                   className="b"
                   onClick={() => setShowAllDataRows((current) => !current)}
@@ -1694,7 +1775,7 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
                     color: C.subHi, fontSize: 12, fontWeight: 800,
                   }}
                 >
-                  {showAllDataRows ? "先頭12台だけ表示" : `全${dataMatchedCount || dataRows.length}台を表示`}
+                  {showAllDataRows ? "要確認を優先して12台表示" : `全${dataRows.length}台を表示`}
                 </button>
               )}
               {preparedData.invalidCount > 0 && (
@@ -1702,12 +1783,27 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
                   ⚠ 数字が空欄の{preparedData.invalidCount}台は統合されません
                 </div>
               )}
+              {preparedData.reviewPendingCount > 0 && (
+                <div style={{ color: C.yellow, fontSize: 11, fontWeight: 700, marginTop: 8 }}>
+                  ⚠ 要確認の{preparedData.reviewPendingCount}台は、確認済みにするまで統合されません
+                </div>
+              )}
+              {preparedData.duplicateCount > 0 && (
+                <div style={{ color: C.red, fontSize: 11, fontWeight: 700, marginTop: 8 }}>
+                  ⚠ 台番号が重複しています（{preparedData.duplicateNumbers.join("・")}）。正しい台番号へ直してください
+                </div>
+              )}
+              {preparedData.unexpectedCount > 0 && (
+                <div style={{ color: C.red, fontSize: 11, fontWeight: 700, marginTop: 8 }}>
+                  ⚠ 差玉側にない台番号があります（{preparedData.unexpectedNumbers.join("・")}）。台番号を確認してください
+                </div>
+              )}
             </div>
           </Card>
         )}
 
         <div style={{ fontSize: 11, color: C.sub, fontWeight: 800, margin: "18px 2px 8px" }}>
-          自動で読めない場合に使う補助機能
+          有料の外部AI補助（通常は使いません）
         </div>
 
         {/* AI読み取りカード（任意の補助経路） */}
@@ -1716,7 +1812,7 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
             {hasKey ? (
               <>
                 <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>
-                  AI補助読み取り（任意）
+                  外部AI補助読み取り（任意・有料）
                 </div>
                 <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>
                   差玉資料と大当たり資料をまとめて再解析する場合に使います
@@ -1731,17 +1827,17 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
                 />
                 <button
                   className="b"
-                  onClick={aiBusy ? undefined : () => aiFileRef.current?.click()}
-                  disabled={aiBusy}
+                  onClick={aiBusy || dataBusy ? undefined : () => aiFileRef.current?.click()}
+                  disabled={aiBusy || dataBusy}
                   style={{
                     width: "100%", minHeight: CTA, borderRadius: 12, marginTop: 12,
                     border: "none",
-                    background: aiBusy ? C.surfaceHi : C.blue,
-                    color: aiBusy ? C.sub : "#fff",
+                    background: aiBusy || dataBusy ? C.surfaceHi : C.blue,
+                    color: aiBusy || dataBusy ? C.sub : "#fff",
                     fontSize: 15, fontWeight: 900,
                   }}
                 >
-                  {aiBusy ? `読み取り中…（${aiFileCount}ファイル）` : "差玉＋大当たり資料をまとめて選ぶ"}
+                  {aiBusy ? `読み取り中…（${aiFileCount}ファイル）` : dataBusy ? "無料読取の完了を待っています…" : "差玉＋大当たり資料をまとめて選ぶ"}
                 </button>
 
                 {aiOk && (
@@ -1826,7 +1922,7 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
                   }}
                 >
                   <span style={{ color: C.blue }}>✦</span>
-                  AI補助を使う（任意・APIキーが必要）
+                  有料の外部AI補助を使う（任意・APIキーが必要）
                 </button>
                 {showKeyForm && (
                   <ApiKeyForm
@@ -1942,9 +2038,25 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
         )}
       </div>
       <BottomCta
-        label="台データと差玉を台番号で統合する"
+        label={dataBusy
+          ? "台データを読み取り中…"
+          : aiBusy
+            ? "外部AIで読み取り中…"
+          : preparedData.duplicateCount > 0 || preparedData.unexpectedCount > 0
+            || preparedText.duplicateCount > 0 || preparedText.unexpectedCount > 0
+          ? "台番号の重複・不一致を直してください"
+          : preparedData.reviewPendingCount > 0
+            ? `要確認${preparedData.reviewPendingCount}台を確認してください`
+            : "台データと差玉を台番号で統合する"}
         onClick={() => onMerge(importRows)}
-        disabled={recognized === 0}
+        disabled={recognized === 0
+          || dataBusy
+          || aiBusy
+          || preparedData.reviewPendingCount > 0
+          || preparedData.duplicateCount > 0
+          || preparedData.unexpectedCount > 0
+          || preparedText.duplicateCount > 0
+          || preparedText.unexpectedCount > 0}
       />
     </>
   );

@@ -305,10 +305,12 @@ export function mergeTaiData(rows, taiRows) {
       conflictNumbers.add(normalizeMachineNumber(row?.num));
     }
     const mergedVal = hasImportedDelta ? importedDelta : row.val;
+    const importedIsland = String(t.island ?? "").trim();
+    const importedMachineName = String(t.machineName ?? "").trim();
     return {
       ...row,
-      island: t.island ?? row.island ?? "",
-      machineName: t.machineName ?? row.machineName ?? "",
+      island: importedIsland || row.island || "",
+      machineName: importedMachineName || row.machineName || "",
       val: mergedVal,
       rank: hasImportedDelta ? getRank(mergedVal).rank : row.rank,
       status: hasImportedDelta ? "ok" : row.status,
@@ -317,6 +319,14 @@ export function mergeTaiData(rows, taiRows) {
       reasonCodes: hasImportedDelta ? [] : row.reasonCodes,
       normalSpins: t.normalSpins ?? row.normalSpins ?? null,
       totalStarts: t.totalStarts ?? row.totalStarts ?? null,
+      taiImportAudit: {
+        sourceFile: String(t.sourceFile || ""),
+        sourceLine: Number.isInteger(t.sourceLine) ? t.sourceLine : null,
+        sourceType: String(t.sourceType || t.importKind || "manual"),
+        ocrConfidence: Number.isFinite(t.ocrConfidence) ? t.ocrConfidence : null,
+        reviewRequired: t.reviewRequired === true,
+        reviewConfirmed: t.reviewConfirmed === true,
+      },
     };
   });
   return {
