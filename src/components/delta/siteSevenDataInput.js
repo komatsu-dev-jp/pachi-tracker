@@ -388,7 +388,25 @@ export function mergeSiteSevenParsedResults(resultEntries, { expectedNumbers = [
     .filter((value) => value !== null && value >= 0)
     .map(String))];
   const recognizedCount = rows.length;
-  const missingNumbers = expected.filter((num) => !rows.some((row) => String(row.num) === num));
+  // 行順から得た候補は、利用者が確認するまで num（確定値）へ入れない。
+  // ただし同じ候補の空欄行と missing-placeholder を二重生成すると、
+  // 52行の表が最大104行に膨らむため、一意な候補行は「未確認の仮対応」として数える。
+  const provisionalSuggestionCounts = new Map();
+  for (const row of rows) {
+    if (parseSiteSevenEditableInteger(row?.num) !== null) continue;
+    const suggested = parseSiteSevenEditableInteger(row?.machineNumberSuggested);
+    if (suggested === null || suggested < 0) continue;
+    const key = String(suggested);
+    if (!expected.includes(key)) continue;
+    provisionalSuggestionCounts.set(key, (provisionalSuggestionCounts.get(key) || 0) + 1);
+  }
+  const provisionallyCoveredNumbers = new Set([...provisionalSuggestionCounts.entries()]
+    .filter(([, count]) => count === 1)
+    .map(([num]) => num));
+  const missingNumbers = expected.filter((num) => (
+    !rows.some((row) => String(row.num) === num)
+    && !provisionallyCoveredNumbers.has(num)
+  ));
   // 誤読した余分な行が1件あると rows.length 自体は期待件数と同じになる。
   // 件数差だけで補完数を決めると、本当に欠けた台の修正欄が作られないため、
   // 期待番号ごとの不足をすべて独立した確認行として残す。

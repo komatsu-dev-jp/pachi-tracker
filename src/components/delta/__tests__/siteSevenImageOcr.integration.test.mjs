@@ -6,6 +6,7 @@ import {
   findSiteSevenMachineNumberOrderConflicts,
   parseSiteSevenTableImageData,
 } from "../siteSevenImageOcr.js";
+import { mergeSiteSevenParsedResults } from "../siteSevenDataInput.js";
 
 const fixturePath = process.env.SITE_SEVEN_FIXTURE_PATH
   || fileURLToPath(new URL("./fixtures/site-seven-table-52.png", import.meta.url));
@@ -35,11 +36,28 @@ function assertNoIncorrectRowPasses(result) {
       && String(row.normalSpins) === String(expectedNormalSpins[index])
       && String(row.totalStarts) === String(expectedJackpots[index]);
     if (!correct) assert.equal(row.reviewRequired, true, `誤読した${index + 1}行目が自動確定されました`);
+    if (String(row.num) !== String(expectedNumbers[index])) {
+      assert.equal(row.numAccepted, false, `台番号を誤読した${index + 1}行目が確定されました`);
+    }
+    if (Number(row.normalSpins) !== expectedNormalSpins[index]) {
+      assert.equal(
+        row.normalSpinsAccepted,
+        false,
+        `通常中スタートを誤読した${index + 1}行目が確定されました`,
+      );
+    }
     if (Number(row.maxPayout) !== expectedMaxPayouts[index]) {
       assert.equal(
         row.maxPayoutAccepted,
         false,
         `最高出玉を誤読した${index + 1}行目が自動照合可能になりました`,
+      );
+    }
+    if (Number(row.totalStarts) !== expectedJackpots[index]) {
+      assert.equal(
+        row.totalStartsAccepted,
+        false,
+        `大当たり回数を誤読した${index + 1}行目が確定されました`,
       );
     }
   });
@@ -84,10 +102,63 @@ test("期待台番号なしのrawモードでも52台の台番号を安全に読
   assert.ok(result.rows.every((row) => row.numAccepted));
 });
 
-test("縮小・再圧縮画像: 誤読候補を未確認のまま通さない", async () => {
-  for (const image of [await loadFixture(0.75), await loadFixture(1, 60)]) {
+test("店舗側の期待番号が1台だけ誤っていても高信頼OCRを別台へ静かに上書きしない", async () => {
+  const wrongStoreNumbers = [475, ...expectedNumbers.slice(1)];
+  const result = parseSiteSevenTableImageData(await loadFixture(), {
+    expectedNumbers: wrongStoreNumbers,
+  });
+
+  assert.notEqual(result.rows[0].num, "475");
+  assert.equal(result.rows[0].numAccepted, false);
+  assert.equal(result.rows[0].reviewRequired, true);
+  assert.deepEqual(
+    result.rows.slice(1).map((row) => Number(row.num)),
+    expectedNumbers.slice(1),
+  );
+  assert.ok(result.rows.slice(1).every((row) => row.numAccepted));
+});
+
+test("縮小・拡大・再圧縮画像: 誤読した各項目を未確認のまま通さない", async () => {
+  for (const { image, label, expectPartialAcceptance } of [
+    { image: await loadFixture(0.75), label: "0.75倍", expectPartialAcceptance: false },
+    { image: await loadFixture(1, 60), label: "JPEG再圧縮", expectPartialAcceptance: false },
+    { image: await loadFixture(1.25), label: "1.25倍", expectPartialAcceptance: true },
+    { image: await loadFixture(2), label: "2倍", expectPartialAcceptance: true },
+  ]) {
     const result = parseSiteSevenTableImageData(image, { expectedNumbers });
     assert.equal(result.rows.length, 52);
+    assert.deepEqual(
+      result.rows.map((row) => Number(row.machineNumberSuggested)),
+      expectedNumbers,
+      "店舗・島の固定行順は主入力と分離した候補として52台保持します",
+    );
+    result.rows.forEach((row, index) => {
+      if (row.num) {
+        assert.equal(Number(row.num), expectedNumbers[index], `${index + 1}行目に誤った台番号を表示しません`);
+      } else {
+        assert.equal(row.numAccepted, false);
+        assert.equal(row.reviewRequired, true);
+      }
+    });
     assertNoIncorrectRowPasses(result);
+    if (expectPartialAcceptance) {
+      assert.ok(result.rows.some((row) => row.normalSpinsAccepted), `${label}: 正しい通常回転まで全行確認にしません`);
+      assert.ok(result.rows.some((row) => row.totalStartsAccepted), `${label}: 正しい大当たり回数まで全行確認にしません`);
+    }
   }
+});
+
+test("読めない台番号の候補行と欠落欄を二重生成しない", async () => {
+  const parsed = parseSiteSevenTableImageData(await loadFixture(0.75), { expectedNumbers });
+  const merged = mergeSiteSevenParsedResults([{ result: parsed, kind: "image" }], {
+    expectedNumbers,
+  });
+
+  assert.equal(merged.rows.length, 52);
+  assert.equal(merged.missingNumbers.length, 0);
+  assert.deepEqual(
+    merged.rows.map((row) => Number(row.machineNumberSuggested)),
+    expectedNumbers,
+  );
+  assert.ok(merged.rows.every((row) => row.reviewRequired && !row.reviewConfirmed));
 });
