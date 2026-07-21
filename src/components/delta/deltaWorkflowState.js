@@ -64,6 +64,17 @@ export function seedPartialMachineNumberInputs(slots, numbers, options = {}) {
   }, {});
 }
 
+export function canAutoAcceptSiteSevenReports(reports) {
+  return Array.isArray(reports)
+    && reports.length > 0
+    && reports.every((report) => (
+      !report?.error
+      && report?.autoAcceptable === true
+      && Number(report?.skippedCount || 0) === 0
+      && Number(report?.duplicateCount || 0) === 0
+    ));
+}
+
 export function summarizeSiteSevenReviewState(summary, rows) {
   if (!summary || !Array.isArray(rows) || !rows.length) return summary || null;
   const reviewCount = rows.filter((row) => (

@@ -40,9 +40,15 @@ import {
   prepareSiteSevenImportedRows,
   readSiteSevenCsv,
 } from "./siteSevenDataInput";
+import { buildSiteSevenStructuredRows } from "./siteSevenStructuredRows";
+import {
+  buildStoreMachineNumberRelation,
+  compareConfirmedMachineNumbers,
+} from "./storeMachineNumberRelation";
 import { buildRowDeltaEvidence } from "./deltaEvidence";
 import {
   buildPartialMachineNumberAssignment,
+  canAutoAcceptSiteSevenReports,
   createImageSelectionSnapshot,
   seedPartialMachineNumberInputs,
   shouldAcceptImageAnalysis,
@@ -53,6 +59,7 @@ import { machineDB } from "../../machineDB";
 
 const TAP = 44; // 最小タップ領域
 const CTA = 48; // 下部固定CTA高さ
+const ANALYSIS_ENGINE_VERSION = String(import.meta.env.VITE_BUILD_SHA || "dev").slice(0, 7);
 
 function todayStr() {
   return localDateStr();
@@ -60,6 +67,10 @@ function todayStr() {
 function todaySlash() {
   const d = new Date();
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+}
+function dateToSlash(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/u);
+  return match ? `${match[1]}/${Number(match[2])}/${Number(match[3])}` : todaySlash();
 }
 
 // 画像 dataUrl → canvas → getImageData → runAnalysis（OCRは移植しない）。
@@ -92,6 +103,59 @@ async function analyzeImages(images, onProgress, { dateText = "", storeName = ""
   const siteSevenReports = [];
   for (let i = 0; i < images.length; i++) {
     onProgress?.(i + 1, images.length);
+    const selectedFile = images[i]?.file;
+    const selectedKind = images[i]?.kind || classifySiteSevenFile(selectedFile) || "image";
+    if (selectedKind === "pdf" || selectedKind === "csv") {
+      try {
+        const parsed = selectedKind === "pdf"
+          ? await import("./siteSevenPdfReader.js").then(({ readSiteSevenPdf }) => (
+            readSiteSevenPdf(selectedFile, { dateText, storeName })
+          ))
+          : await readSiteSevenCsv(selectedFile, { dateText, storeName });
+        const tableSourceIndex = siteSevenResults.length;
+        const tableSourceId = images[i].id || `${images[i].name || selectedKind}:${i}`;
+        const normalized = {
+          ...parsed,
+          rows: buildSiteSevenStructuredRows(parsed, {
+            importKind: selectedKind,
+            sourceIndex: tableSourceIndex,
+            sourceId: tableSourceId,
+          }),
+        };
+        const skippedCount = normalized.skipped?.length || 0;
+        const duplicateCount = normalized.duplicates?.length || 0;
+        siteSevenResults.push({ result: normalized, kind: selectedKind });
+        siteSevenReports.push({
+          imageIndex: i,
+          name: images[i].name || `${selectedKind.toUpperCase()} ${i + 1}`,
+          kind: selectedKind,
+          rowCount: normalized.rows?.length || 0,
+          reviewCount: normalized.rows?.filter((row) => row.reviewRequired && !row.reviewConfirmed).length || 0,
+          skippedCount,
+          duplicateCount,
+          autoAcceptable: normalized.autoAcceptable !== false
+            && skippedCount === 0
+            && duplicateCount === 0,
+          degradedImage: false,
+          extractionMode: normalized.extractionMode || null,
+          error: null,
+        });
+      } catch (error) {
+        siteSevenReports.push({
+          imageIndex: i,
+          name: images[i].name || `${selectedKind.toUpperCase()} ${i + 1}`,
+          kind: selectedKind,
+          rowCount: 0,
+          reviewCount: 0,
+          skippedCount: 0,
+          duplicateCount: 0,
+          autoAcceptable: false,
+          degradedImage: false,
+          error: error instanceof Error ? error.message : `${selectedKind.toUpperCase()}の読み取りに失敗しました`,
+        });
+      }
+      continue;
+    }
     try {
       const img = await loadImage(images[i].dataUrl);
       // 解析タイミングは移植元と同じく描画後に走らせる
@@ -139,12 +203,23 @@ async function analyzeImages(images, onProgress, { dateText = "", storeName = ""
               rowId: `${tableSourceId}:${Number.isInteger(row.sourceLine) ? row.sourceLine : rowIndex + 1}`,
             })),
           };
+          // Image OCR reports field-level reviews through parsedTable.skipped.
+          // They do not make an otherwise exact num/max graph relation unsafe;
+          // degraded geometry and duplicate rows are the source-level blockers.
+          const fieldReviewCount = parsedTable.skipped?.length || 0;
+          const duplicateCount = parsedTable.duplicates?.length || 0;
           siteSevenResults.push({ result: annotatedTable, kind: "image" });
           siteSevenReports.push({
             imageIndex: i,
             name: images[i].name || `画像${i + 1}`,
+            kind: "image",
             rowCount: parsedTable.rows?.length || 0,
             reviewCount: parsedTable.rows?.filter((row) => row.reviewRequired && !row.reviewConfirmed).length || 0,
+            skippedCount: 0,
+            fieldReviewCount,
+            duplicateCount,
+            autoAcceptable: parsedTable.degradedImage !== true
+              && duplicateCount === 0,
             degradedImage: parsedTable.degradedImage === true,
             error: null,
           });
@@ -152,8 +227,12 @@ async function analyzeImages(images, onProgress, { dateText = "", storeName = ""
           siteSevenReports.push({
             imageIndex: i,
             name: images[i].name || `画像${i + 1}`,
+            kind: "image",
             rowCount: 0,
             reviewCount: 0,
+            skippedCount: 0,
+            duplicateCount: 0,
+            autoAcceptable: false,
             degradedImage: false,
             error: error instanceof Error ? error.message : "台データ画像の読み取りに失敗しました",
           });
@@ -219,9 +298,9 @@ async function analyzeImages(images, onProgress, { dateText = "", storeName = ""
   const siteSeven = siteSevenResults.length
     ? mergeSiteSevenParsedResults(siteSevenResults, { expectedNumbers: [] })
     : { rows: [], recognizedCount: 0, reviewCount: 0, duplicateCount: 0, missingNumbers: [] };
-  // 照合前に台番号で重複排除すると、誤読行が正しい行を隠す。写真・行の出典を
-  // 保った生行をmatcherへ渡し、1対1対応が決まった後だけ番号キーで統合する。
-  const rawSiteSevenRows = siteSevenResults.flatMap((entry) => entry.result?.rows || []);
+  // 別資料で値が完全一致した同じ台は1件へ畳む。値の競合・元資料内の重複は
+  // reviewRequiredのまま残し、matcher側では固定点として使わない。
+  const relationSiteSevenRows = siteSeven.rows || [];
   const jointGraphPanels = combinedNumbers.slots.map((slot, graphIndex) => ({
     ...slot,
     panelId: `${slot?.source?.imageIndex ?? "x"}:${slot?.source?.panelIndex ?? graphIndex}`,
@@ -231,8 +310,8 @@ async function analyzeImages(images, onProgress, { dateText = "", storeName = ""
     rowIndex: slot?.source?.row ?? slot?.row ?? graphIndex,
     colIndex: slot?.source?.column ?? slot?.column ?? 0,
   }));
-  const jointMatch = jointGraphPanels.length && rawSiteSevenRows.length
-    ? matchSiteSevenGraphPanels(jointGraphPanels, rawSiteSevenRows)
+  const jointMatch = jointGraphPanels.length && relationSiteSevenRows.length
+    ? matchSiteSevenGraphPanels(jointGraphPanels, relationSiteSevenRows)
     : null;
   const jointNumberByGraphIndex = new Map(
     (jointMatch?.matches || []).map((match) => [match.graphIndex, match]),
@@ -245,7 +324,7 @@ async function analyzeImages(images, onProgress, { dateText = "", storeName = ""
     && jointMatch.summary?.unmatchedGraphCount === 0
     && jointMatch.summary?.unmatchedRowCount === 0
     && (jointMatch.reviewReasons?.length || 0) === 0
-    && !siteSevenReports.some((report) => report.error)
+    && canAutoAcceptSiteSevenReports(siteSevenReports)
     && jointNumbers.every(Boolean)
     && new Set(jointNumbers).size === jointNumbers.length;
   const resolvedSlots = combinedNumbers.slots.map((slot, graphIndex) => {
@@ -299,7 +378,7 @@ async function analyzeImages(images, onProgress, { dateText = "", storeName = ""
       }
       : combinedNumbers;
   const resolvedSiteSevenRows = resolveMatchedSiteSevenRows(
-    rawSiteSevenRows,
+    relationSiteSevenRows,
     jointMatch?.matches || [],
   );
   return {
@@ -315,11 +394,14 @@ async function analyzeImages(images, onProgress, { dateText = "", storeName = ""
       skippedCount: resolvedSiteSevenRows.filter((row) => row.reviewRequired && !row.reviewConfirmed).length,
       duplicateCount: siteSeven.duplicateCount || 0,
       missingCount: siteSeven.missingNumbers?.length || 0,
-      pdfCount: 0,
-      csvCount: 0,
-      imageCount: siteSevenResults.length,
+      pdfCount: siteSevenResults.filter((entry) => entry.kind === "pdf").length,
+      csvCount: siteSevenResults.filter((entry) => entry.kind === "csv").length,
+      imageCount: siteSevenResults.filter((entry) => entry.kind === "image").length,
       degradedImageCount: siteSevenReports.filter((report) => report.degradedImage).length,
       failedFileCount: siteSevenReports.filter((report) => report.error).length,
+      unsafeFileCount: siteSevenReports.filter((report) => (
+        !report.error && report.autoAcceptable === false
+      )).length,
       reports: siteSevenReports,
     },
   };
@@ -398,7 +480,7 @@ const scrollAreaStyle = {
 };
 
 // ════════════ アップロード ════════════
-function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
+function UploadStep({ store, images, setImages, analysisDate, setAnalysisDate, onAnalyze, onClose }) {
   const fileRef = useRef(null);
   const analysisRequestIdRef = useRef(0);
   const imagesRef = useRef(images);
@@ -426,7 +508,9 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
 
   const handleFiles = (files) => {
     if (busyRef.current || fileLoadRef.current) return;
-    const arr = Array.from(files || []).filter((fl) => fl.type.startsWith("image/"));
+    const arr = Array.from(files || [])
+      .map((file) => ({ file, kind: classifySiteSevenFile(file) }))
+      .filter((entry) => entry.kind);
     if (!arr.length) return;
     fileLoadRef.current = true;
     setLoadingFiles(true);
@@ -450,7 +534,7 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
         return [...p, ...additions];
       });
     };
-    arr.forEach((file, idx) => {
+    arr.forEach(({ file, kind }, idx) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         next[idx] = {
@@ -458,6 +542,7 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
           name: file.name,
           id: `${file.name}:${file.size}:${file.lastModified}`,
           file,
+          kind,
         };
         finishFile();
       };
@@ -502,7 +587,7 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
           setProgress({ i, n });
         }
       }, {
-        dateText: todaySlash(),
+        dateText: dateToSlash(analysisDate),
         storeName: store?.name || "",
       });
     } catch {
@@ -544,13 +629,30 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
               </div>
             </div>
           </div>
+          <label style={{
+            display: "flex", alignItems: "center", gap: 12, padding: "10px 14px 12px",
+            borderTop: `1px solid ${C.border}`, color: C.subHi, fontSize: 12, fontWeight: 700,
+          }}>
+            <span style={{ flex: 1 }}>解析するデータの日付</span>
+            <input
+              type="date"
+              aria-label="解析するデータの日付"
+              value={analysisDate}
+              disabled={interactionLocked}
+              onChange={(event) => setAnalysisDate?.(event.target.value || todayStr())}
+              style={{
+                minHeight: 38, borderRadius: 9, border: `1px solid ${C.borderHi}`,
+                background: C.surfaceHi, color: C.text, padding: "0 9px", fontFamily: mono,
+              }}
+            />
+          </label>
         </Card>
 
         {/* アップロードゾーン */}
         <input
           ref={fileRef}
           type="file"
-          accept="image/*"
+          accept="image/*,.pdf,application/pdf,.csv,.tsv,text/csv,text/tab-separated-values"
           multiple
           disabled={interactionLocked}
           style={{ display: "none" }}
@@ -576,7 +678,10 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
             グラフと台データ表をまとめて追加
           </div>
           <div style={{ fontSize: 12, color: C.sub, lineHeight: 1.6 }}>
-            出玉推移グラフ＋サイトセブンの表写真<br />（複数枚を一度に選択できます）
+            出玉推移グラフ＋サイトセブンの表写真・PDF・CSV<br />（複数ファイルを一度に選択できます）
+          </div>
+          <div style={{ fontSize: 11, color: C.subHi, lineHeight: 1.55, marginTop: 10 }}>
+            文字を選択できるPDF・CSVは写真より正確です。画像だけのPDFは、元の写真も一緒に選んでください。
           </div>
         </div>
 
@@ -593,7 +698,19 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
                   <div style={{ position: "absolute", top: 5, left: 5, zIndex: 1, minWidth: 24, height: 24, borderRadius: 12, background: C.blue, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900 }}>
                     {i + 1}
                   </div>
-                  <img src={img.dataUrl} alt="" style={{ width: 96, height: 84, objectFit: "cover", borderRadius: 12, border: `1px solid ${C.border}` }} />
+                  {img.kind === "image" ? (
+                    <img src={img.dataUrl} alt="" style={{ width: 96, height: 84, objectFit: "cover", borderRadius: 12, border: `1px solid ${C.border}` }} />
+                  ) : (
+                    <div style={{
+                      width: 96, height: 84, boxSizing: "border-box", borderRadius: 12,
+                      border: `1px solid ${C.border}`, background: C.surfaceHi,
+                      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                      color: img.kind === "pdf" ? C.red : C.green, fontWeight: 900, fontFamily: mono,
+                    }}>
+                      <div style={{ fontSize: 22 }}>{img.kind === "pdf" ? "PDF" : "CSV"}</div>
+                      <div style={{ fontSize: 9, color: C.sub, marginTop: 3 }}>台データ</div>
+                    </div>
+                  )}
                   <button
                     className="b"
                     aria-label="この画像を削除"
@@ -676,15 +793,18 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
         }}>
           <span style={{ fontSize: 16, color: C.sub }}>🔒</span>
           <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.6 }}>
-            画像はこの端末内でのみ解析されます<br />
-            <span style={{ color: C.sub }}>外部への送信は行いません</span>
+            写真・PDF・CSVはこの端末内でのみ解析されます<br />
+            <span style={{ color: C.sub }}>外部への送信は行いません</span><br />
+            <span data-testid="analysis-engine-version" style={{ color: C.sub, fontFamily: mono }}>
+              解析エンジン {ANALYSIS_ENGINE_VERSION}
+            </span>
           </div>
         </div>
       </div>
       <BottomCta
         label={busy
           ? `解析中… ${progress.i}/${progress.n}`
-          : loadingFiles ? "画像を準備中…" : `解析する（${images.length}枚）`}
+          : loadingFiles ? "ファイルを準備中…" : `解析する（${images.length}件）`}
         onClick={start}
         disabled={!images.length || interactionLocked}
       />
@@ -727,15 +847,26 @@ function NumbersStep({
 }) {
   const slotCount = slots.length;
   const jointOnlyNumbers = Boolean(jointMatch);
-  const [pickedIslandId, setPickedIslandId] = useState(null);
-  const [segments, setSegments] = useState([{ start: "", count: String(slotCount) }]);
-  const [partialManualNumbers, setPartialManualNumbers] = useState(() => (
-    seedPartialMachineNumberInputs(slots, initialNumbers, { jointOnly: jointOnlyNumbers })
+  const storeRelation = useMemo(() => buildStoreMachineNumberRelation({
+    islands,
+    slots,
+    jointOnly: jointOnlyNumbers,
+  }), [islands, slots, jointOnlyNumbers]);
+  const storeSuggestion = storeRelation.suggestion;
+  const [pickedIslandId, setPickedIslandId] = useState(() => (
+    storeSuggestion.available ? storeSuggestion.candidateId : null
   ));
+  const [segments, setSegments] = useState([{ start: "", count: String(slotCount) }]);
+  const [partialManualNumbers, setPartialManualNumbers] = useState(() => ({
+    ...(storeSuggestion.suggestedManualNumbersByIndex || {}),
+    ...seedPartialMachineNumberInputs(slots, initialNumbers, { jointOnly: jointOnlyNumbers }),
+  }));
   const [orderConfirmed, setOrderConfirmed] = useState(false);
 
   const pickedIsland = useMemo(
-    () => (islands || []).find((isl) => isl.id === pickedIslandId) || null,
+    () => (islands || []).find((isl, index) => (
+      String(isl?.id ?? `island-${index}`) === String(pickedIslandId)
+    )) || null,
     [islands, pickedIslandId]
   );
 
@@ -759,6 +890,19 @@ function NumbersStep({
     }, []),
     [fixedNumbers],
   );
+  const selectedStoreCandidate = useMemo(() => {
+    const compatible = Array.isArray(storeRelation.compatibleCandidates)
+      ? storeRelation.compatibleCandidates
+      : [];
+    const picked = compatible.find((candidate) => (
+      String(candidate.candidateId) === String(pickedIslandId)
+    ));
+    if (picked) return picked;
+    if (!storeSuggestion.available) return null;
+    return compatible.find((candidate) => (
+      String(candidate.candidateId) === String(storeSuggestion.candidateId)
+    )) || null;
+  }, [pickedIslandId, storeRelation.compatibleCandidates, storeSuggestion]);
   const numbers = numberOcr?.accepted
       ? numberOcr.numbers
       : hasFixedNumberAssignments
@@ -766,6 +910,18 @@ function NumbersStep({
         jointOnly: jointOnlyNumbers,
       })
       : manualNumbers;
+  const storeCandidateNumbers = selectedStoreCandidate?.numbers || [];
+  const storeNumberComparison = (
+    storeCandidateNumbers.length
+      ? compareConfirmedMachineNumbers(numbers, storeCandidateNumbers)
+      : null
+  );
+  const storeSuggestedCount = selectedStoreCandidate
+    ? selectedStoreCandidate.numbers.reduce((count, _number, index) => (
+      count + (fixedNumbers[index] ? 0 : 1)
+    ), 0)
+    : 0;
+  const storeRelationExact = storeNumberComparison?.exact === true;
 
   const numberValidation = useMemo(
     () => validateNumberAssignment(slots, numbers),
@@ -822,6 +978,19 @@ function NumbersStep({
   const updatePartialNumber = (slotIndex, value) => {
     setOrderConfirmed(false);
     setPartialManualNumbers((current) => ({ ...current, [slotIndex]: value }));
+  };
+  const applyCompatibleStoreCandidate = (candidate) => {
+    if (!candidate || !Array.isArray(candidate.numbers)) return;
+    setPickedIslandId(candidate.candidateId);
+    setOrderConfirmed(false);
+    setPartialManualNumbers((current) => {
+      const next = { ...current };
+      candidate.numbers.forEach((number, index) => {
+        // 共同照合／OCRで固定済みの位置には一切書き込まない。
+        if (!fixedNumbers[index]) next[index] = String(number);
+      });
+      return next;
+    });
   };
 
   const valid = numberValidation.valid
@@ -893,7 +1062,7 @@ function NumbersStep({
         {siteSevenSummary?.failedFileCount > 0 && (
           <div style={{ background: "color-mix(in srgb, var(--yellow) 12%, transparent)", border: `1px solid color-mix(in srgb, var(--yellow) 38%, transparent)`, borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
             <div style={{ fontSize: 14, color: C.yellow, fontWeight: 900, marginBottom: 4 }}>
-              台データ表を読めない画像が{siteSevenSummary.failedFileCount}枚あります
+              台データを読めないファイルが{siteSevenSummary.failedFileCount}件あります
             </div>
             <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.65, fontWeight: 700 }}>
               {siteSevenSummary.reports?.find((report) => report.error)?.error
@@ -901,6 +1070,128 @@ function NumbersStep({
             </div>
           </div>
         )}
+
+        {siteSevenSummary?.unsafeFileCount > 0 && (
+          <div style={{ background: "color-mix(in srgb, var(--yellow) 12%, transparent)", border: `1px solid color-mix(in srgb, var(--yellow) 38%, transparent)`, borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
+            <div style={{ fontSize: 14, color: C.yellow, fontWeight: 900, marginBottom: 4 }}>
+              資料に目視確認が必要なファイルが{siteSevenSummary.unsafeFileCount}件あります
+            </div>
+            <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.65, fontWeight: 700 }}>
+              列欠け・読み飛ばし・重複の可能性があるため自動確定しません。共同照合した番号は候補として保持し、元資料を確認してから確定してください。
+            </div>
+          </div>
+        )}
+
+        {siteSevenSummary?.rowCount > 0 && (
+          <Card style={{ marginBottom: 12 }}>
+            <div style={{ padding: "12px 14px" }}>
+              <div style={{ fontSize: 14, color: C.text, fontWeight: 900 }}>
+                台データ資料 {siteSevenSummary.rowCount}台を関係付け
+              </div>
+              <div style={{ fontSize: 11, color: C.subHi, lineHeight: 1.6, marginTop: 4 }}>
+                写真 {siteSevenSummary.imageCount || 0}件・PDF {siteSevenSummary.pdfCount || 0}件・CSV {siteSevenSummary.csvCount || 0}件
+                を、台番号と最高出玉でグラフへ照合しています。
+              </div>
+              {(siteSevenSummary.reports || []).filter((report) => !report.error).map((report) => (
+                <div key={`${report.imageIndex}-${report.name}`} style={{
+                  display: "flex", gap: 8, alignItems: "baseline", marginTop: 7,
+                  fontSize: 11, color: C.subHi, fontFamily: mono,
+                }}>
+                  <span style={{ color: report.kind === "pdf" ? C.red : report.kind === "csv" ? C.green : C.blue, fontWeight: 900 }}>
+                    {String(report.kind || "image").toUpperCase()}
+                  </span>
+                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{report.name}</span>
+                  <span style={{ marginLeft: "auto", whiteSpace: "nowrap" }}>{report.rowCount}台</span>
+                  {report.autoAcceptable === false && (
+                    <span style={{ color: C.yellow, whiteSpace: "nowrap", fontWeight: 900 }}>要確認</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        <Card style={{ marginBottom: 12 }}>
+          <div data-testid="store-machine-relation-status" style={{ padding: "12px 14px" }}>
+            <div style={{ fontSize: 14, fontWeight: 900, color: (
+              storeRelationExact && (!storeSuggestedCount || orderConfirmed)
+                ? C.green
+                : selectedStoreCandidate
+                  ? C.yellow
+                  : C.subHi
+            ) }}>
+              {!Array.isArray(islands) || islands.length === 0
+                ? "店舗管理リスト：未登録"
+                : selectedStoreCandidate && storeSuggestedCount > 0 && !orderConfirmed
+                  ? `店舗管理リストで${storeSuggestedCount}台を補助入力・確認待ち`
+                  : storeRelationExact
+                    ? `店舗管理リストとも${storeNumberComparison.matchedNumbers.length}/${slotCount}台一致`
+                    : storeRelation.compatibleCandidates.length > 1
+                      ? `店舗管理リストの候補が${storeRelation.compatibleCandidates.length}件あります`
+                      : storeRelation.candidates.length > 0
+                        ? "店舗管理リストと台番号の位置が一致しません"
+                        : "店舗管理リスト：利用できる台範囲がありません"}
+            </div>
+            <div style={{ fontSize: 11, color: C.subHi, lineHeight: 1.65, marginTop: 4, fontWeight: 650 }}>
+              {selectedStoreCandidate && (
+                <div>
+                  使用候補：{selectedStoreCandidate.candidateLabel || selectedStoreCandidate.candidateName}
+                  {fixedNumberCount > 0 ? "（固定済み番号と位置照合）" : "（台数だけで選択・要確認）"}
+                </div>
+              )}
+              <div>
+                店舗管理リストは「台選び → 店舗レイアウト」で登録します。次の画面ではなく、この台番号画面で照合に使います。
+              </div>
+              {storeNumberComparison && !storeRelationExact && (
+                <div style={{ color: C.yellow, marginTop: 3 }}>
+                  位置違い {storeNumberComparison.indexMismatches.length}台
+                  {storeNumberComparison.missingNumbers.length > 0 && `・不足 ${storeNumberComparison.missingNumbers.length}台`}
+                  {storeNumberComparison.extraNumbers.length > 0 && `・余分 ${storeNumberComparison.extraNumbers.length}台`}
+                </div>
+              )}
+            </div>
+            {hasFixedNumberAssignments && storeRelation.compatibleCandidates.length > 1 && (
+              <div data-testid="store-compatible-candidates" style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                <div style={{ fontSize: 11, color: C.yellow, fontWeight: 800 }}>
+                  固定済み番号と矛盾しない候補が複数あります。元画像を見て1件選んでください。
+                </div>
+                {storeRelation.compatibleCandidates.map((candidate) => {
+                  const selected = String(selectedStoreCandidate?.candidateId) === String(candidate.candidateId);
+                  return (
+                    <button
+                      key={candidate.candidateId}
+                      className="b"
+                      type="button"
+                      data-testid={`store-compatible-candidate-${candidate.candidateId}`}
+                      onClick={() => applyCompatibleStoreCandidate(candidate)}
+                      style={{
+                        width: "100%", minHeight: TAP, borderRadius: 10, padding: "9px 11px",
+                        border: `1px solid ${selected ? C.blue : C.borderHi}`,
+                        background: selected
+                          ? "color-mix(in srgb, var(--blue) 12%, transparent)"
+                          : C.surfaceHi,
+                        color: selected ? C.blue : C.text,
+                        display: "flex", alignItems: "center", gap: 10, textAlign: "left",
+                      }}
+                    >
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: "block", fontSize: 13, fontWeight: 900 }}>
+                          {candidate.candidateLabel || candidate.candidateName}
+                        </span>
+                        <span style={{ display: "block", fontSize: 11, color: C.subHi, fontFamily: mono, marginTop: 2 }}>
+                          {formatNumberRanges(candidate.numbers)}（{candidate.numberCount}台）
+                        </span>
+                      </span>
+                      <span style={{ fontSize: 12, fontWeight: 900, whiteSpace: "nowrap" }}>
+                        {selected ? "選択中" : "この候補を使う"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </Card>
 
         <Card style={{ marginBottom: 12 }}>
           <div style={{ padding: "12px 14px" }}>
@@ -922,7 +1213,7 @@ function NumbersStep({
           <Card style={{ marginBottom: 12 }}>
             <div style={{ padding: "12px 14px" }}>
               <div style={{ fontSize: 14, fontWeight: 900, color: C.text }}>
-                固定済み {fixedNumberCount}台・入力が必要 {unresolvedNumberIndices.length}台
+                固定済み {fixedNumberCount}台・確認が必要 {unresolvedNumberIndices.length}台
               </div>
               <div style={{ fontSize: 11, color: C.subHi, lineHeight: 1.6, marginTop: 4 }}>
                 共同照合または番号OCRで確定した台番号は変更できません。空欄の台だけ元画像を見て入力してください。
@@ -964,12 +1255,13 @@ function NumbersStep({
             <div style={{ padding: "12px 14px 4px", fontSize: 14, fontWeight: 800, color: C.text }}>
               登録済みのホールマップから選ぶ
             </div>
-            {islands.map((isl) => {
+            {islands.map((isl, islandIndex) => {
               const cnt = islandToNumbers(isl).length;
-              const picked = pickedIslandId === isl.id;
+              const islandCandidateId = String(isl?.id ?? `island-${islandIndex}`);
+              const picked = String(pickedIslandId) === islandCandidateId;
               const mismatch = cnt !== slotCount;
               return (
-                <div key={isl.id} style={{ padding: "8px 12px" }}>
+                <div key={islandCandidateId} style={{ padding: "8px 12px" }}>
                   <div style={{
                     display: "flex", alignItems: "center", gap: 10,
                     border: picked ? `2px solid ${C.blue}` : `1px solid ${C.border}`,
@@ -988,7 +1280,7 @@ function NumbersStep({
                     <button
                       className="b"
                       onClick={() => {
-                        setPickedIslandId(picked ? null : isl.id);
+                        setPickedIslandId(picked ? null : islandCandidateId);
                         setOrderConfirmed(false);
                       }}
                       style={{
@@ -1177,6 +1469,8 @@ function NumbersStep({
         label="この台番号で確定"
         onClick={() => onConfirm(numbers, {
           manualVerified: !numberOcr?.accepted && orderConfirmed,
+          storeMapVerified: !numberOcr?.accepted && orderConfirmed && storeRelationExact,
+          storeCandidateNumbers,
           trustedOcrMismatches,
         })}
         disabled={!valid}
@@ -1650,6 +1944,11 @@ function ResultsStep({
                 数字の目視確認が必要な台が{siteSevenSummary.reviewCount}台あります
               </div>
             )}
+            {siteSevenSummary.unsafeFileCount > 0 && (
+              <div style={{ color: C.yellow }}>
+                列欠け・読み飛ばし・重複の可能性がある資料{siteSevenSummary.unsafeFileCount}件は、元資料との確認が必要です
+              </div>
+            )}
           </div>
         )}
 
@@ -1694,6 +1993,7 @@ function canConfirmSiteSevenRow(row, rowIndex, rows, expectedNumberSet) {
 // ════════════ 台データ取り込み ════════════
 function ImportStep({
   store,
+  analysisDate,
   rows: deltaRows,
   onBack,
   onMerge,
@@ -1703,8 +2003,8 @@ function ImportStep({
   initialDataSummary = null,
 }) {
   const prompt = useMemo(
-    () => buildOcrPrompt({ dateText: todaySlash(), storeName: store?.name || "" }),
-    [store]
+    () => buildOcrPrompt({ dateText: dateToSlash(analysisDate), storeName: store?.name || "" }),
+    [analysisDate, store]
   );
   const promptHead = useMemo(() => prompt.split("\n").slice(0, 2).join("\n"), [prompt]);
   const [copied, setCopied] = useState(false);
@@ -1773,7 +2073,7 @@ function ImportStep({
         for (const file of pdfFiles) {
           try {
             const parsedPdf = await readSiteSevenPdf(file, {
-              dateText: todaySlash(),
+              dateText: dateToSlash(analysisDate),
               storeName: store?.name || "",
             });
             results.push({ result: parsedPdf, kind: "pdf" });
@@ -1787,7 +2087,7 @@ function ImportStep({
         for (const file of csvFiles) {
           try {
             const parsedCsv = await readSiteSevenCsv(file, {
-              dateText: todaySlash(),
+              dateText: dateToSlash(analysisDate),
               storeName: store?.name || "",
             });
             results.push({ result: parsedCsv, kind: "csv" });
@@ -1805,7 +2105,7 @@ function ImportStep({
         for (const file of imageFiles) {
           try {
             const parsedImage = await readSiteSevenImage(file, {
-              dateText: todaySlash(),
+              dateText: dateToSlash(analysisDate),
               storeName: store?.name || "",
               expectedNumbers,
             });
@@ -2403,7 +2703,7 @@ function ImportStep({
               borderRadius: 12, padding: "12px 14px", marginBottom: 10,
             }}>
               <div style={{ fontSize: 13, color: C.subHi, fontFamily: mono, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
-                日付：{todaySlash()}{"　"}店舗名：{store?.name || "未選択"}
+                日付：{dateToSlash(analysisDate)}{"　"}店舗名：{store?.name || "未選択"}
                 {"\n"}
                 <span style={{ color: C.sub }}>{promptHead.split("\n")[0]} …</span>
               </div>
@@ -2572,6 +2872,7 @@ function StepBadge({ n }) {
 // ════════════ ルート ════════════
 export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiApiKey, onChangeAiApiKey, customMachines }) {
   const [step, setStep] = useState("upload");
+  const [analysisDate, setAnalysisDate] = useState(todayStr);
   const [images, setImages] = useState([]);
   const [slots, setSlots] = useState([]); // ピクセル解析の生スロット
   const [analysisReports, setAnalysisReports] = useState([]);
@@ -2633,6 +2934,9 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
           ? "manual-verified"
         : slot?.machineNumberOcr?.accepted === true
           ? "ocr"
+          : options.storeMapVerified === true
+            && String(options.storeCandidateNumbers?.[index] || "") === String(numbers[index] || "")
+            ? "store-map-verified"
           : "manual-verified";
       return {
         ...row,
@@ -2663,7 +2967,7 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
     const scan = makeScan({
       storeId: store?.id ?? null,
       storeName: store?.name || "",
-      date: todayStr(),
+      date: analysisDate || todayStr(),
       machineName,
       rows,
     });
@@ -2734,6 +3038,8 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
         <UploadStep
           store={store}
           images={images}
+          analysisDate={analysisDate}
+          setAnalysisDate={setAnalysisDate}
           setImages={(updater) => {
             setImages(updater);
             setSlots([]);
@@ -2782,6 +3088,7 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
       {step === "import" && (
         <ImportStep
           store={store}
+          analysisDate={analysisDate}
           rows={rows}
           onBack={() => setStep("results")}
           onMerge={handleMerge}

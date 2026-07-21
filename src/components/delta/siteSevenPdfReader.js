@@ -20,6 +20,19 @@ class SiteSevenBinaryDataFactory {
   }
 }
 
+function pdfReadError(message, code, parsed) {
+  const error = new Error(message);
+  error.code = code;
+  error.extractionMode = parsed?.extractionMode || "unknown";
+  error.details = {
+    pageCount: Number(parsed?.pageCount) || 0,
+    textItemCount: Number(parsed?.textItemCount) || 0,
+    headerCount: Number(parsed?.headerCount) || 0,
+    skippedCount: Array.isArray(parsed?.skipped) ? parsed.skipped.length : 0,
+  };
+  return error;
+}
+
 export async function readSiteSevenPdf(file, { dateText = "", storeName = "" } = {}) {
   if (!file || typeof file.arrayBuffer !== "function") {
     throw new Error("PDFファイルを選んでください");
@@ -46,7 +59,25 @@ export async function readSiteSevenPdf(file, { dateText = "", storeName = "" } =
 
     const parsed = parseSiteSevenTextPages(pages, { dateText, storeName });
     if (!parsed.rows.length) {
-      throw new Error("台データを見つけられませんでした。画像だけのPDFはAI補助読み取りを使ってください");
+      if (parsed.extractionMode === "image-only") {
+        throw pdfReadError(
+          "このPDFは文字を直接取得できない画像PDFです。各ページを写真として読み取り、数値を要確認にしてください",
+          "SITE_SEVEN_IMAGE_ONLY_PDF",
+          parsed,
+        );
+      }
+      if (!parsed.schemaDetected) {
+        throw pdfReadError(
+          "サイトセブンの6列見出しを確認できませんでした。元の台データPDFまたはCSVを選んでください",
+          "SITE_SEVEN_PDF_SCHEMA_NOT_FOUND",
+          parsed,
+        );
+      }
+      throw pdfReadError(
+        "6列の台データを安全に確定できませんでした。読み取れない行を要確認にしてください",
+        "SITE_SEVEN_PDF_ROWS_UNRESOLVED",
+        parsed,
+      );
     }
     return parsed;
   } finally {

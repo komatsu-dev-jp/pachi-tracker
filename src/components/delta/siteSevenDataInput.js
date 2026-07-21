@@ -297,13 +297,14 @@ function sameImportedValues(left, right) {
       || String(left.maxPayout) === String(right.maxPayout));
 }
 
-function appendReviewReason(row, reason) {
+function appendReviewReason(row, reason, { rejectJointEvidence = false } = {}) {
   const reasons = [row?.reviewReason, reason].filter(Boolean);
   return {
     ...row,
     reviewRequired: true,
     reviewConfirmed: false,
     reviewReason: [...new Set(reasons)].join("。"),
+    ...(rejectJointEvidence ? { jointEvidenceRejected: true } : {}),
   };
 }
 
@@ -341,7 +342,8 @@ export function mergeSiteSevenParsedResults(resultEntries, { expectedNumbers = [
       if (parsedNum !== null && sourceDuplicateNumbers.has(String(parsedNum))) {
         candidate = appendReviewReason(
           candidate,
-          `元資料内で台${parsedNum}が重複しています。採用する数値を確認してください`
+          `元資料内で台${parsedNum}が重複しています。採用する数値を確認してください`,
+          { rejectJointEvidence: true },
         );
       }
       if (parsedNum === null || parsedNum < 0) {
@@ -375,7 +377,9 @@ export function mergeSiteSevenParsedResults(resultEntries, { expectedNumbers = [
       }
 
       const conflictReason = `台${key}の数値が${existing.importKind.toUpperCase()}と${String(kind).toUpperCase()}で一致しません。元資料を確認してください`;
-      rows[existingIndex] = appendReviewReason(existing, conflictReason);
+      rows[existingIndex] = appendReviewReason(existing, conflictReason, {
+        rejectJointEvidence: true,
+      });
     }
   }
 

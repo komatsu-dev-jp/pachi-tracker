@@ -54,9 +54,11 @@ function tableEntry(tableRow, index) {
     index,
     id: String(tableRow?.rowId ?? `row-${index}`),
     rawNum,
-    trustedNum: tableRow?.numAccepted === true ? rawNum : null,
+    trustedNum: tableRow?.numAccepted === true
+      && tableRow?.jointEvidenceRejected !== true ? rawNum : null,
     rawMaxPayout,
-    trustedMaxPayout: tableRow?.maxPayoutAccepted === true ? rawMaxPayout : null,
+    trustedMaxPayout: tableRow?.maxPayoutAccepted === true
+      && tableRow?.jointEvidenceRejected !== true ? rawMaxPayout : null,
     sourceIndex: finiteOrder(tableRow?.sourceIndex, 0),
     rowIndex: finiteOrder(tableRow?.rowIndex, index),
   };

@@ -2,12 +2,38 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildPartialMachineNumberAssignment,
+  canAutoAcceptSiteSevenReports,
   createImageSelectionSnapshot,
   seedPartialMachineNumberInputs,
   shouldAcceptImageAnalysis,
   summarizeSiteSevenReviewState,
   trustedMachineNumberForSlot,
 } from "../deltaWorkflowState.js";
+
+test("サイトセブン資料は全ファイルが安全な場合だけ共同照合を自動確定する", () => {
+  const safe = [{
+    kind: "pdf",
+    autoAcceptable: true,
+    skippedCount: 0,
+    duplicateCount: 0,
+    error: null,
+  }];
+
+  assert.equal(canAutoAcceptSiteSevenReports(safe), true);
+  assert.equal(canAutoAcceptSiteSevenReports([]), false);
+  assert.equal(canAutoAcceptSiteSevenReports([{ ...safe[0], autoAcceptable: false }]), false);
+  assert.equal(canAutoAcceptSiteSevenReports([{ ...safe[0], skippedCount: 1 }]), false);
+  assert.equal(canAutoAcceptSiteSevenReports([{ ...safe[0], duplicateCount: 1 }]), false);
+  assert.equal(canAutoAcceptSiteSevenReports([{ ...safe[0], error: "read failed" }]), false);
+  assert.equal(canAutoAcceptSiteSevenReports([{
+    kind: "image",
+    autoAcceptable: true,
+    skippedCount: 0,
+    fieldReviewCount: 1,
+    duplicateCount: 0,
+    error: null,
+  }]), true, "回転数などのfield reviewはnum/max共同照合の自動確定を妨げない");
+});
 
 test("解析開始後に画像の追加・削除・並べ替えがあれば古い結果を採用しない", () => {
   const first = { id: "graph-1", name: "graph-1.jpg", dataUrl: "data:a" };
