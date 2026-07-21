@@ -108,6 +108,9 @@ export function buildNumTrend(scans, storeId, num) {
     for (const row of rows) {
       if (!row || row.num == null) continue;
       if (String(row.num) !== numKey) continue;
+      if (row?.status === "bounded" || row?.status === "failed"
+        || (row?.status === "review" && row?.reviewConfirmed !== true)
+        || row?.val === null || row?.val === undefined || row?.val === "") continue;
       const val = Number(row.val);
       if (!Number.isFinite(val)) continue;
       const rank = (typeof row.rank === "string" && row.rank)

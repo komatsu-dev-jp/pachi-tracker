@@ -13,6 +13,7 @@ import { Card } from "../Atoms";
 import { getRankTone } from "./deltaEngine";
 import { TopBar } from "./DeltaAnalyzer";
 import { buildRowDeltaEvidence } from "./deltaEvidence";
+import { formatDeltaRange, isBoundedDeltaRow } from "./deltaBounded";
 import { machineDB } from "../../machineDB";
 import {
   listScanDates,
@@ -63,13 +64,16 @@ function EmptyCard({ text }) {
 
 // ── 台マス（1台分） ──
 function MapCell({ cell, selected, onSelect }) {
-  const tone = cell.row ? getRankTone(cell.row.rank) : null;
+  const bounded = isBoundedDeltaRow(cell.row);
+  const tone = cell.row ? bounded
+    ? { color: C.yellow, bg: "color-mix(in srgb, var(--yellow) 13%, transparent)" }
+    : getRankTone(cell.row.rank) : null;
   const hasData = !!cell.row;
   return (
     <button
       className="b"
       onClick={() => onSelect(cell)}
-      aria-label={hasData ? `台${cell.num} ランク${cell.row.rank}` : `台${cell.num} データなし`}
+      aria-label={hasData ? bounded ? `台${cell.num} 差玉は境界到達記録` : `台${cell.num} ランク${cell.row.rank}` : `台${cell.num} データなし`}
       style={{
         minHeight: TAP + 8,
         borderRadius: 10,
@@ -98,7 +102,7 @@ function MapCell({ cell, selected, onSelect }) {
         color: hasData ? tone.color : C.sub,
         fontFamily: hasData ? mono : font,
       }}>
-        {hasData ? cell.row.rank : "—"}
+        {hasData ? bounded ? "境界" : cell.row.rank : "—"}
       </span>
     </button>
   );
@@ -174,7 +178,10 @@ function TrendSection({ trend, currentDate }) {
 function DetailPanel({ cell, machineName, onClose, trend, currentDate, prediction }) {
   const row = cell.row;
   const hasTai = row && row.normalSpins != null && row.totalStarts != null;
-  const tone = row ? getRankTone(row.rank) : null;
+  const bounded = isBoundedDeltaRow(row);
+  const tone = row ? bounded
+    ? { color: C.yellow, bg: "color-mix(in srgb, var(--yellow) 13%, transparent)" }
+    : getRankTone(row.rank) : null;
   return (
     <div style={{
       marginTop: 10,
@@ -190,12 +197,16 @@ function DetailPanel({ cell, machineName, onClose, trend, currentDate, predictio
             <>
               <div style={{
                 fontSize: 22, fontWeight: 900, fontFamily: mono, marginTop: 4,
-                color: row.val >= 0 ? C.green : C.red,
+                color: bounded ? C.yellow : row.val >= 0 ? C.green : C.red,
               }}>
-                差玉 {sp(row.val)}玉
+                差玉 {bounded ? formatDeltaRange(row.deltaRange, sp) : `${sp(row.val)}玉`}
               </div>
               <div style={{ fontSize: 13, color: C.subHi, fontWeight: 700, marginTop: 4 }}>
-                ランク <span style={{ color: tone.color, fontFamily: mono, fontWeight: 900 }}>{row.rank}</span>
+                {bounded ? (
+                  <span style={{ color: C.yellow }}>正確な一点値ではないため集計・予測から除外</span>
+                ) : (
+                  <>ランク <span style={{ color: tone.color, fontFamily: mono, fontWeight: 900 }}>{row.rank}</span></>
+                )}
                 {(row.machineName || machineName) && (
                   <span style={{ color: C.sub, marginLeft: 8, fontWeight: 600 }}>
                     {row.machineName || machineName}

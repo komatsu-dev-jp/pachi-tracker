@@ -14,6 +14,14 @@ import {
   parseSiteSevenTableImageData,
 } from "../siteSevenImageOcr.js";
 import { matchSiteSevenGraphPanels } from "../siteSevenJointMatcher.js";
+import { resolveMatchedSiteSevenRows } from "../siteSevenJointResolution.js";
+import { attachClippedDeltaRanges } from "../deltaBounded.js";
+import {
+  mergeTaiData,
+  updateDeltaReview,
+  validateDeltaRows,
+} from "../deltaSelectors.js";
+import { prepareSiteSevenImportedRows } from "../siteSevenDataInput.js";
 
 const FIXTURE_ROOT = path.resolve("src/components/delta/__tests__/fixtures");
 const GRAPH_ROOT = path.join(FIXTURE_ROOT, "p-analysis-review-52");
@@ -142,8 +150,49 @@ test("基準4枚は52台すべて台番号・最高出玉・グラフを1対1対
     .map((panel, graphIndex) => ({ panel, num: numByGraphIndex.get(graphIndex) }))
     .filter(({ panel }) => panel.status === "review")
     .map(({ num }) => num);
-  assert.deepEqual(reviewNumbers, ["503", "508", "574"]);
-  assert.equal(graphPanels.filter((panel) => panel.status === "ok").length, 49);
+  assert.deepEqual(reviewNumbers, ["499", "503", "508", "548", "574"]);
+  assert.equal(graphPanels.filter((panel) => panel.status === "ok").length, 47);
+});
+
+test("共同照合→表統合→上限接触記録→保存検証まで後続台をずらさない", async () => {
+  const table = await tableRows();
+  const { graphPanels, result } = await jointResult(pages);
+  const matchByGraphIndex = new Map(result.matches.map((match) => [match.graphIndex, match]));
+  const assigned = graphPanels.map((panel, graphIndex) => {
+    const match = matchByGraphIndex.get(graphIndex);
+    return {
+      ...panel,
+      num: match.resolvedNum,
+      jointMatch: {
+        accepted: true,
+        resolvedNum: match.resolvedNum,
+        matchedBy: match.matchedBy,
+        maxPayout: match.maxPayout,
+      },
+    };
+  });
+  const resolvedTable = resolveMatchedSiteSevenRows(table, result.matches);
+  const prepared = prepareSiteSevenImportedRows(resolvedTable, { expectedNumbers: numbers });
+  assert.equal(prepared.rows.length, 52);
+  const merged = mergeTaiData(assigned, prepared.rows);
+  assert.equal(merged.matched, 52);
+
+  const withCensoring = attachClippedDeltaRanges(merged.rows);
+  const validation = validateDeltaRows(withCensoring);
+  assert.equal(validation.exactCount, 47);
+  assert.equal(validation.boundedCount, 2);
+  assert.deepEqual(validation.boundedIndices.map((index) => withCensoring[index].num), ["499", "548"]);
+  assert.deepEqual(validation.unresolvedIndices.map((index) => withCensoring[index].num), ["503", "508", "574"]);
+
+  const reviewed = withCensoring.map((row) => (
+    ["503", "508", "574"].includes(row.num)
+      ? updateDeltaReview(row, { value: row.val, confirmed: true, reviewedAt: "2026-07-21T00:00:00.000Z" })
+      : row
+  ));
+  const readyToSave = validateDeltaRows(reviewed);
+  assert.equal(readyToSave.valid, true);
+  assert.equal(readyToSave.exactCount, 50);
+  assert.equal(readyToSave.boundedCount, 2);
 });
 
 test("グラフ3枚の選択順を変えても台とグラフの対応は変わらない", async () => {

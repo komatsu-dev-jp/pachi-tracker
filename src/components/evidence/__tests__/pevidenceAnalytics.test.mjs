@@ -29,6 +29,16 @@ assert.ok(Math.abs(pevidenceInternals.atLeastOneHitProbability(750, 319.6) - 0.9
 assert.deepEqual(pevidenceInternals.outwardPercentBand(0.511, 0.543), { low: 50, high: 55 });
 assert.equal(pevidenceInternals.hasExactMachineIdentity(machine, "テスト機"), true);
 assert.equal(pevidenceInternals.hasExactMachineIdentity(machine, "テスト"), false, "部分一致だけでは勝率算定へ進めない");
+assert.equal(
+  pevidenceInternals.estimateDaily({
+    normalSpins: 631,
+    totalStarts: 40,
+    val: null,
+    status: "bounded",
+  }, machine, PE_PARAMS).valid,
+  false,
+  "範囲記録を差玉0としてP-EVIDENCEへ混ぜない",
+);
 
 function rowForRate(num, rate, date, island = "A島", event = "") {
   const spins = 720;

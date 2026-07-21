@@ -135,6 +135,7 @@ function storeKey(scan, row) {
 
 function hasExplicitError(row) {
   const status = String(row?.status ?? row?.statusStr ?? row?.qualityStatus ?? "").trim();
+  if (status === "review" && row?.reviewConfirmed === true) return false;
   return Boolean(status) && !["正常", "ok", "OK", "有効"].includes(status);
 }
 
@@ -177,9 +178,13 @@ function latestRows(scans = []) {
 function estimateDaily(row, machine, params) {
   const normalSpins = Math.max(0, num(row.normalSpins));
   const totalStarts = Math.max(0, num(row.totalStarts));
-  const deltaBalls = num(row.val);
+  const rawDelta = row?.val;
+  const deltaBalls = Number(rawDelta);
   const border = machineBorder(machine);
   const stats = resolveMachineStats(machine);
+  if (rawDelta === null || rawDelta === undefined || rawDelta === "" || !Number.isFinite(deltaBalls)) {
+    return { valid: false, reason: "確定差玉なし", normalSpins, totalStarts, deltaBalls: null, border, stats };
+  }
   if (!(normalSpins > 0) || !(border > 0) || hasExplicitError(row)) {
     return { valid: false, normalSpins, totalStarts, deltaBalls, border, stats };
   }
