@@ -292,7 +292,9 @@ const SITE_SEVEN_SOURCE_PRIORITY = Object.freeze({ pdf: 3, csv: 3, image: 1 });
 
 function sameImportedValues(left, right) {
   return String(left?.normalSpins ?? "") === String(right?.normalSpins ?? "")
-    && String(left?.totalStarts ?? "") === String(right?.totalStarts ?? "");
+    && String(left?.totalStarts ?? "") === String(right?.totalStarts ?? "")
+    && (left?.maxPayout == null || right?.maxPayout == null
+      || String(left.maxPayout) === String(right.maxPayout));
 }
 
 function appendReviewReason(row, reason) {
@@ -315,7 +317,8 @@ export function mergeSiteSevenParsedResults(resultEntries, { expectedNumbers = [
     ));
   const rows = [];
   const firstIndexByNumber = new Map();
-  let duplicateCount = 0;
+  let duplicateOccurrenceCount = 0;
+  const duplicateNumbers = new Set();
   let sourceSkippedCount = 0;
 
   for (const { result, kind } of entries) {
@@ -324,8 +327,9 @@ export function mergeSiteSevenParsedResults(resultEntries, { expectedNumbers = [
       .map((duplicate) => parseSiteSevenEditableInteger(duplicate?.num))
       .filter((num) => num !== null && num >= 0)
       .map(String));
+    for (const num of sourceDuplicateNumbers) duplicateNumbers.add(num);
     sourceSkippedCount += Array.isArray(result?.skipped) ? result.skipped.length : 0;
-    duplicateCount += sourceDuplicates.length;
+    duplicateOccurrenceCount += sourceDuplicates.length;
     for (const rawRow of result?.rows || []) {
       const parsedNum = parseSiteSevenEditableInteger(rawRow?.num);
       let candidate = {
@@ -353,7 +357,8 @@ export function mergeSiteSevenParsedResults(resultEntries, { expectedNumbers = [
         continue;
       }
 
-      duplicateCount += 1;
+      duplicateOccurrenceCount += 1;
+      duplicateNumbers.add(key);
       const existing = rows[existingIndex];
       if (sameImportedValues(existing, candidate)) {
         if (!existing.machineName && candidate.machineName) {
@@ -380,8 +385,10 @@ export function mergeSiteSevenParsedResults(resultEntries, { expectedNumbers = [
     .map(String))];
   const recognizedCount = rows.length;
   const missingNumbers = expected.filter((num) => !rows.some((row) => String(row.num) === num));
-  const placeholderCount = Math.max(0, expected.length - rows.length);
-  for (const num of missingNumbers.slice(0, placeholderCount)) {
+  // 誤読した余分な行が1件あると rows.length 自体は期待件数と同じになる。
+  // 件数差だけで補完数を決めると、本当に欠けた台の修正欄が作られないため、
+  // 期待番号ごとの不足をすべて独立した確認行として残す。
+  for (const num of missingNumbers) {
     rows.push({
       num,
       normalSpins: "",
@@ -398,7 +405,9 @@ export function mergeSiteSevenParsedResults(resultEntries, { expectedNumbers = [
 
   return {
     rows,
-    duplicateCount,
+    duplicateCount: duplicateNumbers.size,
+    duplicateOccurrenceCount,
+    duplicateNumbers: [...duplicateNumbers].sort((left, right) => Number(left) - Number(right)),
     sourceSkippedCount,
     recognizedCount,
     reviewCount: rows.filter((row) => row.reviewRequired && !row.reviewConfirmed).length,

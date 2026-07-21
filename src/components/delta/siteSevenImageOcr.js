@@ -1,6 +1,8 @@
 // サイトセブンの表スクリーンショット専用OCR。
 // 外部APIや汎用OCRを使わず、表の罫線と検証済み固定数字テンプレートで各セルを独立認識する。
 
+import { SITE_SEVEN_MAX_PAYOUT_DIGIT_SAMPLES } from "./siteSevenMaxPayoutDigitSamples.js";
+
 const DARK_LUMA = 185;
 const GRID_MIN_LUMA = 120;
 // 240前後の薄い行背景を罫線と誤認しないよう、実際の灰色罫線だけを対象にする。
@@ -329,6 +331,7 @@ function classifyGlyph(glyph, prototypes) {
 
 let embeddedPrototypesCache = null;
 let embeddedMachinePrototypesCache = null;
+let embeddedMaxPayoutPrototypesCache = null;
 let ocrWorkerState = null;
 let ocrWorkerRequestId = 0;
 function prototypesFromSerializedSamples(serialized) {
@@ -404,10 +407,11 @@ function dataRowCandidates(image, horizontalLines, verticalLines) {
   return rows;
 }
 
-function validateExpectedNumbers(expectedNumbers) {
+function validateExpectedNumbers(expectedNumbers, { allowEmpty = false } = {}) {
   const raw = Array.isArray(expectedNumbers) ? expectedNumbers : [];
   const normalized = raw.map((value) => String(value ?? "").trim());
   if (!normalized.length) {
+    if (allowEmpty) return [];
     throw new Error("照合する台番号がありません。先に差玉グラフの台番号を確定してください");
   }
   if (normalized.some((value) => !/^\d+$/u.test(value))) {
@@ -498,9 +502,12 @@ function groupsForExactCount(cell, expectedCount) {
   return groups;
 }
 
-function recognizeMachineMapping(image, rows, expectedNumbers, verticalLines) {
-  const expected = validateExpectedNumbers(expectedNumbers);
+function recognizeMachineMapping(image, rows, expectedNumbers, verticalLines, {
+  allowRawMachineNumbers = false,
+} = {}) {
+  const expected = validateExpectedNumbers(expectedNumbers, { allowEmpty: allowRawMachineNumbers });
   const expectedSet = new Set(expected);
+  const hasExpectedNumbers = expectedSet.size > 0;
   const prototypes = embeddedMachineDigitPrototypes();
   const mapped = rows.map((row) => {
     const recognition = recognizeCellEnsemble(
@@ -512,7 +519,7 @@ function recognizeMachineMapping(image, rows, expectedNumbers, verticalLines) {
     const unanimous = recognition.variants.length === 3
       && recognition.variants.every((value) => value === candidate);
     const accepted = Boolean(candidate)
-      && expectedSet.has(candidate)
+      && (!hasExpectedNumbers || expectedSet.has(candidate))
       && unanimous
       && recognition.baseReasons.length === 0
       && recognition.confidence >= 0.25;
@@ -524,7 +531,7 @@ function recognizeMachineMapping(image, rows, expectedNumbers, verticalLines) {
       machineNumberAccepted: accepted,
       machineNumberReviewReason: !candidate
         ? "台番号を読み取れませんでした"
-        : !expectedSet.has(candidate)
+        : hasExpectedNumbers && !expectedSet.has(candidate)
           ? `差玉側に台${candidate}がありません`
           : !unanimous
             ? "台番号の読み取り結果が条件によって一致しません"
@@ -548,10 +555,12 @@ function recognizeMachineMapping(image, rows, expectedNumbers, verticalLines) {
     }
   }
 
-  const orderConflictIndexes = findSiteSevenMachineNumberOrderConflicts(
-    mapped.map((row) => row.machineNumberAccepted ? row.num : ""),
-    expected
-  );
+  const orderConflictIndexes = hasExpectedNumbers
+    ? findSiteSevenMachineNumberOrderConflicts(
+      mapped.map((row) => row.machineNumberAccepted ? row.num : ""),
+      expected
+    )
+    : [];
   for (const index of orderConflictIndexes) {
     mapped[index].machineNumberAccepted = false;
     mapped[index].machineNumberReviewReason = "台番号の並び順が前後の行と一致しません";
@@ -568,12 +577,13 @@ function recognizeMachineMapping(image, rows, expectedNumbers, verticalLines) {
     mapped,
     accuracy: mapped.length ? acceptedCount / mapped.length : 0,
     acceptedCount,
+    machineNumberMode: hasExpectedNumbers ? "expected" : "raw",
     consecutiveLines,
     degradedReasons,
   };
 }
 
-function recognizeMaskedCell(cell, prototypes) {
+function recognizeMaskedCell(cell, prototypes, { widthPenaltyWeight = 0.42 } = {}) {
   const contentBounds = maskBounds(cell.mask, cell.width, cell.height);
   if (!contentBounds) return { value: "", confidence: 0, reasons: ["empty-cell"] };
   const contentWidth = contentBounds.maxX - contentBounds.minX + 1;
@@ -591,7 +601,8 @@ function recognizeMaskedCell(cell, prototypes) {
     const leadingZeroPenalty = value.length > 1 && value.startsWith("0") ? 0.12 : 0;
     const expectedWidth = recognized.reduce((sum, result) => sum + (prototypes[result.digit]?.width || 0), 0)
       + Math.max(0, digitCount - 1);
-    const widthPenalty = Math.abs(expectedWidth - contentWidth) / Math.max(1, contentWidth) * 0.42;
+    const widthPenalty = Math.abs(expectedWidth - contentWidth) / Math.max(1, contentWidth)
+      * widthPenaltyWeight;
     candidates.push({
       value,
       recognized,
@@ -627,8 +638,8 @@ function recognizeMaskedCell(cell, prototypes) {
   };
 }
 
-function recognizeCell(image, bounds, prototypes, darkLuma = DARK_LUMA) {
-  return recognizeMaskedCell(foregroundMask(image, bounds, darkLuma), prototypes);
+function recognizeCell(image, bounds, prototypes, darkLuma = DARK_LUMA, options = {}) {
+  return recognizeMaskedCell(foregroundMask(image, bounds, darkLuma), prototypes, options);
 }
 
 function summarizeRecognitionEnsemble(variants) {
@@ -653,9 +664,9 @@ function summarizeRecognitionEnsemble(variants) {
   };
 }
 
-function recognizeCellEnsemble(image, bounds, prototypes) {
+function recognizeCellEnsemble(image, bounds, prototypes, options = {}) {
   const variants = [184, DARK_LUMA, 186]
-    .map((threshold) => recognizeCell(image, bounds, prototypes, threshold));
+    .map((threshold) => recognizeCell(image, bounds, prototypes, threshold, options));
   return summarizeRecognitionEnsemble(variants);
 }
 
@@ -740,7 +751,15 @@ export function createSiteSevenDigitTemplateFixture(image, {
     const mappedRow = inspected.rows[rowIndex];
     const truth = groundTruthRows[rowIndex];
     if (!truth) throw new Error(`${rowIndex + 1}行目の正解データがありません`);
-    for (const [columnIndex, rawValue] of [[3, truth.normalSpins], [6, truth.totalStarts]]) {
+    const labeledCells = [
+      [3, truth.normalSpins],
+      [5, truth.maxPayout],
+      [6, truth.totalStarts],
+    ].filter(([, rawValue]) => rawValue !== null && rawValue !== undefined && rawValue !== "");
+    if (!labeledCells.length) {
+      throw new Error(`${rowIndex + 1}行目に数字字体の正解データがありません`);
+    }
+    for (const [columnIndex, rawValue] of labeledCells) {
       const value = String(rawValue);
       const cell = foregroundMask(image, rowCellBounds(inspected.geometry.lines, mappedRow, columnIndex));
       const groups = groupsForExactCount(cell, value.length);
@@ -829,20 +848,26 @@ export function createSiteSevenMachineDigitTemplateFixture(image, {
 
 export function debugRecognizeSiteSevenCell(image, {
   expectedNumbers = [],
+  allowRawMachineNumbers = false,
   rowIndex = 0,
   columnIndex = 3,
-  digitSamples = EMBEDDED_DIGIT_SAMPLES,
+  digitSamples = null,
 } = {}) {
-  const inspected = inspectSiteSevenTableImage(image, { expectedNumbers });
+  const inspected = inspectSiteSevenTableImage(image, { expectedNumbers, allowRawMachineNumbers });
   const row = inspected.mapping.mapped[rowIndex];
   if (!row) throw new Error("指定された確認行がありません");
   const prototypes = columnIndex === 1
     ? embeddedMachineDigitPrototypes()
-    : prototypesFromSerializedSamples(digitSamples);
+    : columnIndex === 5
+      ? digitSamples
+        ? prototypesFromSerializedSamples(digitSamples)
+        : embeddedMaxPayoutDigitPrototypes()
+      : prototypesFromSerializedSamples(digitSamples || EMBEDDED_DIGIT_SAMPLES);
   return recognizeCellEnsemble(
     image,
     rowCellBounds(inspected.geometry.lines, row, columnIndex),
-    prototypes
+    prototypes,
+    columnIndex === 5 ? { widthPenaltyWeight: 0 } : {},
   );
 }
 
@@ -861,43 +886,72 @@ export function inspectSiteSevenTableStructure(image) {
   return { image, horizontalLines, geometry, rows };
 }
 
-export function inspectSiteSevenTableImage(image, { expectedNumbers = [] } = {}) {
+export function inspectSiteSevenTableImage(image, {
+  expectedNumbers = [],
+  allowRawMachineNumbers = false,
+} = {}) {
   const structure = inspectSiteSevenTableStructure(image);
   const { rows } = structure;
-  const mapping = recognizeMachineMapping(image, rows, expectedNumbers, structure.geometry.lines);
+  const mapping = recognizeMachineMapping(
+    image,
+    rows,
+    expectedNumbers,
+    structure.geometry.lines,
+    { allowRawMachineNumbers },
+  );
   return { ...structure, mapping };
+}
+
+function embeddedMaxPayoutDigitPrototypes() {
+  if (embeddedMaxPayoutPrototypesCache) return embeddedMaxPayoutPrototypesCache;
+  embeddedMaxPayoutPrototypesCache = prototypesFromSerializedSamples(
+    SITE_SEVEN_MAX_PAYOUT_DIGIT_SAMPLES,
+  );
+  return embeddedMaxPayoutPrototypesCache;
 }
 
 export function parseSiteSevenTableImageData(image, {
   expectedNumbers = [],
+  allowRawMachineNumbers = false,
   dateText = "",
   storeName = "",
   fileName = "",
   digitSamples = null,
+  maxPayoutDigitSamples = null,
 } = {}) {
   const scaleInfo = normalizeTableScale(image);
   const normalizedImage = scaleInfo.image;
-  const inspected = inspectSiteSevenTableImage(normalizedImage, { expectedNumbers });
+  const inspected = inspectSiteSevenTableImage(normalizedImage, {
+    expectedNumbers,
+    allowRawMachineNumbers,
+  });
   const { geometry, mapping } = inspected;
   const digitPrototypes = digitSamples
     ? prototypesFromSerializedSamples(digitSamples)
     : embeddedDigitPrototypes();
+  const maxPayoutDigitPrototypes = maxPayoutDigitSamples
+    ? prototypesFromSerializedSamples(maxPayoutDigitSamples)
+    : embeddedMaxPayoutDigitPrototypes();
   const recognizedRows = [];
   for (let index = 0; index < mapping.mapped.length; index += 1) {
     const mappedRow = mapping.mapped[index];
     const normal = recognizeCellEnsemble(normalizedImage, rowCellBounds(geometry.lines, mappedRow, 3), digitPrototypes);
+    const maxPayout = recognizeCellEnsemble(
+      normalizedImage,
+      rowCellBounds(geometry.lines, mappedRow, 5),
+      maxPayoutDigitPrototypes,
+      { widthPenaltyWeight: 0 },
+    );
     const jackpot = recognizeCellEnsemble(normalizedImage, rowCellBounds(geometry.lines, mappedRow, 6), digitPrototypes);
     recognizedRows.push({
       normal,
+      maxPayout,
       jackpot,
       mappedRow,
       index,
     });
   }
   const degradedReasons = [...scaleInfo.reasons, ...mapping.degradedReasons];
-  if (recognizedRows.some(({ normal, jackpot }) => (
-    normal.baseReasons.length > 0 || jackpot.baseReasons.length > 0
-  ))) degradedReasons.push("font-or-compression-difference");
   const uniqueDegradedReasons = [...new Set(degradedReasons)];
   const degradedImage = uniqueDegradedReasons.length > 0;
   const globalReviewMessages = uniqueDegradedReasons.map((reason) => {
@@ -915,21 +969,38 @@ export function parseSiteSevenTableImageData(image, {
   const recognitionReviewReason = (label, recognition) => {
     if (!recognition.value) return `${label}を読み取れませんでした`;
     if (!recognition.unanimous) return `${label}の読み取り結果が条件によって一致しません`;
-    if (recognition.baseReasons.length > 0 || recognition.confidence < 0.3) {
+    const hasDistantGlyph = recognition.glyphs?.some((glyph) => glyph.distance > 0.04);
+    if (recognition.baseReasons.length > 0 || recognition.confidence < 0.3 || hasDistantGlyph) {
       return `${label}を十分な精度で読めませんでした`;
     }
     return "";
   };
+  const maxPayoutReviewReasonFor = (recognition) => {
+    // The maximum-payout column uses its own fixed glyph bank. A glyph that is an
+    // almost exact match is stronger evidence than the generic segmentation
+    // margin (which can be small when a trailing zero is faintly connected).
+    const exactTemplateMatch = /^\d+$/.test(recognition.value || "")
+      && recognition.glyphs?.length > 0
+      && recognition.glyphs.every((glyph) => glyph.distance <= 0.002)
+      && (recognition.candidates?.[0]?.distance ?? 1) <= 0.002;
+    return exactTemplateMatch
+      ? ""
+      : recognitionReviewReason("最高出玉", recognition);
+  };
   const rows = [];
   const skipped = [];
-  for (const { normal, jackpot, mappedRow, index } of recognizedRows) {
+  for (const { normal, maxPayout, jackpot, mappedRow, index } of recognizedRows) {
     const normalReviewReason = recognitionReviewReason("通常中スタート", normal);
+    const maxPayoutReviewReason = maxPayoutReviewReasonFor(maxPayout);
     const jackpotReviewReason = recognitionReviewReason("大当たり回数", jackpot);
-    const rowReviewMessages = [
+    const nonNumberReviewMessages = [
       ...globalReviewMessages,
-      ...(!mappedRow.machineNumberAccepted ? [mappedRow.machineNumberReviewReason] : []),
       ...(normalReviewReason ? [normalReviewReason] : []),
       ...(jackpotReviewReason ? [jackpotReviewReason] : []),
+    ].filter(Boolean);
+    const rowReviewMessages = [
+      ...nonNumberReviewMessages,
+      ...(!mappedRow.machineNumberAccepted ? [mappedRow.machineNumberReviewReason] : []),
     ].filter(Boolean);
     const needsReview = rowReviewMessages.length > 0;
     const row = {
@@ -939,18 +1010,59 @@ export function parseSiteSevenTableImageData(image, {
       machineName: "",
       num: mappedRow.num,
       normalSpins: normal.value,
+      maxPayout: maxPayout.value,
       totalStarts: jackpot.value,
       sourceFile: String(fileName || ""),
       sourceLine: index + 1,
       sourceType: "local-image-ocr",
       reviewRequired: needsReview,
       reviewConfirmed: false,
+      globalReviewRequired: globalReviewMessages.length > 0,
+      nonNumberReviewRequired: nonNumberReviewMessages.length > 0,
+      nonNumberReviewReason: [...new Set(nonNumberReviewMessages)].join("。"),
       ocrConfidence: Math.min(
         mappedRow.machineNumberRecognition.confidence,
         normal.confidence,
         jackpot.confidence
       ),
       reviewReason: [...new Set(rowReviewMessages)].join("。"),
+      // 既存の reviewRequired / ocrConfidence は、これまでと同じ3項目の集約を維持する。
+      // 最高出玉はグラフとの照合用フィールドなので、低信頼時も他の正しい行を巻き込まず
+      // field-level の状態だけで安全に止める。
+      numAccepted: mappedRow.machineNumberAccepted,
+      normalSpinsAccepted: !normalReviewReason,
+      maxPayoutAccepted: !maxPayoutReviewReason,
+      totalStartsAccepted: !jackpotReviewReason,
+      numConfidence: mappedRow.machineNumberRecognition.confidence,
+      normalSpinsConfidence: normal.confidence,
+      maxPayoutConfidence: maxPayout.confidence,
+      totalStartsConfidence: jackpot.confidence,
+      numCandidates: mappedRow.machineNumberRecognition.candidates || [],
+      maxPayoutCandidates: maxPayout.candidates || [],
+      fieldConfidence: {
+        num: mappedRow.machineNumberRecognition.confidence,
+        normalSpins: normal.confidence,
+        maxPayout: maxPayout.confidence,
+        totalStarts: jackpot.confidence,
+      },
+      fieldAccepted: {
+        num: mappedRow.machineNumberAccepted,
+        normalSpins: !normalReviewReason,
+        maxPayout: !maxPayoutReviewReason,
+        totalStarts: !jackpotReviewReason,
+      },
+      fieldReviewRequired: {
+        num: !mappedRow.machineNumberAccepted,
+        normalSpins: Boolean(normalReviewReason),
+        maxPayout: Boolean(maxPayoutReviewReason),
+        totalStarts: Boolean(jackpotReviewReason),
+      },
+      fieldReviewReason: {
+        num: mappedRow.machineNumberReviewReason || "",
+        normalSpins: normalReviewReason,
+        maxPayout: maxPayoutReviewReason,
+        totalStarts: jackpotReviewReason,
+      },
     };
     rows.push(row);
     if (needsReview) {
@@ -970,6 +1082,7 @@ export function parseSiteSevenTableImageData(image, {
     duplicates: [],
     sourceType: "local-image-ocr",
     machineNumberAccuracy: mapping.accuracy,
+    machineNumberMode: mapping.machineNumberMode,
     degradedImage,
     degradedReasons: uniqueDegradedReasons,
   };

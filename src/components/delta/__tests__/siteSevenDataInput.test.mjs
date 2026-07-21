@@ -152,6 +152,24 @@ test("mergeSiteSevenParsedResults: 同じ値なら低信頼写真を無視して
   assert.equal(merged.rows[0].importKind, "pdf");
 });
 
+test("mergeSiteSevenParsedResults: 最高出玉が双方にあり不一致なら確認対象にする", () => {
+  const merged = mergeSiteSevenParsedResults([
+    {
+      kind: "image",
+      result: { rows: [{ num: "479", normalSpins: 1104, totalStarts: 14, maxPayout: 17330 }] },
+    },
+    {
+      kind: "pdf",
+      result: { rows: [{ num: "479", normalSpins: 1104, totalStarts: 14, maxPayout: 17370 }] },
+    },
+  ], { expectedNumbers: [479] });
+
+  assert.equal(merged.rows.length, 1);
+  assert.equal(merged.rows[0].maxPayout, 17370);
+  assert.equal(merged.rows[0].reviewRequired, true);
+  assert.match(merged.rows[0].reviewReason, /一致しません/);
+});
+
 test("mergeSiteSevenParsedResults: CSV・PDF内の重複台は確認前に統合しない", () => {
   for (const kind of ["csv", "pdf"]) {
     const merged = mergeSiteSevenParsedResults([{
@@ -165,6 +183,8 @@ test("mergeSiteSevenParsedResults: CSV・PDF内の重複台は確認前に統合
     assert.equal(merged.rows[0].reviewRequired, true);
     assert.equal(merged.rows[0].reviewConfirmed, false);
     assert.match(merged.rows[0].reviewReason, /元資料内.*重複/);
+    assert.equal(merged.duplicateCount, 1);
+    assert.deepEqual(merged.duplicateNumbers, ["479"]);
     const prepared = prepareSiteSevenImportedRows(merged.rows, { expectedNumbers: [479] });
     assert.equal(prepared.rows.length, 0);
     assert.equal(prepared.reviewPendingCount, 1);
@@ -201,6 +221,25 @@ test("mergeSiteSevenParsedResults: 行が不足した場合は入力可能な要
   assert.equal(merged.rows[1].num, "480");
   assert.equal(merged.rows[1].reviewRequired, true);
   assert.equal(merged.rows[1].normalSpins, "");
+});
+
+test("mergeSiteSevenParsedResults: 誤読した余分な行で件数が同じでも不足台の修正欄を残す", () => {
+  const merged = mergeSiteSevenParsedResults([{
+    kind: "image",
+    result: {
+      rows: [
+        { num: "475", normalSpins: "1104", totalStarts: "14", reviewRequired: true },
+        { num: "480", normalSpins: "1319", totalStarts: "12" },
+      ],
+    },
+  }], { expectedNumbers: [479, 480] });
+
+  assert.equal(merged.recognizedCount, 2);
+  assert.deepEqual(merged.missingNumbers, ["479"]);
+  assert.equal(merged.rows.length, 3);
+  const placeholder = merged.rows.find((row) => row.sourceType === "missing-placeholder");
+  assert.equal(placeholder?.num, "479");
+  assert.equal(placeholder?.reviewRequired, true);
 });
 
 test("prepareSiteSevenImportedRows: 要確認行は確認前に統合せず、確認後だけ採用する", () => {
