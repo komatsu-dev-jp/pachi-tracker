@@ -121,17 +121,24 @@ test("mergeSiteSevenParsedResults: 写真はPDFの確定値を上書きせず、
   const merged = mergeSiteSevenParsedResults([
     {
       kind: "image",
-      result: { rows: [{ num: "479", normalSpins: "1109", totalStarts: "14", reviewRequired: false }] },
+      result: { rows: [{
+        num: "479", normalSpins: "1109", totalStarts: "14", reviewRequired: false,
+        numAccepted: true, maxPayoutAccepted: true,
+      }] },
     },
     {
       kind: "pdf",
-      result: { rows: [{ num: "479", normalSpins: 1104, totalStarts: 14 }] },
+      result: { rows: [{
+        num: "479", normalSpins: 1104, totalStarts: 14,
+        numAccepted: true, maxPayoutAccepted: true,
+      }] },
     },
   ], { expectedNumbers: [479] });
 
   assert.equal(merged.rows.length, 1);
   assert.equal(merged.rows[0].normalSpins, 1104);
   assert.equal(merged.rows[0].reviewRequired, true);
+  assert.equal(merged.rows[0].jointEvidenceRejected, true);
   assert.match(merged.rows[0].reviewReason, /一致しません/);
 });
 

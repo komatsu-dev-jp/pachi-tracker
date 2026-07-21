@@ -987,10 +987,26 @@ export function parseSiteSevenTableImageData(image, {
       ? ""
       : recognitionReviewReason("最高出玉", recognition);
   };
+  const exactTemplateMajority = (recognition) => {
+    const value = String(recognition?.value || "");
+    const agreeingVariants = (recognition?.variants || [])
+      .filter((variant) => variant === value).length;
+    return /^\d+$/u.test(value)
+      && agreeingVariants >= 2
+      && recognition.baseReasons.length === 0
+      && recognition.confidence >= 0.3
+      && recognition.glyphs?.length > 0
+      && recognition.glyphs.every((glyph) => glyph.distance <= 0.002)
+      && (recognition.candidates?.[0]?.distance ?? 1) <= 0.002;
+  };
   const rows = [];
   const skipped = [];
   for (const { normal, maxPayout, jackpot, mappedRow, index } of recognizedRows) {
-    const normalReviewReason = recognitionReviewReason("通常中スタート", normal);
+    // 3段階の二値化のうち2つが一致し、選択字体がテンプレートとほぼ完全一致する場合は、
+    // 1段階だけにじみで別候補になっても安全な多数決として扱う。
+    const normalReviewReason = exactTemplateMajority(normal)
+      ? ""
+      : recognitionReviewReason("通常中スタート", normal);
     const maxPayoutReviewReason = maxPayoutReviewReasonFor(maxPayout);
     const jackpotReviewReason = recognitionReviewReason("大当たり回数", jackpot);
     const nonNumberReviewMessages = [
