@@ -126,7 +126,9 @@ test("花の慶次87ver.は確認済み平均獲得玉で自動計算できる",
   const machine = getYutimeSelectionMachines().find((item) => item.name === "PA花の慶次～傾奇一転 87ver.");
   assert.ok(machine);
   assert.equal(machine.modelName, "PA花の慶次～傾奇一転N");
+  assert.equal(machine.synthProb, 87.84);
   assert.equal(machine.yutime.expectedNetBalls, 1329.5);
+  assert.equal(machine.normalExpectedNetBallsMethod, "published-simulation");
   const spec = deriveSpecForMachine(machine);
   close(deriveNormalExpectedNetBalls(spec), 1178.64);
   const result = calculateYutimeEV({
@@ -144,6 +146,28 @@ test("花の慶次87ver.は確認済み平均獲得玉で自動計算できる",
   assert.equal(result.valid, true);
   assert.equal(result.remainingSpins, 120);
   close(result.selectedArrivalInvestment, 8000);
+});
+
+test("登録済みの全遊タイム搭載スペックは追加入力なしで期待値を算出できる", () => {
+  const equippedMachines = getYutimeSelectionMachines().filter((machine) => machine.yutimeAudit?.status === "equipped");
+  assert.equal(equippedMachines.length, 34);
+
+  for (const machine of equippedMachines) {
+    const spec = deriveSpecForMachine(machine);
+    const result = calculateYutimeEV({
+      probabilityDenom: machine.synthProb,
+      triggerLowSpins: machine.yutime.triggerLowSpins,
+      currentLowSpins: Math.max(0, machine.yutime.triggerLowSpins - 1),
+      start1K: machine.border1K || machine.border?.["4.00"],
+      normalExpectedNetBalls: deriveNormalExpectedNetBalls(spec),
+      yutimeExpectedNetBalls: machine.yutime.expectedNetBalls,
+      rentBalls: 250,
+      exRate: 250,
+      playMode: "cash",
+      budgetYen: 20000,
+    });
+    assert.equal(result.valid, true, `${machine.name}: ${result.missing?.join(", ") || "不明な入力不足"}`);
+  }
 });
 
 test("期待値入力不足時も持ち玉・非等価の到達資金を分離", () => {

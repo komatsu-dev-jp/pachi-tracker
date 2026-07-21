@@ -1,3 +1,5 @@
+import { yutimeReferenceMachines as auditedYutimeReferenceMachines } from "./yutimeReferenceMachines.js";
+
 /* ================================================================
    実機データベース — 人気パチンコ機種スペック
    ※ 代表的なスペックを収録。実際の出玉は店舗により異なります。
@@ -71,6 +73,9 @@ const rawMachineDB = [
     border: { "4.00": 17.0, "3.57": 17.6, "3.33": 18.2, "3.03": 18.9 },
     prize: 1,
     avgPayoutPerHit: 481.5,
+    stdDev: 16000,
+    stdDevLabel: "P-EVIDENCE推定（ST163回・右10R1500発100%型）",
+    stdDevMethod: "p-evidence-branching-v2",
     hesoAvgPayout: 481.5,
     rushAvgPayout: 1500,
     rushEntryRate: 70,
@@ -115,6 +120,10 @@ const rawMachineDB = [
     border1K: 17.0,
     border: { "4.00": 17.0, "3.57": 17.7, "3.33": 18.2, "3.03": 18.9 },
     prize: 1,
+    avgPayoutPerHit: 360,
+    stdDev: 22000,
+    stdDevLabel: "P-EVIDENCE推定（下位約80%＋上位約89%・右1500/450発分岐型）",
+    stdDevMethod: "p-evidence-branching-v2",
     hesoAvgPayout: 360,
     rushAvgPayout: 1185,
     rushEntryRate: 80,
@@ -162,6 +171,10 @@ const rawMachineDB = [
     border1K: 16.9,
     border: { "4.00": 16.9, "3.57": 17.7, "3.33": 18.1, "3.03": 18.8 },
     prize: 2,
+    avgPayoutPerHit: 900,
+    stdDev: 16000,
+    stdDevLabel: "P-EVIDENCE推定（ST135回・右10R80%型）",
+    stdDevMethod: "p-evidence-branching-v2",
     hesoAvgPayout: 900,
     rushAvgPayout: 1260,
     rushEntryRate: 67.5,
@@ -453,6 +466,10 @@ const rawMachineDB = [
     border1K: 20.9,
     border: { "4.00": 20.9, "3.57": 21.7, "3.33": 22.3, "3.03": 23.2 },
     prize: 3,
+    avgPayoutPerHit: 660,
+    stdDev: 18000,
+    stdDevLabel: "P-EVIDENCE推定（4回抽選・約93%高継続型）",
+    stdDevMethod: "p-evidence-branching-v2",
     hesoAvgPayout: 660,
     rushAvgPayout: 462,
     rushEntryRate: 60.2,
@@ -497,6 +514,10 @@ const rawMachineDB = [
     border1K: 17.0,
     border: { "4.00": 17.0, "3.57": 17.7, "3.33": 18.2, "3.03": 18.9 },
     prize: 1,
+    avgPayoutPerHit: 400,
+    stdDev: 18000,
+    stdDevLabel: "P-EVIDENCE推定（ST154回・右10R70%型）",
+    stdDevMethod: "p-evidence-branching-v2",
     hesoAvgPayout: 400,
     rushAvgPayout: 1170,
     rushEntryRate: 100,
@@ -682,7 +703,7 @@ const rawMachineDB = [
     rushDist: "10R:100%",
     border: { "4.00": 17.5, "3.57": 18.1, "3.33": 18.6, "3.03": 19.2 },
     prize: 3,
-    avgPayoutPerHit: 1400,
+    avgPayoutPerHit: 1500,
     stdDev: 13000,
     stdDevLabel: "P-EVIDENCE推定（確変54%＋時短引き戻し型）",
     stdDevMethod: "p-evidence-branching-v2",
@@ -1808,7 +1829,8 @@ const rawMachineDB = [
     yutime: {
       triggerLowSpins: 299,
       durationSpins: 379,
-      expectedNetBalls: null,
+      expectedNetBalls: 1260.07,
+      expectedNetBallsMethod: "published-simulation",
       sourceUrl: "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20220603.pdf",
       verifiedAt: "2026-07-14",
       source: "master",
@@ -5100,9 +5122,10 @@ const equippedYutimeRegistry = Object.freeze({
   "PA新海物語": Object.freeze({
     triggerLowSpins: 299,
     durationSpins: 379,
-    expectedNetBalls: null,
-    sourceUrl: "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20220603.pdf",
-    verifiedAt: "2026-07-17",
+    expectedNetBalls: 1260.07,
+    expectedNetBallsMethod: "published-simulation",
+    sourceUrl: "https://pachinko-spec.info/spec/58637/",
+    verifiedAt: "2026-07-21",
     source: "master",
   }),
 });
@@ -5255,7 +5278,7 @@ export const machineYutimeRegistry = Object.freeze(Object.fromEntries(rawMachine
 // 遊タイム画面専用の参照機種。
 // 98機種のP-EVIDENCE本体へ不完全な振分・標準偏差を混ぜず、確認できた発動条件だけを選択可能にする。
 // `expectedNetBalls` は「遊タイム突入後の平均獲得玉」を示す根拠がない限り null のままにする。
-export const yutimeReferenceMachines = Object.freeze([
+export const legacyYutimeReferenceMachines = Object.freeze([
   {
     id: "yutime-ref-agnes-premium",
     name: "PA大海物語Withアグネス・ラム Premium Edition",
@@ -5422,15 +5445,21 @@ export const yutimeReferenceMachines = Object.freeze([
   }),
 })));
 
-export const machineDB = rawMachineDB.map((machine) => ({
-  ...machine,
-  ...(machineModelRegistry[machine.name] || {}),
-  yutimeAudit: machineYutimeRegistry[machine.name],
-  ...(equippedYutimeRegistry[machine.name] ? {
-    yutime: equippedYutimeRegistry[machine.name],
-    dataUpdatedAt: "2026-07-17",
-  } : {}),
-}));
+// 旧参照一覧は後方互換のため残し、アプリでは平均出玉・標準偏差まで監査済みの一覧を使用します。
+export const yutimeReferenceMachines = auditedYutimeReferenceMachines;
+
+export const machineDB = Object.freeze([
+  ...rawMachineDB.map((machine) => Object.freeze({
+    ...machine,
+    ...(machineModelRegistry[machine.name] || {}),
+    yutimeAudit: machineYutimeRegistry[machine.name],
+    ...(equippedYutimeRegistry[machine.name] ? {
+      yutime: equippedYutimeRegistry[machine.name],
+      dataUpdatedAt: "2026-07-21",
+    } : {}),
+  })),
+  ...yutimeReferenceMachines,
+]);
 
 // 機種に設定するスペック値を決定する（applyMachine / 稼働開始セットアップ共通）。
 // 旧形式（spec1R / specAvgTotalRounds / specSapo を持つ機種）はその値をそのまま返す。
