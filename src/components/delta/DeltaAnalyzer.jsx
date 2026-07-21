@@ -1,17 +1,22 @@
 // 差玉解析：フルスクリーンUI
 //
 // 出玉推移グラフ画像をピクセル解析（deltaEngine.runAnalysis）して各台の差玉ランクを判定し、
-// 台番号をホールマップ／手動設定で割り当て、AI文字起こし（外部）との往復で台データを統合する。
+// サイトセブン表とグラフを同時に端末内解析し、台番号を主証拠として1対1照合する。
+// 信頼できる最高出玉が両側にある場合だけ、台番号を補う証拠として使用する。
+// 読み切れない資料だけホールマップ／手動設定や任意のAI補助へ回す。
 // 画像解析は端末内で完結（外部送信なし）。logic.js・rotRows とは無関係の独立データ。
 //
-// ステップ: upload → numbers → results（results から import へ往復）
+// ステップ: upload（共同解析）→ numbers（照合確認）→ results（results から import へ往復）
 // props: { store, islands, onClose, onSaveScan }
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { C, f, sp, font, mono, localDateStr } from "../../constants";
 import { Card } from "../Atoms";
 import { runAnalysis, getRankTone } from "./deltaEngine";
 import { attachMachineNumbersToSlots, combineMachineNumberPages } from "./machineNumberOcr";
+import { attachGraphPanelMetadata } from "./graphPanelMetadataOcr";
+import { matchSiteSevenGraphPanels } from "./siteSevenJointMatcher";
+import { resolveMatchedSiteSevenRows } from "./siteSevenJointResolution";
 import {
   parseTaiDataText,
   buildOcrPrompt,
@@ -36,6 +41,14 @@ import {
   readSiteSevenCsv,
 } from "./siteSevenDataInput";
 import { buildRowDeltaEvidence } from "./deltaEvidence";
+import {
+  buildPartialMachineNumberAssignment,
+  createImageSelectionSnapshot,
+  seedPartialMachineNumberInputs,
+  shouldAcceptImageAnalysis,
+  summarizeSiteSevenReviewState,
+  trustedMachineNumberForSlot,
+} from "./deltaWorkflowState";
 import { machineDB } from "../../machineDB";
 
 const TAP = 44; // 最小タップ領域
@@ -72,9 +85,11 @@ function fileToAttachment(file) {
   });
 }
 
-async function analyzeImages(images, onProgress) {
+async function analyzeImages(images, onProgress, { dateText = "", storeName = "" } = {}) {
   const reports = [];
   const numberPages = [];
+  const siteSevenResults = [];
+  const siteSevenReports = [];
   for (let i = 0; i < images.length; i++) {
     onProgress?.(i + 1, images.length);
     try {
@@ -87,10 +102,72 @@ async function analyzeImages(images, onProgress) {
       const ctx = c.getContext("2d", { willReadFrequently: true });
       ctx.drawImage(img, 0, 0);
       const id = ctx.getImageData(0, 0, img.width, img.height);
+
+      // 同じ選択欄へサイトセブンの表写真も入れられるよう、罫線構造で先に分類する。
+      // 表とグラフのOCR自体は独立させ、誤読同士を正解扱いしない。
+      const tableOcr = await import("./siteSevenImageOcr.js");
+      let tableStructure = null;
+      try {
+        tableStructure = tableOcr.inspectSiteSevenTableStructure(id);
+      } catch {
+        tableStructure = null;
+      }
+      if (tableStructure) {
+        try {
+          const parsedTable = images[i].file
+            ? await tableOcr.readSiteSevenImage(images[i].file, {
+              dateText,
+              storeName,
+              expectedNumbers: [],
+              allowRawMachineNumbers: true,
+            })
+            : tableOcr.parseSiteSevenTableImageData(id, {
+              dateText,
+              storeName,
+              fileName: images[i].name || `画像${i + 1}`,
+              expectedNumbers: [],
+              allowRawMachineNumbers: true,
+            });
+          const tableSourceIndex = siteSevenResults.length;
+          const tableSourceId = images[i].id || `${images[i].name || "table"}:${i}`;
+          const annotatedTable = {
+            ...parsedTable,
+            rows: (parsedTable.rows || []).map((row, rowIndex) => ({
+              ...row,
+              sourceIndex: tableSourceIndex,
+              rowIndex: Number.isInteger(row.sourceLine) ? row.sourceLine - 1 : rowIndex,
+              rowId: `${tableSourceId}:${Number.isInteger(row.sourceLine) ? row.sourceLine : rowIndex + 1}`,
+            })),
+          };
+          siteSevenResults.push({ result: annotatedTable, kind: "image" });
+          siteSevenReports.push({
+            imageIndex: i,
+            name: images[i].name || `画像${i + 1}`,
+            rowCount: parsedTable.rows?.length || 0,
+            reviewCount: parsedTable.rows?.filter((row) => row.reviewRequired && !row.reviewConfirmed).length || 0,
+            degradedImage: parsedTable.degradedImage === true,
+            error: null,
+          });
+        } catch (error) {
+          siteSevenReports.push({
+            imageIndex: i,
+            name: images[i].name || `画像${i + 1}`,
+            rowCount: 0,
+            reviewCount: 0,
+            degradedImage: false,
+            error: error instanceof Error ? error.message : "台データ画像の読み取りに失敗しました",
+          });
+        }
+        continue;
+      }
+
       const r = runAnalysis(id.data, img.width, img.height);
       const rawResults = Array.isArray(r.results) ? r.results : [];
-      const numberOcr = rawResults.length
-        ? attachMachineNumbersToSlots(id.data, img.width, img.height, rawResults)
+      const metadataResults = rawResults.length
+        ? attachGraphPanelMetadata(id.data, img.width, img.height, rawResults)
+        : rawResults;
+      const numberOcr = metadataResults.length
+        ? attachMachineNumbersToSlots(id.data, img.width, img.height, metadataResults)
         : { accepted: false, reasonCodes: ["empty-page"], numbers: [], slots: rawResults };
       const imageResults = numberOcr.slots.map((slot, panelIndex) => ({
         ...slot,
@@ -139,16 +216,118 @@ async function analyzeImages(images, onProgress) {
     }
   }
   const combinedNumbers = combineMachineNumberPages(numberPages);
+  const siteSeven = siteSevenResults.length
+    ? mergeSiteSevenParsedResults(siteSevenResults, { expectedNumbers: [] })
+    : { rows: [], recognizedCount: 0, reviewCount: 0, duplicateCount: 0, missingNumbers: [] };
+  // 照合前に台番号で重複排除すると、誤読行が正しい行を隠す。写真・行の出典を
+  // 保った生行をmatcherへ渡し、1対1対応が決まった後だけ番号キーで統合する。
+  const rawSiteSevenRows = siteSevenResults.flatMap((entry) => entry.result?.rows || []);
+  const jointGraphPanels = combinedNumbers.slots.map((slot, graphIndex) => ({
+    ...slot,
+    panelId: `${slot?.source?.imageIndex ?? "x"}:${slot?.source?.panelIndex ?? graphIndex}`,
+    observedNumCandidate: slot?.machineNumberCandidate ?? slot?.machineNumberOcr?.candidate ?? null,
+    machineNumberAccepted: slot?.machineNumberOcr?.accepted === true,
+    pageIndex: slot?.source?.imageIndex ?? 0,
+    rowIndex: slot?.source?.row ?? slot?.row ?? graphIndex,
+    colIndex: slot?.source?.column ?? slot?.column ?? 0,
+  }));
+  const jointMatch = jointGraphPanels.length && rawSiteSevenRows.length
+    ? matchSiteSevenGraphPanels(jointGraphPanels, rawSiteSevenRows)
+    : null;
+  const jointNumberByGraphIndex = new Map(
+    (jointMatch?.matches || []).map((match) => [match.graphIndex, match]),
+  );
+  const jointNumbers = jointGraphPanels.map((_, graphIndex) => (
+    jointNumberByGraphIndex.get(graphIndex)?.resolvedNum || ""
+  ));
+  const jointAccepted = Boolean(jointMatch)
+    && jointMatch.summary?.matchedCount === jointGraphPanels.length
+    && jointMatch.summary?.unmatchedGraphCount === 0
+    && jointMatch.summary?.unmatchedRowCount === 0
+    && (jointMatch.reviewReasons?.length || 0) === 0
+    && !siteSevenReports.some((report) => report.error)
+    && jointNumbers.every(Boolean)
+    && new Set(jointNumbers).size === jointNumbers.length;
+  const resolvedSlots = combinedNumbers.slots.map((slot, graphIndex) => {
+    const match = jointNumberByGraphIndex.get(graphIndex);
+    if (!match) return slot;
+    return {
+      ...slot,
+      // matcherが1対1で確定した固定点は、全体が未完でもそのslotに保持する。
+      // 後続画面ではこの値を編集不可にし、未解決slotだけ利用者に確認してもらう。
+      machineNumber: match.resolvedNum,
+      jointMatch: {
+        rowId: match.rowId,
+        resolvedNum: match.resolvedNum,
+        matchedBy: match.matchedBy,
+        maxPayout: match.maxPayout,
+        accepted: true,
+      },
+    };
+  });
+  const resolvedNumberOcr = jointAccepted
+    ? {
+      ...combinedNumbers,
+      accepted: true,
+      status: "ok",
+      source: "joint-site-seven",
+      reasonCodes: [],
+      slots: resolvedSlots,
+      candidates: jointNumbers,
+      numbers: jointNumbers,
+      recognizedCount: jointNumbers.length,
+      unresolvedIndices: [],
+      duplicateNumbers: [],
+      duplicateMachineNumbers: [],
+    }
+    : jointMatch
+      ? {
+        ...combinedNumbers,
+        accepted: false,
+        status: "review",
+        source: "joint-partial",
+        reasonCodes: [...new Set([
+          ...(combinedNumbers.reasonCodes || []),
+          "joint-match-incomplete",
+        ])],
+        slots: resolvedSlots,
+        numbers: jointNumbers,
+        recognizedCount: Math.max(
+          combinedNumbers.recognizedCount || 0,
+          jointMatch.summary?.matchedCount || 0,
+        ),
+      }
+      : combinedNumbers;
+  const resolvedSiteSevenRows = resolveMatchedSiteSevenRows(
+    rawSiteSevenRows,
+    jointMatch?.matches || [],
+  );
   return {
-    slots: combinedNumbers.slots,
+    slots: resolvedSlots,
     reports,
-    numberOcr: combinedNumbers,
+    numberOcr: resolvedNumberOcr,
+    jointMatch,
+    siteSevenRows: resolvedSiteSevenRows,
+    siteSevenSummary: {
+      fileCount: siteSevenResults.length,
+      rowCount: siteSeven.recognizedCount || 0,
+      reviewCount: resolvedSiteSevenRows.filter((row) => row.reviewRequired && !row.reviewConfirmed).length,
+      skippedCount: resolvedSiteSevenRows.filter((row) => row.reviewRequired && !row.reviewConfirmed).length,
+      duplicateCount: siteSeven.duplicateCount || 0,
+      missingCount: siteSeven.missingNumbers?.length || 0,
+      pdfCount: 0,
+      csvCount: 0,
+      imageCount: siteSevenResults.length,
+      degradedImageCount: siteSevenReports.filter((report) => report.degradedImage).length,
+      failedFileCount: siteSevenReports.filter((report) => report.error).length,
+      reports: siteSevenReports,
+    },
   };
 }
 
 // ── 共通ヘッダー（戻る44px） ──
 // DeltaMapView でも再利用するため export する（UI様式の単一化のみ・ロジック不変）。
-export function TopBar({ title, onBack, right }) {
+export function TopBar({ title, onBack, right, backDisabled = false }) {
   return (
     <div style={{
       flexShrink: 0,
@@ -160,12 +339,15 @@ export function TopBar({ title, onBack, right }) {
       <button
         className="b"
         onClick={onBack}
+        disabled={backDisabled}
         aria-label="戻る"
         style={{
           minWidth: TAP, minHeight: TAP, borderRadius: 12,
           border: "none", background: "transparent",
           color: C.text, fontSize: 22, fontWeight: 800,
           display: "flex", alignItems: "center", justifyContent: "center",
+          opacity: backDisabled ? 0.4 : 1,
+          cursor: backDisabled ? "not-allowed" : "pointer",
         }}
       >
         ←
@@ -218,16 +400,56 @@ const scrollAreaStyle = {
 // ════════════ アップロード ════════════
 function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
   const fileRef = useRef(null);
+  const analysisRequestIdRef = useRef(0);
+  const imagesRef = useRef(images);
+  const mountedRef = useRef(true);
+  const busyRef = useRef(false);
+  const fileLoadRef = useRef(false);
   const [busy, setBusy] = useState(false);
+  const [loadingFiles, setLoadingFiles] = useState(false);
   const [progress, setProgress] = useState({ i: 0, n: 0 });
   const [noResult, setNoResult] = useState(false);
 
+  useEffect(() => {
+    imagesRef.current = images;
+  }, [images]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      analysisRequestIdRef.current += 1;
+    };
+  }, []);
+
+  const interactionLocked = busy || loadingFiles;
+
   const handleFiles = (files) => {
+    if (busyRef.current || fileLoadRef.current) return;
     const arr = Array.from(files || []).filter((fl) => fl.type.startsWith("image/"));
     if (!arr.length) return;
+    fileLoadRef.current = true;
+    setLoadingFiles(true);
     setNoResult(false);
     let loaded = 0;
     const next = [];
+    const finishFile = () => {
+      loaded += 1;
+      if (loaded !== arr.length || !mountedRef.current) return;
+      fileLoadRef.current = false;
+      setLoadingFiles(false);
+      analysisRequestIdRef.current += 1;
+      setImages((p) => {
+        const known = new Set(p.map((item) => item.id || item.dataUrl));
+        const additions = next.filter(Boolean).filter((item) => {
+          const key = item.id || item.dataUrl;
+          if (known.has(key)) return false;
+          known.add(key);
+          return true;
+        });
+        return [...p, ...additions];
+      });
+    };
     arr.forEach((file, idx) => {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -235,32 +457,26 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
           dataUrl: e.target.result,
           name: file.name,
           id: `${file.name}:${file.size}:${file.lastModified}`,
+          file,
         };
-        loaded += 1;
-        if (loaded === arr.length) {
-          setImages((p) => {
-            const known = new Set(p.map((item) => item.id || item.dataUrl));
-            const additions = next.filter(Boolean).filter((item) => {
-              const key = item.id || item.dataUrl;
-              if (known.has(key)) return false;
-              known.add(key);
-              return true;
-            });
-            return [...p, ...additions];
-          });
-        }
+        finishFile();
       };
+      reader.onerror = finishFile;
       reader.readAsDataURL(file);
     });
   };
 
   const removeImage = (i) => {
+    if (busyRef.current || fileLoadRef.current) return;
+    analysisRequestIdRef.current += 1;
     setNoResult(false);
     setImages((p) => p.filter((_, j) => j !== i));
   };
 
   const moveImage = (from, to) => {
+    if (busyRef.current || fileLoadRef.current) return;
     if (to < 0 || to >= images.length || from === to) return;
+    analysisRequestIdRef.current += 1;
     setNoResult(false);
     setImages((current) => {
       const nextImages = [...current];
@@ -271,12 +487,41 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
   };
 
   const start = async () => {
-    if (!images.length || busy) return;
+    if (!images.length || busyRef.current || fileLoadRef.current) return;
+    const requestId = ++analysisRequestIdRef.current;
+    const analysisImages = [...images];
+    const selectionSnapshot = createImageSelectionSnapshot(analysisImages);
+    busyRef.current = true;
     setBusy(true);
     setNoResult(false);
-    setProgress({ i: 0, n: images.length });
-    const analysis = await analyzeImages(images, (i, n) => setProgress({ i, n }));
+    setProgress({ i: 0, n: analysisImages.length });
+    let analysis;
+    try {
+      analysis = await analyzeImages(analysisImages, (i, n) => {
+        if (requestId === analysisRequestIdRef.current && mountedRef.current) {
+          setProgress({ i, n });
+        }
+      }, {
+        dateText: todaySlash(),
+        storeName: store?.name || "",
+      });
+    } catch {
+      if (requestId === analysisRequestIdRef.current && mountedRef.current) {
+        busyRef.current = false;
+        setBusy(false);
+        setNoResult(true);
+      }
+      return;
+    }
+    if (!mountedRef.current || requestId !== analysisRequestIdRef.current) return;
+    busyRef.current = false;
     setBusy(false);
+    if (!shouldAcceptImageAnalysis({
+      requestId,
+      activeRequestId: analysisRequestIdRef.current,
+      selectionSnapshot,
+      currentImages: imagesRef.current,
+    })) return;
     if (!analysis.slots.length) {
       setNoResult(true);
       return;
@@ -286,7 +531,7 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
 
   return (
     <>
-      <TopBar title="差玉解析" onBack={onClose} />
+      <TopBar title="差玉解析" onBack={onClose} backDisabled={interactionLocked} />
       <div style={scrollAreaStyle}>
         {/* 選択中店舗チップ */}
         <Card style={{ marginBottom: 12 }}>
@@ -307,27 +552,31 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
           type="file"
           accept="image/*"
           multiple
+          disabled={interactionLocked}
           style={{ display: "none" }}
           onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }}
         />
         <div
-          onClick={() => fileRef.current?.click()}
+          role="button"
+          aria-disabled={interactionLocked}
+          onClick={interactionLocked ? undefined : () => fileRef.current?.click()}
           style={{
             border: `2px dashed ${C.borderHi}`,
             borderRadius: 16,
             padding: "36px 20px",
             textAlign: "center",
-            cursor: "pointer",
+            cursor: interactionLocked ? "not-allowed" : "pointer",
+            opacity: interactionLocked ? 0.55 : 1,
             background: C.surface,
             marginBottom: 12,
           }}
         >
           <div style={{ fontSize: 40, color: C.blue, lineHeight: 1, marginBottom: 12 }}>▣</div>
           <div style={{ fontSize: 17, fontWeight: 800, color: C.text, marginBottom: 6 }}>
-            出玉推移グラフの画像を追加
+            グラフと台データ表をまとめて追加
           </div>
           <div style={{ fontSize: 12, color: C.sub, lineHeight: 1.6 }}>
-            データカウンターのグラフ画面を撮影<br />（複数枚OK）
+            出玉推移グラフ＋サイトセブンの表写真<br />（複数枚を一度に選択できます）
           </div>
         </div>
 
@@ -336,7 +585,7 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
           <>
             <div style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: "4px 2px 2px" }}>追加済みの画像</div>
             <div style={{ fontSize: 11, color: C.yellow, lineHeight: 1.5, margin: "0 2px 8px", fontWeight: 700 }}>
-              台番号は画像内の表示から自動照合します。読めない画像は撮り直しになります
+              台番号を主に照合し、信頼できる最高出玉を使える場合だけ補助証拠にします
             </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
               {images.map((img, i) => (
@@ -348,13 +597,15 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
                   <button
                     className="b"
                     aria-label="この画像を削除"
-                    onClick={() => removeImage(i)}
+                    disabled={interactionLocked}
+                    onClick={interactionLocked ? undefined : () => removeImage(i)}
                     style={{
                       position: "absolute", top: -8, right: -8,
                       minWidth: TAP, minHeight: TAP, borderRadius: "50%",
                       border: "none", background: "transparent",
                       color: C.red, fontSize: 20, fontWeight: 900,
                       display: "flex", alignItems: "center", justifyContent: "center",
+                      opacity: interactionLocked ? 0.4 : 1,
                     }}
                   >
                     <span style={{ background: C.surface, borderRadius: "50%", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${C.borderHi}`, fontSize: 13 }}>×</span>
@@ -366,18 +617,18 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
                     <button
                       className="b"
                       aria-label="この画像を前へ移動"
-                      disabled={i === 0}
+                      disabled={interactionLocked || i === 0}
                       onClick={() => moveImage(i, i - 1)}
-                      style={{ flex: 1, minWidth: TAP, minHeight: TAP, borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: i === 0 ? C.sub : C.text, fontSize: 17 }}
+                      style={{ flex: 1, minWidth: TAP, minHeight: TAP, borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: interactionLocked || i === 0 ? C.sub : C.text, fontSize: 17 }}
                     >
                       ←
                     </button>
                     <button
                       className="b"
                       aria-label="この画像を後ろへ移動"
-                      disabled={i === images.length - 1}
+                      disabled={interactionLocked || i === images.length - 1}
                       onClick={() => moveImage(i, i + 1)}
-                      style={{ flex: 1, minWidth: TAP, minHeight: TAP, borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: i === images.length - 1 ? C.sub : C.text, fontSize: 17 }}
+                      style={{ flex: 1, minWidth: TAP, minHeight: TAP, borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: interactionLocked || i === images.length - 1 ? C.sub : C.text, fontSize: 17 }}
                     >
                       →
                     </button>
@@ -387,11 +638,13 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
               <button
                 className="b"
                 aria-label="画像を追加"
-                onClick={() => fileRef.current?.click()}
+                disabled={interactionLocked}
+                onClick={interactionLocked ? undefined : () => fileRef.current?.click()}
                 style={{
                   width: 84, height: 84, borderRadius: 12,
                   border: `1px dashed ${C.borderHi}`, background: "transparent",
                   color: C.sub, fontSize: 28, fontWeight: 300,
+                  opacity: interactionLocked ? 0.4 : 1,
                 }}
               >
                 +
@@ -410,7 +663,7 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
           }}>
             <span style={{ fontSize: 16, color: C.red }}>⚠</span>
             <div style={{ fontSize: 12, color: C.red, lineHeight: 1.6, fontWeight: 700 }}>
-              グラフを検出できませんでした。出玉推移グラフの画像か確認してください
+              グラフを検出できませんでした。出玉推移グラフを含む画像を選んでください
             </div>
           </div>
         )}
@@ -429,9 +682,11 @@ function UploadStep({ store, images, setImages, onAnalyze, onClose }) {
         </div>
       </div>
       <BottomCta
-        label={busy ? `解析中… ${progress.i}/${progress.n}` : `解析する（${images.length}枚）`}
+        label={busy
+          ? `解析中… ${progress.i}/${progress.n}`
+          : loadingFiles ? "画像を準備中…" : `解析する（${images.length}枚）`}
         onClick={start}
-        disabled={!images.length || busy}
+        disabled={!images.length || interactionLocked}
       />
     </>
   );
@@ -459,10 +714,24 @@ function formatNumberRanges(values) {
 }
 
 // ════════════ 台番号割り当て ════════════
-function NumbersStep({ slots, reports, numberOcr, islands, onConfirm, onBack }) {
+function NumbersStep({
+  slots,
+  reports,
+  numberOcr,
+  jointMatch,
+  siteSevenSummary,
+  initialNumbers,
+  islands,
+  onConfirm,
+  onBack,
+}) {
   const slotCount = slots.length;
+  const jointOnlyNumbers = Boolean(jointMatch);
   const [pickedIslandId, setPickedIslandId] = useState(null);
   const [segments, setSegments] = useState([{ start: "", count: String(slotCount) }]);
+  const [partialManualNumbers, setPartialManualNumbers] = useState(() => (
+    seedPartialMachineNumberInputs(slots, initialNumbers, { jointOnly: jointOnlyNumbers })
+  ));
   const [orderConfirmed, setOrderConfirmed] = useState(false);
 
   const pickedIsland = useMemo(
@@ -475,7 +744,28 @@ function NumbersStep({ slots, reports, numberOcr, islands, onConfirm, onBack }) 
     if (pickedIsland) return islandToNumbers(pickedIsland);
     return buildSegmentsNumbers(segments);
   }, [pickedIsland, segments]);
-  const numbers = numberOcr?.accepted ? numberOcr.numbers : manualNumbers;
+  const fixedNumbers = useMemo(
+    () => slots.map((slot) => trustedMachineNumberForSlot(slot, {
+      jointOnly: jointOnlyNumbers,
+    })),
+    [slots, jointOnlyNumbers],
+  );
+  const fixedNumberCount = fixedNumbers.filter(Boolean).length;
+  const hasFixedNumberAssignments = !numberOcr?.accepted && fixedNumberCount > 0;
+  const unresolvedNumberIndices = useMemo(
+    () => fixedNumbers.reduce((indices, value, index) => {
+      if (!value) indices.push(index);
+      return indices;
+    }, []),
+    [fixedNumbers],
+  );
+  const numbers = numberOcr?.accepted
+      ? numberOcr.numbers
+      : hasFixedNumberAssignments
+      ? buildPartialMachineNumberAssignment(slots, partialManualNumbers, {
+        jointOnly: jointOnlyNumbers,
+      })
+      : manualNumbers;
 
   const numberValidation = useMemo(
     () => validateNumberAssignment(slots, numbers),
@@ -489,14 +779,14 @@ function NumbersStep({ slots, reports, numberOcr, islands, onConfirm, onBack }) 
   const recognizedNumberCount = numberOcr?.recognizedCount
     ?? slots.filter((slot) => slot?.machineNumberOcr?.accepted).length;
   const reviewedNumberAssignment = useMemo(
-    () => validateReviewedNumberAssignment(slots, numbers),
-    [slots, numbers],
+    () => validateReviewedNumberAssignment(slots, numbers, { jointOnly: jointOnlyNumbers }),
+    [slots, numbers, jointOnlyNumbers],
   );
   const trustedOcrMismatches = reviewedNumberAssignment.mismatches;
   const duplicateOcrNumbers = numberOcr?.duplicateNumbers
     || numberOcr?.duplicateMachineNumbers
     || [];
-  const hasOcrConflict = duplicateOcrNumbers.length > 0;
+  const hasOcrConflict = !jointOnlyNumbers && duplicateOcrNumbers.length > 0;
 
   const sourceAssignments = useMemo(() => {
     const list = Array.isArray(reports) ? reports : [];
@@ -529,6 +819,10 @@ function NumbersStep({ slots, reports, numberOcr, islands, onConfirm, onBack }) 
     setOrderConfirmed(false);
     setSegments((p) => p.filter((_, i) => i !== idx));
   };
+  const updatePartialNumber = (slotIndex, value) => {
+    setOrderConfirmed(false);
+    setPartialManualNumbers((current) => ({ ...current, [slotIndex]: value }));
+  };
 
   const valid = numberValidation.valid
     && (numberOcr?.accepted || orderConfirmed)
@@ -541,30 +835,69 @@ function NumbersStep({ slots, reports, numberOcr, islands, onConfirm, onBack }) 
       <TopBar title="台番号の設定" onBack={onBack} />
       <div style={scrollAreaStyle}>
         <div style={{ fontSize: 14, color: C.subHi, margin: "4px 2px 12px", fontWeight: 600 }}>
-          {numberOcr?.accepted
-            ? `画像内の台番号を${slotCount}台すべて自動照合しました`
+          {numberOcr?.source === "joint-site-seven"
+            ? `グラフと表を突き合わせ、${slotCount}台を1台ずつ自動照合しました`
+            : numberOcr?.source === "joint-partial"
+              ? `共同照合で${fixedNumberCount}台を固定し、未確認の${unresolvedNumberIndices.length}台だけ入力します`
+            : numberOcr?.accepted
+              ? `画像内の台番号を${slotCount}台すべて自動照合しました`
             : `検出された${slotCount}台に台番号を割り当てます`}
         </div>
 
         {numberOcr?.accepted && (
           <div style={{ background: "color-mix(in srgb, var(--green) 12%, transparent)", border: `1px solid color-mix(in srgb, var(--green) 38%, transparent)`, borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
             <div style={{ fontSize: 14, color: C.green, fontWeight: 900, marginBottom: 4 }}>
-              台番号OCR {numberOcr.numbers.length}/{slotCount}台 読み取り完了
+              {numberOcr?.source === "joint-site-seven"
+                ? `共同照合 ${numberOcr.numbers.length}/${slotCount}台 一致`
+                : `台番号OCR ${numberOcr.numbers.length}/${slotCount}台 読み取り完了`}
             </div>
             <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.6 }}>
-              各グラフ直上の番号を直接読み、重複がないことを確認しました。画像の選択順には依存しません。
+              {numberOcr?.source === "joint-site-seven"
+                ? "台番号を1対1で確認しました。信頼できる最高出玉を使える場合だけ補助証拠にし、1行欠けても後続をずらしません。"
+                : "各グラフ直上の番号を直接読み、重複がないことを確認しました。画像の選択順には依存しません。"}
             </div>
           </div>
         )}
 
-        {numberOcr && !numberOcr.accepted && (
+        {jointMatch && !numberOcr?.accepted && (
+          <div style={{ background: "color-mix(in srgb, var(--yellow) 12%, transparent)", border: `1px solid color-mix(in srgb, var(--yellow) 38%, transparent)`, borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
+            <div style={{ fontSize: 14, color: C.yellow, fontWeight: 900, marginBottom: 4 }}>
+              共同照合 {jointMatch.summary?.matchedCount || 0}/{slotCount}台・残りは要確認
+            </div>
+            <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.65, fontWeight: 700 }}>
+              読めない台だけを確認対象に残しました。確定済みの台を詰めて後続へ割り当てることはありません。
+              {jointMatch.reviewReasons?.[0]?.message && (
+                <div style={{ color: C.yellow, marginTop: 4 }}>
+                  {jointMatch.reviewReasons[0].message}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {numberOcr && !numberOcr.accepted && numberOcr.source !== "joint-partial" && (
           <div style={{ background: "color-mix(in srgb, var(--yellow) 12%, transparent)", border: `1px solid color-mix(in srgb, var(--yellow) 38%, transparent)`, borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
             <div style={{ fontSize: 14, color: C.yellow, fontWeight: 900, marginBottom: 4 }}>
               台番号OCRは一部のみ成功（{recognizedNumberCount}/{slotCount}台）
             </div>
             <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.65, fontWeight: 700 }}>
-              小さい文字を無理に推測しません。下の島または区間で番号を割り当て、画像ごとの範囲を確認してください。
+              小さい文字を無理に推測しません。
+              {hasFixedNumberAssignments
+                ? " 確実に読めた番号は固定し、未確認の台だけ入力してください。"
+                : " 下の島または区間で番号を割り当て、画像ごとの範囲を確認してください。"}
               OCRで確実に読めた番号と1台でも矛盾する場合は確定できません。
+            </div>
+          </div>
+        )}
+
+        {siteSevenSummary?.failedFileCount > 0 && (
+          <div style={{ background: "color-mix(in srgb, var(--yellow) 12%, transparent)", border: `1px solid color-mix(in srgb, var(--yellow) 38%, transparent)`, borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
+            <div style={{ fontSize: 14, color: C.yellow, fontWeight: 900, marginBottom: 4 }}>
+              台データ表を読めない画像が{siteSevenSummary.failedFileCount}枚あります
+            </div>
+            <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.65, fontWeight: 700 }}>
+              {siteSevenSummary.reports?.find((report) => report.error)?.error
+                || "表全体と台番号が見える元画像へ差し替えてください。"}
             </div>
           </div>
         )}
@@ -585,7 +918,46 @@ function NumbersStep({ slots, reports, numberOcr, islands, onConfirm, onBack }) 
           </div>
         </Card>
 
-        {!numberOcr?.accepted && <>
+        {hasFixedNumberAssignments && (
+          <Card style={{ marginBottom: 12 }}>
+            <div style={{ padding: "12px 14px" }}>
+              <div style={{ fontSize: 14, fontWeight: 900, color: C.text }}>
+                固定済み {fixedNumberCount}台・入力が必要 {unresolvedNumberIndices.length}台
+              </div>
+              <div style={{ fontSize: 11, color: C.subHi, lineHeight: 1.6, marginTop: 4 }}>
+                共同照合または番号OCRで確定した台番号は変更できません。空欄の台だけ元画像を見て入力してください。
+              </div>
+              {unresolvedNumberIndices.length > 0 ? (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginTop: 12 }}>
+                  {unresolvedNumberIndices.map((slotIndex) => {
+                    const slot = slots[slotIndex];
+                    const imageLabel = Number.isInteger(slot?.source?.imageIndex)
+                      ? `画像${slot.source.imageIndex + 1}`
+                      : "画像不明";
+                    const rowLabel = Number.isInteger(slot?.source?.row)
+                      ? `・${slot.source.row + 1}行目`
+                      : "";
+                    return (
+                      <SegInput
+                        key={slotIndex}
+                        label={`${slotIndex + 1}台目（${imageLabel}${rowLabel}）`}
+                        value={partialManualNumbers[slotIndex] || ""}
+                        onChange={(value) => updatePartialNumber(slotIndex, value)}
+                        ph="台番号"
+                      />
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ color: C.green, fontSize: 12, fontWeight: 800, marginTop: 10 }}>
+                  グラフ側の台番号はすべて固定済みです。下の対応だけ目視確認してください。
+                </div>
+              )}
+            </div>
+          </Card>
+        )}
+
+        {!numberOcr?.accepted && !hasFixedNumberAssignments && <>
         {/* ホールマップから選ぶ */}
         {islands && islands.length > 0 && (
           <Card style={{ marginBottom: 12 }}>
@@ -695,13 +1067,22 @@ function NumbersStep({ slots, reports, numberOcr, islands, onConfirm, onBack }) 
 
         {/* プレビュー */}
         {numbers.length > 0 && (
-          <div style={{ fontSize: 13, color: C.subHi, fontFamily: mono, lineHeight: 1.7, padding: "0 4px 8px", wordBreak: "break-all" }}>
+          <div style={{ fontSize: 13, color: C.subHi, fontFamily: mono, lineHeight: 1.7, padding: "0 4px 8px" }}>
             {numbers.map((n, i) => (
-              <span key={i}>
+              <span
+                key={i}
+                title={hasFixedNumberAssignments && fixedNumbers[i] ? "共同照合または番号OCRで固定済み" : undefined}
+                style={{
+                  display: "inline-block",
+                  whiteSpace: "nowrap",
+                  color: hasFixedNumberAssignments && fixedNumbers[i] ? C.green : n ? C.subHi : C.red,
+                  fontWeight: hasFixedNumberAssignments && fixedNumbers[i] ? 900 : 700,
+                }}
+              >
                 {i > 0 && numbers[i] !== String(parseInt(numbers[i - 1], 10) + 1)
                   ? <span style={{ color: C.blue, fontWeight: 800 }}> | </span>
                   : i > 0 ? ", " : ""}
-                {n}
+                {n || "未入力"}{hasFixedNumberAssignments && fixedNumbers[i] ? " 🔒" : ""}
               </span>
             ))}
             <span style={{ color: C.sub }}>（{numbers.length}台）</span>
@@ -743,7 +1124,9 @@ function NumbersStep({ slots, reports, numberOcr, islands, onConfirm, onBack }) 
             <div style={{ padding: "8px 14px 12px", fontSize: 11, color: C.sub, lineHeight: 1.5 }}>
               {numberOcr
                 ? numberOcr.accepted
-                  ? "各画像に表示された台番号で照合済みです。"
+                  ? numberOcr?.source === "joint-site-seven"
+                    ? "表の台番号を主に照合し、信頼できる最高出玉がある台だけ補助証拠にしています。"
+                    : "各画像に表示された台番号で照合済みです。"
                   : "手動で割り当てた範囲を画像ごとに表示しています。番号が飛ぶ位置も確認してください。"
                 : "順番が違う場合は、戻って画像の「←」「→」で並べ替えてください。"}
             </div>
@@ -785,7 +1168,9 @@ function NumbersStep({ slots, reports, numberOcr, islands, onConfirm, onBack }) 
           <span aria-hidden="true" style={{ width: 24, height: 24, borderRadius: 7, border: `2px solid ${orderConfirmed ? C.blue : C.borderHi}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             {orderConfirmed ? "✓" : ""}
           </span>
-          各画像のグラフと台番号の対応を1台ずつ確認しました
+          {hasFixedNumberAssignments
+            ? "固定済み番号と入力した番号が、各画像のグラフに対応することを確認しました"
+            : "各画像のグラフと台番号の対応を1台ずつ確認しました"}
         </button>}
       </div>
       <BottomCta
@@ -967,7 +1352,19 @@ function ReviewValueEditor({ row, onUpdate }) {
   );
 }
 
-function ResultsStep({ rows, images, machineName, onBack, onSave, onOpenImport, onUpdateReview, saved, customMachines }) {
+function ResultsStep({
+  rows,
+  images,
+  machineName,
+  onBack,
+  onSave,
+  onOpenImport,
+  onUpdateReview,
+  saved,
+  customMachines,
+  siteSevenSummary,
+  autoImportedCount = 0,
+}) {
   const [sortBy, setSortBy] = useState("delta");
 
   const rowValidation = useMemo(() => validateDeltaRows(rows), [rows]);
@@ -1143,6 +1540,9 @@ function ResultsStep({ rows, images, machineName, onBack, onSave, onOpenImport, 
             ? getRankTone(r.rank)
             : { color: isReview ? C.yellow : C.red, bg: isReview ? "color-mix(in srgb, var(--yellow) 14%, transparent)" : "color-mix(in srgb, var(--red) 12%, transparent)" };
           const hasTai = r.normalSpins != null && r.totalStarts != null;
+          const hasMaxPayout = Number.isFinite(Number(r.maxPayout));
+          const maxPayoutRejected = r.maxPayoutAccepted === false
+            || (r.maxPayoutAccepted == null && r.fieldAccepted?.maxPayout === false);
           const prediction = predictionByNum.get(String(r.num));
           const predicted = prediction?.evidence;
           const sourceImage = Number.isInteger(r.source?.imageIndex)
@@ -1178,6 +1578,11 @@ function ResultsStep({ rows, images, machineName, onBack, onSave, onOpenImport, 
                   {hasTai && (
                     <div style={{ fontSize: 11, color: C.subHi, fontFamily: mono, marginTop: 2 }}>
                       回転数 {f(r.normalSpins)} / 当り {f(r.totalStarts)}回
+                      {hasMaxPayout && (
+                        maxPayoutRejected
+                          ? <span style={{ color: C.yellow }}> / 最高出玉 要確認</span>
+                          : ` / 最高出玉 ${f(Number(r.maxPayout))}玉`
+                      )}
                     </div>
                   )}
                   {predicted?.hasEstimate ? (
@@ -1225,6 +1630,40 @@ function ResultsStep({ rows, images, machineName, onBack, onSave, onOpenImport, 
         })}
 
         {/* 台データ取り込み導線 */}
+        {siteSevenSummary?.rowCount > 0 && (
+          <div style={{
+            borderRadius: 12,
+            border: `1px solid color-mix(in srgb, var(--green) 35%, transparent)`,
+            background: "color-mix(in srgb, var(--green) 10%, transparent)",
+            color: C.green,
+            fontSize: 12,
+            fontWeight: 800,
+            lineHeight: 1.6,
+            padding: "10px 12px",
+            marginTop: 4,
+            marginBottom: 8,
+          }}>
+            ✓ 一緒に選んだ表から{siteSevenSummary.rowCount}台を読取
+            {autoImportedCount > 0 && `・${autoImportedCount}台の回転数と大当り回数を自動統合`}
+            {siteSevenSummary.reviewCount > 0 && (
+              <div style={{ color: C.yellow }}>
+                数字の目視確認が必要な台が{siteSevenSummary.reviewCount}台あります
+              </div>
+            )}
+          </div>
+        )}
+
+        {siteSevenSummary?.failedFileCount > 0 && (
+          <div style={{ background: "color-mix(in srgb, var(--yellow) 12%, transparent)", border: `1px solid color-mix(in srgb, var(--yellow) 38%, transparent)`, borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
+            <div style={{ fontSize: 14, color: C.yellow, fontWeight: 900, marginBottom: 4 }}>
+              台データ表を読めない画像が{siteSevenSummary.failedFileCount}枚あります
+            </div>
+            <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.65, fontWeight: 700 }}>
+              {siteSevenSummary.reports?.find((report) => report.error)?.error
+                || "表全体と台番号が見える元画像へ差し替えてください。"}
+            </div>
+          </div>
+        )}
         <button
           className="b"
           onClick={onOpenImport}
@@ -1234,7 +1673,7 @@ function ResultsStep({ rows, images, machineName, onBack, onSave, onOpenImport, 
             color: C.text, fontSize: 14, fontWeight: 800, marginTop: 4, marginBottom: 12,
           }}
         >
-          大当たり・回転数データを一括取り込み
+          {siteSevenSummary?.rowCount > 0 ? "台データを確認・追加" : "大当たり・回転数データを一括取り込み"}
         </button>
       </div>
     </>
@@ -1253,7 +1692,16 @@ function canConfirmSiteSevenRow(row, rowIndex, rows, expectedNumberSet) {
 }
 
 // ════════════ 台データ取り込み ════════════
-function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChangeAiApiKey }) {
+function ImportStep({
+  store,
+  rows: deltaRows,
+  onBack,
+  onMerge,
+  aiApiKey,
+  onChangeAiApiKey,
+  initialDataRows = [],
+  initialDataSummary = null,
+}) {
   const prompt = useMemo(
     () => buildOcrPrompt({ dateText: todaySlash(), storeName: store?.name || "" }),
     [store]
@@ -1264,10 +1712,12 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
 
   const dataFileRef = useRef(null);
   const dataRequestIdRef = useRef(0);
-  const [dataRows, setDataRows] = useState([]);
+  const [dataRows, setDataRows] = useState(() => (
+    Array.isArray(initialDataRows) ? initialDataRows : []
+  ));
   const [dataBusy, setDataBusy] = useState(false);
   const [dataError, setDataError] = useState("");
-  const [dataSummary, setDataSummary] = useState(null);
+  const [dataSummary, setDataSummary] = useState(() => initialDataSummary);
   const [dataFilter, setDataFilter] = useState("");
   const [showAllDataRows, setShowAllDataRows] = useState(false);
 
@@ -1497,8 +1947,10 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
     [deltaRows]
   );
   const dataMatchedCount = useMemo(
-    () => dataRows.filter((row) => row.sourceType !== "missing-placeholder"
-      && deltaNumberSet.has(String(row.num))).length,
+    () => new Set(dataRows
+      .filter((row) => row.sourceType !== "missing-placeholder"
+        && deltaNumberSet.has(String(row.num)))
+      .map((row) => String(row.num))).size,
     [dataRows, deltaNumberSet]
   );
   const dataReviewEntries = useMemo(() => {
@@ -2048,7 +2500,7 @@ function ImportStep({ store, rows: deltaRows, onBack, onMerge, aiApiKey, onChang
           : preparedData.reviewPendingCount > 0
             ? `要確認${preparedData.reviewPendingCount}台を確認してください`
             : "台データと差玉を台番号で統合する"}
-        onClick={() => onMerge(importRows)}
+        onClick={() => onMerge(importRows, { dataRows, dataSummary })}
         disabled={recognized === 0
           || dataBusy
           || aiBusy
@@ -2124,6 +2576,11 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
   const [slots, setSlots] = useState([]); // ピクセル解析の生スロット
   const [analysisReports, setAnalysisReports] = useState([]);
   const [analysisNumberOcr, setAnalysisNumberOcr] = useState(null);
+  const [analysisJointMatch, setAnalysisJointMatch] = useState(null);
+  const [analysisSiteSevenRows, setAnalysisSiteSevenRows] = useState([]);
+  const [analysisSiteSevenSummary, setAnalysisSiteSevenSummary] = useState(null);
+  const [autoImportedCount, setAutoImportedCount] = useState(0);
+  const [confirmedMachineNumbers, setConfirmedMachineNumbers] = useState([]);
   const [rows, setRows] = useState([]);   // 台番号割り当て後の結果行
   const [saved, setSaved] = useState(false);
   const [toast, setToast] = useState("");
@@ -2139,15 +2596,21 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
     setSlots(results);
     setAnalysisReports(Array.isArray(analysis?.reports) ? analysis.reports : []);
     setAnalysisNumberOcr(analysis?.numberOcr || null);
+    setAnalysisJointMatch(analysis?.jointMatch || null);
+    setAnalysisSiteSevenRows(Array.isArray(analysis?.siteSevenRows) ? analysis.siteSevenRows : []);
+    setAnalysisSiteSevenSummary(analysis?.siteSevenSummary || null);
+    setConfirmedMachineNumbers([]);
     if (results.length > 0) setStep("numbers");
     // 0台のときは upload に留まる（やり直し可能）
   };
 
   const handleConfirmNumbers = (numbers, options = {}) => {
     const validation = validateNumberAssignment(slots, numbers);
-    const reviewedNumberAssignment = validateReviewedNumberAssignment(slots, numbers);
+    const reviewedNumberAssignment = validateReviewedNumberAssignment(slots, numbers, {
+      jointOnly: Boolean(analysisJointMatch),
+    });
     const hasImageError = analysisReports.some((report) => report?.error || !Number(report?.total));
-    const hasOcrConflict = (
+    const hasOcrConflict = !analysisJointMatch && (
       analysisNumberOcr?.duplicateNumbers
       || analysisNumberOcr?.duplicateMachineNumbers
       || []
@@ -2162,11 +2625,30 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
       setTimeout(() => setToast(""), 3000);
       return;
     }
-    setRows(assignNumbers(slots, numbers).map((row) => ({
-      ...row,
-      machineNumberSource: analysisNumberOcr?.accepted ? "ocr" : "manual-verified",
-      machineNumberVerified: true,
-    })));
+    const assignedRows = assignNumbers(slots, numbers).map((row, index) => {
+      const slot = slots[index];
+      const machineNumberSource = slot?.jointMatch?.accepted === true
+        ? "joint-site-seven"
+        : analysisJointMatch
+          ? "manual-verified"
+        : slot?.machineNumberOcr?.accepted === true
+          ? "ocr"
+          : "manual-verified";
+      return {
+        ...row,
+        machineNumberSource,
+        machineNumberVerified: true,
+      };
+    });
+    const preparedSiteSeven = prepareSiteSevenImportedRows(analysisSiteSevenRows, {
+      expectedNumbers: numbers,
+    });
+    const autoMerged = preparedSiteSeven.rows.length
+      ? mergeTaiData(assignedRows, preparedSiteSeven.rows)
+      : { rows: assignedRows, matched: 0 };
+    setRows(autoMerged.rows);
+    setAutoImportedCount(autoMerged.matched || 0);
+    setConfirmedMachineNumbers(numbers.map((number) => String(number ?? "")));
     setSaved(false);
     setStep("results");
   };
@@ -2201,7 +2683,7 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
     setSaved(false);
   };
 
-  const handleMerge = (taiRows) => {
+  const handleMerge = (taiRows, importState = {}) => {
     const {
       rows: merged,
       matched,
@@ -2211,6 +2693,17 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
       unverifiedDeltaNumbers,
     } = mergeTaiData(rows, taiRows);
     setRows(merged);
+    const reviewedSourceRows = Array.isArray(importState?.dataRows)
+      ? importState.dataRows
+      : [];
+    if (reviewedSourceRows.length) {
+      setAnalysisSiteSevenRows(reviewedSourceRows);
+      setAnalysisSiteSevenSummary((current) => summarizeSiteSevenReviewState(
+        importState.dataSummary || current,
+        reviewedSourceRows,
+      ));
+    }
+    setAutoImportedCount(matched || 0);
     setSaved(false);
     setStep("results");
     const remaining = validateDeltaRows(merged).unresolvedCount;
@@ -2246,6 +2739,11 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
             setSlots([]);
             setAnalysisReports([]);
             setAnalysisNumberOcr(null);
+            setAnalysisJointMatch(null);
+            setAnalysisSiteSevenRows([]);
+            setAnalysisSiteSevenSummary(null);
+            setAutoImportedCount(0);
+            setConfirmedMachineNumbers([]);
             setRows([]);
             setSaved(false);
           }}
@@ -2258,6 +2756,9 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
           slots={slots}
           reports={analysisReports}
           numberOcr={analysisNumberOcr}
+          jointMatch={analysisJointMatch}
+          siteSevenSummary={analysisSiteSevenSummary}
+          initialNumbers={confirmedMachineNumbers}
           islands={islands}
           onConfirm={handleConfirmNumbers}
           onBack={() => setStep("upload")}
@@ -2274,6 +2775,8 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
           onUpdateReview={handleUpdateReview}
           saved={saved}
           customMachines={customMachines}
+          siteSevenSummary={analysisSiteSevenSummary}
+          autoImportedCount={autoImportedCount}
         />
       )}
       {step === "import" && (
@@ -2284,6 +2787,8 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
           onMerge={handleMerge}
           aiApiKey={aiApiKey}
           onChangeAiApiKey={onChangeAiApiKey}
+          initialDataRows={analysisSiteSevenRows}
+          initialDataSummary={analysisSiteSevenSummary}
         />
       )}
     </div>

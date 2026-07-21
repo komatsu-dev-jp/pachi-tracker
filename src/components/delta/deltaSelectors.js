@@ -230,11 +230,15 @@ export function validateNumberAssignment(slots, numList) {
 
 // ページ全体のOCRが不合格でも、各枠で合格した候補だけは信頼済みとして保護する。
 // OCR不合格枠は手修正を許すが、合格済み候補と異なる番号への上書きは拒否する。
-export function validateReviewedNumberAssignment(slots, numList) {
+export function validateReviewedNumberAssignment(slots, numList, { jointOnly = false } = {}) {
   const list = Array.isArray(slots) ? slots : [];
   const base = validateNumberAssignment(list, numList);
   const trustedCandidates = list.map((slot) => (
-    slot?.machineNumberOcr?.accepted === true
+    slot?.jointMatch?.accepted === true
+      ? normalizeMachineNumber(slot?.jointMatch?.resolvedNum)
+      : jointOnly
+      ? null
+      : slot?.machineNumberOcr?.accepted === true
       ? normalizeMachineNumber(
         slot?.machineNumberOcr?.candidate
         ?? slot?.machineNumberCandidate
@@ -307,6 +311,37 @@ export function mergeTaiData(rows, taiRows) {
     const mergedVal = hasImportedDelta ? importedDelta : row.val;
     const importedIsland = String(t.island ?? "").trim();
     const importedMachineName = String(t.machineName ?? "").trim();
+    const hasGraphMaxPayout = row?.maxPayout !== null
+      && row?.maxPayout !== undefined
+      && row?.maxPayout !== "";
+    const hasImportedMaxPayout = t?.maxPayout !== null
+      && t?.maxPayout !== undefined
+      && t?.maxPayout !== "";
+    const graphMaxPayoutAccepted = hasGraphMaxPayout && (
+      row?.maxPayoutAccepted === true || row?.fieldAccepted?.maxPayout === true
+    );
+    const importedMaxPayoutHasExplicitTrust = t?.maxPayoutAccepted === true
+      || t?.fieldAccepted?.maxPayout === true;
+    const importedMaxPayoutExplicitlyRejected = t?.maxPayoutAccepted === false
+      || t?.fieldAccepted?.maxPayout === false;
+    const importedMaxPayoutAccepted = hasImportedMaxPayout && (
+      t?.reviewConfirmed === true
+      || importedMaxPayoutHasExplicitTrust
+      // PDF・CSV・手入力にはfield-levelのOCRフラグがない。明示的な不合格だけを除外する。
+      || (!importedMaxPayoutExplicitlyRejected && t?.sourceType !== "local-image-ocr"
+        && t?.importKind !== "image")
+    );
+    const selectedMaxPayout = graphMaxPayoutAccepted
+      ? row.maxPayout
+      : importedMaxPayoutAccepted
+        ? t.maxPayout
+        : hasGraphMaxPayout ? row.maxPayout : null;
+    const selectedMaxPayoutAccepted = graphMaxPayoutAccepted || importedMaxPayoutAccepted;
+    const selectedMaxPayoutSource = graphMaxPayoutAccepted
+      ? "graph"
+      : importedMaxPayoutAccepted
+        ? "import"
+        : hasGraphMaxPayout ? "graph-unverified" : null;
     return {
       ...row,
       island: importedIsland || row.island || "",
@@ -319,6 +354,8 @@ export function mergeTaiData(rows, taiRows) {
       reasonCodes: hasImportedDelta ? [] : row.reasonCodes,
       normalSpins: t.normalSpins ?? row.normalSpins ?? null,
       totalStarts: t.totalStarts ?? row.totalStarts ?? null,
+      maxPayout: selectedMaxPayout,
+      maxPayoutAccepted: selectedMaxPayoutAccepted,
       taiImportAudit: {
         sourceFile: String(t.sourceFile || ""),
         sourceLine: Number.isInteger(t.sourceLine) ? t.sourceLine : null,
@@ -326,6 +363,15 @@ export function mergeTaiData(rows, taiRows) {
         ocrConfidence: Number.isFinite(t.ocrConfidence) ? t.ocrConfidence : null,
         reviewRequired: t.reviewRequired === true,
         reviewConfirmed: t.reviewConfirmed === true,
+        fieldConfidence: t.fieldConfidence && typeof t.fieldConfidence === "object"
+          ? { ...t.fieldConfidence }
+          : null,
+        matchedBy: String(t.matchedBy || "") || null,
+        graphMaxPayout: hasGraphMaxPayout ? row.maxPayout : null,
+        graphMaxPayoutAccepted,
+        importedMaxPayout: hasImportedMaxPayout ? t.maxPayout : null,
+        importedMaxPayoutAccepted,
+        selectedMaxPayoutSource,
       },
     };
   });
