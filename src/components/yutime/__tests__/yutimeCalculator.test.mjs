@@ -8,6 +8,7 @@ import {
   normalizeYutimeSpec,
   resolveYutimeStartAction,
 } from "../yutimeCalculator.js";
+import { deriveSpecForMachine, getYutimeSelectionMachines } from "../../../machineDB.js";
 
 let passed = 0;
 const test = (name, fn) => {
@@ -98,6 +99,73 @@ test("入力不足を0円と誤表示しない", () => {
   const result = calculateYutimeEV({ ...base, yutimeExpectedNetBalls: null });
   assert.equal(result.valid, false);
   assert.ok(result.missing.includes("yutimeExpectedNetBalls"));
+  assert.equal(result.arrivalReady, true);
+  close(result.selectedArrivalInvestment, 200 * (1000 / 18));
+});
+
+test("平均獲得玉が未確認でも遊タイム到達必要資金を表示できる", () => {
+  const result = calculateYutimeEV({
+    ...base,
+    probabilityDenom: null,
+    normalExpectedNetBalls: 0,
+    yutimeExpectedNetBalls: null,
+    triggerLowSpins: 260,
+    currentLowSpins: 140,
+    start1K: 15,
+    budgetYen: 20000,
+  });
+  assert.equal(result.valid, false);
+  assert.equal(result.arrivalReady, true);
+  assert.equal(result.remainingSpins, 120);
+  close(result.selectedArrivalInvestment, 8000);
+  assert.equal(result.budgetCanReach, true);
+  close(result.budgetSurplusYen, 12000);
+});
+
+test("花の慶次87ver.は確認済み平均獲得玉で自動計算できる", () => {
+  const machine = getYutimeSelectionMachines().find((item) => item.name === "PA花の慶次～傾奇一転 87ver.");
+  assert.ok(machine);
+  assert.equal(machine.modelName, "PA花の慶次～傾奇一転N");
+  assert.equal(machine.yutime.expectedNetBalls, 1329.5);
+  const spec = deriveSpecForMachine(machine);
+  close(deriveNormalExpectedNetBalls(spec), 1178.64);
+  const result = calculateYutimeEV({
+    probabilityDenom: machine.synthProb,
+    triggerLowSpins: machine.yutime.triggerLowSpins,
+    currentLowSpins: 140,
+    start1K: 15,
+    normalExpectedNetBalls: deriveNormalExpectedNetBalls(spec),
+    yutimeExpectedNetBalls: machine.yutime.expectedNetBalls,
+    rentBalls: 250,
+    exRate: 250,
+    playMode: "cash",
+    budgetYen: 20000,
+  });
+  assert.equal(result.valid, true);
+  assert.equal(result.remainingSpins, 120);
+  close(result.selectedArrivalInvestment, 8000);
+});
+
+test("期待値入力不足時も持ち玉・非等価の到達資金を分離", () => {
+  const result = calculateYutimeEV({
+    ...base,
+    yutimeExpectedNetBalls: null,
+    triggerLowSpins: 260,
+    currentLowSpins: 140,
+    start1K: 15,
+    exRate: 280,
+    playMode: "mochi",
+  });
+  assert.equal(result.valid, false);
+  assert.equal(result.arrivalReady, true);
+  close(result.selectedArrivalInvestment, 120 * ((250 * (1000 / 280)) / 15));
+});
+
+test("1K回転率が未入力なら到達資金を推測しない", () => {
+  const result = calculateYutimeEV({ ...base, start1K: null, yutimeExpectedNetBalls: null });
+  assert.equal(result.valid, false);
+  assert.equal(result.arrivalReady, false);
+  assert.equal(result.selectedArrivalInvestment, undefined);
 });
 
 test("負数と異常確率を拒否", () => {

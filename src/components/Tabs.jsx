@@ -499,18 +499,19 @@ function YutimeEvCard({ result, spec, currentLowSpins = 0, rateSource = "assumed
     const isHeld = playMode === "mochi" || playMode === "chodama";
     const modeLabel = playMode === "chodama" ? "貯玉" : isHeld ? "持ち玉" : "現金";
     const canCompute = Boolean(result?.valid);
+    const canShowArrival = Boolean(result?.arrivalReady && Number.isFinite(result?.selectedArrivalInvestment));
     const missingPayout = result?.missing?.includes("yutimeExpectedNetBalls");
     const statusLabel = rateSource === "measured" ? "実測" : "暫定";
     const fallbackRemaining = Number(spec?.triggerLowSpins) > 0
         ? Math.max(0, Math.round(Number(spec.triggerLowSpins) - Math.max(0, Number(currentLowSpins) || 0)))
         : null;
-    const remainingLabel = canCompute
+    const remainingLabel = Number.isFinite(result?.remainingSpins)
         ? result.remainingSpins.toLocaleString("ja-JP")
         : fallbackRemaining == null ? "—" : fallbackRemaining.toLocaleString("ja-JP");
-    const arrivalLabel = canCompute ? Math.ceil(result.selectedArrivalInvestment).toLocaleString("ja-JP") : "—";
+    const arrivalLabel = canShowArrival ? Math.ceil(result.selectedArrivalInvestment - 1e-9).toLocaleString("ja-JP") : "—";
     const reachLabel = canCompute ? `${(result.reachProbability * 100).toFixed(1)}%` : "—";
-    const ariaLabel = canCompute
-        ? `遊タイム詳細。残り${remainingLabel}回、到達必要資金${arrivalLabel}円、到達率${reachLabel}`
+    const ariaLabel = canShowArrival
+        ? `遊タイム詳細。残り${remainingLabel}回、到達必要資金${arrivalLabel}円。${canCompute ? `到達率${reachLabel}` : "期待出玉の入力が必要"}`
         : `遊タイム詳細。残り${remainingLabel}回。${missingPayout ? "期待出玉の入力が必要" : "設定の確認が必要"}`;
 
     return (
@@ -541,20 +542,23 @@ function YutimeEvCard({ result, spec, currentLowSpins = 0, rateSource = "assumed
                     <span style={{ fontSize: 11, fontWeight: 800 }}>回</span>
                 </div>
             </div>
-            {canCompute ? (
-                <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.45fr) minmax(64px, .65fr) auto", alignItems: "end", gap: 9, marginTop: 10 }}>
-                    <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 9, color: C.sub, whiteSpace: "nowrap" }}>到達必要資金（{modeLabel}）</div>
-                        <div style={{ marginTop: 2, fontFamily: mono, fontVariantNumeric: "tabular-nums", color: C.text, whiteSpace: "nowrap" }}>
-                            <strong style={{ fontSize: 19, lineHeight: 1 }}>{arrivalLabel}</strong><span style={{ marginLeft: 3, fontSize: 10, fontWeight: 800 }}>円</span>
+            {canCompute || canShowArrival ? (
+                <>
+                    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.45fr) minmax(64px, .65fr) auto", alignItems: "end", gap: 9, marginTop: 10 }}>
+                        <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 9, color: C.sub, whiteSpace: "nowrap" }}>到達必要資金（{modeLabel}）</div>
+                            <div style={{ marginTop: 2, fontFamily: mono, fontVariantNumeric: "tabular-nums", color: C.text, whiteSpace: "nowrap" }}>
+                                <strong style={{ fontSize: 19, lineHeight: 1 }}>{arrivalLabel}</strong><span style={{ marginLeft: 3, fontSize: 10, fontWeight: 800 }}>円</span>
+                            </div>
                         </div>
+                        <div style={{ minWidth: 0, paddingLeft: 9, borderLeft: `1px solid ${C.border}` }}>
+                            <div style={{ fontSize: 9, color: C.sub, whiteSpace: "nowrap" }}>{canCompute ? "到達率" : "期待値"}</div>
+                            <strong style={{ display: "block", marginTop: 2, fontFamily: mono, fontVariantNumeric: "tabular-nums", color: canCompute ? C.text : C.yellow, fontSize: canCompute ? 16 : 11, lineHeight: 1, whiteSpace: "nowrap" }}>{canCompute ? reachLabel : "未計算"}</strong>
+                        </div>
+                        <span style={{ alignSelf: "center", color: C.subHi, fontSize: 10, fontWeight: 800, whiteSpace: "nowrap" }}>詳細を見る <span aria-hidden="true">›</span></span>
                     </div>
-                    <div style={{ minWidth: 0, paddingLeft: 9, borderLeft: `1px solid ${C.border}` }}>
-                        <div style={{ fontSize: 9, color: C.sub, whiteSpace: "nowrap" }}>到達率</div>
-                        <strong style={{ display: "block", marginTop: 2, fontFamily: mono, fontVariantNumeric: "tabular-nums", color: C.text, fontSize: 16, lineHeight: 1, whiteSpace: "nowrap" }}>{reachLabel}</strong>
-                    </div>
-                    <span style={{ alignSelf: "center", color: C.subHi, fontSize: 10, fontWeight: 800, whiteSpace: "nowrap" }}>詳細を見る <span aria-hidden="true">›</span></span>
-                </div>
+                    {!canCompute && <div style={{ marginTop: 7, color: C.yellow, fontSize: 9, fontWeight: 800 }}>平均獲得玉を入力すると、期待値と到達率も表示します。</div>}
+                </>
             ) : (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 12 }}>
                     <span style={{ color: C.yellow, fontSize: 11, fontWeight: 800 }}>{missingPayout ? "期待出玉を設定してください" : "遊タイム条件を確認してください"}</span>
