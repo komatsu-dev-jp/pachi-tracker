@@ -35,6 +35,7 @@ import {
 import { readTaiDataAttachments } from "./aiReader";
 import {
   classifySiteSevenFile,
+  applySiteSevenFieldEdit,
   mergeSiteSevenParsedResults,
   parseSiteSevenEditableInteger,
   prepareSiteSevenImportedRows,
@@ -47,6 +48,12 @@ import {
   compareConfirmedMachineNumbers,
 } from "./storeMachineNumberRelation";
 import { buildRowDeltaEvidence } from "./deltaEvidence";
+import {
+  attachClippedDeltaRanges,
+  formatDeltaRange,
+  isBoundedDeltaRow,
+} from "./deltaBounded";
+import { buildClippedDeltaSuggestion } from "./clippedDeltaSuggestion";
 import {
   buildPartialMachineNumberAssignment,
   canAutoAcceptSiteSevenReports,
@@ -1637,6 +1644,9 @@ function reviewReasonText(row) {
   if (reasons.includes("endpoint-clipped-bottom")) {
     return "終点がグラフ下限で切れています。表示値よりマイナス側へ大きい可能性があります。";
   }
+  if (reasons.includes("boundary-uncertain")) {
+    return "終点がグラフ上限・下限のすぐ近くです。境界を越えたとは断定せず、元画像での確認が必要です。";
+  }
   if (reasons.includes("short-series")) {
     return "折れ線が短いため、終点位置を元画像と照らし合わせてください。";
   }
@@ -1693,12 +1703,19 @@ function GraphReviewPreview({ row, image }) {
 }
 
 function ReviewValueEditor({ row, onUpdate }) {
-  const [draft, setDraft] = useState(String(row?.val ?? ""));
+  const bounded = isBoundedDeltaRow(row);
+  const [draft, setDraft] = useState(bounded ? "" : String(row?.val ?? ""));
   const normalized = draft.normalize("NFKC").replace(/[−‐‑‒–—―﹣]/g, "-").replace(/[,，\s]/g, "");
   const numericValid = /^[+-]?\d+$/.test(normalized) && Number.isSafeInteger(Number(normalized));
   const parsedValue = numericValid ? Number(normalized) : null;
   const constraintValid = numericValid && isDeltaValueWithinConstraint(row, parsedValue);
   const valid = numericValid && constraintValid;
+  const emptyBoundedDraft = bounded && !draft.trim();
+  const showInputError = !valid && !emptyBoundedDraft;
+  const canRestoreBounded = !bounded
+    && row?.deltaRange
+    && row?.rawGraphCandidate
+    && ["manual-review", "manual-review-candidate"].includes(row?.valueSource);
   const commit = () => {
     if (!valid) return;
     const value = parsedValue;
@@ -1718,14 +1735,16 @@ function ReviewValueEditor({ row, onUpdate }) {
   return (
     <>
       <div style={{ flex: 1, minWidth: 132 }}>
-        <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, marginBottom: 4 }}>確認後の差玉</div>
+        <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, marginBottom: 4 }}>
+          {bounded ? "正確な差玉が分かる場合のみ入力（任意）" : "確認後の差玉"}
+        </div>
         <input
           type="text"
           inputMode="numeric"
           value={draft}
           disabled={reviewConfirmed}
           aria-label={`台${row?.num}の確認後差玉`}
-          aria-invalid={!valid}
+          aria-invalid={showInputError}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commit}
           onKeyDown={(event) => {
@@ -1733,37 +1752,108 @@ function ReviewValueEditor({ row, onUpdate }) {
           }}
           style={{
             width: "100%", minHeight: TAP, boxSizing: "border-box",
-            borderRadius: 10, border: `1px solid ${valid ? C.borderHi : C.red}`,
+            borderRadius: 10,
+            border: `1px solid ${showInputError ? C.red : emptyBoundedDraft ? C.green : C.borderHi}`,
             background: reviewConfirmed ? C.surface : C.surfaceHi,
             color: C.text, fontSize: 18, fontFamily: mono, fontWeight: 900,
             padding: "0 10px", opacity: reviewConfirmed ? 0.72 : 1,
           }}
         />
-        {!valid && !reviewConfirmed && (
+        {!valid && !reviewConfirmed && (!bounded || draft.trim()) && (
           <div role="alert" style={{ color: C.red, fontSize: 10, fontWeight: 800, marginTop: 4 }}>
             {numericValid ? constraintText(row) || "許可された範囲で入力してください" : "数字で入力してください"}
           </div>
         )}
       </div>
-      <button
-        className="b"
-        type="button"
-        role="checkbox"
-        aria-checked={reviewConfirmed}
-        disabled={!reviewConfirmed && !valid}
-        onClick={toggleConfirmation}
-        style={{
+      {bounded && !draft.trim() ? (
+        <div style={{
           flex: "1 1 170px", minHeight: TAP, borderRadius: 10,
-          border: `1px solid ${reviewConfirmed ? C.green : valid ? C.yellow : C.border}`,
-          background: reviewConfirmed ? "color-mix(in srgb, var(--green) 13%, transparent)" : "color-mix(in srgb, var(--yellow) 10%, transparent)",
-          color: reviewConfirmed ? C.green : valid ? C.yellow : C.sub,
-          fontSize: 12, fontWeight: 900, padding: "8px 10px",
-          opacity: !reviewConfirmed && !valid ? 0.6 : 1,
-        }}
-      >
-        {reviewConfirmed ? "✓ この値で確認済み" : "この値を目視確認して確定"}
-      </button>
+          border: `1px solid color-mix(in srgb, var(--green) 30%, transparent)`,
+          background: "color-mix(in srgb, var(--green) 8%, transparent)",
+          color: C.green, fontSize: 11, fontWeight: 800, padding: "8px 10px",
+          display: "flex", alignItems: "center",
+        }}>
+          入力しなければ上限・下限到達の記録として保存されます
+        </div>
+      ) : (
+        <button
+          className="b"
+          type="button"
+          role="checkbox"
+          aria-checked={reviewConfirmed}
+          disabled={!reviewConfirmed && !valid}
+          onClick={toggleConfirmation}
+          style={{
+            flex: "1 1 170px", minHeight: TAP, borderRadius: 10,
+            border: `1px solid ${reviewConfirmed ? C.green : valid ? C.yellow : C.border}`,
+            background: reviewConfirmed ? "color-mix(in srgb, var(--green) 13%, transparent)" : "color-mix(in srgb, var(--yellow) 10%, transparent)",
+            color: reviewConfirmed ? C.green : valid ? C.yellow : C.sub,
+            fontSize: 12, fontWeight: 900, padding: "8px 10px",
+            opacity: !reviewConfirmed && !valid ? 0.6 : 1,
+          }}
+        >
+          {reviewConfirmed ? "✓ この値で確認済み" : "この値を目視確認して確定"}
+        </button>
+      )}
+      {canRestoreBounded && (
+        <button
+          className="b"
+          type="button"
+          onClick={() => {
+            setDraft("");
+            onUpdate({ restoreBounded: true });
+          }}
+          style={{
+            flex: "1 1 170px", minHeight: TAP, borderRadius: 10,
+            border: `1px solid ${C.border}`, background: C.surfaceHi,
+            color: C.subHi, fontSize: 11, fontWeight: 800, padding: "8px 10px",
+          }}
+        >
+          正確値を取り消して境界到達記録に戻す
+        </button>
+      )}
     </>
+  );
+}
+
+function ClippedEvidenceCard({ row, suggestion }) {
+  const range = row?.deltaRange;
+  if (!isBoundedDeltaRow(row) || !range) return null;
+  return (
+    <div style={{
+      marginTop: 10, padding: "11px 12px", borderRadius: 11,
+      border: `1px solid color-mix(in srgb, var(--green) 36%, transparent)`,
+      background: "color-mix(in srgb, var(--green) 9%, transparent)",
+    }}>
+      <div style={{ color: C.green, fontSize: 13, fontWeight: 900 }}>
+        グラフから上限・下限到達を記録
+      </div>
+      <div style={{ color: C.text, fontFamily: mono, fontSize: 20, fontWeight: 900, marginTop: 4 }}>
+        {formatDeltaRange(range, sp)}
+      </div>
+      <div style={{ color: C.subHi, fontSize: 10, lineHeight: 1.6, marginTop: 5, fontWeight: 700 }}>
+        折れ線から分かる境界だけを保存します。正確な一点値として平均や予測には使いません。
+      </div>
+      {suggestion && (
+        <div style={{
+          marginTop: 9, paddingTop: 9, borderTop: `1px solid ${C.border}`,
+          display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+        }}>
+          <div style={{ flex: 1, minWidth: 150 }}>
+            <div style={{ color: C.sub, fontSize: 10, fontWeight: 800 }}>大当り・回転数・機種からの参考推定</div>
+            <div style={{ color: C.yellow, fontFamily: mono, fontSize: 18, fontWeight: 900, marginTop: 2 }}>
+              約 {sp(suggestion.value)}玉
+            </div>
+            <div style={{ color: C.sub, fontSize: 9, lineHeight: 1.5, marginTop: 2 }}>
+              {suggestion.confidence === "medium"
+                ? `精度: 中（同日0当たり${suggestion.basis?.peerNumbers?.length || 0}台で回転率を補正）`
+                : "精度: 低（機種ボーダーを仮定）"}
+              <br />推定値のため自動確定・平均・予測には使用しません
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1816,7 +1906,12 @@ function ResultsStep({
     const map = new Map();
     for (const row of rows) {
       if (!hasResolvedDelta(row)) {
-        map.set(String(row.num), { hasEstimate: false, reason: row?.status === "review" ? "差玉の確認待ち" : "差玉未読取" });
+        map.set(String(row.num), {
+          hasEstimate: false,
+          reason: isBoundedDeltaRow(row)
+            ? "差玉は境界到達記録（予測から除外）"
+            : row?.status === "review" ? "差玉の確認待ち" : "差玉未読取",
+        });
         continue;
       }
       map.set(String(row.num), buildRowDeltaEvidence(
@@ -1824,6 +1919,14 @@ function ResultsStep({
         customMachines,
         machineDB,
       ));
+    }
+    return map;
+  }, [rows, customMachines]);
+  const clippedSuggestionByNum = useMemo(() => {
+    const map = new Map();
+    for (const row of rows) {
+      const suggestion = buildClippedDeltaSuggestion(row, rows, customMachines, machineDB);
+      if (suggestion) map.set(String(row.num), suggestion);
     }
     return map;
   }, [rows, customMachines]);
@@ -1843,6 +1946,7 @@ function ResultsStep({
   const predictedCount = Array.from(predictionByNum.values()).filter((item) => item.hasEstimate).length;
   const pendingReviewCount = rowValidation.pendingReviewIndices.length;
   const confirmedReviewCount = rowValidation.confirmedReviewIndices.length;
+  const boundedCount = rowValidation.boundedCount || 0;
   const missingDeltaCount = rowValidation.missingIndices.length;
   const saveDisabled = saved || !rowValidation.valid;
 
@@ -1910,7 +2014,9 @@ function ResultsStep({
               ))}
             </div>
             <div style={{ fontSize: 12, color: predictedCount > 0 ? C.green : C.sub, fontWeight: 700, marginTop: 10 }}>
-              読取 {rowValidation.resolvedCount}/{rows.length}台 ・ 予測回転率 {predictedCount}台
+              確定 {rowValidation.exactCount ?? rowValidation.resolvedCount}/{rows.length}台
+              {boundedCount > 0 && ` ・ 境界到達 ${boundedCount}台`}
+              {` ・ 予測回転率 ${predictedCount}台`}
               {confirmedReviewCount > 0 && ` ・ 目視確認済み ${confirmedReviewCount}台`}
             </div>
           </div>
@@ -1964,6 +2070,20 @@ function ResultsStep({
           </div>
         )}
 
+        {boundedCount > 0 && (
+          <div style={{
+            background: "color-mix(in srgb, var(--green) 9%, transparent)",
+            border: `1px solid color-mix(in srgb, var(--green) 32%, transparent)`,
+            borderRadius: 14, padding: "11px 13px", marginBottom: 12,
+            color: C.subHi, fontSize: 11, lineHeight: 1.65, fontWeight: 700,
+          }}>
+            <div style={{ color: C.green, fontSize: 13, fontWeight: 900, marginBottom: 3 }}>
+              上限・下限で切れた{boundedCount}台は境界到達のまま保存できます
+            </div>
+            正確な一点値を作らないため、チェックは不要です。平均差玉と予測回転率からは除外し、正確な値が分かっている場合だけ任意で上書きできます。
+          </div>
+        )}
+
         {/* 並び替えトグル */}
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
           {[["delta", "差玉順"], ["number", "台番号順"]].map(([id, label]) => {
@@ -1990,7 +2110,8 @@ function ResultsStep({
         {/* 結果カードリスト */}
         {sorted.map((r, i) => {
           const resolved = hasResolvedDelta(r);
-          const isReview = r.status === "review";
+          const bounded = isBoundedDeltaRow(r);
+          const isReview = r.status === "review" || bounded;
           const reviewConfirmed = isReview && resolved && r.reviewConfirmed === true;
           const tone = resolved
             ? getRankTone(r.rank)
@@ -2005,6 +2126,7 @@ function ResultsStep({
             ? images?.[r.source.imageIndex]
             : null;
           const boundWarning = constraintText(r);
+          const clippedSuggestion = clippedSuggestionByNum.get(String(r.num));
           return (
             <div key={`${r.num}-${r.source?.imageIndex ?? "x"}-${r.source?.panelIndex ?? i}`} style={{
               background: C.surface, border: `1px solid ${C.border}`,
@@ -2017,7 +2139,7 @@ function ResultsStep({
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
                   <span style={{ fontSize: resolved && !reviewConfirmed ? 20 : 11, fontWeight: 900, color: tone.color, fontFamily: mono, textAlign: "center", lineHeight: 1.25 }}>
-                    {reviewConfirmed ? "確認済" : resolved ? r.rank : isReview ? "要確認" : "未読取"}
+                    {reviewConfirmed ? "確認済" : resolved ? r.rank : bounded ? "境界" : isReview ? "要確認" : "未読取"}
                   </span>
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -2083,9 +2205,9 @@ function ResultsStep({
                     </div>
                   ) : null}
                 </div>
-                <div style={{ fontSize: resolved || isReview ? 21 : 15, fontWeight: 900, fontFamily: mono, color: resolved ? (r.val >= 0 ? C.green : C.red) : tone.color, flexShrink: 0, textAlign: "right" }}>
-                  {resolved || isReview ? sp(r.val) : "—"}
-                  {isReview && !reviewConfirmed && <div style={{ fontSize: 9, color: C.yellow, marginTop: 2 }}>候補値</div>}
+                <div style={{ fontSize: resolved || isReview ? (bounded ? 13 : 21) : 15, fontWeight: 900, fontFamily: mono, color: resolved ? (r.val >= 0 ? C.green : C.red) : tone.color, flexShrink: 0, textAlign: "right", maxWidth: bounded ? 150 : "none" }}>
+                  {bounded ? formatDeltaRange(r.deltaRange, sp) : resolved || isReview ? sp(r.val) : "—"}
+                  {isReview && !reviewConfirmed && !bounded && <div style={{ fontSize: 9, color: C.yellow, marginTop: 2 }}>候補値</div>}
                 </div>
               </div>
 
@@ -2094,16 +2216,20 @@ function ResultsStep({
                   <GraphReviewPreview row={r} image={sourceImage} />
                   <div style={{ fontSize: 12, color: reviewConfirmed ? C.green : C.yellow, lineHeight: 1.6, fontWeight: 800, marginTop: 9 }}>
                     {reviewReasonText(r)}
-                    {boundWarning && <div style={{ color: C.red }}>{boundWarning}</div>}
+                    {boundWarning && !bounded && <div style={{ color: C.red }}>{boundWarning}</div>}
                     {Number.isInteger(r.source?.imageIndex) && (
                       <div style={{ color: C.subHi, fontWeight: 700 }}>
                         画像{r.source.imageIndex + 1}{Number.isInteger(r.source?.row) ? `・${r.source.row + 1}行目` : ""}
                       </div>
                     )}
                   </div>
+                  <ClippedEvidenceCard
+                    row={r}
+                    suggestion={clippedSuggestion}
+                  />
                   <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginTop: 10 }}>
                     <ReviewValueEditor
-                      key={r.num}
+                      key={`${r.num}-${bounded ? "bounded" : reviewConfirmed ? "confirmed" : "review"}`}
                       row={r}
                       onUpdate={(update) => onUpdateReview?.(r.num, update)}
                     />
@@ -2414,7 +2540,7 @@ function ImportStep({
     setDataRows((current) => {
       const next = current.map((row, rowIndex) => (
         rowIndex === index
-          ? { ...row, [field]: value, reviewConfirmed: false }
+          ? applySiteSevenFieldEdit(row, field, value)
           : row
       ));
       return field === "num"
@@ -2475,7 +2601,18 @@ function ImportStep({
     setDataRows((current) => current.map((row, rowIndex) => {
       if (rowIndex !== index) return row;
       const canConfirm = canConfirmSiteSevenRow(row, rowIndex, current, deltaNumberSet);
-      return { ...row, reviewConfirmed: checked && canConfirm };
+      const confirmed = checked && canConfirm;
+      const editedFields = Array.isArray(row?.editedFields) ? row.editedFields : [];
+      return {
+        ...row,
+        reviewConfirmed: confirmed,
+        fieldAccepted: confirmed
+          ? editedFields.reduce(
+            (accepted, field) => ({ ...accepted, [field]: true }),
+            { ...(row?.fieldAccepted || {}) },
+          )
+          : row?.fieldAccepted,
+      };
     }));
   };
 
@@ -2540,6 +2677,26 @@ function ImportStep({
   const preparedText = useMemo(() => prepareSiteSevenImportedRows(parsed.rows, {
     expectedNumbers: expectedDataNumbers,
   }), [parsed.rows, expectedDataNumbers]);
+  const dataIssueIndices = useMemo(() => {
+    const duplicateNumbers = new Set(preparedData.duplicateNumbers || []);
+    const unexpectedNumbers = new Set(preparedData.unexpectedNumbers || []);
+    const issues = new Set();
+    dataRows.forEach((row, index) => {
+      const num = parseSiteSevenEditableInteger(row?.num);
+      const normalSpins = parseSiteSevenEditableInteger(row?.normalSpins);
+      const totalStarts = parseSiteSevenEditableInteger(row?.totalStarts);
+      const normalizedNum = num === null ? "" : String(num);
+      const invalid = num === null || num <= 0 || normalSpins === null || normalSpins < 0
+        || totalStarts === null || totalStarts < 0;
+      if ((row?.reviewRequired && !row?.reviewConfirmed)
+        || invalid
+        || duplicateNumbers.has(normalizedNum)
+        || unexpectedNumbers.has(normalizedNum)) {
+        issues.add(index);
+      }
+    });
+    return issues;
+  }, [dataRows, preparedData]);
   // 手動・外部AIの値より、画面で確認した端末内ファイルの値を優先する。
   const importRows = useMemo(() => {
     const byNumber = new Map();
@@ -2578,8 +2735,16 @@ function ImportStep({
         String(row.machineName || "").toLowerCase().includes(query)
       );
     }
-    return showAllDataRows ? entries : entries.slice(0, 12);
-  }, [dataRows, dataFilter, showAllDataRows, deltaNumberSet]);
+    if (showAllDataRows) return entries;
+    // 普段は確認が必要な行だけを見せる。正常な数十台を毎回スクロール・確認させない。
+    return entries.filter(({ index }) => dataIssueIndices.has(index)).slice(0, 12);
+  }, [dataRows, dataFilter, showAllDataRows, deltaNumberSet, dataIssueIndices]);
+  const deferredImportCount = dataIssueIndices.size
+    + preparedText.invalidCount
+    + preparedText.reviewPendingCount
+    + preparedText.duplicateCount
+    + preparedText.unexpectedCount
+    + parsed.skipped.length;
   const dataSourceSummary = dataSummary
     ? [
         dataSummary.pdfCount > 0 ? `PDF ${dataSummary.pdfCount}` : "",
@@ -2911,6 +3076,22 @@ function ImportStep({
                 ))}
               </div>
 
+              {!dataReviewEntries.length && !showAllDataRows
+                && !dataFilter.trim()
+                && preparedData.invalidCount === 0
+                && preparedData.reviewPendingCount === 0
+                && preparedData.duplicateCount === 0
+                && preparedData.unexpectedCount === 0 && (
+                <div style={{
+                  marginTop: 10, padding: "10px 12px", borderRadius: 10,
+                  background: "color-mix(in srgb, var(--green) 9%, transparent)",
+                  border: `1px solid color-mix(in srgb, var(--green) 28%, transparent)`,
+                  color: C.green, fontSize: 12, fontWeight: 800,
+                }}>
+                  ✓ 確認が必要な台はありません（確認不要 {preparedData.rows.length}台）
+                </div>
+              )}
+
               {!dataFilter && dataRows.length > 12 && (
                 <button
                   className="b"
@@ -2921,7 +3102,7 @@ function ImportStep({
                     color: C.subHi, fontSize: 12, fontWeight: 800,
                   }}
                 >
-                  {showAllDataRows ? "要確認を優先して12台表示" : `全${dataRows.length}台を表示`}
+                  {showAllDataRows ? "要確認の台だけ表示" : `確認不要を含む全${dataRows.length}台を表示`}
                 </button>
               )}
               {preparedData.invalidCount > 0 && (
@@ -2942,6 +3123,11 @@ function ImportStep({
               {preparedData.unexpectedCount > 0 && (
                 <div style={{ color: C.red, fontSize: 11, fontWeight: 700, marginTop: 8 }}>
                   ⚠ 差玉側にない台番号があります（{preparedData.unexpectedNumbers.join("・")}）。台番号を確認してください
+                </div>
+              )}
+              {deferredImportCount > 0 && recognized > 0 && (
+                <div style={{ color: C.subHi, fontSize: 10, fontWeight: 700, lineHeight: 1.6, marginTop: 8 }}>
+                  保留した行は今回の統合・保存には入りません。必要な場合は、元資料を直してもう一度取り込めます。
                 </div>
               )}
             </div>
@@ -3188,21 +3374,16 @@ function ImportStep({
           ? "台データを読み取り中…"
           : aiBusy
             ? "外部AIで読み取り中…"
-          : preparedData.duplicateCount > 0 || preparedData.unexpectedCount > 0
-            || preparedText.duplicateCount > 0 || preparedText.unexpectedCount > 0
-          ? "台番号の重複・不一致を直してください"
-          : preparedData.reviewPendingCount > 0
-            ? `要確認${preparedData.reviewPendingCount}台を確認してください`
-            : "台データと差玉を台番号で統合する"}
+          : deferredImportCount > 0 && recognized > 0
+            ? `安全な${recognized}台だけ先に統合（${deferredImportCount}台保留）`
+          : deferredImportCount > 0
+            ? `要確認${deferredImportCount}台（安全に統合できる台なし）`
+          : "台データと差玉を台番号で統合する"}
         onClick={() => onMerge(importRows, { dataRows, dataSummary })}
         disabled={recognized === 0
           || dataBusy
           || aiBusy
-          || preparedData.reviewPendingCount > 0
-          || preparedData.duplicateCount > 0
-          || preparedData.unexpectedCount > 0
-          || preparedText.duplicateCount > 0
-          || preparedText.unexpectedCount > 0}
+        }
       />
       <MachinePickerSheet
         open={machinePickerRowIndex !== null}
@@ -3381,7 +3562,7 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
       ? mergeTaiData(assignedRows, preparedSiteSeven.rows)
       : { rows: assignedRows, matched: 0 };
     const related = applyStoreLayoutRelations(autoMerged.rows, islands, activeIslandScopeId);
-    setRows(related.rows);
+    setRows(attachClippedDeltaRanges(related.rows));
     setAutoImportedCount(autoMerged.matched || 0);
     setConfirmedMachineNumbers(numbers.map((number) => String(number ?? "")));
     setSaved(false);
@@ -3465,7 +3646,9 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
       unverifiedDeltaNumbers,
     } = mergeTaiData(rows, taiRows);
     const related = applyStoreLayoutRelations(merged, islands, activeIslandScopeId);
-    const rowsWithManualSelections = propagateManualMachineSelections(related.rows, taiRows);
+    const rowsWithManualSelections = attachClippedDeltaRanges(
+      propagateManualMachineSelections(related.rows, taiRows),
+    );
     setRows(rowsWithManualSelections);
     const reviewedSourceRows = Array.isArray(importState?.dataRows)
       ? importState.dataRows

@@ -23,6 +23,15 @@ assert.ok(Math.abs(observed.observedRotation - 20.9433962264) < 1e-9);
 
 assert.equal(estimateDeltaObservation({ normalSpins: 100, totalStarts: 1, val: 5000 }, machine).valid, false);
 assert.equal(estimateDeltaObservation({ normalSpins: 0, totalStarts: 0, val: -5000 }, machine).valid, false);
+assert.deepEqual(
+  estimateDeltaObservation({ normalSpins: 631, totalStarts: 40, val: null, status: "bounded" }, machine),
+  { valid: false, reason: "差玉は境界到達記録" },
+  "範囲記録を差玉0として予測へ混ぜない",
+);
+assert.equal(
+  estimateDeltaObservation({ normalSpins: 631, totalStarts: 40, val: null }, machine).reason,
+  "確定差玉なし",
+);
 
 const scans = [{
   storeId: "s1", storeName: "店", date: "2026-01-22", createdAt: "2026-01-22T12:00:00Z",

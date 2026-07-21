@@ -203,6 +203,23 @@ test("buildNumTrend: 同一日付は createdAt が新しい方を優先", () => 
   assert.strictEqual(trend[0].val, 5000);
 });
 
+test("buildNumTrend: bounded範囲を差玉0の履歴として追加しない", () => {
+  const scans = [scan({
+    id: "bounded",
+    storeId: 7,
+    date: "2026-06-11",
+    createdAt: "a",
+    rows: [{
+      num: "548",
+      val: null,
+      rank: null,
+      status: "bounded",
+      deltaRange: { lower: 30000, upper: 49190, exact: false },
+    }],
+  })];
+  assert.deepStrictEqual(buildNumTrend(scans, 7, "548"), []);
+});
+
 test("buildNumTrend: 店舗フィルタ（storeId 厳密一致・文字列化照合）", () => {
   const scans = [
     scan({ id: "1", storeId: "7", date: "2026-06-01", rows: [row(816, 1000)], createdAt: "a" }),

@@ -235,6 +235,26 @@ export function parseSiteSevenEditableInteger(value) {
   return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
+export function applySiteSevenFieldEdit(row, field, value) {
+  const source = row && typeof row === "object" ? row : {};
+  return {
+    ...source,
+    [field]: value,
+    reviewRequired: true,
+    reviewConfirmed: false,
+    reviewReason: "手修正した数字を元資料と照らし合わせてください",
+    structuredRowTrusted: false,
+    editedFields: [...new Set([...(source.editedFields || []), field])],
+    fieldAccepted: {
+      ...(source.fieldAccepted || {}),
+      [field]: false,
+    },
+    ...(["num", "maxPayout"].includes(field)
+      ? { jointMatchAccepted: false, jointEvidenceRejected: true }
+      : {}),
+  };
+}
+
 export function prepareSiteSevenImportedRows(rows, { expectedNumbers = [] } = {}) {
   const candidates = [];
   let invalidCount = 0;
@@ -333,11 +353,31 @@ export function mergeSiteSevenParsedResults(resultEntries, { expectedNumbers = [
     duplicateOccurrenceCount += sourceDuplicates.length;
     for (const rawRow of result?.rows || []) {
       const parsedNum = parseSiteSevenEditableInteger(rawRow?.num);
+      const parsedFieldValues = {
+        num: parsedNum !== null && parsedNum > 0,
+        normalSpins: parseSiteSevenEditableInteger(rawRow?.normalSpins) !== null,
+        totalStarts: parseSiteSevenEditableInteger(rawRow?.totalStarts) !== null,
+        maxPayout: parseSiteSevenEditableInteger(rawRow?.maxPayout) !== null,
+      };
+      const explicitlyRejectedField = Object.keys(parsedFieldValues)
+        .some((field) => rawRow?.fieldAccepted?.[field] === false);
+      const structuredTrusted = ["pdf", "csv"].includes(kind)
+        && rawRow?.reviewRequired !== true
+        && rawRow?.structuredRowTrusted !== false
+        && rawRow?.jointEvidenceRejected !== true
+        && !explicitlyRejectedField;
       let candidate = {
         ...rawRow,
         num: parsedNum === null ? String(rawRow?.num ?? "") : String(parsedNum),
         importKind: kind,
         reviewConfirmed: rawRow?.reviewConfirmed === true,
+        structuredRowTrusted: structuredTrusted,
+        fieldAccepted: structuredTrusted
+          ? {
+            ...(rawRow?.fieldAccepted || {}),
+            ...parsedFieldValues,
+          }
+          : rawRow?.fieldAccepted,
       };
       if (parsedNum !== null && sourceDuplicateNumbers.has(String(parsedNum))) {
         candidate = appendReviewReason(

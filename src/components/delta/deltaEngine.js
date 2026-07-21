@@ -418,14 +418,14 @@ function extractSeries(data, imageWidth, panel) {
   const verticalYs = verticalTerminal.map((point) => point.y);
   const terminalMin = Math.min(...verticalYs);
   const terminalMax = Math.max(...verticalYs);
+  const previous = selected.points.filter((point) => (
+    point.x >= selected.maxX - verticalTailWidth * 4
+    && point.x < selected.maxX - verticalTailWidth
+  ));
+  const approachY = median(previous.map((point) => point.y));
   if (terminalMax - terminalMin >= Math.max(8, height * 0.04)) {
-    const previous = selected.points.filter((point) => (
-      point.x >= selected.maxX - verticalTailWidth * 4
-      && point.x < selected.maxX - verticalTailWidth
-    ));
-    const previousY = median(previous.map((point) => point.y));
-    if (Number.isFinite(previousY)) {
-      endpointY = Math.abs(terminalMin - previousY) > Math.abs(terminalMax - previousY)
+    if (Number.isFinite(approachY)) {
+      endpointY = Math.abs(terminalMin - approachY) > Math.abs(terminalMax - approachY)
         ? terminalMin
         : terminalMax;
     }
@@ -447,11 +447,16 @@ function extractSeries(data, imageWidth, panel) {
       minY: selected.minY,
       maxY: selected.maxY,
     },
+    terminalBounds: {
+      minY: terminalMin,
+      maxY: terminalMax,
+    },
     endpoint: {
       x: panelX + selected.maxX,
       y: panelY + endpointY,
       localX: selected.maxX,
       localY: endpointY,
+      approachLocalY: Number.isFinite(approachY) ? approachY : null,
     },
   };
 }
@@ -482,12 +487,12 @@ function publicCalibration(calibration) {
 
 function classifySeriesBoundaryContact(series, calibration) {
   if (!series || !calibration) {
-    return { endpointBoundary: null, historicalBoundaries: [] };
+    return { endpointBoundary: null, uncertainEndpointBoundary: null, historicalBoundaries: [] };
   }
   const { plotTopY, plotBottomY, gridSpacing } = calibration;
   if (!Number.isFinite(plotTopY) || !Number.isFinite(plotBottomY)
     || !Number.isFinite(gridSpacing)) {
-    return { endpointBoundary: null, historicalBoundaries: [] };
+    return { endpointBoundary: null, uncertainEndpointBoundary: null, historicalBoundaries: [] };
   }
 
   // A trace is several pixels thick after screenshots and JPEG compression. The
@@ -495,25 +500,49 @@ function classifySeriesBoundaryContact(series, calibration) {
   // a nearby historical pixel must not turn an otherwise visible endpoint into a
   // clipped value.
   const pathTolerance = Math.max(1.5, gridSpacing * 0.05);
-  const endpointTolerance = pathTolerance;
+  // JPEG縮小では線の中心が上端/下端から2pxほど内側へにじむ。従来の1.5pxでは
+  // 実画像の台548を「途中で触れただけ」と誤判定し、+28,500玉を確定していた。
+  // 経路全体の接触判定は狭いまま保ち、終点だけ最低2.5pxまで許容する。
+  const endpointTolerance = Math.max(2.5, gridSpacing * 0.08);
   const endpointTopDistance = series.endpoint.localY - plotTopY;
   const endpointBottomDistance = plotBottomY - series.endpoint.localY;
   const endpointNearTop = endpointTopDistance <= endpointTolerance;
   const endpointNearBottom = endpointBottomDistance <= endpointTolerance;
-  let endpointBoundary = null;
-  if (endpointNearTop || endpointNearBottom) {
-    endpointBoundary = endpointTopDistance <= endpointBottomDistance ? "top" : "bottom";
-  }
-
   const touchedTop = series.bounds.minY <= plotTopY + pathTolerance;
   const touchedBottom = series.bounds.maxY >= plotBottomY - pathTolerance;
+  // Record a direct boundary contact separately from a trace that merely ends
+  // nearby. Even a direct raster contact remains a censored observation below;
+  // the yellow stroke thickness does not prove the center line crossed 30k.
+  const terminalContactTolerance = 0.5;
+  const terminalNearTop = series.terminalBounds?.minY <= plotTopY + pathTolerance;
+  const terminalNearBottom = series.terminalBounds?.maxY >= plotBottomY - pathTolerance;
+  const endpointTrend = Number.isFinite(series.endpoint?.approachLocalY)
+    ? series.endpoint.localY - series.endpoint.approachLocalY
+    : 0;
+  const terminalTouchedTop = series.terminalBounds?.minY <= plotTopY + terminalContactTolerance;
+  const terminalTouchedBottom = series.terminalBounds?.maxY >= plotBottomY - terminalContactTolerance;
+  const endpointClippedTop = endpointNearTop && terminalTouchedTop;
+  const endpointClippedBottom = endpointNearBottom && terminalTouchedBottom;
+  let endpointBoundary = null;
+  if (endpointClippedTop || endpointClippedBottom) {
+    endpointBoundary = endpointTopDistance <= endpointBottomDistance ? "top" : "bottom";
+  }
+  let uncertainEndpointBoundary = null;
+  if (!endpointBoundary) {
+    const approachingTop = endpointNearTop && terminalNearTop && endpointTrend <= -0.5;
+    const approachingBottom = endpointNearBottom && terminalNearBottom && endpointTrend >= 0.5;
+    if (approachingTop || approachingBottom) {
+      uncertainEndpointBoundary = endpointTopDistance <= endpointBottomDistance ? "top" : "bottom";
+    }
+  }
+
   const historicalBoundaries = [];
-  if (touchedTop && endpointBoundary !== "top") historicalBoundaries.push("top");
-  if (touchedBottom && endpointBoundary !== "bottom") historicalBoundaries.push("bottom");
-  return { endpointBoundary, historicalBoundaries };
+  if (touchedTop && endpointBoundary !== "top" && uncertainEndpointBoundary !== "top") historicalBoundaries.push("top");
+  if (touchedBottom && endpointBoundary !== "bottom" && uncertainEndpointBoundary !== "bottom") historicalBoundaries.push("bottom");
+  return { endpointBoundary, uncertainEndpointBoundary, historicalBoundaries };
 }
 
-function clippedValueConstraint(calibration, boundary) {
+function clippedBoundaryObservation(calibration, boundary) {
   if (boundary !== "top" && boundary !== "bottom") return null;
   const boundaryY = boundary === "top" ? calibration.plotTopY : calibration.plotBottomY;
   if (!Number.isFinite(boundaryY) || !Number.isFinite(calibration.zeroY)
@@ -521,11 +550,33 @@ function clippedValueConstraint(calibration, boundary) {
     return null;
   }
   const rawBoundaryValue = ((calibration.zeroY - boundaryY) / calibration.gridSpacing) * 10000;
-  const roundedBoundaryValue = Math.round(rawBoundaryValue / 500) * 500;
+  // 表示境界の目安値。これはhard boundではなく、画像上の上限/下限ラベルとして使う。
+  const roundedBoundaryValue = boundary === "top"
+    ? Math.floor(rawBoundaryValue / 500) * 500
+    : Math.ceil(rawBoundaryValue / 500) * 500;
   return {
-    kind: boundary === "top" ? "lower-bound" : "upper-bound",
+    kind: boundary === "top" ? "censored-top" : "censored-bottom",
     boundary,
     value: Object.is(roundedBoundaryValue, -0) ? 0 : roundedBoundaryValue,
+    exact: false,
+  };
+}
+
+function visibleSeriesValueRange(series, calibration) {
+  if (!series?.bounds || !calibration
+    || !Number.isFinite(series.bounds.minY) || !Number.isFinite(series.bounds.maxY)
+    || !Number.isFinite(calibration.zeroY) || !Number.isFinite(calibration.gridSpacing)
+    || calibration.gridSpacing <= 0) {
+    return null;
+  }
+  const valueAt = (localY) => {
+    const raw = ((calibration.zeroY - localY) / calibration.gridSpacing) * 10000;
+    const rounded = Math.round(raw / 500) * 500;
+    return Object.is(rounded, -0) ? 0 : rounded;
+  };
+  return {
+    lower: valueAt(series.bounds.maxY),
+    upper: valueAt(series.bounds.minY),
   };
 }
 
@@ -537,6 +588,8 @@ function failedSeriesResult(panel, calibration) {
     reasonCodes: ["missing-series"],
     calibration: publicCalibration(calibration),
     endpoint: null,
+    visibleValueRange: null,
+    boundaryObservation: null,
     valueConstraint: null,
     px: 0,
     bbox: { ...panel.bbox },
@@ -637,6 +690,8 @@ export function runAnalysis(data, w, h) {
         reasonCodes: ["missing-calibration"],
         calibration: null,
         endpoint: series.endpoint,
+        visibleValueRange: null,
+        boundaryObservation: null,
         valueConstraint: null,
         px: series.px,
         bbox: { ...panel.bbox },
@@ -656,7 +711,15 @@ export function runAnalysis(data, w, h) {
     const isShortSeries = series.span < panel.bbox.width * 0.12;
     const boundaryContact = classifySeriesBoundaryContact(series, calibration);
     const isEndpointClipped = Boolean(boundaryContact.endpointBoundary);
-    const valueConstraint = clippedValueConstraint(calibration, boundaryContact.endpointBoundary);
+    const isEndpointBoundaryUncertain = Boolean(boundaryContact.uncertainEndpointBoundary);
+    // Raster screenshots only prove that the yellow stroke touched the display
+    // boundary. They do not mathematically prove that the center line exceeded
+    // it, so keep this as a censored observation rather than a numeric constraint.
+    const boundaryObservation = clippedBoundaryObservation(
+      calibration,
+      boundaryContact.endpointBoundary,
+    );
+    const visibleValueRange = visibleSeriesValueRange(series, calibration);
     if (isShortSeries) reasonCodes.push("short-series");
     if (boundaryContact.historicalBoundaries.length) {
       reasonCodes.push("historical-boundary-contact");
@@ -667,11 +730,16 @@ export function runAnalysis(data, w, h) {
       // top/bottom reason yet.
       reasonCodes.push("clipped-series");
     }
+    if (isEndpointBoundaryUncertain) {
+      reasonCodes.push(`endpoint-near-${boundaryContact.uncertainEndpointBoundary}`);
+      reasonCodes.push("boundary-uncertain");
+    }
     if (confidence < 0.7) reasonCodes.push("low-confidence");
     const status = confidence >= 0.7
       && calibration.source === "panel"
       && !isShortSeries
       && !isEndpointClipped
+      && !isEndpointBoundaryUncertain
       ? "ok"
       : "review";
     diagnostics.analysis[status] += 1;
@@ -683,7 +751,9 @@ export function runAnalysis(data, w, h) {
       reasonCodes,
       calibration: publicCalibration(calibration),
       endpoint: series.endpoint,
-      valueConstraint,
+      visibleValueRange,
+      boundaryObservation,
+      valueConstraint: null,
       px: series.px,
       bbox: { ...panel.bbox },
       row: panel.row,

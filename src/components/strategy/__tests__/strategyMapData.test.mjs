@@ -68,6 +68,22 @@ assert.equal(
   "収支シナリオは台・店舗の直接観測区間を使う",
 );
 
+const mapWithBoundedHistory = buildStrategyMap({
+  scans: [
+    {
+      id: "bounded-history", storeId: "s1", storeName: "検証店", date: "2026-06-30",
+      createdAt: "2026-06-30T12:00:00Z",
+      rows: [{
+        num: "101", machineName: "検証機", island: "1島", normalSpins: 600, totalStarts: 8,
+        val: null, status: "bounded", valueSource: "bounded-range",
+      }],
+    },
+    ...scans,
+  ],
+  customMachines: [machine],
+});
+assert.equal(mapWithBoundedHistory.all[0].history.length, 2, "範囲だけの日を架空のボーダー履歴にしない");
+
 // 別店舗のスキャンが混ざっていても、解析・推奨は表示中の店舗に限定される
 const multiStoreScans = [
   ...scans,

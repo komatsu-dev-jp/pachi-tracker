@@ -217,7 +217,7 @@ test("2月13日実画像は58台の台番号・差玉・判定をgolden値へ固
 
   const visible = new Map([
     ["757", [26000, "ok"]], ["758", [-12000, "ok"]],
-    ["759", [29500, "review", "clipped-series"]],
+    ["759", [29500, "review", "boundary-uncertain"]],
     ["760", [-4000, "review", "short-series"]],
     ["761", [-20500, "ok"]], ["762", [30000, "review", "clipped-series"]],
     ["763", [1000, "ok"]], ["764", [-15500, "ok"]],
@@ -238,7 +238,12 @@ test("2月13日実画像は58台の台番号・差玉・判定をgolden値へ固
     }
     assert.equal(slot.val, expected[0], `${slot.machineNumber}: 差玉`);
     assert.equal(slot.status, expected[1], `${slot.machineNumber}: 判定`);
-    if (expected[2]) assert.ok(slot.reasonCodes.includes(expected[2]));
+    if (expected[2]) {
+      assert.ok(
+        slot.reasonCodes.includes(expected[2]),
+        `${slot.machineNumber}: ${expected[2]} を含む（actual: ${slot.reasonCodes.join(",")}）`,
+      );
+    }
   }
   assert.deepEqual(statusCounts, { ok: 13, review: 3, failed: 42 });
 });

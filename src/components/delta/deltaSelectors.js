@@ -5,6 +5,7 @@
 // logic.js とは無関係の独立データ。rotRows は迂回しない。
 
 import { getRank } from "./deltaEngine.js";
+import { deriveClippedDeltaRange, isBoundedDeltaRow } from "./deltaBounded.js";
 
 // 端末ローカルの "YYYY-MM-DD"（node テストからも使うため本モジュール内に定義）
 function toLocalDay(d) {
@@ -370,6 +371,8 @@ export function mergeTaiData(rows, taiRows) {
       reasonCodes: hasImportedDelta ? [] : row.reasonCodes,
       normalSpins: t.normalSpins ?? row.normalSpins ?? null,
       totalStarts: t.totalStarts ?? row.totalStarts ?? null,
+      cumulativeStarts: t.cumulativeStarts ?? row.cumulativeStarts ?? null,
+      firstHitCount: t.firstHitCount ?? row.firstHitCount ?? null,
       maxPayout: selectedMaxPayout,
       maxPayoutAccepted: selectedMaxPayoutAccepted,
       taiImportAudit: {
@@ -379,10 +382,15 @@ export function mergeTaiData(rows, taiRows) {
         ocrConfidence: Number.isFinite(t.ocrConfidence) ? t.ocrConfidence : null,
         reviewRequired: t.reviewRequired === true,
         reviewConfirmed: t.reviewConfirmed === true,
+        structuredRowTrusted: t.structuredRowTrusted === true,
         fieldConfidence: t.fieldConfidence && typeof t.fieldConfidence === "object"
           ? { ...t.fieldConfidence }
           : null,
         matchedBy: String(t.matchedBy || "") || null,
+        jointMatchAccepted: t?.jointMatchAccepted === true,
+        fieldAccepted: t?.fieldAccepted && typeof t.fieldAccepted === "object"
+          ? { ...t.fieldAccepted }
+          : null,
         graphMaxPayout: hasGraphMaxPayout ? row.maxPayout : null,
         graphMaxPayoutAccepted,
         importedMaxPayout: hasImportedMaxPayout ? t.maxPayout : null,
@@ -427,8 +435,30 @@ export function isResolvedDeltaRow(row) {
 // 要確認行の候補値と確認状態を不変更新する。
 // 候補値を変更した場合、同じ呼び出しで再確認しない限り以前の確認を解除する。
 // reviewedAt は呼び出し側で生成した時刻を渡し、テスト可能な純粋関数に保つ。
-export function updateDeltaReview(row, { value: nextValue, confirmed, reviewedAt } = {}) {
+export function updateDeltaReview(row, {
+  value: nextValue,
+  confirmed,
+  reviewedAt,
+  restoreBounded = false,
+} = {}) {
   const source = row && typeof row === "object" ? row : {};
+  if (restoreBounded) {
+    const deltaRange = deriveClippedDeltaRange(source);
+    if (deltaRange) {
+      return {
+        ...source,
+        val: null,
+        rank: null,
+        status: "bounded",
+        confidence: 0,
+        reviewConfirmed: false,
+        reviewedAt: null,
+        valueSource: "bounded-range",
+        deltaRange,
+        deltaSuggestionAudit: null,
+      };
+    }
+  }
   const hasValueUpdate = nextValue !== undefined;
   const previousValue = finiteDelta(source.val);
   const value = finiteDelta(hasValueUpdate ? nextValue : source.val);
@@ -457,6 +487,9 @@ export function updateDeltaReview(row, { value: nextValue, confirmed, reviewedAt
     reviewConfirmed,
     reviewedAt: auditTime,
     valueSource,
+    deltaSuggestionAudit: reviewConfirmed && !valueChanged
+      ? source.deltaSuggestionAudit ?? null
+      : null,
   };
 }
 
@@ -471,6 +504,7 @@ export function validateDeltaRows(rows) {
   const unresolvedIndices = [];
   const pendingReviewIndices = [];
   const confirmedReviewIndices = [];
+  const boundedIndices = [];
   const missingIndices = [];
   const invalidStatusIndices = [];
   const seen = new Map();
@@ -488,6 +522,13 @@ export function validateDeltaRows(rows) {
     const value = finiteDelta(row?.val);
     if (isResolvedDeltaRow(row)) {
       if (row?.status === "review") confirmedReviewIndices.push(index);
+      return;
+    }
+
+    // 上端/下端で見切れた台は、偽の一点値を作らず境界到達として保存できる。
+    // 平均差玉・予測回転率側では別途除外するため、ここでは記録可能として扱う。
+    if (isBoundedDeltaRow(row)) {
+      boundedIndices.push(index);
       return;
     }
 
@@ -511,6 +552,9 @@ export function validateDeltaRows(rows) {
     valid: errors.length === 0,
     total: list.length,
     resolvedCount: list.length - unresolvedIndices.length,
+    exactCount: list.length - unresolvedIndices.length - boundedIndices.length,
+    boundedCount: boundedIndices.length,
+    boundedIndices,
     unresolvedCount: unresolvedIndices.length,
     unresolvedIndices,
     pendingReviewIndices,

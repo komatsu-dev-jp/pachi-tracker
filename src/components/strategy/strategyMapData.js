@@ -317,7 +317,9 @@ function historyFor(scans, machineName, num, machine) {
   return [...byDate.entries()]
     .sort(([a], [b]) => String(a).localeCompare(String(b)))
     .slice(-7)
-    .map(([, rows]) => round1(buildDeltaEvidence(rows, machine).predictedRotation));
+    .map(([, rows]) => buildDeltaEvidence(rows, machine))
+    .filter((evidence) => evidence.hasEstimate === true)
+    .map((evidence) => round1(evidence.predictedRotation));
 }
 
 function islandGrade(goodRate) {
@@ -427,7 +429,10 @@ export function buildStrategyMap({
       island: row.island || `${row.machineName || scan.machineName || "未分類"}島`,
       storeId: scan.storeId,
       storeName: scan.storeName,
-    }))
+    })).filter((row) => row?.status !== "bounded"
+      && row?.status !== "failed"
+      && !(row?.status === "review" && row?.reviewConfirmed !== true)
+      && row?.val !== null && row?.val !== undefined && row?.val !== "")
   );
   const uniqueRows = new Map();
   for (const row of currentRows) uniqueRows.set(`${row.machineName}:${row.num}`, row);

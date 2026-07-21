@@ -166,11 +166,20 @@ export function resolveMachineStats(machine = {}) {
 export function estimateDeltaObservation(row = {}, machine = {}, options = {}) {
   const normalSpins = Math.max(0, num(row.normalSpins));
   const totalStarts = Math.max(0, num(row.totalStarts));
-  const deltaBalls = num(row.val);
+  const rawDelta = row?.val;
+  const deltaBalls = Number(rawDelta);
   const stats = resolveMachineStats(machine);
   const avgPayout = stats.avgPayout;
   const stdDev = stats.stdDev;
 
+  if (row?.status === "bounded") return { valid: false, reason: "差玉は境界到達記録" };
+  if (row?.status === "review" && row?.reviewConfirmed !== true) {
+    return { valid: false, reason: "差玉の確認待ち" };
+  }
+  if (row?.status === "failed" || rawDelta === null || rawDelta === undefined || rawDelta === ""
+    || !Number.isFinite(deltaBalls)) {
+    return { valid: false, reason: "確定差玉なし" };
+  }
   if (normalSpins <= 0) return { valid: false, reason: "通常回転数なし" };
   if (totalStarts > 0 && avgPayout <= 0) return { valid: false, reason: "平均出玉なし" };
 
