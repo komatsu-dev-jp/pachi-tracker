@@ -78,8 +78,13 @@ for (const machine of yutimeReferenceMachines) {
   assert.equal(machine.yutimeAudit?.status, "equipped", `${machine.name}: 搭載状態`);
   assert.ok(machine.yutime?.triggerLowSpins > 0, `${machine.name}: 発動回転数`);
   assert.match(machine.yutime?.sourceUrl || "", /^https:\/\//, `${machine.name}: 根拠URL`);
-  assert.equal(machine.yutime?.expectedNetBalls, null, `${machine.name}: 未確認の平均獲得玉を推測しない`);
+  if (machine.name !== "PA花の慶次～傾奇一転 87ver.") {
+    assert.equal(machine.yutime?.expectedNetBalls, null, `${machine.name}: 未確認の平均獲得玉を推測しない`);
+  }
 }
+const kabuki87 = yutimeReferenceMachines.find((machine) => machine.modelName === "PA花の慶次～傾奇一転N");
+assert.equal(kabuki87?.yutime?.expectedNetBalls, 1329.5, "87ver.は確認済み遊タイム平均獲得玉を登録します");
+assert.equal(kabuki87?.synthProb, 87.84, "87ver.は確認済み大当り確率を登録します");
 const norimono59 = yutimeReferenceMachines.find((machine) => machine.modelName === "PA乗物娘2GO2");
 assert.equal(norimono59?.yutime?.triggerLowSpins, 160, "59ver.は公式資料どおり低確率160回転で登録します");
 assert.equal(getYutimeSelectionMachines().length, 112, "98機種と参照14機種を選択画面へ連携します");

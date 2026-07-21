@@ -31,6 +31,9 @@ const fmtYen = (value) => value == null
   ? "—"
   : `${value >= 0 ? "+" : ""}${Math.round(value).toLocaleString("ja-JP")}円`;
 
+// 8,000.000000000001 のような浮動小数点誤差だけを除いて切り上げる。
+const ceilYen = (value) => Math.ceil(Number(value) - 1e-9);
+
 const MACHINE_TYPE_FILTERS = [
   { id: "all", label: "全て" },
   { id: "スマパチ", label: "スマパチ" },
@@ -47,6 +50,8 @@ const MACHINE_TYPE_COLORS = {
   "ライトミドル": "#20e3b2",
   "甘デジ": "#16a34a",
 };
+
+const BUDGET_OPTIONS = Array.from({ length: 100 }, (_, index) => (index + 1) * 1000);
 
 function MachineIcon({ machine }) {
   return (
@@ -161,13 +166,32 @@ function MachinePicker({ machines, onBack, onSelect, onUseUnregistered }) {
 }
 
 function Result({ result, mode }) {
+  const arrivalReady = Boolean(result?.arrivalReady && Number.isFinite(result?.selectedArrivalInvestment));
   if (!result?.valid) {
     const payoutMissing = result?.missing?.includes("yutimeExpectedNetBalls");
     return (
       <div style={{ padding: 13, borderRadius: 13, border: "1px solid var(--sm-line)", background: "var(--sm-card)", color: "var(--sm-sub-hi)", fontSize: 12, lineHeight: 1.6 }}>
-        {payoutMissing
-          ? "遊タイム突入後の平均獲得玉が未確認です。機種情報を確認して入力してください。"
-          : "確率・発動回転数・現在カウント・1K回転率を入力すると計算できます。"}
+        {arrivalReady && (
+          <div style={{ marginBottom: 10, padding: "11px 12px", borderRadius: 11, background: "color-mix(in srgb, var(--sm-yellow) 11%, var(--sm-card))", border: "1px solid color-mix(in srgb, var(--sm-yellow) 38%, transparent)" }}>
+            <div style={{ color: "var(--sm-sub-hi)", fontSize: 10, fontWeight: 800 }}>遊タイム到達までの必要資金（{mode === "cash" ? "現金" : mode === "chodama" ? "貯玉" : "持ち玉"}）</div>
+            <div style={{ marginTop: 3, color: "var(--sm-yellow)", fontFamily: "var(--font-mono)", fontSize: 23, fontWeight: 900 }}>
+              {ceilYen(result.selectedArrivalInvestment).toLocaleString("ja-JP")}円
+            </div>
+            <div style={{ color: "var(--sm-sub)", fontSize: 10 }}>残り{result.remainingSpins.toLocaleString("ja-JP")}回を、入力した1K回転率で回す最大必要額です。</div>
+            {result.budgetCanReach != null && (
+              <div style={{ marginTop: 7, color: result.budgetCanReach ? "var(--sm-green)" : "var(--sm-red)", fontSize: 11, fontWeight: 800 }}>
+                {result.budgetCanReach
+                  ? `予算内で到達可能（残り約${Math.floor(result.budgetSurplusYen).toLocaleString("ja-JP")}円）`
+                  : `予算では${result.budgetCoveredSpins.toLocaleString("ja-JP")}回転まで・あと約${ceilYen(result.budgetShortfallYen).toLocaleString("ja-JP")}円必要`}
+              </div>
+            )}
+          </div>
+        )}
+        <div>
+          {payoutMissing
+            ? "遊タイム到達後の平均獲得玉が未確認のため、期待値と到達率はまだ計算できません。機種情報を確認して入力してください。"
+            : "確率・発動回転数・現在カウント・1K回転率を入力すると計算できます。"}
+        </div>
       </div>
     );
   }
@@ -178,7 +202,7 @@ function Result({ result, mode }) {
     ["平均投資", `${Math.round(result.selectedInvestment).toLocaleString()}円`],
   ];
   return (
-    <div style={{ borderRadius: 14, border: `1px solid ${result.selectedEV >= 0 ? "var(--sm-green)" : "var(--sm-red)"}`, background: "var(--sm-card)", overflow: "hidden" }}>
+    <div style={{ minHeight: "max-content", alignSelf: "start", borderRadius: 14, border: `1px solid ${result.selectedEV >= 0 ? "var(--sm-green)" : "var(--sm-red)"}`, background: "var(--sm-card)", overflow: "hidden" }}>
       <div style={{ padding: "11px 12px", fontSize: 13, fontWeight: 900, color: result.selectedEV >= 0 ? "var(--sm-green)" : "var(--sm-red)" }}>
         {mode === "cash" ? "現金" : mode === "chodama" ? "貯玉" : "持ち玉"}の計算結果
       </div>
@@ -199,12 +223,12 @@ function Result({ result, mode }) {
           <div style={{ marginBottom: 7, color: result.budgetCanReach ? "var(--sm-green)" : "var(--sm-red)", fontSize: 11, fontWeight: 800 }}>
             {result.budgetCanReach
               ? `予算内で到達可能（残り約${Math.floor(result.budgetSurplusYen).toLocaleString()}円）`
-              : `予算では${result.budgetCoveredSpins.toLocaleString()}回転まで・あと約${Math.ceil(result.budgetShortfallYen).toLocaleString()}円必要`}
+              : `予算では${result.budgetCoveredSpins.toLocaleString()}回転まで・あと約${ceilYen(result.budgetShortfallYen).toLocaleString()}円必要`}
           </div>
         )}
         期待値0円以上の開始：{result.selectedBreakEvenLowSpins ?? "—"}回<br />
         現金 {fmtYen(result.cashEV)} / 持ち玉・貯玉 {fmtYen(result.heldEV)}<br />
-        到達必要資金：現金 {Math.ceil(result.arrivalInvestmentCash).toLocaleString()}円 / 持ち玉・貯玉 {Math.ceil(result.arrivalInvestmentHeld).toLocaleString()}円
+        到達必要資金：現金 {ceilYen(result.arrivalInvestmentCash).toLocaleString()}円 / 持ち玉・貯玉 {ceilYen(result.arrivalInvestmentHeld).toLocaleString()}円
       </div>
     </div>
   );
@@ -235,7 +259,8 @@ export default function YutimeCalculatorSheet({
   const initialSession = suppliedInitialSession || machineInitialSession;
   const [machineName, setMachineName] = useState(initialMachine?.name || initialMachineName || "");
   const [selectedMachine, setSelectedMachine] = useState(initialMachine);
-  const [currentLowSpins, setCurrentLowSpins] = useState(String(Math.max(0, Number(initialCurrentLowSpins) || 0)));
+  const initialLowSpins = Math.max(0, Number(initialCurrentLowSpins) || 0);
+  const [currentLowSpins, setCurrentLowSpins] = useState(initialLowSpins > 0 ? String(initialLowSpins) : "");
   const [start1K, setStart1K] = useState(String(initialStart1K || initialSession?.assumedStart1K || S?.border || ""));
   const [triggerLowSpins, setTriggerLowSpins] = useState(String(initialSession?.triggerLowSpins || ""));
   const [durationSpins, setDurationSpins] = useState(String(initialSession?.durationSpins || ""));
@@ -280,7 +305,7 @@ export default function YutimeCalculatorSheet({
     // 選択機種の確率が未登録なら、現在遊技中の別機種の確率を誤用しない。
     probabilityDenom: selectedMachine ? selectedMachine.synthProb : S?.synthDenom,
     triggerLowSpins: numberOrNull(triggerLowSpins),
-    currentLowSpins: numberOrNull(currentLowSpins),
+    currentLowSpins: Math.max(0, numberOrNull(currentLowSpins) ?? 0),
     start1K: numberOrNull(start1K),
     normalExpectedNetBalls: deriveNormalExpectedNetBalls(machineSpec),
     yutimeExpectedNetBalls: numberOrNull(expectedNetBalls),
@@ -473,7 +498,7 @@ export default function YutimeCalculatorSheet({
           <div><div style={{ fontSize: 17, fontWeight: 900, color: "var(--sm-text)" }}>遊タイム期待値計算</div><div style={{ fontSize: 10, color: "var(--sm-sub)", marginTop: 3 }}>途中の通常当たりと到達率を含めます</div></div>
           <button type="button" aria-label="閉じる" onClick={onClose} style={{ width: 44, height: 44, borderRadius: 12, border: "1px solid var(--sm-line-hi)", background: "var(--sm-card)", color: "var(--sm-text)", fontSize: 20 }}>×</button>
         </div>
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overscrollBehaviorY: "contain", scrollbarGutter: "stable", WebkitOverflowScrolling: "touch", touchAction: "pan-y", padding: "14px 14px calc(18px + env(safe-area-inset-bottom))", display: "grid", alignContent: "start", gap: 12 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overscrollBehaviorY: "contain", scrollbarGutter: "stable", WebkitOverflowScrolling: "touch", touchAction: "pan-y", padding: "14px 14px calc(18px + env(safe-area-inset-bottom))", display: "grid", gridAutoRows: "max-content", alignContent: "start", gap: 12 }}>
           <section style={{ border: "1px solid color-mix(in srgb, var(--sm-cyan) 35%, var(--sm-line))", borderRadius: 14, background: "color-mix(in srgb, var(--sm-cyan) 7%, var(--sm-card))", overflow: "hidden" }}>
             <button type="button" onClick={() => setHelpOpen((open) => !open)} aria-expanded={helpOpen} style={{ width: "100%", minHeight: 48, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", border: "none", background: "transparent", color: "var(--sm-text)", fontSize: 13, fontWeight: 900, textAlign: "left" }}>
               <span>はじめに：遊タイム計算の使い方</span><span aria-hidden="true" style={{ color: "var(--sm-cyan)" }}>{helpOpen ? "−" : "＋"}</span>
@@ -511,24 +536,25 @@ export default function YutimeCalculatorSheet({
                 <div><strong style={{ color: "var(--sm-text)" }}>正式型式：</strong>{selectedMachine.modelName || "未登録"}</div>
                 <div><strong style={{ color: "var(--sm-text)" }}>発動条件：</strong>低確率{selectedMachine.yutime.triggerLowSpins}回転消化</div>
                 <div><strong style={{ color: "var(--sm-text)" }}>恩恵：</strong>{selectedMachine.yutime.durationLabel || `時短${selectedMachine.yutime.durationSpins}回転`}{selectedMachine.yutime.benefit ? `（${selectedMachine.yutime.benefit}）` : ""}</div>
+                <div><strong style={{ color: "var(--sm-text)" }}>遊タイム到達後の平均獲得玉：</strong>{hasVerifiedExpectedBalls ? `${Number(selectedMachine.yutime.expectedNetBalls).toLocaleString("ja-JP")}玉` : <span style={{ color: "var(--sm-yellow)", fontWeight: 800 }}>未確認（手動入力が必要）</span>}</div>
                 <div><strong style={{ color: "var(--sm-text)" }}>確認日：</strong>{selectedMachine.yutime.verifiedAt || "未登録"}{selectedMachine.releaseStatus === "scheduled" ? "・導入予定機" : ""}</div>
                 {selectedMachine.yutime.sourceUrl && <a href={selectedMachine.yutime.sourceUrl} target="_blank" rel="noreferrer" style={{ color: "var(--sm-cyan)", fontWeight: 800 }}>根拠ページを確認</a>}
               </div>
             )}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div>{label("現在の低確率カウント")}<input aria-label="現在カウント" type="number" min="0" inputMode="numeric" value={currentLowSpins} onChange={(e) => setCurrentLowSpins(e.target.value)} style={fieldStyle} /></div>
+            <div>{label("現在の低確率カウント")}<input aria-label="現在カウント" type="number" min="0" inputMode="numeric" value={currentLowSpins} onFocus={(event) => event.currentTarget.select()} onChange={(e) => setCurrentLowSpins(e.target.value)} placeholder="0" style={fieldStyle} /></div>
             <div>{label("想定1K回転率")}<input aria-label="1K回転率" type="number" min="0" step="0.1" inputMode="decimal" value={start1K} onChange={(e) => setStart1K(e.target.value)} style={fieldStyle} /></div>
           </div>
           <div>{label("遊技方法")}<div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>{[["cash", "現金"], ["mochi", "持ち玉"], ["chodama", "貯玉"]].map(([id, text]) => <button key={id} type="button" onClick={() => setPlayMode(id)} style={{ minHeight: 44, borderRadius: 10, border: `1px solid ${playMode === id ? "var(--sm-cyan)" : "var(--sm-line)"}`, background: playMode === id ? "color-mix(in srgb, var(--sm-cyan) 18%, var(--sm-card))" : "var(--sm-card)", color: "var(--sm-text)", fontWeight: 800 }}>{text}</button>)}</div></div>
-          <div>{label("使える予算（任意）")}<input aria-label="使える予算" type="number" min="0" step="1000" inputMode="numeric" value={budgetYen} onChange={(e) => setBudgetYen(e.target.value)} placeholder="例：10000" style={fieldStyle} /><div style={{ marginTop: 5, fontSize: 9, color: "var(--sm-sub)" }}>入力すると、予算で回せる回転数と不足額を逆算します。</div></div>
+          <div>{label("使える予算（任意）")}<select aria-label="使える予算" value={budgetYen} onChange={(e) => setBudgetYen(e.target.value)} style={{ ...fieldStyle, fontWeight: 800 }}><option value="">設定しない</option>{BUDGET_OPTIONS.map((amount) => <option key={amount} value={amount}>{amount.toLocaleString("ja-JP")}円</option>)}</select><div style={{ marginTop: 5, fontSize: 9, color: "var(--sm-sub)" }}>iPhoneではタップするとリールが開きます。1,000円単位で選ぶと、不足額を逆算します。</div></div>
           <div style={{ padding: 12, borderRadius: 13, border: "1px solid var(--sm-line)", background: "var(--sm-card-hi)" }}>
             <div style={{ fontSize: 11, fontWeight: 900, color: "var(--sm-cyan)", marginBottom: 4 }}>遊タイム条件</div>
             <div style={{ marginBottom: 9, color: machineStatus.color, fontSize: 10, fontWeight: 800 }}>{machineStatus.text}</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}><div>{label("発動回転数")}<input aria-label="発動回転数" type="number" min="0" value={triggerLowSpins} onChange={(e) => { setTriggerLowSpins(e.target.value); setSource("manual"); }} style={fieldStyle} /></div><div>{label("遊タイム回数")}<input aria-label="遊タイム回数" type="number" min="0" value={durationSpins} onChange={(e) => { setDurationSpins(e.target.value); setSource("manual"); }} placeholder={selectedMachine?.yutime?.durationLabel || "回数"} style={fieldStyle} /></div></div>
-            <div style={{ marginTop: 10 }}>{label("遊タイム突入後の平均獲得玉（スルー込み）")}<input aria-label="遊タイム突入後の平均獲得玉" type="number" min="0" value={expectedNetBalls} onChange={(e) => { setExpectedNetBalls(e.target.value); setSource("manual"); }} placeholder={hasVerifiedExpectedBalls ? "自動入力" : "機種情報の確認が必要"} style={fieldStyle} /></div>
+            <div style={{ marginTop: 10 }}>{label("遊タイム到達後の平均獲得玉（スルー込み）")}<input aria-label="遊タイム到達後の平均獲得玉" type="number" min="0" value={expectedNetBalls} onChange={(e) => { setExpectedNetBalls(e.target.value); setSource("manual"); }} placeholder={hasVerifiedExpectedBalls ? "自動入力" : "未確認・入力が必要"} style={fieldStyle} /></div>
             <div style={{ marginTop: 7, padding: "9px 10px", borderRadius: 10, background: "var(--sm-card)", border: "1px solid var(--sm-line)", color: "var(--sm-sub-hi)", fontSize: 10, lineHeight: 1.6 }}>
-              <strong style={{ color: "var(--sm-text)" }}>平均大当たり出玉そのものではありません。</strong><br />遊タイム突入後に得られる玉数を、当たり・連チャン・遊タイムスルー・電サポ中の増減まで含めて平均した値です。
+              <strong style={{ color: "var(--sm-text)" }}>平均大当たり出玉そのものではありません。</strong><br />遊タイム到達後からRUSH終了までに得られる玉数を、当たり・連チャン・遊タイムスルー・電サポ中の増減まで含めて平均した値です。公開値に電サポ中の増減が含まれない場合は0玉として扱い、実測値で修正できます。
             </div>
             <div style={{ marginTop: 8, fontSize: 10, color: "var(--sm-sub)", lineHeight: 1.5 }}>各項目は確認後に手動修正できます。{sourceUrl && <><br /><a href={sourceUrl} target="_blank" rel="noreferrer" style={{ color: "var(--sm-cyan)" }}>登録済みの根拠を確認</a></>}</div>
           </div>
