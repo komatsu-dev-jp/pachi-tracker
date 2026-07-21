@@ -41,6 +41,7 @@ import {
   readSiteSevenCsv,
 } from "./siteSevenDataInput";
 import { buildSiteSevenStructuredRows } from "./siteSevenStructuredRows";
+import { buildStoreScopeExpectedNumbers } from "./siteSevenExpectedNumbers";
 import {
   buildStoreMachineNumberRelation,
   compareConfirmedMachineNumbers,
@@ -102,11 +103,24 @@ function fileToAttachment(file) {
   });
 }
 
-async function analyzeImages(images, onProgress, { dateText = "", storeName = "" } = {}) {
+async function analyzeImages(images, onProgress, {
+  dateText = "",
+  storeName = "",
+  expectedNumbers = [],
+  expectCompleteTable = false,
+} = {}) {
   const reports = [];
   const numberPages = [];
   const siteSevenResults = [];
   const siteSevenReports = [];
+  // 表の行順補正に使うのは、独立した店舗・島の管理番号だけに限定する。
+  // グラフOCRを正解として注入すると、同じ誤読同士が一致する循環になる。
+  const tableExpectation = {
+    numbers: Array.isArray(expectedNumbers) ? expectedNumbers : [],
+    source: Array.isArray(expectedNumbers) && expectedNumbers.length
+      ? "store-scope"
+      : "raw-ocr",
+  };
   for (let i = 0; i < images.length; i++) {
     onProgress?.(i + 1, images.length);
     const selectedFile = images[i]?.file;
@@ -184,20 +198,15 @@ async function analyzeImages(images, onProgress, { dateText = "", storeName = ""
       }
       if (tableStructure) {
         try {
-          const parsedTable = images[i].file
-            ? await tableOcr.readSiteSevenImage(images[i].file, {
-              dateText,
-              storeName,
-              expectedNumbers: [],
-              allowRawMachineNumbers: true,
-            })
-            : tableOcr.parseSiteSevenTableImageData(id, {
-              dateText,
-              storeName,
-              fileName: images[i].name || `画像${i + 1}`,
-              expectedNumbers: [],
-              allowRawMachineNumbers: true,
-            });
+          // すでにデコードしたImageDataをworkerへ渡し、同じ写真を二重に
+          // デコードしたり全ファイル分のRGBAを保持したりしない。
+          const parsedTable = await tableOcr.readSiteSevenImageData(id, {
+            dateText,
+            storeName,
+            fileName: images[i].name || `画像${i + 1}`,
+            expectedNumbers: tableExpectation.numbers,
+            allowRawMachineNumbers: tableExpectation.numbers.length === 0,
+          });
           const tableSourceIndex = siteSevenResults.length;
           const tableSourceId = images[i].id || `${images[i].name || "table"}:${i}`;
           const annotatedTable = {
@@ -209,9 +218,6 @@ async function analyzeImages(images, onProgress, { dateText = "", storeName = ""
               rowId: `${tableSourceId}:${Number.isInteger(row.sourceLine) ? row.sourceLine : rowIndex + 1}`,
             })),
           };
-          // Image OCR reports field-level reviews through parsedTable.skipped.
-          // They do not make an otherwise exact num/max graph relation unsafe;
-          // degraded geometry and duplicate rows are the source-level blockers.
           const fieldReviewCount = parsedTable.skipped?.length || 0;
           const duplicateCount = parsedTable.duplicates?.length || 0;
           siteSevenResults.push({ result: annotatedTable, kind: "image" });
@@ -224,6 +230,9 @@ async function analyzeImages(images, onProgress, { dateText = "", storeName = ""
             skippedCount: 0,
             fieldReviewCount,
             duplicateCount,
+            machineNumberMode: parsedTable.machineNumberMode,
+            expectedNumberSource: tableExpectation.source,
+            machineNumberAccuracy: parsedTable.machineNumberAccuracy,
             autoAcceptable: parsedTable.degradedImage !== true
               && duplicateCount === 0,
             degradedImage: parsedTable.degradedImage === true,
@@ -238,6 +247,7 @@ async function analyzeImages(images, onProgress, { dateText = "", storeName = ""
             reviewCount: 0,
             skippedCount: 0,
             duplicateCount: 0,
+            expectedNumberSource: tableExpectation.source,
             autoAcceptable: false,
             degradedImage: false,
             error: error instanceof Error ? error.message : "台データ画像の読み取りに失敗しました",
@@ -301,8 +311,13 @@ async function analyzeImages(images, onProgress, { dateText = "", storeName = ""
     }
   }
   const combinedNumbers = combineMachineNumberPages(numberPages);
+  const mergeExpectedNumbers = expectCompleteTable
+    ? tableExpectation.numbers
+    : combinedNumbers.accepted
+      ? combinedNumbers.numbers
+      : [];
   const siteSeven = siteSevenResults.length
-    ? mergeSiteSevenParsedResults(siteSevenResults, { expectedNumbers: [] })
+    ? mergeSiteSevenParsedResults(siteSevenResults, { expectedNumbers: mergeExpectedNumbers })
     : { rows: [], recognizedCount: 0, reviewCount: 0, duplicateCount: 0, missingNumbers: [] };
   // 別資料で値が完全一致した同じ台は1件へ畳む。値の競合・元資料内の重複は
   // reviewRequiredのまま残し、matcher側では固定点として使わない。
@@ -514,6 +529,10 @@ function UploadStep({
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [progress, setProgress] = useState({ i: 0, n: 0 });
   const [noResult, setNoResult] = useState(false);
+  const expectedTableNumbers = useMemo(
+    () => buildStoreScopeExpectedNumbers(islands, islandScopeId),
+    [islands, islandScopeId],
+  );
 
   useEffect(() => {
     imagesRef.current = images;
@@ -612,6 +631,10 @@ function UploadStep({
       }, {
         dateText: dateToSlash(analysisDate),
         storeName: store?.name || "",
+        expectedNumbers: expectedTableNumbers,
+        // 特定の島を選んだ時だけ、一覧の全台が資料にある前提で不足行を補う。
+        // 「店舗全体」は一部の島だけを撮った資料も許容する。
+        expectCompleteTable: islandScopeId !== "all",
       });
     } catch {
       if (requestId === analysisRequestIdRef.current && mountedRef.current) {
@@ -2179,6 +2202,28 @@ function canConfirmSiteSevenRow(row, rowIndex, rows, expectedNumberSet) {
   ));
 }
 
+function suggestedMachineNumberStatus(row, rowIndex, rows, expectedNumberSet) {
+  const suggested = parseSiteSevenEditableInteger(row?.machineNumberSuggested);
+  if (suggested === null || suggested <= 0) {
+    return { canApply: false, num: "", reason: "台番号候補を確認できません" };
+  }
+  const num = String(suggested);
+  if (expectedNumberSet.size > 0 && !expectedNumberSet.has(num)) {
+    return {
+      canApply: false,
+      num,
+      reason: "差玉側の台番号一覧にない候補です。先にグラフ側の台番号を確認してください",
+    };
+  }
+  const alreadyUsed = (Array.isArray(rows) ? rows : []).some((other, otherIndex) => (
+    otherIndex !== rowIndex && String(parseSiteSevenEditableInteger(other?.num)) === num
+  ));
+  if (alreadyUsed) {
+    return { canApply: false, num, reason: `台${num}は別の行ですでに使用されています` };
+  }
+  return { canApply: true, num, reason: "" };
+}
+
 // ════════════ 台データ取り込み ════════════
 function ImportStep({
   store,
@@ -2217,6 +2262,10 @@ function ImportStep({
   const [dataFilter, setDataFilter] = useState("");
   const [showAllDataRows, setShowAllDataRows] = useState(false);
   const [machinePickerRowIndex, setMachinePickerRowIndex] = useState(null);
+  const storeScopeExpectedNumbers = useMemo(
+    () => buildStoreScopeExpectedNumbers(islands, islandScopeId),
+    [islands, islandScopeId]
+  );
 
   const hasKey = typeof aiApiKey === "string" && aiApiKey.trim() !== "";
   const aiFileRef = useRef(null);
@@ -2298,13 +2347,15 @@ function ImportStep({
       if (imageFiles.length) {
         // 数字字体テンプレートを含むため、写真を選んだ時だけOCRコードを読み込む。
         const { readSiteSevenImage } = await import("./siteSevenImageOcr.js");
-        const expectedNumbers = (Array.isArray(deltaRows) ? deltaRows : []).map((row) => row?.num);
         for (const file of imageFiles) {
           try {
             const parsedImage = await readSiteSevenImage(file, {
               dateText: dateToSlash(analysisDate),
               storeName: store?.name || "",
-              expectedNumbers,
+              // 表の台番号認識には、グラフOCRではなく店舗・島の登録番号だけを使う。
+              // グラフの誤読を表へ循環させて「一致」に見せないための独立照合。
+              expectedNumbers: storeScopeExpectedNumbers,
+              allowRawMachineNumbers: storeScopeExpectedNumbers.length === 0,
             });
             if (parsedImage.degradedImage) degradedImageCount += 1;
             results.push({ result: parsedImage, kind: "image" });
@@ -2369,6 +2420,29 @@ function ImportStep({
       return field === "num"
         ? applyStoreLayoutRelations(next, islands, islandScopeId).rows
         : next;
+    });
+  };
+  const applySuggestedMachineNumber = (index) => {
+    setDataRows((current) => {
+      const target = current[index];
+      const suggestion = suggestedMachineNumberStatus(
+        target,
+        index,
+        current,
+        deltaNumberSet,
+      );
+      if (!suggestion.canApply) return current;
+      const next = current.map((row, rowIndex) => (
+        rowIndex === index
+          ? {
+            ...row,
+            num: suggestion.num,
+            reviewConfirmed: false,
+            machineNumberResolutionSource: "manual-suggestion-applied",
+          }
+          : row
+      ));
+      return applyStoreLayoutRelations(next, islands, islandScopeId).rows;
     });
   };
   const pickDataRowMachine = (index, machine) => {
@@ -2500,6 +2574,7 @@ function ImportStep({
     if (query) {
       return entries.filter(({ row }) =>
         String(row.num).toLowerCase().includes(query) ||
+        String(row.machineNumberSuggested || "").toLowerCase().includes(query) ||
         String(row.machineName || "").toLowerCase().includes(query)
       );
     }
@@ -2688,6 +2763,78 @@ function ImportStep({
                           />
                           この台の数字を目視確認済みにする
                         </label>
+                      </div>
+                    )}
+                    {parseSiteSevenEditableInteger(row.machineNumberSuggested) > 0
+                      && String(parseSiteSevenEditableInteger(row.machineNumberSuggested))
+                        !== String(parseSiteSevenEditableInteger(row.num)) && (
+                      <div style={{
+                        marginBottom: 9, padding: "8px 9px", borderRadius: 8,
+                        background: "color-mix(in srgb, var(--blue) 11%, transparent)",
+                        border: `1px solid color-mix(in srgb, var(--blue) 32%, transparent)`,
+                        color: C.subHi, fontSize: 11, lineHeight: 1.55,
+                      }}>
+                        <div>
+                          店舗の台番号順からの候補: <strong style={{ color: C.text }}>台{row.machineNumberSuggested}</strong>
+                        </div>
+                        {parseSiteSevenEditableInteger(row.machineNumberObserved) > 0 && (
+                          <div style={{ marginTop: 3 }}>
+                            写真で読んだ候補: <strong style={{ color: C.text }}>台{row.machineNumberObserved}</strong>
+                          </div>
+                        )}
+                        {!row.num ? (
+                          <>
+                            <button
+                              type="button"
+                              className="b"
+                              disabled={!suggestedMachineNumberStatus(
+                                row,
+                                index,
+                                dataRows,
+                                deltaNumberSet,
+                              ).canApply}
+                              onClick={() => applySuggestedMachineNumber(index)}
+                              style={{
+                                width: "100%", minHeight: 38, marginTop: 7, borderRadius: 8,
+                                border: `1px solid ${suggestedMachineNumberStatus(
+                                  row,
+                                  index,
+                                  dataRows,
+                                  deltaNumberSet,
+                                ).canApply ? C.blue : C.border}`,
+                                background: "transparent",
+                                color: suggestedMachineNumberStatus(
+                                  row,
+                                  index,
+                                  dataRows,
+                                  deltaNumberSet,
+                                ).canApply ? C.blue : C.sub,
+                                fontSize: 11, fontWeight: 900,
+                              }}
+                            >
+                              店舗候補を台番号欄へ入れる（確認はまだ完了しません）
+                            </button>
+                            {!suggestedMachineNumberStatus(
+                              row,
+                              index,
+                              dataRows,
+                              deltaNumberSet,
+                            ).canApply && (
+                              <div style={{ color: C.yellow, marginTop: 5, fontWeight: 800 }}>
+                                {suggestedMachineNumberStatus(
+                                  row,
+                                  index,
+                                  dataRows,
+                                  deltaNumberSet,
+                                ).reason}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div style={{ color: C.yellow, marginTop: 5, fontWeight: 800 }}>
+                            入力中の台番号と候補が一致しないため、自動変更していません。元資料を見て正しい番号を選んでください。
+                          </div>
+                        )}
                       </div>
                     )}
                     <div style={{ display: "grid", gridTemplateColumns: "82px minmax(0, 1fr)", gap: 8 }}>

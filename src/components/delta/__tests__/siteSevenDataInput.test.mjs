@@ -230,6 +230,45 @@ test("mergeSiteSevenParsedResults: 行が不足した場合は入力可能な要
   assert.equal(merged.rows[1].normalSpins, "");
 });
 
+test("mergeSiteSevenParsedResults: 一意な未確認候補行と欠落欄を二重生成しない", () => {
+  const merged = mergeSiteSevenParsedResults([{
+    kind: "image",
+    result: { rows: [{
+      num: "",
+      machineNumberSuggested: "479",
+      normalSpins: "1104",
+      totalStarts: "14",
+      reviewRequired: true,
+    }] },
+  }], { expectedNumbers: [479] });
+
+  assert.equal(merged.rows.length, 1);
+  assert.deepEqual(merged.missingNumbers, []);
+  assert.equal(merged.rows[0].num, "");
+  assert.equal(merged.rows[0].machineNumberSuggested, "479");
+});
+
+test("mergeSiteSevenParsedResults: 候補が重複する時は欠落台の入力欄を残す", () => {
+  const ambiguousRows = [1, 2].map((sourceLine) => ({
+    num: "",
+    machineNumberSuggested: "479",
+    normalSpins: "1104",
+    totalStarts: "14",
+    sourceLine,
+    reviewRequired: true,
+  }));
+  const merged = mergeSiteSevenParsedResults([{
+    kind: "image",
+    result: { rows: ambiguousRows },
+  }], { expectedNumbers: [479] });
+
+  assert.deepEqual(merged.missingNumbers, ["479"]);
+  assert.equal(merged.rows.length, 3);
+  assert.ok(merged.rows.some((row) => (
+    row.sourceType === "missing-placeholder" && row.num === "479"
+  )));
+});
+
 test("mergeSiteSevenParsedResults: 誤読した余分な行で件数が同じでも不足台の修正欄を残す", () => {
   const merged = mergeSiteSevenParsedResults([{
     kind: "image",

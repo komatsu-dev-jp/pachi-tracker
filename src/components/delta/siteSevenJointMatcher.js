@@ -27,6 +27,10 @@ function finiteOrder(value, fallback = 0) {
   return Number.isFinite(Number(value)) ? Number(value) : fallback;
 }
 
+function normalizedNumberCandidates(values) {
+  return [...new Set(values.map(normalizeMachineNumber).filter((value) => value !== null))];
+}
+
 function graphEntry(graphPanel, index) {
   const observedCandidate = normalizeMachineNumber(graphPanel?.observedNumCandidate);
   const fallbackNumber = normalizeMachineNumber(graphPanel?.num);
@@ -37,6 +41,7 @@ function graphEntry(graphPanel, index) {
     index,
     id: String(graphPanel?.panelId ?? `graph-${index}`),
     rawNum,
+    rawNumCandidates: normalizedNumberCandidates([rawNum]),
     trustedNum: graphPanel?.machineNumberAccepted === true ? rawNum : null,
     rawMaxPayout,
     trustedMaxPayout: graphPanel?.maxPayoutAccepted === true ? rawMaxPayout : null,
@@ -48,12 +53,18 @@ function graphEntry(graphPanel, index) {
 
 function tableEntry(tableRow, index) {
   const rawNum = normalizeMachineNumber(tableRow?.num);
+  const rawNumCandidates = normalizedNumberCandidates([
+    rawNum,
+    tableRow?.machineNumberSuggested,
+    tableRow?.machineNumberObserved,
+  ]);
   const rawMaxPayout = normalizeMaxPayout(tableRow?.maxPayout);
   return {
     item: tableRow,
     index,
     id: String(tableRow?.rowId ?? `row-${index}`),
     rawNum,
+    rawNumCandidates,
     trustedNum: tableRow?.numAccepted === true
       && tableRow?.jointEvidenceRejected !== true ? rawNum : null,
     rawMaxPayout,
@@ -286,8 +297,10 @@ export function matchSiteSevenGraphPanels(graphPanels, tableRows) {
       continue;
     }
 
-    const untrustedRawNum = graph.trustedNum === null ? graph.rawNum : row.rawNum;
-    if (untrustedRawNum !== null && untrustedRawNum !== trustedNum) {
+    const untrustedRawNumbers = graph.trustedNum === null
+      ? graph.rawNumCandidates
+      : row.rawNumCandidates;
+    if (untrustedRawNumbers.some((candidate) => candidate !== trustedNum)) {
       markHardConflict({ graphEntries: [graph], rowEntries: [row], nums: [trustedNum] });
       addReason({
         code: "number-candidate-conflict",
@@ -411,8 +424,10 @@ export function matchSiteSevenGraphPanels(graphPanels, tableRows) {
         }
         const trustedNum = graph.trustedNum ?? row.trustedNum;
         if (trustedNum === null) continue;
-        const untrustedRawNum = graph.trustedNum === null ? graph.rawNum : row.rawNum;
-        if (untrustedRawNum !== null && untrustedRawNum !== trustedNum) {
+        const untrustedRawNumbers = graph.trustedNum === null
+          ? graph.rawNumCandidates
+          : row.rawNumCandidates;
+        if (untrustedRawNumbers.some((candidate) => candidate !== trustedNum)) {
           markHardConflict({ graphEntries: [graph], rowEntries: [row], nums: [trustedNum] });
           addReason({
             code: "number-candidate-conflict",

@@ -2,6 +2,10 @@
 // 外部APIや汎用OCRを使わず、表の罫線と検証済み固定数字テンプレートで各セルを独立認識する。
 
 import { SITE_SEVEN_MAX_PAYOUT_DIGIT_SAMPLES } from "./siteSevenMaxPayoutDigitSamples.js";
+import {
+  alignSiteSevenTableRows,
+  resolveAlignedMachineNumber,
+} from "./siteSevenTableRowAlignment.js";
 
 const DARK_LUMA = 185;
 const GRID_MIN_LUMA = 120;
@@ -509,7 +513,7 @@ function recognizeMachineMapping(image, rows, expectedNumbers, verticalLines, {
   const expectedSet = new Set(expected);
   const hasExpectedNumbers = expectedSet.size > 0;
   const prototypes = embeddedMachineDigitPrototypes();
-  const mapped = rows.map((row) => {
+  const rawMapped = rows.map((row) => {
     const recognition = recognizeCellEnsemble(
       image,
       rowCellBounds(verticalLines, row, 1),
@@ -541,6 +545,45 @@ function recognizeMachineMapping(image, rows, expectedNumbers, verticalLines, {
     };
   });
 
+  const alignment = hasExpectedNumbers
+    ? alignSiteSevenTableRows(rawMapped, expected)
+    : null;
+  const alignmentReviewMessage = (assignment) => {
+    const reasons = new Set(assignment?.reasonCodes || []);
+    if (reasons.has("unexpected-observed-row")) {
+      return "店舗・島の台番号一覧に対応しない余分な行を検出しました";
+    }
+    if (reasons.has("machine-number-unreadable")) {
+      return "台番号を読めなかったため、前後の行順から候補を表示しています";
+    }
+    if (reasons.has("ocr-candidate-conflict") || reasons.has("out-of-scope-ocr-candidate")) {
+      return "写真の台番号候補と店舗・島の台番号一覧が一致しません";
+    }
+    if (reasons.has("ambiguous-alignment") || reasons.has("insufficient-anchor-evidence")) {
+      return "台番号の開始位置を一意に決められないため、元資料を確認してください";
+    }
+    return "台番号と表の行順を十分な精度で対応付けられませんでした";
+  };
+  const mapped = alignment
+    ? rawMapped.map((row, index) => {
+      const assignment = alignment.rowAssignments[index];
+      const resolved = resolveAlignedMachineNumber(row, assignment);
+      return {
+        ...row,
+        // 生OCR値ではなく、固定CSV順へ対応付けた番号を表示する。
+        // 根拠不足時も推測値を確定せず、候補を要確認として残す。
+        num: resolved.num,
+        machineNumberSuggested: resolved.suggestedNumber,
+        machineNumberResolutionSource: resolved.source,
+        machineNumberAccepted: assignment?.accepted === true,
+        machineNumberReviewReason: assignment?.accepted === true
+          ? ""
+          : alignmentReviewMessage(assignment),
+        machineNumberAlignment: assignment || null,
+      };
+    })
+    : rawMapped;
+
   const byNumber = new Map();
   for (const row of mapped) {
     if (!row.num) continue;
@@ -571,6 +614,10 @@ function recognizeMachineMapping(image, rows, expectedNumbers, verticalLines, {
   const degradedReasons = [
     ...(!consecutiveLines ? ["table-row-gap"] : []),
     ...(orderConflictIndexes.length > 0 ? ["machine-number-order"] : []),
+    ...(alignment?.summary?.extraRowCount > 0 ? ["table-extra-row"] : []),
+    ...(alignment && alignment.summary.acceptedCount < alignment.summary.assignedCount
+      ? ["machine-number-alignment-review"]
+      : []),
   ];
   const acceptedCount = mapped.filter((row) => row.machineNumberAccepted).length;
   return {
@@ -580,6 +627,7 @@ function recognizeMachineMapping(image, rows, expectedNumbers, verticalLines, {
     machineNumberMode: hasExpectedNumbers ? "expected" : "raw",
     consecutiveLines,
     degradedReasons,
+    alignment,
   };
 }
 
@@ -730,6 +778,9 @@ function normalizeTableScale(image) {
     }
     result.image = resizeImageData(image, scale);
     result.resampled = true;
+    // 再標本化された数字は、元fixtureと同じ字体でも補間で形が変わる。
+    // 値は候補として表示するが、自動確定の証拠にはしない。
+    result.reasons.push("resampled-table");
     return result;
   } catch {
     return result;
@@ -954,6 +1005,8 @@ export function parseSiteSevenTableImageData(image, {
   const degradedReasons = [...scaleInfo.reasons, ...mapping.degradedReasons];
   const uniqueDegradedReasons = [...new Set(degradedReasons)];
   const degradedImage = uniqueDegradedReasons.length > 0;
+  const strictRecognition = scaleInfo.resampled
+    || scaleInfo.reasons.includes("low-resolution-table");
   const globalReviewMessages = uniqueDegradedReasons.map((reason) => {
     if (reason === "low-resolution-table") {
       return "写真の表が小さいため、元画像または高解像度の写真で数字を確認してください";
@@ -964,13 +1017,22 @@ export function parseSiteSevenTableImageData(image, {
     if (reason === "machine-number-order") {
       return "台番号の並び順に矛盾があるため、この写真の全台を目視確認してください";
     }
+    if (reason === "resampled-table") {
+      return "表画像が拡大または縮小されているため、各列の数字を元画像で確認してください";
+    }
+    if (reason === "table-extra-row") {
+      return "店舗・島の台番号一覧に対応しない余分な行を検出したため、行の対応を確認してください";
+    }
+    if (reason === "machine-number-alignment-review") {
+      return "台番号の開始位置または行順を一意に決められない箇所があります";
+    }
     return "画像の圧縮または字体差を検出したため、数字を目視確認してください";
   });
   const recognitionReviewReason = (label, recognition) => {
     if (!recognition.value) return `${label}を読み取れませんでした`;
     if (!recognition.unanimous) return `${label}の読み取り結果が条件によって一致しません`;
-    const hasDistantGlyph = recognition.glyphs?.some((glyph) => glyph.distance > 0.04);
-    if (recognition.baseReasons.length > 0 || recognition.confidence < 0.3 || hasDistantGlyph) {
+    const hasDistantGlyph = recognition.glyphs?.some((glyph) => glyph.distance > 0.02);
+    if (recognition.baseReasons.length > 0 || recognition.confidence < 0.5 || hasDistantGlyph) {
       return `${label}を十分な精度で読めませんでした`;
     }
     return "";
@@ -980,6 +1042,7 @@ export function parseSiteSevenTableImageData(image, {
     // almost exact match is stronger evidence than the generic segmentation
     // margin (which can be small when a trailing zero is faintly connected).
     const exactTemplateMatch = /^\d+$/.test(recognition.value || "")
+      && (!strictRecognition || recognition.confidence >= 0.5)
       && recognition.glyphs?.length > 0
       && recognition.glyphs.every((glyph) => glyph.distance <= 0.002)
       && (recognition.candidates?.[0]?.distance ?? 1) <= 0.002;
@@ -994,7 +1057,7 @@ export function parseSiteSevenTableImageData(image, {
     return /^\d+$/u.test(value)
       && agreeingVariants >= 2
       && recognition.baseReasons.length === 0
-      && recognition.confidence >= 0.3
+      && recognition.confidence >= (strictRecognition ? 0.5 : 0.3)
       && recognition.glyphs?.length > 0
       && recognition.glyphs.every((glyph) => glyph.distance <= 0.002)
       && (recognition.candidates?.[0]?.distance ?? 1) <= 0.002;
@@ -1008,9 +1071,10 @@ export function parseSiteSevenTableImageData(image, {
       ? ""
       : recognitionReviewReason("通常中スタート", normal);
     const maxPayoutReviewReason = maxPayoutReviewReasonFor(maxPayout);
-    const jackpotReviewReason = recognitionReviewReason("大当たり回数", jackpot);
+    const jackpotReviewReason = exactTemplateMajority(jackpot)
+      ? ""
+      : recognitionReviewReason("大当たり回数", jackpot);
     const nonNumberReviewMessages = [
-      ...globalReviewMessages,
       ...(normalReviewReason ? [normalReviewReason] : []),
       ...(jackpotReviewReason ? [jackpotReviewReason] : []),
     ].filter(Boolean);
@@ -1025,6 +1089,10 @@ export function parseSiteSevenTableImageData(image, {
       island: "",
       machineName: "",
       num: mappedRow.num,
+      machineNumberObserved: mappedRow.machineNumberCandidate || "",
+      machineNumberSuggested: mappedRow.machineNumberSuggested || "",
+      machineNumberResolutionSource: mappedRow.machineNumberResolutionSource || "",
+      machineNumberAlignment: mappedRow.machineNumberAlignment || null,
       normalSpins: normal.value,
       maxPayout: maxPayout.value,
       totalStarts: jackpot.value,
@@ -1099,6 +1167,7 @@ export function parseSiteSevenTableImageData(image, {
     sourceType: "local-image-ocr",
     machineNumberAccuracy: mapping.accuracy,
     machineNumberMode: mapping.machineNumberMode,
+    machineNumberAlignment: mapping.alignment,
     degradedImage,
     degradedReasons: uniqueDegradedReasons,
   };
@@ -1167,6 +1236,17 @@ function loadImageElement(file) {
   });
 }
 
+export async function readSiteSevenImageData(imageData, options = {}) {
+  if (!imageData?.data || !Number.isInteger(imageData.width) || !Number.isInteger(imageData.height)) {
+    throw new Error("写真の画像データを読み込めませんでした");
+  }
+  if (imageData.width * imageData.height > 20_000_000) {
+    throw new Error("写真が大きすぎます。表全体が読める範囲で切り抜いてから選び直してください");
+  }
+  const workerResult = parseSiteSevenTableImageOffMainThread(imageData, options);
+  return workerResult || parseSiteSevenTableImageData(imageData, options);
+}
+
 export async function readSiteSevenImage(file, options = {}) {
   if (!file) throw new Error("写真ファイルを選んでください");
   const image = await loadImageElement(file);
@@ -1182,6 +1262,5 @@ export async function readSiteSevenImage(file, options = {}) {
   context.drawImage(image, 0, 0);
   const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
   const parseOptions = { ...options, fileName: file.name || "" };
-  const workerResult = parseSiteSevenTableImageOffMainThread(imageData, parseOptions);
-  return workerResult || parseSiteSevenTableImageData(imageData, parseOptions);
+  return readSiteSevenImageData(imageData, parseOptions);
 }
