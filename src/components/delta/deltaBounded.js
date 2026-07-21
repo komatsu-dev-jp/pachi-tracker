@@ -57,7 +57,7 @@ export function isBoundedDeltaRow(row) {
     || row?.status !== "bounded" || row?.valueSource !== "bounded-range") return false;
   // 境界到達記録に一点値やランクが混ざると、後続集計が正確値として
   // 扱う余地が生まれる。保存形では必ず両方を空にする。
-  if (finite(row?.val) !== null || row?.rank !== null) return false;
+  if (row?.val !== null || row?.rank !== null) return false;
   const range = row?.deltaRange;
   const derived = deriveClippedDeltaRange(row);
   if (!range || !derived || range.exact === true) return false;
