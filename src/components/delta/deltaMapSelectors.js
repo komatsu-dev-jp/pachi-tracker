@@ -9,6 +9,9 @@
 // Island スキーマ: { id, name, start, end, machineName }
 
 import { getRank } from "./deltaEngine.js";
+import { islandLayoutCells } from "../select/hallMapSelectors.js";
+
+const MAX_ISLAND_OVERLAY_CELLS = 10_000;
 
 // 指定店舗のスキャンが持つ日付（"YYYY-MM-DD"）を降順ユニーク配列で返す。
 // storeId は文字列化して厳密照合する（storeId が null のスキャンは storeName 一致では拾わない）。
@@ -58,14 +61,26 @@ export function buildScanIndex(scans, storeId, date) {
 export function buildIslandOverlay(island, scanIndex) {
   const idx = scanIndex instanceof Map ? scanIndex : new Map();
   if (!island || typeof island !== "object") return [];
-  const start = Number(island.start);
-  const end = Number(island.end);
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return [];
-  const lo = Math.min(start, end);
-  const hi = Math.max(start, end);
+  const configuredRanges = Array.isArray(island.ranges) && island.ranges.length > 0
+    ? island.ranges
+    : null;
+  const hasUsableRange = configuredRanges?.some((range) => (
+    Number.isFinite(Number(range?.start)) && Number.isFinite(Number(range?.end))
+  ));
+  if (configuredRanges && !hasUsableRange) return [];
+  if (!configuredRanges && (
+    !Number.isFinite(Number(island.start)) || !Number.isFinite(Number(island.end))
+  )) return [];
+
+  const seen = new Set();
   const cells = [];
-  for (let n = lo; n <= hi; n++) {
-    const numStr = String(n);
+  for (const layoutCell of islandLayoutCells(island, MAX_ISLAND_OVERLAY_CELLS)) {
+    if (layoutCell?.gap === true) continue;
+    const num = Number(layoutCell?.num);
+    if (!Number.isSafeInteger(num) || num < 0) continue;
+    const numStr = String(num);
+    if (seen.has(numStr)) continue;
+    seen.add(numStr);
     const short = numStr.length > 2 ? numStr.slice(-2) : numStr;
     cells.push({ num: numStr, short, row: idx.get(numStr) || null });
   }

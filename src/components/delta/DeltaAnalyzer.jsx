@@ -56,6 +56,12 @@ import {
   trustedMachineNumberForSlot,
 } from "./deltaWorkflowState";
 import { machineDB } from "../../machineDB";
+import MachinePickerSheet from "../machines/MachinePickerSheet";
+import {
+  overlayManualMachineSelections,
+  propagateManualMachineSelections,
+  relateRowsToStoreLayout,
+} from "./storeLayoutRowRelation";
 
 const TAP = 44; // 最小タップ領域
 const CTA = 48; // 下部固定CTA高さ
@@ -434,8 +440,14 @@ export function TopBar({ title, onBack, right, backDisabled = false }) {
       >
         ←
       </button>
-      <div style={{ flex: 1, fontSize: 19, fontWeight: 800, color: C.text, fontFamily: font }}>
-        {title}
+      <div style={{ flex: 1, minWidth: 0, fontFamily: font }}>
+        <div style={{ fontSize: 19, fontWeight: 800, color: C.text }}>{title}</div>
+        <div
+          data-testid="analysis-engine-version"
+          style={{ color: C.sub, fontSize: 9, fontFamily: mono, fontWeight: 700, marginTop: 1 }}
+        >
+          解析エンジン {ANALYSIS_ENGINE_VERSION}
+        </div>
       </div>
       {right}
     </div>
@@ -480,7 +492,18 @@ const scrollAreaStyle = {
 };
 
 // ════════════ アップロード ════════════
-function UploadStep({ store, images, setImages, analysisDate, setAnalysisDate, onAnalyze, onClose }) {
+function UploadStep({
+  store,
+  islands,
+  islandScopeId,
+  onChangeIslandScope,
+  images,
+  setImages,
+  analysisDate,
+  setAnalysisDate,
+  onAnalyze,
+  onClose,
+}) {
   const fileRef = useRef(null);
   const analysisRequestIdRef = useRef(0);
   const imagesRef = useRef(images);
@@ -648,6 +671,81 @@ function UploadStep({ store, images, setImages, analysisDate, setAnalysisDate, o
           </label>
         </Card>
 
+        <Card data-testid="delta-island-scope" style={{ marginBottom: 12 }}>
+          <div style={{ padding: "12px 14px 9px" }}>
+            <div style={{ fontSize: 14, fontWeight: 900, color: C.text }}>解析する島</div>
+            <div style={{ color: C.subHi, fontSize: 11, lineHeight: 1.55, marginTop: 3 }}>
+              台番号を店舗管理の島と照合し、登録済みの機種名を自動入力します。
+            </div>
+          </div>
+          {Array.isArray(islands) && islands.length > 0 ? (
+            <div role="radiogroup" aria-label="解析する島" style={{ padding: "0 10px 10px", display: "grid", gap: 7 }}>
+              <button
+                className="b"
+                type="button"
+                role="radio"
+                aria-checked={islandScopeId === "all"}
+                disabled={interactionLocked}
+                onClick={() => onChangeIslandScope?.("all")}
+                style={{
+                  width: "100%", minHeight: TAP, borderRadius: 11, padding: "9px 11px",
+                  border: islandScopeId === "all" ? `2px solid ${C.blue}` : `1px solid ${C.border}`,
+                  background: islandScopeId === "all" ? "color-mix(in srgb, var(--blue) 12%, transparent)" : C.surfaceHi,
+                  color: C.text, textAlign: "left", fontFamily: font, opacity: interactionLocked ? 0.55 : 1,
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 900 }}>
+                  {islandScopeId === "all" && <span style={{ color: C.blue, marginRight: 5 }}>✓</span>}
+                  店舗全体（台番号から自動判定）
+                </div>
+                <div style={{ color: C.sub, fontSize: 10, marginTop: 2 }}>
+                  複数の島を一緒に撮影した場合はこちら
+                </div>
+              </button>
+              {islands.map((island, index) => {
+                const islandId = String(island?.id ?? `island-${index}`);
+                const selected = islandScopeId === islandId;
+                const numbers = islandToNumbers(island);
+                return (
+                  <button
+                    key={islandId}
+                    className="b"
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    disabled={interactionLocked}
+                    onClick={() => onChangeIslandScope?.(islandId)}
+                    style={{
+                      width: "100%", minHeight: TAP, borderRadius: 11, padding: "9px 11px",
+                      border: selected ? `2px solid ${C.blue}` : `1px solid ${C.border}`,
+                      background: selected ? "color-mix(in srgb, var(--blue) 12%, transparent)" : C.surfaceHi,
+                      color: C.text, textAlign: "left", fontFamily: font, opacity: interactionLocked ? 0.55 : 1,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                      <div style={{ minWidth: 0, flex: 1, fontSize: 13, fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {selected && <span style={{ color: C.blue, marginRight: 5 }}>✓</span>}
+                        {island?.name || `島${index + 1}`}
+                      </div>
+                      <div style={{ color: C.sub, fontSize: 10, fontFamily: mono }}>{numbers.length}台</div>
+                    </div>
+                    <div style={{ color: island?.machineName ? C.green : C.yellow, fontSize: 10, marginTop: 3, fontWeight: 700 }}>
+                      {island?.machineName || "機種未登録（解析後に選択できます）"}
+                    </div>
+                    <div style={{ color: C.sub, fontSize: 9, marginTop: 2, fontFamily: mono }}>
+                      台番号 {formatNumberRanges(numbers)}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ padding: "0 14px 13px", color: C.yellow, fontSize: 11, lineHeight: 1.6, fontWeight: 700 }}>
+              この店舗には島がまだ登録されていません。解析は続けられ、機種名は結果画面で選択できます。
+            </div>
+          )}
+        </Card>
+
         {/* アップロードゾーン */}
         <input
           ref={fileRef}
@@ -795,7 +893,7 @@ function UploadStep({ store, images, setImages, analysisDate, setAnalysisDate, o
           <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.6 }}>
             写真・PDF・CSVはこの端末内でのみ解析されます<br />
             <span style={{ color: C.sub }}>外部への送信は行いません</span><br />
-            <span data-testid="analysis-engine-version" style={{ color: C.sub, fontFamily: mono }}>
+            <span style={{ color: C.sub, fontFamily: mono }}>
               解析エンジン {ANALYSIS_ENGINE_VERSION}
             </span>
           </div>
@@ -1654,12 +1752,14 @@ function ResultsStep({
   onSave,
   onOpenImport,
   onUpdateReview,
+  onUpdateMachineName,
   saved,
   customMachines,
   siteSevenSummary,
   autoImportedCount = 0,
 }) {
   const [sortBy, setSortBy] = useState("delta");
+  const [machinePickerNumber, setMachinePickerNumber] = useState(null);
 
   const rowValidation = useMemo(() => validateDeltaRows(rows), [rows]);
   const resolvedRows = useMemo(() => rows.filter(hasResolvedDelta), [rows]);
@@ -1697,13 +1797,26 @@ function ResultsStep({
         continue;
       }
       map.set(String(row.num), buildRowDeltaEvidence(
-        { ...row, machineName: row.machineName || machineName || "" },
+        { ...row, machineName: row.machineName || "" },
         customMachines,
         machineDB,
       ));
     }
     return map;
-  }, [rows, machineName, customMachines]);
+  }, [rows, customMachines]);
+  const machineNames = useMemo(() => (
+    [...new Set(rows.map((row) => String(row?.machineName || "").trim()).filter(Boolean))]
+  ), [rows]);
+  const layoutState = useMemo(() => rows.reduce((state, row) => {
+    const status = row?.storeLayoutRelation?.status;
+    if (status === "matched") state.matched += 1;
+    if (status === "manual-override") state.manual += 1;
+    if (status === "island-only") state.machineMissing += 1;
+    if (status === "machine-conflict") state.conflicts += 1;
+    if (status === "ambiguous") state.ambiguous += 1;
+    if (status === "unmapped") state.unmapped += 1;
+    return state;
+  }, { matched: 0, manual: 0, machineMissing: 0, conflicts: 0, ambiguous: 0, unmapped: 0 }), [rows]);
   const predictedCount = Array.from(predictionByNum.values()).filter((item) => item.hasEstimate).length;
   const pendingReviewCount = rowValidation.pendingReviewIndices.length;
   const confirmedReviewCount = rowValidation.confirmedReviewIndices.length;
@@ -1744,7 +1857,7 @@ function ResultsStep({
           <div style={{ padding: "14px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
               <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>
-                {machineName || "解析結果"} ・ {rows.length}台
+                {machineName || (machineNames.length > 1 ? "複数機種" : "解析結果")} ・ {rows.length}台
               </div>
               <div style={{ fontSize: 13, fontWeight: 800 }}>
                 <span style={{ color: C.green }}>勝{plus}</span> <span style={{ color: C.red }}>負{minus}</span>
@@ -1779,6 +1892,32 @@ function ResultsStep({
             </div>
           </div>
         </Card>
+
+        {(layoutState.matched > 0 || layoutState.manual > 0 || layoutState.machineMissing > 0 || layoutState.conflicts > 0
+          || layoutState.ambiguous > 0 || layoutState.unmapped > 0) && (
+          <div style={{
+            borderRadius: 13, padding: "11px 13px", marginBottom: 12,
+            border: `1px solid ${layoutState.conflicts || layoutState.ambiguous ? C.yellow : C.border}`,
+            background: layoutState.conflicts || layoutState.ambiguous
+              ? "color-mix(in srgb, var(--yellow) 10%, transparent)"
+              : C.surface,
+          }}>
+            <div style={{ color: C.text, fontSize: 13, fontWeight: 900 }}>店舗管理との連携</div>
+            <div style={{ color: C.subHi, fontSize: 11, lineHeight: 1.6, marginTop: 3, fontWeight: 700 }}>
+              島・機種一致 {layoutState.matched}台
+              {layoutState.manual > 0 && ` ・ 手動補正 ${layoutState.manual}台`}
+              {layoutState.machineMissing > 0 && ` ・ 島の機種未登録 ${layoutState.machineMissing}台`}
+              {layoutState.conflicts > 0 && ` ・ 機種名の相違 ${layoutState.conflicts}台`}
+              {layoutState.ambiguous > 0 && ` ・ 島範囲の重複 ${layoutState.ambiguous}台`}
+              {layoutState.unmapped > 0 && ` ・ 選択範囲外 ${layoutState.unmapped}台`}
+            </div>
+            {(layoutState.machineMissing > 0 || layoutState.conflicts > 0 || layoutState.ambiguous > 0) && (
+              <div style={{ color: C.yellow, fontSize: 10, lineHeight: 1.55, marginTop: 3, fontWeight: 800 }}>
+                機種名を押すと、記録ページと同じ機種マスターから補正できます。
+              </div>
+            )}
+          </div>
+        )}
 
         {!rowValidation.valid && (
           <div style={{
@@ -1860,9 +1999,38 @@ function ResultsStep({
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 19, fontWeight: 800, color: C.text }}>台{r.num}</div>
-                  <div style={{ fontSize: 12, color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {r.machineName || machineName || "—"}
-                  </div>
+                  <button
+                    type="button"
+                    className="b"
+                    aria-label={`台${r.num}の機種名を選択`}
+                    onClick={() => setMachinePickerNumber(String(r.num))}
+                    style={{
+                      minHeight: TAP, maxWidth: "100%", padding: "3px 0", border: "none",
+                      background: "transparent", color: r.machineName ? C.blue : C.yellow,
+                      display: "flex", alignItems: "center", gap: 5, textAlign: "left", fontFamily: font,
+                    }}
+                  >
+                    <span style={{ fontSize: 12, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {r.machineName || "機種を選ぶ"}
+                    </span>
+                    <span aria-hidden="true" style={{ flexShrink: 0 }}>›</span>
+                  </button>
+                  {r.island && (
+                    <div style={{ color: C.sub, fontSize: 10, marginTop: -5, marginBottom: 3 }}>
+                      {r.island}
+                      {r?.storeLayoutRelation?.machineNameApplied && <span style={{ color: C.green }}> ・ 店舗管理から自動入力</span>}
+                    </div>
+                  )}
+                  {r?.storeLayoutRelation?.status === "machine-conflict" && (
+                    <div style={{ color: C.yellow, fontSize: 10, lineHeight: 1.45, fontWeight: 800, marginBottom: 3 }}>
+                      資料と店舗管理の機種名が異なります。機種名を押して確認してください
+                    </div>
+                  )}
+                  {r?.storeLayoutRelation?.status === "ambiguous" && (
+                    <div style={{ color: C.yellow, fontSize: 10, lineHeight: 1.45, fontWeight: 800, marginBottom: 3 }}>
+                      同じ台番号が複数の島に登録されています
+                    </div>
+                  )}
                   {!resolved && !isReview && (
                     <div style={{ fontSize: 10, color: tone.color, marginTop: 3, fontWeight: 800, lineHeight: 1.45 }}>
                       元画像に折れ線が描画されていません
@@ -1975,8 +2143,29 @@ function ResultsStep({
           {siteSevenSummary?.rowCount > 0 ? "台データを確認・追加" : "大当たり・回転数データを一括取り込み"}
         </button>
       </div>
+      <MachinePickerSheet
+        open={machinePickerNumber !== null}
+        title={machinePickerNumber ? `台${machinePickerNumber}の機種を選択` : "機種を選択"}
+        customMachines={customMachines}
+        onClose={() => setMachinePickerNumber(null)}
+        onSelect={(picked) => {
+          const pickedName = typeof picked === "string" ? picked : picked?.name;
+          if (machinePickerNumber !== null && pickedName) {
+            onUpdateMachineName?.(machinePickerNumber, pickedName);
+          }
+          setMachinePickerNumber(null);
+        }}
+      />
     </>
   );
+}
+
+function applyStoreLayoutRelations(rows, islands, scope = "all") {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!Array.isArray(islands) || islands.length === 0) {
+    return { rows: list, summary: null };
+  }
+  return relateRowsToStoreLayout(list, { islands, scope });
 }
 
 function canConfirmSiteSevenRow(row, rowIndex, rows, expectedNumberSet) {
@@ -1995,6 +2184,9 @@ function ImportStep({
   store,
   analysisDate,
   rows: deltaRows,
+  islands,
+  islandScopeId,
+  customMachines,
   onBack,
   onMerge,
   aiApiKey,
@@ -2013,13 +2205,18 @@ function ImportStep({
   const dataFileRef = useRef(null);
   const dataRequestIdRef = useRef(0);
   const [dataRows, setDataRows] = useState(() => (
-    Array.isArray(initialDataRows) ? initialDataRows : []
+    applyStoreLayoutRelations(
+      overlayManualMachineSelections(initialDataRows, deltaRows),
+      islands,
+      islandScopeId,
+    ).rows
   ));
   const [dataBusy, setDataBusy] = useState(false);
   const [dataError, setDataError] = useState("");
   const [dataSummary, setDataSummary] = useState(() => initialDataSummary);
   const [dataFilter, setDataFilter] = useState("");
   const [showAllDataRows, setShowAllDataRows] = useState(false);
+  const [machinePickerRowIndex, setMachinePickerRowIndex] = useState(null);
 
   const hasKey = typeof aiApiKey === "string" && aiApiKey.trim() !== "";
   const aiFileRef = useRef(null);
@@ -2133,7 +2330,11 @@ function ImportStep({
         throw new Error(`選んだファイルから台データを確認できませんでした${failureDetail}`);
       }
       if (requestId !== dataRequestIdRef.current) return;
-      setDataRows(nextRows);
+      setDataRows(applyStoreLayoutRelations(
+        overlayManualMachineSelections(nextRows, deltaRows),
+        islands,
+        islandScopeId,
+      ).rows);
       setDataSummary({
         fileCount: results.length,
         rowCount: mergedResults.recognizedCount,
@@ -2159,11 +2360,42 @@ function ImportStep({
   };
 
   const changeDataRow = (index, field, value) => {
-    setDataRows((current) => current.map((row, rowIndex) =>
-      rowIndex === index
-        ? { ...row, [field]: value, reviewConfirmed: false }
-        : row
-    ));
+    setDataRows((current) => {
+      const next = current.map((row, rowIndex) => (
+        rowIndex === index
+          ? { ...row, [field]: value, reviewConfirmed: false }
+          : row
+      ));
+      return field === "num"
+        ? applyStoreLayoutRelations(next, islands, islandScopeId).rows
+        : next;
+    });
+  };
+  const pickDataRowMachine = (index, machine) => {
+    const pickedName = typeof machine === "string" ? machine.trim() : String(machine?.name || "").trim();
+    if (!pickedName) return;
+    setDataRows((current) => {
+      const target = current[index];
+      const targetIslandId = target?.islandId == null ? "" : String(target.islandId);
+      return current.map((row, rowIndex) => {
+        const sameTarget = rowIndex === index;
+        const sameIsland = targetIslandId && String(row?.islandId ?? "") === targetIslandId;
+        if (!sameTarget && !sameIsland) return row;
+        return {
+          ...row,
+          machineName: pickedName,
+          machineNameSource: "manual",
+          storeLayoutRelation: row?.storeLayoutRelation
+            ? {
+              ...row.storeLayoutRelation,
+              status: "manual-override",
+              manuallySelected: true,
+              machineNameApplied: false,
+            }
+            : row?.storeLayoutRelation,
+        };
+      });
+    });
   };
   const confirmDataRow = (index, checked) => {
     setDataRows((current) => current.map((row, rowIndex) => {
@@ -2472,18 +2704,33 @@ function ImportStep({
                           }}
                         />
                       </label>
-                      <label style={{ fontSize: 10, color: C.sub, fontWeight: 700, minWidth: 0 }}>
+                      <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, minWidth: 0 }}>
                         機種名
-                        <input
-                          value={row.machineName || ""}
-                          onChange={(e) => changeDataRow(index, "machineName", e.target.value)}
+                        <button
+                          type="button"
+                          className="b"
+                          aria-label={`台${row.num}の機種名を選択`}
+                          onClick={() => setMachinePickerRowIndex(index)}
                           style={{
-                            width: "100%", height: 38, boxSizing: "border-box", marginTop: 3,
-                            borderRadius: 8, border: `1px solid ${C.borderHi}`,
-                            background: C.bg, color: C.text, padding: "0 8px", fontSize: 12,
+                            width: "100%", minHeight: TAP, boxSizing: "border-box", marginTop: 3,
+                            borderRadius: 8, border: `1px solid ${row.machineName ? C.borderHi : C.yellow}`,
+                            background: C.bg, color: row.machineName ? C.text : C.yellow, padding: "0 8px",
+                            fontSize: 12, fontWeight: 800, textAlign: "left", fontFamily: font,
+                            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 5,
                           }}
-                        />
-                      </label>
+                        >
+                          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {row.machineName || "機種を選ぶ"}
+                          </span>
+                          <span aria-hidden="true">›</span>
+                        </button>
+                        {row.island && (
+                          <div style={{ color: C.sub, fontSize: 9, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {row.island}
+                            {row?.storeLayoutRelation?.machineNameApplied && <span style={{ color: C.green }}>・自動</span>}
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
                       <label style={{ fontSize: 10, color: C.sub, fontWeight: 700 }}>
@@ -2810,6 +3057,18 @@ function ImportStep({
           || preparedText.duplicateCount > 0
           || preparedText.unexpectedCount > 0}
       />
+      <MachinePickerSheet
+        open={machinePickerRowIndex !== null}
+        title={machinePickerRowIndex !== null && dataRows[machinePickerRowIndex]
+          ? `台${dataRows[machinePickerRowIndex].num}の機種を選択`
+          : "機種を選択"}
+        customMachines={customMachines}
+        onClose={() => setMachinePickerRowIndex(null)}
+        onSelect={(picked) => {
+          if (machinePickerRowIndex !== null) pickDataRowMachine(machinePickerRowIndex, picked);
+          setMachinePickerRowIndex(null);
+        }}
+      />
     </>
   );
 }
@@ -2873,6 +3132,10 @@ function StepBadge({ n }) {
 export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiApiKey, onChangeAiApiKey, customMachines }) {
   const [step, setStep] = useState("upload");
   const [analysisDate, setAnalysisDate] = useState(todayStr);
+  const [islandScopeId, setIslandScopeId] = useState(() => {
+    const list = Array.isArray(islands) ? islands : [];
+    return list.length === 1 ? String(list[0]?.id ?? "island-0") : "all";
+  });
   const [images, setImages] = useState([]);
   const [slots, setSlots] = useState([]); // ピクセル解析の生スロット
   const [analysisReports, setAnalysisReports] = useState([]);
@@ -2886,10 +3149,29 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
   const [saved, setSaved] = useState(false);
   const [toast, setToast] = useState("");
 
-  // 結果の機種名: 取り込み済み行があればそれを優先表示
+  const activeIslandScopeId = islandScopeId === "all"
+    || (Array.isArray(islands) ? islands : []).some((island, index) => (
+      String(island?.id ?? `island-${index}`) === islandScopeId
+    ))
+    ? islandScopeId
+    : "all";
+
+  const scopedIslands = useMemo(() => {
+    const list = Array.isArray(islands) ? islands : [];
+    if (activeIslandScopeId === "all") return list;
+    return list.filter((island, index) => (
+      String(island?.id ?? `island-${index}`) === activeIslandScopeId
+    ));
+  }, [islands, activeIslandScopeId]);
+
+  // 複数島を解析した時に、最初の1台の機種名を全台へ流用しない。
+  // スキャン全体の機種名は「全行が同じ機種」の時だけ設定する。
   const machineName = useMemo(() => {
-    const withName = rows.find((r) => r.machineName);
-    return withName?.machineName || "";
+    if (!rows.length) return "";
+    const names = rows.map((row) => String(row?.machineName || "").trim());
+    if (names.some((name) => !name)) return "";
+    const unique = new Set(names);
+    return unique.size === 1 ? names[0] : "";
   }, [rows]);
 
   const handleAnalyzed = (analysis) => {
@@ -2898,7 +3180,8 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
     setAnalysisReports(Array.isArray(analysis?.reports) ? analysis.reports : []);
     setAnalysisNumberOcr(analysis?.numberOcr || null);
     setAnalysisJointMatch(analysis?.jointMatch || null);
-    setAnalysisSiteSevenRows(Array.isArray(analysis?.siteSevenRows) ? analysis.siteSevenRows : []);
+    const siteSevenRows = Array.isArray(analysis?.siteSevenRows) ? analysis.siteSevenRows : [];
+    setAnalysisSiteSevenRows(applyStoreLayoutRelations(siteSevenRows, islands, activeIslandScopeId).rows);
     setAnalysisSiteSevenSummary(analysis?.siteSevenSummary || null);
     setConfirmedMachineNumbers([]);
     if (results.length > 0) setStep("numbers");
@@ -2950,7 +3233,8 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
     const autoMerged = preparedSiteSeven.rows.length
       ? mergeTaiData(assignedRows, preparedSiteSeven.rows)
       : { rows: assignedRows, matched: 0 };
-    setRows(autoMerged.rows);
+    const related = applyStoreLayoutRelations(autoMerged.rows, islands, activeIslandScopeId);
+    setRows(related.rows);
     setAutoImportedCount(autoMerged.matched || 0);
     setConfirmedMachineNumbers(numbers.map((number) => String(number ?? "")));
     setSaved(false);
@@ -2987,6 +3271,43 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
     setSaved(false);
   };
 
+  const handleUpdateMachineName = (machineNumber, nextMachineName) => {
+    const pickedName = String(nextMachineName || "").trim();
+    if (!pickedName) return;
+    const target = rows.find((row) => String(row?.num) === String(machineNumber));
+    const targetIslandId = target?.islandId == null ? "" : String(target.islandId);
+    const targetIslandName = String(target?.island || "");
+    const appliedCount = rows.filter((row) => (
+      String(row?.num) === String(machineNumber)
+      || (targetIslandId && String(row?.islandId ?? "") === targetIslandId)
+    )).length;
+    setRows((current) => {
+      return current.map((row) => {
+        const sameTarget = String(row?.num) === String(machineNumber);
+        const sameIsland = targetIslandId && String(row?.islandId ?? "") === targetIslandId;
+        if (!sameTarget && !sameIsland) return row;
+        return {
+          ...row,
+          machineName: pickedName,
+          machineNameSource: "manual",
+          storeLayoutRelation: row?.storeLayoutRelation
+            ? {
+              ...row.storeLayoutRelation,
+              status: "manual-override",
+              manuallySelected: true,
+              machineNameApplied: false,
+            }
+            : row?.storeLayoutRelation,
+        };
+      });
+    });
+    setSaved(false);
+    setToast(targetIslandName && appliedCount > 1
+      ? `${targetIslandName}の${appliedCount}台へ「${pickedName}」を設定しました`
+      : `台${machineNumber}へ「${pickedName}」を設定しました`);
+    setTimeout(() => setToast(""), 3000);
+  };
+
   const handleMerge = (taiRows, importState = {}) => {
     const {
       rows: merged,
@@ -2996,7 +3317,9 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
       conflictNumbers,
       unverifiedDeltaNumbers,
     } = mergeTaiData(rows, taiRows);
-    setRows(merged);
+    const related = applyStoreLayoutRelations(merged, islands, activeIslandScopeId);
+    const rowsWithManualSelections = propagateManualMachineSelections(related.rows, taiRows);
+    setRows(rowsWithManualSelections);
     const reviewedSourceRows = Array.isArray(importState?.dataRows)
       ? importState.dataRows
       : [];
@@ -3010,7 +3333,7 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
     setAutoImportedCount(matched || 0);
     setSaved(false);
     setStep("results");
-    const remaining = validateDeltaRows(merged).unresolvedCount;
+    const remaining = validateDeltaRows(rowsWithManualSelections).unresolvedCount;
     const warnings = [
       duplicateNumbers.length ? `重複 ${duplicateNumbers.length}台` : "",
       invalidDeltaNumbers.length ? `異常値 ${invalidDeltaNumbers.length}台` : "",
@@ -3037,6 +3360,9 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
       {step === "upload" && (
         <UploadStep
           store={store}
+          islands={islands}
+          islandScopeId={activeIslandScopeId}
+          onChangeIslandScope={setIslandScopeId}
           images={images}
           analysisDate={analysisDate}
           setAnalysisDate={setAnalysisDate}
@@ -3065,7 +3391,7 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
           jointMatch={analysisJointMatch}
           siteSevenSummary={analysisSiteSevenSummary}
           initialNumbers={confirmedMachineNumbers}
-          islands={islands}
+          islands={scopedIslands}
           onConfirm={handleConfirmNumbers}
           onBack={() => setStep("upload")}
         />
@@ -3079,6 +3405,7 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
           onSave={handleSave}
           onOpenImport={() => setStep("import")}
           onUpdateReview={handleUpdateReview}
+          onUpdateMachineName={handleUpdateMachineName}
           saved={saved}
           customMachines={customMachines}
           siteSevenSummary={analysisSiteSevenSummary}
@@ -3096,6 +3423,9 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
           onChangeAiApiKey={onChangeAiApiKey}
           initialDataRows={analysisSiteSevenRows}
           initialDataSummary={analysisSiteSevenSummary}
+          islands={islands}
+          islandScopeId={activeIslandScopeId}
+          customMachines={customMachines}
         />
       )}
     </div>
