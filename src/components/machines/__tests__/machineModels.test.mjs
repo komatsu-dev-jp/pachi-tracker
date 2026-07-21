@@ -40,9 +40,9 @@ assert.deepEqual(
 );
 
 const partialYutime = machineDB.find((machine) => machine.name === "PA新海物語")?.yutime;
-assert.equal(partialYutime?.expectedNetBalls, null, "期待出玉の根拠がない機種を推測で補完してはいけません");
+assert.equal(partialYutime?.expectedNetBalls, 1260.07, "公開シミュレーションの遊タイム平均獲得玉を連携します");
 
-assert.equal(machineDB.length, 98, "P-EVIDENCE本体の登録数は98機種のまま維持します");
+assert.equal(machineDB.length, 125, "98機種に監査済み遊タイム27スペックを統合します");
 assert.equal(Object.keys(machineYutimeRegistry).length, 98, "98機種すべてに遊タイム監査結果が必要です");
 const yutimeStatusCounts = machineDB.reduce((counts, machine) => {
   counts[machine.yutimeAudit?.status] = (counts[machine.yutimeAudit?.status] || 0) + 1;
@@ -50,9 +50,9 @@ const yutimeStatusCounts = machineDB.reduce((counts, machine) => {
 }, {});
 assert.deepEqual(yutimeStatusCounts, {
   "not-equipped": 90,
-  equipped: 7,
+  equipped: 34,
   "not-applicable": 1,
-}, "98機種の搭載・非搭載・対象外分類");
+}, "統合後125スペックの搭載・非搭載・対象外分類");
 
 const equippedConditions = {
   "仮面ライダー轟音": [950, 1200],
@@ -71,22 +71,33 @@ for (const [name, expected] of Object.entries(equippedConditions)) {
 }
 assert.equal(machineDB.find((machine) => machine.name === "e大海物語5スペシャル")?.yutimeAudit?.status, "not-equipped", "e機とP機を混同してはいけません");
 
-assert.equal(yutimeReferenceMachines.length, 14, "資料から追加する遊タイム参照機種数");
+assert.equal(yutimeReferenceMachines.length, 27, "2024～2026年の遊タイム参照スペック数");
 for (const machine of yutimeReferenceMachines) {
   assert.equal(machine.modelVerified, true, `${machine.name}: 型式確認状態`);
   assert.ok(machine.modelName, `${machine.name}: 正式型式`);
   assert.equal(machine.yutimeAudit?.status, "equipped", `${machine.name}: 搭載状態`);
   assert.ok(machine.yutime?.triggerLowSpins > 0, `${machine.name}: 発動回転数`);
   assert.match(machine.yutime?.sourceUrl || "", /^https:\/\//, `${machine.name}: 根拠URL`);
-  if (machine.name !== "PA花の慶次～傾奇一転 87ver.") {
-    assert.equal(machine.yutime?.expectedNetBalls, null, `${machine.name}: 未確認の平均獲得玉を推測しない`);
-  }
+  assert.ok(machine.yutime?.expectedNetBalls > 0, `${machine.name}: 遊タイム平均獲得玉`);
+  assert.ok(machine.normalExpectedNetBalls > 0, `${machine.name}: 通常時平均獲得玉`);
+  assert.match(machine.normalExpectedNetBallsMethod || "", /^(published-simulation|allocation-derived|border-derived)$/, `${machine.name}: 通常時平均獲得玉の算出根拠`);
+  assert.ok(machine.avgPayoutPerHit > 0, `${machine.name}: 大当り1回平均出玉`);
+  assert.ok(machine.hesoAvgPayout > 0, `${machine.name}: ヘソ平均出玉`);
+  assert.ok(machine.rushAvgPayout > 0, `${machine.name}: RUSH平均出玉`);
+  assert.ok(machine.border1K > 0, `${machine.name}: 等価ボーダー`);
+  assert.ok(machine.stdDev > 0, `${machine.name}: P-EVIDENCE標準偏差`);
+  assert.equal(machine.stdDevMethod, "p-evidence-branching-v2", `${machine.name}: 標準偏差算出方式`);
 }
 const kabuki87 = yutimeReferenceMachines.find((machine) => machine.modelName === "PA花の慶次～傾奇一転N");
 assert.equal(kabuki87?.yutime?.expectedNetBalls, 1329.5, "87ver.は確認済み遊タイム平均獲得玉を登録します");
 assert.equal(kabuki87?.synthProb, 87.84, "87ver.は確認済み大当り確率を登録します");
 const norimono59 = yutimeReferenceMachines.find((machine) => machine.modelName === "PA乗物娘2GO2");
 assert.equal(norimono59?.yutime?.triggerLowSpins, 160, "59ver.は公式資料どおり低確率160回転で登録します");
-assert.equal(getYutimeSelectionMachines().length, 112, "98機種と参照14機種を選択画面へ連携します");
+const garo = searchMachines("牙狼 甘デジ").find((machine) => machine.modelName === "PA激デジ牙狼月虹ノ旅人-RL");
+assert.ok(garo, "PA激デジ牙狼を通常の機種検索から選べます");
+assert.equal(garo.avgPayoutPerHit, 244.48, "PA激デジ牙狼の初当り平均出玉");
+const eacModes = searchMachines("eACわんわんセレブレーション");
+assert.equal(eacModes.length, 2, "2in1機は77ver.と49ver.を別々に選べます");
+assert.equal(getYutimeSelectionMachines().length, 125, "統合後の全スペックを遊タイム選択画面へ連携します");
 
-console.log("machineModels: 型式84件 + 98機種遊タイム監査 + 参照14機種 PASS");
+console.log("machineModels: 型式84件 + 125スペック遊タイム監査 + 参照27スペック PASS");

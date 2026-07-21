@@ -819,8 +819,8 @@ check("T31_残り8機種と全98機種の照合完了を固定", () => {
   assert.deepStrictEqual(sig(targets[6].hesoModes[0].rows), [[10, 720, 2], [4, 288, 73], [4, 288, 25]]);
   assert.deepStrictEqual(sig(targets[7].rushModes[0].rows), [[10, 840, 2], [6, 504, 49], [4, 336, 49]]);
 
-  assert.strictEqual(machineDB.length, 98, "登録機種数");
-  assert.strictEqual(machineDB.filter((m) => m.allocationVerified === true).length, 98, "全機種照合済み");
+  assert.strictEqual(machineDB.length, 125, "登録機種数（遊タイム27スペック統合後）");
+  assert.strictEqual(machineDB.filter((m) => m.allocationVerified === true).length, 125, "全機種照合済み");
   for (const target of targets) {
     assert.ok(target.sourceUrls.length >= 2, `${target.name}: 複数出典`);
     const model = normalizeMachine(target);
