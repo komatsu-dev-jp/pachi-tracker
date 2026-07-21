@@ -36,6 +36,7 @@ import {
     PACHINKO_RATE_PRESETS,
     ballsForInvestment,
     formatBallQuantity,
+    formatPachinkoRateLabel,
     rentalYenPerBall,
 } from "../rateSettings";
 import { evDecision } from "./decision/evDecision";
@@ -5491,7 +5492,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             </div>
                             {moveYutimeTarget && (
                                 <div style={{ marginBottom: 8, color: C.sub, fontSize: 10, lineHeight: 1.55 }}>
-                                    開始 {moveYutimeTarget.currentLowSpins.toLocaleString()}回 ・ 想定1K {moveYutimeTarget.assumedStart1K || "—"}回/K
+                                    開始 {moveYutimeTarget.currentLowSpins.toLocaleString()}回 ・ 想定1K {moveYutimeTarget.assumedStart1K || "—"}回/K ・ {moveYutimeTarget.pachinkoRateLabel || "4円"}パチンコ
                                     <br />発動 {moveYutimeTarget.session.triggerLowSpins.toLocaleString()}回 ・ {moveYutimeTarget.decision?.result?.valid ? `期待値 ${Math.round(moveYutimeTarget.decision.result.selectedEV).toLocaleString()}円` : "期待出玉などの確認が必要"}
                                 </div>
                             )}
@@ -5530,6 +5531,9 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     machineNum: (moveMachineNum || "").trim(),
                                     startRot: Math.max(0, Math.round(Number(moveStartRot) || 0)),
                                     ...(picked || {}),
+                                    rentBalls: moveYutimeTarget?.rentBalls ?? picked?.rentBalls,
+                                    exRate: moveYutimeTarget?.exRate ?? picked?.exRate,
+                                    investPace: moveYutimeTarget?.investPace ?? picked?.investPace,
                                     yutimeSession: moveYutimeTarget?.session || picked?.yutimeSession || null,
                                     yutimeLowSpins,
                                 };
@@ -5553,8 +5557,8 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                             specSapo: dest.specSapo ?? S.specSapo,
                                         }),
                                         yutimeExpectedNetBalls: dest.yutimeSession.expectedNetBalls,
-                                        rentBalls: S.rentBalls,
-                                        exRate: S.exRate,
+                                        rentBalls: dest.rentBalls || dest.yutimeSession?.rentBalls || S.rentBalls,
+                                        exRate: dest.exRate || dest.yutimeSession?.exRate || S.exRate,
                                         playMode: S.currentMochiBalls > 0 ? "mochi" : S.currentChodama > 0 ? "chodama" : "cash",
                                     });
                                     dest.yutimeDecision = dest.yutimeDecision || {
@@ -5565,6 +5569,10 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                         assumedStart1K: dest.yutimeSession.assumedStart1K || S.border,
                                         rateSource: "assumed",
                                         playMode: S.currentMochiBalls > 0 ? "mochi" : S.currentChodama > 0 ? "chodama" : "cash",
+                                        rentBalls: dest.rentBalls || dest.yutimeSession?.rentBalls || S.rentBalls,
+                                        exRate: dest.exRate || dest.yutimeSession?.exRate || S.exRate,
+                                        pachinkoRateLabel: dest.yutimeSession?.pachinkoRateLabel || "",
+                                        pachinkoRateSource: dest.yutimeSession?.pachinkoRateSource || "app",
                                         spec: dest.yutimeSession,
                                         result: moveResult,
                                     };
@@ -5597,6 +5605,9 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             ...(selectedSpec?.spec1R != null ? { spec1R: selectedSpec.spec1R } : {}),
                             ...(selectedSpec?.specAvgRounds != null ? { specAvgRounds: selectedSpec.specAvgRounds } : {}),
                             ...(selectedSpec?.specSapo != null ? { specSapo: selectedSpec.specSapo } : {}),
+                            rentBalls: confirmation.rentBalls,
+                            exRate: confirmation.exRate,
+                            investPace: confirmation.investPace,
                             yutimeSession: confirmation.session,
                             yutimeLowSpins: confirmation.currentLowSpins,
                         };
@@ -9769,7 +9780,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                                         ))}
                                     </div>
                                     <div style={{ marginTop: 8, fontSize: 10, color: C.sub, lineHeight: 1.6 }}>
-                                        開始 {a.yutimeDecision.currentLowSpins ?? "—"}回 ・ 想定1K {a.yutimeDecision.assumedStart1K ?? "—"}回/K ・ {a.yutimeDecision.spec?.source === "master" ? "自動機種データ" : "手動設定"}
+                                        開始 {a.yutimeDecision.currentLowSpins ?? "—"}回 ・ 想定1K {a.yutimeDecision.assumedStart1K ?? "—"}回/K ・ {a.yutimeDecision.pachinkoRateLabel || formatPachinkoRateLabel(a.yutimeDecision.rentBalls || a.settings?.rentBalls)}パチンコ ・ {a.yutimeDecision.spec?.source === "master" ? "自動機種データ" : "手動設定"}
                                     </div>
                                 </>
                             ) : (

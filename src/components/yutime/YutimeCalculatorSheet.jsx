@@ -3,6 +3,11 @@ import { localDateStr } from "../../constants";
 import { deriveSpecForMachine, getYutimeSelectionMachines } from "../../machineDB";
 import { MACHINE_SORT_OPTIONS, filterMachines, sortMachines } from "../../machineSort";
 import {
+  PACHINKO_RATE_PRESETS,
+  formatPachinkoRateLabel,
+  resolvePachinkoRateContext,
+} from "../../rateSettings";
+import {
   calculateYutimeEV,
   createYutimeSessionFromMachine,
   deriveNormalExpectedNetBalls,
@@ -165,7 +170,7 @@ function MachinePicker({ machines, onBack, onSelect, onUseUnregistered }) {
   );
 }
 
-function Result({ result, mode }) {
+function Result({ result, mode, rateLabel }) {
   const arrivalReady = Boolean(result?.arrivalReady && Number.isFinite(result?.selectedArrivalInvestment));
   if (!result?.valid) {
     const payoutMissing = result?.missing?.includes("yutimeExpectedNetBalls");
@@ -173,7 +178,7 @@ function Result({ result, mode }) {
       <div style={{ padding: 13, borderRadius: 13, border: "1px solid var(--sm-line)", background: "var(--sm-card)", color: "var(--sm-sub-hi)", fontSize: 12, lineHeight: 1.6 }}>
         {arrivalReady && (
           <div style={{ marginBottom: 10, padding: "11px 12px", borderRadius: 11, background: "color-mix(in srgb, var(--sm-yellow) 11%, var(--sm-card))", border: "1px solid color-mix(in srgb, var(--sm-yellow) 38%, transparent)" }}>
-            <div style={{ color: "var(--sm-sub-hi)", fontSize: 10, fontWeight: 800 }}>遊タイム到達までの必要資金（{mode === "cash" ? "現金" : mode === "chodama" ? "貯玉" : "持ち玉"}）</div>
+            <div style={{ color: "var(--sm-sub-hi)", fontSize: 10, fontWeight: 800 }}>遊タイム到達までの必要資金（{mode === "cash" ? "現金" : mode === "chodama" ? "貯玉" : "持ち玉"}・{rateLabel}パチンコ）</div>
             <div style={{ marginTop: 3, color: "var(--sm-yellow)", fontFamily: "var(--font-mono)", fontSize: 23, fontWeight: 900 }}>
               {ceilYen(result.selectedArrivalInvestment).toLocaleString("ja-JP")}円
             </div>
@@ -204,7 +209,7 @@ function Result({ result, mode }) {
   return (
     <div style={{ minHeight: "max-content", alignSelf: "start", borderRadius: 14, border: `1px solid ${result.selectedEV >= 0 ? "var(--sm-green)" : "var(--sm-red)"}`, background: "var(--sm-card)", overflow: "hidden" }}>
       <div style={{ padding: "11px 12px", fontSize: 13, fontWeight: 900, color: result.selectedEV >= 0 ? "var(--sm-green)" : "var(--sm-red)" }}>
-        {mode === "cash" ? "現金" : mode === "chodama" ? "貯玉" : "持ち玉"}の計算結果
+        {mode === "cash" ? "現金" : mode === "chodama" ? "貯玉" : "持ち玉"}・{rateLabel}パチンコの計算結果
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", borderTop: "1px solid var(--sm-line)" }}>
         {values.map(([label, value]) => (
@@ -217,7 +222,7 @@ function Result({ result, mode }) {
       <div style={{ padding: 11, color: "var(--sm-sub-hi)", fontSize: 10, lineHeight: 1.6 }}>
         <div style={{ marginBottom: 7, padding: "9px 10px", borderRadius: 10, background: "color-mix(in srgb, var(--sm-yellow) 10%, var(--sm-card))", border: "1px solid color-mix(in srgb, var(--sm-yellow) 32%, transparent)" }}>
           <span style={{ color: "var(--sm-sub-hi)" }}>当たらず遊タイムまで回す必要資金：</span>
-          <strong style={{ color: "var(--sm-yellow)", fontSize: 13 }}>{fmtYen(result.selectedArrivalInvestment).replace("+", "")}</strong>
+          <strong style={{ color: "var(--sm-yellow)", fontSize: 13 }}>{ceilYen(result.selectedArrivalInvestment).toLocaleString("ja-JP")}円</strong>
         </div>
         {result.budgetCanReach != null && (
           <div style={{ marginBottom: 7, color: result.budgetCanReach ? "var(--sm-green)" : "var(--sm-red)", fontSize: 11, fontWeight: 800 }}>
@@ -257,6 +262,19 @@ export default function YutimeCalculatorSheet({
   );
   const machineInitialSession = createYutimeSessionFromMachine(initialMachine, { assumedStart1K: initialMachine?.border1K || S?.border });
   const initialSession = suppliedInitialSession || machineInitialSession;
+  const storeRateContext = useMemo(() => resolvePachinkoRateContext({
+    stores: S?.stores,
+    selectedStoreId: S?.selectedStoreId,
+    rentBalls: S?.rentBalls,
+    exRate: S?.exRate,
+  }), [S?.exRate, S?.rentBalls, S?.selectedStoreId, S?.stores]);
+  const savedRentBalls = Number(initialSession?.rentBalls);
+  const savedExRate = Number(initialSession?.exRate);
+  const initialRateContext = savedRentBalls > 0 ? {
+    rentBalls: savedRentBalls,
+    exRate: savedExRate > 0 ? savedExRate : savedRentBalls,
+    source: initialSession?.pachinkoRateSource || "manual",
+  } : storeRateContext;
   const [machineName, setMachineName] = useState(initialMachine?.name || initialMachineName || "");
   const [selectedMachine, setSelectedMachine] = useState(initialMachine);
   const initialLowSpins = Math.max(0, Number(initialCurrentLowSpins) || 0);
@@ -268,6 +286,9 @@ export default function YutimeCalculatorSheet({
   const [sourceUrl, setSourceUrl] = useState(initialSession?.sourceUrl || "");
   const [source, setSource] = useState(initialSession?.source || "manual");
   const [playMode, setPlayMode] = useState(S?.playMode || "cash");
+  const [rentBalls, setRentBalls] = useState(initialRateContext.rentBalls);
+  const [exRate, setExRate] = useState(initialRateContext.exRate);
+  const [pachinkoRateSource, setPachinkoRateSource] = useState(initialRateContext.source);
   const [budgetYen, setBudgetYen] = useState("");
   const [helpOpen, setHelpOpen] = useState(true);
   const [machinePickerOpen, setMachinePickerOpen] = useState(false);
@@ -301,6 +322,20 @@ export default function YutimeCalculatorSheet({
     specAvgRounds: S?.specAvgRounds,
     specSapo: S?.specSapo,
   };
+  const rateLabel = formatPachinkoRateLabel(rentBalls);
+  const selectedRatePreset = PACHINKO_RATE_PRESETS.find((preset) => preset.rentBalls === Number(rentBalls)) || null;
+  const applyRatePreset = (preset) => {
+    if (Number(rentBalls) === preset.rentBalls) return;
+    setRentBalls(preset.rentBalls);
+    // 店舗を選ばずにレートを変更した場合は、まず等価交換を初期値にする。
+    setExRate(preset.rentBalls);
+    setPachinkoRateSource("manual");
+  };
+  const restoreStoreRate = () => {
+    setRentBalls(storeRateContext.rentBalls);
+    setExRate(storeRateContext.exRate);
+    setPachinkoRateSource(storeRateContext.source);
+  };
   const result = calculateYutimeEV({
     // 選択機種の確率が未登録なら、現在遊技中の別機種の確率を誤用しない。
     probabilityDenom: selectedMachine ? selectedMachine.synthProb : S?.synthDenom,
@@ -309,8 +344,8 @@ export default function YutimeCalculatorSheet({
     start1K: numberOrNull(start1K),
     normalExpectedNetBalls: deriveNormalExpectedNetBalls(machineSpec),
     yutimeExpectedNetBalls: numberOrNull(expectedNetBalls),
-    rentBalls: S?.rentBalls,
-    exRate: S?.exRate,
+    rentBalls,
+    exRate,
     playMode,
     budgetYen: numberOrNull(budgetYen),
   });
@@ -339,6 +374,12 @@ export default function YutimeCalculatorSheet({
       benefit: selectedMachine?.yutime?.benefit || "",
       source: selectedMachine?.yutime ? source : "manual",
       targetingEnabled: true,
+      rentBalls,
+      exRate,
+      pachinkoRateLabel: rateLabel,
+      pachinkoRateSource,
+      storeId: storeRateContext.storeId,
+      storeName: storeRateContext.storeName,
     };
     const now = new Date();
     const decision = {
@@ -349,6 +390,12 @@ export default function YutimeCalculatorSheet({
       assumedStart1K,
       rateSource: "assumed",
       playMode,
+      rentBalls,
+      exRate,
+      pachinkoRateLabel: rateLabel,
+      pachinkoRateSource,
+      storeId: storeRateContext.storeId,
+      storeName: storeRateContext.storeName,
       spec: session,
       result,
     };
@@ -361,6 +408,11 @@ export default function YutimeCalculatorSheet({
       currentLowSpins: normalizedCurrentLowSpins,
       assumedStart1K,
       playMode,
+      rentBalls,
+      exRate,
+      pachinkoRateLabel: rateLabel,
+      pachinkoRateSource,
+      investPace: selectedRatePreset?.recommendedInvestPace,
     };
 
     // 台移動から開いた場合は、現在の台を変更せず移動先の一時設定として返す。
@@ -392,6 +444,9 @@ export default function YutimeCalculatorSheet({
         yutimeLowSpins: normalizedCurrentLowSpins,
         yutimeSession: session,
         yutimeDecision: decision,
+        rentBalls,
+        exRate,
+        investPace: selectedRatePreset?.recommendedInvestPace,
         ...(selectedSynthDenom !== undefined ? { synthDenom: selectedSynthDenom } : {}),
         ...(selectedSpec1R !== undefined ? { spec1R: selectedSpec1R } : {}),
         ...(selectedSpecAvgRounds !== undefined ? { specAvgRounds: selectedSpecAvgRounds } : {}),
@@ -403,6 +458,11 @@ export default function YutimeCalculatorSheet({
       return;
     }
 
+    S?.setRentBalls?.(rentBalls);
+    S?.setExRate?.(exRate);
+    S?.setBallVal?.(1000 / exRate);
+    if (selectedRatePreset) S?.setInvestPace?.(selectedRatePreset.recommendedInvestPace);
+    if (storeRateContext.storeName) S?.setStoreName?.(storeRateContext.storeName);
     S?.setYutimeSession?.(session);
     S?.setYutimeDecision?.(decision);
 
@@ -507,7 +567,7 @@ export default function YutimeCalculatorSheet({
               <div style={{ display: "grid", gap: 9, padding: "0 12px 12px", color: "var(--sm-sub-hi)", fontSize: 11, lineHeight: 1.6 }}>
                 {[
                   ["1", "機種を選ぶ", "登録済み情報があれば、発動回転数などを自動入力します。"],
-                  ["2", "現在カウントと回転率を確認", "データカウンターの低確率回転数と、想定1K回転率を入力します。"],
+                  ["2", "現在カウント・レート・回転率を確認", "店舗を選択済みなら貸玉と交換率を自動反映します。必要な場合だけ1円などへ変更します。"],
                   ["3", "計算結果を確認して開始", "開始後だけ、記録画面に遊タイムカードが表示されます。"],
                 ].map(([number, title, description]) => (
                   <div key={number} style={{ display: "grid", gridTemplateColumns: "24px 1fr", gap: 8 }}>
@@ -543,8 +603,37 @@ export default function YutimeCalculatorSheet({
             )}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div>{label("現在の低確率カウント")}<input aria-label="現在カウント" type="number" min="0" inputMode="numeric" value={currentLowSpins} onFocus={(event) => event.currentTarget.select()} onChange={(e) => setCurrentLowSpins(e.target.value)} placeholder="0" style={fieldStyle} /></div>
+            <div>{label("現在の低確率カウント")}<input aria-label="現在カウント" type="number" min="0" inputMode="numeric" value={currentLowSpins} onFocus={(event) => event.currentTarget.select()} onChange={(e) => setCurrentLowSpins(e.target.value)} placeholder="入力" style={fieldStyle} /></div>
             <div>{label("想定1K回転率")}<input aria-label="1K回転率" type="number" min="0" step="0.1" inputMode="decimal" value={start1K} onChange={(e) => setStart1K(e.target.value)} style={fieldStyle} /></div>
+          </div>
+          <div>
+            {label("貸玉レート")}
+            <div aria-label="遊タイム計算の貸玉レート" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+              {PACHINKO_RATE_PRESETS.map((preset) => {
+                const active = Number(rentBalls) === preset.rentBalls;
+                return (
+                  <button key={preset.rentBalls} type="button" aria-pressed={active} onClick={() => applyRatePreset(preset)} style={{ minHeight: 44, borderRadius: 10, border: `1px solid ${active ? "var(--sm-cyan)" : "var(--sm-line)"}`, background: active ? "color-mix(in srgb, var(--sm-cyan) 18%, var(--sm-card))" : "var(--sm-card)", color: active ? "var(--sm-cyan)" : "var(--sm-text)", fontSize: 12, fontWeight: 900 }}>
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ marginTop: 8, padding: "9px 10px", borderRadius: 10, border: "1px solid var(--sm-line)", background: "var(--sm-card)", color: "var(--sm-sub-hi)", fontSize: 10, lineHeight: 1.6 }}>
+              <div style={{ color: "var(--sm-text)", fontWeight: 900 }}>{rateLabel}パチンコ ・ 1,000円で{Number(rentBalls).toLocaleString("ja-JP")}玉</div>
+              <div>交換：100円あたり{(Number(exRate) / 10).toLocaleString("ja-JP", { maximumFractionDigits: 1 })}玉</div>
+              <div style={{ color: pachinkoRateSource === "store" ? "var(--sm-green)" : "var(--sm-sub)" }}>
+                {pachinkoRateSource === "store" && storeRateContext.storeName
+                  ? `${storeRateContext.storeName}の店舗設定を自動反映`
+                  : pachinkoRateSource === "manual"
+                    ? "この遊タイム計算だけの手動設定"
+                    : "アプリの貸玉・交換率設定を使用"}
+              </div>
+              {storeRateContext.source === "store" && pachinkoRateSource !== "store" && (
+                <button type="button" onClick={restoreStoreRate} style={{ minHeight: 44, marginTop: 6, padding: "7px 10px", borderRadius: 9, border: "1px solid var(--sm-line-hi)", background: "var(--sm-card-hi)", color: "var(--sm-cyan)", fontSize: 11, fontWeight: 800 }}>
+                  {storeRateContext.storeName}のレートに戻す
+                </button>
+              )}
+            </div>
           </div>
           <div>{label("遊技方法")}<div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>{[["cash", "現金"], ["mochi", "持ち玉"], ["chodama", "貯玉"]].map(([id, text]) => <button key={id} type="button" onClick={() => setPlayMode(id)} style={{ minHeight: 44, borderRadius: 10, border: `1px solid ${playMode === id ? "var(--sm-cyan)" : "var(--sm-line)"}`, background: playMode === id ? "color-mix(in srgb, var(--sm-cyan) 18%, var(--sm-card))" : "var(--sm-card)", color: "var(--sm-text)", fontWeight: 800 }}>{text}</button>)}</div></div>
           <div>{label("使える予算（任意）")}<select aria-label="使える予算" value={budgetYen} onChange={(e) => setBudgetYen(e.target.value)} style={{ ...fieldStyle, fontWeight: 800 }}><option value="">設定しない</option>{BUDGET_OPTIONS.map((amount) => <option key={amount} value={amount}>{amount.toLocaleString("ja-JP")}円</option>)}</select><div style={{ marginTop: 5, fontSize: 9, color: "var(--sm-sub)" }}>iPhoneではタップするとリールが開きます。1,000円単位で選ぶと、不足額を逆算します。</div></div>
@@ -558,7 +647,7 @@ export default function YutimeCalculatorSheet({
             </div>
             <div style={{ marginTop: 8, fontSize: 10, color: "var(--sm-sub)", lineHeight: 1.5 }}>各項目は確認後に手動修正できます。{sourceUrl && <><br /><a href={sourceUrl} target="_blank" rel="noreferrer" style={{ color: "var(--sm-cyan)" }}>登録済みの根拠を確認</a></>}</div>
           </div>
-          <Result result={result} mode={playMode} />
+          <Result result={result} mode={playMode} rateLabel={rateLabel} />
           <button type="button" disabled={!canConfirm} onClick={saveForSession} style={{ minHeight: 48, border: "none", borderRadius: 13, background: canConfirm ? "linear-gradient(180deg, var(--sm-cyan-hi), var(--sm-cyan))" : "var(--sm-card-hi)", color: canConfirm ? "var(--sm-on-cyan)" : "var(--sm-sub)", fontSize: 14, fontWeight: 900, opacity: canConfirm ? 1 : 0.65 }}>{confirmLabel}</button>
           {isCurrentTarget && (
             <button type="button" onClick={stopTargeting} style={{ minHeight: 44, borderRadius: 13, border: "1px solid var(--sm-line-hi)", background: "var(--sm-card)", color: "var(--sm-sub-hi)", fontSize: 12, fontWeight: 800 }}>遊タイム狙いを解除</button>

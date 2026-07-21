@@ -976,7 +976,8 @@ export default function App() {
   // 収支按分（コストベース）: この台の投資 = 持ち込んだ持ち玉(carriedInYen) + この台の現金投資(rawInvest)、
   //   回収 = 持ち出す持ち玉の円換算。次台の carriedInYen には今回の持ち出し額をセット（相殺で合計は正確）。
   // mochiOverride: モーダルで修正した「移動前の持ち玉」（未指定なら currentMochiBalls を使用）
-  // dest: 移動先の機種情報 { machineName, machineNum, synthDenom, spec1R, specAvgRounds, specSapo }（任意）
+  // dest: 移動先の機種・遊タイム計算情報
+  // { machineName, machineNum, synthDenom, spec1R, specAvgRounds, specSapo, rentBalls, exRate }（任意）
   const handleMoveTable = (mochiOverride, dest = {}) => {
     const carriedMochi = mochiOverride !== undefined ? Math.max(0, Math.round(mochiOverride)) : (currentMochiBalls || 0);
     const carriedChodama = currentChodama || 0;
@@ -1016,6 +1017,14 @@ export default function App() {
     if (dest.spec1R != null) setSpec1R(dest.spec1R);
     if (dest.specAvgRounds != null) setSpecAvgRounds(dest.specAvgRounds);
     if (dest.specSapo != null) setSpecSapo(dest.specSapo);
+    // 遊タイム計算で1円などへ変更した場合は、移動後の記録にも同じレートを引き継ぐ。
+    // 旧台のアーカイブ後に反映することで、移動前の収支レートは変更しない。
+    if (Number(dest.rentBalls) > 0) setRentBalls(Number(dest.rentBalls));
+    if (Number(dest.exRate) > 0) {
+      setExRate(Number(dest.exRate));
+      setBallVal(1000 / Number(dest.exRate));
+    }
+    if (Number(dest.investPace) > 0) setInvestPace(Number(dest.investPace));
     setYutimeSession(dest.yutimeSession || null);
     setYutimeDecision(dest.yutimeDecision || null);
     // 引き継いだ玉数を新台の初期値として設定（収支の基準にする）

@@ -30,3 +30,45 @@ export function formatBallQuantity(value) {
     ? balls.toLocaleString("ja-JP")
     : balls.toLocaleString("ja-JP", { maximumFractionDigits: 1 });
 }
+
+export function formatPachinkoRateLabel(rentBalls) {
+  const balls = positiveNumber(rentBalls);
+  if (!(balls > 0)) return "—";
+  const preset = PACHINKO_RATE_PRESETS.find((item) => item.rentBalls === balls);
+  if (preset) return preset.label;
+  const yenPerBall = 1000 / balls;
+  const digits = yenPerBall >= 1 ? 2 : 3;
+  return `${Number(yenPerBall.toFixed(digits))}円`;
+}
+
+// 遊タイム計算など、店舗選択後に開く画面で使う貸玉・交換率の解決処理。
+// 選択店舗に登録値があれば店舗を優先し、不足時だけアプリ共通設定へ戻す。
+export function resolvePachinkoRateContext({
+  stores = [],
+  selectedStoreId = null,
+  rentBalls = 250,
+  exRate = 250,
+} = {}) {
+  const list = Array.isArray(stores) ? stores : [];
+  const store = list.find((item) => (
+    item
+    && typeof item === "object"
+    && selectedStoreId != null
+    && String(item.id) === String(selectedStoreId)
+  )) || null;
+  const fallbackRentBalls = positiveNumber(rentBalls, 250);
+  const storeRentBalls = positiveNumber(store?.rentBalls);
+  const resolvedRentBalls = storeRentBalls || fallbackRentBalls;
+  const resolvedExRate = storeRentBalls
+    ? positiveNumber(store?.exRate, resolvedRentBalls)
+    : positiveNumber(exRate, resolvedRentBalls);
+
+  return {
+    rentBalls: resolvedRentBalls,
+    exRate: resolvedExRate,
+    rateLabel: formatPachinkoRateLabel(resolvedRentBalls),
+    source: storeRentBalls ? "store" : "app",
+    storeId: store?.id ?? null,
+    storeName: String(store?.name || "").trim(),
+  };
+}
