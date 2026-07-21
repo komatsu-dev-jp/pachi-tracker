@@ -115,6 +115,50 @@ test("buildIslandOverlay: start>end は昇順に正規化", () => {
   assert.deepStrictEqual(cells.map((c) => c.num), ["3", "4", "5"]);
 });
 
+test("buildIslandOverlay: 52台の飛び番号島は ranges 外の番号を含めない", () => {
+  const cells = buildIslandOverlay({
+    ranges: [
+      { start: 479, end: 490 },
+      { start: 499, end: 509 },
+      { start: 546, end: 574 },
+    ],
+  }, new Map());
+
+  assert.strictEqual(cells.length, 52);
+  assert.deepStrictEqual(
+    [0, 11, 12, 22, 23, 51].map((index) => cells[index].num),
+    ["479", "490", "499", "509", "546", "574"],
+  );
+  assert.strictEqual(cells.some((cell) => cell.num === "491"), false);
+  assert.strictEqual(cells.some((cell) => cell.num === "545"), false);
+});
+
+test("buildIslandOverlay: ranges 内の gaps を実在台として表示しない", () => {
+  const idx = new Map([["490", row(490, 3000)]]);
+  const cells = buildIslandOverlay({
+    ranges: [{ start: 479, end: 483 }, { start: 490, end: 492 }],
+    gaps: [481, 491],
+  }, idx);
+
+  assert.deepStrictEqual(
+    cells.map((cell) => cell.num),
+    ["479", "480", "482", "483", "490", "492"],
+  );
+  assert.strictEqual(cells.find((cell) => cell.num === "490").row.val, 3000);
+});
+
+test("buildIslandOverlay: ranges の降順と行順を保ちつつ gaps を除外する", () => {
+  const cells = buildIslandOverlay({
+    ranges: [{ start: 509, end: 507 }, { start: 546, end: 548 }],
+    gaps: [508],
+  }, new Map());
+
+  assert.deepStrictEqual(
+    cells.map((cell) => cell.num),
+    ["509", "507", "546", "547", "548"],
+  );
+});
+
 test("buildIslandOverlay: 無効な島は空配列", () => {
   assert.deepStrictEqual(buildIslandOverlay({}, new Map()), []);
   assert.deepStrictEqual(buildIslandOverlay(null, new Map()), []);

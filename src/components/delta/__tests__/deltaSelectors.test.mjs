@@ -293,6 +293,44 @@ test("mergeTaiData: 写真OCRの空欄で既存機種名を消さず、確認履
   assert.strictEqual(merged[0].maxPayout, 17370);
 });
 
+test("mergeTaiData: 既存の手動選択機種を自動取り込み値で上書きしない", () => {
+  const rows = [{
+    num: "818",
+    val: 1000,
+    machineName: "手動で選んだ機種",
+    machineNameSource: "manual",
+  }];
+  const tai = [{
+    num: "818",
+    machineName: "店舗管理の自動機種",
+    machineNameSource: "store-layout",
+  }];
+
+  const { rows: merged } = mergeTaiData(rows, tai);
+
+  assert.strictEqual(merged[0].machineName, "手動で選んだ機種");
+  assert.strictEqual(merged[0].machineNameSource, "manual");
+});
+
+test("mergeTaiData: 取り込み側で手動選択した機種を優先する", () => {
+  const rows = [{
+    num: "818",
+    val: 1000,
+    machineName: "結果画面の手動機種",
+    machineNameSource: "manual",
+  }];
+  const tai = [{
+    num: "818",
+    machineName: "取り込み画面の手動機種",
+    machineNameSource: "manual",
+  }];
+
+  const { rows: merged } = mergeTaiData(rows, tai);
+
+  assert.strictEqual(merged[0].machineName, "取り込み画面の手動機種");
+  assert.strictEqual(merged[0].machineNameSource, "manual");
+});
+
 test("mergeTaiData: 確定済みグラフ最高出玉を低信頼の表OCRで上書きしない", () => {
   const rows = [{
     num: "479",
@@ -557,6 +595,11 @@ test("islandToNumbers: 複数行と欠けを考慮して実在番号だけ返す
   const withGap = islandToNumbers({ start: 499, end: 509, gaps: [505] });
   assert.strictEqual(withGap.length, 10);
   assert.ok(!withGap.includes("505"));
+});
+
+test("islandToNumbers: 巨大な誤設定は1万件を展開せず拒否する", () => {
+  assert.deepStrictEqual(islandToNumbers({ start: 1, end: 1_000_000_000 }), []);
+  assert.deepStrictEqual(islandToNumbers({ start: 1, end: 4 }, 3), []);
 });
 
 // ──────────── buildSegmentsNumbers ────────────

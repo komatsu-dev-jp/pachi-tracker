@@ -678,6 +678,7 @@ export default function SelectDashboard({ S, onStart, onOpenStrategy }) {
         onSaveScan={handleSaveScan}
         aiApiKey={typeof S?.aiApiKey === "string" ? S.aiApiKey : ""}
         onChangeAiApiKey={S?.setAiApiKey}
+        customMachines={Array.isArray(S?.customMachines) ? S.customMachines : []}
       />
     );
   }

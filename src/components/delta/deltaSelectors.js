@@ -311,6 +311,21 @@ export function mergeTaiData(rows, taiRows) {
     const mergedVal = hasImportedDelta ? importedDelta : row.val;
     const importedIsland = String(t.island ?? "").trim();
     const importedMachineName = String(t.machineName ?? "").trim();
+    const existingMachineName = String(row.machineName ?? "").trim();
+    const importedMachineWasSelected = t?.machineNameSource === "manual" && importedMachineName;
+    const existingMachineWasSelected = row?.machineNameSource === "manual" && existingMachineName;
+    const selectedMachineName = importedMachineWasSelected
+      ? importedMachineName
+      : existingMachineWasSelected
+        ? existingMachineName
+        : importedMachineName || existingMachineName;
+    const selectedMachineNameSource = importedMachineWasSelected
+      ? "manual"
+      : existingMachineWasSelected
+        ? "manual"
+        : importedMachineName
+          ? t?.machineNameSource
+          : row?.machineNameSource;
     const hasGraphMaxPayout = row?.maxPayout !== null
       && row?.maxPayout !== undefined
       && row?.maxPayout !== "";
@@ -345,7 +360,8 @@ export function mergeTaiData(rows, taiRows) {
     return {
       ...row,
       island: importedIsland || row.island || "",
-      machineName: importedMachineName || row.machineName || "",
+      machineName: selectedMachineName,
+      machineNameSource: selectedMachineNameSource || undefined,
       val: mergedVal,
       rank: hasImportedDelta ? getRank(mergedVal).rank : row.rank,
       status: hasImportedDelta ? "ok" : row.status,
@@ -510,7 +526,9 @@ export function validateDeltaRows(rows) {
 
 // ホールマップの島から台番号配列を生成する。
 // 複数行（ranges）・欠け（gaps）を考慮した実在の台番号だけを昇順で返す。
-export function islandToNumbers(island) {
+const MAX_ISLAND_NUMBER_EXPANSION = 10_000;
+
+export function islandToNumbers(island, maxNumbers = MAX_ISLAND_NUMBER_EXPANSION) {
   if (!island || typeof island !== "object") return [];
   const hasRanges = Array.isArray(island.ranges) && island.ranges.length > 0;
   if (!hasRanges && (!Number.isFinite(Number(island.start)) || !Number.isFinite(Number(island.end)))) {
@@ -520,13 +538,23 @@ export function islandToNumbers(island) {
   const gaps = new Set((Array.isArray(island.gaps) ? island.gaps : [])
     .map(Number)
     .filter(Number.isFinite));
-  const nums = [];
+  const safeLimit = Number.isSafeInteger(Number(maxNumbers)) && Number(maxNumbers) > 0
+    ? Number(maxNumbers)
+    : MAX_ISLAND_NUMBER_EXPANSION;
+  let expandedCount = 0;
+  const normalizedRanges = [];
   for (const range of ranges) {
     const start = Number(range?.start);
     const end = Number(range?.end);
-    if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) continue;
     const low = Math.min(start, end);
     const high = Math.max(start, end);
+    expandedCount += high - low + 1;
+    if (expandedCount > safeLimit) return [];
+    normalizedRanges.push({ low, high });
+  }
+  const nums = [];
+  for (const { low, high } of normalizedRanges) {
     for (let number = low; number <= high; number += 1) {
       if (!gaps.has(number)) nums.push(number);
     }
