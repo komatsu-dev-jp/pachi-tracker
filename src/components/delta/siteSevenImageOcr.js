@@ -394,6 +394,36 @@ function bluePixelRatio(image, verticalLines, row) {
   return dark ? blue / dark : 0;
 }
 
+// サイトセブンの表末尾にある「平均」行は、通常行と異なる緑色の背景で表示される。
+// JPEG圧縮によって「平均」の文字が青い台番号に近い色へ変わっても、背景色を独立に見て
+// 実台として数えない。単純に末尾行を削ると、平均行が写っていない画像の最終台まで
+// 消してしまうため、集計行固有の背景が十分な面積にある場合だけ除外する。
+function hasSummaryRowBackground(image, verticalLines, row) {
+  const left = verticalLines[0].end + 2;
+  const right = verticalLines.at(-1).start - 2;
+  const top = row.top.end + 2;
+  const bottom = row.bottom.start - 2;
+  let sampled = 0;
+  let greenBackground = 0;
+
+  for (let y = top; y < bottom; y += 1) {
+    for (let x = left; x < right; x += 1) {
+      const index = pixelOffset(image, x, y);
+      const r = image.data[index];
+      const g = image.data[index + 1];
+      const b = image.data[index + 2];
+      sampled += 1;
+      if (r >= 150 && g >= 180 && b >= 150 && g >= r + 14 && g >= b + 14) {
+        greenBackground += 1;
+      }
+    }
+  }
+
+  // 縮小画像では最終台と平均行の境界線が潰れ、1つの帯として検出される場合がある。
+  // その帯には実台も含まれるため、背景の過半が明確に緑色の「平均行そのもの」だけ除外する。
+  return sampled > 0 && greenBackground / sampled >= 0.6;
+}
+
 function dataRowCandidates(image, horizontalLines, verticalLines) {
   const rows = [];
   for (let index = 0; index < horizontalLines.length - 1; index += 1) {
@@ -405,6 +435,7 @@ function dataRowCandidates(image, horizontalLines, verticalLines) {
     const machineCell = machineCellForRow(image, verticalLines, row);
     const groups = columnGroups(machineCell);
     if (groups.length < 1 || groups.length > 5) continue;
+    if (hasSummaryRowBackground(image, verticalLines, row)) continue;
     if (bluePixelRatio(image, verticalLines, row) < 0.08) continue;
     rows.push({ ...row, machineCell, machineGroups: groups });
   }
