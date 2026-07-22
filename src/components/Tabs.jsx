@@ -37,6 +37,7 @@ import {
     ballsForInvestment,
     formatBallQuantity,
     formatPachinkoRateLabel,
+    getPushCorrectionAmounts,
     rentalYenPerBall,
 } from "../rateSettings";
 import { evDecision } from "./decision/evDecision";
@@ -5748,11 +5749,12 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     const evNet = ev && Number.isFinite(ev.totalNetGain) ? ev.totalNetGain : 0;
                     const startG1K = ev && Number.isFinite(ev.start1K) ? ev.start1K : 0;
                     const avg1R = ev && Number.isFinite(ev.avg1R) ? ev.avg1R : 0;
+                    const currentRateLabel = formatPachinkoRateLabel(S.rentBalls || 250);
 
                     // ステップ定義（簡易入力フロー 画面A、入力順: プッシュ補正→当たった回転数→開始前の玉数→R→結果）
                     // 液晶出玉・実測出玉の毎回入力は廃止。出玉は「開始前の玉数」と「最終玉数（ラッシュ終了時）」の差分で算出する。
                     const STEPS = [
-                        { id: "pushAmount",   num: 1, label: "プッシュ補正額",  sub: "（任意・投資補正）",        short: "補正",     color: C.yellow, icon: "coin",   summaryUnit: "円" },
+                        { id: "pushAmount",   num: 1, label: "プッシュ補正額",  sub: `（任意・${currentRateLabel}パチの投資補正）`, short: "補正", color: C.yellow, icon: "coin", summaryUnit: "円" },
                         { id: "rotCount",     num: 2, label: "当たった回転数",  sub: "（はまり・ゲーム数）",      short: "回転数",   color: C.blue,   icon: "rotate", summaryUnit: "回転" },
                         { id: "trayBalls",    num: 3, label: "開始前の玉数",    sub: "（当たり直前の持ち玉・上皿）", short: "開始玉",   color: C.yellow, icon: "coin",   summaryUnit: "玉",  required: true },
                         { id: "rounds",       num: 4, label: "ラウンド数",      sub: "（当たったラウンド 10R・5Rなど）", short: "R数",  color: C.purple, icon: "r",      summaryUnit: "R" },
@@ -5889,11 +5891,15 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         { label: "ラウンド数",     value: roundLabel || "--", unit: multN > 1 ? `（合計${rndN * multN}R）` : "" },
                     ];
 
-                    // プッシュ補正額のプリセット
+                    // 貸玉レートごとの通常記録単位に合わせ、半分 / 1回分を候補にする。
+                    const pushCorrectionAmounts = getPushCorrectionAmounts(S.rentBalls, S.investPace);
                     const pushPresets = [
-                        { label: "なし",   onClick: () => updField("pushAmount", 0),     active: !D.pushAmount },
-                        { label: "+500",   onClick: () => updField("pushAmount", 500),   active: D.pushAmount === 500 },
-                        { label: "+1000",  onClick: () => updField("pushAmount", 1000),  active: D.pushAmount === 1000 },
+                        { label: "なし", onClick: () => updField("pushAmount", 0), active: !D.pushAmount },
+                        ...pushCorrectionAmounts.map((amount) => ({
+                            label: `+${amount.toLocaleString("ja-JP")}`,
+                            onClick: () => updField("pushAmount", amount),
+                            active: D.pushAmount === amount,
+                        })),
                         { label: "クリア", onClick: () => updField("pushAmount", 0),     active: false },
                     ];
 

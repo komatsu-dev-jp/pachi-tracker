@@ -23,6 +23,20 @@ export function ballsForInvestment(investYen, rentBalls) {
   return yen > 0 && balls > 0 ? (yen / 1000) * balls : 0;
 }
 
+// 初当たり直前に押した貸玉分を補う候補額。
+// 既知の貸玉レートでは通常の記録単位を基準に「半分 / 1回分」を返し、
+// カスタムレートではユーザーが設定した記録単位へ連動する。
+export function getPushCorrectionAmounts(rentBalls, investPace = 1000) {
+  const balls = positiveNumber(rentBalls, 250);
+  const preset = PACHINKO_RATE_PRESETS.find((item) => item.rentBalls === balls);
+  const fullAmount = Math.max(1, Math.round(positiveNumber(
+    preset?.recommendedInvestPace,
+    positiveNumber(investPace, 1000),
+  )));
+  const halfAmount = Math.max(1, Math.round(fullAmount / 2));
+  return halfAmount === fullAmount ? [fullAmount] : [halfAmount, fullAmount];
+}
+
 export function formatBallQuantity(value) {
   const balls = Number(value);
   if (!Number.isFinite(balls)) return "0";
