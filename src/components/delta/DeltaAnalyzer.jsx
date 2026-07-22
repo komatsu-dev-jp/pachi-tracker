@@ -39,6 +39,7 @@ import {
   mergeSiteSevenParsedResults,
   parseSiteSevenEditableInteger,
   prepareSiteSevenImportedRows,
+  removeSiteSevenImportedRow,
   readSiteSevenCsv,
 } from "./siteSevenDataInput";
 import { buildSiteSevenStructuredRows } from "./siteSevenStructuredRows";
@@ -2615,6 +2616,29 @@ function ImportStep({
       };
     }));
   };
+  const removeDataRow = (index) => {
+    const target = dataRows[index];
+    if (!target || target.sourceType === "missing-placeholder") return;
+    const parsedNumber = parseSiteSevenEditableInteger(target.num);
+    const rowLabel = parsedNumber !== null && parsedNumber > 0
+      ? `台${parsedNumber}`
+      : `画像内${target.sourceLine || index + 1}行目`;
+    if (!window.confirm(
+      `${rowLabel}の読み取り行を削除しますか？\n\n平均行や実在しない行の場合だけ削除してください。元の写真・PDF・CSVは削除されません。`,
+    )) return;
+
+    const removed = removeSiteSevenImportedRow(dataRows, index, dataSummary, {
+      expectedNumbers: [...deltaNumberSet],
+    });
+    if (!removed.removedRow) return;
+    setDataRows(removed.rows);
+    setDataSummary(removed.summary);
+    setMachinePickerRowIndex((current) => {
+      if (current === null) return null;
+      if (current === index) return null;
+      return current > index ? current - 1 : current;
+    });
+  };
 
   // 差玉画像と大当たり情報（画像/PDF）をまとめて読み込み、1回のAI処理へ渡す。
   const handleAiFiles = async (files) => {
@@ -2876,7 +2900,7 @@ function ImportStep({
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 900, color: C.text }}>読み取り結果を確認・修正</div>
                   <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>
-                    間違いがあれば数字や機種名を直接直せます
+                    数字や機種名を修正し、平均・実在しない行は削除できます
                   </div>
                 </div>
                 <span style={{ color: C.green, fontSize: 12, fontWeight: 900 }}>{preparedData.rows.length}台</span>
@@ -3072,6 +3096,29 @@ function ImportStep({
                         />
                       </label>
                     </div>
+                    {row.sourceType !== "missing-placeholder" && (
+                      <div style={{
+                        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                        marginTop: 10, paddingTop: 9, borderTop: `1px solid ${C.border}`,
+                      }}>
+                        <span style={{ color: C.sub, fontSize: 10, lineHeight: 1.5 }}>
+                          平均・実在しない行のみ
+                        </span>
+                        <button
+                          type="button"
+                          className="b"
+                          aria-label={`台${row.num || "番号不明"}の読み取り行を削除`}
+                          onClick={() => removeDataRow(index)}
+                          style={{
+                            minWidth: 112, minHeight: TAP, borderRadius: 9, padding: "0 12px",
+                            border: `1px solid color-mix(in srgb, var(--red) 45%, transparent)`,
+                            background: "transparent", color: C.red, fontSize: 11, fontWeight: 900,
+                          }}
+                        >
+                          この行を削除
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

@@ -255,6 +255,68 @@ export function applySiteSevenFieldEdit(row, field, value) {
   };
 }
 
+// 読み取り結果から、平均行や実在しない台など利用者が不要と判断した1行だけを除外する。
+// 元ファイルは変更せず、再度選び直せば復元できる。欠落台の入力用placeholderは、
+// 必要な台まで誤って消さないよう削除対象にしない。
+export function removeSiteSevenImportedRow(rows, index, summary = null, {
+  expectedNumbers = [],
+} = {}) {
+  const list = Array.isArray(rows) ? rows : [];
+  const currentSummary = summary && typeof summary === "object" ? summary : null;
+  if (!Number.isInteger(index) || index < 0 || index >= list.length) {
+    return { rows: list, summary: currentSummary, removedRow: null, blockedReason: "invalid-index" };
+  }
+
+  const removedRow = list[index];
+  if (removedRow?.sourceType === "missing-placeholder") {
+    return { rows: list, summary: currentSummary, removedRow: null, blockedReason: "missing-placeholder" };
+  }
+
+  const nextRows = list.filter((_, rowIndex) => rowIndex !== index);
+  const remainingNumberCounts = new Map();
+  for (const row of nextRows) {
+    if (row?.sourceType === "missing-placeholder") continue;
+    const num = parseSiteSevenEditableInteger(row?.num);
+    if (num === null || num <= 0) continue;
+    const key = String(num);
+    remainingNumberCounts.set(key, (remainingNumberCounts.get(key) || 0) + 1);
+  }
+  const duplicateCount = [...remainingNumberCounts.values()].filter((count) => count > 1).length;
+  const reviewCount = nextRows.filter((row) => (
+    row?.reviewRequired === true && row?.reviewConfirmed !== true
+  )).length;
+
+  let missingCount = Math.max(0, Number(currentSummary?.missingCount) || 0);
+  const expectedSet = new Set((Array.isArray(expectedNumbers) ? expectedNumbers : [])
+    .map(parseSiteSevenEditableInteger)
+    .filter((num) => num !== null && num > 0)
+    .map(String));
+  const removedExpectedNumbers = new Set([
+    removedRow?.num,
+    removedRow?.machineNumberSuggested,
+  ].map(parseSiteSevenEditableInteger)
+    .filter((num) => num !== null && num > 0)
+    .map(String)
+    .filter((num) => expectedSet.has(num) && !remainingNumberCounts.has(num)));
+  missingCount += removedExpectedNumbers.size;
+
+  const nextSummary = currentSummary ? {
+    ...currentSummary,
+    rowCount: nextRows.filter((row) => row?.sourceType !== "missing-placeholder").length,
+    reviewCount,
+    skippedCount: reviewCount,
+    duplicateCount,
+    missingCount,
+  } : null;
+
+  return {
+    rows: nextRows,
+    summary: nextSummary,
+    removedRow,
+    blockedReason: null,
+  };
+}
+
 export function prepareSiteSevenImportedRows(rows, { expectedNumbers = [] } = {}) {
   const candidates = [];
   let invalidCount = 0;

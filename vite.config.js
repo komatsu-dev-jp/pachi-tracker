@@ -45,6 +45,8 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,bcmap}'],
+        // メイン画面は圧縮後約580KB。既定の2MiBをわずかに超える非圧縮JSもオフライン利用に含める。
+        maximumFileSizeToCacheInBytes: 2.25 * 1024 * 1024,
         cleanupOutdatedCaches: true,
         clientsClaim: true
       }
