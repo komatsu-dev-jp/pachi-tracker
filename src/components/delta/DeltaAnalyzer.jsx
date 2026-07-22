@@ -34,6 +34,7 @@ import {
 } from "./deltaSelectors";
 import { readTaiDataAttachments } from "./aiReader";
 import {
+  applySiteSevenMachineNameToRows,
   classifySiteSevenFile,
   applySiteSevenFieldEdit,
   mergeSiteSevenParsedResults,
@@ -41,6 +42,7 @@ import {
   prepareSiteSevenImportedRows,
   removeSiteSevenImportedRow,
   readSiteSevenCsv,
+  setSiteSevenRowsReviewConfirmation,
 } from "./siteSevenDataInput";
 import { buildSiteSevenStructuredRows } from "./siteSevenStructuredRows";
 import { buildStoreScopeExpectedNumbers } from "./siteSevenExpectedNumbers";
@@ -74,6 +76,7 @@ import {
 
 const TAP = 44; // 最小タップ領域
 const CTA = 48; // 下部固定CTA高さ
+const BULK_MACHINE_PICKER_INDEX = -1;
 const ANALYSIS_ENGINE_VERSION = String(import.meta.env.VITE_BUILD_SHA || "dev").slice(0, 7);
 
 function todayStr() {
@@ -2389,6 +2392,8 @@ function ImportStep({
   const [dataFilter, setDataFilter] = useState("");
   const [showAllDataRows, setShowAllDataRows] = useState(false);
   const [machinePickerRowIndex, setMachinePickerRowIndex] = useState(null);
+  const [bulkMessage, setBulkMessage] = useState("");
+  const bulkReviewCheckboxRef = useRef(null);
   const storeScopeExpectedNumbers = useMemo(
     () => buildStoreScopeExpectedNumbers(islands, islandScopeId),
     [islands, islandScopeId]
@@ -2429,6 +2434,8 @@ function ImportStep({
     setDataSummary(null);
     setDataFilter("");
     setShowAllDataRows(false);
+    setMachinePickerRowIndex(null);
+    setBulkMessage("");
     setText("");
     try {
       const results = [];
@@ -2598,6 +2605,12 @@ function ImportStep({
       });
     });
   };
+  const pickAllDataRowMachines = (machine) => {
+    const pickedName = typeof machine === "string" ? machine.trim() : String(machine?.name || "").trim();
+    if (!pickedName) return;
+    setDataRows((current) => applySiteSevenMachineNameToRows(current, pickedName));
+    setBulkMessage(`「${pickedName}」を全${dataRows.length}台に反映しました`);
+  };
   const confirmDataRow = (index, checked) => {
     setDataRows((current) => current.map((row, rowIndex) => {
       if (rowIndex !== index) return row;
@@ -2733,6 +2746,35 @@ function ImportStep({
     () => new Set((Array.isArray(deltaRows) ? deltaRows : []).map((row) => String(row.num))),
     [deltaRows]
   );
+  const bulkConfirmableIndices = useMemo(() => dataRows.flatMap((row, index) => (
+    row?.reviewRequired === true
+      && canConfirmSiteSevenRow(row, index, dataRows, deltaNumberSet)
+      ? [index]
+      : []
+  )), [dataRows, deltaNumberSet]);
+  const bulkConfirmedCount = bulkConfirmableIndices.filter(
+    (index) => dataRows[index]?.reviewConfirmed === true,
+  ).length;
+  const allBulkReviewConfirmed = bulkConfirmableIndices.length > 0
+    && bulkConfirmedCount === bulkConfirmableIndices.length;
+  const someBulkReviewConfirmed = bulkConfirmedCount > 0 && !allBulkReviewConfirmed;
+  useEffect(() => {
+    if (bulkReviewCheckboxRef.current) {
+      bulkReviewCheckboxRef.current.indeterminate = someBulkReviewConfirmed;
+    }
+  }, [someBulkReviewConfirmed]);
+  const confirmAllDataRows = (checked) => {
+    const targetIndices = checked
+      ? bulkConfirmableIndices
+      : dataRows.flatMap((row, index) => (
+        row?.reviewRequired === true && row?.reviewConfirmed === true ? [index] : []
+      ));
+    if (!targetIndices.length) return;
+    setDataRows((current) => setSiteSevenRowsReviewConfirmation(current, checked, targetIndices));
+    setBulkMessage(checked
+      ? `確認可能な${targetIndices.length}台を目視確認済みにしました`
+      : `${targetIndices.length}台の目視確認済みを解除しました`);
+  };
   const dataMatchedCount = useMemo(
     () => new Set(dataRows
       .filter((row) => row.sourceType !== "missing-placeholder"
@@ -2904,6 +2946,64 @@ function ImportStep({
                   </div>
                 </div>
                 <span style={{ color: C.green, fontSize: 12, fontWeight: 900 }}>{preparedData.rows.length}台</span>
+              </div>
+
+              <div style={{
+                marginTop: 10, padding: 10, borderRadius: 11,
+                background: "color-mix(in srgb, var(--blue) 8%, transparent)",
+                border: `1px solid color-mix(in srgb, var(--blue) 28%, transparent)`,
+              }}>
+                <div style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                  color: C.text, fontSize: 12, fontWeight: 900,
+                }}>
+                  <span>一括設定</span>
+                  <span style={{ color: C.sub, fontSize: 10 }}>全{dataRows.length}台</span>
+                </div>
+                <label style={{
+                  display: "flex", alignItems: "center", gap: 9, minHeight: TAP,
+                  marginTop: 6, cursor: bulkConfirmableIndices.length ? "pointer" : "default",
+                  color: bulkConfirmableIndices.length ? C.text : C.sub,
+                }}>
+                  <input
+                    ref={bulkReviewCheckboxRef}
+                    type="checkbox"
+                    aria-label="確認可能な台をすべて目視確認済みにする"
+                    checked={allBulkReviewConfirmed}
+                    disabled={bulkConfirmableIndices.length === 0}
+                    onChange={(event) => confirmAllDataRows(event.target.checked)}
+                  />
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: "block", fontSize: 12, fontWeight: 900 }}>
+                      目視確認済みを一括チェック
+                    </span>
+                    <span style={{ display: "block", marginTop: 2, fontSize: 9, color: C.sub, lineHeight: 1.45 }}>
+                      {bulkConfirmableIndices.length > 0
+                        ? `数字がそろった要確認${bulkConfirmableIndices.length}台が対象です`
+                        : "一括確認できる要確認台はありません"}
+                    </span>
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  className="b"
+                  aria-label={`機種名を全${dataRows.length}台に反映`}
+                  onClick={() => setMachinePickerRowIndex(BULK_MACHINE_PICKER_INDEX)}
+                  style={{
+                    width: "100%", minHeight: TAP, borderRadius: 9,
+                    border: `1px solid ${C.blue}`, background: "transparent", color: C.blue,
+                    padding: "0 11px", fontSize: 12, fontWeight: 900,
+                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                  }}
+                >
+                  <span>機種名を全台に反映</span>
+                  <span aria-hidden="true">機種を選ぶ ›</span>
+                </button>
+                {bulkMessage && (
+                  <div style={{ marginTop: 7, color: C.green, fontSize: 10, fontWeight: 800, lineHeight: 1.5 }}>
+                    ✓ {bulkMessage}
+                  </div>
+                )}
               </div>
 
               <input
@@ -3434,13 +3534,16 @@ function ImportStep({
       />
       <MachinePickerSheet
         open={machinePickerRowIndex !== null}
-        title={machinePickerRowIndex !== null && dataRows[machinePickerRowIndex]
+        title={machinePickerRowIndex === BULK_MACHINE_PICKER_INDEX
+          ? `全${dataRows.length}台に反映する機種を選択`
+          : machinePickerRowIndex !== null && dataRows[machinePickerRowIndex]
           ? `台${dataRows[machinePickerRowIndex].num}の機種を選択`
           : "機種を選択"}
         customMachines={customMachines}
         onClose={() => setMachinePickerRowIndex(null)}
         onSelect={(picked) => {
-          if (machinePickerRowIndex !== null) pickDataRowMachine(machinePickerRowIndex, picked);
+          if (machinePickerRowIndex === BULK_MACHINE_PICKER_INDEX) pickAllDataRowMachines(picked);
+          else if (machinePickerRowIndex !== null) pickDataRowMachine(machinePickerRowIndex, picked);
           setMachinePickerRowIndex(null);
         }}
       />

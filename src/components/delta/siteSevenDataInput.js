@@ -255,6 +255,59 @@ export function applySiteSevenFieldEdit(row, field, value) {
   };
 }
 
+// UI側で安全確認した要確認行だけを、まとめて確認済み／未確認へ切り替える。
+// 対象indexを必須にして、空欄・重複など確認できない行まで誤って確定しないようにする。
+export function setSiteSevenRowsReviewConfirmation(rows, checked, indices = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  const targets = new Set((Array.isArray(indices) ? indices : [])
+    .filter((index) => Number.isInteger(index) && index >= 0));
+  if (targets.size === 0) return list;
+
+  const confirmed = checked === true;
+  return list.map((row, index) => {
+    if (!targets.has(index) || row?.reviewRequired !== true) return row;
+    const editedFields = Array.isArray(row?.editedFields) ? row.editedFields : [];
+    return {
+      ...row,
+      reviewConfirmed: confirmed,
+      fieldAccepted: confirmed
+        ? editedFields.reduce(
+          (accepted, field) => ({ ...accepted, [field]: true }),
+          { ...(row?.fieldAccepted || {}) },
+        )
+        : row?.fieldAccepted,
+    };
+  });
+}
+
+// 選んだ機種名を全台または指定行へまとめて反映する。
+// 空文字では既存の機種名を消さず、店舗レイアウトとの関係は手動補正として記録する。
+export function applySiteSevenMachineNameToRows(rows, machineName, indices = null) {
+  const list = Array.isArray(rows) ? rows : [];
+  const pickedName = String(machineName || "").trim();
+  if (!pickedName) return list;
+  const targets = Array.isArray(indices)
+    ? new Set(indices.filter((index) => Number.isInteger(index) && index >= 0))
+    : null;
+
+  return list.map((row, index) => {
+    if (targets && !targets.has(index)) return row;
+    return {
+      ...row,
+      machineName: pickedName,
+      machineNameSource: "manual",
+      storeLayoutRelation: row?.storeLayoutRelation
+        ? {
+          ...row.storeLayoutRelation,
+          status: "manual-override",
+          manuallySelected: true,
+          machineNameApplied: false,
+        }
+        : row?.storeLayoutRelation,
+    };
+  });
+}
+
 // 読み取り結果から、平均行や実在しない台など利用者が不要と判断した1行だけを除外する。
 // 元ファイルは変更せず、再度選び直せば復元できる。欠落台の入力用placeholderは、
 // 必要な台まで誤って消さないよう削除対象にしない。
