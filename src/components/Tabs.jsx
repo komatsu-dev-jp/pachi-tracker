@@ -57,6 +57,13 @@ import {
     deriveNormalExpectedNetBalls,
     isYutimeTargetingSession,
 } from "./yutime/yutimeCalculator";
+import {
+    addYutimeSupportCash,
+    completeYutimeRun,
+    createYutimeRun,
+    getYutimeCardStage,
+    shouldAutoShowYutimeCard,
+} from "./yutime/yutimeFlow";
 import YutimeCalculatorSheet from "./yutime/YutimeCalculatorSheet";
 
 /* ================================================================
@@ -496,7 +503,7 @@ function effectiveEv(ev = {}) {
 // - 遊タイム非搭載機では描画しない
 // - 実戦中に必要な「残り回転・到達必要資金・到達率」だけをコンパクトに表示する
 // - カード全体をタップすると、台選び画面と同じ詳細計算シートを開く
-function YutimeEvCard({ result, spec, currentLowSpins = 0, rateSource = "assumed", playMode = "cash", onOpen }) {
+function LegacyYutimeEvCard({ result, spec, currentLowSpins = 0, rateSource = "assumed", playMode = "cash", onOpen }) {
     if (!isYutimeTargetingSession(spec)) return null;
     const isHeld = playMode === "mochi" || playMode === "chodama";
     const modeLabel = playMode === "chodama" ? "貯玉" : isHeld ? "持ち玉" : "現金";
@@ -572,6 +579,40 @@ function YutimeEvCard({ result, spec, currentLowSpins = 0, rateSource = "assumed
 }
 
 // 詳細データタブ専用 スタイルヘルパー（分析OS風 ダークUI）
+function YutimeEvCard({ result, spec, activeRun, normalEv, currentLowSpins = 0, rateSource = "assumed", playMode = "cash", onOpen, onEnter, onRecordHit, onThrough, onAddCash }) {
+    if (!shouldAutoShowYutimeCard({ spec, result, activeRun })) return null;
+    const stage = getYutimeCardStage({ spec, result, activeRun });
+    const isActive = stage === "active";
+    const isReady = stage === "ready";
+    const isHeld = playMode === "mochi" || playMode === "chodama";
+    const modeLabel = playMode === "chodama" ? "貯玉" : isHeld ? "持ち玉" : "現金";
+    const remaining = Number.isFinite(result?.remainingSpins) ? result.remainingSpins : Math.max(0, Number(spec?.triggerLowSpins || 0) - Number(currentLowSpins || 0));
+    const reach = result?.valid ? `${(Number(result.reachProbability || 0) * 100).toFixed(1)}%` : "未計算";
+    const arrival = result?.arrivalReady && Number.isFinite(result?.selectedArrivalInvestment) ? `${Math.ceil(result.selectedArrivalInvestment).toLocaleString("ja-JP")}円` : "—";
+    const decisionEv = result?.valid ? `${result.selectedEV >= 0 ? "+" : ""}${Math.round(result.selectedEV).toLocaleString("ja-JP")}円` : "期待出玉未確認";
+    const measuredStart = Number(normalEv?.effectiveStart1K ?? normalEv?.start1KCorrected ?? normalEv?.start1K) || 0;
+    const supportCash = Math.max(0, Number(activeRun?.supportCashYen) || 0);
+    const actionStyle = (primary = false) => ({ minHeight: 44, borderRadius: 11, border: `1px solid ${primary ? "rgba(245,180,0,.9)" : C.border}`, background: primary ? "linear-gradient(135deg,#f59e0b,#fbbf24)" : "var(--surface-hi)", color: primary ? "#17120a" : C.text, fontWeight: 900, fontSize: 12, fontFamily: font, padding: "0 10px" });
+
+    return (
+        <section aria-label="遊タイム判断" style={{ width: "100%", minHeight: 190, boxSizing: "border-box", position: "relative", overflow: "hidden", color: C.text, background: "linear-gradient(135deg,rgba(245,158,11,.12),var(--surface) 48%,rgba(15,23,42,.96))", border: "1px solid rgba(245,180,0,.78)", borderRadius: 16, padding: "13px 13px 12px 17px", boxShadow: "0 5px 18px rgba(0,0,0,.30)" }}>
+            <span aria-hidden="true" style={{ position: "absolute", left: 0, top: 12, bottom: 12, width: 4, borderRadius: "0 4px 4px 0", background: C.yellow }} />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 10 }}>
+                <div><div style={{ fontSize: 14, fontWeight: 900, color: C.yellow }}>{isActive ? "遊タイム中" : isReady ? "遊タイム到達" : "遊タイムが近づいています"}</div><div style={{ marginTop: 3, fontSize: 9, color: C.sub }}>{isActive ? `突入時 ${activeRun.entryLowSpins || 0}回・追加投資 ${supportCash.toLocaleString()}円` : `通常打ちを自動監視・${rateSource === "measured" ? "実測" : "暫定"}回転率`}</div></div>
+                {!isActive && <div style={{ textAlign: "right", color: C.yellow }}><span style={{ fontSize: 10 }}>残り </span><strong style={{ fontFamily: mono, fontSize: 26 }}>{Math.round(remaining).toLocaleString()}</strong><span style={{ fontSize: 10 }}> 回</span></div>}
+            </div>
+            {!isActive ? <>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8, marginTop: 12 }}>{[["現在からの判断EV", decisionEv], ["遊タイム到達率", reach], [`到達必要資金（${modeLabel}）`, arrival]].map(([label, value]) => <div key={label} style={{ minWidth: 0 }}><div style={{ fontSize: 8, color: C.sub }}>{label}</div><div style={{ marginTop: 3, fontSize: 13, fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div></div>)}</div>
+                <div style={{ marginTop: 7, fontSize: 9, color: C.sub }}>通常当たり込みの将来判断EVです。通常期待値とは合算しません。{measuredStart > 0 ? ` 実測 ${measuredStart.toFixed(1)}回/K。` : ""}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, marginTop: 10 }}><button className="b" type="button" style={actionStyle(true)} onClick={isReady ? onEnter : onOpen}>{isReady ? "遊タイム突入を記録" : "条件と根拠を確認"}</button><button className="b" type="button" style={actionStyle(false)} onClick={onOpen}>詳細</button></div>
+            </> : <>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8, marginTop: 14 }}>{[["遊タイム回数", `${activeRun.durationSpins || "—"}回`], ["開始時の玉", `${(activeRun.startBalls || 0).toLocaleString()}玉`], ["追加投資", `${supportCash.toLocaleString()}円`]].map(([label, value]) => <div key={label}><div style={{ fontSize: 8, color: C.sub }}>{label}</div><div style={{ marginTop: 3, fontSize: 13, fontWeight: 900 }}>{value}</div></div>)}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}><button className="b" type="button" style={actionStyle(true)} onClick={onRecordHit}>遊タイム中に当たった</button><button className="b" type="button" style={actionStyle(false)} onClick={onThrough}>スルー・終了</button><button className="b" type="button" style={{ ...actionStyle(false), gridColumn: "1 / -1" }} onClick={onAddCash}>+ 貸玉を追加</button></div>
+            </>}
+        </section>
+    );
+}
+
 function dataCardStyle() {
     return {
         background: "var(--surface)",
@@ -843,7 +884,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             const cum = rowsAll[i].cumRot || 0;
             const prefixRows = rowsAll.slice(0, i + 1);
             // その時点までに発生した大当たりチェーンのみ（hitRot = 発生時の cumRot）
-            const prefixJp = jpAll.filter((c) => (Number(c?.hitRot) || 0) <= cum);
+            const prefixJp = jpAll.filter((c) => c?.origin !== "yutime" && (Number(c?.hitRot) || 0) <= cum);
             const prefixTrayBalls = prefixJp.reduce((sum, chain) => sum + (Number(chain?.trayBalls) || 0), 0);
             const baseEvI = calcPreciseEV({
                 rotRows: prefixRows,
@@ -1872,6 +1913,86 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     // 初当たりボタン → ウィザード開始
     // 新UI: 画面 A の「連チャン継続」/「単発終了」押下時に rotCountArg を渡して呼ぶ
     //       （旧UIのテンキー bottom sheet jackpot モードは廃止、引数なし呼び出しは下位互換用）
+    const beginYutimeRun = () => {
+        const spec = S.activeYutimeSession;
+        if (!spec || S.activeYutimeRun) return;
+        if (!window.confirm("遊タイム突入を記録します。\n通常回転率の集計はここで止め、遊タイム中の回転を別記録にします。")) return;
+        S.pushSnapshot();
+        const lastRow = rows[rows.length - 1];
+        const cumRot = Number(lastRow?.cumRot) || 0;
+        const startBalls = S.playMode === "chodama" ? Number(S.currentChodama || 0) : Number(S.currentMochiBalls || 0);
+        const run = createYutimeRun({ id: `yutime-${Date.now()}`, machineName: S.machineName, triggerLowSpins: spec.triggerLowSpins, durationSpins: spec.durationSpins, entryLowSpins: S.currentYutimeLowSpins, entryCumRot: cumRot, startBalls, playMode: S.playMode, enteredAt: new Date().toISOString() });
+        S.setYutimeRuns((prev) => [...(Array.isArray(prev) ? prev : []), run]);
+        setRows((prev) => [...prev, { type: "yutime_start", runId: run.id, cumRot, lowSpins: run.entryLowSpins, startBalls, mode: S.playMode, time: tsNow() }]);
+        S.pushLog({ type: "遊タイム突入", time: tsNow(), rot: cumRot });
+        S.setYutimeDecision((prev) => prev || { recordedAt: new Date().toISOString(), decisionMode: "auto-approach", currentLowSpins: S.currentYutimeLowSpins, assumedStart1K: S.yutimeRateSource === "measured" ? null : spec.assumedStart1K, rateSource: S.yutimeRateSource, playMode: S.playMode, spec: { ...spec }, result: S.yutimeLive ? { ...S.yutimeLive } : null });
+    };
+
+    const addYutimeCash = () => {
+        const run = S.activeYutimeRun;
+        if (!run) return;
+        const raw = window.prompt("遊タイム中に追加した貸玉金額を入力してください（円）", String(S.investPace || 1000));
+        if (raw == null) return;
+        const amount = Math.max(0, Math.round(Number(raw) || 0));
+        if (!amount) return;
+        S.pushSnapshot();
+        S.setYutimeRuns((prev) => addYutimeSupportCash(prev, run.id, amount));
+        S.pushLog({ type: "遊タイム追加投資", time: tsNow(), amount });
+    };
+
+    const finishYutimeThrough = () => {
+        const run = S.activeYutimeRun;
+        if (!run) return;
+        const spinsRaw = window.prompt("遊タイムで消化した回転数を入力してください", String(run.durationSpins || 0));
+        if (spinsRaw == null) return;
+        const ballsDefault = S.playMode === "chodama" ? S.currentChodama : S.currentMochiBalls;
+        const ballsRaw = window.prompt("終了時の持ち玉を入力してください", String(Math.max(0, Math.round(Number(ballsDefault) || 0))));
+        if (ballsRaw == null) return;
+        const supportSpins = Math.max(0, Math.round(Number(spinsRaw) || 0));
+        const endBalls = Math.max(0, Math.round(Number(ballsRaw) || 0));
+        S.pushSnapshot();
+        S.setYutimeRuns((prev) => completeYutimeRun(prev, run.id, { outcome: "through", supportSpins, endBalls }));
+        S.setYutimeSession((prev) => prev ? { ...prev, targetingEnabled: false, consumed: true } : prev);
+        const cumRot = Number(rows[rows.length - 1]?.cumRot) || 0;
+        setRows((prev) => [...prev, { type: "yutime_end", runId: run.id, outcome: "through", supportSpins, endBalls, cumRot, time: tsNow() }]);
+        if (S.playMode === "chodama") S.setCurrentChodama(endBalls);
+        else S.setCurrentMochiBalls(endBalls);
+        S.pushLog({ type: "遊タイムスルー", time: tsNow(), rot: cumRot });
+    };
+
+    const openYutimeHitWizard = () => {
+        const run = S.activeYutimeRun;
+        if (!run) return;
+        const balls = S.playMode === "chodama" ? S.currentChodama : S.currentMochiBalls;
+        setHitWizardData({ pushAmount: 0, rotCount: "", trayBalls: String(Math.max(0, Math.round(Number(balls) || 0))), rounds: 0, mult: 1, displayBalls: "", actualBalls: "", hitType: "", jitanSpins: "", finalBallsAfterJitan: "", yutimeRunId: run.id });
+        setHitInputError("");
+        setHitInputFocus("rotCount");
+        setHitWizardOpen(true);
+    };
+
+    const handleStartYutimeChain = (runId, supportSpinsArg, trayBallsArg) => {
+        const run = (S.yutimeRuns || []).find((item) => item?.id === runId && item.status === "active");
+        if (!run) {
+            setHitInputError("遊タイム記録が見つかりません。画面を閉じてやり直してください。");
+            return false;
+        }
+        const supportSpins = Math.max(0, Math.round(Number(supportSpinsArg) || 0));
+        if (supportSpins <= 0) {
+            setHitInputError("遊タイムで消化した回転数を入力してください。");
+            return false;
+        }
+        S.pushSnapshot();
+        const chainId = Date.now();
+        const cumRot = Number(rows[rows.length - 1]?.cumRot) || 0;
+        const endBalls = Math.max(0, Math.round(Number(trayBallsArg) || 0));
+        setRows((prev) => [...prev, { type: "yutime_end", runId, outcome: "hit", supportSpins, endBalls, linkedChainId: chainId, cumRot, time: tsNow() }, { type: "hit", chainId, origin: "yutime", yutimeRunId: runId, cumRot, thisRot: 0, invest: 0, mode: S.playMode, mochiBalls: S.currentMochiBalls, chodamaBalls: S.currentChodama, time: tsNow() }]);
+        S.pushJP({ chainId, origin: "yutime", yutimeRunId: runId, yutimeSupportSpins: supportSpins, trayBalls: 0, hits: [], hitRot: cumRot, hitThisRot: 0, finalBalls: null, summary: null, completed: false, time: tsNow(), finalRealBalls: undefined });
+        S.setYutimeRuns((prev) => completeYutimeRun(prev, runId, { outcome: "hit", supportSpins, endBalls, linkedChainId: chainId }));
+        S.setYutimeSession((prev) => prev ? { ...prev, targetingEnabled: false, consumed: true } : prev);
+        S.pushLog({ type: "遊タイム当たり", time: tsNow(), rot: cumRot });
+        return true;
+    };
+
     const handleStartChain = (rotCountArg) => {
         // 1. 入力欄が空文字なら警告して処理を中断
         const inputTrimmed = (rotCountArg != null ? String(rotCountArg) : (input || "")).toString().trim();
@@ -1949,6 +2070,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     const handleWizardComplete = (overrideHitType) => {
         if (endLockRef.current) return;
         const { pushAmount, trayBalls, rounds, mult, displayBalls, actualBalls, hitType: stateHitType, jitanSpins, finalBallsAfterJitan } = hitWizardData;
+        const isYutimeOrigin = Boolean(hitWizardData.yutimeRunId);
         const hitType = overrideHitType || stateHitType;
         const rnd = Number(rounds) || 0;
         const multN = Math.max(1, Number(mult) || 1);
@@ -1964,10 +2086,10 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             setHitWizardOpen(false);
             return;
         }
-        S.pushSnapshot();
+        if (!isYutimeOrigin) S.pushSnapshot();
         endLockRef.current = true;
 
-        if (pushAmount > 0) {
+        if (!isYutimeOrigin && pushAmount > 0) {
             S.setRotRows((prev) => {
                 const lastDataRow = [...prev].reverse().find(r => r.type === "data");
                 const prevInvest = lastDataRow ? lastDataRow.invest : 0;
@@ -1998,7 +2120,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         // グロスを入れて二重控除を避ける。logic.js は不変。
         // rentBalls を渡すことで、持ち越し玉（RUSH 出玉など）を丸ごと消費計上して
         // 実質投資が膨張するのを回転数ベースの上限で防ぐ（reconcileSegmentConsumption 内ガード）。
-        if (S.playMode === "chodama" || S.playMode === "mochi") {
+        if (!isYutimeOrigin && (S.playMode === "chodama" || S.playMode === "mochi")) {
             const currentBalance = S.playMode === "chodama"
                 ? (S.currentChodama || 0)
                 : (S.currentMochiBalls || 0);
@@ -3037,7 +3159,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             </div>
                             <div className="stat-mini">
                                 <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>初当</div>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: C.orange, fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{ev.jpCount || 0}</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: C.orange, fontFamily: mono, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{ev.normalFirstHitCount ?? ev.jpCount ?? 0}</div>
                             </div>
                         </div>
                     </div>
@@ -3103,6 +3225,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                 const lastRow = rows.length > 0 ? rows[rows.length - 1] : null;
                 const currentCumRot = lastRow ? (lastRow.cumRot || 0) : 0;
                 const lastInputRot = inputHistory.length > 0 ? inputHistory[0] : null;
+                const showYutimeDecision = shouldAutoShowYutimeCard({ spec: S.activeYutimeSession, result: S.yutimeLive, activeRun: S.activeYutimeRun });
 
                 return (
                     <>
@@ -3113,16 +3236,22 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         display: "flex", flexDirection: "column", gap: 12,
                     }}>
                         {/* 1. 3K・5K・10K・20K固定地点で判断する見切りナビ */}
-                        <LiveDecisionNavigator decision={ev.liveDecision} />
+                        {!showYutimeDecision && <LiveDecisionNavigator decision={ev.liveDecision} />}
 
                         {/* 1.5. 遊タイム狙い目分析（天井未設定機種では非表示） */}
                         <YutimeEvCard
                             result={S.yutimeLive}
-                            spec={S.activeYutimeSession}
+                            spec={{ ...S.activeYutimeSession, investPace: S.investPace }}
+                            activeRun={S.activeYutimeRun}
+                            normalEv={evEff}
                             currentLowSpins={S.currentYutimeLowSpins}
                             rateSource={S.yutimeRateSource}
                             playMode={S.playMode}
                             onOpen={() => setShowYutimeCalculator(true)}
+                            onEnter={beginYutimeRun}
+                            onRecordHit={openYutimeHitWizard}
+                            onThrough={finishYutimeThrough}
+                            onAddCash={addYutimeCash}
                         />
                         {showYutimeCalculator && (
                             <YutimeCalculatorSheet
@@ -4406,7 +4535,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                 // 差分表示用：差 = 期待値 − 実収支。正＝欠損（実収支が期待値を下回る）／負＝余剰（上回る）
                 const diffExpVsAct = expectedWork - actualBalance;
                 const currentBalls = currentMochi;
-                const jpCount = ev.jpCount || 0;
+                const jpCount = ev.normalFirstHitCount ?? ev.jpCount ?? 0;
                 const totalHits = ev.totalHits || 0;
                 const netRot = ev.netRot || 0;
                 const avg1R = ev.avg1R > 0 ? ev.avg1R : 0;
@@ -5726,7 +5855,8 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             {hitWizardOpen && ReactDOM.createPortal(
                 (() => {
                     const D = hitWizardData;
-                    const focus = hitInputFocus || "pushAmount";
+                    const isYutimeOrigin = Boolean(D.yutimeRunId);
+                    const focus = hitInputFocus || (isYutimeOrigin ? "rotCount" : "pushAmount");
                     const setFocus = (k) => setHitInputFocus(k);
                     const updField = (key, val) => setHitWizardData(d => ({ ...d, [key]: val }));
 
@@ -5740,7 +5870,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     const roundLabel = rndN > 0 ? (multN > 1 ? `${rndN}R×${multN}` : `${rndN}R`) : "";
 
                     // 液晶出玉(dispN)は簡易フローでは入力しないため必須から除外
-                    const requiredOk = rotN > 0 && trayN > 0 && rndN > 0;
+                    const requiredOk = rotN > 0 && (isYutimeOrigin || trayN > 0) && rndN > 0;
 
                     // ヘッダーのチェーン状態
                     const chainLen = lastChain && !lastChain.completed ? (lastChain.hits || []).length : 0;
@@ -5759,7 +5889,11 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         { id: "trayBalls",    num: 3, label: "開始前の玉数",    sub: "（当たり直前の持ち玉・上皿）", short: "開始玉",   color: C.yellow, icon: "coin",   summaryUnit: "玉",  required: true },
                         { id: "rounds",       num: 4, label: "ラウンド数",      sub: "（当たったラウンド 10R・5Rなど）", short: "R数",  color: C.purple, icon: "r",      summaryUnit: "R" },
                         { id: "result",       num: 5, label: "結果を選択",      sub: "（連チャン継続 or 単発終了）", short: "結果",  color: C.orange, icon: "flag",   summaryUnit: "" },
-                    ];
+                    ].filter((step) => !isYutimeOrigin || step.id !== "pushAmount").map((step, index) => (
+                        isYutimeOrigin && step.id === "rotCount"
+                            ? { ...step, num: index + 1, label: "遊タイム消化回転数", sub: "遊タイム突入から当たるまでの回転数" }
+                            : { ...step, num: index + 1 }
+                    ));
                     const stepIdx = Math.max(0, STEPS.findIndex(s => s.id === focus));
                     const curStep = STEPS[stepIdx];
                     const nxtStep = STEPS[stepIdx + 1] || null;
@@ -5837,7 +5971,9 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             return;
                         }
                         setHitInputError("");
-                        const ok = handleStartChain(rotN);
+                        const ok = isYutimeOrigin
+                            ? handleStartYutimeChain(D.yutimeRunId, rotN, trayN)
+                            : handleStartChain(rotN);
                         if (!ok) return;
                         // チェーン作成成功 → 確変として hit を追加（既存 handleWizardComplete を再利用）
                         handleWizardComplete("確変");
@@ -5867,7 +6003,9 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     // 単発終了モーダルから記録完了
                     const onSingleEndConfirm = () => {
                         if (endLockRef.current) return;
-                        const ok = handleStartChain(rotN);
+                        const ok = isYutimeOrigin
+                            ? handleStartYutimeChain(D.yutimeRunId, rotN, trayN)
+                            : handleStartChain(rotN);
                         if (!ok) return;
                         handleWizardComplete("単発");
                         setHitInputSingleEndOpen(false);
@@ -9262,7 +9400,8 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                     // 台移動で持ち込んだ持ち玉コスト（carriedInYen）は投資の内数なので加算する。
                     // 算出値が無い古いアーカイブは従来の保存値 investYen をフォールバック表示。
                     const carriedIn = Math.round(target.carriedInYen || 0);
-                    const derivedInvest = Math.round(target.stats?.rawInvest || 0) + carriedIn;
+                    const yutimeSupportCash = (Array.isArray(target.yutimeRuns) ? target.yutimeRuns : []).reduce((sum, run) => sum + Math.max(0, Number(run?.supportCashYen) || 0), 0);
+                    const derivedInvest = Math.round(target.stats?.rawInvest || 0) + carriedIn + Math.round(yutimeSupportCash);
                     setEditInvest(targetGameType === "slot" ? (target.investYen || "") : (derivedInvest > 0 ? derivedInvest : (target.investYen || "")));
                     setEditRecovery(target.recoveryYen || "");
                     // 貯玉残高はその店舗の現在残高を初期表示（店舗が特定できる場合のみ）
@@ -9792,6 +9931,25 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                             ) : (
                                 <div style={{ fontSize: 11, color: C.sub }}>期待出玉などの入力が不足していたため、開始時の条件だけを保存しています。</div>
                             )}
+                        </Card>
+                    )}
+
+                    {Array.isArray(a.yutimeRuns) && a.yutimeRuns.length > 0 && (
+                        <Card style={{ padding: 13, marginBottom: 8, border: "1px solid rgba(245,158,11,.55)" }}>
+                            <SecLabel label="遊タイム実績（通常期待値とは別記録）" />
+                            {a.yutimeRuns.map((run, index) => (
+                                <div key={run.id || index} style={{ padding: "10px 0", borderTop: index ? `1px solid ${C.border}` : "none" }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, fontWeight: 800 }}>
+                                        <span>{run.status === "active" ? "記録中" : run.outcome === "hit" ? "遊タイム中に当たり" : "スルー・終了"}</span>
+                                        <span style={{ color: C.yellow }}>{Number(run.supportSpins || 0).toLocaleString()}回</span>
+                                    </div>
+                                    <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6, fontSize: 10, color: C.sub }}>
+                                        <span>開始 {Number(run.startBalls || 0).toLocaleString()}玉</span>
+                                        <span>終了 {run.endBalls == null ? "—" : `${Number(run.endBalls).toLocaleString()}玉`}</span>
+                                        <span>追加 {Number(run.supportCashYen || 0).toLocaleString()}円</span>
+                                    </div>
+                                </div>
+                            ))}
                         </Card>
                     )}
 
@@ -10927,6 +11085,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
             "遊タイム開始カウント", "遊タイム想定1K", "遊タイム遊技方法", "遊タイム発動回転",
             "遊タイム回数", "遊タイム平均純増玉", "遊タイムデータ種別", "遊タイム根拠URL"
         ];
+        headers.push("遊タイム実績JSON");
         const rows = archives.map(a => {
             const isSlot = a.gameType === "slot";
             // スロット記録には、古いデータに残っているパチンコ専用値を出力しない。
@@ -10937,6 +11096,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
             const yd = isSlot ? {} : (a.yutimeDecision || {});
             const yr = yd.result || {};
             const ys = yd.spec || {};
+            const yutimeRuns = Array.isArray(a.yutimeRuns) ? a.yutimeRuns : [];
             const slotStats = a.slotStats || {};
             return toCsvRow([
                 getArchiveRecordId(a),
@@ -10977,7 +11137,8 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                 ys.durationSpins ?? "",
                 ys.expectedNetBalls ?? "",
                 ys.source || "",
-                String(ys.sourceUrl || "")
+                String(ys.sourceUrl || ""),
+                yutimeRuns.length ? JSON.stringify(yutimeRuns) : ""
             ]);
         });
         const csv = "\uFEFF" + headers.join(",") + "\n" + rows.join("\n");
@@ -11075,6 +11236,17 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                         },
                     } : null;
 
+                    let yutimeRuns = [];
+                    const yutimeRunsJson = getCol(cols, ["遊タイム実績JSON"], "");
+                    if (yutimeRunsJson) {
+                        try {
+                            const parsedRuns = JSON.parse(yutimeRunsJson);
+                            if (Array.isArray(parsedRuns)) yutimeRuns = parsedRuns;
+                        } catch {
+                            yutimeRuns = [];
+                        }
+                    }
+
                     newArchives.push({
                         id: Date.now() + i + Math.random(),
                         recordId: csvRecordId,
@@ -11096,6 +11268,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                         totalTrayBalls: 0,
                         startRot: 0,
                         yutimeDecision,
+                        yutimeRuns,
                         isManual: true,
                     });
                 }

@@ -73,6 +73,11 @@ import {
   deriveCurrentLowProbabilitySpins,
   deriveNormalExpectedNetBalls,
 } from "./components/yutime/yutimeCalculator";
+import {
+  countNormalFirstHits,
+  getActiveYutimeRun,
+  sumYutimeSupportCash,
+} from "./components/yutime/yutimeFlow";
 
 // 旧タブ名 → 新モード名 のマッピング
 // Tabs.jsx 内から S.setTab("rot" | "calendar" | "settings") が呼ばれるため、
@@ -254,6 +259,7 @@ export default function App() {
   const [yutimePayout, setYutimePayout] = useLS("pt_yutimePayout", 0);
   const [yutimeSession, setYutimeSession] = useLS("pt_yutimeSession", null);
   const [yutimeDecision, setYutimeDecision] = useLS("pt_yutimeDecision", null);
+  const [yutimeRuns, setYutimeRuns] = useLS("pt_yutimeRuns", []);
   const [yutimeMigratedV2, setYutimeMigratedV2] = useLS("pt_yutimeMigratedV2", false);
 
   // 旧設定は一度だけ新形式へ移す。元の pt_* は削除せず、バックアップ互換を保つ。
@@ -501,15 +507,18 @@ export default function App() {
   const pushLog = (e) => setSesLog((p) => [...p, e]);
 
   // ── 高精度期待値エンジン ──
+  // 遊タイム中の当たりは独立実績として残し、通常期待値・通常初当たり統計へ混ぜない。
+  const normalJpLogForEV = (jpLog || []).filter((chain) => chain?.origin !== "yutime");
+  const normalTotalTrayBalls = normalJpLogForEV.reduce((sum, chain) => sum + Math.max(0, Number(chain?.trayBalls) || 0), 0);
   const baseCalculatedEv = calcPreciseEV({
-    rotRows, startRot, jpLog,
+    rotRows, startRot, jpLog: normalJpLogForEV,
     rentBalls, exRate, synthDenom, rotPerHour,
-    totalTrayBalls, border,
+    totalTrayBalls: normalTotalTrayBalls, border,
     spec1R, specAvgRounds, specSapo,
     chodamaSettings: { includeChodamaInBalance },
   });
   const calculatedEv = applyEconomicEV(baseCalculatedEv, {
-    rotRows, jpLog, totalTrayBalls, rentBalls, exRate, rotPerHour,
+    rotRows, jpLog: normalJpLogForEV, totalTrayBalls: normalTotalTrayBalls, rentBalls, exRate, rotPerHour,
   });
   // 機種マスタ照合と差玉履歴の集計は全件走査になるため、依存値が変わったときだけ再計算する
   const evidenceMachine = useMemo(
@@ -547,7 +556,15 @@ export default function App() {
     priorScore: savedDeltaEvidence?.hasEstimate ? savedDeltaEvidence.goodMachineScore : 0,
     rotationStdDevPerK: evidenceMachine?.rotationStdDevPerK,
   });
-  const ev = { ...calculatedEv, evidence: { ...evidence, delta: savedDeltaEvidence }, liveDecision };
+  const normalFirstHitCount = countNormalFirstHits(jpLog);
+  const yutimeFirstHitCount = Math.max(0, (jpLog || []).length - normalFirstHitCount);
+  const ev = {
+    ...calculatedEv,
+    normalFirstHitCount,
+    yutimeFirstHitCount,
+    evidence: { ...evidence, delta: savedDeltaEvidence },
+    liveDecision,
+  };
   // 3K・5K・10K・20Kへ初めて到達した時点の判断を、実戦記録へ残す。
   useEffect(() => {
     if (!sessionStarted || !(liveDecision.totalK > 0)) return;
@@ -579,6 +596,8 @@ export default function App() {
     exRate,
     playMode,
   }) : null;
+  const activeYutimeRun = getActiveYutimeRun(yutimeRuns);
+  const yutimeSupportCashYen = sumYutimeSupportCash(yutimeRuns);
 
   // ── Phase 6 XPトリガー：大当たり（jpLog の hits 合計が増えたら +20/件） ──
   // マイグレーション完了後にのみ作動。
@@ -719,14 +738,14 @@ export default function App() {
 
   // ── Undo/Redo（直近10操作分のセッション中スナップショット） ──
   const getUndoSnapshot = useCallback(() => ({
-    rotRows, jpLog, sesLog,
+    rotRows, jpLog, sesLog, yutimeRuns, yutimeSession, yutimeDecision,
     currentMochiBalls, totalTrayBalls, currentChodama,
     playMode,
     investYen, recoveryYen,
     startGameCount, startRot,
     initialMochiBalls, initialChodama,
   }), [
-    rotRows, jpLog, sesLog,
+    rotRows, jpLog, sesLog, yutimeRuns, yutimeSession, yutimeDecision,
     currentMochiBalls, totalTrayBalls, currentChodama,
     playMode, investYen, recoveryYen,
     startGameCount, startRot, initialMochiBalls, initialChodama,
@@ -736,6 +755,9 @@ export default function App() {
     setRotRows(s.rotRows);
     setJpLog(s.jpLog);
     setSesLog(s.sesLog);
+    setYutimeRuns(Array.isArray(s.yutimeRuns) ? s.yutimeRuns : []);
+    setYutimeSession(s.yutimeSession ?? null);
+    setYutimeDecision(s.yutimeDecision ?? null);
     setCurrentMochiBalls(s.currentMochiBalls);
     setTotalTrayBalls(s.totalTrayBalls);
     setCurrentChodama(s.currentChodama);
@@ -886,6 +908,7 @@ export default function App() {
     setCarriedInYen(0);
     setYutimeSession(null);
     setYutimeDecision(null);
+    setYutimeRuns([]);
     setDecisionSnapshots([]);
     // Phase 6 XPトリガー用カウンタもセッション一緒にリセット（次のセッションは 0 から数え直す）
     setHunterCounters((prev) => ({
@@ -940,6 +963,7 @@ export default function App() {
       isMoveArchive: isMove,
       // 通常期待値とは合算せず、着席判断時点の遊タイム計算を独立保存する。
       yutimeDecision: yutimeDecision ? JSON.parse(JSON.stringify(yutimeDecision)) : null,
+      yutimeRuns: JSON.parse(JSON.stringify(yutimeRuns || [])),
       decisionSnapshots: JSON.parse(JSON.stringify(decisionSnapshots)),
       sessionStartedAt: sessionStartedAt || "",
       sessionTargetEndAt: sessionTargetEndAt || "",
@@ -985,7 +1009,9 @@ export default function App() {
     const store = (stores || []).find(st => typeof st === "object" && st.id === selectedStoreId);
     const ballYen = store?.exRate > 0 ? 1000 / store.exRate : (exRate > 0 ? 1000 / exRate : (Number(ballVal) > 0 ? Number(ballVal) : 4));
     const carriedOutYen = Math.round(carriedMochi * ballYen); // この台の回収（持ち出し玉の価値）
-    const machineInvest = Math.round(Number(carriedInYen) || 0) + Math.round(ev?.rawInvest || 0);
+    const machineInvest = Math.round(Number(carriedInYen) || 0)
+      + Math.round(ev?.rawInvest || 0)
+      + Math.round(yutimeSupportCashYen || 0);
     // 旧台のデータを先にアーカイブ（この時点の機種名・スペックは旧台のまま保存する）。
     archiveCurrentSession(true, { investYen: machineInvest, recoveryYen: carriedOutYen, carriedInYen });
     // 玉箱を持っての移動は「持ち玉」で続行する。持ち玉が無ければ貯玉、それも無ければ現金。
@@ -1027,6 +1053,7 @@ export default function App() {
     if (Number(dest.investPace) > 0) setInvestPace(Number(dest.investPace));
     setYutimeSession(dest.yutimeSession || null);
     setYutimeDecision(dest.yutimeDecision || null);
+    setYutimeRuns([]);
     // 引き継いだ玉数を新台の初期値として設定（収支の基準にする）
     setInitialMochiBalls(carriedMochi);
     setInitialChodama(carriedChodama);
@@ -1055,6 +1082,10 @@ export default function App() {
       const ok = window.confirm("大当たり記録が入力途中です。\nこのまま実戦を終了しますか？");
       if (!ok) return;
     }
+    if (activeYutimeRun) {
+      const ok = window.confirm("遊タイム中の記録が未完了です。先に『当たった』または『スルー・終了』を記録してください。\n\nこのまま実戦を終了しますか？");
+      if (!ok) return;
+    }
     const heldMochi = Math.round(currentMochiBalls || 0);
     const store = (stores || []).find(st => typeof st === "object" && st.id === selectedStoreId);
     // 店舗の換金率を優先（グローバルstateのズレを回避）
@@ -1064,7 +1095,9 @@ export default function App() {
     const chodamaYen = Math.round((ev?.chodamaKCount || 0) * heldBallCostPerK(rentBalls, exRate));
     setEndSheet({
       // 投資額（現金分）= この台の現金投資 + 台移動で持ち込んだ持ち玉コスト（按分）
-      invest: Math.round(ev?.rawInvest || 0) + Math.round(Number(carriedInYen) || 0),
+      invest: Math.round(ev?.rawInvest || 0)
+        + Math.round(Number(carriedInYen) || 0)
+        + Math.round(yutimeSupportCashYen || 0),
       heldMochi,
       ballYen,
       cashYen: Math.round(heldMochi * ballYen),
@@ -1181,6 +1214,7 @@ export default function App() {
     yutimeSession, setYutimeSession,
     activeYutimeSession,
     yutimeDecision, setYutimeDecision,
+    yutimeRuns, setYutimeRuns, activeYutimeRun, yutimeSupportCashYen,
     yutimeLive, currentYutimeLowSpins, yutimeRateSource,
     rotRows, setRotRows,
     jpLog, setJpLog, pushJP,
