@@ -101,12 +101,13 @@ test("addIsland は末尾に続き番号で追加する", () => {
 
 test("removeIsland は id 指定で削除する", () => {
   const list = [
-    { id: "a", name: "1", start: 1, end: 2, machineName: "" },
-    { id: "b", name: "2", start: 3, end: 4, machineName: "" },
+    { id: "a", name: "1", start: 1, end: 2, machineName: "", facingIslandId: "b" },
+    { id: "b", name: "2", start: 3, end: 4, machineName: "", facingIslandId: "a" },
   ];
   const next = removeIsland(list, "a");
   assert.strictEqual(next.length, 1);
   assert.strictEqual(next[0].id, "b");
+  assert.strictEqual(next[0].facingIslandId, null);
 });
 
 test("updateIsland は対象のみ部分更新する", () => {

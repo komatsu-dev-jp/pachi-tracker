@@ -66,7 +66,7 @@ export const P_EVIDENCE_DEMO_SCANS = Array.from({ length: 14 }, (_, index) => {
 
 export const P_EVIDENCE_DEMO_HALL_MAPS = {
   "pe-demo-store": [
-    { id: "pe-demo-a", name: "A島", start: 101, end: 106, machineName: P_EVIDENCE_DEMO_MACHINE.name },
-    { id: "pe-demo-b", name: "B島", start: 201, end: 206, machineName: P_EVIDENCE_DEMO_MACHINE.name },
+    { id: "pe-demo-a", name: "A島", start: 101, end: 106, machineName: P_EVIDENCE_DEMO_MACHINE.name, facingIslandId: "pe-demo-b", facingReversed: true },
+    { id: "pe-demo-b", name: "B島", start: 201, end: 206, machineName: P_EVIDENCE_DEMO_MACHINE.name, facingIslandId: "pe-demo-a", facingReversed: true },
   ],
 };

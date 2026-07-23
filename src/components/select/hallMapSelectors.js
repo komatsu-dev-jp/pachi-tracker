@@ -7,7 +7,8 @@
 // 永続化キー: pt_hallMaps（既存キーの構造は一切変更しない・新規キーのみ追加）
 // スキーマ: { [storeId]: Island[] }
 //   Island = { id: string, name: string, start: number, end: number, machineName: string,
-//              ranges?: {start,end}[], rows?: number, cols?: number, gaps?: number[] }
+//              ranges?: {start,end}[], rows?: number, cols?: number, gaps?: number[],
+//              facingIslandId?: string, facingReversed?: boolean }
 //     start/end: 台番号範囲（昇順に正規化）。ranges がある場合は全連番を包む範囲（最小〜最大）
 //     ranges: 行ごとの連番範囲一覧（任意）。島を上から見た行の並び順で保持し、
 //             各行は { start: 左端の台番号, end: 右端の台番号 }。start > end なら降順の行
@@ -102,6 +103,10 @@ export function normalizeIsland(island, i = 0) {
     start,
     end,
     machineName: typeof src.machineName === "string" ? src.machineName : "",
+    facingIslandId: typeof src.facingIslandId === "string" && src.facingIslandId
+      ? src.facingIslandId
+      : null,
+    facingReversed: src.facingReversed !== false,
   };
   // 昇順1行だけなら ranges を持たず、従来どおり start/end のみで表す。
   if (segs.length > 1 || (segs.length === 1 && segs[0].start > segs[0].end)) out.ranges = segs;
@@ -223,7 +228,9 @@ export function addIsland(islands, partial = {}) {
 
 // id 指定で島を削除した配列を返す。
 export function removeIsland(islands, id) {
-  return normalizeIslands(islands).filter((isl) => isl.id !== id);
+  return normalizeIslands(islands)
+    .filter((isl) => isl.id !== id)
+    .map((isl) => isl.facingIslandId === id ? { ...isl, facingIslandId: null } : isl);
 }
 
 // id 指定で島のフィールドを部分更新した配列を返す。

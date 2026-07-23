@@ -62,11 +62,6 @@ function signed(n, d = 0) {
   if (n == null || !isFinite(n)) return "—";
   return (n >= 0 ? "+" : "") + fmt(n, d);
 }
-function nowHM() {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
-
 const PROFIT_CHANCE_PENDING = {
   "model-unverified": "正式型式の確認待ち",
   "stddev-unverified": "ブレ幅の確認待ち",
@@ -74,6 +69,7 @@ const PROFIT_CHANCE_PENDING = {
   "rotation-range-missing": "予測回転率の幅待ち",
   "low-confidence": "店舗データ不足",
   "data-missing": "店舗データ待ち",
+  "stale-scan": "本日の解析待ち",
 };
 
 function profitChanceText(machine) {
@@ -105,7 +101,7 @@ function BackIcon() {
   );
 }
 
-function Header({ data, updatedAt, onBack, onHelp }) {
+function Header({ data, onBack, onHelp }) {
   return (
     <div
       style={{
@@ -163,7 +159,9 @@ function Header({ data, updatedAt, onBack, onHelp }) {
             ?
           </button>
           <div style={{ textAlign: "right", minWidth: 56 }}>
-            <div style={{ fontSize: 10, color: P.sub }}>更新 {updatedAt}</div>
+            <div style={{ fontSize: 10, color: P.sub }}>
+              {data.freshness?.sourceDate ? `解析 ${data.freshness.sourceDate}` : "解析日なし"}
+            </div>
             <div style={{ fontSize: 13, fontWeight: 900, color: P.cyan, marginTop: 3, fontFamily: MONO }}>
               候補 {data.kpi.candidates}台
             </div>
@@ -232,6 +230,7 @@ const HELP_GROUPS = [
       { name: "信頼度・確信度", simple: "予想を、どれくらい信用してよいかの目安です。", read: "データが少ないと低く、投入玉や日数が増えると高くなります。高くても未来を保証する数字ではありません。" },
       { name: "良台スコア", simple: "回転率の良さと、データの確かさを1つにまとめた点数です。", read: "高いほど候補ですが、釘変化や明日締め確率が危険な場合は点数を下げます。" },
       { name: "収支プラス見込み", simple: "予定時間の終了時に、収支が0円を超える確率の概算幅です。", read: "本日の予定時間、予測回転率の上下幅、交換率、検証済みの機種ブレから正規近似で計算します。勝利を保証せず、短時間や荒い機種ほど誤差が大きくなります。" },
+      { name: "勝てる確率（旧称）", simple: "現在の『収支プラス見込み』と同じ項目です。", read: "別の確率ではありません。画面と説明の呼び方を『収支プラス見込み』へ統一しています。" },
       { name: "初当たり1回以上", simple: "予定回転数の中で、初当たりを1回以上引く理論上の確率です。", read: "大当たり確率と予定回転数だけで計算します。初当たりを引いても最終収支がプラスとは限らないため、収支プラス見込みとは別の数字です。" },
     ],
   },
@@ -240,7 +239,7 @@ const HELP_GROUPS = [
     terms: [
       { name: "EMA（最近重視の平均）", simple: "昔よりも最近の結果を大事にする平均です。", read: "普通の平均は昔の数字も同じ重さですが、EMAは直近の変化へ早く気づけます。" },
       { name: "CUSUM（ズレの貯金）", simple: "小さな上がり下がりを毎日少しずつ貯める仕組みです。", read: "1日だけのブレでは反応しにくく、同じ方向のズレが続くと『開け・締め』を知らせます。" },
-      { name: "SPC・釘変化", simple: "いつもの範囲を外れた変化が起きていないか見張ります。", read: "CUSUM、隣台、対面台を合わせて、締め変化・開け変化・ニュートラルを表示します。" },
+      { name: "CUSUM中心の釘変化監視", simple: "いつもの範囲を外れた変化が起きていないか見張ります。", read: "CUSUMを中心に、確認済みの隣台・対面台を合わせて締め変化・開け変化・ニュートラルを表示します。" },
       { name: "レジーム", simple: "台の『今の状態が始まった日』のことです。", read: "大きな変化を見つけたら、古い状態と新しい状態を分けます。新しい状態のデータを強く使うためです。" },
     ],
   },
@@ -250,25 +249,24 @@ const HELP_GROUPS = [
       { name: "曜日締め率", simple: "その店・機種が、明日と同じ曜日に悪くなった割合です。", read: "同じ曜日が3件未満なら参考不足です。30%なら、過去の約10回中3回で締め方向になったという意味です。" },
       { name: "島平均", simple: "同じ島にある台をまとめた平均回転率です。", read: "自分の台だけでなく、島全体が開いているか、1台だけ良く見えるのかを確認できます。" },
       { name: "隣接台の影響", simple: "近くの台が同じ方向へ動いているかを見ます。", read: "周りの60%以上が締め方向なら締め波及、開け方向なら開け波及として注意を出します。" },
-      { name: "対面台の影響", simple: "向かい側の台と一緒に変化しているかを見ます。", read: "ホールマップで向かい合う2島を鏡向きに対応します。実際の配置と違う場合は参考にしないでください。" },
+      { name: "対面台の影響", simple: "向かい側の台と一緒に変化しているかを見ます。", read: "ホールマップで対面に設定した2島だけを、指定した向きで対応します。未設定の島は対面スコアへ含めません。" },
     ],
   },
   {
     title: "明日の予想",
     terms: [
       { name: "マルコフ・明日締め確率", simple: "今日の状態から、明日悪くなる割合を過去から調べた数字です。", read: "難しく言うと『良い→悪い』『悪い→悪い』の変わり方を数えています。60%以上は締め注意、データ不足時は安全側の初期値を使います。" },
-      { name: "AIプロファイル", simple: "保存したデータから、曜日・店・機種・島のクセをまとめた表です。", read: "人のように考えるAIではなく、投入玉が多い記録を強くする統計です。少ないデータは控えめに表示します。" },
+      { name: "AIプロファイル", simple: "保存した差玉から、曜日・店・機種・島のクセをまとめた統計です。", read: "人のように考えるAIではありません。直近90日・最大300件の範囲で、投入玉が多い記録を強くします。" },
       { name: "明日の地図", simple: "各台を、据え置き・締め注意・開け波及・様子見に分けた予想です。", read: "回転率、マルコフ、隣、対面を合わせます。翌日の実際の釘を保証するものではありません。" },
     ],
   },
   {
     title: "お金と安全度",
     terms: [
-      { name: "勝てる確率", simple: "予測した日当とブレから、プラスで終わる可能性を計算した目安です。", read: "標準偏差が大きい機種ほど、良い台でも短時間では勝率が低く出ます。" },
       { name: "玉単価差", simple: "ボーダー台より、1回転ごとに何円得か損かの差です。", read: "プラスなら有利、マイナスなら不利です。一般的な交換率の玉単価とは少し意味が違うため『差』と表示しています。" },
-      { name: "時給・日当", simple: "同じ回転率が続いたときの、1時間・1日あたりの期待金額です。", read: "日当下限〜上限は、回転率の誤差を金額へ直した幅です。実際の勝ち負けの上限ではありません。" },
+      { name: "時給・予定収支", simple: "同じ回転率が続いたときの、1時間・設定した予定時間の期待金額です。", read: "下限〜上限は回転率の誤差を金額へ直した幅です。実際の勝ち負けの上限ではありません。" },
       { name: "標準偏差・1時間のブレ", simple: "結果が平均からどれくらい大きく揺れやすいかです。", read: "数字が大きい機種ほど、短い時間では運の影響が大きくなります。" },
-      { name: "シャープ比", simple: "期待できる利益を、結果のブレで割った安全度です。", read: "同じ時給なら、ブレが小さい台のほうが高くなります。高い順に8時間の優先配分を作ります。" },
+      { name: "シャープ比", simple: "期待できる利益を、結果のブレで割った安全度です。", read: "同じ時給なら、ブレが小さい台のほうが高くなります。当日の予定時間を高い順に配分します。" },
     ],
   },
 ];
@@ -389,6 +387,25 @@ function SelectedOutcomeSection({ machine, islandAvgRot, plan }) {
   );
 }
 
+function FreshnessBanner({ freshness, sourceSummary }) {
+  if (!freshness || freshness.status === "fresh") return null;
+  const future = freshness.status === "future";
+  return (
+    <div style={{
+      margin: "10px 14px 0", padding: "11px 12px", borderRadius: 14,
+      border: "1px solid color-mix(in srgb, var(--sm-yellow) 42%, var(--sm-line))",
+      background: "color-mix(in srgb, var(--sm-yellow) 8%, var(--sm-card))",
+      color: P.subHi, fontSize: 11, lineHeight: 1.6,
+    }}>
+      <strong style={{ display: "block", color: P.yellow, marginBottom: 3 }}>
+        {future ? "解析日を確認してください" : `過去参考：${freshness.label}`}
+      </strong>
+      本命・着席推奨・今日の収支・明日予測は停止しています。本日の差玉解析を保存すると再開します。
+      {sourceSummary?.length > 0 && <span style={{ display: "block", marginTop: 3 }}>使用データ：{sourceSummary.join("＋")}</span>}
+    </div>
+  );
+}
+
 // ============================ KPIサマリー ============================
 function Kpi({ kpi }) {
   const items = [
@@ -457,6 +474,13 @@ const MAX_MAP_CELLS = 200;
 
 function heatTone(machine) {
   if (!machine) return { color: P.gray, bg: "rgba(100,116,139,.16)", label: "未計測" };
+  if (machine.recommendationStatus === "reference") {
+    return {
+      color: P.gray,
+      bg: "rgba(100,116,139,.16)",
+      label: "過去参考",
+    };
+  }
   const diff = Number(machine.rot || 0) - Number(machine.border || 0);
   const color = diff >= 1 ? P.green : diff >= 0 ? P.yellow : P.red;
   return {
@@ -518,7 +542,26 @@ function HeatMachineCell({ number, machine, dim, selected, opposite, onSelect })
 
 function pairIslands(islands) {
   const pairs = [];
-  for (let index = 0; index < islands.length; index += 2) pairs.push(islands.slice(index, index + 2));
+  const used = new Set();
+  const keyOf = (island) => String(island?.layoutId || island?.id || "");
+  for (const island of islands) {
+    const key = keyOf(island);
+    if (used.has(key)) continue;
+    const partner = island.facingIslandId
+      ? islands.find((candidate) => keyOf(candidate) === String(island.facingIslandId) && !used.has(keyOf(candidate)))
+      : null;
+    const pair = partner ? [island, partner] : [island];
+    pair.confirmed = Boolean(partner);
+    used.add(key);
+    if (partner) used.add(keyOf(partner));
+    pairs.push(pair);
+  }
+  // 旧データは表示だけ隣同士へまとめる。統計補正には使われない。
+  for (let index = 0; index + 1 < pairs.length; index++) {
+    if (pairs[index].confirmed || pairs[index + 1].confirmed) continue;
+    pairs[index].push(pairs[index + 1][0]);
+    pairs.splice(index + 1, 1);
+  }
   return pairs;
 }
 
@@ -613,6 +656,7 @@ function OppositePairMap({ pair, filter, selectedId, selectedMachine, onSelect }
         </div>
       </div>
       <div className="strategy-map-hint">← 横に動かすと2島が一緒に動きます →</div>
+      {!pair.confirmed && pair.length === 2 && <div className="strategy-layout-note">仮対面表示です。島マップ管理で対面を確認するまで予測補正には使いません</div>}
       {pair.some((island) => !island.registeredLayout) && <div className="strategy-layout-note">未登録の島は計測済み台から仮配置しています</div>}
     </div>
   );
@@ -711,7 +755,14 @@ function RevenueOutlook({ machine, plan }) {
         <RevenuePoint label="上振れ" value={machine.dailyHigh} tone="high" />
       </div>
       <div className="strategy-luck-risk">
-        <div className="strategy-luck-title"><strong>運によるブレ</strong><span>大当たりが早い・遅いことで揺れる目安</span></div>
+        <div className="strategy-luck-title">
+          <strong>運によるブレ</strong>
+          <span>
+            {machine.stdDevVerified && machine.stdDev != null
+              ? `2,200回転基準の検証済み標準偏差 ${fmt(machine.stdDev)}玉を使用`
+              : "検証済み標準偏差の確認待ち"}
+          </span>
+        </div>
         <div><span>1時間</span><b>{machine.hourlyRisk == null ? "算定待ち" : `±${fmt(Math.abs(machine.hourlyRisk))}円`}</b></div>
         <div><span>予定全体</span><b>{machine.dailyRisk == null ? "算定待ち" : `±${fmt(Math.abs(machine.dailyRisk))}円`}</b></div>
       </div>
@@ -752,8 +803,9 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
   const seatThreshold = Math.ceil((Number(machine.border || 0) + 0.5) * 10) / 10;
   const recommendation = plan?.isSkip
     ? "本日見送り"
+    : machine.recommendationStatus === "reference" ? "過去参考"
     : machine.profitChanceStatus === "ready" ? v.reco : "要確認";
-  const recommendationColor = plan?.isSkip || machine.profitChanceStatus !== "ready" ? P.yellow : v.color;
+  const recommendationColor = plan?.isSkip || machine.recommendationStatus === "reference" || machine.profitChanceStatus !== "ready" ? P.yellow : v.color;
   return (
     <div className="strategy-selected-detail-card" style={{ background: P.card, border: `1px solid color-mix(in srgb, ${v.color} 30%, ${P.line})`, borderRadius: RADIUS, padding: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
@@ -781,7 +833,11 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
 
           {plan?.isSkip ? (
             <div className="strategy-a-decision is-skip">
-              <div><span>本日の判断</span><b>プランが「見送り」に設定されています</b></div>
+              <div><span>本日の判断</span><b>立ち回りプランが「見送り」に設定されています</b></div>
+            </div>
+          ) : machine.recommendationStatus === "reference" ? (
+            <div className="strategy-a-decision is-skip">
+              <div><span>本日の判断</span><b>本日分の解析がないため、着席判断を停止しています</b></div>
             </div>
           ) : (
             <div className="strategy-a-decision">
@@ -807,10 +863,20 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
           </div>
 
           <div className="strategy-detail-secondary">
+            <DetailMetric label="良台スコア" value={fmt(machine.goodMachineScore, 1)} unit="点" color={v.color} />
             <DetailMetric label="EMA（最近重視）" value={fmt(machine.ema, 1)} unit="/k" color={P.cyan} />
-            <DetailMetric label="明日締め確率" value={fmt(machine.tomorrowTight)} unit="%" color={machine.tomorrowTight >= 60 ? P.red : P.yellow} />
+            <DetailMetric
+              label={machine.recommendationStatus === "reference" ? "締め確率" : "明日締め確率"}
+              value={machine.recommendationStatus === "reference" ? "—" : fmt(machine.tomorrowTight)}
+              unit={machine.recommendationStatus === "reference" ? "" : "%"}
+              color={machine.tomorrowTight >= 60 ? P.red : P.yellow}
+            />
             <DetailMetric label="玉単価差" value={machine.unitPriceAvailable ? signed(machine.unitPrice, 2) : "—"} unit={machine.unitPriceAvailable ? "円/回" : ""} color={machine.unitPriceAvailable && machine.unitPrice < 0 ? P.red : P.green} />
             <DetailMetric label="シャープ比" value={fmt(machine.sharpe, 2)} unit="" color={P.subHi} />
+          </div>
+          <div style={{ marginTop: 7, fontSize: 9, color: P.sub }}>
+            予測データ：{(machine.evidenceSources || []).map((source) => source === "delta" ? "差玉" : source === "archive" ? "完了実戦" : "現在実戦").join("＋") || "機種基準"}
+            {machine.rotationEstimate?.inputBalls > 0 ? ` ／ 推定投入 ${fmt(machine.rotationEstimate.inputBalls)}玉` : ""}
           </div>
 
           <div style={{ marginTop: 9, padding: "10px 11px", borderRadius: 12, background: P.bg, border: `1px solid ${P.line}` }}>
@@ -830,6 +896,10 @@ function LearningSummary({ data, selected }) {
   if (!data.analytics || !selected) return null;
   const overall = data.aiProfile?.overall || {};
   const island = data.islandStats?.find((item) => item.island === data.islands.find((x) => x.id === selected.islandId)?.name);
+  const profileCounts = (data.aiProfile?.profiles || []).reduce((acc, profile) => {
+    acc[profile.type] = (acc[profile.type] || 0) + 1;
+    return acc;
+  }, {});
   return (
     <Section title="店のクセと変化検知" accent={P.yellow} sub="保存した差玉だけで学習">
       <div style={{ padding: "0 14px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -837,11 +907,18 @@ function LearningSummary({ data, selected }) {
           <div style={{ fontSize: 9, color: P.sub }}>AIプロファイル（全体）</div>
           <div style={{ marginTop: 6, fontSize: 19, fontWeight: 900, color: P.cyan, fontFamily: MONO }}>{fmt(overall.rate, 1)}<span style={{ fontSize: 9, color: P.sub }}>/k</span></div>
           <div style={{ marginTop: 4, fontSize: 9, color: P.subHi }}>{fmt(overall.count)}件を玉数で重み付け</div>
+          <div style={{ marginTop: 3, fontSize: 8, color: P.sub }}>
+            曜日{profileCounts.weekday || 0}・店{profileCounts.store || 0}・機種{profileCounts.machine || 0}・島{profileCounts.island || 0}
+          </div>
         </div>
         <div style={{ padding: 12, borderRadius: 16, background: P.card, border: `1px solid ${P.line}` }}>
-          <div style={{ fontSize: 9, color: P.sub }}>明日の曜日の締め率</div>
-          <div style={{ marginTop: 6, fontSize: 19, fontWeight: 900, color: selected.weekdayTight >= 30 ? P.red : P.yellow, fontFamily: MONO }}>{fmt(selected.weekdayTight)}<span style={{ fontSize: 9, color: P.sub }}>%</span></div>
-          <div style={{ marginTop: 4, fontSize: 9, color: P.subHi }}>明日と同じ曜日 {fmt(selected.weekdaySamples)}件</div>
+          <div style={{ fontSize: 9, color: P.sub }}>{data.actionable ? "明日の曜日の締め率" : "曜日の締め率"}</div>
+          <div style={{ marginTop: 6, fontSize: 19, fontWeight: 900, color: data.actionable && selected.weekdayTight >= 30 ? P.red : P.yellow, fontFamily: MONO }}>
+            {data.actionable ? <>{fmt(selected.weekdayTight)}<span style={{ fontSize: 9, color: P.sub }}>%</span></> : "算定待ち"}
+          </div>
+          <div style={{ marginTop: 4, fontSize: 9, color: P.subHi }}>
+            {data.actionable ? `明日と同じ曜日 ${fmt(selected.weekdaySamples)}件` : "本日分の解析後に更新"}
+          </div>
         </div>
         <div style={{ padding: 12, borderRadius: 16, background: P.card, border: `1px solid ${P.line}`, gridColumn: "1 / -1" }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
@@ -849,8 +926,33 @@ function LearningSummary({ data, selected }) {
             <span style={{ fontSize: 12, fontWeight: 900, color: P.text, fontFamily: MONO }}>{island ? `${fmt(island.averageRotation, 1)}/k（${island.activeMachines}台）` : "データ不足"}</span>
           </div>
           <div style={{ marginTop: 7, fontSize: 9, lineHeight: 1.6, color: P.sub }}>
-            CUSUM（小さなズレの貯金） 開け {fmt(selected.cusumUp, 1)} ／ 締め {fmt(selected.cusumDown, 1)}。対面はホールマップで向かい合う同じ台数の島を自動対応します。
+            CUSUM（小さなズレの貯金） 開け {fmt(selected.cusumUp, 1)} ／ 締め {fmt(selected.cusumDown, 1)}。対面はホールマップで明示設定した島だけを対応します。
           </div>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+function PortfolioPlan({ portfolio, plan }) {
+  const rows = portfolio?.plan || [];
+  if (!rows.length) return null;
+  return (
+    <Section title="予定時間の優先配分" accent={P.green} sub="期待値÷ブレで配分">
+      <div style={{ padding: "0 14px", display: "grid", gap: 7 }}>
+        {rows.map((row) => (
+          <div key={`${row.machineName}-${row.number}`} className="strategy-plan-row">
+            <span className="strategy-plan-rank">{row.rank}</span>
+            <span className="strategy-plan-machine">台{row.number}</span>
+            <span className="strategy-plan-sub">{row.machineName}</span>
+            <span className="strategy-plan-metrics">
+              <span className="is-ready"><b>{fmt(row.hours, 1)}</b><small>時間</small></span>
+              <span><b>{signed(row.expectedProfit)}</b><small>円</small></span>
+            </span>
+          </div>
+        ))}
+        <div style={{ color: P.subHi, fontSize: 10, textAlign: "right" }}>
+          設定 {fmt(plan?.plannedHours, 1)}時間 ／ 配分 {fmt(portfolio.totalHours, 1)}時間 ／ 期待 {signed(portfolio.expectedProfit)}円
         </div>
       </div>
     </Section>
@@ -881,6 +983,7 @@ export default function StrategyMapDashboard({ S, onBack }) {
   const savedScans = Array.isArray(S?.deltaScans) ? S.deltaScans : EMPTY_LIST;
   const savedCustomMachines = Array.isArray(S?.customMachines) ? S.customMachines : EMPTY_LIST;
   const savedStores = Array.isArray(S?.stores) ? S.stores : EMPTY_LIST;
+  const savedArchives = Array.isArray(S?.archives) ? S.archives : EMPTY_LIST;
   const savedMonthlyPlayPlans = S?.monthlyPlayPlans;
   const savedDailyResearchPlans = S?.dailyResearchPlans;
   const selectedStoreId = S?.selectedStoreId;
@@ -889,6 +992,16 @@ export default function StrategyMapDashboard({ S, onBack }) {
   const rotationsPerHour = S?.rotPerHour;
   const savedHallMaps = S?.hallMaps;
   const liveDecision = S?.ev?.liveDecision || null;
+  const sessionStarted = Boolean(S?.sessionStarted);
+  const liveSession = useMemo(() => sessionStarted ? {
+    storeId: selectedStoreId,
+    storeName: S?.storeName || "",
+    machineName: S?.machineName || "",
+    machineNum: S?.machineNum,
+    date: S?.sessionStartDate || localDateStr(new Date()),
+    ev: S?.ev || {},
+    settings: { rentBalls: S?.rentBalls },
+  } : null, [sessionStarted, selectedStoreId, S?.storeName, S?.machineName, S?.machineNum, S?.sessionStartDate, S?.ev, S?.rentBalls]);
   const deltaScans = useMemo(() => isDemo ? P_EVIDENCE_DEMO_SCANS : savedScans, [isDemo, savedScans]);
   const customMachines = useMemo(
     () => isDemo ? [P_EVIDENCE_DEMO_MACHINE, ...savedCustomMachines] : savedCustomMachines,
@@ -930,6 +1043,9 @@ export default function StrategyMapDashboard({ S, onBack }) {
       ballValueYen: isDemo ? 4 : ballValueYen,
     });
   }, [entryPlanContext, savedStores, strategyStoreId, exchangeRateRaw, ballValueRaw, savedDailyResearchPlans, savedMonthlyPlayPlans, rotationsPerHour, isDemo]);
+  const targetDate = isDemo
+    ? [...deltaScans].map((scan) => String(scan?.date || "")).sort().at(-1) || strategyPlan.date
+    : strategyPlan.date;
   const data = useMemo(() => buildStrategyMap({
     playingNum,
     liveDecision,
@@ -939,13 +1055,16 @@ export default function StrategyMapDashboard({ S, onBack }) {
     selectedStoreId: strategyStoreId,
     planHandoff,
     plan: strategyPlan,
-  }), [playingNum, liveDecision, deltaScans, customMachines, isDemo, savedHallMaps, strategyStoreId, planHandoff, strategyPlan]);
+    targetDate,
+    stores: savedStores,
+    archives: isDemo ? EMPTY_LIST : savedArchives,
+    liveSession: isDemo ? null : liveSession,
+  }), [playingNum, liveDecision, deltaScans, customMachines, isDemo, savedHallMaps, strategyStoreId, planHandoff, strategyPlan, targetDate, savedStores, savedArchives, liveSession]);
   const plannedStore = savedStores.find((item) => (
     item && typeof item === "object" && planHandoff?.defaultStoreId != null
       && String(item.id) === String(planHandoff.defaultStoreId)
   ));
   const plannedStoreName = plannedStore?.name || "";
-  const updatedAt = useMemo(() => nowHM(), []);
   const [filter, setFilter] = useState("all");
   const [selectedId, setSelectedId] = useState(data.leadId);
   const [activeIslandId, setActiveIslandId] = useState(() =>
@@ -984,13 +1103,14 @@ export default function StrategyMapDashboard({ S, onBack }) {
 
   return (
     <div ref={rootRef} className="strategy-map" style={{ flex: 1, background: P.bg, color: P.text, fontFamily: FONT, paddingBottom: "calc(24px + env(safe-area-inset-bottom))" }}>
-      <Header data={data} updatedAt={updatedAt} onBack={onBack} onHelp={() => setHelpOpen(true)} />
+      <Header data={data} onBack={onBack} onHelp={() => setHelpOpen(true)} />
       <PlanHandoffBanner
         plan={planHandoff}
         match={data.planMatch}
         storeName={plannedStoreName}
         hasData={data.total > 0}
       />
+      <FreshnessBanner freshness={data.freshness} sourceSummary={data.sourceSummary} />
       <div style={{ padding: "4px 14px 0" }}>
         <button
           type="button"
@@ -1031,6 +1151,7 @@ export default function StrategyMapDashboard({ S, onBack }) {
       />
       <SelectedOutcomeSection machine={selected} islandAvgRot={data.islandAvgRot} plan={data.plan} />
       <LearningSummary data={data} selected={selected} />
+      <PortfolioPlan portfolio={data.portfolio} plan={data.plan} />
       {helpOpen && <HelpSheet onClose={() => setHelpOpen(false)} />}
       {yutimeOpen && (
         <YutimeCalculatorSheet

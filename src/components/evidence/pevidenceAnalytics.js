@@ -269,6 +269,7 @@ function createProcessedRows(rawRows, customMachines, params) {
     let regimeDirection = null;
     let regimeSpins = 0;
     let regimeInputBalls = 0;
+    let regimeInputVariance = 0;
 
     for (const row of list) {
       const e = row.estimate;
@@ -300,6 +301,7 @@ function createProcessedRows(rawRows, customMachines, params) {
           regimeDirection = changePoint;
           regimeSpins = 0;
           regimeInputBalls = 0;
+          regimeInputVariance = 0;
         } else {
           cusumUp = nextUp;
           cusumDown = nextDown;
@@ -314,6 +316,7 @@ function createProcessedRows(rawRows, customMachines, params) {
       cumulativeInputVariance += (e.dailyStandardError * e.estimatedInputBalls ** 2 / Math.max(1, 250 * e.normalSpins)) ** 2;
       regimeSpins += e.normalSpins;
       regimeInputBalls += e.estimatedInputBalls;
+      regimeInputVariance += (e.dailyStandardError * e.estimatedInputBalls ** 2 / Math.max(1, 250 * e.normalSpins)) ** 2;
 
       const postSamples = cumulativeInputBalls / 250;
       const regimeSamples = regimeInputBalls / 250;
@@ -328,8 +331,11 @@ function createProcessedRows(rawRows, customMachines, params) {
       const priorBalls = Math.max(2500, num(row.machine?.muraCoef, params.defaultPriorBalls) * Math.pow(0.5, confidenceBalls / params.priorHalfLifeBalls));
       const confidence = confidenceSamples / (confidenceSamples + priorBalls / 250);
       const predictedRotation = activeRate * confidence + row.border * (1 - confidence);
-      const aggregateDerivative = 250 * cumulativeSpins / Math.max(1, cumulativeInputBalls ** 2);
-      const standardError = Math.max(0.12, aggregateDerivative * Math.sqrt(Math.max(0, cumulativeInputVariance)));
+      const activeSpins = usesRegimeRate ? regimeSpins : cumulativeSpins;
+      const activeInputBalls = usesRegimeRate ? regimeInputBalls : cumulativeInputBalls;
+      const activeInputVariance = usesRegimeRate ? regimeInputVariance : cumulativeInputVariance;
+      const aggregateDerivative = 250 * activeSpins / Math.max(1, activeInputBalls ** 2);
+      const standardError = Math.max(0.12, aggregateDerivative * Math.sqrt(Math.max(0, activeInputVariance)));
       // 3エンジン共通の区間式（deltaEvidence と同一）: 予測は実測×信頼度+ボーダー×(1-信頼度)の
       // 合成なので、区間幅も conf²·SE² + (1-conf)²·priorVariance のベイズ事後分散から取る。
       // 従来の SE×conf は信頼度ゼロ付近で区間幅0（＝データなしで断定）に潰れていた。
@@ -354,11 +360,13 @@ function createProcessedRows(rawRows, customMachines, params) {
         regimeDirection,
         regimeSpins,
         regimeInputBalls,
+        regimeInputVariance,
         regimeRate,
         confidence,
         predictedRotation,
         predictedLow,
         predictedHigh,
+        posteriorVariance: posteriorSd ** 2,
         standardError,
       });
     }
@@ -506,9 +514,14 @@ function buildSpatial(latest, params) {
 
 function buildOppositePairs(islands = []) {
   const pairs = new Map();
-  for (let i = 0; i + 1 < islands.length; i += 2) {
-    const left = islands[i];
-    const right = islands[i + 1];
+  const byId = new Map((islands || []).map((island) => [String(island?.id || ""), island]));
+  const handled = new Set();
+  for (const left of islands || []) {
+    const right = byId.get(String(left?.facingIslandId || ""));
+    if (!right || right === left) continue;
+    const relationKey = [String(left.id), String(right.id)].sort().join("___");
+    if (handled.has(relationKey)) continue;
+    handled.add(relationKey);
     const aStart = num(left?.start, NaN);
     const aEnd = num(left?.end, NaN);
     const bStart = num(right?.start, NaN);
@@ -518,10 +531,13 @@ function buildOppositePairs(islands = []) {
     const b = [];
     for (let n = Math.min(aStart, aEnd); n <= Math.max(aStart, aEnd); n++) a.push(String(n));
     for (let n = Math.min(bStart, bEnd); n <= Math.max(bStart, bEnd); n++) b.push(String(n));
-    if (a.length !== b.length) continue;
-    for (let j = 0; j < a.length; j++) {
-      pairs.set(a[j], b[b.length - 1 - j]);
-      pairs.set(b[b.length - 1 - j], a[j]);
+    const count = Math.min(a.length, b.length);
+    const reverse = left?.facingReversed !== false;
+    for (let j = 0; j < count; j++) {
+      const oppositeIndex = reverse ? b.length - 1 - j : j;
+      if (oppositeIndex < 0 || oppositeIndex >= b.length) continue;
+      pairs.set(a[j], b[oppositeIndex]);
+      pairs.set(b[oppositeIndex], a[j]);
     }
   }
   return pairs;
