@@ -1377,7 +1377,14 @@ export default function App() {
         {currentMode === "delta" && (
           <DeltaAnalyzer
             store={deltaActiveStore}
+            stores={Array.isArray(stores) ? stores : []}
             islands={deltaIslands}
+            onChangeStore={(nextStoreId) => {
+              const nextStore = (Array.isArray(stores) ? stores : []).find(
+                (item) => item && typeof item === "object" && String(item.id) === String(nextStoreId)
+              );
+              if (nextStore) setSelectedStoreId(nextStore.id);
+            }}
             onClose={() => setCurrentMode("home")}
             onSaveScan={handleSaveDeltaScan}
             aiApiKey={typeof aiApiKey === "string" ? aiApiKey : ""}
