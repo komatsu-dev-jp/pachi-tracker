@@ -62,6 +62,13 @@ function signed(n, d = 0) {
   if (n == null || !isFinite(n)) return "—";
   return (n >= 0 ? "+" : "") + fmt(n, d);
 }
+
+function nextDateKey(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return "";
+  return localDateStr(new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + 1));
+}
+
 const PROFIT_CHANCE_PENDING = {
   "model-unverified": "正式型式の確認待ち",
   "stddev-unverified": "ブレ幅の確認待ち",
@@ -69,7 +76,7 @@ const PROFIT_CHANCE_PENDING = {
   "rotation-range-missing": "予測回転率の幅待ち",
   "low-confidence": "店舗データ不足",
   "data-missing": "店舗データ待ち",
-  "stale-scan": "本日の解析待ち",
+  "stale-scan": "前日または本日の解析待ち",
 };
 
 function profitChanceText(machine) {
@@ -228,7 +235,7 @@ const HELP_GROUPS = [
       { name: "予測回転率", simple: "1,000円で、だいたい何回まわりそうかの予想です。", read: "ボーダーより大きいほど有利です。ただし、差玉から計算した予想なので必ず同じ回数になるわけではありません。" },
       { name: "ボーダー", simple: "長く遊んだときに、プラスとマイナスの境目になる回転率です。", read: "予測回転率がボーダーを上回る台を探します。例：ボーダー18、予測20なら、1,000円で約2回多く回る予想です。" },
       { name: "信頼度・確信度", simple: "予想を、どれくらい信用してよいかの目安です。", read: "データが少ないと低く、投入玉や日数が増えると高くなります。高くても未来を保証する数字ではありません。" },
-      { name: "良台スコア", simple: "回転率の良さと、データの確かさを1つにまとめた点数です。", read: "高いほど候補ですが、釘変化や明日締め確率が危険な場合は点数を下げます。" },
+      { name: "良台スコア", simple: "回転率の良さと、データの確かさを1つにまとめた点数です。", read: "高いほど候補ですが、釘変化や解析翌日の締め確率が危険な場合は点数を下げます。" },
       { name: "収支プラス見込み", simple: "予定時間の終了時に、収支が0円を超える確率の概算幅です。", read: "本日の予定時間、予測回転率の上下幅、交換率、検証済みの機種ブレから正規近似で計算します。勝利を保証せず、短時間や荒い機種ほど誤差が大きくなります。" },
       { name: "勝てる確率（旧称）", simple: "現在の『収支プラス見込み』と同じ項目です。", read: "別の確率ではありません。画面と説明の呼び方を『収支プラス見込み』へ統一しています。" },
       { name: "初当たり1回以上", simple: "予定回転数の中で、初当たりを1回以上引く理論上の確率です。", read: "大当たり確率と予定回転数だけで計算します。初当たりを引いても最終収支がプラスとは限らないため、収支プラス見込みとは別の数字です。" },
@@ -253,11 +260,11 @@ const HELP_GROUPS = [
     ],
   },
   {
-    title: "明日の予想",
+    title: "解析翌日の予想",
     terms: [
-      { name: "マルコフ・明日締め確率", simple: "今日の状態から、明日悪くなる割合を過去から調べた数字です。", read: "難しく言うと『良い→悪い』『悪い→悪い』の変わり方を数えています。60%以上は締め注意、データ不足時は安全側の初期値を使います。" },
+      { name: "マルコフ・翌日締め確率", simple: "解析日の状態から、翌日悪くなる割合を過去から調べた数字です。", read: "難しく言うと『良い→悪い』『悪い→悪い』の変わり方を数えています。60%以上は締め注意、データ不足時は安全側の初期値を使います。" },
       { name: "AIプロファイル", simple: "保存した差玉から、曜日・店・機種・島のクセをまとめた統計です。", read: "人のように考えるAIではありません。直近90日・最大300件の範囲で、投入玉が多い記録を強くします。" },
-      { name: "明日の地図", simple: "各台を、据え置き・締め注意・開け波及・様子見に分けた予想です。", read: "回転率、マルコフ、隣、対面を合わせます。翌日の実際の釘を保証するものではありません。" },
+      { name: "翌日の地図", simple: "各台を、据え置き・締め注意・開け波及・様子見に分けた予想です。", read: "回転率、マルコフ、隣、対面を合わせます。翌日の実際の釘を保証するものではありません。" },
     ],
   },
   {
@@ -389,6 +396,22 @@ function SelectedOutcomeSection({ machine, islandAvgRot, plan }) {
 
 function FreshnessBanner({ freshness, sourceSummary }) {
   if (!freshness || freshness.status === "fresh") return null;
+  if (freshness.status === "prepared") {
+    return (
+      <div style={{
+        margin: "10px 14px 0", padding: "11px 12px", borderRadius: 14,
+        border: "1px solid color-mix(in srgb, var(--sm-cyan) 42%, var(--sm-line))",
+        background: "color-mix(in srgb, var(--sm-cyan) 8%, var(--sm-card))",
+        color: P.subHi, fontSize: 11, lineHeight: 1.6,
+      }}>
+        <strong style={{ display: "block", color: P.cyan, marginBottom: 3 }}>
+          前日リサーチ：{freshness.sourceDate}の解析を本日用に表示
+        </strong>
+        本命・着席目安・収支見込みを確認できます。実戦前は店内状況と試し打ちの回転率も確認してください。
+        {sourceSummary?.length > 0 && <span style={{ display: "block", marginTop: 3 }}>使用データ：{sourceSummary.join("＋")}</span>}
+      </div>
+    );
+  }
   const future = freshness.status === "future";
   return (
     <div style={{
@@ -400,7 +423,7 @@ function FreshnessBanner({ freshness, sourceSummary }) {
       <strong style={{ display: "block", color: P.yellow, marginBottom: 3 }}>
         {future ? "解析日を確認してください" : `過去参考：${freshness.label}`}
       </strong>
-      本命・着席推奨・今日の収支・明日予測は停止しています。本日の差玉解析を保存すると再開します。
+      本命・着席推奨・今日の収支・翌日予測は停止しています。前日または本日の差玉解析を保存すると再開します。
       {sourceSummary?.length > 0 && <span style={{ display: "block", marginTop: 3 }}>使用データ：{sourceSummary.join("＋")}</span>}
     </div>
   );
@@ -837,7 +860,7 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
             </div>
           ) : machine.recommendationStatus === "reference" ? (
             <div className="strategy-a-decision is-skip">
-              <div><span>本日の判断</span><b>本日分の解析がないため、着席判断を停止しています</b></div>
+              <div><span>本日の判断</span><b>前日または本日の解析がないため、着席判断を停止しています</b></div>
             </div>
           ) : (
             <div className="strategy-a-decision">
@@ -866,7 +889,7 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
             <DetailMetric label="良台スコア" value={fmt(machine.goodMachineScore, 1)} unit="点" color={v.color} />
             <DetailMetric label="EMA（最近重視）" value={fmt(machine.ema, 1)} unit="/k" color={P.cyan} />
             <DetailMetric
-              label={machine.recommendationStatus === "reference" ? "締め確率" : "明日締め確率"}
+              label={machine.recommendationStatus === "reference" ? "締め確率" : `${machine.predictionDayLabel}締め確率`}
               value={machine.recommendationStatus === "reference" ? "—" : fmt(machine.tomorrowTight)}
               unit={machine.recommendationStatus === "reference" ? "" : "%"}
               color={machine.tomorrowTight >= 60 ? P.red : P.yellow}
@@ -884,7 +907,7 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
               釘変化：{machine.nailAlert}
             </div>
             <div style={{ marginTop: 5, fontSize: 10, lineHeight: 1.6, color: P.subHi }}>
-              明日の地図：{machine.nextPrediction} ／ {machine.spatialAlert} ／ {machine.oppositeAlert}
+              {machine.predictionDayLabel}の地図：{machine.nextPrediction} ／ {machine.spatialAlert} ／ {machine.oppositeAlert}
             </div>
             {machine.regimeStart && <div style={{ marginTop: 4, fontSize: 10, lineHeight: 1.6, color: P.sub }}>今の状態は{machine.regimeStart}から</div>}
           </div>
@@ -912,12 +935,12 @@ function LearningSummary({ data, selected }) {
           </div>
         </div>
         <div style={{ padding: 12, borderRadius: 16, background: P.card, border: `1px solid ${P.line}` }}>
-          <div style={{ fontSize: 9, color: P.sub }}>{data.actionable ? "明日の曜日の締め率" : "曜日の締め率"}</div>
+          <div style={{ fontSize: 9, color: P.sub }}>{data.actionable ? `${selected.predictionDayLabel}の曜日の締め率` : "曜日の締め率"}</div>
           <div style={{ marginTop: 6, fontSize: 19, fontWeight: 900, color: data.actionable && selected.weekdayTight >= 30 ? P.red : P.yellow, fontFamily: MONO }}>
             {data.actionable ? <>{fmt(selected.weekdayTight)}<span style={{ fontSize: 9, color: P.sub }}>%</span></> : "算定待ち"}
           </div>
           <div style={{ marginTop: 4, fontSize: 9, color: P.subHi }}>
-            {data.actionable ? `明日と同じ曜日 ${fmt(selected.weekdaySamples)}件` : "本日分の解析後に更新"}
+            {data.actionable ? `${selected.predictionDayLabel}と同じ曜日 ${fmt(selected.weekdaySamples)}件` : "前日または本日の解析後に更新"}
           </div>
         </div>
         <div style={{ padding: 12, borderRadius: 16, background: P.card, border: `1px solid ${P.line}`, gridColumn: "1 / -1" }}>
@@ -1043,9 +1066,10 @@ export default function StrategyMapDashboard({ S, onBack }) {
       ballValueYen: isDemo ? 4 : ballValueYen,
     });
   }, [entryPlanContext, savedStores, strategyStoreId, exchangeRateRaw, ballValueRaw, savedDailyResearchPlans, savedMonthlyPlayPlans, rotationsPerHour, isDemo]);
-  const targetDate = isDemo
-    ? [...deltaScans].map((scan) => String(scan?.date || "")).sort().at(-1) || strategyPlan.date
-    : strategyPlan.date;
+  const latestDemoDate = isDemo
+    ? [...deltaScans].map((scan) => String(scan?.date || "")).sort().at(-1) || ""
+    : "";
+  const targetDate = isDemo ? nextDateKey(latestDemoDate) || strategyPlan.date : strategyPlan.date;
   const data = useMemo(() => buildStrategyMap({
     playingNum,
     liveDecision,

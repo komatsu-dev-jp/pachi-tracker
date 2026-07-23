@@ -91,8 +91,19 @@ const allocationMap = buildStrategyMap({
 assert.ok(allocationMap.portfolio.plan.length > 0);
 assert.equal(allocationMap.portfolio.totalHours, allocationMap.plan.plannedHours, "優先配分の丸め後も予定時間の合計を保つ");
 
-const staleMap = buildStrategyMap({ scans, customMachines: [machine], plan, targetDate: "2026-07-03" });
+const preparedMap = buildStrategyMap({ scans, customMachines: [machine], plan, targetDate: "2026-07-03" });
+assert.equal(preparedMap.freshness.status, "prepared");
+assert.equal(preparedMap.freshness.ageDays, 1);
+assert.equal(preparedMap.actionable, true);
+assert.equal(preparedMap.all[0].recommendationStatus, "actionable");
+assert.equal(preparedMap.all[0].predictionDayLabel, "本日");
+assert.equal(preparedMap.all[0].profitChanceStatus, "ready");
+assert.notEqual(preparedMap.all[0].daily, null);
+assert.notEqual(preparedMap.all[0].tomorrowTight, null);
+
+const staleMap = buildStrategyMap({ scans, customMachines: [machine], plan, targetDate: "2026-07-04" });
 assert.equal(staleMap.freshness.status, "stale");
+assert.equal(staleMap.freshness.ageDays, 2);
 assert.equal(staleMap.actionable, false);
 assert.equal(staleMap.candidates.length, 0);
 assert.equal(staleMap.all[0].profitChanceStatus, "stale-scan");

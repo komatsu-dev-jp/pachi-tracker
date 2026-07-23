@@ -42,7 +42,13 @@ export function getStrategyFreshness(scans = [], targetDate = "") {
   const sourceDay = dayNumber(sourceDate);
   const targetDay = dayNumber(target);
   const ageDays = Number.isFinite(sourceDay) && Number.isFinite(targetDay) ? targetDay - sourceDay : null;
-  const status = ageDays === 0 ? "fresh" : ageDays > 0 ? "stale" : ageDays < 0 ? "future" : "invalid";
+  const status = ageDays === 0
+    ? "fresh"
+    : ageDays === 1
+      ? "prepared"
+      : ageDays > 1
+        ? "stale"
+        : ageDays < 0 ? "future" : "invalid";
   return {
     status,
     sourceDate,
@@ -51,6 +57,7 @@ export function getStrategyFreshness(scans = [], targetDate = "") {
     ageDays,
     label: status === "fresh"
       ? "本日解析"
+      : status === "prepared" ? `前日解析（${sourceDate}）・本日用`
       : status === "stale" ? `${sourceDate}の解析・${ageDays}日前`
         : status === "future" ? "未来日の解析" : "解析日不明",
   };
@@ -492,7 +499,10 @@ export function buildStrategyMap({
   const currentScans = latestScanGroup(scans, selectedStoreId, stores);
   const freshness = getStrategyFreshness(currentScans, targetDate);
   if (!currentScans.length) return emptyMap(playingNum, planHandoff, plan, freshness);
-  const actionable = freshness.status === "fresh";
+  // 差玉リサーチは通常、実戦日の前日に行う。
+  // 当日解析に加えて1日前の解析だけを本日用として有効にし、2日以上前は参考表示へ戻す。
+  const actionable = freshness.status === "fresh" || freshness.status === "prepared";
+  const predictionDayLabel = freshness.status === "prepared" ? "本日" : "明日";
 
   const analysisStoreId = currentScans[0]?.storeId ?? selectedStoreId;
   const selectedStore = (stores || []).find((store) => String(store?.id) === String(analysisStoreId)) || null;
@@ -661,7 +671,8 @@ export function buildStrategyMap({
       },
       evidenceSources: estimate.sources,
       recommendationStatus: actionable ? "actionable" : "reference",
-      calculationPendingReasons: actionable ? [] : ["解析日が本日ではありません"],
+      calculationPendingReasons: actionable ? [] : ["解析日が本日または前日ではありません"],
+      predictionDayLabel,
       ema: round1(pe?.ema || 0),
       cusumUp: round1(pe?.cusumUp || 0),
       cusumDown: round1(pe?.cusumDown || 0),
@@ -703,7 +714,7 @@ export function buildStrategyMap({
         String(item.number) === String(row.num) &&
         item.machineName === machineName &&
         String(item.store ?? "") === rowStore
-      )?.prediction || "データ収集中") : "過去参考・本日解析待ち",
+      )?.prediction || "データ収集中") : "過去参考・前日または本日の解析待ち",
       planRole: planEligible ? planTarget.role : null,
       planPriority: planEligible ? planTarget.priority : null,
       planEvaluation: !planTarget
