@@ -327,17 +327,36 @@ function isYellowPixel(data, index) {
   return hue >= 38 && hue <= 76;
 }
 
-function findYellowComponents(data, imageWidth, panel) {
+// JPEG圧縮で白い0線へ溶けた極短線は、通常の彩度条件だけでは消えることがある。
+// 誤検出を避けるため、校正済みパネルの左端・0線付近を再探索する時だけ使う。
+function isFaintYellowPixel(data, index) {
+  const r = data[index];
+  const g = data[index + 1];
+  const b = data[index + 2];
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  if (max < 35 || Math.min(r, g) - b < 12) return false;
+  const hue = hueDegrees(r, g, b, max, delta);
+  return hue >= 35 && hue <= 85;
+}
+
+function findYellowComponents(data, imageWidth, panel, options = {}) {
   const { x, y, width, height } = panel.bbox;
   const size = width * height;
   const mask = new Uint8Array(size);
   const visited = new Uint8Array(size);
   const bridgeRadius = Math.max(2, Math.min(6, Math.round(Math.min(width, height) * 0.015)));
+  const pixelMatcher = options.pixelMatcher || isYellowPixel;
+  const scanLeft = Math.max(0, Math.floor(options.scanLeft ?? 0));
+  const scanRight = Math.min(width - 1, Math.ceil(options.scanRight ?? (width - 1)));
+  const scanTop = Math.max(0, Math.floor(options.scanTop ?? 0));
+  const scanBottom = Math.min(height - 1, Math.ceil(options.scanBottom ?? (height - 1)));
 
-  for (let localY = 0; localY < height; localY++) {
-    for (let localX = 0; localX < width; localX++) {
+  for (let localY = scanTop; localY <= scanBottom; localY++) {
+    for (let localX = scanLeft; localX <= scanRight; localX++) {
       const imageIndex = ((y + localY) * imageWidth + x + localX) * 4;
-      if (isYellowPixel(data, imageIndex)) mask[localY * width + localX] = 1;
+      if (pixelMatcher(data, imageIndex)) mask[localY * width + localX] = 1;
     }
   }
 
@@ -384,7 +403,7 @@ function findYellowComponents(data, imageWidth, panel) {
   return components;
 }
 
-function extractSeries(data, imageWidth, panel) {
+function extractSeries(data, imageWidth, panel, calibration) {
   const { width, height, x: panelX, y: panelY } = panel.bbox;
   const components = findYellowComponents(data, imageWidth, panel);
   const leftAnchor = Math.max(8, Math.round(width * 0.18));
@@ -401,7 +420,39 @@ function extractSeries(data, imageWidth, panel) {
     const scoreB = (b.maxX - b.minX) * 4 + b.px * 0.15 - b.minX;
     return scoreB - scoreA;
   });
-  const selected = candidates[0];
+  let selected = candidates[0];
+  let detectionSource = "standard";
+
+  if (!selected
+    && calibration?.source === "panel"
+    && Number.isFinite(calibration.zeroY)
+    && Number.isFinite(calibration.gridSpacing)
+    && calibration.quality >= 0.7) {
+    const startAnchor = Math.max(8, Math.round(width * 0.08));
+    const recoveryRight = Math.max(startAnchor, Math.round(width * 0.18));
+    const zeroTolerance = Math.max(3, calibration.gridSpacing * 0.25);
+    const recoverySpan = Math.max(2, Math.round(width * 0.01));
+    const faintCandidates = findYellowComponents(data, imageWidth, panel, {
+      pixelMatcher: isFaintYellowPixel,
+      scanRight: recoveryRight,
+      scanTop: calibration.zeroY - zeroTolerance,
+      scanBottom: calibration.zeroY + zeroTolerance,
+    }).filter((component) => (
+      component.minX <= startAnchor
+      && component.maxX - component.minX >= recoverySpan
+      && component.px >= 6
+      && component.minY < height * 0.9
+      && component.maxY >= calibration.zeroY - zeroTolerance
+      && component.minY <= calibration.zeroY + zeroTolerance
+    ));
+    faintCandidates.sort((a, b) => {
+      const scoreA = (a.maxX - a.minX) * 4 + a.px * 0.15 - a.minX;
+      const scoreB = (b.maxX - b.minX) * 4 + b.px * 0.15 - b.minX;
+      return scoreB - scoreA;
+    });
+    selected = faintCandidates[0];
+    if (selected) detectionSource = "faint-short";
+  }
   if (!selected) return null;
 
   // 通常は最も右の2列だけを使い、斜線の手前側へ終点がずれるのを防ぐ。
@@ -441,6 +492,7 @@ function extractSeries(data, imageWidth, panel) {
     px: selected.px,
     quality,
     span,
+    detectionSource,
     bounds: {
       minX: selected.minX,
       maxX: selected.maxX,
@@ -674,7 +726,7 @@ export function runAnalysis(data, w, h) {
 
   const results = panels.map((panel, index) => {
     const calibration = resolvedCalibrations[index];
-    const series = extractSeries(data, w, panel);
+    const series = extractSeries(data, w, panel, calibration);
     if (!series) {
       diagnostics.analysis.failed += 1;
       diagnostics.analysis.missingSeries += 1;
@@ -708,6 +760,7 @@ export function runAnalysis(data, w, h) {
     confidence = Math.round(confidence * 1000) / 1000;
     const reasonCodes = [];
     if (calibration.source === "image-median") reasonCodes.push("fallback-calibration");
+    if (series.detectionSource === "faint-short") reasonCodes.push("faint-series");
     const isShortSeries = series.span < panel.bbox.width * 0.12;
     const boundaryContact = classifySeriesBoundaryContact(series, calibration);
     const isEndpointClipped = Boolean(boundaryContact.endpointBoundary);
@@ -737,6 +790,7 @@ export function runAnalysis(data, w, h) {
     if (confidence < 0.7) reasonCodes.push("low-confidence");
     const status = confidence >= 0.7
       && calibration.source === "panel"
+      && series.detectionSource === "standard"
       && !isShortSeries
       && !isEndpointClipped
       && !isEndpointBoundaryUncertain

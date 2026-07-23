@@ -1642,6 +1642,12 @@ function hasResolvedDelta(row) {
 
 function reviewReasonText(row) {
   const reasons = Array.isArray(row?.reasonCodes) ? row.reasonCodes : [];
+  if (reasons.includes("zero-length-series") && reasons.includes("table-low-activity")) {
+    return "低稼働・当り0の表データと照合した0玉候補です。元画像を確認してください。";
+  }
+  if (reasons.includes("faint-series")) {
+    return "淡く短い折れ線を復元しました。折れ線の終点を元画像で確認してください。";
+  }
   if (reasons.includes("endpoint-clipped-top")) {
     return "終点がグラフ上限で切れています。表示値よりプラス側へ大きい可能性があります。";
   }

@@ -8,6 +8,7 @@ const PANEL = [14, 20, 15, 255];
 const GRID = [68, 72, 70, 255];
 const ZERO = [205, 205, 205, 255];
 const YELLOW = [238, 232, 0, 255];
+const FAINT_YELLOW = [74, 70, 47, 255];
 
 function createRgba(width, height, color = WHITE) {
   const data = new Uint8ClampedArray(width * height * 4);
@@ -174,6 +175,33 @@ test("画像内に良好な校正元がなければ固定位置を推測しな�
   assert.deepEqual(results[0].reasonCodes, ["missing-calibration"]);
   assert.equal(results[0].calibration, null);
   assert.equal(diagnostics.calibration.unavailable, 1);
+});
+
+test("JPEGで白い0線へ溶けた淡い極短線を要確認候補として復元する", () => {
+  const image = createRgba(260, 120);
+  drawPanel(image, {
+    x: 10,
+    y: 10,
+    zeroY: 50,
+    spacing: 12,
+  });
+  drawLine(image, 16, 59, 21, 59, FAINT_YELLOW);
+  drawLine(image, 16, 60, 21, 60, FAINT_YELLOW);
+
+  const { results, diagnostics } = runAnalysis(image.data, image.width, image.height);
+
+  assert.equal(results.length, 1);
+  assert.equal(results[0].status, "review");
+  assert.ok(Number.isFinite(results[0].val));
+  assert.ok(Math.abs(results[0].val) <= 500);
+  assert.ok(results[0].reasonCodes.includes("faint-series"));
+  assert.ok(results[0].reasonCodes.includes("short-series"));
+  assert.deepEqual(diagnostics.analysis, {
+    ok: 0,
+    review: 1,
+    failed: 0,
+    missingSeries: 0,
+  });
 });
 
 test("途中の境界接触は確定し、短線と境界で切れた終点は制約付きreviewにする", () => {
