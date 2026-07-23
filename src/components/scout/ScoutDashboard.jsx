@@ -4,6 +4,7 @@ import { Card } from "../Atoms";
 import StoreRankingCard from "./StoreRankingCard";
 import { getStoreRanking } from "./scoutSelectors";
 import { buildStrategyMap } from "../strategy/strategyMapData";
+import { localDateStr } from "../../constants";
 
 // 本日予測タブ: 保存済み差玉から P-EVIDENCE 解析（buildStrategyMap）で計算した
 // 最新スキャン店舗の狙い台と翌日予測を表示する。仮データ・通信は使わない。
@@ -22,8 +23,15 @@ function ForecastTab({ S }) {
   const hallMaps = S?.hallMaps;
   const selectedStoreId = S?.selectedStoreId;
   const data = useMemo(
-    () => buildStrategyMap({ scans, customMachines, hallMaps, selectedStoreId }),
-    [scans, customMachines, hallMaps, selectedStoreId],
+    () => buildStrategyMap({
+      scans,
+      customMachines,
+      hallMaps,
+      selectedStoreId,
+      stores: S?.stores,
+      targetDate: localDateStr(new Date()),
+    }),
+    [scans, customMachines, hallMaps, selectedStoreId, S?.stores],
   );
 
   if (!data.total) {
@@ -37,19 +45,27 @@ function ForecastTab({ S }) {
   }
 
   const rows = data.top5.length ? data.top5 : data.all.slice(0, 5);
+  const isReference = !data.actionable;
   return (
     <Card>
       <div style={{ padding: "12px 14px 4px" }}>
         <div style={{ fontSize: 12, color: C.sub, fontWeight: 700, letterSpacing: 0.4 }}>
-          本日の狙い台 TOP{rows.length}
+          {isReference ? "過去解析の参考台" : `本日の狙い台 TOP${rows.length}`}
         </div>
         <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>
           {data.machineName} ／ 全{data.total}台 ・ 候補{data.kpi.candidates}台（保存済み差玉から計算）
         </div>
+        {isReference && (
+          <div style={{ marginTop: 7, padding: "7px 9px", borderRadius: 8, color: C.yellow, border: `1px solid ${C.yellow}` }}>
+            解析日は{data.freshness?.sourceDate || "不明"}です。本日分ではないため、本命判定を停止しています。
+          </div>
+        )}
       </div>
       <div style={{ padding: "4px 8px 10px" }}>
         {rows.map((m, i) => {
-          const v = FORECAST_VERDICT[m.verdict] || FORECAST_VERDICT.nodata;
+          const v = isReference
+            ? { label: "過去参考", color: C.sub }
+            : FORECAST_VERDICT[m.verdict] || FORECAST_VERDICT.nodata;
           return (
             <div
               key={m.id}
@@ -77,7 +93,7 @@ function ForecastTab({ S }) {
                   予測 {Number(m.rot).toLocaleString("ja-JP", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}/k ・ 信頼度 {m.confidence}%
                 </div>
                 <div style={{ fontSize: 10, color: C.sub, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  明日の地図：{m.nextPrediction}
+                  {isReference ? "過去データ：" : "明日の地図："}{m.nextPrediction}
                 </div>
               </div>
             </div>

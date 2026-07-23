@@ -221,8 +221,8 @@ assert.equal(zeroHit.valid, true);
 assert.ok(Math.abs(zeroHit.dailyRate - 25) < 0.01, "当りゼロの日は|差玉|を投入玉として全面採用する");
 
 const pairs = pevidenceInternals.buildOppositePairs([
-  { start: 101, end: 103 },
-  { start: 201, end: 203 },
+  { id: "a", start: 101, end: 103, facingIslandId: "b", facingReversed: true },
+  { id: "b", start: 201, end: 203, facingIslandId: "a", facingReversed: true },
 ]);
 assert.equal(pairs.get("101"), "203", "向かい合う島は鏡向きに対応する");
 assert.equal(pairs.get("103"), "201");

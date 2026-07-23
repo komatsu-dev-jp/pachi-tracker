@@ -7,7 +7,7 @@
 //   - 戦略マップ画面＝「分析」。本画面は触れない。
 //
 // データの実体は App.jsx の pt_hallMaps（{ [storeId]: Island[] }、
-// Island = { id, name, start, end, machineName }）。本コンポーネントは hallMapSelectors の
+// Island = { id, name, start, end, machineName, facingIslandId?, facingReversed? }）。本コンポーネントは hallMapSelectors の
 // 純粋関数のみで不変更新し、rotRows（回転数記録）・logic.js には触れない。
 // 世界観は戦略マップと統一（Bloomberg風・ダーク・ネオンブルー）だが、より管理寄りでシンプル。
 
@@ -662,7 +662,7 @@ function extendRange(s, e, delta) {
   return Math.min(s, Math.max(0, ne));
 }
 
-function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown, onRemove }) {
+function EditScreen({ island, islands, index, total, onBack, onSave, onMoveUp, onMoveDown, onRemove }) {
   // 下書き編集 → 「保存」で確定（保存後に戦略マップへ反映）。
   // rows（行数）・gaps（欠け台番号）・extra（追加の連番範囲）も下書きに含め、保存で島データへ永続化する。
   const segs0 = islandRanges(island);
@@ -671,6 +671,8 @@ function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown
     start: segs0[0].start, end: segs0[0].end,
     extra: segs0.slice(1), // 2つ目以降の連番範囲（連番が途中で切れる島用）
     rows: initialRows(island), gaps: Array.isArray(island.gaps) ? island.gaps : [],
+    facingIslandId: island.facingIslandId || "",
+    facingReversed: island.facingReversed !== false,
   });
 
   const startN = Math.max(0, Math.round(Number(draft.start) || 0));
@@ -799,7 +801,6 @@ function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown
                 <div style={{ minHeight: 46, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 900, color: P.cyan, fontFamily: MONO }}>{machines}</div>
               </div>
             </div>
-
             {/* 追加の行（対面の裏側・番号が飛ぶ島用）。左端＞右端なら降順の行になる */}
             {draft.extra.map((r, i) => (
               <div key={`extra-${i}-${draft.extra.length}-${r.start}-${r.end}`} style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr auto auto", gap: 8, alignItems: "end" }}>
@@ -823,6 +824,37 @@ function EditScreen({ island, index, total, onBack, onSave, onMoveUp, onMoveDown
                 ※ 1行＝上から見た島の並び1本分。各行の左端・右端に角台の番号を入れると、間を自動で埋めてマップを作ります。左端＞右端なら降順（例: 509〜499）。「⇅」で昇順/降順を入れ替えられます。
               </div>
             )}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <label style={{ fontSize: 10.5, color: P.sub, fontWeight: 700 }}>
+                対面する島
+                <select
+                  aria-label="対面する島"
+                  value={draft.facingIslandId}
+                  onChange={(event) => setDraft((current) => ({ ...current, facingIslandId: event.target.value }))}
+                  style={{ width: "100%", minHeight: 46, marginTop: 5, borderRadius: 12, border: `1px solid ${P.lineHi}`, background: P.bg, color: P.text, padding: "8px 10px" }}
+                >
+                  <option value="">未設定</option>
+                  {islands.filter((item) => item.id !== island.id).map((item) => (
+                    <option key={item.id} value={item.id}>{item.name || `${item.start}〜${item.end}`}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ fontSize: 10.5, color: P.sub, fontWeight: 700 }}>
+                台番号の向き
+                <select
+                  aria-label="対面の台番号方向"
+                  value={draft.facingReversed ? "reverse" : "same"}
+                  onChange={(event) => setDraft((current) => ({ ...current, facingReversed: event.target.value === "reverse" }))}
+                  style={{ width: "100%", minHeight: 46, marginTop: 5, borderRadius: 12, border: `1px solid ${P.lineHi}`, background: P.bg, color: P.text, padding: "8px 10px" }}
+                >
+                  <option value="reverse">鏡向き</option>
+                  <option value="same">同じ向き</option>
+                </select>
+              </label>
+            </div>
+            <div style={{ fontSize: 10, color: P.sub, lineHeight: 1.6 }}>
+              対面を設定した島だけが、戦略マップの対面変化判定に使われます。
+            </div>
           </div>
         </div>
 
@@ -943,7 +975,21 @@ export default function IslandMapManager({ store, stores, onChangeStore, islands
 
   const handleSave = (patch) => {
     if (!editingIsland) return;
-    onChangeIslands(updateIsland(islands, editingIsland.id, patch));
+    let next = updateIsland(islands, editingIsland.id, patch);
+    next = next.map((item) => {
+      if (item.id === editingIsland.id) return item;
+      if (item.id === patch.facingIslandId) {
+        return { ...item, facingIslandId: editingIsland.id, facingReversed: patch.facingReversed !== false };
+      }
+      if (
+        item.facingIslandId === editingIsland.id
+        || (patch.facingIslandId && item.facingIslandId === patch.facingIslandId)
+      ) {
+        return { ...item, facingIslandId: null };
+      }
+      return item;
+    });
+    onChangeIslands(next);
     logChange(`「${patch.name || editingIsland.name || "島"}」を更新 ${patch.start}〜${patch.end}`);
     setEditId(null);
   };
@@ -983,6 +1029,7 @@ export default function IslandMapManager({ store, stores, onChangeStore, islands
     return (
       <EditScreen
         island={editingIsland}
+        islands={islands}
         index={editingIndex}
         total={islands.length}
         onBack={() => setEditId(null)}

@@ -6,6 +6,8 @@ import {
   buildDeltaEvidence,
   collectDeltaRows,
   findMachineSpec,
+  normalizeEvidenceMachineName,
+  normalizeEvidenceMachineNumber,
 } from "../delta/deltaEvidence.js";
 import {
   buildPEvidenceAnalytics,
@@ -18,6 +20,90 @@ function round1(value) {
   return Math.round(Number(value || 0) * 10) / 10;
 }
 
+function normalizedDate(value) {
+  const match = String(value || "").match(/^(\d{4})[-/](\d{2})[-/](\d{2})/);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : "";
+}
+
+function dayNumber(value) {
+  const key = normalizedDate(value);
+  if (!key) return NaN;
+  const [year, month, day] = key.split("-").map(Number);
+  return Math.floor(Date.UTC(year, month - 1, day) / 86400000);
+}
+
+export function getStrategyFreshness(scans = [], targetDate = "") {
+  const latest = [...scans].sort((a, b) =>
+    String(b?.date || "").localeCompare(String(a?.date || "")) ||
+    String(b?.createdAt || "").localeCompare(String(a?.createdAt || ""))
+  )[0] || null;
+  const sourceDate = normalizedDate(latest?.date);
+  const target = normalizedDate(targetDate) || sourceDate;
+  const sourceDay = dayNumber(sourceDate);
+  const targetDay = dayNumber(target);
+  const ageDays = Number.isFinite(sourceDay) && Number.isFinite(targetDay) ? targetDay - sourceDay : null;
+  const status = ageDays === 0 ? "fresh" : ageDays > 0 ? "stale" : ageDays < 0 ? "future" : "invalid";
+  return {
+    status,
+    sourceDate,
+    sourceCreatedAt: latest?.createdAt || "",
+    targetDate: target,
+    ageDays,
+    label: status === "fresh"
+      ? "本日解析"
+      : status === "stale" ? `${sourceDate}の解析・${ageDays}日前`
+        : status === "future" ? "未来日の解析" : "解析日不明",
+  };
+}
+
+function recordMatchesStore(record, storeId, storeName) {
+  if (storeId != null && record?.storeId != null) return String(record.storeId) === String(storeId);
+  return Boolean(storeName) && String(record?.storeName || "").trim() === String(storeName).trim();
+}
+
+function practiceObservation(record, identity, source) {
+  if (!record || !recordMatchesStore(record, identity.storeId, identity.storeName)) return null;
+  if (normalizeEvidenceMachineName(record.machineName) !== normalizeEvidenceMachineName(identity.machineName)) return null;
+  if (normalizeEvidenceMachineNumber(record.machineNum ?? record.num) !== normalizeEvidenceMachineNumber(identity.num)) return null;
+  const stats = record.stats || record.ev || {};
+  const ratePerMoneyK = Number(stats.start1K ?? stats.physicalStart1K);
+  if (!(ratePerMoneyK > 0)) return null;
+  const ballsPerMoneyK = Math.max(1, Number(record.settings?.rentBalls ?? record.rentBalls) || 250);
+  let kCount = Math.max(0,
+    Number(stats.cashKCount || 0) + Number(stats.mochiKCount || 0) + Number(stats.chodamaKCount || 0)
+  );
+  if (!(kCount > 0) && Number(stats.netRot) > 0) kCount = Number(stats.netRot) / ratePerMoneyK;
+  if (!(kCount > 0)) return null;
+  return {
+    source,
+    date: normalizedDate(record.date),
+    rate: ratePerMoneyK * 250 / ballsPerMoneyK,
+    inputBalls: kCount * ballsPerMoneyK,
+  };
+}
+
+function fusePracticeEstimate(base, observations, priorBalls = 50000) {
+  const valid = observations.filter((item) => item?.rate > 0 && item?.inputBalls > 0);
+  if (!valid.length) return { ...base, sources: ["delta"] };
+  const inputBalls = valid.reduce((sum, item) => sum + item.inputBalls, 0);
+  const observedRate = valid.reduce((sum, item) => sum + item.rate * item.inputBalls, 0) / inputBalls;
+  const observationWeight = inputBalls / (inputBalls + Math.max(2500, Number(priorBalls) || 50000));
+  const mean = observedRate * observationWeight + base.mean * (1 - observationWeight);
+  const observationSe = 2 / Math.sqrt(Math.max(1, inputBalls / 250));
+  const variance = (observationWeight * observationSe) ** 2
+    + ((1 - observationWeight) ** 2) * Math.max(0.01, base.variance);
+  const sd = Math.sqrt(variance);
+  return {
+    mean,
+    low: Math.max(0, mean - 1.96 * sd),
+    high: mean + 1.96 * sd,
+    variance,
+    confidence: 1 - (1 - base.confidence) * (1 - observationWeight),
+    inputBalls: (base.inputBalls || 0) + inputBalls,
+    sources: ["delta", ...new Set(valid.map((item) => item.source))],
+  };
+}
+
 function classify(borderDiff, confidence) {
   if (confidence < 20) return "nodata";
   if (borderDiff >= 0.5) return "strong";
@@ -27,12 +113,6 @@ function classify(borderDiff, confidence) {
 
 function scoreOf(machine) {
   return Number(machine.goodMachineScore || 0);
-}
-
-function evPerHourOf(rotation, border) {
-  if (!(rotation > 0) || !(border > 0)) return 0;
-  const evPerK = ((rotation - border) / border) * 1000;
-  return Math.round(evPerK * (210 / rotation));
 }
 
 const PLAN_STYLE_LABELS = Object.freeze({
@@ -81,7 +161,7 @@ export function buildStrategyPlanContext({
   };
 }
 
-function emptyMap(playingNum, planHandoff = null, plan = null) {
+function emptyMap(playingNum, planHandoff = null, plan = null, freshness = null) {
   return {
     source: "delta",
     machineName: "差玉データなし",
@@ -103,27 +183,35 @@ function emptyMap(playingNum, planHandoff = null, plan = null) {
     planHandoff,
     plan,
     planMatch: { matched: 0, total: planHandoff?.targets?.length || 0 },
+    freshness,
+    actionable: false,
+    sourceSummary: [],
   };
 }
 
-function scanStoreKey(scan) {
-  return String(scan?.storeId ?? scan?.storeName ?? "");
-}
-
-function latestScanGroup(scans, selectedStoreId = null) {
-  const valid = (scans || []).filter((scan) => Array.isArray(scan?.rows) && scan.rows.length);
-  const scoped = selectedStoreId == null
-    ? valid
-    : valid.filter((scan) => scanStoreKey(scan) === String(selectedStoreId));
-  if (!scoped.length) return [];
-  const latest = [...scoped].sort((a, b) =>
+function latestScanGroup(scans, selectedStoreId = null, stores = []) {
+  const selectedStore = (stores || []).find((store) => String(store?.id) === String(selectedStoreId)) || null;
+  const valid = (scans || []).filter((scan) => (
+    Array.isArray(scan?.rows)
+    && scan.rows.length
+    && (
+      selectedStoreId == null
+      || String(scan?.storeId ?? "") === String(selectedStoreId)
+      || (scan?.storeId == null && selectedStore && String(scan?.storeName || "").trim() === String(selectedStore.name || "").trim())
+    )
+  ));
+  if (!valid.length) return [];
+  const latest = [...valid].sort((a, b) =>
     String(b.date || "").localeCompare(String(a.date || "")) ||
     String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
   )[0];
-  return scoped.filter((scan) =>
-    scanStoreKey(scan) === scanStoreKey(latest) &&
+  return valid.filter((scan) => (
     String(scan.date || "") === String(latest.date || "")
-  );
+    && (
+      selectedStoreId != null
+      || String(scan?.storeId ?? scan?.storeName ?? "") === String(latest?.storeId ?? latest?.storeName ?? "")
+    )
+  ));
 }
 
 function localDateKey(value = new Date()) {
@@ -372,6 +460,8 @@ function applyHallLayout(analyzedIslands, hallIslands) {
       end: layout.end,
       layoutOrder: order,
       registeredLayout: true,
+      facingIslandId: layout.facingIslandId || null,
+      facingReversed: layout.facingReversed !== false,
     };
   });
   const extras = analyzedIslands
@@ -394,18 +484,29 @@ export function buildStrategyMap({
   selectedStoreId = null,
   planHandoff = null,
   plan = null,
+  targetDate = "",
+  stores = [],
+  archives = [],
+  liveSession = null,
 } = {}) {
-  const currentScans = latestScanGroup(scans, selectedStoreId);
-  if (!currentScans.length) return emptyMap(playingNum, planHandoff, plan);
+  const currentScans = latestScanGroup(scans, selectedStoreId, stores);
+  const freshness = getStrategyFreshness(currentScans, targetDate);
+  if (!currentScans.length) return emptyMap(playingNum, planHandoff, plan, freshness);
+  const actionable = freshness.status === "fresh";
 
   const analysisStoreId = currentScans[0]?.storeId ?? selectedStoreId;
+  const selectedStore = (stores || []).find((store) => String(store?.id) === String(analysisStoreId)) || null;
+  const analysisStoreName = currentScans[0]?.storeName || selectedStore?.name || "";
   const hallIslands = getStoreIslands(hallMaps, analysisStoreId);
   // ポートフォリオ・翌日予測に他店舗の台が混ざらないよう、
   // 解析対象は表示中の店舗（最新スキャンの店舗）の履歴に限定する。
   const analysisStoreKey = String(currentScans[0]?.storeId ?? currentScans[0]?.storeName ?? "");
-  const storeScans = (scans || []).filter((scan) =>
-    String(scan?.storeId ?? scan?.storeName ?? "") === analysisStoreKey
-  );
+  const storeScans = (scans || []).filter((scan) => {
+    if (String(scan?.storeId ?? scan?.storeName ?? "") === analysisStoreKey) return true;
+    return scan?.storeId == null
+      && Boolean(analysisStoreName)
+      && String(scan?.storeName || "").trim() === String(analysisStoreName).trim();
+  });
   const analytics = buildPEvidenceAnalytics({
     scans: storeScans,
     customMachines,
@@ -429,13 +530,18 @@ export function buildStrategyMap({
       island: row.island || `${row.machineName || scan.machineName || "未分類"}島`,
       storeId: scan.storeId,
       storeName: scan.storeName,
+      createdAt: scan.createdAt || "",
     })).filter((row) => row?.status !== "bounded"
       && row?.status !== "failed"
       && !(row?.status === "review" && row?.reviewConfirmed !== true)
       && row?.val !== null && row?.val !== undefined && row?.val !== "")
   );
   const uniqueRows = new Map();
-  for (const row of currentRows) uniqueRows.set(`${row.machineName}:${row.num}`, row);
+  for (const row of currentRows) {
+    const key = `${normalizeEvidenceMachineName(row.machineName)}:${normalizeEvidenceMachineNumber(row.num)}`;
+    const previous = uniqueRows.get(key);
+    if (!previous || String(row.createdAt || "") >= String(previous.createdAt || "")) uniqueRows.set(key, row);
+  }
 
   const islandMap = new Map();
   for (const row of uniqueRows.values()) {
@@ -451,35 +557,75 @@ export function buildStrategyMap({
     const evidence = buildDeltaEvidence(historyRows, machineSpec);
     const rowStore = String(row.storeId ?? row.storeName ?? "").trim();
     const pe = analyticsByMachine.get(`${rowStore}___${machineName}___${String(row.num).replace(/_旧.*/, "").trim()}`);
-    const predictedRotation = pe?.valid ? pe.predictedRotation : evidence.predictedRotation;
     const trueBorder = pe?.valid ? pe.border : evidence.trueBorder;
-    const confidence = pe?.valid ? pe.confidence : evidence.confidence;
+    const baseMean = pe?.valid ? pe.predictedRotation : evidence.predictedRotation;
+    const baseLow = pe?.valid ? pe.predictedLow : evidence.predictedLow;
+    const baseHigh = pe?.valid ? pe.predictedHigh : evidence.predictedHigh;
+    const baseVariance = pe?.posteriorVariance
+      ?? (((Number(baseHigh) - Number(baseLow)) / (2 * 1.96)) ** 2 || 4);
+    const identity = {
+      storeId: row.storeId ?? analysisStoreId,
+      storeName: row.storeName || analysisStoreName,
+      machineName,
+      num: row.num,
+    };
+    const newerArchives = (archives || [])
+      .filter((archive) => normalizedDate(archive?.date) > freshness.sourceDate)
+      .map((archive) => practiceObservation(archive, identity, "archive"))
+      .filter(Boolean);
+    const liveObservation = practiceObservation(liveSession, identity, "live");
+    const estimate = fusePracticeEstimate({
+      mean: baseMean,
+      low: baseLow,
+      high: baseHigh,
+      variance: baseVariance,
+      confidence: pe?.valid ? pe.confidence : evidence.confidence,
+      inputBalls: pe?.regimeInputBalls || pe?.cumulativeInputBalls || evidence.totalInputBalls || 0,
+    }, [...newerArchives, liveObservation].filter(Boolean), machineSpec.muraCoef);
+    const predictedRotation = estimate.mean;
+    const confidence = estimate.confidence;
     const confidencePct = Math.round(confidence * 100);
-    const borderDiff = round1(pe?.valid ? pe.borderDifference : (evidence.borderDifference || 0));
-    const verdict = pe?.valid ? pe.verdict : classify(borderDiff, confidencePct);
+    const borderDiff = round1(predictedRotation - trueBorder);
+    const contextualScore = Math.max(0, borderDiff * confidence * 100 + Number(pe?.contextAdjustment || 0));
+    const verdict = pe?.valid
+      ? (confidence < 0.2 ? "nodata" : contextualScore >= 50 ? "strong" : contextualScore >= 10 ? "watch" : "weak")
+      : classify(borderDiff, confidencePct);
     const islandName = row.island || `${machineName}島`;
     const islandId = islandName;
     // スパークラインも表示中店舗の履歴だけを使う（他店舗の同番号を混ぜない）
     const history = historyFor(storeScans, machineName, row.num, machineSpec);
     const isPlaying = playingNum != null && String(row.num) === String(playingNum);
-    // この台・この店舗の直接観測区間を、予定時間の収支シナリオへ使う。
-    // 長期学習側の区間は釘変化検知用の累積誤差も含むため、役割を分ける。
-    const scenarioLowRotation = evidence.hasEstimate ? evidence.predictedLow : pe?.predictedLow;
-    const scenarioHighRotation = evidence.hasEstimate ? evidence.predictedHigh : pe?.predictedHigh;
+    // 中心・上下幅・金額・確率を同じ事後推定から計算し、レジーム切替後に
+    // 旧状態の履歴が収支幅へ戻ってくる不整合を防ぐ。
+    const scenarioLowRotation = estimate.low;
+    const scenarioHighRotation = estimate.high;
+    const hasFinancialEstimate = Boolean(
+      pe?.valid
+      || evidence.hasEstimate
+      || estimate.sources.some((source) => source === "archive" || source === "live")
+    );
+    const unitPrice = predictedRotation > 0 && trueBorder > 0 ? 1000 / trueBorder - 1000 / predictedRotation : null;
     const lowUnitPrice = scenarioLowRotation > 0 && trueBorder > 0 ? 1000 / trueBorder - 1000 / scenarioLowRotation : null;
     const highUnitPrice = scenarioHighRotation > 0 && trueBorder > 0 ? 1000 / trueBorder - 1000 / scenarioHighRotation : null;
-    const scenarioHourlyLow = lowUnitPrice == null ? null : Math.round(lowUnitPrice * analytics.params.spinsPerHour);
-    const scenarioHourlyHigh = highUnitPrice == null ? null : Math.round(highUnitPrice * analytics.params.spinsPerHour);
-    const scenarioDailyLow = lowUnitPrice == null ? null : Math.round(lowUnitPrice * analytics.params.sessionSpins);
-    const scenarioDailyHigh = highUnitPrice == null ? null : Math.round(highUnitPrice * analytics.params.sessionSpins);
-    const scenarioChanceBand = pe?.profitChanceStatus === "ready" && pe?.dailyRisk > 0 && scenarioDailyLow != null && scenarioDailyHigh != null
+    const scenarioHourly = actionable && hasFinancialEstimate && unitPrice != null ? Math.round(unitPrice * analytics.params.spinsPerHour) : null;
+    const scenarioHourlyLow = actionable && hasFinancialEstimate && lowUnitPrice != null ? Math.round(lowUnitPrice * analytics.params.spinsPerHour) : null;
+    const scenarioHourlyHigh = actionable && hasFinancialEstimate && highUnitPrice != null ? Math.round(highUnitPrice * analytics.params.spinsPerHour) : null;
+    const scenarioDaily = actionable && hasFinancialEstimate && unitPrice != null ? Math.round(unitPrice * analytics.params.sessionSpins) : null;
+    const scenarioDailyLow = actionable && hasFinancialEstimate && lowUnitPrice != null ? Math.round(lowUnitPrice * analytics.params.sessionSpins) : null;
+    const scenarioDailyHigh = actionable && hasFinancialEstimate && highUnitPrice != null ? Math.round(highUnitPrice * analytics.params.sessionSpins) : null;
+    const profitChanceReady = actionable
+      && (pe?.profitChanceStatus === "ready" || (pe?.profitChanceStatus === "low-confidence" && confidence >= 0.2));
+    const scenarioChanceBand = profitChanceReady && pe?.dailyRisk > 0 && scenarioDailyLow != null && scenarioDailyHigh != null
       ? outwardPercentBand(normalCdf(scenarioDailyLow / pe.dailyRisk), normalCdf(scenarioDailyHigh / pe.dailyRisk))
       : null;
+    const scenarioWinRate = profitChanceReady && pe?.dailyRisk > 0 && scenarioDaily != null
+      ? normalCdf(scenarioDaily / pe.dailyRisk)
+      : null;
     const planTarget = planTargetForMachine(machineName, planHandoff, machineSpec);
-    const evPerHour = pe?.valid ? pe.hourly : evPerHourOf(predictedRotation, trueBorder);
+    const evPerHour = scenarioHourly;
     const minPlanEv = Math.max(0, Number(planHandoff?.minExpectedValuePerHour) || 0);
-    const hasPlanEvidence = verdict !== "nodata";
-    const goalEligible = planHandoff ? Boolean(hasPlanEvidence && evPerHour >= minPlanEv) : true;
+    const hasPlanEvidence = actionable && verdict !== "nodata" && evPerHour != null;
+    const goalEligible = planHandoff ? Boolean(hasPlanEvidence && evPerHour >= minPlanEv) : actionable;
     const planEligible = Boolean(planTarget && goalEligible);
     const machine = {
       id: `m-${machineName}-${row.num}`,
@@ -490,13 +636,13 @@ export function buildStrategyMap({
       confidence: confidencePct,
       border: round1(trueBorder),
       borderDiff,
-      goodMachineScore: round1(pe?.valid ? pe.score : evidence.goodMachineScore),
+      goodMachineScore: round1(contextualScore),
       score: 0,
       evPerHour,
       goalEligible,
       goalThresholdActive: Boolean(planHandoff),
       verdict,
-      isStar: verdict === "strong" && (pe?.valid ? pe.score : evidence.goodMachineScore) >= 50,
+      isStar: actionable && verdict === "strong" && contextualScore >= 50,
       isPlaying,
       liveDecision: isPlaying ? liveDecision : null,
       history: history.length > 1
@@ -504,22 +650,34 @@ export function buildStrategyMap({
         : [history[0] ?? round1(evidence.predictedRotation), history[0] ?? round1(evidence.predictedRotation)],
       evidence,
       pevidence: pe || null,
+      rotationEstimate: {
+        mean: round1(estimate.mean),
+        low: round1(estimate.low),
+        high: round1(estimate.high),
+        variance: estimate.variance,
+        confidence,
+        inputBalls: estimate.inputBalls,
+        regimeStart: pe?.regimeStart || "",
+      },
+      evidenceSources: estimate.sources,
+      recommendationStatus: actionable ? "actionable" : "reference",
+      calculationPendingReasons: actionable ? [] : ["解析日が本日ではありません"],
       ema: round1(pe?.ema || 0),
       cusumUp: round1(pe?.cusumUp || 0),
       cusumDown: round1(pe?.cusumDown || 0),
       nailAlert: pe?.nailAlert || "データ収集中",
       regimeStart: pe?.regimeStart || "",
-      tomorrowTight: Math.round((pe?.tightProbability || 0) * 100),
+      tomorrowTight: actionable ? Math.round((pe?.tightProbability || 0) * 100) : null,
       weekdayTight: Math.round((pe?.weekdayTightRate || 0) * 100),
       weekdaySamples: pe?.weekdaySampleCount || 0,
-      winRate: pe?.winRate == null ? null : Math.round(pe.winRate * 100),
-      profitChanceLow: scenarioChanceBand?.low ?? pe?.winRateBandLow ?? null,
-      profitChanceHigh: scenarioChanceBand?.high ?? pe?.winRateBandHigh ?? null,
-      profitChanceStatus: pe?.profitChanceStatus || "data-missing",
-      profitChanceMethod: pe?.profitChanceMethod || null,
+      winRate: scenarioWinRate == null ? null : Math.round(scenarioWinRate * 100),
+      profitChanceLow: scenarioChanceBand?.low ?? null,
+      profitChanceHigh: scenarioChanceBand?.high ?? null,
+      profitChanceStatus: actionable ? (profitChanceReady ? "ready" : (pe?.profitChanceStatus || "data-missing")) : "stale-scan",
+      profitChanceMethod: profitChanceReady ? "normal-approx-v1" : null,
       jackpotLabel: pe?.jackpotLabel || machineSpec.prob || null,
       jackpotDenominator: pe?.jackpotDenominator ?? (Number(machineSpec.synthProb) > 0 ? Number(machineSpec.synthProb) : null),
-      atLeastOneHitRate: pe?.atLeastOneHitRate ?? null,
+      atLeastOneHitRate: actionable ? (pe?.atLeastOneHitRate ?? null) : null,
       initialAvgPayout: pe?.initialAvgPayout ?? null,
       rushAvgPayout: pe?.rushAvgPayout ?? null,
       avgPayoutPerHit: pe?.avgPayoutPerHit ?? (Number(machineSpec.avgPayoutPerHit) > 0 ? Math.round(Number(machineSpec.avgPayoutPerHit)) : null),
@@ -527,23 +685,25 @@ export function buildStrategyMap({
       rushContinueRate: pe?.rushContinueRate ?? null,
       plannedSpins: pe?.plannedSpins ?? plan?.sessionSpins ?? null,
       modelName: machineSpec.modelName || null,
-      unitPrice: pe?.unitPrice || 0,
-      unitPriceAvailable: Boolean(pe?.valid),
-      daily: pe?.daily || 0,
-      hourlyLow: scenarioHourlyLow ?? pe?.hourlyLow ?? null,
-      hourlyHigh: scenarioHourlyHigh ?? pe?.hourlyHigh ?? null,
-      dailyLow: scenarioDailyLow ?? pe?.dailyLow ?? null,
-      dailyHigh: scenarioDailyHigh ?? pe?.dailyHigh ?? null,
-      hourlyRisk: pe?.hourlyRisk ?? null,
-      dailyRisk: pe?.dailyRisk ?? null,
-      sharpe: round1(pe?.sharpe || 0),
+      stdDev: Number(machineSpec.stdDev) > 0 ? Number(machineSpec.stdDev) : null,
+      stdDevVerified: machineSpec.stdDevMethod === "p-evidence-branching-v2",
+      unitPrice: unitPrice,
+      unitPriceAvailable: actionable && hasFinancialEstimate && unitPrice != null,
+      daily: scenarioDaily,
+      hourlyLow: actionable ? scenarioHourlyLow : null,
+      hourlyHigh: actionable ? scenarioHourlyHigh : null,
+      dailyLow: actionable ? scenarioDailyLow : null,
+      dailyHigh: actionable ? scenarioDailyHigh : null,
+      hourlyRisk: actionable ? (pe?.hourlyRisk ?? null) : null,
+      dailyRisk: actionable ? (pe?.dailyRisk ?? null) : null,
+      sharpe: actionable && pe?.hourlyRisk > 0 && scenarioHourly != null ? round1(scenarioHourly / pe.hourlyRisk) : null,
       spatialAlert: pe?.spatial?.label || "隣接情報なし",
       oppositeAlert: pe?.opposite?.label || "対面情報なし",
-      nextPrediction: analytics.nextMap.find((item) =>
+      nextPrediction: actionable ? (analytics.nextMap.find((item) =>
         String(item.number) === String(row.num) &&
         item.machineName === machineName &&
         String(item.store ?? "") === rowStore
-      )?.prediction || "データ収集中",
+      )?.prediction || "データ収集中") : "過去参考・本日解析待ち",
       planRole: planEligible ? planTarget.role : null,
       planPriority: planEligible ? planTarget.priority : null,
       planEvaluation: !planTarget
@@ -566,10 +726,10 @@ export function buildStrategyMap({
   }));
   const islands = applyHallLayout(analyzedIslands, hallIslands);
   const all = islands.flatMap((island) => island.machines);
-  if (!all.length) return emptyMap(playingNum, planHandoff, plan);
-  const candidates = all
+  if (!all.length) return emptyMap(playingNum, planHandoff, plan, freshness);
+  const candidates = actionable ? all
     .filter((machine) => machine.verdict === "strong")
-    .sort(compareStrategyPriority);
+    .sort(compareStrategyPriority) : [];
   const top5 = [...all]
     .filter((machine) => machine.verdict !== "nodata")
     .sort(compareStrategyPriority)
@@ -578,6 +738,43 @@ export function buildStrategyMap({
   const lead = top5[0] || [...all].sort((a, b) => b.confidence - a.confidence)[0];
   const machineNames = [...new Set(all.map((machine) => machine.machineName))];
   const matchedPlanTargets = new Set(all.filter((machine) => machine.planRole).map((machine) => machine.planPriority));
+  const allocationCandidates = actionable
+    ? [...all].filter((machine) => machine.evPerHour > 0 && machine.sharpe > 0 && ["strong", "watch"].includes(machine.verdict))
+      .sort((a, b) => b.sharpe - a.sharpe)
+    : [];
+  const selectedAllocationCandidates = allocationCandidates.slice(0, 5);
+  const totalSharpe = selectedAllocationCandidates.reduce((sum, machine) => sum + machine.sharpe, 0);
+  const plannedTenths = Math.max(0, Math.round(Number(plan?.plannedHours || 0) * 10));
+  const rawTenths = selectedAllocationCandidates.map((machine) =>
+    totalSharpe > 0 ? plannedTenths * machine.sharpe / totalSharpe : 0
+  );
+  const allocatedTenths = rawTenths.map(Math.floor);
+  let remainingTenths = plannedTenths - allocatedTenths.reduce((sum, value) => sum + value, 0);
+  [...rawTenths.keys()]
+    .sort((a, b) => (rawTenths[b] - allocatedTenths[b]) - (rawTenths[a] - allocatedTenths[a]))
+    .forEach((index) => {
+      if (remainingTenths > 0) {
+        allocatedTenths[index] += 1;
+        remainingTenths -= 1;
+      }
+    });
+  const allocationPlan = selectedAllocationCandidates.map((machine, index) => {
+    const hours = allocatedTenths[index] / 10;
+    return {
+      rank: index + 1,
+      number: machine.num,
+      machineName: machine.machineName,
+      hours,
+      expectedProfit: Math.round((machine.evPerHour || 0) * hours),
+      sharpe: machine.sharpe,
+      action: index === 0 ? "最優先" : "巡回候補",
+    };
+  });
+  const portfolio = {
+    plan: allocationPlan,
+    totalHours: round1(allocationPlan.reduce((sum, item) => sum + item.hours, 0)),
+    expectedProfit: allocationPlan.reduce((sum, item) => sum + item.expectedProfit, 0),
+  };
   const islandAvgRot = (id) => {
     const list = all.filter((machine) => machine.islandId === id && machine.rot > 0);
     return list.length ? round1(list.reduce((sum, machine) => sum + machine.rot, 0) / list.length) : 0;
@@ -593,7 +790,7 @@ export function buildStrategyMap({
     candidates,
     top5,
     kpi: {
-      evPerHour: lead?.evPerHour || 0,
+      evPerHour: actionable ? lead?.evPerHour ?? null : null,
       rot: lead?.rot || 0,
       confidence: lead?.confidence || 0,
       candidates: candidates.length,
@@ -601,7 +798,7 @@ export function buildStrategyMap({
     leadId: lead?.id || null,
     islandAvgRot,
     analytics,
-    portfolio: analytics.portfolio,
+    portfolio,
     aiProfile: analytics.aiProfile,
     nextMap: analytics.nextMap,
     islandStats: analytics.islandStats,
@@ -611,5 +808,8 @@ export function buildStrategyMap({
       matched: matchedPlanTargets.size,
       total: planHandoff?.targets?.length || 0,
     },
+    freshness,
+    actionable,
+    sourceSummary: [...new Set(all.flatMap((machine) => machine.evidenceSources || []))],
   };
 }

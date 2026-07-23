@@ -25,11 +25,17 @@ function dataDate(value) {
   return match ? `${match[1]}-${match[2]}-${match[3]}` : "";
 }
 
-function normalizeMachineName(value) {
+export function normalizeEvidenceMachineName(value) {
   return String(value ?? "")
     .normalize("NFKC")
     .toLowerCase()
     .replace(/[\s・･:：/／\\()（）\u005b\u005d［］【】「」『』.,，。_-]/g, "");
+}
+
+export function normalizeEvidenceMachineNumber(value) {
+  const normalized = String(value ?? "").normalize("NFKC").replace(/_旧.*/, "").trim();
+  if (/^\d+$/.test(normalized)) return String(Number(normalized));
+  return normalized;
 }
 
 function machineNameVariants(machine = {}) {
@@ -40,12 +46,12 @@ function machineNameVariants(machine = {}) {
 
 function machineNameScore(machine, inputName) {
   const input = String(inputName ?? "").trim();
-  const normalizedInput = normalizeMachineName(input);
+  const normalizedInput = normalizeEvidenceMachineName(input);
   if (!normalizedInput) return 0;
   let score = 0;
   for (const variant of machineNameVariants(machine)) {
     if (variant === input) return 3;
-    const normalizedVariant = normalizeMachineName(variant);
+    const normalizedVariant = normalizeEvidenceMachineName(variant);
     if (normalizedVariant === normalizedInput) score = Math.max(score, 2);
     else if (
       normalizedVariant.length >= 6 && normalizedInput.length >= 6 &&
@@ -67,7 +73,7 @@ export function findMachineSpec(machineName, customMachines = [], builtInMachine
   const matched = scored.filter((item) => item.score === highestScore);
   // 部分一致は型式違いの誤照合を避けるため、同じ正規化機種名に絞れる場合だけ採用する。
   if (highestScore === 1) {
-    const canonicalNames = new Set(matched.map((item) => normalizeMachineName(item.machine?.name)));
+    const canonicalNames = new Set(matched.map((item) => normalizeEvidenceMachineName(item.machine?.name)));
     if (canonicalNames.size !== 1) return null;
   }
 
@@ -213,25 +219,39 @@ export function estimateDeltaObservation(row = {}, machine = {}, options = {}) {
 }
 
 export function collectDeltaRows(scans = [], filters = {}) {
-  const rows = [];
+  const rows = new Map();
   for (const scan of scans || []) {
     if (filters.storeId != null && String(scan?.storeId) !== String(filters.storeId)) continue;
     if (filters.storeName && !sameText(scan?.storeName, filters.storeName)) continue;
     for (const row of scan?.rows || []) {
       const machineName = row?.machineName || scan?.machineName || "";
-      if (filters.machineName && !sameText(machineName, filters.machineName)) continue;
-      if (filters.num != null && String(row?.num) !== String(filters.num)) continue;
-      rows.push({
+      if (filters.machineName && normalizeEvidenceMachineName(machineName) !== normalizeEvidenceMachineName(filters.machineName)) continue;
+      if (filters.num != null && normalizeEvidenceMachineNumber(row?.num) !== normalizeEvidenceMachineNumber(filters.num)) continue;
+      const date = dataDate(row?.date || scan?.date);
+      const normalizedNumber = normalizeEvidenceMachineNumber(row?.num);
+      const normalizedName = normalizeEvidenceMachineName(machineName);
+      const store = String(scan?.storeId ?? scan?.storeName ?? "").trim();
+      const createdAt = String(scan?.createdAt || "");
+      const key = `${store}___${date}___${normalizedName}___${normalizedNumber}`;
+      const candidate = {
         ...row,
         machineName,
-        date: scan?.date || "",
-        createdAt: scan?.createdAt || "",
+        date,
+        createdAt,
         storeId: scan?.storeId ?? null,
         storeName: scan?.storeName || "",
-      });
+      };
+      const previous = rows.get(key);
+      // 同じ店舗・日・機種・台の再取込は最新の保存だけを採用する。
+      // これを中心予測・信頼度・予測幅・スパークラインで共通利用し、
+      // 同日データの二重計上を防ぐ。
+      if (!previous || createdAt >= String(previous.createdAt || "")) rows.set(key, candidate);
     }
   }
-  return rows.sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.createdAt).localeCompare(String(b.createdAt)));
+  return [...rows.values()].sort((a, b) =>
+    String(a.date).localeCompare(String(b.date)) ||
+    String(a.createdAt).localeCompare(String(b.createdAt))
+  );
 }
 
 export function buildDeltaEvidence(rows = [], machine = {}, options = {}) {

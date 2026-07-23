@@ -62,11 +62,7 @@ assert.equal(map.all[0].initialAvgPayout, 450);
 assert.ok(map.all[0].atLeastOneHitRate > 0.9 && map.all[0].atLeastOneHitRate < 0.91);
 assert.equal(map.all[0].profitChanceStatus, "ready");
 assert.ok(map.all[0].profitChanceLow <= map.all[0].profitChanceHigh);
-assert.equal(
-  map.all[0].dailyLow,
-  Math.round((1000 / map.all[0].border - 1000 / map.all[0].evidence.predictedLow) * plan.sessionSpins),
-  "収支シナリオは台・店舗の直接観測区間を使う",
-);
+assert.ok(Number.isFinite(map.all[0].dailyLow), "統一した事後推定区間から収支下限を計算する");
 
 const mapWithBoundedHistory = buildStrategyMap({
   scans: [
@@ -83,6 +79,55 @@ const mapWithBoundedHistory = buildStrategyMap({
   customMachines: [machine],
 });
 assert.equal(mapWithBoundedHistory.all[0].history.length, 2, "範囲だけの日を架空のボーダー履歴にしない");
+assert.ok(map.all[0].rotationEstimate.low <= map.all[0].rot && map.all[0].rot <= map.all[0].rotationEstimate.high);
+assert.ok(map.all[0].dailyLow <= map.all[0].daily && map.all[0].daily <= map.all[0].dailyHigh);
+assert.ok(map.all[0].profitChanceLow <= map.all[0].winRate && map.all[0].winRate <= map.all[0].profitChanceHigh);
+
+const allocationMap = buildStrategyMap({
+  scans,
+  customMachines: [{ ...machine, border1K: 5 }],
+  plan,
+});
+assert.ok(allocationMap.portfolio.plan.length > 0);
+assert.equal(allocationMap.portfolio.totalHours, allocationMap.plan.plannedHours, "優先配分の丸め後も予定時間の合計を保つ");
+
+const staleMap = buildStrategyMap({ scans, customMachines: [machine], plan, targetDate: "2026-07-03" });
+assert.equal(staleMap.freshness.status, "stale");
+assert.equal(staleMap.actionable, false);
+assert.equal(staleMap.candidates.length, 0);
+assert.equal(staleMap.all[0].profitChanceStatus, "stale-scan");
+assert.equal(staleMap.all[0].daily, null);
+assert.equal(staleMap.all[0].tomorrowTight, null);
+
+const duplicateMap = buildStrategyMap({
+  scans: [...scans, {
+    ...scans[1],
+    id: "d2-new",
+    createdAt: "2026-07-02T13:00:00Z",
+    rows: [{ ...scans[1].rows[0], normalSpins: 950 }],
+  }],
+  customMachines: [machine],
+  plan,
+});
+assert.equal(duplicateMap.all[0].evidence.observationCount, 2, "同日の再取込を二重計上しない");
+assert.equal(duplicateMap.all[0].history.length, 2);
+
+const liveMap = buildStrategyMap({
+  scans,
+  customMachines: [machine],
+  playingNum: 101,
+  plan,
+  liveSession: {
+    storeId: "s1",
+    machineName: "検証機",
+    machineNum: "101",
+    date: "2026-07-02",
+    ev: { start1K: 24, cashKCount: 5, netRot: 120 },
+    settings: { rentBalls: 250 },
+  },
+});
+assert.ok(liveMap.all[0].rot > map.all[0].rot, "現在実戦を同じ台の予測へ統合する");
+assert.deepEqual(liveMap.all[0].evidenceSources, ["delta", "live"]);
 
 // 別店舗のスキャンが混ざっていても、解析・推奨は表示中の店舗に限定される
 const multiStoreScans = [
@@ -106,6 +151,9 @@ assert.equal(
   multiStoreMap.all[0].history.length, 2,
   "スパークラインの履歴に他店舗の同番号データを混ぜない"
 );
+const selectedOtherStoreMap = buildStrategyMap({ scans: multiStoreScans, customMachines: [machine], selectedStoreId: "s2", plan });
+assert.equal(selectedOtherStoreMap.total, 1, "選択店舗に古いスキャンしかなくても、その店舗だけを表示する");
+assert.ok(selectedOtherStoreMap.analytics.latestRows.every((row) => row.store === "s2"));
 
 // 選択店舗がある場合は、全店舗の最新日を選んでから絞るのではなく、店舗を絞ってから最新日を選ぶ
 const selectedOlderStoreMap = buildStrategyMap({
@@ -371,8 +419,8 @@ assert.equal(noDataMap.top5.length, 0, "データ不足の予定機種をTOP5へ
 
 const hallMaps = {
   s1: [
-    { id: "layout-b", name: "B島", start: 201, end: 206, machineName: "検証機" },
-    { id: "layout-a", name: "1島", start: 101, end: 106, machineName: "検証機" },
+    { id: "layout-b", name: "B島", start: 201, end: 206, machineName: "検証機", facingIslandId: "layout-a" },
+    { id: "layout-a", name: "1島", start: 101, end: 106, machineName: "検証機", facingIslandId: "layout-b" },
   ],
 };
 const mappedLayout = buildStrategyMap({ scans, customMachines: [machine], hallMaps });
@@ -384,5 +432,6 @@ assert.equal(mappedLayout.islands[0].machines.length, 0);
 assert.equal(mappedLayout.islands[1].name, "1島");
 assert.equal(mappedLayout.islands[1].machines[0].num, 101);
 assert.equal(mappedLayout.islands[1].registeredLayout, true);
+assert.equal(mappedLayout.islands[0].facingIslandId, "layout-a");
 
 console.log("strategyMapData.test.mjs: all tests passed");
