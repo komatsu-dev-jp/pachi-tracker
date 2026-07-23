@@ -7,9 +7,9 @@
 // 画像解析は端末内で完結（外部送信なし）。logic.js・rotRows とは無関係の独立データ。
 //
 // ステップ: upload（共同解析）→ numbers（照合確認）→ results（results から import へ往復）
-// props: { store, islands, onClose, onSaveScan }
+// props: { store, stores, islands, onChangeStore, onClose, onSaveScan }
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { C, f, sp, font, mono, localDateStr } from "../../constants";
 import { Card } from "../Atoms";
 import { runAnalysis, getRankTone } from "./deltaEngine";
@@ -520,9 +520,11 @@ const scrollAreaStyle = {
 // ════════════ アップロード ════════════
 function UploadStep({
   store,
+  stores,
   islands,
   islandScopeId,
   onChangeIslandScope,
+  onChangeStore,
   images,
   setImages,
   analysisDate,
@@ -558,6 +560,12 @@ function UploadStep({
   }, []);
 
   const interactionLocked = busy || loadingFiles;
+  const selectableStores = useMemo(
+    () => (Array.isArray(stores) ? stores : []).filter(
+      (item) => item && typeof item === "object" && item.id != null
+    ),
+    [stores],
+  );
 
   const handleFiles = (files) => {
     if (busyRef.current || fileLoadRef.current) return;
@@ -675,14 +683,44 @@ function UploadStep({
     <>
       <TopBar title="差玉解析" onBack={onClose} backDisabled={interactionLocked} />
       <div style={scrollAreaStyle}>
-        {/* 選択中店舗チップ */}
+        {/* 選択中店舗。解析中は入力資料と店舗の対応がずれないよう変更不可にする。 */}
         <Card style={{ marginBottom: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px" }}>
             <span style={{ fontSize: 18, color: C.blue }}>◎</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>選択中の店舗</div>
-              <div style={{ fontSize: 15, fontWeight: 800, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {store?.name || "未選択"}
+              <div style={{ position: "relative", marginTop: 3 }}>
+                <select
+                  aria-label="差玉解析の店舗"
+                  value={store?.id == null ? "" : String(store.id)}
+                  disabled={interactionLocked || selectableStores.length < 2}
+                  onChange={(event) => onChangeStore?.(event.target.value)}
+                  style={{
+                    width: "100%", minHeight: 40, boxSizing: "border-box",
+                    border: `1px solid ${selectableStores.length > 1 ? C.borderHi : "transparent"}`,
+                    borderRadius: 10, background: selectableStores.length > 1 ? C.surfaceHi : "transparent",
+                    color: C.text, padding: selectableStores.length > 1 ? "0 36px 0 10px" : "0",
+                    fontFamily: font, fontSize: 15, fontWeight: 800,
+                    appearance: "none", WebkitAppearance: "none",
+                    opacity: interactionLocked ? 0.55 : 1,
+                  }}
+                >
+                  {!selectableStores.length && <option value="">未選択</option>}
+                  {selectableStores.map((item) => (
+                    <option key={String(item.id)} value={String(item.id)}>{item.name || "名称未設定"}</option>
+                  ))}
+                </select>
+                {selectableStores.length > 1 && (
+                  <span aria-hidden="true" style={{
+                    position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+                    color: C.blue, fontSize: 14, fontWeight: 900, pointerEvents: "none",
+                  }}>
+                    ▾
+                  </span>
+                )}
+              </div>
+              <div style={{ marginTop: 3, color: selectableStores.length > 1 ? C.blue : C.sub, fontSize: 9, fontWeight: 700 }}>
+                {selectableStores.length > 1 ? "タップして解析店舗を変更できます" : "変更するには店舗を2件以上登録してください"}
               </div>
             </div>
           </div>
@@ -3613,7 +3651,17 @@ function StepBadge({ n }) {
 }
 
 // ════════════ ルート ════════════
-export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiApiKey, onChangeAiApiKey, customMachines }) {
+export default function DeltaAnalyzer({
+  store,
+  stores = [],
+  islands,
+  onChangeStore,
+  onClose,
+  onSaveScan,
+  aiApiKey,
+  onChangeAiApiKey,
+  customMachines,
+}) {
   const [step, setStep] = useState("upload");
   const [analysisDate, setAnalysisDate] = useState(todayStr);
   const [islandScopeId, setIslandScopeId] = useState(() => {
@@ -3632,6 +3680,37 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
   const [rows, setRows] = useState([]);   // 台番号割り当て後の結果行
   const [saved, setSaved] = useState(false);
   const [toast, setToast] = useState("");
+  const clearDerivedAnalysis = useCallback(() => {
+    setSlots([]);
+    setAnalysisReports([]);
+    setAnalysisNumberOcr(null);
+    setAnalysisJointMatch(null);
+    setAnalysisSiteSevenRows([]);
+    setAnalysisSiteSevenSummary(null);
+    setAutoImportedCount(0);
+    setConfirmedMachineNumbers([]);
+    setRows([]);
+    setSaved(false);
+  }, []);
+
+  // この画面から店舗を変える時は、前店舗の解析結果を新店舗へ保存できないよう破棄する。
+  // 追加済みファイルは選択ミスを直しただけでも選び直さずに済むよう保持し、再解析を必須にする。
+  const handleChangeStore = (nextStoreId) => {
+    if (String(nextStoreId ?? "") === String(store?.id ?? "")) return;
+    if (rows.length > 0 && !saved) {
+      const confirmed = window.confirm("保存していない解析結果があります。破棄して店舗を変更しますか？");
+      if (!confirmed) return;
+    }
+    const nextStore = (Array.isArray(stores) ? stores : []).find(
+      (candidate) => String(candidate?.id ?? "") === String(nextStoreId ?? ""),
+    );
+    clearDerivedAnalysis();
+    setStep("upload");
+    setIslandScopeId("all");
+    setToast(`${nextStore?.name || "店舗"}へ切り替えました。資料を解析し直してください`);
+    setTimeout(() => setToast(""), 3000);
+    onChangeStore?.(nextStoreId);
+  };
 
   const activeIslandScopeId = islandScopeId === "all"
     || (Array.isArray(islands) ? islands : []).some((island, index) => (
@@ -3846,24 +3925,17 @@ export default function DeltaAnalyzer({ store, islands, onClose, onSaveScan, aiA
       {step === "upload" && (
         <UploadStep
           store={store}
+          stores={stores}
           islands={islands}
           islandScopeId={activeIslandScopeId}
           onChangeIslandScope={setIslandScopeId}
+          onChangeStore={handleChangeStore}
           images={images}
           analysisDate={analysisDate}
           setAnalysisDate={setAnalysisDate}
           setImages={(updater) => {
             setImages(updater);
-            setSlots([]);
-            setAnalysisReports([]);
-            setAnalysisNumberOcr(null);
-            setAnalysisJointMatch(null);
-            setAnalysisSiteSevenRows([]);
-            setAnalysisSiteSevenSummary(null);
-            setAutoImportedCount(0);
-            setConfirmedMachineNumbers([]);
-            setRows([]);
-            setSaved(false);
+            clearDerivedAnalysis();
           }}
           onAnalyze={handleAnalyzed}
           onClose={onClose}
