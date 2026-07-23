@@ -1,4 +1,5 @@
 import { MOCK_STORE_DETAIL } from "../../data/mockStoreDetail.js";
+import { getEvAmount } from "../analysis/analysisSelectors.js";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 const TIME_SLOT_DEFINITIONS = [
@@ -41,9 +42,15 @@ const actualProfit = (record) => (
   toNumber(record?.recoveryYen) - toNumber(record?.investYen) - toNumber(record?.chodamaYen)
 );
 
-const expectedValue = (record) => toNumber(
-  record?.stats?.effectiveWorkAmount ?? record?.stats?.workAmount ?? record?.expectedValue
-);
+const expectedValue = (record) => {
+  const hasCurrentEv = Number.isFinite(record?.stats?.effectiveWorkAmount)
+    || Number.isFinite(record?.stats?.workAmount)
+    || (
+      record?.yutimeDecision?.result?.valid === true
+      && Number.isFinite(record?.yutimeDecision?.result?.selectedEV)
+    );
+  return hasCurrentEv ? getEvAmount(record) : toNumber(record?.expectedValue);
+};
 
 const decorateSnapshot = (snapshot, record) => ({
   id: snapshot?.id || `${record?.id || "record"}-${snapshot?.recordedAt || snapshot?.checkpointK || "decision"}`,

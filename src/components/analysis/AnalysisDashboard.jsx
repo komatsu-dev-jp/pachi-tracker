@@ -37,6 +37,7 @@ import {
   archiveWorkMinutes,
   filterArchives,
   getActualPL,
+  getEvBreakdown,
   getEvAmount,
   listAvailableMachines,
   listAvailableStores,
@@ -434,18 +435,18 @@ function CalendarCell({ day, row, selected, weekday, onSelect }) {
 
 // 日別詳細の実践記録カード（参考画像のレイアウトを analytics-terminal ダークトークンへ翻訳）。
 // 数値は記録エディタ（CalendarTab）の SummaryCard と同一の式:
-//   実収支 =（回収 − 投資）− 貯玉消費円 / 期待値 = stats.effectiveWorkAmount ?? workAmount
+//   実収支 =（回収 − 投資）− 貯玉消費円 / 期待値 = 通常期待値 + 有効な遊タイム判断EV
 //   時間 = netRot ÷ rotPerHour / 時給 = 実収支 ÷ 時間
 // タップで既存の「記録を編集」導線（記録エディタ遷移）を開く。
 function DaySessionCard({ archive, onOpen }) {
-  const st = archive.stats || {};
   const isSlot = archive.gameType === "slot";
   const slotStats = archive.slotStats || {};
   const invest = Number(archive.investYen) || 0;
   const recovery = Number(archive.recoveryYen) || 0;
   const chodamaYen = Number(archive.chodamaYen) || 0;
   const actual = (recovery - invest) - chodamaYen;
-  const ev = Number(st.effectiveWorkAmount ?? st.workAmount) || 0;
+  const evBreakdown = getEvBreakdown(archive);
+  const ev = evBreakdown.total;
   const hasEv = ev !== 0;
   // 稼働時間: 実践記録は netRot/rotPerHour、手動記録は遊技時間（playMinutes）を使用
   const hours = archiveWorkMinutes(archive) / 60;
@@ -508,6 +509,11 @@ function DaySessionCard({ archive, onOpen }) {
           </div>
         ))}
       </div>
+      {evBreakdown.yutime !== 0 && (
+        <div className="mt-2 border-t border-[var(--at-ln)] pt-2 text-right text-[10px] font-bold text-[var(--at-mut)]">
+          通常期待値 {signed(Math.round(evBreakdown.normal))}円 ＋ 遊タイム期待値 {signed(Math.round(evBreakdown.yutime))}円
+        </div>
+      )}
       {/* 下段: 時間 / 時給 */}
       <div className="mt-2.5 flex items-center gap-4 border-t border-[var(--at-ln)] pt-2 text-[11px] font-semibold text-[var(--at-mut)]">
         <span>時間 <span className="font-mono text-[13px] font-black tabular-nums text-[var(--at-strong)]">{hours > 0 ? hours.toFixed(1) : "0.0"}</span>h</span>

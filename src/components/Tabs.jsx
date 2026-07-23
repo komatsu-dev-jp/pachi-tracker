@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import ReactDOM from "react-dom";
 import { C, f, sc, sp, tsNow, font, mono, localDateStr } from "../constants";
-import { archiveWorkMinutes } from "./analysis/analysisSelectors";
+import {
+    archiveWorkMinutes,
+    getEvAmount,
+    getEvBreakdown,
+    getYutimeEvAmount,
+} from "./analysis/analysisSelectors";
 import { NI, Card, MiniStat, Btn, SecLabel, KV, ModeToggle, ModeBadge } from "./Atoms";
 import { searchMachines, deriveSpecForMachine, getEffectiveMachineList } from "../machineDB";
 import {
@@ -614,7 +619,7 @@ function YutimeEvCard({ result, spec, activeRun, normalEv, currentLowSpins = 0, 
             </div>
             {!isActive ? <>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8, marginTop: 12 }}>{[["現在からの判断EV", decisionEv], ["遊タイム到達率", reach], [`到達必要資金（${modeLabel}）`, arrival]].map(([label, value]) => <div key={label} style={{ minWidth: 0 }}><div style={{ fontSize: 8, color: C.sub }}>{label}</div><div style={{ marginTop: 3, fontSize: 13, fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div></div>)}</div>
-                <div style={{ marginTop: 7, fontSize: 9, color: C.sub }}>通常当たり込みの将来判断EVです。通常期待値とは合算しません。{measuredStart > 0 ? ` 実測 ${measuredStart.toFixed(1)}回/K。` : ""}</div>
+                <div style={{ marginTop: 7, fontSize: 9, color: C.sub }}>通常当たり込みの将来判断EVです。累計期待値へ加算します。{measuredStart > 0 ? ` 実測 ${measuredStart.toFixed(1)}回/K。` : ""}</div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", gap: 8, marginTop: 10 }}>
                     <div style={{ color: isReady ? C.yellow : C.subHi, fontSize: 10, fontWeight: 800, lineHeight: 1.45 }}>
                         {isReady ? "右下の「＋イベント」から突入を記録" : "接近状況を自動更新しています"}
@@ -733,18 +738,19 @@ export function DataTab({ ev, jpLog, S }) {
         const points = [];
         let cumEV = 0;
         archives.forEach((a) => {
-            const w = a.stats?.effectiveWorkAmount ?? a.stats?.workAmount ?? 0;
+            const w = getEvAmount(a);
             cumEV += w;
             points.push({ label: a.date?.slice(5) || "", value: Math.round(cumEV) });
         });
         // Add current session
-        const currentWork = ev.effectiveWorkAmount ?? ev.workAmount;
+        const currentWork = (ev.effectiveWorkAmount ?? ev.workAmount ?? 0)
+            + getYutimeEvAmount({ yutimeDecision: S.yutimeDecision });
         if (currentWork !== 0) {
             cumEV += currentWork;
             points.push({ label: "今日", value: Math.round(cumEV) });
         }
         return points;
-    }, [archives, ev.effectiveWorkAmount, ev.workAmount]);
+    }, [archives, ev.effectiveWorkAmount, ev.workAmount, S.yutimeDecision]);
 
     // Build cumulative profit/loss graph from archives (actual results based)
     const _plGraphData = useMemo(() => {
@@ -5953,11 +5959,12 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                 const points = [];
                 let cum = 0;
                 archives.forEach((a) => {
-                    const w = a.stats?.effectiveWorkAmount ?? a.stats?.workAmount ?? 0;
+                    const w = getEvAmount(a);
                     cum += w;
                     points.push({ label: a.date?.slice(5) || "", value: Math.round(cum) });
                 });
-                const currentWork = ev.effectiveWorkAmount ?? ev.workAmount;
+                const currentWork = (ev.effectiveWorkAmount ?? ev.workAmount ?? 0)
+                    + getYutimeEvAmount({ yutimeDecision: S.yutimeDecision });
                 if (currentWork !== 0) {
                     cum += currentWork;
                     points.push({ label: "今日", value: Math.round(cum) });
@@ -8985,7 +8992,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                     actual += (a.recoveryYen || 0) - (a.investYen || 0);
                     hasActual = true;
                 }
-                ev += (a.stats?.effectiveWorkAmount ?? a.stats?.workAmount ?? 0);
+                ev += getEvAmount(a);
             });
             totals[date] = { actual, ev, hasActual };
         });
@@ -9031,7 +9038,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                 invest += inv; recovery += rec; realCount += 1;
                 if (rec - inv > 0) winCount += 1;
             }
-            ev += Number(a.stats?.effectiveWorkAmount ?? a.stats?.workAmount) || 0;
+            ev += getEvAmount(a);
             // 稼働時間: 実践記録は netRot/rotPerHour、手動記録は遊技時間（playMinutes）
             workMin += archiveWorkMinutes(a);
         });
@@ -9057,7 +9064,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
             const inv = Number(a.investYen) || 0;
             const rec = Number(a.recoveryYen) || 0;
             if (inv > 0 || rec > 0) { map[d].actual += rec - inv; map[d].hasActual = true; }
-            map[d].ev += Number(a.stats?.effectiveWorkAmount ?? a.stats?.workAmount) || 0;
+            map[d].ev += getEvAmount(a);
             map[d].sessions += 1;
         });
         return Object.values(map)
@@ -9323,7 +9330,6 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
     // ── Inline summary card for an archive entry (reference app style) ──
     const SummaryCard = ({ a, onClick }) => {
         const isSlot = a.gameType === "slot";
-        const st = isSlot ? {} : (a.stats || {});
         const invest = a.investYen || 0;
         const recovery = a.recoveryYen || 0;
         // 貯玉消費（確定時に保存済み）: 円換算額と消費玉数。実収支では投資と同じくコストとして差し引く
@@ -9333,7 +9339,8 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
         // 実収支 =（回収 − 投資）− 貯玉消費分。現金 or 貯玉いずれかの実データがある時のみ確定
         const hasActual = invest > 0 || recovery > 0 || chodamaYen > 0;
         const realPL = (recovery - invest) - chodamaYen;
-        const workAmount = st.effectiveWorkAmount ?? st.workAmount ?? 0;
+        const workBreakdown = getEvBreakdown(a);
+        const workAmount = workBreakdown.total;
         // 実データが無い場合のみ期待値（仕事量）へフォールバック
         const displayPL = hasActual ? realPL : workAmount;
         // 稼働時間: 実践記録は netRot/rotPerHour、手動記録は遊技時間（playMinutes）
@@ -9505,7 +9512,14 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                         marginTop: 10, padding: "6px 12px", borderRadius: 9,
                         background: "rgba(251, 191, 36, 0.08)", border: "1px solid rgba(251, 191, 36, 0.22)",
                     }}>
-                        <span style={{ fontSize: 11, color: C.yellow, fontWeight: 700 }}>期待値（理論値）</span>
+                        <span style={{ fontSize: 11, color: C.yellow, fontWeight: 700 }}>
+                            {workBreakdown.yutime !== 0 ? "合計期待値" : "期待値（理論値）"}
+                            {workBreakdown.yutime !== 0 && (
+                                <small style={{ display: "block", marginTop: 2, color: C.sub }}>
+                                    通常 {sp(Math.round(workBreakdown.normal))}円 ＋ 遊タイム {sp(Math.round(workBreakdown.yutime))}円
+                                </small>
+                            )}
+                        </span>
                         <span style={{ fontSize: 13, color: C.yellow, fontWeight: 800, fontFamily: font, fontVariantNumeric: "tabular-nums" }}>
                             {sp(Math.round(workAmount))}<span className="unit">円</span>
                         </span>
@@ -9722,8 +9736,8 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                             const cy = Number(ar.chodamaYen) || 0;
                             const hasActual = inv > 0 || rec > 0 || cy > 0;
                             const pl = (rec - inv) - cy;
-                            const arSt = ar.stats || {};
-                            const ev = Number(arSt.effectiveWorkAmount ?? arSt.workAmount) || 0;
+                            const evBreakdown = getEvBreakdown(ar);
+                            const ev = evBreakdown.total;
                             const denom = ar.settings?.synthDenom;
                             const name = ar.machineName && ar.machineName !== `1/${denom}` ? ar.machineName : (ar.machineName || (isSlot ? "機種未入力" : `1/${denom || "—"}`));
                             // 分析（MACHINE REPORT）へ飛べる実機種名のみを対象にする（合成分母フォールバックや未入力は除外）。
@@ -9747,6 +9761,11 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                                             <div className="mt-0.5 truncate text-[10.5px] font-bold text-[var(--at-mut)]">
                                                 {[isSlot ? "パチスロ" : "パチンコ", ar.storeName, ar.machineNum ? `${ar.machineNum}番台` : "", !isSlot && ev !== 0 ? `期待値 ${yenFmt(ev)}円` : ""].filter(Boolean).join(" / ") || "詳細未入力"}
                                             </div>
+                                            {evBreakdown.yutime !== 0 && (
+                                                <div className="mt-1 text-[9.5px] font-bold text-[var(--at-mut)]">
+                                                    通常 {yenFmt(evBreakdown.normal)}円 ＋ 遊タイム {yenFmt(evBreakdown.yutime)}円
+                                                </div>
+                                            )}
                                         </div>
                                         <div className={`shrink-0 font-mono text-[16px] font-black tabular-nums ${hasActual ? plCls(pl) : "text-[var(--at-faint)]"}`}>
                                             {hasActual ? `${yenFmt(pl)}円` : "—"}
@@ -9958,8 +9977,8 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
         const a = archives.find(ar => ar.id === selectedArchiveId);
         if (!a) { setSelectedArchiveId(null); return null; }
         const st = a.stats || {};
-        // 期待値（仕事量）は上皿補正後を優先し、旧アーカイブは workAmount にフォールバック
-        const stWork = st.effectiveWorkAmount ?? st.workAmount;
+        const evBreakdown = getEvBreakdown(a);
+        const stWork = evBreakdown.total;
         const pl = (a.investYen > 0 || a.recoveryYen > 0) ? (a.recoveryYen || 0) - (a.investYen || 0) : null;
         const aggKey = `${a.settings?.synthDenom || ""}|${a.machineNum}`;
         const agg = a.machineNum ? machineAggregates[aggKey] : null;
@@ -10010,7 +10029,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                                 { label: "投資", val: f(a.investYen || 0), col: C.red },
                                 { label: "回収", val: f(a.recoveryYen || 0), col: C.green },
                                 { label: "収支", val: pl != null ? f(pl) : "0", col: pl != null ? sc(pl) : C.subHi },
-                                { label: "仕事量", val: stWork != null && stWork !== 0 ? f(Math.round(stWork)) : "—", col: stWork ? sc(stWork) : C.subHi },
+                                { label: "合計期待値", val: stWork != null && stWork !== 0 ? f(Math.round(stWork)) : "—", col: stWork ? sc(stWork) : C.subHi },
                             ].map(({ label, val, col }) => (
                                 <div key={label} style={{ textAlign: "center", background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: "8px 2px" }}>
                                     <div style={{ fontSize: 9, color: C.sub, marginBottom: 3, fontWeight: 600 }}>{label}</div>
@@ -10018,6 +10037,11 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                                 </div>
                             ))}
                         </div>
+                        {evBreakdown.yutime !== 0 && (
+                            <div style={{ marginTop: 8, textAlign: "right", fontSize: 10, color: C.sub }}>
+                                通常期待値 {sp(Math.round(evBreakdown.normal))}円 ＋ 遊タイム期待値 {sp(Math.round(evBreakdown.yutime))}円
+                            </div>
+                        )}
                         {/* 貯玉換算表示 */}
                         {(a.chodamaYen || 0) > 0 && (
                             <div style={{ marginTop: 10, padding: "10px 12px", background: "rgba(168,85,247,0.1)", borderRadius: 10, border: `1px solid rgba(168,85,247,0.25)` }}>
@@ -10047,7 +10071,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
 
                     {a.yutimeDecision && (
                         <Card style={{ padding: 14, marginBottom: 8, borderColor: `${C.blue}66` }}>
-                            <SecLabel label="遊タイム判断（通常期待値とは別保存）" />
+                            <SecLabel label="遊タイム判断（累計期待値へ加算）" />
                             {a.yutimeDecision.result?.valid ? (
                                 <>
                                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -10349,7 +10373,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                         const i2 = Number(a.investYen) || 0;
                         const r2 = Number(a.recoveryYen) || 0;
                         if (i2 > 0 || r2 > 0) { inv += i2; rec += r2; hasActual = true; }
-                        ev += Number(a.stats?.effectiveWorkAmount ?? a.stats?.workAmount) || 0;
+                        ev += getEvAmount(a);
                         const nr = Number(a.stats?.netRot) || 0;
                         const rph = Number(a.settings?.rotPerHour) || 0;
                         if (nr > 0 && rph > 0) workMin += (nr / rph) * 60;

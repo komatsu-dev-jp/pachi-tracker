@@ -13,7 +13,7 @@
 //       回転率/K   = stats.start1K（投入玉ベースの物理的な回転率）
 //       ボーダー差 = stats.bDiff（物理回転率 − 理論ボーダー）
 //     持ち玉の交換価値で補正した値は期待値にのみ使い、台性能の推移には混ぜない。
-//   - 期待値(EV)  = stats.effectiveWorkAmount ?? stats.workAmount（getEvAmount と同方針）
+//   - 期待値(EV)  = 通常期待値 + 有効な遊タイム判断EV（getEvAmount と同方針）
 //   - investYen / recoveryYen : 実損益（recoveryYen - investYen、両方ゼロなら実損益なし）
 //
 // データ不足判定の閾値:
@@ -173,7 +173,7 @@ function formatBinLabel(lo, hi, size) {
 // 3. 店舗別・曜日別の期待値傾向
 // ──────────────────────────────────────────────────────────────────────────────
 //   グループ（店舗名 or 曜日）ごとに、件数・EV 合計・実損益合計を集計する。
-//   EV = getEvAmount（effectiveWorkAmount ?? workAmount）。
+//   EV = getEvAmount（通常期待値 + 有効な遊タイム判断EV）。
 //   実損益 = Σ(recoveryYen - investYen)（実損益記録のあるセッションのみ加算）。
 //   返却: [{ key, label, sessions, evAmount, evAvg, actualPL, hasActual, realSessions }, ...]
 

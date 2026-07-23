@@ -6,10 +6,12 @@
 // 主要フィールド:
 //   - storeName: 文字列（空文字なら "店舗未登録" 扱い）
 //   - investYen / recoveryYen: 実損益判定用
-//   - stats.effectiveWorkAmount: 期待値の累積に使う（上皿補正後。旧データは stats.workAmount にフォールバック）
+//   - 期待値: 通常期待値（effectiveWorkAmount、旧データは workAmount）+ 有効な遊タイム判断EV
 //   - date: "YYYY-MM-DD"
 //
 // hasActual の判定は analysisSelectors と揃える（投資 or 回収のどちらかが 0 より大きい）。
+
+import { getEvAmount } from "../analysis/analysisSelectors.js";
 
 const UNREGISTERED = "店舗未登録";
 
@@ -19,13 +21,6 @@ const hasActualMoney = (a) =>
 function getActualPL(a) {
   if (!hasActualMoney(a)) return null;
   return (Number(a.recoveryYen) || 0) - (Number(a.investYen) || 0);
-}
-
-function getEvAmount(a) {
-  const ew = a?.stats?.effectiveWorkAmount;
-  if (typeof ew === "number" && isFinite(ew)) return ew;
-  const w = a?.stats?.workAmount;
-  return typeof w === "number" && isFinite(w) ? w : 0;
 }
 
 function normalizeStoreName(name) {

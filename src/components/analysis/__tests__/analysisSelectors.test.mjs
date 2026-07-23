@@ -19,7 +19,10 @@ import {
   getActualPL,
   getArchiveGameType,
   getChodamaPL,
+  getEvBreakdown,
   getEvAmount,
+  getNormalEvAmount,
+  getYutimeEvAmount,
   getMachineHamariList,
   isFilterActive,
   listAvailableMachines,
@@ -514,6 +517,43 @@ test("summarize: 貯玉あり・なし混在の合算", () => {
   assert.strictEqual(s.totalChodamaPL, -3000);
   assert.strictEqual(s.totalRealPL, 2000);
   assert.strictEqual(s.hasChodama, true);
+});
+
+test("yutime: 通常期待値へ遊タイム期待値を加算する", () => {
+  const archive = {
+    stats: { effectiveWorkAmount: 1200, workAmount: 900 },
+    yutimeDecision: { result: { valid: true, selectedEV: 2800 } },
+  };
+  assert.strictEqual(getNormalEvAmount(archive), 1200);
+  assert.strictEqual(getYutimeEvAmount(archive), 2800);
+  assert.deepStrictEqual(getEvBreakdown(archive), {
+    normal: 1200,
+    yutime: 2800,
+    total: 4000,
+  });
+  assert.strictEqual(getEvAmount(archive), 4000);
+});
+
+test("yutime: 旧記録・無効な計算・負の期待値を安全に扱う", () => {
+  assert.strictEqual(getEvAmount({ stats: { workAmount: 500 } }), 500);
+  assert.strictEqual(getEvAmount({
+    stats: { workAmount: 500 },
+    yutimeDecision: { result: { valid: false, selectedEV: 3000 } },
+  }), 500);
+  assert.strictEqual(getEvAmount({
+    stats: { workAmount: 500 },
+    yutimeDecision: { result: { valid: true, selectedEV: -800 } },
+  }), -300);
+});
+
+test("yutime: スロットへ残った古い遊タイム値は加算しない", () => {
+  const archive = {
+    gameType: "slot",
+    stats: { workAmount: 500 },
+    yutimeDecision: { result: { valid: true, selectedEV: 3000 } },
+  };
+  assert.strictEqual(getEvAmount(archive), 0);
+  assert.strictEqual(getYutimeEvAmount(archive), 0);
 });
 
 // ──────────── getMachineHamariList ────────────

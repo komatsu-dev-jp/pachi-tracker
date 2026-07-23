@@ -1036,8 +1036,9 @@ export default function HomeDashboard({ S }) {
         workAmount: Number.isFinite(workAmount) ? workAmount : 0,
         netRot: Number(S?.ev?.netRot) || 0,
       },
+      yutimeDecision: S?.yutimeDecision || null,
     }];
-  }, [archives, S?.sessionStarted, S?.sessionStartDate, S?.machineName, S?.rotPerHour, S?.ballVal, S?.exRate, S?.ev?.effectiveWorkAmount, S?.ev?.workAmount, S?.ev?.netRot, todayStr]);
+  }, [archives, S?.sessionStarted, S?.sessionStartDate, S?.machineName, S?.rotPerHour, S?.ballVal, S?.exRate, S?.ev?.effectiveWorkAmount, S?.ev?.workAmount, S?.ev?.netRot, S?.yutimeDecision, todayStr]);
 
   const monthOverview = useMemo(
     () => buildMonthOverview(overviewArchives, S?.monthlyEvTarget, now),
