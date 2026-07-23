@@ -34,6 +34,21 @@ export function getYutimeCardStage({ spec, result, activeRun } = {}) {
   return spec?.targetingEnabled === true ? "targeting" : "approaching";
 }
 
+// 記録画面の「＋イベント」で表示する遊タイム操作を一意に決める。
+// active 中は突入を再表示せず、完了・消化済みのセッションも再突入できないようにする。
+export function getYutimeEventMode({ spec, activeRun } = {}) {
+  if (activeRun?.status === "active") return "active";
+  if (
+    spec
+    && finiteNumber(spec.triggerLowSpins) > 0
+    && spec.targetingEnabled === true
+    && spec.consumed !== true
+  ) {
+    return "entry";
+  }
+  return "hidden";
+}
+
 export function createYutimeRun({
   id,
   machineName,

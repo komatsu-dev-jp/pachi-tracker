@@ -7,6 +7,7 @@ import {
   createYutimeRun,
   getActiveYutimeRun,
   getYutimeCardStage,
+  getYutimeEventMode,
   shouldAutoShowYutimeCard,
   sumYutimeSupportCash,
 } from "../yutimeFlow.js";
@@ -44,6 +45,17 @@ test("consumed eligibility stays hidden unless a run is active", () => {
   }), false);
   assert.equal(shouldAutoShowYutimeCard({ spec: { ...spec, consumed: true }, activeRun }), true);
   assert.equal(getYutimeCardStage({ spec, activeRun }), "active");
+});
+
+test("event menu exposes exactly one yutime operation for the current state", () => {
+  const target = { ...spec, targetingEnabled: true };
+  assert.equal(getYutimeEventMode({ spec: target }), "entry");
+  assert.equal(getYutimeEventMode({
+    spec: target,
+    activeRun: { id: "run-1", status: "active" },
+  }), "active");
+  assert.equal(getYutimeEventMode({ spec: { ...target, consumed: true } }), "hidden");
+  assert.equal(getYutimeEventMode({ spec }), "hidden");
 });
 
 test("run creation, cash addition, and hit completion preserve the record", () => {
