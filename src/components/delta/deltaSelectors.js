@@ -157,11 +157,30 @@ function finiteDelta(value) {
 // 取り込み値はユーザー確認後に使うが、桁欠落・列ずれを確定値にしないため
 // 日次の1台差玉として明らかに異常な値と小数は拒否する。
 export const MAX_IMPORTED_DELTA_ABS = 500000;
+// 折れ線が白い0線へ完全に重なった場合だけ、表データとの共同照合で
+// 0玉の「要確認」候補を作る。自動確定はせず、目視確認を必須にする。
+export const LOW_ACTIVITY_ZERO_MAX_SPINS = 150;
 
 function safeImportedDelta(value) {
   const parsed = finiteDelta(value);
   if (parsed === null || !Number.isSafeInteger(parsed) || Math.abs(parsed) > MAX_IMPORTED_DELTA_ABS) return null;
   return parsed;
+}
+
+function canSuggestLowActivityZero(row, tableRow) {
+  const normalSpins = Number(tableRow?.normalSpins);
+  const totalStarts = Number(tableRow?.totalStarts);
+  const reasons = Array.isArray(row?.reasonCodes) ? row.reasonCodes : [];
+  return row?.status === "failed"
+    && finiteDelta(row?.val) === null
+    && reasons.includes("missing-series")
+    && row?.calibration?.source === "panel"
+    && Number(row?.calibration?.quality) >= 0.7
+    && Number.isInteger(normalSpins)
+    && normalSpins > 0
+    && normalSpins <= LOW_ACTIVITY_ZERO_MAX_SPINS
+    && Number.isInteger(totalStarts)
+    && totalStarts === 0;
 }
 
 // 解析スロット配列に台番号配列を割り当てる。
@@ -304,12 +323,13 @@ export function mergeTaiData(rows, taiRows) {
     // AI/TSVの差玉は折れ線の代用品として自動確定しない。回転数などだけ統合し、
     // missing/review は元画像を撮り直すまでその状態を維持する。
     const hasImportedDelta = false;
+    const suggestLowActivityZero = canSuggestLowActivityZero(row, t);
     if (t.val != null && importedDelta === null) invalidDeltaNumbers.add(normalizeMachineNumber(row?.num));
     if (!hasTrustedDelta && importedDelta !== null) unverifiedDeltaNumbers.add(normalizeMachineNumber(row?.num));
     if (hasTrustedDelta && importedDelta !== null && importedDelta !== existingDelta) {
       conflictNumbers.add(normalizeMachineNumber(row?.num));
     }
-    const mergedVal = hasImportedDelta ? importedDelta : row.val;
+    const mergedVal = hasImportedDelta ? importedDelta : suggestLowActivityZero ? 0 : row.val;
     const importedIsland = String(t.island ?? "").trim();
     const importedMachineName = String(t.machineName ?? "").trim();
     const existingMachineName = String(row.machineName ?? "").trim();
@@ -364,11 +384,18 @@ export function mergeTaiData(rows, taiRows) {
       machineName: selectedMachineName,
       machineNameSource: selectedMachineNameSource || undefined,
       val: mergedVal,
-      rank: hasImportedDelta ? getRank(mergedVal).rank : row.rank,
-      status: hasImportedDelta ? "ok" : row.status,
-      valueSource: hasImportedDelta ? "import" : row.valueSource,
-      confidence: hasImportedDelta ? 1 : row.confidence,
-      reasonCodes: hasImportedDelta ? [] : row.reasonCodes,
+      rank: hasImportedDelta || suggestLowActivityZero ? getRank(mergedVal).rank : row.rank,
+      status: hasImportedDelta ? "ok" : suggestLowActivityZero ? "review" : row.status,
+      valueSource: hasImportedDelta
+        ? "import"
+        : suggestLowActivityZero ? "low-activity-evidence" : row.valueSource,
+      confidence: hasImportedDelta ? 1 : suggestLowActivityZero ? 0.25 : row.confidence,
+      reasonCodes: hasImportedDelta
+        ? []
+        : suggestLowActivityZero
+          ? ["zero-length-series", "table-low-activity", "low-confidence"]
+          : row.reasonCodes,
+      reviewConfirmed: suggestLowActivityZero ? false : row.reviewConfirmed,
       normalSpins: t.normalSpins ?? row.normalSpins ?? null,
       totalStarts: t.totalStarts ?? row.totalStarts ?? null,
       cumulativeStarts: t.cumulativeStarts ?? row.cumulativeStarts ?? null,
