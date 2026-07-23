@@ -62,6 +62,7 @@ import {
     completeYutimeRun,
     createYutimeRun,
     getYutimeCardStage,
+    getYutimeEventMode,
     shouldAutoShowYutimeCard,
 } from "./yutime/yutimeFlow";
 import YutimeCalculatorSheet from "./yutime/YutimeCalculatorSheet";
@@ -579,7 +580,7 @@ function LegacyYutimeEvCard({ result, spec, currentLowSpins = 0, rateSource = "a
 }
 
 // 詳細データタブ専用 スタイルヘルパー（分析OS風 ダークUI）
-function YutimeEvCard({ result, spec, activeRun, normalEv, currentLowSpins = 0, rateSource = "assumed", playMode = "cash", onOpen, onEnter, onRecordHit, onThrough, onAddCash }) {
+function YutimeEvCard({ result, spec, activeRun, normalEv, currentLowSpins = 0, rateSource = "assumed", playMode = "cash", onOpen }) {
     if (!shouldAutoShowYutimeCard({ spec, result, activeRun })) return null;
     const stage = getYutimeCardStage({ spec, result, activeRun });
     const isActive = stage === "active";
@@ -592,10 +593,20 @@ function YutimeEvCard({ result, spec, activeRun, normalEv, currentLowSpins = 0, 
     const decisionEv = result?.valid ? `${result.selectedEV >= 0 ? "+" : ""}${Math.round(result.selectedEV).toLocaleString("ja-JP")}円` : "期待出玉未確認";
     const measuredStart = Number(normalEv?.effectiveStart1K ?? normalEv?.start1KCorrected ?? normalEv?.start1K) || 0;
     const supportCash = Math.max(0, Number(activeRun?.supportCashYen) || 0);
+    const activePlayMode = activeRun?.playMode === "mochi" || activeRun?.playMode === "chodama" ? activeRun.playMode : "cash";
+    const activeModeLabel = activePlayMode === "chodama" ? "貯玉" : activePlayMode === "mochi" ? "持ち玉" : "現金";
+    const supportSpins = Math.max(0, Math.round(Number(activeRun?.supportSpins) || 0));
+    const durationSpins = Math.max(0, Math.round(Number(activeRun?.durationSpins) || Number(spec?.durationSpins) || 0));
+    const supportProgress = supportSpins > 0
+        ? `${supportSpins.toLocaleString()} / ${durationSpins > 0 ? durationSpins.toLocaleString() : "—"}回`
+        : `未入力 / ${durationSpins > 0 ? `${durationSpins.toLocaleString()}回` : "規定未確認"}`;
+    const startAsset = activePlayMode === "cash"
+        ? "現金遊技"
+        : `${Math.max(0, Math.round(Number(activeRun?.startBalls) || 0)).toLocaleString()}玉`;
     const actionStyle = (primary = false) => ({ minHeight: 44, borderRadius: 11, border: `1px solid ${primary ? "rgba(245,180,0,.9)" : C.border}`, background: primary ? "linear-gradient(135deg,#f59e0b,#fbbf24)" : "var(--surface-hi)", color: primary ? "#17120a" : C.text, fontWeight: 900, fontSize: 12, fontFamily: font, padding: "0 10px" });
 
     return (
-        <section aria-label="遊タイム判断" style={{ width: "100%", minHeight: 190, boxSizing: "border-box", position: "relative", overflow: "hidden", color: C.text, background: "linear-gradient(135deg,rgba(245,158,11,.12),var(--surface) 48%,rgba(15,23,42,.96))", border: "1px solid rgba(245,180,0,.78)", borderRadius: 16, padding: "13px 13px 12px 17px", boxShadow: "0 5px 18px rgba(0,0,0,.30)" }}>
+        <section aria-label="遊タイム判断" style={{ width: "100%", minHeight: isActive ? 218 : 190, flexShrink: 0, boxSizing: "border-box", position: "relative", overflow: "hidden", color: C.text, background: "linear-gradient(135deg,rgba(245,158,11,.12),var(--surface) 48%,rgba(15,23,42,.96))", border: "1px solid rgba(245,180,0,.78)", borderRadius: 16, padding: "13px 13px 12px 17px", boxShadow: "0 5px 18px rgba(0,0,0,.30)" }}>
             <span aria-hidden="true" style={{ position: "absolute", left: 0, top: 12, bottom: 12, width: 4, borderRadius: "0 4px 4px 0", background: C.yellow }} />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 10 }}>
                 <div><div style={{ fontSize: 14, fontWeight: 900, color: C.yellow }}>{isActive ? "遊タイム中" : isReady ? "遊タイム到達" : "遊タイムが近づいています"}</div><div style={{ marginTop: 3, fontSize: 9, color: C.sub }}>{isActive ? `突入時 ${activeRun.entryLowSpins || 0}回・追加投資 ${supportCash.toLocaleString()}円` : `通常打ちを自動監視・${rateSource === "measured" ? "実測" : "暫定"}回転率`}</div></div>
@@ -604,10 +615,24 @@ function YutimeEvCard({ result, spec, activeRun, normalEv, currentLowSpins = 0, 
             {!isActive ? <>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8, marginTop: 12 }}>{[["現在からの判断EV", decisionEv], ["遊タイム到達率", reach], [`到達必要資金（${modeLabel}）`, arrival]].map(([label, value]) => <div key={label} style={{ minWidth: 0 }}><div style={{ fontSize: 8, color: C.sub }}>{label}</div><div style={{ marginTop: 3, fontSize: 13, fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div></div>)}</div>
                 <div style={{ marginTop: 7, fontSize: 9, color: C.sub }}>通常当たり込みの将来判断EVです。通常期待値とは合算しません。{measuredStart > 0 ? ` 実測 ${measuredStart.toFixed(1)}回/K。` : ""}</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, marginTop: 10 }}><button className="b" type="button" style={actionStyle(true)} onClick={isReady ? onEnter : onOpen}>{isReady ? "遊タイム突入を記録" : "条件と根拠を確認"}</button><button className="b" type="button" style={actionStyle(false)} onClick={onOpen}>詳細</button></div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", gap: 8, marginTop: 10 }}>
+                    <div style={{ color: isReady ? C.yellow : C.subHi, fontSize: 10, fontWeight: 800, lineHeight: 1.45 }}>
+                        {isReady ? "右下の「＋イベント」から突入を記録" : "接近状況を自動更新しています"}
+                    </div>
+                    <button className="b" type="button" style={actionStyle(false)} onClick={onOpen}>条件・根拠</button>
+                </div>
             </> : <>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8, marginTop: 14 }}>{[["遊タイム回数", `${activeRun.durationSpins || "—"}回`], ["開始時の玉", `${(activeRun.startBalls || 0).toLocaleString()}玉`], ["追加投資", `${supportCash.toLocaleString()}円`]].map(([label, value]) => <div key={label}><div style={{ fontSize: 8, color: C.sub }}>{label}</div><div style={{ marginTop: 3, fontSize: 13, fontWeight: 900 }}>{value}</div></div>)}</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}><button className="b" type="button" style={actionStyle(true)} onClick={onRecordHit}>遊タイム中に当たった</button><button className="b" type="button" style={actionStyle(false)} onClick={onThrough}>スルー・終了</button><button className="b" type="button" style={{ ...actionStyle(false), gridColumn: "1 / -1" }} onClick={onAddCash}>+ 貸玉を追加</button></div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: "10px 12px", marginTop: 14 }}>
+                    {[
+                        ["消化回転 / 規定", supportProgress],
+                        [activePlayMode === "cash" ? "突入時の遊技方法" : `突入時の${activeModeLabel}`, startAsset],
+                        ["突入後の追加投資", `${supportCash.toLocaleString()}円`],
+                        ["記録方法", "＋イベント"],
+                    ].map(([label, value]) => <div key={label} style={{ minWidth: 0 }}><div style={{ fontSize: 8, color: C.sub }}>{label}</div><div style={{ marginTop: 3, fontSize: 13, fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div></div>)}
+                </div>
+                <div style={{ marginTop: 12, padding: "9px 10px", borderRadius: 10, border: `1px solid ${C.border}`, background: "rgba(15,23,42,.38)", color: C.subHi, fontSize: 10, fontWeight: 700, lineHeight: 1.45 }}>
+                    通常回転の集計は停止中です。右下の「＋イベント」から、当たり・スルー・貸玉追加を記録してください。
+                </div>
             </>}
         </section>
     );
@@ -1915,8 +1940,14 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     //       （旧UIのテンキー bottom sheet jackpot モードは廃止、引数なし呼び出しは下位互換用）
     const beginYutimeRun = () => {
         const spec = S.activeYutimeSession;
-        if (!spec || S.activeYutimeRun) return;
-        if (!window.confirm("遊タイム突入を記録します。\n通常回転率の集計はここで止め、遊タイム中の回転を別記録にします。")) return;
+        if (getYutimeEventMode({ spec, activeRun: S.activeYutimeRun }) !== "entry") return;
+        const remaining = Number.isFinite(S.yutimeLive?.remainingSpins)
+            ? Math.max(0, Math.round(S.yutimeLive.remainingSpins))
+            : Math.max(0, Math.round(Number(spec.triggerLowSpins || 0) - Number(S.currentYutimeLowSpins || 0)));
+        const remainingWarning = remaining > 0
+            ? `アプリ上では到達まで残り${remaining.toLocaleString()}回です。\n実機が遊タイムへ突入した場合だけ記録してください。\n\n`
+            : "";
+        if (!window.confirm(`${remainingWarning}遊タイム突入を記録します。\n通常回転率の集計はここで止め、遊タイム中を独立記録に切り替えます。`)) return;
         S.pushSnapshot();
         const lastRow = rows[rows.length - 1];
         const cumRot = Number(lastRow?.cumRot) || 0;
@@ -3226,6 +3257,10 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                 const currentCumRot = lastRow ? (lastRow.cumRot || 0) : 0;
                 const lastInputRot = inputHistory.length > 0 ? inputHistory[0] : null;
                 const showYutimeDecision = shouldAutoShowYutimeCard({ spec: S.activeYutimeSession, result: S.yutimeLive, activeRun: S.activeYutimeRun });
+                const yutimeEventMode = getYutimeEventMode({ spec: S.activeYutimeSession, activeRun: S.activeYutimeRun });
+                const yutimeEventRemaining = Number.isFinite(S.yutimeLive?.remainingSpins)
+                    ? Math.max(0, Math.round(S.yutimeLive.remainingSpins))
+                    : Math.max(0, Math.round(Number(S.activeYutimeSession?.triggerLowSpins || 0) - Number(S.currentYutimeLowSpins || 0)));
 
                 return (
                     <>
@@ -3248,10 +3283,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             rateSource={S.yutimeRateSource}
                             playMode={S.playMode}
                             onOpen={() => setShowYutimeCalculator(true)}
-                            onEnter={beginYutimeRun}
-                            onRecordHit={openYutimeHitWizard}
-                            onThrough={finishYutimeThrough}
-                            onAddCash={addYutimeCash}
                         />
                         {showYutimeCalculator && (
                             <YutimeCalculatorSheet
@@ -3307,19 +3338,37 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     {/* 下部固定 CTA + FAB */}
                     <div className="record-cta-bar">
                         <button
-                            className="b record-cta-input"
+                            className={`b record-cta-input${yutimeEventMode === "active" ? " record-cta-input--yutime" : ""}`}
                             type="button"
-                            onClick={() => { setInputError(""); setShowInputSheet(true); }}
-                            aria-label="回転数を入力する"
+                            onClick={() => {
+                                if (yutimeEventMode === "active") {
+                                    setShowEventMenu(true);
+                                    return;
+                                }
+                                setInputError("");
+                                setShowInputSheet(true);
+                            }}
+                            aria-label={yutimeEventMode === "active" ? "遊タイム中のイベントを記録する" : "回転数を入力する"}
                         >
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                <rect x="3" y="6" width="18" height="14" rx="2" />
-                                <path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10" />
-                            </svg>
-                            <span>
-                                回転数を入力する
-                                <span className="record-cta-input__sub">タップしてテンキーを開く</span>
-                            </span>
+                            {yutimeEventMode === "active" ? <>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <circle cx="12" cy="12" r="9" />
+                                    <path d="M12 8v8M8 12h8" />
+                                </svg>
+                                <span>
+                                    遊タイム中の記録
+                                    <span className="record-cta-input__sub">＋イベントから結果・貸玉を記録</span>
+                                </span>
+                            </> : <>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <rect x="3" y="6" width="18" height="14" rx="2" />
+                                    <path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10" />
+                                </svg>
+                                <span>
+                                    回転数を入力する
+                                    <span className="record-cta-input__sub">タップしてテンキーを開く</span>
+                                </span>
+                            </>}
                         </button>
                         <button
                             className="b record-fab"
@@ -3347,10 +3396,101 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             >
                                 <div className="input-sheet__handle" />
                                 <div className="event-menu__title" style={{ fontFamily: font }}>イベントメニュー</div>
-                                <div className="event-menu__sub" style={{ fontFamily: font }}>（戦略・実践イベント）</div>
+                                <div className="event-menu__sub" style={{ fontFamily: font }}>
+                                    {yutimeEventMode === "active" ? "遊タイム中の記録" : yutimeEventMode === "entry" ? "通常記録・遊タイム突入" : "戦略・実践イベント"}
+                                </div>
 
-                                {/* 初当たりを記録 */}
-                                <button
+                                {yutimeEventMode === "entry" && (
+                                    <button
+                                        className="b event-menu__item event-menu__item--yutime"
+                                        type="button"
+                                        onClick={() => {
+                                            setShowEventMenu(false);
+                                            beginYutimeRun();
+                                        }}
+                                    >
+                                        <span className="event-menu__item-icon" style={{ "--em-color": C.yellow }}>
+                                            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                                <path d="M13 2 5 13h6l-1 9 8-12h-6z" />
+                                            </svg>
+                                        </span>
+                                        <span>
+                                            <span className="event-menu__item-title" style={{ fontFamily: font }}>遊タイム突入を記録</span>
+                                            <span className="event-menu__item-sub" style={{ fontFamily: font }}>
+                                                {yutimeEventRemaining > 0 ? `アプリ上は残り${yutimeEventRemaining.toLocaleString()}回・実機突入時に記録` : "通常回転の集計を止め、独立記録へ切り替えます"}
+                                            </span>
+                                        </span>
+                                        <span className="event-menu__item-chev">›</span>
+                                    </button>
+                                )}
+
+                                {yutimeEventMode === "active" && (<>
+                                    <button
+                                        className="b event-menu__item event-menu__item--yutime"
+                                        type="button"
+                                        onClick={() => {
+                                            setShowEventMenu(false);
+                                            openYutimeHitWizard();
+                                        }}
+                                    >
+                                        <span className="event-menu__item-icon" style={{ "--em-color": C.yellow }}>
+                                            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                                <circle cx="12" cy="12" r="9" />
+                                                <path d="M8 12h8M12 8v8" />
+                                            </svg>
+                                        </span>
+                                        <span>
+                                            <span className="event-menu__item-title" style={{ fontFamily: font }}>遊タイム中に当たった</span>
+                                            <span className="event-menu__item-sub" style={{ fontFamily: font }}>消化回転数と実際の大当たりを記録します</span>
+                                        </span>
+                                        <span className="event-menu__item-chev">›</span>
+                                    </button>
+
+                                    <button
+                                        className="b event-menu__item"
+                                        type="button"
+                                        onClick={() => {
+                                            setShowEventMenu(false);
+                                            finishYutimeThrough();
+                                        }}
+                                    >
+                                        <span className="event-menu__item-icon" style={{ "--em-color": C.orange }}>
+                                            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                                <circle cx="12" cy="12" r="9" />
+                                                <path d="m9 9 6 6m0-6-6 6" />
+                                            </svg>
+                                        </span>
+                                        <span>
+                                            <span className="event-menu__item-title" style={{ fontFamily: font }}>スルー・終了を記録</span>
+                                            <span className="event-menu__item-sub" style={{ fontFamily: font }}>消化回転数と終了時の玉数を保存します</span>
+                                        </span>
+                                        <span className="event-menu__item-chev">›</span>
+                                    </button>
+
+                                    <button
+                                        className="b event-menu__item"
+                                        type="button"
+                                        onClick={() => {
+                                            setShowEventMenu(false);
+                                            addYutimeCash();
+                                        }}
+                                    >
+                                        <span className="event-menu__item-icon" style={{ "--em-color": C.green }}>
+                                            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                                <circle cx="12" cy="12" r="9" />
+                                                <path d="M12 7v10M8 12h8" />
+                                            </svg>
+                                        </span>
+                                        <span>
+                                            <span className="event-menu__item-title" style={{ fontFamily: font }}>遊タイム中の貸玉を追加</span>
+                                            <span className="event-menu__item-sub" style={{ fontFamily: font }}>突入後に追加した現金投資だけを記録します</span>
+                                        </span>
+                                        <span className="event-menu__item-chev">›</span>
+                                    </button>
+                                </>)}
+
+                                {/* 遊タイム中は通常初当たりへ誤登録させない */}
+                                {yutimeEventMode !== "active" && <button
                                     className="b event-menu__item"
                                     type="button"
                                     onClick={() => {
@@ -3372,7 +3512,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                         <span className="event-menu__item-sub" style={{ fontFamily: font }}>大当たりを記録します</span>
                                     </span>
                                     <span className="event-menu__item-chev">›</span>
-                                </button>
+                                </button>}
 
                                 {/* 台移動を記録 */}
                                 <button

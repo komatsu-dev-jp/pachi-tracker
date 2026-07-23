@@ -2108,6 +2108,16 @@ input, select, textarea {
   margin-top: 2px;
 }
 
+.record-cta-input--yutime {
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--yellow) 88%, #7c4a03),
+    color-mix(in srgb, var(--yellow) 72%, #92400e));
+  border-color: color-mix(in srgb, var(--yellow) 72%, transparent);
+  color: #17120a;
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--yellow) 24%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+
 .record-fab {
   flex: 0 0 auto;
   width: 64px;
@@ -2154,6 +2164,9 @@ input, select, textarea {
 .event-menu__panel {
   width: 100%;
   max-width: 480px;
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--surface);
   border-top: 1px solid color-mix(in srgb, var(--blue) 25%, var(--border));
   border-radius: 22px 22px 0 0;
@@ -2193,6 +2206,11 @@ input, select, textarea {
   margin-top: 8px;
   cursor: pointer;
   min-height: 56px;
+}
+
+.event-menu__item--yutime {
+  border-color: color-mix(in srgb, var(--yellow) 52%, var(--border));
+  background: color-mix(in srgb, var(--yellow) 9%, var(--surface-hi));
 }
 
 .event-menu__item-icon {
