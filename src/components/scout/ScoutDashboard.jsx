@@ -57,7 +57,14 @@ function ForecastTab({ S }) {
         </div>
         {isReference && (
           <div style={{ marginTop: 7, padding: "7px 9px", borderRadius: 8, color: C.yellow, border: `1px solid ${C.yellow}` }}>
-            解析日は{data.freshness?.sourceDate || "不明"}です。本日分ではないため、本命判定を停止しています。
+            {data.freshness?.status === "stale"
+              ? `解析日は${data.freshness.sourceDate || "不明"}です。2日以上前のため、本命判定を停止しています。`
+              : "解析日を確認できないため、本命判定を停止しています。"}
+          </div>
+        )}
+        {data.freshness?.status === "prepared" && (
+          <div style={{ marginTop: 7, padding: "7px 9px", borderRadius: 8, color: C.cyan, border: `1px solid ${C.cyan}` }}>
+            前日（{data.freshness.sourceDate}）の解析を本日用として表示しています。
           </div>
         )}
       </div>
@@ -93,7 +100,7 @@ function ForecastTab({ S }) {
                   予測 {Number(m.rot).toLocaleString("ja-JP", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}/k ・ 信頼度 {m.confidence}%
                 </div>
                 <div style={{ fontSize: 10, color: C.sub, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {isReference ? "過去データ：" : "明日の地図："}{m.nextPrediction}
+                  {isReference ? "過去データ：" : `${m.predictionDayLabel}の地図：`}{m.nextPrediction}
                 </div>
               </div>
             </div>
