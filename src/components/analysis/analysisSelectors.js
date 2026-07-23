@@ -10,7 +10,7 @@
 //   - chodamaYen, chodamaNetBalls
 //
 // 実損益(actualPL) = recoveryYen - investYen （投資 or 回収が記録されている archive のみ）
-// 期待値(evAmount) = stats.effectiveWorkAmount（上皿補正後。旧データは effectiveWorkAmount 欠落のため stats.workAmount にフォールバック）
+// 期待値(evAmount) = 通常期待値（effectiveWorkAmount、旧データは workAmount）+ 有効な遊タイム判断EV
 
 const hasActualMoney = (a) =>
   (Number(a?.investYen) || 0) > 0 || (Number(a?.recoveryYen) || 0) > 0;
@@ -24,7 +24,7 @@ export function getActualPL(a) {
   return (Number(a.recoveryYen) || 0) - (Number(a.investYen) || 0);
 }
 
-export function getEvAmount(a) {
+export function getNormalEvAmount(a) {
   // スロットは現状、パチンコ用の仕事量・期待値を計算しない。
   // 種別変更前の stats が古い保存データに残っていても集計へ混ぜない。
   if (getArchiveGameType(a) === "slot") return 0;
@@ -32,6 +32,24 @@ export function getEvAmount(a) {
   if (typeof ew === "number" && isFinite(ew)) return ew;
   const w = a?.stats?.workAmount;
   return typeof w === "number" && isFinite(w) ? w : 0;
+}
+
+export function getYutimeEvAmount(a) {
+  if (getArchiveGameType(a) === "slot") return 0;
+  const result = a?.yutimeDecision?.result;
+  if (!result?.valid) return 0;
+  const value = result.selectedEV;
+  return typeof value === "number" && isFinite(value) ? value : 0;
+}
+
+export function getEvBreakdown(a) {
+  const normal = getNormalEvAmount(a);
+  const yutime = getYutimeEvAmount(a);
+  return { normal, yutime, total: normal + yutime };
+}
+
+export function getEvAmount(a) {
+  return getEvBreakdown(a).total;
 }
 
 // 稼働時間（分）: 実践記録（回転数）があれば netRot ÷ rotPerHour × 60 を優先。

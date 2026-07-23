@@ -202,6 +202,16 @@ test("date 欠落・型不正でも他レコードを集計できる", () => {
   assert.strictEqual(a.totalPL, 5000);
 });
 
+test("yutime: 店舗別期待値へ遊タイム期待値を加算する", () => {
+  const result = getStoreRanking([{
+    date: "2026-07-23",
+    storeName: "A",
+    stats: { workAmount: 1000 },
+    yutimeDecision: { result: { valid: true, selectedEV: 2500 } },
+  }]);
+  assert.strictEqual(result[0].evAmount, 3500);
+});
+
 // ──────────── 出力サマリー ────────────
 if (failed === 0) {
   console.log(`OK: ${passed} tests passed`);

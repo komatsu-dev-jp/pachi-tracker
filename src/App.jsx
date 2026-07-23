@@ -961,7 +961,7 @@ export default function App() {
       chodamaNetBalls: (currentChodama || 0) - (initialChodama || 0),
       chodamaYen: Math.round((ev?.chodamaKCount || 0) * heldBallCostPerK(rentBalls, exRate)),
       isMoveArchive: isMove,
-      // 通常期待値とは合算せず、着席判断時点の遊タイム計算を独立保存する。
+      // 着席判断時点の遊タイム計算を独立保存し、集計時に通常期待値へ加算する。
       yutimeDecision: yutimeDecision ? JSON.parse(JSON.stringify(yutimeDecision)) : null,
       yutimeRuns: JSON.parse(JSON.stringify(yutimeRuns || [])),
       decisionSnapshots: JSON.parse(JSON.stringify(decisionSnapshots)),

@@ -98,3 +98,17 @@ test("貯玉履歴は店舗別に絞り込み、最新順と円換算を返す",
   assert.equal(result.chodama.storeBallsYen, 3571);
   assert.equal(result.exchangeInfo.ballUnitYen, 100 / 28);
 });
+
+test("店舗の記録にも遊タイム期待値を加算する", () => {
+  const result = buildStoreAnalytics([{
+    id: "yutime-record",
+    storeId: store.id,
+    date: "2026-07-23",
+    time: "12:00",
+    machineName: "遊タイム機",
+    stats: { effectiveWorkAmount: 1000 },
+    yutimeDecision: { result: { valid: true, selectedEV: 2500 } },
+  }], store);
+
+  assert.equal(result.analyticsDetail.recentRecords[0].expectedValueYen, 3500);
+});

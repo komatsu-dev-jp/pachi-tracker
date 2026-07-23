@@ -91,3 +91,16 @@ test("当日の実戦終了後は分析を案内する", () => {
   });
   assert.equal(action.kind, "analysis");
 });
+
+test("遊タイム期待値を月間累計期待値へ加算する", () => {
+  const result = buildMonthOverview([{
+    date: "2026-07-05",
+    stats: { workAmount: 1500 },
+    yutimeDecision: { result: { valid: true, selectedEV: 2500 } },
+  }], 10000, new Date(2026, 6, 10, 12));
+
+  assert.equal(result.expected, 4000);
+  assert.equal(result.remaining, 6000);
+  assert.equal(result.progress, 40);
+  assert.equal(result.chartData[4].cumulativeEv, 4000);
+});
