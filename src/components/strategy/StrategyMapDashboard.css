@@ -367,6 +367,32 @@
   font-weight: 900;
 }
 
+.strategy-revenue-coverage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px 9px;
+  flex-wrap: wrap;
+  margin-bottom: 7px;
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--sm-cyan) 18%, var(--sm-line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--sm-cyan) 6%, var(--sm-bg));
+}
+
+.strategy-revenue-coverage > div { display: flex; align-items: center; gap: 5px; }
+.strategy-revenue-coverage strong { color: var(--sm-text); font-size: 9px; }
+.strategy-revenue-coverage em {
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sm-yellow) 12%, transparent);
+  color: var(--sm-yellow);
+  font-size: 6px;
+  font-style: normal;
+  font-weight: 900;
+}
+.strategy-revenue-coverage > span { color: var(--sm-sub-hi); font-size: 7px; }
+
 .strategy-revenue-line {
   display: grid;
   grid-template-columns: 44px repeat(3, minmax(0, 1fr));
@@ -411,6 +437,28 @@
 .strategy-revenue-point.is-expected { border-color: rgba(34,197,94,.35); background: rgba(34,197,94,.09); }
 .strategy-revenue-point.is-expected strong { color: #4ade80; }
 .strategy-revenue-point.is-high strong { color: #22d3ee; }
+.strategy-revenue-point.is-pending strong {
+  color: var(--sm-sub-hi);
+  font-family: var(--font-main);
+  font-size: 9px;
+  letter-spacing: 0;
+}
+.strategy-revenue-point.is-pending small { font-size: 6px; }
+
+.strategy-revenue-pending-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--sm-red) 20%, var(--sm-line));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--sm-red) 5%, var(--sm-bg));
+}
+
+.strategy-revenue-pending-note strong { color: var(--sm-red); font-size: 8px; white-space: nowrap; }
+.strategy-revenue-pending-note span { color: var(--sm-sub-hi); font-size: 7px; line-height: 1.45; }
 
 .strategy-luck-risk {
   display: grid;
