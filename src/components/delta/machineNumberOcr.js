@@ -516,23 +516,28 @@ export function attachMachineNumbersToSlots(data, width, height, slots, options 
   };
 }
 
-// 複数画像のページOCRを1つへまとめる。アップロード順は信用せず、全ページが
-// 合格した時だけ台番号で並べ替える。同じ画像を別名で二重追加した場合も、
-// ページをまたぐ台番号重複として全スロットを未確定へ戻す。
-export function combineMachineNumberPages(pages) {
+// 複数画像のページOCRを1つへまとめる。通常は全ページ合格を必須にし、
+// allowPartialPages の時だけ不合格ページを除外する。採用ページ同士の台番号が
+// 重複する場合は、画像名に関係なく全スロットを未確定へ戻す。
+export function combineMachineNumberPages(pages, options = {}) {
   const sourcePages = Array.isArray(pages) ? pages : [];
+  const allowPartialPages = options?.allowPartialPages === true;
   if (!sourcePages.length) {
     return {
       accepted: false,
       status: "failed",
       reasonCodes: ["empty-pages"],
       pageCount: 0,
+      includedPageCount: 0,
       slotCount: 0,
+      excludedSlotCount: 0,
+      partial: false,
       failedPageIndices: [],
       unresolvedIndices: [],
       duplicateNumbers: [],
       duplicateMachineNumbers: [],
       recognizedCount: 0,
+      warningCodes: [],
       candidates: [],
       numbers: [],
       slots: [],
@@ -541,9 +546,17 @@ export function combineMachineNumberPages(pages) {
 
   const failedPageIndices = [];
   const entries = [];
+  let excludedSlotCount = 0;
   sourcePages.forEach((page, pageIndex) => {
     const pageSlots = Array.isArray(page?.slots) ? page.slots : [];
-    if (!page?.accepted || !pageSlots.length) failedPageIndices.push(pageIndex);
+    const pageAccepted = page?.accepted === true && pageSlots.length > 0;
+    if (!pageAccepted) {
+      failedPageIndices.push(pageIndex);
+      if (allowPartialPages) {
+        excludedSlotCount += pageSlots.length;
+        return;
+      }
+    }
     pageSlots.forEach((slot, pageSlotIndex) => {
       const candidate = normalizedNumber(
         slot?.machineNumberCandidate
@@ -569,7 +582,7 @@ export function combineMachineNumberPages(pages) {
     .filter((entry) => !entry.trustedCandidate)
     .map((entry) => entry.originalIndex);
   const reasonCodes = [];
-  if (failedPageIndices.length) reasonCodes.push("unresolved-page");
+  if (failedPageIndices.length && !allowPartialPages) reasonCodes.push("unresolved-page");
   if (unresolvedIndices.length) reasonCodes.push("unresolved-number");
   if (duplicateNumbers.length) reasonCodes.push("duplicate-number");
   const accepted = entries.length > 0 && reasonCodes.length === 0;
@@ -594,12 +607,16 @@ export function combineMachineNumberPages(pages) {
     status: accepted ? "ok" : "review",
     reasonCodes: [...new Set(reasonCodes)],
     pageCount: sourcePages.length,
+    includedPageCount: sourcePages.length - failedPageIndices.length,
     slotCount: slots.length,
+    excludedSlotCount,
+    partial: accepted && failedPageIndices.length > 0,
     failedPageIndices,
     unresolvedIndices,
     duplicateNumbers,
     duplicateMachineNumbers: duplicateNumbers,
     recognizedCount: entries.filter((entry) => entry.trustedCandidate).length,
+    warningCodes: failedPageIndices.length && allowPartialPages ? ["excluded-unresolved-page"] : [],
     candidates,
     numbers: accepted ? candidates : [],
     slots,

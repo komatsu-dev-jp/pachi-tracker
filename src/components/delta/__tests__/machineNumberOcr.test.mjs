@@ -132,6 +132,18 @@ test("複数ページは全ページ合格・全体一意の時だけ番号順�
   assert.ok(oneRejected.reasonCodes.includes("unresolved-page"));
   assert.ok(oneRejected.slots.every((slot) => slot.machineNumber === null));
 
+  const partial = combineMachineNumberPages(
+    [pageA, { ...pageB, accepted: false }],
+    { allowPartialPages: true },
+  );
+  assert.equal(partial.accepted, true);
+  assert.equal(partial.partial, true);
+  assert.equal(partial.includedPageCount, 1);
+  assert.deepEqual(partial.failedPageIndices, [1]);
+  assert.deepEqual(partial.numbers, ["811", "812"]);
+  assert.deepEqual(partial.slots.map((slot) => slot.val), [1000, 2000]);
+  assert.ok(partial.warningCodes.includes("excluded-unresolved-page"));
+
   const duplicate = combineMachineNumberPages([
     pageA,
     { accepted: true, slots: [{ machineNumberCandidate: "811" }] },

@@ -139,10 +139,20 @@ function hasExplicitError(row) {
   return Boolean(status) && !["正常", "ok", "OK", "有効"].includes(status);
 }
 
+function hasUsableDeltaValue(row) {
+  const rawDelta = row?.val;
+  return rawDelta !== null
+    && rawDelta !== undefined
+    && rawDelta !== ""
+    && Number.isFinite(Number(rawDelta))
+    && !hasExplicitError(row);
+}
+
 function latestRows(scans = []) {
   const map = new Map();
   for (const scan of scans || []) {
     for (const row of scan?.rows || []) {
+      if (!hasUsableDeltaValue(row)) continue;
       const date = dateKey(row?.date || scan?.date);
       const machineName = String(row?.machineName || scan?.machineName || "").trim();
       const number = baseMachineNumber(row?.num);
@@ -182,10 +192,10 @@ function estimateDaily(row, machine, params) {
   const deltaBalls = Number(rawDelta);
   const border = machineBorder(machine);
   const stats = resolveMachineStats(machine);
-  if (rawDelta === null || rawDelta === undefined || rawDelta === "" || !Number.isFinite(deltaBalls)) {
+  if (!hasUsableDeltaValue(row)) {
     return { valid: false, reason: "確定差玉なし", normalSpins, totalStarts, deltaBalls: null, border, stats };
   }
-  if (!(normalSpins > 0) || !(border > 0) || hasExplicitError(row)) {
+  if (!(normalSpins > 0) || !(border > 0)) {
     return { valid: false, normalSpins, totalStarts, deltaBalls, border, stats };
   }
   // 平均出玉が不明なのに大当りがある日は、投入玉を推定できず

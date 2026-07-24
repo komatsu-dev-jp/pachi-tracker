@@ -219,6 +219,32 @@ const zeroHit = pevidenceInternals.estimateDaily(
 );
 assert.equal(zeroHit.valid, true);
 assert.ok(Math.abs(zeroHit.dailyRate - 25) < 0.01, "当りゼロの日は|差玉|を投入玉として全面採用する");
+assert.equal(
+  pevidenceInternals.estimateDaily(
+    { normalSpins: 720, totalStarts: 10, val: null, status: "failed" },
+    machine,
+    PE_PARAMS,
+  ).valid,
+  false,
+  "未読取のnullを差玉0として分析しない",
+);
+const partialSaveDefense = buildPEvidenceAnalytics({
+  scans: [{
+    id: "partial-defense",
+    storeId: "store-a",
+    storeName: "テスト店",
+    date: "2026-06-20",
+    createdAt: "2026-06-20T12:00:00.000Z",
+    rows: [
+      rowForRate(401, 20, "2026-06-20"),
+      { ...rowForRate(402, 20, "2026-06-20"), val: null, status: "failed" },
+      { ...rowForRate(403, 20, "2026-06-20"), val: 0, status: "review" },
+    ],
+  }],
+  customMachines: [machine],
+});
+assert.equal(partialSaveDefense.rawRowCount, 1, "未読取・要確認行を分析母数へ入れない");
+assert.deepEqual(partialSaveDefense.latestRows.map((row) => row.num), ["401"]);
 
 const pairs = pevidenceInternals.buildOppositePairs([
   { id: "a", start: 101, end: 103, facingIslandId: "b", facingReversed: true },

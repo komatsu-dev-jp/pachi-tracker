@@ -92,6 +92,30 @@ test("buildScanIndex: num の文字列照合（数値 num も拾う）", () => {
   assert.ok(idx.has("816"));
 });
 
+test("buildScanIndex: 未読取・未確認は0玉にせず、境界記録は保持する", () => {
+  const scans = [scan({
+    id: "partial",
+    storeId: 7,
+    date: "2026-06-01",
+    createdAt: "a",
+    rows: [
+      { num: "816", val: null, status: "failed" },
+      { num: "817", val: 0, status: "review", reviewConfirmed: false },
+      { num: "818", val: 1000, status: "review", reviewConfirmed: true },
+      {
+        num: "819",
+        val: null,
+        status: "bounded",
+        deltaRange: { lower: 30000, upper: null, exact: false },
+      },
+    ],
+  })];
+  const idx = buildScanIndex(scans, 7, "2026-06-01");
+  assert.deepStrictEqual([...idx.keys()], ["818", "819"]);
+  assert.strictEqual(idx.get("818").val, 1000);
+  assert.strictEqual(idx.get("819").status, "bounded");
+});
+
 // ──────────── buildIslandOverlay ────────────
 
 test("buildIslandOverlay: 範囲走査・short 下2桁・データなし null", () => {
