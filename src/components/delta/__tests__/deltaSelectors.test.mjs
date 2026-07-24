@@ -477,6 +477,8 @@ test("validateDeltaRows: 未読取・要確認・重複番号があれば保存�
     { num: "811", val: -4500, status: "ok" },
   ]);
   assert.strictEqual(valid.valid, true);
+  assert.strictEqual(valid.canSave, true);
+  assert.strictEqual(valid.savableCount, 2);
   assert.strictEqual(valid.resolvedCount, 2);
 
   const invalid = validateDeltaRows([
@@ -484,6 +486,8 @@ test("validateDeltaRows: 未読取・要確認・重複番号があれば保存�
     { num: "810", val: 500, status: "review" },
   ]);
   assert.strictEqual(invalid.valid, false);
+  assert.strictEqual(invalid.canSave, false, "重複台番号は取り違え防止のため部分保存も止める");
+  assert.deepStrictEqual(invalid.savableRows, []);
   assert.strictEqual(invalid.unresolvedCount, 2);
   assert.deepStrictEqual(invalid.pendingReviewIndices, [1]);
   assert.deepStrictEqual(invalid.missingIndices, [0]);
@@ -515,6 +519,10 @@ test("validateDeltaRows: 有限値を明示確認したreviewだけを確定扱�
   ]);
 
   assert.strictEqual(result.valid, false);
+  assert.strictEqual(result.canSave, true);
+  assert.strictEqual(result.savableCount, 2);
+  assert.deepStrictEqual(result.savableRows.map((row) => row.num), ["499", "509"]);
+  assert.strictEqual(result.excludedCount, 3);
   assert.strictEqual(result.resolvedCount, 2);
   assert.deepStrictEqual(result.confirmedReviewIndices, [0]);
   assert.deepStrictEqual(result.pendingReviewIndices, [1, 2]);
@@ -523,6 +531,38 @@ test("validateDeltaRows: 有限値を明示確認したreviewだけを確定扱�
   assert.strictEqual(isResolvedDeltaRow({ val: 28000, status: "review", reviewConfirmed: true }), true);
   assert.strictEqual(isResolvedDeltaRow({ val: 28000, status: "review", reviewConfirmed: "true" }), false);
   assert.strictEqual(isResolvedDeltaRow({ val: null, status: "review", reviewConfirmed: true }), false);
+});
+
+test("validateDeltaRows: 修正して確認した行は次の保存判定で対象へ戻る", () => {
+  const rows = [
+    { num: "554", val: -13000, status: "ok" },
+    { num: "568", val: null, status: "failed" },
+    { num: "572", val: 2500, status: "review", reviewConfirmed: false },
+  ];
+  const before = validateDeltaRows(rows);
+  assert.strictEqual(before.canSave, true);
+  assert.deepStrictEqual(before.savableRows.map((row) => row.num), ["554"]);
+
+  const corrected = updateDeltaReview(rows[2], {
+    value: 3000,
+    confirmed: true,
+    reviewedAt: "2026-07-24T00:00:00.000Z",
+  });
+  const after = validateDeltaRows([rows[0], rows[1], corrected]);
+  assert.strictEqual(after.canSave, true);
+  assert.deepStrictEqual(after.savableRows.map((row) => row.num), ["554", "572"]);
+  assert.strictEqual(after.savableRows[1].val, 3000);
+});
+
+test("validateDeltaRows: 読み取れた行が1台もなければ保存不可", () => {
+  const result = validateDeltaRows([
+    { num: "568", val: null, status: "failed" },
+    { num: "572", val: 2500, status: "review", reviewConfirmed: false },
+  ]);
+  assert.strictEqual(result.valid, false);
+  assert.strictEqual(result.canSave, false);
+  assert.strictEqual(result.savableCount, 0);
+  assert.deepStrictEqual(result.excludedIndices, [0, 1]);
 });
 
 test("validateDeltaRows: 明示的な上下限制約があるreviewは条件を満たすまで保存不可", () => {
@@ -570,6 +610,8 @@ test("validateDeltaRows: 一点値を捏造せずbounded範囲のまま保存可
     bounded,
   ]);
   assert.equal(result.valid, true);
+  assert.equal(result.canSave, true);
+  assert.equal(result.savableCount, 2);
   assert.equal(result.exactCount, 1);
   assert.equal(result.boundedCount, 1);
   assert.deepEqual(result.boundedIndices, [1]);

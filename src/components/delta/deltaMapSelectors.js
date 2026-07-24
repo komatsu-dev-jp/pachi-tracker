@@ -13,6 +13,15 @@ import { islandLayoutCells } from "../select/hallMapSelectors.js";
 
 const MAX_ISLAND_OVERLAY_CELLS = 10_000;
 
+function hasUsableSavedDelta(row) {
+  if (!row || row.num == null) return false;
+  if (row.status === "bounded") return Boolean(row.deltaRange);
+  if (row.status === "failed") return false;
+  if (row.status === "review" && row.reviewConfirmed !== true) return false;
+  if (row.val === null || row.val === undefined || row.val === "") return false;
+  return Number.isFinite(Number(row.val));
+}
+
 // 指定店舗のスキャンが持つ日付（"YYYY-MM-DD"）を降順ユニーク配列で返す。
 // storeId は文字列化して厳密照合する（storeId が null のスキャンは storeName 一致では拾わない）。
 export function listScanDates(scans, storeId) {
@@ -42,7 +51,7 @@ export function buildScanIndex(scans, storeId, date) {
     const rows = Array.isArray(s.rows) ? s.rows : [];
     const createdAt = typeof s.createdAt === "string" ? s.createdAt : "";
     for (const row of rows) {
-      if (!row || row.num == null) continue;
+      if (!hasUsableSavedDelta(row)) continue;
       const numKey = String(row.num);
       const prevAt = pickedAt.get(numKey);
       // 未登録、または今回の createdAt がより新しいなら上書き。

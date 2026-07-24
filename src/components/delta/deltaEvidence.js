@@ -218,12 +218,23 @@ export function estimateDeltaObservation(row = {}, machine = {}, options = {}) {
   };
 }
 
+function hasUsableExactDelta(row) {
+  const rawDelta = row?.val;
+  if (row?.status === "bounded" || row?.status === "failed") return false;
+  if (row?.status === "review" && row?.reviewConfirmed !== true) return false;
+  return rawDelta !== null
+    && rawDelta !== undefined
+    && rawDelta !== ""
+    && Number.isFinite(Number(rawDelta));
+}
+
 export function collectDeltaRows(scans = [], filters = {}) {
   const rows = new Map();
   for (const scan of scans || []) {
     if (filters.storeId != null && String(scan?.storeId) !== String(filters.storeId)) continue;
     if (filters.storeName && !sameText(scan?.storeName, filters.storeName)) continue;
     for (const row of scan?.rows || []) {
+      if (!hasUsableExactDelta(row)) continue;
       const machineName = row?.machineName || scan?.machineName || "";
       if (filters.machineName && normalizeEvidenceMachineName(machineName) !== normalizeEvidenceMachineName(filters.machineName)) continue;
       if (filters.num != null && normalizeEvidenceMachineNumber(row?.num) !== normalizeEvidenceMachineNumber(filters.num)) continue;

@@ -321,7 +321,8 @@ async function analyzeImages(images, onProgress, {
       });
     }
   }
-  const combinedNumbers = combineMachineNumberPages(numberPages);
+  const combinedNumbers = combineMachineNumberPages(numberPages, { allowPartialPages: true });
+  const excludedPageSet = new Set(combinedNumbers.failedPageIndices || []);
   const mergeExpectedNumbers = expectCompleteTable
     ? tableExpectation.numbers
     : combinedNumbers.accepted
@@ -415,7 +416,10 @@ async function analyzeImages(images, onProgress, {
   );
   return {
     slots: resolvedSlots,
-    reports,
+    reports: reports.map((report, index) => ({
+      ...report,
+      includedInAnalysis: !excludedPageSet.has(index),
+    })),
     numberOcr: resolvedNumberOcr,
     jointMatch,
     siteSevenRows: resolvedSiteSevenRows,
@@ -860,7 +864,7 @@ function UploadStep({
           <>
             <div style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: "4px 2px 2px" }}>追加済みの画像</div>
             <div style={{ fontSize: 11, color: C.yellow, lineHeight: 1.5, margin: "0 2px 8px", fontWeight: 700 }}>
-              台番号を主に照合し、信頼できる最高出玉を使える場合だけ補助証拠にします
+              読めない画像は除外し、読めた画像だけ解析します。台番号を主に照合し、信頼できる最高出玉だけを補助証拠にします
             </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
               {images.map((img, i) => (
@@ -1101,7 +1105,7 @@ function NumbersStep({
   const reviewCount = slots.filter((slot) => slot?.status === "review").length;
   const missingCount = slots.filter((slot) => !Number.isFinite(slot?.val) || slot?.status === "failed").length;
   const reportErrorCount = (Array.isArray(reports) ? reports : [])
-    .filter((report) => report?.error || !Number(report?.total)).length;
+    .filter((report) => report?.includedInAnalysis === false).length;
   const recognizedNumberCount = numberOcr?.recognizedCount
     ?? slots.filter((slot) => slot?.machineNumberOcr?.accepted).length;
   const reviewedNumberAssignment = useMemo(
@@ -1119,11 +1123,14 @@ function NumbersStep({
     return list.map((report, index) => {
       const cursor = list
         .slice(0, index)
+        .filter((item) => item?.includedInAnalysis !== false)
         .reduce((sum, item) => sum + (Number(item?.total) || 0), 0);
       const count = Number(report?.total) || 0;
-      const assigned = report.machineNumberOcrAccepted
-        ? report.machineNumbers
-        : numbers.slice(cursor, cursor + count);
+      const assigned = report?.includedInAnalysis === false
+        ? []
+        : report.machineNumberOcrAccepted
+          ? report.machineNumbers
+          : numbers.slice(cursor, cursor + count);
       return { ...report, assigned };
     });
   }, [reports, numbers]);
@@ -1166,7 +1173,6 @@ function NumbersStep({
   const valid = numberValidation.valid
     && (numberOcr?.accepted || orderConfirmed)
     && trustedOcrMismatches.length === 0
-    && reportErrorCount === 0
     && !hasOcrConflict;
 
   return (
@@ -1194,6 +1200,7 @@ function NumbersStep({
               {numberOcr?.source === "joint-site-seven"
                 ? "台番号を1対1で確認しました。信頼できる最高出玉を使える場合だけ補助証拠にし、1行欠けても後続をずらしません。"
                 : "各グラフ直上の番号を直接読み、重複がないことを確認しました。画像の選択順には依存しません。"}
+              {reportErrorCount > 0 && ` 読めなかった画像${reportErrorCount}枚は除外しています。`}
             </div>
           </div>
         )}
@@ -1596,8 +1603,8 @@ function NumbersStep({
         )}
 
         {reportErrorCount > 0 && (
-          <div style={{ fontSize: 12, color: C.red, lineHeight: 1.6, fontWeight: 700, margin: "0 4px 12px" }}>
-            グラフを読めなかった画像が{reportErrorCount}枚あります。画像を戻って削除するか、グラフが表示された画像へ差し替えてください。
+          <div style={{ fontSize: 12, color: C.yellow, lineHeight: 1.6, fontWeight: 700, margin: "0 4px 12px" }}>
+            グラフを読めなかった画像{reportErrorCount}枚は分析対象から除外しました。読めた画像の台だけ続けて保存できます。
           </div>
         )}
 
@@ -1923,7 +1930,10 @@ function ResultsStep({
   const [machinePickerNumber, setMachinePickerNumber] = useState(null);
 
   const rowValidation = useMemo(() => validateDeltaRows(rows), [rows]);
-  const resolvedRows = useMemo(() => rows.filter(hasResolvedDelta), [rows]);
+  const resolvedRows = useMemo(
+    () => rowValidation.savableRows.filter(hasResolvedDelta),
+    [rowValidation],
+  );
   const active = resolvedRows.filter((r) => r.val !== 0 || r.px > 10 || r.valueSource === "import");
   const avg = active.length ? Math.round(active.reduce((s, r) => s + Number(r.val), 0) / active.length) : 0;
   const plus = active.filter((r) => r.val > 0).length;
@@ -1996,7 +2006,9 @@ function ResultsStep({
   const confirmedReviewCount = rowValidation.confirmedReviewIndices.length;
   const boundedCount = rowValidation.boundedCount || 0;
   const missingDeltaCount = rowValidation.missingIndices.length;
-  const saveDisabled = saved || !rowValidation.valid;
+  const hasPartialSave = rowValidation.canSave && !rowValidation.valid;
+  const warningOnly = hasPartialSave || (pendingReviewCount > 0 && missingDeltaCount === 0);
+  const saveDisabled = saved || !rowValidation.canSave;
 
   return (
     <>
@@ -2010,16 +2022,16 @@ function ResultsStep({
             disabled={saveDisabled}
             style={{
               minHeight: TAP, minWidth: 64, borderRadius: 12, padding: "0 14px",
-              border: saved ? "none" : `1px solid ${rowValidation.valid ? C.blue : C.border}`,
+              border: saved ? "none" : `1px solid ${rowValidation.canSave ? C.blue : C.border}`,
               background: saved ? "color-mix(in srgb, var(--green) 16%, transparent)" : "transparent",
-              color: saved ? C.green : rowValidation.valid ? C.blue : C.sub,
+              color: saved ? C.green : rowValidation.canSave ? C.blue : C.sub,
               fontSize: 14, fontWeight: 800,
             }}
           >
             {saved
               ? "保存済み ✓"
-              : rowValidation.valid
-                ? "保存"
+              : rowValidation.canSave
+                ? `${rowValidation.savableCount}台を保存`
                 : pendingReviewCount > 0 && missingDeltaCount === 0
                   ? `確認待ち${pendingReviewCount}`
                   : "保存不可"}
@@ -2098,20 +2110,23 @@ function ResultsStep({
 
         {!rowValidation.valid && (
           <div style={{
-            background: pendingReviewCount > 0 && missingDeltaCount === 0
+            background: warningOnly
               ? "color-mix(in srgb, var(--yellow) 12%, transparent)"
               : "color-mix(in srgb, var(--red) 12%, transparent)",
-            border: `1px solid color-mix(in srgb, ${pendingReviewCount > 0 && missingDeltaCount === 0 ? "var(--yellow)" : "var(--red)"} 38%, transparent)`,
+            border: `1px solid color-mix(in srgb, ${warningOnly ? "var(--yellow)" : "var(--red)"} 38%, transparent)`,
             borderRadius: 14, padding: "12px 14px", marginBottom: 12,
           }}>
-            <div style={{ fontSize: 14, color: pendingReviewCount > 0 && missingDeltaCount === 0 ? C.yellow : C.red, fontWeight: 900, marginBottom: 5 }}>
-              {pendingReviewCount > 0 && missingDeltaCount === 0
+            <div style={{ fontSize: 14, color: warningOnly ? C.yellow : C.red, fontWeight: 900, marginBottom: 5 }}>
+              {hasPartialSave
+                ? `解析済みの${rowValidation.savableCount}台だけ保存できます`
+                : pendingReviewCount > 0 && missingDeltaCount === 0
                 ? `候補値を目視確認してください（残り${pendingReviewCount}台）`
                 : "未解決のため保存できません"}
             </div>
-            <div style={{ fontSize: 12, color: pendingReviewCount > 0 && missingDeltaCount === 0 ? C.subHi : C.red, lineHeight: 1.65, fontWeight: 700 }}>
+            <div style={{ fontSize: 12, color: warningOnly ? C.subHi : C.red, lineHeight: 1.65, fontWeight: 700 }}>
+              {hasPartialSave && `未読取・未確認の${rowValidation.excludedCount}台は今回の保存から除外します。値を修正または確認すると、その台も保存対象になります。`}
               {pendingReviewCount > 0 && `候補差玉と元グラフを照合し、各カードの「この値で確認済み」をチェックしてください。`}
-              {missingDeltaCount > 0 && ` 折れ線を読めない台が${missingDeltaCount}台あります。折れ線が表示された画像へ撮り直してください。`}
+              {missingDeltaCount > 0 && ` 折れ線を読めない台が${missingDeltaCount}台あります。未読取の台は0玉として保存しません。`}
               {rowValidation.duplicateNumbers.length > 0 && ` 重複台番号: ${rowValidation.duplicateNumbers.join(", ")}`}
               {rowValidation.blankNumberIndices.length > 0 && " 台番号が空欄の行があります。"}
             </div>
@@ -3756,7 +3771,6 @@ export default function DeltaAnalyzer({
     const reviewedNumberAssignment = validateReviewedNumberAssignment(slots, numbers, {
       jointOnly: Boolean(analysisJointMatch),
     });
-    const hasImageError = analysisReports.some((report) => report?.error || !Number(report?.total));
     const hasOcrConflict = !analysisJointMatch && (
       analysisNumberOcr?.duplicateNumbers
       || analysisNumberOcr?.duplicateMachineNumbers
@@ -3767,7 +3781,7 @@ export default function DeltaAnalyzer({
     ));
     const numberSourceAccepted = analysisNumberOcr?.accepted
       || (options.manualVerified === true && reviewedNumberAssignment.mismatchIndices.length === 0);
-    if (!numberSourceAccepted || !validation.valid || hasImageError || hasOcrConflict || ocrOrderMismatch) {
+    if (!numberSourceAccepted || !validation.valid || hasOcrConflict || ocrOrderMismatch) {
       setToast("検出台数と台番号を1台ずつ一致させてください");
       setTimeout(() => setToast(""), 3000);
       return;
@@ -3806,8 +3820,11 @@ export default function DeltaAnalyzer({
 
   const handleSave = () => {
     const validation = validateDeltaRows(rows);
-    if (!validation.valid) {
-      setToast(`未読取または要確認が${validation.unresolvedCount}台あるため保存できません`);
+    if (!validation.canSave) {
+      const message = validation.blockingErrors.length
+        ? "台番号の空欄・形式・重複を修正してください"
+        : "保存できる解析済みデータがありません";
+      setToast(message);
       setTimeout(() => setToast(""), 3000);
       return;
     }
@@ -3816,10 +3833,14 @@ export default function DeltaAnalyzer({
       storeName: store?.name || "",
       date: analysisDate || todayStr(),
       machineName,
-      rows,
+      rows: validation.savableRows,
     });
     onSaveScan?.(scan);
     setSaved(true);
+    setToast(validation.excludedCount > 0
+      ? `${validation.savableCount}台を保存しました（未読取・未確認${validation.excludedCount}台は除外）`
+      : `${validation.savableCount}台を保存しました`);
+    setTimeout(() => setToast(""), 3500);
   };
 
   const handleUpdateReview = (machineNumber, update = {}) => {

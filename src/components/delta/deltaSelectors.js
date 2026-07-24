@@ -568,15 +568,29 @@ export function validateDeltaRows(rows) {
   const duplicateNumbers = Array.from(seen.entries())
     .filter(([, indices]) => indices.length > 1)
     .map(([num]) => num);
-  const errors = [];
-  if (!list.length) errors.push("empty");
-  if (blankNumberIndices.length) errors.push("blank-number");
-  if (invalidNumberIndices.length) errors.push("invalid-number");
-  if (duplicateNumbers.length) errors.push("duplicate-number");
+  const blockingErrors = [];
+  if (!list.length) blockingErrors.push("empty");
+  if (blankNumberIndices.length) blockingErrors.push("blank-number");
+  if (invalidNumberIndices.length) blockingErrors.push("invalid-number");
+  if (duplicateNumbers.length) blockingErrors.push("duplicate-number");
+  const errors = [...blockingErrors];
   if (unresolvedIndices.length) errors.push("unresolved-delta");
+  const candidateIndices = list
+    .map((_row, index) => index)
+    .filter((index) => !unresolvedIndices.includes(index));
+  const savableIndices = blockingErrors.length ? [] : candidateIndices;
+  const savableRows = savableIndices.map((index) => {
+    const row = list[index];
+    return {
+      ...row,
+      num: numbers[index],
+      ...(isResolvedDeltaRow(row) ? { val: finiteDelta(row.val) } : {}),
+    };
+  });
 
   return {
     valid: errors.length === 0,
+    canSave: blockingErrors.length === 0 && savableRows.length > 0,
     total: list.length,
     resolvedCount: list.length - unresolvedIndices.length,
     exactCount: list.length - unresolvedIndices.length - boundedIndices.length,
@@ -591,6 +605,12 @@ export function validateDeltaRows(rows) {
     blankNumberIndices,
     invalidNumberIndices,
     duplicateNumbers,
+    savableCount: savableRows.length,
+    savableIndices,
+    savableRows,
+    excludedCount: unresolvedIndices.length,
+    excludedIndices: unresolvedIndices,
+    blockingErrors,
     errors,
   };
 }

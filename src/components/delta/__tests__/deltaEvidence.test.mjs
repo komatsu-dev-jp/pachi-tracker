@@ -41,6 +41,16 @@ const scans = [{
   ],
 }];
 assert.equal(collectDeltaRows(scans, { storeId: "s1", machineName: machine.name, num: "479" }).length, 1);
+const partialRows = collectDeltaRows([{
+  ...scans[0],
+  rows: [
+    scans[0].rows[0],
+    { ...scans[0].rows[1], num: "481", val: null, status: "failed" },
+    { ...scans[0].rows[1], num: "482", val: 0, status: "review", reviewConfirmed: false },
+    { ...scans[0].rows[1], num: "483", val: 500, status: "review", reviewConfirmed: true },
+  ],
+}], { machineName: machine.name });
+assert.deepEqual(partialRows.map((row) => row.num), ["479", "483"], "未読取・未確認を分析母数へ入れない");
 
 const result = buildDeltaEvidence(collectDeltaRows(scans, { machineName: machine.name }), machine);
 assert.equal(result.hasEstimate, true);
