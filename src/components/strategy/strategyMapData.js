@@ -409,12 +409,50 @@ function historyFor(scans, machineName, num, machine) {
     if (!byDate.has(row.date)) byDate.set(row.date, []);
     byDate.get(row.date).push(row);
   }
-  return [...byDate.entries()]
+  const points = [...byDate.entries()]
     .sort(([a], [b]) => String(a).localeCompare(String(b)))
     .slice(-7)
     .map(([, rows]) => buildDeltaEvidence(rows, machine))
     .filter((evidence) => evidence.hasEstimate === true)
     .map((evidence) => round1(evidence.predictedRotation));
+  return { points, dayCount: points.length };
+}
+
+function buildDataCoverage({
+  analyticsHistoryRows = [],
+  pe = null,
+  evidence = null,
+  rowStore = "",
+  machineName = "",
+  num = "",
+  practiceObservations = [],
+  inputBalls = 0,
+  usesRecentRegime = false,
+} = {}) {
+  const baseNumber = String(num).replace(/_旧.*/, "").trim();
+  const peRows = (analyticsHistoryRows || []).filter((item) =>
+    item?.valid
+    && String(item.store ?? "").trim() === String(rowStore).trim()
+    && String(item.machineName ?? "").trim() === String(machineName).trim()
+    && String(item.num ?? "").replace(/_旧.*/, "").trim() === baseNumber
+  );
+  const activePeRows = usesRecentRegime && pe?.regimeStart
+    ? peRows.filter((item) => normalizedDate(item.date) >= normalizedDate(pe.regimeStart))
+    : peRows;
+  const evidenceRows = (evidence?.observations || []).map((item) => item?.row || item).filter(Boolean);
+  const baseRows = pe?.valid && activePeRows.length ? activePeRows : evidenceRows;
+  const dates = [...new Set(
+    [...baseRows, ...(practiceObservations || [])]
+      .map((item) => normalizedDate(item?.date))
+      .filter(Boolean)
+  )].sort();
+  return {
+    effectiveDays: dates.length,
+    fromDate: dates[0] || "",
+    toDate: dates.at(-1) || "",
+    inputBalls: Math.max(0, Math.round(Number(inputBalls) || 0)),
+    recentRegimeOnly: Boolean(usesRecentRegime),
+  };
 }
 
 function islandGrade(goodRate) {
@@ -584,14 +622,36 @@ export function buildStrategyMap({
       .map((archive) => practiceObservation(archive, identity, "archive"))
       .filter(Boolean);
     const liveObservation = practiceObservation(liveSession, identity, "live");
+    const practiceObservations = [...newerArchives, liveObservation].filter(Boolean);
+    const usesRecentRegime = Boolean(
+      pe?.valid
+      && Number(pe.regimeInputBalls) / 250 >= 4
+      && Number(pe.regimeRate) > 0
+      && pe.regimeStart
+      && pe.regimeDirection
+    );
+    const baseInputBalls = pe?.valid
+      ? (usesRecentRegime ? Number(pe.regimeInputBalls) : Number(pe.cumulativeInputBalls))
+      : Number(evidence.totalInputBalls);
     const estimate = fusePracticeEstimate({
       mean: baseMean,
       low: baseLow,
       high: baseHigh,
       variance: baseVariance,
       confidence: pe?.valid ? pe.confidence : evidence.confidence,
-      inputBalls: pe?.regimeInputBalls || pe?.cumulativeInputBalls || evidence.totalInputBalls || 0,
-    }, [...newerArchives, liveObservation].filter(Boolean), machineSpec.muraCoef);
+      inputBalls: baseInputBalls || 0,
+    }, practiceObservations, machineSpec.muraCoef);
+    const dataCoverage = buildDataCoverage({
+      analyticsHistoryRows: analytics.historyRows,
+      pe,
+      evidence,
+      rowStore: String(row.storeId ?? row.storeName ?? "").trim(),
+      machineName,
+      num: row.num,
+      practiceObservations,
+      inputBalls: estimate.inputBalls,
+      usesRecentRegime,
+    });
     const predictedRotation = estimate.mean;
     const confidence = estimate.confidence;
     const confidencePct = Math.round(confidence * 100);
@@ -603,7 +663,7 @@ export function buildStrategyMap({
     const islandName = row.island || `${machineName}島`;
     const islandId = islandName;
     // スパークラインも表示中店舗の履歴だけを使う（他店舗の同番号を混ぜない）
-    const history = historyFor(storeScans, machineName, row.num, machineSpec);
+    const historySummary = historyFor(storeScans, machineName, row.num, machineSpec);
     const isPlaying = playingNum != null && String(row.num) === String(playingNum);
     // 中心・上下幅・金額・確率を同じ事後推定から計算し、レジーム切替後に
     // 旧状態の履歴が収支幅へ戻ってくる不整合を防ぐ。
@@ -623,6 +683,17 @@ export function buildStrategyMap({
     const scenarioDaily = actionable && hasFinancialEstimate && unitPrice != null ? Math.round(unitPrice * analytics.params.sessionSpins) : null;
     const scenarioDailyLow = actionable && hasFinancialEstimate && lowUnitPrice != null ? Math.round(lowUnitPrice * analytics.params.sessionSpins) : null;
     const scenarioDailyHigh = actionable && hasFinancialEstimate && highUnitPrice != null ? Math.round(highUnitPrice * analytics.params.sessionSpins) : null;
+    const hasLowRotation = scenarioLowRotation != null && Number.isFinite(Number(scenarioLowRotation));
+    const hasHighRotation = scenarioHighRotation != null && Number.isFinite(Number(scenarioHighRotation));
+    const revenueRangeStatus = !actionable
+      ? "stale-scan"
+      : !hasFinancialEstimate
+        ? "data-missing"
+        : !hasLowRotation || !hasHighRotation
+          ? "range-missing"
+          : !(scenarioLowRotation > 0)
+            ? "lower-bound-missing"
+            : "ready";
     const profitChanceReady = actionable
       && (pe?.profitChanceStatus === "ready" || (pe?.profitChanceStatus === "low-confidence" && confidence >= 0.2));
     const scenarioChanceBand = profitChanceReady && pe?.dailyRisk > 0 && scenarioDailyLow != null && scenarioDailyHigh != null
@@ -655,9 +726,14 @@ export function buildStrategyMap({
       isStar: actionable && verdict === "strong" && contextualScore >= 50,
       isPlaying,
       liveDecision: isPlaying ? liveDecision : null,
-      history: history.length > 1
-        ? history
-        : [history[0] ?? round1(evidence.predictedRotation), history[0] ?? round1(evidence.predictedRotation)],
+      history: historySummary.points.length > 1
+        ? historySummary.points
+        : [
+            historySummary.points[0] ?? round1(evidence.predictedRotation),
+            historySummary.points[0] ?? round1(evidence.predictedRotation),
+          ],
+      historyDayCount: historySummary.dayCount,
+      dataCoverage,
       evidence,
       pevidence: pe || null,
       rotationEstimate: {
@@ -705,6 +781,7 @@ export function buildStrategyMap({
       hourlyHigh: actionable ? scenarioHourlyHigh : null,
       dailyLow: actionable ? scenarioDailyLow : null,
       dailyHigh: actionable ? scenarioDailyHigh : null,
+      revenueRangeStatus,
       hourlyRisk: actionable ? (pe?.hourlyRisk ?? null) : null,
       dailyRisk: actionable ? (pe?.dailyRisk ?? null) : null,
       sharpe: actionable && pe?.hourlyRisk > 0 && scenarioHourly != null ? round1(scenarioHourly / pe.hourlyRisk) : null,

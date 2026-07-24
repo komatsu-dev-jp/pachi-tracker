@@ -63,6 +63,27 @@ function signed(n, d = 0) {
   return (n >= 0 ? "+" : "") + fmt(n, d);
 }
 
+function isFiniteValue(value) {
+  return value != null && Number.isFinite(Number(value));
+}
+
+function compactDate(value, includeYear = false) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return "";
+  return includeYear
+    ? `${Number(match[1])}/${Number(match[2])}/${Number(match[3])}`
+    : `${Number(match[2])}/${Number(match[3])}`;
+}
+
+function coveragePeriod(coverage) {
+  const from = String(coverage?.fromDate || "");
+  const to = String(coverage?.toDate || "");
+  if (!from || !to) return "";
+  if (from === to) return compactDate(from);
+  const crossesYear = from.slice(0, 4) !== to.slice(0, 4);
+  return `${compactDate(from, crossesYear)}〜${compactDate(to, crossesYear)}`;
+}
+
 function nextDateKey(value) {
   const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return "";
@@ -749,21 +770,36 @@ function DetailMetric({ label, value, unit, color, big }) {
 }
 
 function RevenuePoint({ label, value, tone }) {
+  const ready = isFiniteValue(value);
   return (
-    <div className={`strategy-revenue-point is-${tone}`}>
+    <div className={`strategy-revenue-point is-${tone}${ready ? "" : " is-pending"}`}>
       <span>{label}</span>
-      <strong>{signed(value)}</strong>
-      <small>円</small>
+      <strong>{ready ? signed(value) : "算定待ち"}</strong>
+      <small>{ready ? "円" : "データ不足"}</small>
     </div>
   );
 }
 
 function RevenueOutlook({ machine, plan }) {
+  const coverage = machine.dataCoverage || {};
+  const period = coveragePeriod(coverage);
+  const coverageDetails = [
+    period,
+    coverage.inputBalls > 0 ? `推定投入 ${fmt(coverage.inputBalls)}玉` : "",
+  ].filter(Boolean).join(" ／ ");
+  const lowerBoundPending = machine.revenueRangeStatus === "lower-bound-missing";
   return (
     <div className="strategy-revenue-card">
       <div className="strategy-revenue-head">
         <div><strong>収益見込み</strong><span>回転率が予測の範囲で動いた場合</span></div>
         <span className="strategy-revenue-help" title="未来を保証する金額ではありません">予測値</span>
+      </div>
+      <div className="strategy-revenue-coverage">
+        <div>
+          <strong>有効データ {coverage.effectiveDays > 0 ? `${fmt(coverage.effectiveDays)}日` : "算定待ち"}</strong>
+          {coverage.recentRegimeOnly && <em>直近状態のみ</em>}
+        </div>
+        <span>{coverageDetails || "計算に使える記録を収集中"}</span>
       </div>
       <div className="strategy-revenue-line">
         <div className="strategy-revenue-label"><strong>時給</strong><span>約1時間</span></div>
@@ -777,6 +813,12 @@ function RevenueOutlook({ machine, plan }) {
         <RevenuePoint label="期待" value={machine.daily} tone="expected" />
         <RevenuePoint label="上振れ" value={machine.dailyHigh} tone="high" />
       </div>
+      {lowerBoundPending && (
+        <div className="strategy-revenue-pending-note">
+          <strong>下振れは算定待ち</strong>
+          <span>悪い側の予測が「1,000円あたり0回」まで広がっているためです。データが増えると更新されます。</span>
+        </div>
+      )}
       <div className="strategy-luck-risk">
         <div className="strategy-luck-title">
           <strong>運によるブレ</strong>
@@ -878,7 +920,9 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
               <DetailMetric label="ボーダー" value={fmt(machine.border, 1)} unit="/k" color={P.subHi} />
             </div>
             <div className="strategy-detail-chart">
-              <div style={{ fontSize: 9, color: P.sub, fontWeight: 700, marginBottom: 4 }}>過去推定回転率 ・7日</div>
+              <div style={{ fontSize: 9, color: P.sub, fontWeight: 700, marginBottom: 4 }}>
+                過去推定回転率 ・ {machine.historyDayCount > 0 ? `有効${fmt(machine.historyDayCount)}日` : "データ待ち"}
+              </div>
               <div style={{ background: P.bg, border: `1px solid ${P.line}`, borderRadius: 12, padding: "6px 0" }}>
                 <Sparkline points={machine.history} color={v.color} />
               </div>

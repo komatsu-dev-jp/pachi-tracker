@@ -5,6 +5,11 @@ import {
   buildStrategyPlanContext,
   resolveStrategyPlanHandoff,
 } from "../strategyMapData.js";
+import {
+  P_EVIDENCE_DEMO_HALL_MAPS,
+  P_EVIDENCE_DEMO_MACHINE,
+  P_EVIDENCE_DEMO_SCANS,
+} from "../../evidence/pevidenceDemoData.js";
 
 const machine = {
   name: "検証機",
@@ -54,6 +59,14 @@ assert.equal(map.all[0].evidence.observationCount, 2);
 assert.ok(map.all[0].rot > 0);
 assert.ok(map.all[0].confidence >= 0 && map.all[0].confidence <= 100);
 assert.equal(map.all[0].history.length, 2);
+assert.equal(map.all[0].historyDayCount, 2);
+assert.deepEqual(map.all[0].dataCoverage, {
+  effectiveDays: 2,
+  fromDate: "2026-07-01",
+  toDate: "2026-07-02",
+  inputBalls: map.all[0].rotationEstimate.inputBalls,
+  recentRegimeOnly: false,
+});
 assert.equal(map.plan.source, "daily");
 assert.equal(map.plan.plannedHours, 3);
 assert.equal(map.plan.sessionSpins, 750);
@@ -82,6 +95,21 @@ assert.equal(mapWithBoundedHistory.all[0].history.length, 2, "範囲だけの日
 assert.ok(map.all[0].rotationEstimate.low <= map.all[0].rot && map.all[0].rot <= map.all[0].rotationEstimate.high);
 assert.ok(map.all[0].dailyLow <= map.all[0].daily && map.all[0].daily <= map.all[0].dailyHigh);
 assert.ok(map.all[0].profitChanceLow <= map.all[0].winRate && map.all[0].winRate <= map.all[0].profitChanceHigh);
+
+const demoDate = P_EVIDENCE_DEMO_SCANS.at(-1).date;
+const demoPlan = buildStrategyPlanContext({ date: demoDate, spinsPerHour: 250, defaultHours: 3 });
+const lowerPendingMap = buildStrategyMap({
+  scans: P_EVIDENCE_DEMO_SCANS,
+  customMachines: [P_EVIDENCE_DEMO_MACHINE],
+  hallMaps: P_EVIDENCE_DEMO_HALL_MAPS,
+  plan: demoPlan,
+  targetDate: demoDate,
+});
+const lowerPendingMachine = lowerPendingMap.all.find((item) => item.revenueRangeStatus === "lower-bound-missing");
+assert.ok(lowerPendingMachine, "予測下限が0回/Kまで広がる台を検出する");
+assert.equal(lowerPendingMachine.hourlyLow, null, "下振れ金額を0円と誤表示しない");
+assert.equal(lowerPendingMachine.dailyLow, null, "予定収支の下振れも算定待ちにする");
+assert.ok(lowerPendingMachine.dataCoverage.effectiveDays > 0);
 
 const allocationMap = buildStrategyMap({
   scans,
@@ -139,6 +167,25 @@ const liveMap = buildStrategyMap({
 });
 assert.ok(liveMap.all[0].rot > map.all[0].rot, "現在実戦を同じ台の予測へ統合する");
 assert.deepEqual(liveMap.all[0].evidenceSources, ["delta", "live"]);
+assert.equal(liveMap.all[0].dataCoverage.effectiveDays, 2, "同じ日の現在実戦は日数を二重計上しない");
+assert.ok(liveMap.all[0].dataCoverage.inputBalls > map.all[0].dataCoverage.inputBalls);
+
+const archiveMap = buildStrategyMap({
+  scans,
+  customMachines: [machine],
+  plan,
+  archives: [{
+    storeId: "s1",
+    machineName: "検証機",
+    machineNum: "101",
+    date: "2026-07-03",
+    stats: { start1K: 22, cashKCount: 3, netRot: 66 },
+    settings: { rentBalls: 250 },
+  }],
+});
+assert.equal(archiveMap.all[0].dataCoverage.effectiveDays, 3, "後日の完了実戦は有効日数へ加える");
+assert.equal(archiveMap.all[0].dataCoverage.toDate, "2026-07-03");
+assert.deepEqual(archiveMap.all[0].evidenceSources, ["delta", "archive"]);
 
 // 別店舗のスキャンが混ざっていても、解析・推奨は表示中の店舗に限定される
 const multiStoreScans = [
