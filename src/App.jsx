@@ -59,6 +59,7 @@ import {
   NOTIF_BADGE_UNLOCKED,
   NOTIF_VERDICT_CHANGE,
 } from "./notifications";
+import { calculateDailyCashSpent } from "./sessionProjection";
 import { takeSnapshot, takeSnapshotImmediate, getLatest as getLatestSnapshot } from "./snapshot";
 import { setupGlobalHaptics } from "./haptics";
 import EHIME_STORES from "./data/ehimeStores";
@@ -418,6 +419,7 @@ export default function App() {
     streak: true,
     badge: true,
     verdict: true,
+    cashLimit: true,
   });
 
   // レベルアップトースト表示状態（永続化しない）
@@ -1032,6 +1034,7 @@ export default function App() {
     setInvestYen(0);
     setRecoveryYen(0);
     setTotalTrayBalls(0);
+    setDecisionSnapshots([]);
     // 移動先の機種情報（移動モーダルで入力）を反映。
     // 入力した項目のみ上書きし、空欄は直前の台の値を保持する（同じ機種への移動を想定）。
     const destName = dest.machineName != null ? String(dest.machineName).trim() : "";
@@ -1204,6 +1207,12 @@ export default function App() {
   // 過去記録は元データを壊さず、参照時に現行の経済価値へ再計算する。
   // 新規アーカイブは calculationVersion=2 のため、そのまま返る。
   const economicArchives = useMemo(() => normalizeArchivesEconomics(archives), [archives]);
+  const dailyCashSpent = useMemo(() => calculateDailyCashSpent({
+    archives: economicArchives,
+    date: localDateStr(),
+    currentRawInvest: ev?.rawInvest,
+    currentYutimeRuns: yutimeRuns,
+  }), [economicArchives, ev?.rawInvest, yutimeRuns]);
 
   const S = {
     rentBalls, setRentBalls, exRate, setExRate, synthDenom, setSynthDenom,
@@ -1277,6 +1286,8 @@ export default function App() {
     // 通知（Phase 6）
     notificationLog,
     notificationPrefs: normalizeNotificationPrefs(notificationPrefs), setNotificationPrefs,
+    pushNotification,
+    dailyCashSpent,
     openNotificationPanel: () => setNotificationPanelOpen(true),
     openStoreDetail: (id) => {
       const fallbackId = selectedStoreId ?? stores.find((store) => store && typeof store === "object")?.id ?? null;

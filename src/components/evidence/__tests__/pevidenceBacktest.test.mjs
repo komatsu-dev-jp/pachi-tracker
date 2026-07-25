@@ -173,3 +173,45 @@ assert.equal(
     .recommendedPriorBalls,
   null,
 );
+
+// 校正は全店舗共通なので、店舗を切り替えても校正前の古い実績を
+// 「新しく集まったサンプル」と誤認しない。
+const latestCalibrationHistory = [
+  {
+    id: "older-large-sample-count",
+    approvedAt: "2026-05-01T09:00:00.000Z",
+    effectiveFrom: "2026-05-01",
+    sampleCount: 999,
+    previousPriorBalls: 40000,
+    appliedPriorBalls: 45000,
+  },
+  {
+    id: "latest-smaller-sample-count",
+    approvedAt: "2026-06-25T09:00:00.000Z",
+    effectiveFrom: "2026-06-25",
+    sampleCount: 20,
+    previousPriorBalls: 45000,
+    appliedPriorBalls: 50000,
+  },
+];
+const anotherStoreRows = calibrationRows(30).map((entry, index) => ({
+  ...entry,
+  store: "store-b",
+  machine: {
+    ...machine,
+    pevidenceCalibrationHistory: latestCalibrationHistory,
+  },
+  date: `2026-06-${String(index + 1).padStart(2, "0")}`,
+}));
+const anotherStoreCandidate = buildCalibrationCandidates(
+  buildBacktestPairs(anotherStoreRows),
+)[0];
+assert.equal(anotherStoreCandidate.n, 29);
+assert.equal(
+  anotherStoreCandidate.samplesSinceCalibration,
+  5,
+  "最新校正の有効日以後に作った予測だけを新規サンプルとして数える",
+);
+assert.equal(anotherStoreCandidate.eligible, false);
+assert.equal(anotherStoreCandidate.reason, "awaiting-new-samples");
+assert.equal(anotherStoreCandidate.remainingSamples, 15);

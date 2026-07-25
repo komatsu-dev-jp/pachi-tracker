@@ -17,6 +17,7 @@ import {
 import { calculateStrategyEconomics } from "../../economics.js";
 import { evidenceDayNumber, normalizeEvidenceDate } from "../../evidenceDate.js";
 import { buildPEvidenceBacktest } from "./pevidenceBacktest.js";
+import { priorBallsForEvidenceDate } from "./pevidenceCalibration.js";
 
 export const PE_PARAMS = Object.freeze({
   emaAlpha: 2 / 8,
@@ -300,8 +301,12 @@ function islandKey(row) {
 function createProcessedRows(rawRows, customMachines, params) {
   const grouped = new Map();
   for (const raw of rawRows) {
-    const machine = findMachineSpec(raw.machineName, customMachines, machineDB);
-    if (!machine) continue;
+    const resolvedMachine = findMachineSpec(raw.machineName, customMachines, machineDB);
+    if (!resolvedMachine) continue;
+    const datedPriorBalls = priorBallsForEvidenceDate(resolvedMachine, raw.date);
+    const machine = datedPriorBalls > 0
+      ? { ...resolvedMachine, muraCoef: datedPriorBalls }
+      : resolvedMachine;
     const estimate = estimateDaily(raw, machine, params);
     const row = { ...raw, machine, estimate, border: machineBorder(machine) };
     const key = historyKey(row);
@@ -764,6 +769,38 @@ function buildAIProfile(rows) {
   return { overall, profiles };
 }
 
+function summarizeIslandActivity(key, rows, date = "") {
+  const activeRows = rows.filter((row) => row.valid);
+  const inactiveRows = rows.filter((row) => row.inactive || row.activityStatus === "inactive");
+  const invalidRows = rows.filter((row) => !row.valid && !inactiveRows.includes(row));
+  const totalInput = activeRows.reduce((sum, row) => sum + row.estimatedInputBalls, 0);
+  const totalSpins = activeRows.reduce((sum, row) => sum + row.estimate.normalSpins, 0);
+  const scannedMachines = rows.length;
+  const inactiveRate = scannedMachines ? inactiveRows.length / scannedMachines : 0;
+  const signalCode = inactiveRows.length > 0
+    ? (inactiveRate >= 0.6 ? "inactive-high" : "inactive-partial")
+    : invalidRows.length > 0 ? "invalid" : "active";
+  return {
+    key,
+    date,
+    store: rows[0]?.store || "",
+    island: rows[0]?.island || `${rows[0]?.machineName || ""}島`,
+    machineName: rows[0]?.machineName || "",
+    averageRotation: totalInput > 0 ? totalSpins / (totalInput / 250) : 0,
+    scannedMachines,
+    activeMachines: activeRows.length,
+    inactiveMachines: inactiveRows.length,
+    invalidMachines: invalidRows.length,
+    inactiveRate,
+    signalCode,
+    activitySignal: signalCode === "inactive-high"
+      ? "島の未稼働が多い・調整前兆候補"
+      : signalCode === "inactive-partial"
+        ? "一部未稼働"
+        : signalCode === "invalid" ? "読取除外あり" : "通常稼働",
+  };
+}
+
 function buildIslandStats(latest) {
   const groups = new Map();
   for (const row of latest) {
@@ -771,30 +808,25 @@ function buildIslandStats(latest) {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(row);
   }
-  return [...groups.entries()].map(([key, rows]) => {
-    const activeRows = rows.filter((row) => row.valid);
-    const inactiveRows = rows.filter((row) => row.inactive || row.activityStatus === "inactive");
-    const invalidRows = rows.filter((row) => !row.valid && !inactiveRows.includes(row));
-    const totalInput = activeRows.reduce((sum, row) => sum + row.estimatedInputBalls, 0);
-    const totalSpins = activeRows.reduce((sum, row) => sum + row.estimate.normalSpins, 0);
-    const scannedMachines = rows.length;
-    const inactiveRate = scannedMachines ? inactiveRows.length / scannedMachines : 0;
-    return {
-      key,
-      store: rows[0]?.store || "",
-      island: rows[0]?.island || `${rows[0]?.machineName || ""}島`,
-      machineName: rows[0]?.machineName || "",
-      averageRotation: totalInput > 0 ? totalSpins / (totalInput / 250) : 0,
-      scannedMachines,
-      activeMachines: activeRows.length,
-      inactiveMachines: inactiveRows.length,
-      invalidMachines: invalidRows.length,
-      inactiveRate,
-      activitySignal: inactiveRows.length > 0
-        ? (inactiveRate >= 0.6 ? "島の未稼働が多い・調整前兆候補" : "一部未稼働")
-        : invalidRows.length > 0 ? "読取除外あり" : "通常稼働",
-    };
-  });
+  return [...groups.entries()].map(([key, rows]) => summarizeIslandActivity(key, rows));
+}
+
+export function buildIslandActivityHistory(rows = []) {
+  const groups = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const date = dateKey(row?.date);
+    if (!date) continue;
+    const key = islandKey(row);
+    const datedKey = `${date}___${key}`;
+    if (!groups.has(datedKey)) groups.set(datedKey, { date, key, rows: [] });
+    groups.get(datedKey).rows.push(row);
+  }
+  return [...groups.values()]
+    .map((group) => summarizeIslandActivity(group.key, group.rows, group.date))
+    .sort((left, right) => (
+      dayNumber(left.date) - dayNumber(right.date)
+      || left.key.localeCompare(right.key)
+    ));
 }
 
 function applyDecision(latest, profiles, markov, spatial, opposite, params) {
@@ -1078,6 +1110,7 @@ export function buildPEvidenceAnalytics({ scans = [], customMachines = [], islan
     ? decisionRows.filter((row) => dayNumber(row.date) === currentDay)
     : [];
   const islandStats = buildIslandStats(currentRows);
+  const islandActivityHistory = buildIslandActivityHistory(processed);
   const portfolio = buildPortfolioPlan(currentRows, {
     plannedHours: params.portfolioHours,
     cashLimit: params.cashLimit,
@@ -1098,6 +1131,7 @@ export function buildPEvidenceAnalytics({ scans = [], customMachines = [], islan
     aiProfile,
     backtest,
     islandStats,
+    islandActivityHistory,
     portfolio,
     nextMap,
   };

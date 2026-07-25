@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  assessStrategyPredictionDivergence,
   buildStrategyMap,
   buildStrategyPlanContext,
   getStrategyFreshness,
@@ -442,4 +443,130 @@ test("対象日より未来の実戦記録を予測へ混ぜない", () => {
   close(withFuture.rotationEstimate.mean, baseline.rotationEstimate.mean);
   close(withFuture.rotationEstimate.inputBalls, baseline.rotationEstimate.inputBalls);
   assert.equal(withFuture.dataCoverage.toDate, "2026-07-09");
+});
+
+test("4円・2円・1円・0.5円の実測を同じ250玉基準で見切り判定する", () => {
+  const rates = [
+    { rentBalls: 250, observedRotation: 18 },
+    { rentBalls: 500, observedRotation: 36 },
+    { rentBalls: 1000, observedRotation: 72 },
+    { rentBalls: 2000, observedRotation: 144 },
+  ];
+  for (const rate of rates) {
+    const result = assessStrategyPredictionDivergence({
+      isPlaying: true,
+      actionable: true,
+      liveDecision: { totalK: 3, observedRotation: rate.observedRotation },
+      predictedLowPer250: 19,
+      predictionConfidence: 0.2,
+      rentBalls: rate.rentBalls,
+    });
+    assert.equal(result.status, "below-lower-bound");
+    assert.equal(result.label, "見切り検討");
+    assert.equal(result.actualPer250, 18);
+    assert.equal(result.predictedLowPer250, 19);
+    assert.equal(result.shortfall, 1);
+
+    const equal = assessStrategyPredictionDivergence({
+      isPlaying: true,
+      actionable: true,
+      liveDecision: {
+        totalK: 3,
+        observedRotation: 19 * rate.rentBalls / 250,
+      },
+      predictedLowPer250: 19,
+      predictionConfidence: 0.2,
+      rentBalls: rate.rentBalls,
+    });
+    assert.equal(equal.status, "within-range", "下限と同値なら見切り表示にしない");
+  }
+});
+
+test("見切り判定は3K・信頼度20%・同一店舗機種台を満たし、ライブ値で比較線を動かさない", () => {
+  const baseArgs = {
+    scans: [scanOf([activeRow("101", "2026-07-10")])],
+    customMachines: [auditMachine],
+    selectedStoreId: "audit-store",
+    targetDate: "2026-07-10",
+    playingNum: "101",
+  };
+  const baseline = buildStrategyMap(baseArgs).all[0];
+  const predictedLow = baseline.strategyBaseline.low;
+  assert.ok(predictedLow > 1);
+
+  const liveDecision = {
+    action: "stop_candidate",
+    totalK: 10,
+    observedRotation: 1,
+  };
+  const live = buildStrategyMap({
+    ...baseArgs,
+    liveDecision,
+    liveSession: {
+      date: "2026-07-10",
+      storeId: "audit-store",
+      storeName: "監査店",
+      machineName: auditMachine.name,
+      machineNum: "101",
+      ev: { start1K: 1, cashKCount: 10, netRot: 10 },
+      settings: { rentBalls: 250 },
+    },
+  }).all[0];
+  assert.equal(live.isPlaying, true);
+  assert.equal(live.strategyDivergence.status, "below-lower-bound");
+  assert.equal(live.strategyDivergence.predictedLowPer250, predictedLow);
+  assert.equal(live.strategyBaseline.low, predictedLow);
+  assert.notEqual(
+    live.rotationEstimate.low,
+    predictedLow,
+    "表示中の融合予測は動いても、見切り比較線はライブ値を混ぜる前のままにする",
+  );
+
+  const wrongStore = buildStrategyMap({
+    ...baseArgs,
+    liveDecision,
+    liveSession: {
+      date: "2026-07-10",
+      storeId: "another-store",
+      machineName: auditMachine.name,
+      machineNum: "101",
+      ev: { start1K: 1, cashKCount: 10, netRot: 10 },
+      settings: { rentBalls: 250 },
+    },
+  }).all[0];
+  assert.equal(wrongStore.isPlaying, false);
+  assert.equal(wrongStore.strategyDivergence.status, "insufficient-data");
+
+  for (const mismatchedIdentity of [
+    { storeId: "audit-store", machineName: "別機種", machineNum: "101" },
+    { storeId: "audit-store", machineName: auditMachine.name, machineNum: "102" },
+  ]) {
+    const mismatch = buildStrategyMap({
+      ...baseArgs,
+      liveDecision,
+      liveSession: {
+        date: "2026-07-10",
+        ...mismatchedIdentity,
+        ev: { start1K: 1, cashKCount: 10, netRot: 10 },
+        settings: { rentBalls: 250 },
+      },
+    }).all[0];
+    assert.equal(mismatch.isPlaying, false);
+    assert.equal(mismatch.strategyDivergence.status, "insufficient-data");
+  }
+
+  for (const partial of [
+    { totalK: 2.99, predictionConfidence: 1 },
+    { totalK: 3, predictionConfidence: 0.199 },
+  ]) {
+    const result = assessStrategyPredictionDivergence({
+      isPlaying: true,
+      actionable: true,
+      liveDecision: { totalK: partial.totalK, observedRotation: 1 },
+      predictedLowPer250: 19,
+      predictionConfidence: partial.predictionConfidence,
+      rentBalls: 250,
+    });
+    assert.equal(result.status, "insufficient-data");
+  }
 });

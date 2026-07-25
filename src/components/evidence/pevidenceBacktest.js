@@ -148,6 +148,11 @@ export function buildBacktestPairs(rows = []) {
         currentPriorBalls: currentPriorBalls !== null && currentPriorBalls > 0
           ? currentPriorBalls
           : null,
+        machineRecordName: String(previous.row?.machine?.name || history.machineName),
+        machineModelName: String(previous.row?.machine?.modelName || ""),
+        calibrationHistory: Array.isArray(previous.row?.machine?.pevidenceCalibrationHistory)
+          ? previous.row.machine.pevidenceCalibrationHistory
+          : [],
       });
     }
   }
@@ -278,35 +283,139 @@ export function buildCalibrationCandidates(pairs = [], overrides = {}) {
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([machineName, machinePairs]) => {
       const metrics = summarizeBacktestPairs(machinePairs);
-      const currentPriorBalls = median(machinePairs
-        .map((pair) => finite(pair.currentPriorBalls))
-        .filter((value) => value !== null && value > 0));
+      const orderedPairs = [...machinePairs].sort((left, right) => (
+        (dayNumber(left.actualDate) ?? -Infinity) - (dayNumber(right.actualDate) ?? -Infinity)
+        || String(left.id || "").localeCompare(String(right.id || ""))
+      ));
+      const latestPair = orderedPairs.at(-1) || null;
+      const latestPrior = finite(latestPair?.currentPriorBalls);
+      const currentPriorBalls = latestPrior !== null && latestPrior > 0
+        ? latestPrior
+        : median(machinePairs
+          .map((pair) => finite(pair.currentPriorBalls))
+          .filter((value) => value !== null && value > 0));
+      const recordNames = [...new Set(machinePairs
+        .map((pair) => String(pair?.machineRecordName || "").trim())
+        .filter(Boolean))];
+      const modelNames = [...new Set(machinePairs
+        .map((pair) => String(pair?.machineModelName || "").trim())
+        .filter(Boolean))];
+      const canonicalMachineReady = recordNames.length === 1 && modelNames.length <= 1;
+      const latestHistory = Array.isArray(latestPair?.calibrationHistory)
+        ? latestPair.calibrationHistory
+        : [];
+      const previousCalibration = [...latestHistory]
+        .filter((entry) => Number.isFinite(dayNumber(entry?.effectiveFrom)))
+        .sort((left, right) => (
+          dayNumber(left.effectiveFrom) - dayNumber(right.effectiveFrom)
+          || String(left.approvedAt || "").localeCompare(String(right.approvedAt || ""))
+        ))
+        .at(-1) || null;
+      const samplesSinceCalibration = previousCalibration
+        ? machinePairs.filter((pair) => (
+          Number.isFinite(dayNumber(pair?.predictionDate))
+          && dayNumber(pair.predictionDate) >= dayNumber(previousCalibration.effectiveFrom)
+        )).length
+        : metrics.n;
+      const enoughNewSamples = !previousCalibration
+        || samplesSinceCalibration >= options.minCalibrationSamples;
       const enoughSamples = metrics.n >= options.minCalibrationSamples;
-      const canRecommend = enoughSamples && currentPriorBalls !== null;
+      const canRecommend = enoughSamples
+        && enoughNewSamples
+        && canonicalMachineReady
+        && currentPriorBalls !== null;
       const recommendedPriorBalls = canRecommend
         ? roundedPriorBalls(
           currentPriorBalls * proposedPriorFactor(machinePairs, metrics),
           options,
         )
         : null;
+      const hasRecommendedChange = canRecommend
+        && recommendedPriorBalls !== currentPriorBalls;
 
       return {
         machineName,
+        machineRecordName: recordNames[0] || "",
+        machineModelName: modelNames[0] || "",
         n: metrics.n,
         minRequired: options.minCalibrationSamples,
+        evidenceThroughDate: latestPair?.actualDate || "",
+        stores: [...new Set(machinePairs.map((pair) => pair.store).filter(Boolean))],
         currentPriorBalls,
         recommendedPriorBalls,
-        eligible: canRecommend,
+        eligible: hasRecommendedChange,
         reason: !enoughSamples
           ? "insufficient-samples"
-          : currentPriorBalls === null
-            ? "missing-current-prior"
-            : "proposal-only",
+          : !canonicalMachineReady
+            ? "ambiguous-machine"
+            : !enoughNewSamples
+              ? "awaiting-new-samples"
+              : currentPriorBalls === null
+                ? "missing-current-prior"
+                : !hasRecommendedChange
+                  ? "no-change"
+                  : "proposal-only",
+        previousCalibrationSamples: previousCalibration?.sampleCount ?? null,
+        samplesSinceCalibration,
+        remainingSamples: previousCalibration && !enoughNewSamples
+          ? Math.max(0, options.minCalibrationSamples - samplesSinceCalibration)
+          : 0,
         method: canRecommend ? "coverage-and-border-benchmark-v1" : null,
         proposalOnly: true,
         appliesAutomatically: false,
       };
     });
+}
+
+function isoDateFromDay(day) {
+  if (!Number.isFinite(day)) return "";
+  return new Date(day * 86400000).toISOString().slice(0, 10);
+}
+
+function weekStartDay(value) {
+  const day = dayNumber(value);
+  if (!Number.isFinite(day)) return null;
+  const weekday = new Date(day * 86400000).getUTCDay();
+  return day - ((weekday + 6) % 7);
+}
+
+export function buildWeeklyBacktestTrend(pairs = [], { maxWeeks = 12 } = {}) {
+  const groups = new Map();
+  for (const pair of Array.isArray(pairs) ? pairs : []) {
+    const startDay = weekStartDay(pair?.actualDate);
+    if (!Number.isFinite(startDay)) continue;
+    if (!groups.has(startDay)) groups.set(startDay, []);
+    groups.get(startDay).push(pair);
+  }
+  const trend = [...groups.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([startDay, weekPairs]) => {
+      const metrics = summarizeBacktestPairs(weekPairs);
+      const eventMap = new Map();
+      for (const pair of weekPairs) {
+        for (const entry of Array.isArray(pair?.calibrationHistory) ? pair.calibrationHistory : []) {
+          const effectiveDay = dayNumber(entry?.effectiveFrom);
+          if (!Number.isFinite(effectiveDay) || effectiveDay < startDay || effectiveDay > startDay + 6) continue;
+          const key = `${pair.machineRecordName}___${entry.id || entry.approvedAt || entry.effectiveFrom}`;
+          if (!eventMap.has(key)) {
+            eventMap.set(key, {
+              machineName: pair.machineRecordName || pair.machineName,
+              effectiveFrom: normalizeEvidenceDate(entry.effectiveFrom),
+              previousPriorBalls: finite(entry.previousPriorBalls),
+              appliedPriorBalls: finite(entry.appliedPriorBalls),
+            });
+          }
+        }
+      }
+      return {
+        weekStart: isoDateFromDay(startDay),
+        weekEnd: isoDateFromDay(startDay + 6),
+        ...metrics,
+        calibrationEvents: [...eventMap.values()],
+      };
+    });
+  const limit = Math.max(1, Math.floor(finite(maxWeeks) ?? 12));
+  return trend.slice(-limit);
 }
 
 export function buildPEvidenceBacktest(rows = [], options = {}) {
@@ -334,6 +443,7 @@ export function buildPEvidenceBacktest(rows = [], options = {}) {
     byKey,
     byKeyList,
     calibrationCandidates: buildCalibrationCandidates(pairs, options),
+    weeklyTrend: buildWeeklyBacktestTrend(pairs, options),
     biasDefinition: "prediction-minus-actual",
   };
 }

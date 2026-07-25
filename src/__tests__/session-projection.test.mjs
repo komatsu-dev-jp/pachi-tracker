@@ -1,12 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildCashLimitPreAlert,
+  calculateDailyCashSpent,
   calculateLiveActualBalance,
   deadlineFromTime,
   estimateHourlyWorkFromStart1K,
   isTimeValue,
   projectCashLimit,
   projectWorkToDeadline,
+  rotationPer250FromStart1K,
   timeValueFromDate,
   validateSessionSchedule,
 } from "../sessionProjection.js";
@@ -270,4 +273,113 @@ test("cash limit stays unset without creating a stop decision", () => {
   assert.equal(result.cashSpent, 12000);
   assert.equal(result.remainingCash, null);
   assert.equal(result.shouldStop, false);
+});
+
+test("daily cash spent keeps same-day table moves and Yutime support cash in one total", () => {
+  assert.equal(calculateDailyCashSpent({
+    date: "2026-07-25",
+    archives: [
+      {
+        date: "2026-07-25",
+        stats: { rawInvest: 4000, cashKCount: 3 },
+        yutimeRuns: [{ supportCashYen: 1000 }],
+      },
+      {
+        date: "2026/07/25",
+        stats: { rawInvest: 2000, cashKCount: 3 },
+        yutimeRuns: [{ supportCashYen: 500 }, { supportCashYen: -1000 }],
+      },
+      {
+        date: "2026-07-24",
+        stats: { rawInvest: 99999, cashKCount: 99 },
+        yutimeRuns: [{ supportCashYen: 99999 }],
+      },
+    ],
+    currentRawInvest: 2000,
+    currentYutimeRuns: [{ supportCashYen: 1000 }, { supportCashYen: 500 }],
+  }), 12000);
+});
+
+test("cash-limit conversion and 30-minute warning work at every supported loan rate", async (t) => {
+  const loanRates = [
+    { label: "4 yen", rentBalls: 250, rotationPer250: 25 },
+    { label: "2 yen", rentBalls: 500, rotationPer250: 12.5 },
+    { label: "1 yen", rentBalls: 1000, rotationPer250: 6.25 },
+    { label: "0.5 yen", rentBalls: 2000, rotationPer250: 3.125 },
+  ];
+
+  for (const rate of loanRates) {
+    await t.test(rate.label, () => {
+      assert.equal(rotationPer250FromStart1K(25, rate.rentBalls), rate.rotationPer250);
+
+      const atBoundary = projectCashLimit({
+        cashLimit: 30000,
+        rawInvest: 25000,
+        rotationPer250: rotationPer250FromStart1K(25, rate.rentBalls),
+        rentBalls: rate.rentBalls,
+        spinsPerHour: 250,
+        playMode: "cash",
+      });
+      assert.equal(atBoundary.remainingSpins, 125);
+      assert.equal(atBoundary.remainingHours, 0.5);
+      assert.deepEqual(buildCashLimitPreAlert(atBoundary), {
+        shouldAlert: true,
+        kind: "approaching",
+        warningMinutes: 30,
+        remainingMinutes: 30,
+        remainingCash: 5000,
+      });
+
+      const beforeBoundary = projectCashLimit({
+        cashLimit: 30000,
+        rawInvest: 24000,
+        rotationPer250: rotationPer250FromStart1K(25, rate.rentBalls),
+        rentBalls: rate.rentBalls,
+        spinsPerHour: 250,
+        playMode: "cash",
+      });
+      assert.equal(buildCashLimitPreAlert(beforeBoundary).shouldAlert, false);
+
+      const reached = projectCashLimit({
+        cashLimit: 30000,
+        rawInvest: 30000,
+        rotationPer250: rotationPer250FromStart1K(25, rate.rentBalls),
+        rentBalls: rate.rentBalls,
+        spinsPerHour: 250,
+        playMode: "cash",
+      });
+      assert.equal(buildCashLimitPreAlert(reached).kind, "limit_reached");
+      assert.equal(buildCashLimitPreAlert(reached).shouldAlert, true);
+
+      const over = projectCashLimit({
+        cashLimit: 30000,
+        rawInvest: 31000,
+        rotationPer250: rotationPer250FromStart1K(25, rate.rentBalls),
+        rentBalls: rate.rentBalls,
+        spinsPerHour: 250,
+        playMode: "cash",
+      });
+      assert.equal(over.overBy, 1000);
+      assert.equal(buildCashLimitPreAlert(over).kind, "limit_reached");
+      assert.equal(buildCashLimitPreAlert(over).shouldAlert, true);
+    });
+  }
+});
+
+test("cash-limit warning is suppressed while playing with held balls", () => {
+  const guide = projectCashLimit({
+    cashLimit: 30000,
+    rawInvest: 30000,
+    rotationPer250: 20,
+    rentBalls: 250,
+    spinsPerHour: 250,
+    playMode: "chodama",
+  });
+  assert.deepEqual(buildCashLimitPreAlert(guide), {
+    shouldAlert: false,
+    kind: "none",
+    warningMinutes: 30,
+    remainingMinutes: 0,
+    remainingCash: 0,
+  });
 });

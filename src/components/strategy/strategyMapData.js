@@ -21,7 +21,10 @@ import {
 import { getStoreIslands } from "../select/hallMapSelectors.js";
 import { calculateStrategyEconomics } from "../../economics.js";
 import { evidenceDayNumber, normalizeEvidenceDate } from "../../evidenceDate.js";
-import { projectCashLimit } from "../../sessionProjection.js";
+import {
+  projectCashLimit,
+  rotationPer250FromStart1K,
+} from "../../sessionProjection.js";
 
 function round1(value) {
   return Math.round(Number(value || 0) * 10) / 10;
@@ -96,6 +99,54 @@ function practiceObservation(record, identity, source) {
     date: normalizedDate(record.date),
     rate: ratePerMoneyK * 250 / ballsPerMoneyK,
     inputBalls: kCount * ballsPerMoneyK,
+  };
+}
+
+export function assessStrategyPredictionDivergence({
+  isPlaying = false,
+  actionable = false,
+  liveDecision = null,
+  predictedLowPer250 = null,
+  predictionConfidence = 0,
+  rentBalls = 250,
+} = {}) {
+  const totalK = Number(liveDecision?.totalK);
+  const low = Number(predictedLowPer250);
+  const confidence = Number(predictionConfidence);
+  const observedPer250 = rotationPer250FromStart1K(
+    liveDecision?.observedRotation,
+    rentBalls,
+  );
+  const ready = Boolean(
+    isPlaying
+    && actionable
+    && Number.isFinite(totalK)
+    && totalK >= 3
+    && Number.isFinite(low)
+    && low > 0
+    && Number.isFinite(confidence)
+    && confidence >= 0.2
+    && observedPer250 > 0
+  );
+  if (!ready) {
+    return {
+      status: "insufficient-data",
+      label: "",
+      actualPer250: observedPer250 || null,
+      predictedLowPer250: Number.isFinite(low) && low > 0 ? low : null,
+      shortfall: null,
+    };
+  }
+  const roundedActual = round1(observedPer250);
+  const roundedLow = round1(low);
+  // 表示上は小数1桁なので、同じ値に見える微差で警告しない。
+  const below = roundedActual < roundedLow;
+  return {
+    status: below ? "below-lower-bound" : "within-range",
+    label: below ? "見切り検討" : "",
+    actualPer250: roundedActual,
+    predictedLowPer250: roundedLow,
+    shortfall: below ? round1(roundedLow - roundedActual) : 0,
   };
 }
 
@@ -720,14 +771,18 @@ export function buildStrategyMap({
     const baseInputBalls = pe?.valid
       ? (usesRecentRegime ? Number(pe.regimeInputBalls) : Number(pe.cumulativeInputBalls))
       : Number(evidence.totalInputBalls);
-    const estimate = fusePracticeEstimate({
+    const baseEstimate = {
       mean: baseMean,
       low: baseLow,
       high: baseHigh,
       variance: baseVariance,
       confidence: pe?.valid ? pe.confidence : evidence.confidence,
       inputBalls: baseInputBalls || 0,
-    }, practiceObservations, machineSpec.muraCoef);
+    };
+    // ライブ乖離の比較線は、今日の実測で自分自身が下がらないよう
+    // 現在実戦を混ぜる前の予測として固定する。
+    const preLiveEstimate = fusePracticeEstimate(baseEstimate, newerArchives, machineSpec.muraCoef);
+    const estimate = fusePracticeEstimate(baseEstimate, practiceObservations, machineSpec.muraCoef);
     const dataCoverage = buildDataCoverage({
       analyticsHistoryRows: analytics.historyRows,
       pe,
@@ -765,10 +820,28 @@ export function buildStrategyMap({
     const islandId = islandName;
     // スパークラインも表示中店舗の履歴だけを使う（他店舗の同番号を混ぜない）
     const historySummary = historyFor(storeScans, machineName, row.num, machineSpec);
-    const isPlaying = playingNum != null && String(row.num) === String(playingNum);
+    const numberMatchesLive = playingNum != null && String(row.num) === String(playingNum);
+    const liveIdentityMatches = !liveSession || (
+      recordMatchesStore(liveSession, identity.storeId, identity.storeName)
+      && normalizeEvidenceMachineName(liveSession.machineName) === normalizeEvidenceMachineName(machineName)
+      && normalizeEvidenceMachineNumber(liveSession.machineNum) === normalizeEvidenceMachineNumber(row.num)
+    );
+    const isPlaying = numberMatchesLive && liveIdentityMatches;
+    const strategyDivergence = assessStrategyPredictionDivergence({
+      isPlaying,
+      actionable: machineActionable,
+      liveDecision,
+      predictedLowPer250: preLiveEstimate.low,
+      predictionConfidence: preLiveEstimate.confidence,
+      rentBalls: liveSession?.settings?.rentBalls || strategyPlan.rentBalls,
+    });
     const liveStats = liveSession?.stats || liveSession?.ev || {};
     const currentCashInvest = isPlaying
-      ? Math.max(0, Number(liveStats.rawInvest) || Number(liveStats.cashKCount) * 1000 || 0)
+      ? Math.max(
+          0,
+          Number(liveSession?.cashSpentToday) || 0,
+          Number(liveStats.rawInvest) || Number(liveStats.cashKCount) * 1000 || 0,
+        )
       : 0;
     const cashLimitGuide = projectCashLimit({
       cashLimit: strategyPlan.cashLimit,
@@ -851,6 +924,16 @@ export function buildStrategyMap({
       isStar: machineActionable && verdict === "strong" && contextualScore >= 50,
       isPlaying,
       liveDecision: isPlaying ? liveDecision : null,
+      strategyDivergence,
+      strategyBaseline: {
+        mean: currentRowInvalid ? null : round1(preLiveEstimate.mean),
+        low: currentRowInvalid ? null : round1(preLiveEstimate.low),
+        high: currentRowInvalid ? null : round1(preLiveEstimate.high),
+        confidence: currentRowInvalid ? 0 : preLiveEstimate.confidence,
+        unit: "per250Balls",
+        sourceDate: freshness.sourceDate,
+      },
+      activityHistoryKey: `${rowStore}___${islandName}`,
       history: historySummary.points.length > 1
         ? historySummary.points
         : [
@@ -1056,6 +1139,7 @@ export function buildStrategyMap({
     aiProfile: analytics.aiProfile,
     nextMap: analytics.nextMap,
     islandStats: analytics.islandStats,
+    islandActivityHistory: analytics.islandActivityHistory,
     planHandoff,
     plan: strategyPlan,
     planMatch: {

@@ -19,11 +19,13 @@ import {
 import { calcPreciseEV } from "../logic";
 import { applyEconomicEV } from "../economics";
 import {
+    buildCashLimitPreAlert,
     calculateLiveActualBalance,
     deadlineFromTime,
     estimateHourlyWorkFromStart1K,
     projectCashLimit,
     projectWorkToDeadline,
+    rotationPer250FromStart1K,
     timeValueFromDate,
     validateSessionSchedule,
 } from "../sessionProjection";
@@ -73,6 +75,8 @@ import {
     shouldAutoShowYutimeCard,
 } from "./yutime/yutimeFlow";
 import YutimeCalculatorSheet from "./yutime/YutimeCalculatorSheet";
+import { makeNotification, NOTIF_CASH_LIMIT_WARNING } from "../notifications";
+import { triggerHaptic } from "../haptics";
 
 /* ================================================================
    Simple SVG Line Chart component
@@ -886,6 +890,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     const [customInvestPace, setCustomInvestPace] = useState("");
     const [customInvestPaceError, setCustomInvestPaceError] = useState("");
     const tableRef = useRef(null);
+    const cashAlertSentRef = useRef(new Set());
     const evEff = effectiveEv(ev);
     const [projectionNow, setProjectionNow] = useState(() => Date.now());
     const [showScheduleEditor, setShowScheduleEditor] = useState(false);
@@ -911,19 +916,17 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         S.rentBalls,
     ]);
     const liveCashLimitGuide = useMemo(() => {
-        // start1K系は「1,000円あたりの回転数」。projectCashLimit は
+        // start1K は「1,000円あたりの物理回転数」。projectCashLimit は
         // 「250玉あたりの回転数」を前提とするため、低貸し（rentBalls>250）では
         // 玉数換算してから渡す（等価250玉では換算係数1で従来どおり）。
-        const start1KPerMoney = [
-            ev.effectiveStart1K,
-            ev.start1KCorrected,
-            ev.start1K,
-        ].map(Number).find((value) => value > 0) || 0;
+        // 現金であと何回まわせるかの計算なので、交換価値補正済みの
+        // effectiveStart1K ではなく実測の start1K を使う。
+        const start1KPerMoney = Number(ev.start1K) > 0 ? Number(ev.start1K) : 0;
         const rentBallsPer1K = Number(liveStrategyPlan.rentBalls) > 0 ? Number(liveStrategyPlan.rentBalls) : 250;
         return projectCashLimit({
             cashLimit: liveStrategyPlan.cashLimit,
-            rawInvest: ev.rawInvest,
-            rotationPer250: start1KPerMoney * 250 / rentBallsPer1K,
+            rawInvest: Number(S.dailyCashSpent) >= 0 ? Number(S.dailyCashSpent) : ev.rawInvest,
+            rotationPer250: rotationPer250FromStart1K(start1KPerMoney, rentBallsPer1K),
             rentBalls: liveStrategyPlan.rentBalls,
             spinsPerHour: liveStrategyPlan.spinsPerHour,
             playMode: S.playMode,
@@ -933,10 +936,53 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         liveStrategyPlan.rentBalls,
         liveStrategyPlan.spinsPerHour,
         ev.rawInvest,
-        ev.effectiveStart1K,
-        ev.start1KCorrected,
         ev.start1K,
+        S.dailyCashSpent,
         S.playMode,
+    ]);
+    const liveCashPreAlert = useMemo(
+        () => buildCashLimitPreAlert(liveCashLimitGuide, { warningMinutes: 30 }),
+        [liveCashLimitGuide],
+    );
+    const cashAlertSessionStarted = S.sessionStarted;
+    const cashAlertEnabled = S.notificationPrefs?.cashLimit !== false;
+    const cashAlertNotificationLog = S.notificationLog;
+    const pushCashAlertNotification = S.pushNotification;
+    const cashAlertHapticEnabled = S.hapticFeedback;
+
+    useEffect(() => {
+        if (!cashAlertSessionStarted || !liveCashPreAlert.shouldAlert || !cashAlertEnabled) return;
+        const alertKey = `cash-limit:${liveStrategyPlan.date}:${liveCashLimitGuide.cashLimit}`;
+        const alreadyRecorded = (Array.isArray(cashAlertNotificationLog) ? cashAlertNotificationLog : [])
+            .some((item) => item?.type === NOTIF_CASH_LIMIT_WARNING && item?.payload?.dedupeKey === alertKey);
+        if (alreadyRecorded || cashAlertSentRef.current.has(alertKey)) return;
+        cashAlertSentRef.current.add(alertKey);
+        const roundedMinutes = Math.max(1, Math.ceil(liveCashPreAlert.remainingMinutes || 0));
+        const limitReached = liveCashPreAlert.kind === "limit_reached";
+        pushCashAlertNotification?.(makeNotification(NOTIF_CASH_LIMIT_WARNING, {
+            title: limitReached ? "現金上限に到達しました" : "現金上限まで30分以内です",
+            body: limitReached
+                ? "現金の追加投資を止める目安です。次の投資前に続行を確認してください。"
+                : `現金残り約${Math.round(liveCashLimitGuide.remainingCash || 0).toLocaleString("ja-JP")}円・約${roundedMinutes}分です。次の投資前に続行を確認してください。`,
+            payload: {
+                dedupeKey: alertKey,
+                date: liveStrategyPlan.date,
+                cashLimit: liveCashLimitGuide.cashLimit,
+                remainingCash: liveCashLimitGuide.remainingCash,
+                remainingMinutes: liveCashPreAlert.remainingMinutes,
+            },
+        }));
+        if (cashAlertHapticEnabled) triggerHaptic(80);
+    }, [
+        cashAlertSessionStarted,
+        cashAlertEnabled,
+        cashAlertNotificationLog,
+        pushCashAlertNotification,
+        cashAlertHapticEnabled,
+        liveCashPreAlert,
+        liveCashLimitGuide.cashLimit,
+        liveCashLimitGuide.remainingCash,
+        liveStrategyPlan.date,
     ]);
 
     useEffect(() => {
@@ -3342,6 +3388,11 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     <strong style={{ color: liveCashLimitGuide.shouldStop ? C.red : C.yellow, fontSize: 12 }}>
                                         現金上限ガイド
                                     </strong>
+                                    {liveCashPreAlert.kind === "approaching" && (
+                                        <span style={{ color: C.orange, fontSize: 9, fontWeight: 900 }}>
+                                            残り30分以内
+                                        </span>
+                                    )}
                                     <span style={{ color: C.sub, fontSize: 9 }}>
                                         上限 {f(liveCashLimitGuide.cashLimit)}円
                                     </span>
@@ -13014,6 +13065,8 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                             right={<Toggle label="バッジ獲得通知" value={prefs.badge !== false} onChange={(v) => setPref("badge", v)} />} />
                         <Row IconComp={IconBell} iconColor={C.blue} label="判断変化" sub="続行・様子見・ヤメの判断が変わったとき"
                             right={<Toggle label="判断変化通知" value={prefs.verdict !== false} onChange={(v) => setPref("verdict", v)} />} />
+                        <Row IconComp={IconBell} iconColor={C.yellow} label="現金上限" sub="停止目安まで約30分になったとき"
+                            right={<Toggle label="現金上限通知" value={prefs.cashLimit !== false} onChange={(v) => setPref("cashLimit", v)} />} />
                     </Section>
                     <div style={{ padding: "12px 16px", color: C.sub, fontSize: 11, lineHeight: 1.6 }}>
                         ここで切り替えるのはアプリ内の通知履歴です。端末のプッシュ通知は使用していません。
@@ -13797,7 +13850,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                     {(() => {
                         const items = [
                             { color: "var(--purple)", icon: IconPaint,      label: "テーマ・カラー",     sub: "ダーク / 配色 / アクセシビリティ", onPress: () => setShowAppearanceView(true) },
-                            { color: "var(--purple)", icon: IconBell,       label: "通知設定",           sub: "4種類のアプリ内通知", onPress: () => setShowNotificationView(true) },
+                            { color: "var(--purple)", icon: IconBell,       label: "通知設定",           sub: "5種類のアプリ内通知", onPress: () => setShowNotificationView(true) },
                             { color: "var(--blue)", icon: IconChartBars,  label: "グラフ・表示設定",   sub: "形式 / 表示項目 / 単位", right: <ComingSoonBadge /> },
                         ];
                         return items.map((it, i) => (
