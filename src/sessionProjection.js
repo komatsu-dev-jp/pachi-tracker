@@ -1,3 +1,5 @@
+import { heldBallCostPerK } from "./economics.js";
+
 const finite = (value, fallback = 0) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
@@ -104,7 +106,7 @@ export function estimateHourlyWorkFromStart1K({
   if (roundOutput <= 0 || averageRounds <= 0) return null;
   const averageNetBalls = roundOutput * averageRounds + finite(specSapo);
   const grossYenPerK = (start / denominator) * averageNetBalls * (1000 / exchangeBalls);
-  const costPerK = playMode === "cash" ? 1000 : 1000 * exchangeBalls / rentalBalls;
+  const costPerK = playMode === "cash" ? 1000 : heldBallCostPerK(rentalBalls, exchangeBalls);
   const expectedYenPerK = grossYenPerK - costPerK;
   const expectedYenPerRotation = expectedYenPerK / start;
   return {
@@ -131,4 +133,64 @@ export function calculateLiveActualBalance({
     - Math.max(0, finite(rawInvest))
     - Math.max(0, finite(carriedInYen)),
   );
+}
+
+export function projectCashLimit({
+  cashLimit,
+  rawInvest = 0,
+  rotationPer250 = 0,
+  rentBalls = 0,
+  spinsPerHour = 0,
+  playMode = "cash",
+}) {
+  const configuredLimit = Math.max(0, finite(cashLimit));
+  const cashSpent = Math.max(0, finite(rawInvest));
+  const usesCashNow = playMode === "cash";
+
+  if (configuredLimit <= 0) {
+    return {
+      status: "unset",
+      calculationStatus: "unset",
+      cashLimit: 0,
+      cashSpent,
+      remainingCash: null,
+      overBy: 0,
+      purchasableBalls: null,
+      remainingSpins: null,
+      remainingHours: null,
+      usesCashNow,
+      shouldStop: false,
+    };
+  }
+
+  const remainingCash = Math.max(0, configuredLimit - cashSpent);
+  const overBy = Math.max(0, cashSpent - configuredLimit);
+  const status = overBy > 0
+    ? "over_limit"
+    : remainingCash === 0
+      ? "limit_reached"
+      : "remaining";
+  const shouldStop = cashSpent >= configuredLimit;
+  const rentalBalls = Math.max(0, finite(rentBalls));
+  const purchasableBalls = Math.floor(remainingCash * rentalBalls / 1000);
+  const rotations = Math.max(0, finite(rotationPer250));
+  const hourlySpins = Math.max(0, finite(spinsPerHour));
+  const calculationReady = rentalBalls > 0 && rotations > 0 && hourlySpins > 0;
+  const remainingSpins = calculationReady
+    ? purchasableBalls * rotations / 250
+    : null;
+
+  return {
+    status,
+    calculationStatus: calculationReady ? "ready" : "rotation-missing",
+    cashLimit: configuredLimit,
+    cashSpent,
+    remainingCash,
+    overBy,
+    purchasableBalls,
+    remainingSpins,
+    remainingHours: calculationReady ? remainingSpins / hourlySpins : null,
+    usesCashNow,
+    shouldStop,
+  };
 }

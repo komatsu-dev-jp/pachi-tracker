@@ -22,6 +22,7 @@ import {
     calculateLiveActualBalance,
     deadlineFromTime,
     estimateHourlyWorkFromStart1K,
+    projectCashLimit,
     projectWorkToDeadline,
     timeValueFromDate,
     validateSessionSchedule,
@@ -48,6 +49,7 @@ import {
 import { evDecision } from "./decision/evDecision";
 import { confidenceAccuracyLabel } from "./decision/confidenceLabels";
 import { LiveDecisionNavigator } from "./decision/LiveDecisionNavigator";
+import { buildStrategyPlanContext } from "./strategy/strategyMapData";
 import { KeyMetrics } from "./decision/KeyMetrics";
 import { RecentEventList } from "./decision/RecentEventList";
 import MachineSpecWorkspace from "./machines/MachineSpecWorkspace";
@@ -890,6 +892,45 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     const [scheduleTargetTime, setScheduleTargetTime] = useState("");
     const [scheduleClosingTime, setScheduleClosingTime] = useState("");
     const [scheduleEditorError, setScheduleEditorError] = useState("");
+    const liveStrategyPlan = useMemo(() => buildStrategyPlanContext({
+        date: localDateStr(new Date()),
+        dailyResearchPlans: S.dailyResearchPlans,
+        monthlyPlayPlans: S.monthlyPlayPlans,
+        spinsPerHour: S.rotPerHour,
+        defaultHours: 6,
+        defaultCashLimit: 0,
+        ballValueYen: Number(S.exRate) > 0 ? 1000 / Number(S.exRate) : Number(S.ballVal) || 4,
+        rentBalls: S.rentBalls,
+        exRate: S.exRate,
+    }), [
+        S.dailyResearchPlans,
+        S.monthlyPlayPlans,
+        S.rotPerHour,
+        S.exRate,
+        S.ballVal,
+        S.rentBalls,
+    ]);
+    const liveCashLimitGuide = useMemo(() => projectCashLimit({
+        cashLimit: liveStrategyPlan.cashLimit,
+        rawInvest: ev.rawInvest,
+        rotationPer250: [
+            ev.effectiveStart1K,
+            ev.start1KCorrected,
+            ev.start1K,
+        ].map(Number).find((value) => value > 0) || 0,
+        rentBalls: liveStrategyPlan.rentBalls,
+        spinsPerHour: liveStrategyPlan.spinsPerHour,
+        playMode: S.playMode,
+    }), [
+        liveStrategyPlan.cashLimit,
+        liveStrategyPlan.rentBalls,
+        liveStrategyPlan.spinsPerHour,
+        ev.rawInvest,
+        ev.effectiveStart1K,
+        ev.start1KCorrected,
+        ev.start1K,
+        S.playMode,
+    ]);
 
     useEffect(() => {
         const timer = setInterval(() => setProjectionNow(Date.now()), 30000);
@@ -3278,6 +3319,43 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     }}>
                         {/* 1. 3K・5K・10K・20K固定地点で判断する見切りナビ */}
                         {!showYutimeDecision && <LiveDecisionNavigator decision={ev.liveDecision} />}
+                        {!showYutimeDecision && liveCashLimitGuide.status !== "unset" && (
+                            <section
+                                aria-label="現金上限ガイド"
+                                style={{
+                                    padding: "11px 13px",
+                                    borderRadius: 14,
+                                    border: `1px solid ${liveCashLimitGuide.shouldStop ? C.red : C.yellow}`,
+                                    background: liveCashLimitGuide.shouldStop
+                                        ? "color-mix(in srgb, var(--red) 8%, var(--surface))"
+                                        : "color-mix(in srgb, var(--yellow) 7%, var(--surface))",
+                                }}
+                            >
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                                    <strong style={{ color: liveCashLimitGuide.shouldStop ? C.red : C.yellow, fontSize: 12 }}>
+                                        現金上限ガイド
+                                    </strong>
+                                    <span style={{ color: C.sub, fontSize: 9 }}>
+                                        上限 {f(liveCashLimitGuide.cashLimit)}円
+                                    </span>
+                                </div>
+                                <div style={{ marginTop: 5, color: C.text, fontSize: 13, fontWeight: 900 }}>
+                                    {liveCashLimitGuide.status === "over_limit"
+                                        ? `上限を${f(liveCashLimitGuide.overBy)}円超過`
+                                        : liveCashLimitGuide.status === "limit_reached"
+                                            ? "現金上限に到達"
+                                            : `現金残り ${f(liveCashLimitGuide.remainingCash)}円`}
+                                </div>
+                                <div style={{ marginTop: 4, color: C.subHi, fontSize: 10, lineHeight: 1.5 }}>
+                                    {liveCashLimitGuide.shouldStop
+                                        ? "現金追加は停止目安です。"
+                                        : liveCashLimitGuide.calculationStatus === "ready"
+                                            ? `現金遊技なら残り約${f(liveCashLimitGuide.remainingSpins)}回・${f(liveCashLimitGuide.remainingHours, 1)}時間です。`
+                                            : "回転率の実測後に、残り回転数と時間を表示します。"}
+                                    {!liveCashLimitGuide.usesCashNow && " 現在は持ち玉・貯玉遊技のため、現金残額は減りません。"}
+                                </div>
+                            </section>
+                        )}
 
                         {/* 1.5. 遊タイム狙い目分析（天井未設定機種では非表示） */}
                         <YutimeEvCard

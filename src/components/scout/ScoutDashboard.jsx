@@ -3,8 +3,9 @@ import { C, font, mono } from "../../constants";
 import { Card } from "../Atoms";
 import StoreRankingCard from "./StoreRankingCard";
 import { getStoreRanking } from "./scoutSelectors";
-import { buildStrategyMap } from "../strategy/strategyMapData";
+import { buildStrategyMap, buildStrategyPlanContext } from "../strategy/strategyMapData";
 import { localDateStr } from "../../constants";
+import { estimateStrategyNonCashRatio } from "../../economics";
 
 // 本日予測タブ: 保存済み差玉から P-EVIDENCE 解析（buildStrategyMap）で計算した
 // 最新スキャン店舗の狙い台と翌日予測を表示する。仮データ・通信は使わない。
@@ -22,16 +23,55 @@ function ForecastTab({ S }) {
   const customMachines = Array.isArray(S?.customMachines) ? S.customMachines : EMPTY_LIST;
   const hallMaps = S?.hallMaps;
   const selectedStoreId = S?.selectedStoreId;
+  const stores = Array.isArray(S?.stores) ? S.stores : EMPTY_LIST;
+  const archives = Array.isArray(S?.archives) ? S.archives : EMPTY_LIST;
+  const strategyPlan = useMemo(() => {
+    const selectedStore = stores.find((store) => String(store?.id) === String(selectedStoreId)) || null;
+    const rentBalls = Number(selectedStore?.rentBalls ?? S?.rentBalls);
+    const exRate = Number(selectedStore?.exRate ?? S?.exRate);
+    const fallbackBallValue = Number(S?.ballVal);
+    const nonCashEstimate = estimateStrategyNonCashRatio(archives, {
+      storeId: selectedStoreId,
+      storeName: selectedStore?.name || S?.storeName || "",
+    });
+    return buildStrategyPlanContext({
+      date: localDateStr(new Date()),
+      dailyResearchPlans: S?.dailyResearchPlans,
+      monthlyPlayPlans: S?.monthlyPlayPlans,
+      spinsPerHour: S?.rotPerHour,
+      defaultHours: 6,
+      defaultCashLimit: 0,
+      ballValueYen: exRate > 0 ? 1000 / exRate : (fallbackBallValue > 0 ? fallbackBallValue : 4),
+      rentBalls,
+      exRate,
+      nonCashRatio: nonCashEstimate.nonCashRatio,
+      nonCashRatioSource: nonCashEstimate.source,
+      nonCashSampleK: nonCashEstimate.sampleK,
+    });
+  }, [
+    stores,
+    selectedStoreId,
+    archives,
+    S?.rentBalls,
+    S?.exRate,
+    S?.ballVal,
+    S?.storeName,
+    S?.dailyResearchPlans,
+    S?.monthlyPlayPlans,
+    S?.rotPerHour,
+  ]);
   const data = useMemo(
     () => buildStrategyMap({
       scans,
       customMachines,
       hallMaps,
       selectedStoreId,
-      stores: S?.stores,
-      targetDate: localDateStr(new Date()),
+      stores,
+      archives,
+      plan: strategyPlan,
+      targetDate: strategyPlan.date,
     }),
-    [scans, customMachines, hallMaps, selectedStoreId, S?.stores],
+    [scans, customMachines, hallMaps, selectedStoreId, stores, archives, strategyPlan],
   );
 
   if (!data.total) {

@@ -2,11 +2,15 @@
 //
 // P-EVIDENCE 由来の島・台データを、台選び UI 用の形へ正規化する。
 
+import { classifyEvidenceScore } from "../evidence/pevidenceAnalytics.js";
+
 const VERDICT_ORDER = {
   strong: 4,
   good: 3,
   watch: 2,
+  weak: 1,
   avoid: 1,
+  nodata: 0,
   unknown: 0,
 };
 
@@ -20,15 +24,14 @@ export function normalizeMachineRows(rows) {
   return rows
     .filter(Boolean)
     .map((row, i) => {
-      const confidence = Math.max(0, Math.min(100, Math.round(num(row.confidence))));
+      const rawConfidence = Math.max(0, Math.min(100, num(row.confidence)));
+      const confidence = Math.round(rawConfidence);
       const borderDiff = Math.round(num(row.borderDiff) * 10) / 10;
       const evPerK = Math.round(num(row.evPerK));
-      const verdict = row.verdict || (
-        confidence >= 76 && borderDiff >= 2 ? "strong" :
-        confidence >= 60 && borderDiff >= 0.5 ? "good" :
-        confidence >= 42 ? "watch" :
-        "avoid"
-      );
+      const evidenceScore = Number.isFinite(Number(row.score))
+        ? Number(row.score)
+        : Math.max(0, borderDiff * rawConfidence);
+      const verdict = row.verdict || classifyEvidenceScore(evidenceScore, rawConfidence);
       return {
         id: row.id || `machine-${row.machineNumber || i}`,
         machineNumber: row.machineNumber || i + 1,
@@ -72,7 +75,7 @@ export function filterMachines(rows, filter = "all") {
 
 export function getGoodMachineCandidates(rows, limit = 5) {
   return normalizeMachineRows(rows)
-    .filter((m) => m.verdict !== "avoid")
+    .filter((m) => ["strong", "good", "watch"].includes(m.verdict))
     .sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
       if (b.confidence !== a.confidence) return b.confidence - a.confidence;

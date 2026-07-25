@@ -9,10 +9,14 @@
 import { machineDB } from "../../machineDB.js";
 import {
   DEFAULT_PRIOR_VARIANCE,
+  estimateDeltaObservation,
   findMachineSpec,
   machineBorder,
   resolveMachineStats,
 } from "../delta/deltaEvidence.js";
+import { calculateStrategyEconomics } from "../../economics.js";
+import { evidenceDayNumber, normalizeEvidenceDate } from "../../evidenceDate.js";
+import { buildPEvidenceBacktest } from "./pevidenceBacktest.js";
 
 export const PE_PARAMS = Object.freeze({
   emaAlpha: 2 / 8,
@@ -24,13 +28,17 @@ export const PE_PARAMS = Object.freeze({
   spatialConsensus: 0.6,
   markovMinTransitions: 5,
   markovDangerThreshold: 0.6,
-  portfolioHours: 8,
+  portfolioHours: 6,
   spinsPerHour: 210,
-  sessionSpins: 2200,
+  sessionSpins: 1260,
   riskReferenceSpins: 2200,
   priorHalfLifeBalls: 7000,
   defaultPriorBalls: 50000,
   graphStepBalls: 500,
+  rentBalls: 250,
+  exRate: 250,
+  nonCashRatio: 0,
+  cashLimit: 0,
   ballValueYen: 4,
 });
 
@@ -102,20 +110,11 @@ function hasExactMachineIdentity(machine, inputName) {
 }
 
 function dateKey(value) {
-  if (!value) return "";
-  const text = String(value).trim().replaceAll("/", "-");
-  const match = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (match) return `${match[1]}-${String(match[2]).padStart(2, "0")}-${String(match[3]).padStart(2, "0")}`;
-  const d = new Date(value);
-  if (!Number.isFinite(d.getTime())) return "";
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return normalizeEvidenceDate(value);
 }
 
 function dayNumber(value) {
-  const key = dateKey(value);
-  if (!key) return NaN;
-  const [y, m, d] = key.split("-").map(Number);
-  return Math.floor(Date.UTC(y, m - 1, d) / 86400000);
+  return evidenceDayNumber(value);
 }
 
 function dayOfWeek(value) {
@@ -139,21 +138,31 @@ function hasExplicitError(row) {
   return Boolean(status) && !["正常", "ok", "OK", "有効"].includes(status);
 }
 
-function hasUsableDeltaValue(row) {
-  const rawDelta = row?.val;
-  return rawDelta !== null
-    && rawDelta !== undefined
-    && rawDelta !== ""
-    && Number.isFinite(Number(rawDelta))
-    && !hasExplicitError(row);
+export function classifyEvidenceScore(score, confidence) {
+  const normalizedConfidence = num(confidence);
+  const confidenceRatio = normalizedConfidence > 1 ? normalizedConfidence / 100 : normalizedConfidence;
+  if (confidenceRatio < 0.2) return "nodata";
+  if (num(score) >= 50) return "strong";
+  if (num(score) >= 10) return "watch";
+  return "weak";
 }
 
-function latestRows(scans = []) {
+function hasUsableDeltaValue(row) {
+  if (row?.val === null || row?.val === undefined || row?.val === "") return false;
+  return Number.isFinite(Number(row.val)) && !hasExplicitError(row);
+}
+
+function latestRows(scans = [], { includeInvalid = false } = {}) {
   const map = new Map();
   for (const scan of scans || []) {
     for (const row of scan?.rows || []) {
-      if (!hasUsableDeltaValue(row)) continue;
-      const date = dateKey(row?.date || scan?.date);
+      if (!includeInvalid && !hasUsableDeltaValue(row)) continue;
+      const scanDate = dateKey(scan?.date);
+      const hasExplicitRowDate = row?.date !== null && row?.date !== undefined && String(row.date).trim() !== "";
+      const rowDate = hasExplicitRowDate ? dateKey(row.date) : "";
+      const dateInvalid = hasExplicitRowDate && (!rowDate || (scanDate && rowDate !== scanDate));
+      if (!includeInvalid && dateInvalid) continue;
+      const date = includeInvalid && dateInvalid ? scanDate : (rowDate || scanDate);
       const machineName = String(row?.machineName || scan?.machineName || "").trim();
       const number = baseMachineNumber(row?.num);
       const store = storeKey(scan, row);
@@ -165,6 +174,8 @@ function latestRows(scans = []) {
         map.set(key, {
           ...row,
           date,
+          dateInvalid,
+          sourceRowDate: hasExplicitRowDate ? String(row.date) : "",
           store,
           storeId: scan?.storeId ?? row?.storeId ?? null,
           storeName: scan?.storeName || row?.storeName || row?.store || "",
@@ -188,57 +199,89 @@ function latestRows(scans = []) {
 function estimateDaily(row, machine, params) {
   const normalSpins = Math.max(0, num(row.normalSpins));
   const totalStarts = Math.max(0, num(row.totalStarts));
-  const rawDelta = row?.val;
-  const deltaBalls = Number(rawDelta);
+  const deltaBalls = hasUsableDeltaValue(row) ? Number(row.val) : 0;
   const border = machineBorder(machine);
   const stats = resolveMachineStats(machine);
-  if (!hasUsableDeltaValue(row)) {
-    return { valid: false, reason: "確定差玉なし", normalSpins, totalStarts, deltaBalls: null, border, stats };
+  if (row?.dateInvalid) {
+    return {
+      valid: false,
+      inactive: false,
+      activityStatus: "invalid",
+      reason: "行の日付がスキャン日と不一致",
+      normalSpins,
+      totalStarts,
+      deltaBalls,
+      border,
+      stats,
+    };
   }
-  if (!(normalSpins > 0) || !(border > 0)) {
-    return { valid: false, normalSpins, totalStarts, deltaBalls, border, stats };
+  const inactive = normalSpins === 0 && totalStarts === 0 && deltaBalls === 0 && hasUsableDeltaValue(row);
+  if (inactive) {
+    return {
+      valid: false,
+      inactive: true,
+      activityStatus: "inactive",
+      reason: "未稼働",
+      normalSpins,
+      totalStarts,
+      deltaBalls,
+      border,
+      stats,
+    };
   }
-  // 平均出玉が不明なのに大当りがある日は、投入玉を推定できず
-  // 回転率が2倍側へ張り付くため除外する（deltaEvidence と同じ基準）。
-  if (totalStarts > 0 && !(stats.avgPayout > 0)) {
-    return { valid: false, reason: "平均出玉なし", normalSpins, totalStarts, deltaBalls, border, stats };
+  if (!(border > 0) || !hasUsableDeltaValue(row)) {
+    return {
+      valid: false,
+      inactive: false,
+      activityStatus: "invalid",
+      reason: !(border > 0)
+        ? "ボーダー未設定"
+        : hasExplicitError(row) ? "読取状態が未確定" : "差玉未読取",
+      normalSpins,
+      totalStarts,
+      deltaBalls,
+      border,
+      stats,
+    };
   }
 
-  let payoutEstimate = 250;
-  let payoutWeight = clamp(totalStarts / 10, 0, 1);
-  if (stats.avgPayout > 0 && totalStarts > 0) {
-    payoutEstimate = Math.max(250, totalStarts * stats.avgPayout - deltaBalls);
-  } else if (totalStarts === 0 && deltaBalls < 0) {
-    // 当りゼロの日は差玉≒投入玉そのもの（最も正確な実測）なので全面的に採用する。
-    payoutEstimate = Math.max(250, Math.abs(deltaBalls));
-    payoutWeight = 1;
+  // 1日の物理観測は Delta エンジンと完全に共通化する。
+  // P-EVIDENCE はこの共通観測へ EMA/CUSUM/事後推定だけを重ねる。
+  const observation = estimateDeltaObservation(row, machine, {
+    graphStepBalls: params.graphStepBalls,
+    minRate: 5,
+    maxRate: 45,
+  });
+  if (!observation.valid) {
+    return {
+      ...observation,
+      inactive: false,
+      activityStatus: "invalid",
+      normalSpins,
+      totalStarts,
+      deltaBalls,
+      border,
+      stats,
+    };
   }
 
-  const spinEstimate = Math.max(250, normalSpins / border * 250);
-  const blended = payoutEstimate * payoutWeight + spinEstimate * (1 - payoutWeight);
-  const estimatedInputBalls = clamp(blended, spinEstimate * 0.5, spinEstimate * 3);
-  const dailyRate = normalSpins / (estimatedInputBalls / 250);
-  if (!(dailyRate >= 5 && dailyRate <= 45)) {
-    return { valid: false, reason: "回転率が現実範囲外", normalSpins, totalStarts, deltaBalls, border, stats };
-  }
-
-  const payoutVariance = totalStarts * (stats.stdDev * 0.25) ** 2;
-  const graphVariance = params.graphStepBalls ** 2 / 12;
-  const derivative = 250 * normalSpins / estimatedInputBalls ** 2;
-  const dailyStandardError = Math.max(0.15, derivative * Math.sqrt(payoutVariance + graphVariance));
+  const estimatedInputBalls = observation.estimatedInputBalls;
+  const dailyRate = observation.observedRotation;
+  const derivative = 250 * normalSpins / Math.max(1, estimatedInputBalls ** 2);
+  const dailyStandardError = Math.max(0.15, derivative * Math.sqrt(Math.max(0, observation.inputVariance)));
   return {
     valid: true,
+    inactive: false,
+    activityStatus: "active",
     normalSpins,
     totalStarts,
     deltaBalls,
     border,
     stats,
-    payoutEstimate,
-    spinEstimate,
-    payoutWeight,
     estimatedInputBalls,
     dailyRate,
     dailyStandardError,
+    inputVariance: observation.inputVariance,
   };
 }
 
@@ -284,7 +327,16 @@ function createProcessedRows(rawRows, customMachines, params) {
     for (const row of list) {
       const e = row.estimate;
       if (!e.valid) {
-        output.push({ ...row, valid: false, ema: ema ?? row.border, cusumUp, cusumDown });
+        output.push({
+          ...row,
+          valid: false,
+          inactive: e.inactive === true,
+          activityStatus: e.activityStatus || "invalid",
+          exclusionReason: e.reason || "計算データ不足",
+          ema: ema ?? row.border,
+          cusumUp,
+          cusumDown,
+        });
         continue;
       }
 
@@ -585,12 +637,24 @@ function buildOpposite(latest, islands) {
 
 function economics(row, params) {
   const rotation = row.predictedRotation;
-  const border = row.border;
-  const unitPrice = rotation > 0 && border > 0 ? 1000 / border - 1000 / rotation : 0;
+  const equivalentBorder = row.border;
+  const exchangeRate = num(params.exRate) > 0
+    ? num(params.exRate)
+    : (num(params.ballValueYen) > 0 ? 1000 / num(params.ballValueYen) : 250);
+  const economicsOptions = {
+    equivalentBorder,
+    rentBalls: params.rentBalls,
+    exRate: exchangeRate,
+    nonCashRatio: params.nonCashRatio,
+  };
+  const centerEconomics = calculateStrategyEconomics({ ...economicsOptions, rotation });
+  const lowEconomics = calculateStrategyEconomics({ ...economicsOptions, rotation: row.predictedLow });
+  const highEconomics = calculateStrategyEconomics({ ...economicsOptions, rotation: row.predictedHigh });
+  const unitPrice = centerEconomics.evPerRot;
   const hourly = unitPrice * params.spinsPerHour;
   const daily = unitPrice * params.sessionSpins;
-  const lowUnit = row.predictedLow > 0 ? 1000 / border - 1000 / row.predictedLow : 0;
-  const highUnit = row.predictedHigh > 0 ? 1000 / border - 1000 / row.predictedHigh : 0;
+  const lowUnit = row.predictedLow > 0 ? lowEconomics.evPerRot : null;
+  const highUnit = row.predictedHigh > 0 ? highEconomics.evPerRot : null;
   // 収支プラス見込みには、機種マスタで検証済みの標準偏差だけを使う。
   // resolveMachineStats() の補完値は差玉から回転率を推定する内部用途に限り、
   // 利用者へ見せる勝率へは流用しない。
@@ -635,12 +699,20 @@ function economics(row, params) {
     : null;
   return {
     unitPrice: round(unitPrice),
+    equivalentBorder: round(equivalentBorder),
+    effectiveBorder: round(centerEconomics.effectiveBorder),
+    economicAssumptions: {
+      rentBalls: centerEconomics.rentBalls,
+      exRate: centerEconomics.exRate,
+      nonCashRatio: centerEconomics.nonCashRatio,
+      cashRatio: centerEconomics.cashRatio,
+    },
     hourly: Math.round(hourly),
-    hourlyLow: Math.round(lowUnit * params.spinsPerHour),
-    hourlyHigh: Math.round(highUnit * params.spinsPerHour),
+    hourlyLow: lowUnit == null ? null : Math.round(lowUnit * params.spinsPerHour),
+    hourlyHigh: highUnit == null ? null : Math.round(highUnit * params.spinsPerHour),
     daily: Math.round(daily),
-    dailyLow: Math.round(lowUnit * params.sessionSpins),
-    dailyHigh: Math.round(highUnit * params.sessionSpins),
+    dailyLow: lowUnit == null ? null : Math.round(lowUnit * params.sessionSpins),
+    dailyHigh: highUnit == null ? null : Math.round(highUnit * params.sessionSpins),
     hourlyRisk: hourlyRisk == null ? null : Math.round(hourlyRisk),
     dailyRisk: sessionRisk == null ? null : Math.round(sessionRisk),
     winRate,
@@ -694,21 +766,33 @@ function buildAIProfile(rows) {
 
 function buildIslandStats(latest) {
   const groups = new Map();
-  for (const row of latest.filter((item) => item.valid)) {
+  for (const row of latest) {
     const key = islandKey(row);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(row);
   }
   return [...groups.entries()].map(([key, rows]) => {
-    const totalInput = rows.reduce((sum, row) => sum + row.estimatedInputBalls, 0);
-    const totalSpins = rows.reduce((sum, row) => sum + row.estimate.normalSpins, 0);
+    const activeRows = rows.filter((row) => row.valid);
+    const inactiveRows = rows.filter((row) => row.inactive || row.activityStatus === "inactive");
+    const invalidRows = rows.filter((row) => !row.valid && !inactiveRows.includes(row));
+    const totalInput = activeRows.reduce((sum, row) => sum + row.estimatedInputBalls, 0);
+    const totalSpins = activeRows.reduce((sum, row) => sum + row.estimate.normalSpins, 0);
+    const scannedMachines = rows.length;
+    const inactiveRate = scannedMachines ? inactiveRows.length / scannedMachines : 0;
     return {
       key,
       store: rows[0]?.store || "",
       island: rows[0]?.island || `${rows[0]?.machineName || ""}島`,
       machineName: rows[0]?.machineName || "",
       averageRotation: totalInput > 0 ? totalSpins / (totalInput / 250) : 0,
-      activeMachines: rows.length,
+      scannedMachines,
+      activeMachines: activeRows.length,
+      inactiveMachines: inactiveRows.length,
+      invalidMachines: invalidRows.length,
+      inactiveRate,
+      activitySignal: inactiveRows.length > 0
+        ? (inactiveRate >= 0.6 ? "島の未稼働が多い・調整前兆候補" : "一部未稼働")
+        : invalidRows.length > 0 ? "読取除外あり" : "通常稼働",
     };
   });
 }
@@ -716,7 +800,22 @@ function buildIslandStats(latest) {
 function applyDecision(latest, profiles, markov, spatial, opposite, params) {
   const profileMap = new Map(profiles.map((item) => [item.key, item]));
   return latest.map((row) => {
-    if (!row.valid) return { ...row, nailAlert: "データ除外", score: 0, verdict: "nodata" };
+    if (!row.valid) {
+      return {
+        ...row,
+        tightProbability: null,
+        tightEvidence: {
+          status: "unavailable",
+          label: row.inactive ? "未稼働のため算定待ち" : "有効データ不足のため算定待ち",
+          successes: 0,
+          total: 0,
+          minRequired: params.markovMinTransitions,
+        },
+        nailAlert: row.inactive ? "未稼働" : "データ除外",
+        score: 0,
+        verdict: "nodata",
+      };
+    }
     const profile = profileMap.get(profileKey(row));
     // tightProbability は「翌日に締められる確率」なので、曜日プロファイルも
     // 今日ではなく翌日の曜日（締めが起きる日）で参照する。
@@ -726,13 +825,40 @@ function applyDecision(latest, profiles, markov, spatial, opposite, params) {
     const stateGood = row.ema >= row.border + 0.5;
     const totalA = markovProfile ? markovProfile.counts.AA + markovProfile.counts.AB : 0;
     const totalB = markovProfile ? markovProfile.counts.BA + markovProfile.counts.BB : 0;
-    let tightProbability = stateGood
-      ? (totalA >= params.markovMinTransitions ? markovProfile.goodToTight : 0.2)
-      : (totalB >= params.markovMinTransitions ? markovProfile.badToBad : 0.5);
-    if (row.event && markovProfile?.counts.eventTotal >= 3) tightProbability = Math.max(tightProbability, markovProfile.eventNextTight * 0.8);
+    const transitionTotal = stateGood ? totalA : totalB;
+    const transitionTight = stateGood
+      ? num(markovProfile?.counts?.AB)
+      : num(markovProfile?.counts?.BB);
+    const usesObservedTransition = transitionTotal >= params.markovMinTransitions;
+    const baseProbability = stateGood
+      ? (usesObservedTransition ? markovProfile.goodToTight : 0.2)
+      : (usesObservedTransition ? markovProfile.badToBad : 0.5);
+    let tightProbability = baseProbability;
+    const eventApplied = Boolean(row.event && markovProfile?.counts.eventTotal >= 3);
+    if (eventApplied) tightProbability = Math.max(tightProbability, markovProfile.eventNextTight * 0.8);
     // 「現在が日曜」だけが翌日=月曜。元GASの土曜補正は適用しない。
     if (dayOfWeek(row.date) === 0) tightProbability = Math.min(1, tightProbability * 1.2);
-    if (dowProfile?.enough) tightProbability = clamp(tightProbability * 0.75 + dowProfile.rate * 0.25, 0, 1);
+    const weekdayApplied = Boolean(dowProfile?.enough);
+    if (weekdayApplied) tightProbability = clamp(tightProbability * 0.75 + dowProfile.rate * 0.25, 0, 1);
+    const tightEvidence = {
+      status: usesObservedTransition ? "observed" : "prior",
+      currentState: stateGood ? "good" : "bad",
+      transitionLabel: stateGood ? "良→締" : "締→締",
+      successes: transitionTight,
+      total: transitionTotal,
+      minRequired: params.markovMinTransitions,
+      baseProbability,
+      weekday: {
+        successes: num(dowProfile?.tight),
+        total: num(dowProfile?.total),
+        applied: weekdayApplied,
+      },
+      event: {
+        successes: num(markovProfile?.counts?.eventTight),
+        total: num(markovProfile?.counts?.eventTotal),
+        applied: eventApplied,
+      },
+    };
 
     const spatialInfo = spatial.get(historyKey(row)) || { code: "none", label: "隣接情報なし" };
     const oppositeInfo = opposite.get(historyKey(row)) || { code: "none", label: "対面情報なし" };
@@ -756,7 +882,8 @@ function applyDecision(latest, profiles, markov, spatial, opposite, params) {
     else if (row.cusumDown >= row.cusumThreshold * 0.6) nailAlert = "締め傾向";
     else if (row.cusumUp >= row.cusumThreshold * 0.6) nailAlert = "開け傾向";
 
-    const borderDifference = row.predictedRotation - row.border;
+    const finance = economics(row, params);
+    const borderDifference = row.predictedRotation - finance.effectiveBorder;
     const baseScore = borderDifference * row.confidence * 100;
     // 空間・対面・曜日・マルコフは同じ現象を重ねて見るため、合計補正を±15点に制限する。
     let contextAdjustment = 0;
@@ -766,13 +893,13 @@ function applyDecision(latest, profiles, markov, spatial, opposite, params) {
     if (row.event && borderDifference > 0) contextAdjustment += 3;
     contextAdjustment = clamp(contextAdjustment, -15, 15);
     const score = Math.max(0, baseScore + contextAdjustment);
-    const verdict = row.confidence < 0.2 ? "nodata" : score >= 50 ? "strong" : score >= 10 ? "watch" : "weak";
-    const finance = economics(row, params);
+    const verdict = classifyEvidenceScore(score, row.confidence);
     return {
       ...row,
       spatial: spatialInfo,
       opposite: oppositeInfo,
       tightProbability,
+      tightEvidence,
       weekdayTightRate: dowProfile?.rate || 0,
       weekdaySampleCount: dowProfile?.total || 0,
       nailAlert,
@@ -786,34 +913,135 @@ function applyDecision(latest, profiles, markov, spatial, opposite, params) {
   });
 }
 
-function buildPortfolio(rows, params) {
-  // 信頼度不足（nodata）の台を時間配分へ推奨しない。strong / watch のみ対象。
-  const candidates = rows
-    .filter((row) => row.valid && row.hourly > 0 && row.hourlyRisk > 0 && (row.verdict === "strong" || row.verdict === "watch") && !row.nailAlert.includes("締め"))
-    .sort((a, b) => b.sharpe - a.sharpe)
-    .slice(0, 10);
-  const totalSharpe = candidates.reduce((sum, row) => sum + Math.max(0, row.sharpe), 0);
+function tightProbabilityOf(row) {
+  if (row?.tightProbability != null && row.tightProbability !== "" && Number.isFinite(Number(row.tightProbability))) {
+    return clamp(Number(row.tightProbability), 0, 1);
+  }
+  if (row?.tomorrowTight != null && row.tomorrowTight !== "" && Number.isFinite(Number(row.tomorrowTight))) {
+    return clamp(Number(row.tomorrowTight) / 100, 0, 1);
+  }
+  return null;
+}
+
+export function priorityScoreOf(row) {
+  const baseScore = num(row?.score ?? row?.goodMachineScore);
+  const tightProbability = tightProbabilityOf(row);
+  const nailTight = String(row?.nailAlert || "").includes("締め");
+  const tightPenalty = nailTight ? 100 : tightProbability == null ? 12 : tightProbability * 20;
+  return baseScore - tightPenalty;
+}
+
+export function rankStrategyCandidates(rows = []) {
+  return [...rows].sort((a, b) =>
+    priorityScoreOf(b) - priorityScoreOf(a)
+    || num(b?.score ?? b?.goodMachineScore) - num(a?.score ?? a?.goodMachineScore)
+    || num(b?.confidence) - num(a?.confidence)
+    || String(a?.machineName || "").localeCompare(String(b?.machineName || ""))
+    || num(a?.num ?? a?.number) - num(b?.num ?? b?.number)
+  );
+}
+
+export function buildPortfolioPlan(rows = [], options = {}) {
+  const plannedHours = Math.max(0, num(options.plannedHours ?? options.portfolioHours, 6));
+  const maxCandidates = Math.max(1, Math.round(num(options.maxCandidates, 10)));
+  const maxTightProbability = clamp(num(options.maxTightProbability, 0.6), 0, 1);
+  const candidates = rankStrategyCandidates(rows.filter((row) => {
+    const hourly = num(row?.hourly ?? row?.evPerHour);
+    const hourlyRisk = num(row?.hourlyRisk);
+    const tightProbability = tightProbabilityOf(row);
+    const valid = row?.valid !== false
+      && row?.actionable !== false
+      && row?.recommendationStatus !== "reference";
+    return valid
+      && hourly > 0
+      && hourlyRisk > 0
+      && num(row?.sharpe) > 0
+      && (row?.verdict === "strong" || row?.verdict === "watch")
+      && !String(row?.nailAlert || "").includes("締め")
+      && (tightProbability == null || tightProbability < maxTightProbability);
+  })).slice(0, maxCandidates);
+  if (!(plannedHours > 0) || !candidates.length) {
+    return { plan: [], totalHours: 0, expectedProfit: 0, projectedCash: 0 };
+  }
+
+  const totalSharpe = candidates.reduce((sum, row) => sum + Math.max(0, num(row.sharpe)), 0);
+  const weights = candidates.map((row) =>
+    totalSharpe > 0 ? Math.max(0, num(row.sharpe)) / totalSharpe : 1 / candidates.length
+  );
+  const rentBalls = Math.max(1, num(options.rentBalls, 250));
+  const nonCashRatio = clamp(num(options.nonCashRatio), 0, 1);
+  const cashRatio = 1 - nonCashRatio;
+  const spinsPerHour = Math.max(0, num(options.spinsPerHour, 210));
+  const cashBurnPerHour = candidates.map((row) => {
+    const rotation = num(row?.predictedRotation ?? row?.rot);
+    return rotation > 0
+      ? (spinsPerHour / rotation) * (250 / rentBalls) * 1000 * cashRatio
+      : 0;
+  });
+  const cashLimit = Math.max(0, num(options.cashLimit));
+  const rawHours = weights.map((weight) => plannedHours * weight);
+  const rawCash = rawHours.reduce((sum, hours, index) => sum + hours * cashBurnPerHour[index], 0);
+  const cashScale = cashLimit > 0 && rawCash > cashLimit ? cashLimit / rawCash : 1;
+  const targetTenths = rawHours.map((hours) => hours * cashScale * 10);
+  const allocatedTenths = targetTenths.map(Math.floor);
+  let remainingTenths = Math.max(
+    0,
+    Math.floor(plannedHours * 10 + 1e-9) - allocatedTenths.reduce((sum, value) => sum + value, 0),
+  );
+  let projectedCash = allocatedTenths.reduce(
+    (sum, tenths, index) => sum + tenths / 10 * cashBurnPerHour[index],
+    0,
+  );
+  const remainderOrder = [...targetTenths.keys()].sort((a, b) =>
+    (targetTenths[b] - allocatedTenths[b]) - (targetTenths[a] - allocatedTenths[a])
+    || priorityScoreOf(candidates[b]) - priorityScoreOf(candidates[a])
+  );
+  while (remainingTenths > 0) {
+    let assigned = false;
+    for (const index of remainderOrder) {
+      const nextCash = projectedCash + cashBurnPerHour[index] / 10;
+      if (cashLimit > 0 && nextCash > cashLimit + 1e-9) continue;
+      allocatedTenths[index] += 1;
+      projectedCash = nextCash;
+      remainingTenths -= 1;
+      assigned = true;
+      if (remainingTenths <= 0) break;
+    }
+    if (!assigned) break;
+  }
   let cumulativeExpectedProfit = 0;
   const plan = candidates.map((row, index) => {
-    const weight = totalSharpe > 0 ? Math.max(0, row.sharpe) / totalSharpe : 1 / candidates.length;
-    const hours = round(params.portfolioHours * weight, 1);
-    const expectedProfit = Math.round(row.hourly * hours);
+    const hours = allocatedTenths[index] / 10;
+    if (!(hours > 0)) return null;
+    const hourly = num(row?.hourly ?? row?.evPerHour);
+    const expectedProfit = Math.round(hourly * hours);
     cumulativeExpectedProfit += expectedProfit;
     return {
-      rank: index + 1,
-      number: row.num,
-      machineName: row.machineName,
-      predictedRotation: row.predictedRotation,
-      hourly: row.hourly,
+      rank: 0,
+      number: row?.num ?? row?.number,
+      machineName: row?.machineName || "",
+      predictedRotation: num(row?.predictedRotation ?? row?.rot),
+      hourly,
       hours,
       expectedProfit,
       cumulativeExpectedProfit,
-      risk: Math.round(row.hourlyRisk * Math.sqrt(Math.max(0, hours))),
-      sharpe: row.sharpe,
-      action: index === 0 ? "最優先" : hours >= 1.5 ? "巡回候補" : "予備候補",
+      projectedCash: Math.round(hours * cashBurnPerHour[index]),
+      risk: Math.round(num(row?.hourlyRisk) * Math.sqrt(hours)),
+      sharpe: num(row?.sharpe),
+      priorityScore: round(priorityScoreOf(row)),
+      action: "",
     };
-  });
-  return { plan, totalHours: round(plan.reduce((sum, item) => sum + item.hours, 0), 1), expectedProfit: cumulativeExpectedProfit };
+  }).filter(Boolean).map((item, index) => ({
+    ...item,
+    rank: index + 1,
+    action: index === 0 ? "最優先" : item.hours >= 1.5 ? "巡回候補" : "予備候補",
+  }));
+  return {
+    plan,
+    totalHours: round(plan.reduce((sum, item) => sum + item.hours, 0), 1),
+    expectedProfit: cumulativeExpectedProfit,
+    projectedCash: Math.round(plan.reduce((sum, item) => sum + item.projectedCash, 0)),
+  };
 }
 
 function buildNextMap(rows) {
@@ -830,8 +1058,10 @@ function buildNextMap(rows) {
 
 export function buildPEvidenceAnalytics({ scans = [], customMachines = [], islands = [], params: overrides = {} } = {}) {
   const params = { ...PE_PARAMS, ...overrides };
-  const rawRows = latestRows(scans);
-  const processed = createProcessedRows(rawRows, customMachines, params);
+  const statusSourceRows = latestRows(scans, { includeInvalid: true });
+  const rawRows = statusSourceRows.filter((row) => hasUsableDeltaValue(row) && !row.dateInvalid);
+  const processed = createProcessedRows(statusSourceRows, customMachines, params);
+  const backtest = buildPEvidenceBacktest(processed);
   const storeProfiles = buildStoreProfiles(processed);
   const markov = buildMarkov(processed, params);
   const latest = latestByHistory(processed);
@@ -839,24 +1069,34 @@ export function buildPEvidenceAnalytics({ scans = [], customMachines = [], islan
   const opposite = buildOpposite(latest, islands);
   const decisionRows = applyDecision(latest, storeProfiles, markov, spatial, opposite, params);
   const aiProfile = buildAIProfile(processed);
-  const islandStats = buildIslandStats(latest);
   // 「今日の配分」「明日の地図」は最新スキャン日のデータがある台だけを対象にし、
   // 数日前が最終データの台の古い予測を今日の推奨として出さない。
-  const validDays = decisionRows.filter((row) => row.valid).map((row) => dayNumber(row.date));
-  const currentDay = validDays.length ? Math.max(...validDays) : NaN;
+  // 全台未稼働の日も「最新日」として扱い、前日の候補を復活させない。
+  const scanDays = statusSourceRows.map((row) => dayNumber(row.date)).filter(Number.isFinite);
+  const currentDay = scanDays.length ? Math.max(...scanDays) : NaN;
   const currentRows = Number.isFinite(currentDay)
     ? decisionRows.filter((row) => dayNumber(row.date) === currentDay)
     : [];
-  const portfolio = buildPortfolio(currentRows, params);
-  const nextMap = buildNextMap(currentRows);
+  const islandStats = buildIslandStats(currentRows);
+  const portfolio = buildPortfolioPlan(currentRows, {
+    plannedHours: params.portfolioHours,
+    cashLimit: params.cashLimit,
+    spinsPerHour: params.spinsPerHour,
+    rentBalls: params.rentBalls,
+    nonCashRatio: params.nonCashRatio,
+  });
+  const nextMap = buildNextMap(currentRows.filter((row) => row.valid));
   return {
     params,
     rawRowCount: rawRows.length,
     historyRows: processed,
-    latestRows: decisionRows,
+    latestRows: decisionRows.filter(hasUsableDeltaValue),
+    statusRows: decisionRows,
+    currentRows,
     storeProfiles,
     markovProfiles: markov.profiles,
     aiProfile,
+    backtest,
     islandStats,
     portfolio,
     nextMap,

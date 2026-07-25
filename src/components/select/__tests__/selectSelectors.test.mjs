@@ -32,6 +32,16 @@ test("confidence は 0-100 に丸める", () => {
   assert.strictEqual(rows[0].confidence, 100);
 });
 
+test("verdict欠損時もP-EVIDENCEと同じscore境界を使う", () => {
+  const rows = normalizeMachineRows([
+    { machineNumber: 1, confidence: 25, borderDiff: 0.6 },
+    { machineNumber: 2, confidence: 100, borderDiff: 0.6 },
+    { machineNumber: 3, confidence: 19, borderDiff: 10 },
+    { machineNumber: 4, confidence: 19.9, borderDiff: 10, score: 999 },
+  ]);
+  assert.deepStrictEqual(rows.map((row) => row.verdict), ["watch", "strong", "nodata", "nodata"]);
+});
+
 test("良台候補フィルタは strong/good のみ", () => {
   const rows = [
     { machineNumber: 1, confidence: 90, borderDiff: 3, verdict: "strong" },

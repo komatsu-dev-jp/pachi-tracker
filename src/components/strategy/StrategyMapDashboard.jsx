@@ -6,6 +6,7 @@ import {
   resolveStrategyPlanHandoff,
 } from "./strategyMapData";
 import { localDateStr } from "../../constants";
+import { estimateStrategyNonCashRatio } from "../../economics";
 import "./StrategyMapDashboard.css";
 import {
   P_EVIDENCE_DEMO_HALL_MAPS,
@@ -67,6 +68,63 @@ function isFiniteValue(value) {
   return value != null && Number.isFinite(Number(value));
 }
 
+function nonCashSourceLabel(source) {
+  if (source === "exact-machine-table") return "同じ台の実戦履歴";
+  if (source === "store") return "店舗の実戦履歴";
+  return "履歴なし（現金のみ）";
+}
+
+function tightEvidenceText(evidence) {
+  if (!evidence || evidence.status === "unavailable") {
+    return evidence?.label || "有効データ不足のため算定待ち";
+  }
+  const transition = `${evidence.transitionLabel || "状態遷移"} ${fmt(evidence.successes)}/${fmt(evidence.total)}件`;
+  const basis = evidence.status === "observed"
+    ? "実績を使用"
+    : `履歴不足（最低${fmt(evidence.minRequired)}件）のため事前値を使用`;
+  const extras = [];
+  if (evidence.weekday?.total > 0) {
+    extras.push(`同曜日 ${fmt(evidence.weekday.successes)}/${fmt(evidence.weekday.total)}件${evidence.weekday.applied ? "を反映" : ""}`);
+  }
+  if (evidence.event?.total > 0) {
+    extras.push(`イベント翌日 ${fmt(evidence.event.successes)}/${fmt(evidence.event.total)}件${evidence.event.applied ? "を反映" : ""}`);
+  }
+  return [transition, basis, ...extras].join(" ／ ");
+}
+
+function CashLimitGuide({ guide }) {
+  if (!guide || guide.status === "unset") return null;
+  const stopped = guide.shouldStop;
+  const statusText = guide.status === "over_limit"
+    ? `上限を${fmt(guide.overBy)}円超過`
+    : guide.status === "limit_reached"
+      ? "現金上限に到達"
+      : `現金残り ${fmt(guide.remainingCash)}円`;
+  const projection = guide.calculationStatus === "ready" && guide.remainingSpins != null
+    ? `約${fmt(guide.remainingSpins)}回・${fmt(guide.remainingHours, 1)}時間`
+    : "回転数の実測後に残り回転を算定";
+  return (
+    <div style={{
+      margin: "9px 0",
+      padding: "10px 11px",
+      borderRadius: 12,
+      background: stopped
+        ? "color-mix(in srgb, var(--sm-red) 8%, var(--sm-bg))"
+        : "color-mix(in srgb, var(--sm-yellow) 7%, var(--sm-bg))",
+      border: `1px solid color-mix(in srgb, ${stopped ? P.red : P.yellow} 38%, ${P.line})`,
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 900, color: stopped ? P.red : P.yellow }}>
+        現金上限ガイド：{statusText}
+      </div>
+      <div style={{ marginTop: 4, fontSize: 10, lineHeight: 1.55, color: P.subHi }}>
+        {stopped
+          ? "現金追加は停止目安です。"
+          : `現金遊技なら残り ${projection}。`}
+        {!guide.usesCashNow && " 現在は持ち玉・貯玉遊技のため、現金残額は減りません。"}
+      </div>
+    </div>
+  );
+}
 function compactDate(value, includeYear = false) {
   const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return "";
@@ -94,7 +152,9 @@ const PROFIT_CHANCE_PENDING = {
   "model-unverified": "正式型式の確認待ち",
   "stddev-unverified": "ブレ幅の確認待ち",
   "plan-missing": "予定時間の設定待ち",
+  "plan-limit-exceeded": "現金上限との調整待ち",
   "rotation-range-missing": "予測回転率の幅待ち",
+  "rotation-range-too-wide": "予測幅の安定待ち",
   "low-confidence": "店舗データ不足",
   "data-missing": "店舗データ待ち",
   "stale-scan": "前日または本日の解析待ち",
@@ -405,8 +465,17 @@ function SelectedOutcomeSection({ machine, islandAvgRot, plan }) {
             <span><strong>{plan.sourceLabel}</strong><b>{plan.styleLabel}</b></span>
             <span>{plan.isSkip ? "本日は稼働しない設定" : `${fmt(plan.plannedHours, 1)}時間・約${fmt(plan.sessionSpins)}回転`}</span>
             <span>現金上限 {plan.cashLimit > 0 ? `${fmt(plan.cashLimit)}円` : "未設定"}</span>
-            <span>交換目安 1玉{fmt(plan.ballValueYen, 2)}円</span>
-            <em>現金上限による途中終了は、収支プラス見込みに含みません</em>
+            <span>貸玉 {fmt(plan.rentBalls)}玉/千円・交換 {fmt(plan.exRate)}玉/千円</span>
+            <span>持ち玉・貯玉見込み {fmt(plan.nonCashRatio * 100)}%</span>
+            <em>
+              換金前提：{nonCashSourceLabel(plan.nonCashRatioSource)}
+              {plan.nonCashSampleK > 0 ? `（${fmt(plan.nonCashSampleK, 1)}K分）` : ""}
+              。1玉{fmt(plan.ballValueYen, 2)}円で計算。
+              <br />
+              {plan.cashLimit > 0
+                ? "現金上限を超える下振れ予測は、金額を算定待ちにします"
+                : "現金上限を設定すると、上限を超える下振れ予測を表示しません"}
+            </em>
           </div>
         )}
         <SelectedDetailCard machine={machine} islandAvgRot={islandAvgRot} plan={plan} />
@@ -788,6 +857,13 @@ function RevenueOutlook({ machine, plan }) {
     coverage.inputBalls > 0 ? `推定投入 ${fmt(coverage.inputBalls)}玉` : "",
   ].filter(Boolean).join(" ／ ");
   const lowerBoundPending = machine.revenueRangeStatus === "lower-bound-missing";
+  const lowerBoundPendingText = {
+    "non-positive": "悪い側の予測が「1,000円あたり0回」まで広がっているためです。データが増えると更新されます。",
+    "invalid-estimate": "悪い側の予測を安定して計算できないためです。データが増えると更新されます。",
+    "low-confidence": "回転率を金額へ換算できるだけの確度に達していないためです。データが増えると更新されます。",
+    unstable: "悪い側の回転率が中心予測と収支ゼロの目安の両方に対して半分以下まで広がり、少しの差で金額が急増するためです。データが増えると更新されます。",
+    "over-budget": "設定した現金上限を超えて打ち続ける前提になるためです。予定を守れる範囲では金額を確定できません。",
+  }[machine.revenueRangeReason] || "悪い側の予測幅が大きく、金額へ安定して換算できないためです。";
   return (
     <div className="strategy-revenue-card">
       <div className="strategy-revenue-head">
@@ -816,7 +892,7 @@ function RevenueOutlook({ machine, plan }) {
       {lowerBoundPending && (
         <div className="strategy-revenue-pending-note">
           <strong>下振れは算定待ち</strong>
-          <span>悪い側の予測が「1,000円あたり0回」まで広がっているためです。データが増えると更新されます。</span>
+          <span>{lowerBoundPendingText}</span>
         </div>
       )}
       <div className="strategy-luck-risk">
@@ -912,12 +988,15 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
             </div>
           )}
 
+          <CashLimitGuide guide={machine.cashLimitGuide} />
+
           <div className="strategy-detail-main">
             <div className="strategy-detail-primary">
               <DetailMetric label="推定回転率" value={fmt(machine.rot, 1)} unit="/k" color={v.color} />
               <DetailMetric label="確信度" value={fmt(machine.confidence)} unit="%" color={P.yellow} />
               <DetailMetric label="島平均との差" value={signed(diff, 1)} unit="/k" color={diff >= 0 ? P.green : P.red} />
-              <DetailMetric label="ボーダー" value={fmt(machine.border, 1)} unit="/k" color={P.subHi} />
+              <DetailMetric label="等価ボーダー" value={fmt(machine.equivalentBorder, 1)} unit="/k" color={P.subHi} />
+              <DetailMetric label="実質ボーダー" value={fmt(machine.border, 1)} unit="/k" color={P.cyan} />
             </div>
             <div className="strategy-detail-chart">
               <div style={{ fontSize: 9, color: P.sub, fontWeight: 700, marginBottom: 4 }}>
@@ -934,9 +1013,9 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
             <DetailMetric label="EMA（最近重視）" value={fmt(machine.ema, 1)} unit="/k" color={P.cyan} />
             <DetailMetric
               label={machine.recommendationStatus === "reference" ? "締め確率" : `${machine.predictionDayLabel}締め確率`}
-              value={machine.recommendationStatus === "reference" ? "—" : fmt(machine.tomorrowTight)}
-              unit={machine.recommendationStatus === "reference" ? "" : "%"}
-              color={machine.tomorrowTight >= 60 ? P.red : P.yellow}
+              value={machine.recommendationStatus === "reference" || !isFiniteValue(machine.tomorrowTight) ? "算定待ち" : fmt(machine.tomorrowTight)}
+              unit={machine.recommendationStatus === "reference" || !isFiniteValue(machine.tomorrowTight) ? "" : "%"}
+              color={isFiniteValue(machine.tomorrowTight) && machine.tomorrowTight >= 60 ? P.red : P.yellow}
             />
             <DetailMetric label="玉単価差" value={machine.unitPriceAvailable ? signed(machine.unitPrice, 2) : "—"} unit={machine.unitPriceAvailable ? "円/回" : ""} color={machine.unitPriceAvailable && machine.unitPrice < 0 ? P.red : P.green} />
             <DetailMetric label="シャープ比" value={fmt(machine.sharpe, 2)} unit="" color={P.subHi} />
@@ -944,6 +1023,9 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
           <div style={{ marginTop: 7, fontSize: 9, color: P.sub }}>
             予測データ：{(machine.evidenceSources || []).map((source) => source === "delta" ? "差玉" : source === "archive" ? "完了実戦" : "現在実戦").join("＋") || "機種基準"}
             {machine.rotationEstimate?.inputBalls > 0 ? ` ／ 推定投入 ${fmt(machine.rotationEstimate.inputBalls)}玉` : ""}
+          </div>
+          <div style={{ marginTop: 5, fontSize: 9, color: P.subHi, lineHeight: 1.55 }}>
+            締め確率の根拠：{tightEvidenceText(machine.tightEvidence)}
           </div>
 
           <div style={{ marginTop: 9, padding: "10px 11px", borderRadius: 12, background: P.bg, border: `1px solid ${P.line}` }}>
@@ -963,6 +1045,14 @@ function LearningSummary({ data, selected }) {
   if (!data.analytics || !selected) return null;
   const overall = data.aiProfile?.overall || {};
   const island = data.islandStats?.find((item) => item.island === data.islands.find((x) => x.id === selected.islandId)?.name);
+  const backtest = data.analytics?.backtest || null;
+  const selectedBacktest = backtest?.byKeyList?.find((item) =>
+    String(item.machineName) === String(selected.machineName)
+    && String(item.num) === String(selected.num)
+  ) || null;
+  const calibration = backtest?.calibrationCandidates?.find((item) =>
+    String(item.machineName) === String(selected.machineName)
+  ) || null;
   const profileCounts = (data.aiProfile?.profiles || []).reduce((acc, profile) => {
     acc[profile.type] = (acc[profile.type] || 0) + 1;
     return acc;
@@ -995,6 +1085,52 @@ function LearningSummary({ data, selected }) {
           <div style={{ marginTop: 7, fontSize: 9, lineHeight: 1.6, color: P.sub }}>
             CUSUM（小さなズレの貯金） 開け {fmt(selected.cusumUp, 1)} ／ 締め {fmt(selected.cusumDown, 1)}。対面はホールマップで明示設定した島だけを対応します。
           </div>
+          {island && (
+            <div style={{ marginTop: 5, fontSize: 9, lineHeight: 1.6, color: island.inactiveMachines > 0 ? P.yellow : P.subHi }}>
+              読取 {fmt(island.scannedMachines)}台 ／ 稼働 {fmt(island.activeMachines)}台 ／ 未稼働 {fmt(island.inactiveMachines)}台
+              {island.invalidMachines > 0 ? ` ／ 除外 ${fmt(island.invalidMachines)}台` : ""}
+              {island.activitySignal ? `。${island.activitySignal}` : ""}
+            </div>
+          )}
+        </div>
+        <div style={{ padding: 12, borderRadius: 16, background: P.card, border: `1px solid ${P.line}`, gridColumn: "1 / -1" }}>
+          <div style={{ fontSize: 10, color: P.sub }}>翌日予測の答え合わせ</div>
+          <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div>
+              <div style={{ fontSize: 9, color: P.subHi }}>全体</div>
+              <div style={{ marginTop: 3, fontSize: 12, fontWeight: 900, color: P.cyan, fontFamily: MONO }}>
+                {backtest?.overall?.n > 0 ? `平均ズレ ${fmt(backtest.overall.mae, 2)}/k` : "検証待ち"}
+              </div>
+              {backtest?.overall?.n > 0 && (
+                <div style={{ marginTop: 3, fontSize: 8, color: P.sub }}>
+                  {fmt(backtest.overall.n)}件・偏り {signed(backtest.overall.bias, 2)}/k・予測範囲内 {fmt(backtest.overall.coverage95 * 100)}%
+                </div>
+              )}
+            </div>
+            <div>
+              <div style={{ fontSize: 9, color: P.subHi }}>台{selected.num}</div>
+              <div style={{ marginTop: 3, fontSize: 12, fontWeight: 900, color: P.yellow, fontFamily: MONO }}>
+                {selectedBacktest?.n > 0 ? `平均ズレ ${fmt(selectedBacktest.mae, 2)}/k` : "検証待ち"}
+              </div>
+              {selectedBacktest?.n > 0 && (
+                <div style={{ marginTop: 3, fontSize: 8, color: P.sub }}>
+                  {fmt(selectedBacktest.n)}件・偏り {signed(selectedBacktest.bias, 2)}/k・予測範囲内 {fmt(selectedBacktest.coverage95 * 100)}%
+                </div>
+              )}
+            </div>
+          </div>
+          <div style={{ marginTop: 7, fontSize: 8, color: P.sub, lineHeight: 1.5 }}>
+            平均ズレは、前日に予測した回転率と翌日の実績が平均で何回/Kずれたかです。偏りがプラスなら高めの予測です。
+          </div>
+          {calibration && (
+            <div style={{ marginTop: 6, fontSize: 8, color: calibration.eligible ? P.cyan : P.subHi, lineHeight: 1.5 }}>
+              {calibration.eligible && calibration.recommendedPriorBalls != null
+                ? `学習係数の校正候補：${fmt(calibration.currentPriorBalls)}玉 → ${fmt(calibration.recommendedPriorBalls)}玉（提案のみ・自動変更なし）`
+                : calibration.reason === "missing-current-prior"
+                  ? "学習係数の校正待ち：現在の係数を確認できません。"
+                  : `学習係数の校正まであと${fmt(Math.max(0, Number(calibration.minRequired || 20) - Number(calibration.n || 0)))}件です。`}
+            </div>
+          )}
         </div>
       </div>
     </Section>
@@ -1047,18 +1183,18 @@ export default function StrategyMapDashboard({ S, onBack }) {
   const clearStrategyPlanContext = S?.setStrategyPlanContext;
   const playingNum = S?.sessionStarted ? S?.machineNum : null;
   const isDemo = import.meta.env.DEV && new URLSearchParams(window.location.search).get("pevidenceDemo") === "1";
-  const savedScans = Array.isArray(S?.deltaScans) ? S.deltaScans : EMPTY_LIST;
-  const savedCustomMachines = Array.isArray(S?.customMachines) ? S.customMachines : EMPTY_LIST;
   const savedStores = Array.isArray(S?.stores) ? S.stores : EMPTY_LIST;
-  const savedArchives = Array.isArray(S?.archives) ? S.archives : EMPTY_LIST;
-  const savedMonthlyPlayPlans = S?.monthlyPlayPlans;
-  const savedDailyResearchPlans = S?.dailyResearchPlans;
   const selectedStoreId = S?.selectedStoreId;
   const exchangeRateRaw = S?.exRate;
   const ballValueRaw = S?.ballVal;
+  const savedDailyResearchPlans = S?.dailyResearchPlans;
+  const savedMonthlyPlayPlans = S?.monthlyPlayPlans;
   const rotationsPerHour = S?.rotPerHour;
   const savedHallMaps = S?.hallMaps;
   const liveDecision = S?.ev?.liveDecision || null;
+  const savedArchives = Array.isArray(S?.archives) ? S.archives : EMPTY_LIST;
+  const savedScans = Array.isArray(S?.deltaScans) ? S.deltaScans : EMPTY_LIST;
+  const savedCustomMachines = Array.isArray(S?.customMachines) ? S.customMachines : EMPTY_LIST;
   const sessionStarted = Boolean(S?.sessionStarted);
   const liveSession = useMemo(() => sessionStarted ? {
     storeId: selectedStoreId,
@@ -1067,8 +1203,9 @@ export default function StrategyMapDashboard({ S, onBack }) {
     machineNum: S?.machineNum,
     date: S?.sessionStartDate || localDateStr(new Date()),
     ev: S?.ev || {},
-    settings: { rentBalls: S?.rentBalls },
-  } : null, [sessionStarted, selectedStoreId, S?.storeName, S?.machineName, S?.machineNum, S?.sessionStartDate, S?.ev, S?.rentBalls]);
+    playMode: S?.playMode || "cash",
+    settings: { rentBalls: S?.rentBalls, exRate: S?.exRate },
+  } : null, [sessionStarted, selectedStoreId, S?.storeName, S?.machineName, S?.machineNum, S?.sessionStartDate, S?.ev, S?.playMode, S?.rentBalls, S?.exRate]);
   const deltaScans = useMemo(() => isDemo ? P_EVIDENCE_DEMO_SCANS : savedScans, [isDemo, savedScans]);
   const customMachines = useMemo(
     () => isDemo ? [P_EVIDENCE_DEMO_MACHINE, ...savedCustomMachines] : savedCustomMachines,
@@ -1097,9 +1234,16 @@ export default function StrategyMapDashboard({ S, onBack }) {
   const strategyPlan = useMemo(() => {
     const date = entryPlanContext?.date || localDateStr(new Date());
     const selectedStore = savedStores.find((store) => String(store?.id) === String(strategyStoreId)) || null;
+    const rentBalls = Number(selectedStore?.rentBalls ?? S?.rentBalls);
     const exchangeRate = Number(selectedStore?.exRate ?? exchangeRateRaw);
     const fallbackBallValue = Number(ballValueRaw);
     const ballValueYen = exchangeRate > 0 ? 1000 / exchangeRate : (fallbackBallValue > 0 ? fallbackBallValue : 4);
+    const nonCashEstimate = isDemo
+      ? { nonCashRatio: 0, source: "cash-only", sampleK: 0 }
+      : estimateStrategyNonCashRatio(savedArchives, {
+          storeId: strategyStoreId,
+          storeName: selectedStore?.name || S?.storeName || "",
+        });
     return buildStrategyPlanContext({
       date,
       dailyResearchPlans: savedDailyResearchPlans,
@@ -1108,8 +1252,26 @@ export default function StrategyMapDashboard({ S, onBack }) {
       defaultHours: isDemo ? 3 : 6,
       defaultCashLimit: 0,
       ballValueYen: isDemo ? 4 : ballValueYen,
+      rentBalls: isDemo ? 250 : rentBalls,
+      exRate: isDemo ? 250 : exchangeRate,
+      nonCashRatio: nonCashEstimate.nonCashRatio,
+      nonCashRatioSource: nonCashEstimate.source,
+      nonCashSampleK: nonCashEstimate.sampleK,
     });
-  }, [entryPlanContext, savedStores, strategyStoreId, exchangeRateRaw, ballValueRaw, savedDailyResearchPlans, savedMonthlyPlayPlans, rotationsPerHour, isDemo]);
+  }, [
+    entryPlanContext,
+    savedStores,
+    strategyStoreId,
+    S?.rentBalls,
+    S?.storeName,
+    exchangeRateRaw,
+    ballValueRaw,
+    savedDailyResearchPlans,
+    savedMonthlyPlayPlans,
+    rotationsPerHour,
+    isDemo,
+    savedArchives,
+  ]);
   const latestDemoDate = isDemo
     ? [...deltaScans].map((scan) => String(scan?.date || "")).sort().at(-1) || ""
     : "";
