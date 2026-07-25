@@ -453,12 +453,16 @@ function compareStrategyPriority(a, b) {
   const goalGap = Number(!a.goalEligible) - Number(!b.goalEligible);
   const aPriority = Number.isFinite(a.planPriority) ? a.planPriority : Number.POSITIVE_INFINITY;
   const bPriority = Number.isFinite(b.planPriority) ? b.planPriority : Number.POSITIVE_INFINITY;
+  // 末尾の機種名・台番号タイブレークは rankStrategyCandidates と揃える。
+  // 完全同点の台がプラン有無で並び替わらないよう、決定的な順序を保証する。
   return goalGap
     || aPriority - bPriority
     || Number(b.priorityScore || 0) - Number(a.priorityScore || 0)
     || b.score - a.score
     || b.confidence - a.confidence
-    || b.evPerHour - a.evPerHour;
+    || (Number(b.evPerHour) || 0) - (Number(a.evPerHour) || 0)
+    || String(a.machineName || "").localeCompare(String(b.machineName || ""))
+    || (Number(a.num) || 0) - (Number(b.num) || 0);
 }
 
 function historyFor(scans, machineName, num, machine) {

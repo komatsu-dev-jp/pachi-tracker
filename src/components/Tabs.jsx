@@ -910,18 +910,25 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         S.ballVal,
         S.rentBalls,
     ]);
-    const liveCashLimitGuide = useMemo(() => projectCashLimit({
-        cashLimit: liveStrategyPlan.cashLimit,
-        rawInvest: ev.rawInvest,
-        rotationPer250: [
+    const liveCashLimitGuide = useMemo(() => {
+        // start1K系は「1,000円あたりの回転数」。projectCashLimit は
+        // 「250玉あたりの回転数」を前提とするため、低貸し（rentBalls>250）では
+        // 玉数換算してから渡す（等価250玉では換算係数1で従来どおり）。
+        const start1KPerMoney = [
             ev.effectiveStart1K,
             ev.start1KCorrected,
             ev.start1K,
-        ].map(Number).find((value) => value > 0) || 0,
-        rentBalls: liveStrategyPlan.rentBalls,
-        spinsPerHour: liveStrategyPlan.spinsPerHour,
-        playMode: S.playMode,
-    }), [
+        ].map(Number).find((value) => value > 0) || 0;
+        const rentBallsPer1K = Number(liveStrategyPlan.rentBalls) > 0 ? Number(liveStrategyPlan.rentBalls) : 250;
+        return projectCashLimit({
+            cashLimit: liveStrategyPlan.cashLimit,
+            rawInvest: ev.rawInvest,
+            rotationPer250: start1KPerMoney * 250 / rentBallsPer1K,
+            rentBalls: liveStrategyPlan.rentBalls,
+            spinsPerHour: liveStrategyPlan.spinsPerHour,
+            playMode: S.playMode,
+        });
+    }, [
         liveStrategyPlan.cashLimit,
         liveStrategyPlan.rentBalls,
         liveStrategyPlan.spinsPerHour,
