@@ -19,6 +19,10 @@ function clampNonNegative(value) {
   return Math.max(0, finite(value, 0));
 }
 
+function clampRatio(value) {
+  return Math.min(1, clampNonNegative(value));
+}
+
 export function exchangeYenPerBall(exRate, fallbackExRate = 250) {
   return 1000 / positive(exRate, positive(fallbackExRate, 250));
 }
@@ -27,6 +31,46 @@ export function heldBallCostPerK(rentBalls, exRate) {
   const rent = positive(rentBalls, 250);
   const exchange = positive(exRate, rent);
   return 1000 * rent / exchange;
+}
+
+export function calculateStrategyEconomics({
+  rotation,
+  equivalentBorder,
+  rentBalls = 250,
+  exRate = rentBalls,
+  nonCashRatio = 0,
+} = {}) {
+  const resolvedRotation = positive(rotation, 0);
+  const border = positive(equivalentBorder, 0);
+  const rent = positive(rentBalls, 250);
+  const exchange = positive(exRate, rent);
+  const heldRatio = clampRatio(nonCashRatio);
+  const cashRatio = 1 - heldRatio;
+  const payoutYenPerSpin = border > 0 ? 250000 / (border * exchange) : 0;
+  const inputYenPerSpin = resolvedRotation > 0
+    ? 250000 / resolvedRotation * (cashRatio / rent + heldRatio / exchange)
+    : 0;
+  const calculatedEvPerRot = border > 0 && resolvedRotation > 0
+    ? payoutYenPerSpin - inputYenPerSpin
+    : 0;
+  const effectiveBorder = border > 0
+    ? border * (cashRatio * exchange / rent + heldRatio)
+    : 0;
+  const evPerRot = finite(calculatedEvPerRot, 0);
+
+  return {
+    rotation: resolvedRotation,
+    equivalentBorder: border,
+    rentBalls: rent,
+    exRate: exchange,
+    cashRatio,
+    nonCashRatio: heldRatio,
+    payoutYenPerSpin: finite(payoutYenPerSpin, 0),
+    inputYenPerSpin: finite(inputYenPerSpin, 0),
+    evPerRot,
+    evPerRotation: evPerRot,
+    effectiveBorder: finite(effectiveBorder, 0),
+  };
 }
 
 export function deriveUsageFromRows(rotRows, rentBalls = 250) {
@@ -225,4 +269,82 @@ export function normalizeArchiveEconomics(archive) {
 
 export function normalizeArchivesEconomics(archives) {
   return Array.isArray(archives) ? archives.map(normalizeArchiveEconomics) : [];
+}
+
+function normalizeIdentityPart(value) {
+  if (value === undefined || value === null) return "";
+  return String(value)
+    .normalize("NFKC")
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function matchesStoreIdentity(archive, identity) {
+  const targetId = normalizeIdentityPart(identity?.storeId);
+  const archiveId = normalizeIdentityPart(archive?.storeId);
+  if (targetId && archiveId) return targetId === archiveId;
+
+  const targetName = normalizeIdentityPart(identity?.storeName);
+  const archiveName = normalizeIdentityPart(archive?.storeName);
+  return Boolean(targetName && archiveName && targetName === archiveName);
+}
+
+function matchesMachineTableIdentity(archive, identity) {
+  const targetMachine = normalizeIdentityPart(identity?.machineName);
+  const targetTable = normalizeIdentityPart(identity?.machineNum ?? identity?.machineNumber);
+  if (!targetMachine || !targetTable) return false;
+
+  const archiveMachine = normalizeIdentityPart(archive?.machineName);
+  const archiveTable = normalizeIdentityPart(archive?.machineNum ?? archive?.machineNumber);
+  return archiveMachine === targetMachine && archiveTable === targetTable;
+}
+
+function summarizeNonCashUsage(archives) {
+  let cashK = 0;
+  let nonCashK = 0;
+
+  for (const archive of archives) {
+    const normalized = normalizeArchiveEconomics(archive);
+    const stats = normalized?.stats;
+    if (!stats || normalized?.gameType === "slot") continue;
+    cashK += clampNonNegative(stats.cashKCount);
+    nonCashK += clampNonNegative(stats.mochiKCount) + clampNonNegative(stats.chodamaKCount);
+  }
+
+  const sampleK = cashK + nonCashK;
+  if (!Number.isFinite(sampleK) || sampleK <= 0) return null;
+  return {
+    nonCashRatio: clampRatio(nonCashK / sampleK),
+    sampleK,
+  };
+}
+
+export function estimateStrategyNonCashRatio(archives, identity = {}) {
+  const storeArchives = Array.isArray(archives)
+    ? archives.filter((archive) => matchesStoreIdentity(archive, identity))
+    : [];
+  const exactUsage = summarizeNonCashUsage(
+    storeArchives.filter((archive) => matchesMachineTableIdentity(archive, identity)),
+  );
+  if (exactUsage) {
+    return {
+      ...exactUsage,
+      source: "exact-machine-table",
+    };
+  }
+
+  const storeUsage = summarizeNonCashUsage(storeArchives);
+  if (storeUsage) {
+    return {
+      ...storeUsage,
+      source: "store",
+    };
+  }
+
+  return {
+    nonCashRatio: 0,
+    source: "cash-only",
+    sampleK: 0,
+  };
 }

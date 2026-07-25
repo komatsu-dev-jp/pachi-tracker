@@ -1,6 +1,8 @@
 // 差玉・通常回転数・大当り回数から、機種ごとの予測回転率を推定する。
 // Google Sheets には接続せず、保存済み pt_deltaScans だけを使う純粋関数。
 
+import { normalizeEvidenceDate } from "../../evidenceDate.js";
+
 const BALLS_PER_1K = 250;
 const DEFAULT_BORDER = 18;
 const DEFAULT_PRIOR_VARIANCE = 4;
@@ -21,8 +23,7 @@ function sameText(a, b) {
 }
 
 function dataDate(value) {
-  const match = String(value || "").match(/^(\d{4})[/-](\d{2})[/-](\d{2})/);
-  return match ? `${match[1]}-${match[2]}-${match[3]}` : "";
+  return normalizeEvidenceDate(value);
 }
 
 export function normalizeEvidenceMachineName(value) {
@@ -188,6 +189,9 @@ export function estimateDeltaObservation(row = {}, machine = {}, options = {}) {
   }
   if (normalSpins <= 0) return { valid: false, reason: "通常回転数なし" };
   if (totalStarts > 0 && avgPayout <= 0) return { valid: false, reason: "平均出玉なし" };
+  if (totalStarts === 0 && deltaBalls > 0) {
+    return { valid: false, reason: "当り0で差玉プラス", normalSpins, totalStarts, deltaBalls };
+  }
 
   // 差玉 = 払い出し - 投入玉 なので、投入玉 = 払い出し - 差玉。
   const estimatedInputBalls = totalStarts * avgPayout - deltaBalls;
@@ -239,6 +243,7 @@ export function collectDeltaRows(scans = [], filters = {}) {
       if (filters.machineName && normalizeEvidenceMachineName(machineName) !== normalizeEvidenceMachineName(filters.machineName)) continue;
       if (filters.num != null && normalizeEvidenceMachineNumber(row?.num) !== normalizeEvidenceMachineNumber(filters.num)) continue;
       const date = dataDate(row?.date || scan?.date);
+      if (!date) continue;
       const normalizedNumber = normalizeEvidenceMachineNumber(row?.num);
       const normalizedName = normalizeEvidenceMachineName(machineName);
       const store = String(scan?.storeId ?? scan?.storeName ?? "").trim();

@@ -5,6 +5,7 @@ import {
   deadlineFromTime,
   estimateHourlyWorkFromStart1K,
   isTimeValue,
+  projectCashLimit,
   projectWorkToDeadline,
   timeValueFromDate,
   validateSessionSchedule,
@@ -107,7 +108,7 @@ test("pre-session hourly estimate uses the selected play mode cost", () => {
   const held = estimateHourlyWorkFromStart1K({ ...common, playMode: "chodama" });
   assert.ok(cash);
   assert.ok(held);
-  assert.ok(held.hourlyWork < cash.hourlyWork);
+  assert.ok(held.hourlyWork > cash.hourlyWork, "非等価では持ち玉の交換価値コストが現金より低い");
 });
 
 test("pre-session estimate does not use fixed fallback payout assumptions", () => {
@@ -172,4 +173,101 @@ test("table-move carry-in value is not counted as free profit", () => {
     carriedInYen: 2000,
     ballValueYen: 4,
   }), 0);
+});
+
+test("cash limit projects remaining cash into physical balls, spins, and time", () => {
+  assert.deepEqual(projectCashLimit({
+    cashLimit: 30000,
+    rawInvest: 10000,
+    rotationPer250: 20,
+    rentBalls: 250,
+    spinsPerHour: 250,
+    playMode: "cash",
+  }), {
+    status: "remaining",
+    calculationStatus: "ready",
+    cashLimit: 30000,
+    cashSpent: 10000,
+    remainingCash: 20000,
+    overBy: 0,
+    purchasableBalls: 5000,
+    remainingSpins: 400,
+    remainingHours: 1.6,
+    usesCashNow: true,
+    shouldStop: false,
+  });
+});
+
+test("cash limit uses the actual low-loan ball count", () => {
+  const result = projectCashLimit({
+    cashLimit: 10000,
+    rawInvest: 2000,
+    rotationPer250: 18,
+    rentBalls: 1000,
+    spinsPerHour: 240,
+    playMode: "cash",
+  });
+  assert.equal(result.purchasableBalls, 8000);
+  assert.equal(result.remainingSpins, 576);
+  assert.equal(result.remainingHours, 2.4);
+});
+
+test("cash limit reports a missing rotation projection for zero rotation", () => {
+  const result = projectCashLimit({
+    cashLimit: 10000,
+    rawInvest: 1000,
+    rotationPer250: 0,
+    rentBalls: 250,
+    spinsPerHour: 250,
+  });
+  assert.equal(result.calculationStatus, "rotation-missing");
+  assert.equal(result.purchasableBalls, 2250);
+  assert.equal(result.remainingSpins, null);
+  assert.equal(result.remainingHours, null);
+});
+
+test("cash limit stops at the limit without reporting an overage", () => {
+  const result = projectCashLimit({
+    cashLimit: 10000,
+    rawInvest: 10000,
+    rotationPer250: 20,
+    rentBalls: 250,
+    spinsPerHour: 250,
+  });
+  assert.equal(result.status, "limit_reached");
+  assert.equal(result.remainingCash, 0);
+  assert.equal(result.overBy, 0);
+  assert.equal(result.shouldStop, true);
+});
+
+test("cash limit reports overspend and keeps held-ball play separate", () => {
+  const result = projectCashLimit({
+    cashLimit: 10000,
+    rawInvest: 12000,
+    rotationPer250: 20,
+    rentBalls: 250,
+    spinsPerHour: 250,
+    playMode: "chodama",
+  });
+  assert.equal(result.status, "over_limit");
+  assert.equal(result.cashSpent, 12000);
+  assert.equal(result.remainingCash, 0);
+  assert.equal(result.overBy, 2000);
+  assert.equal(result.usesCashNow, false);
+  assert.equal(result.shouldStop, true);
+});
+
+test("cash limit stays unset without creating a stop decision", () => {
+  const result = projectCashLimit({
+    cashLimit: 0,
+    rawInvest: 12000,
+    rotationPer250: 20,
+    rentBalls: 250,
+    spinsPerHour: 250,
+  });
+  assert.equal(result.status, "unset");
+  assert.equal(result.calculationStatus, "unset");
+  assert.equal(result.cashSpent, 12000);
+  assert.equal(result.remainingCash, null);
+  assert.equal(result.shouldStop, false);
 });

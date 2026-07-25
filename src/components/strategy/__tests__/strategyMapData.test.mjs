@@ -45,7 +45,7 @@ assert.equal(empty.top5.length, 0);
 const liveDecision = { action: "collecting", actionLabel: "次の判定まで計測", nextCheckpointK: 3 };
 const plan = buildStrategyPlanContext({
   date: "2026-07-02",
-  dailyResearchPlans: { "2026-07-02": { style: "stable", standardHours: 3, cashLimit: 30000 } },
+  dailyResearchPlans: { "2026-07-02": { style: "stable", standardHours: 3, cashLimit: 50000 } },
   spinsPerHour: 250,
   ballValueYen: 4,
 });
@@ -114,7 +114,7 @@ assert.ok(lowerPendingMachine.dataCoverage.effectiveDays > 0);
 const allocationMap = buildStrategyMap({
   scans,
   customMachines: [{ ...machine, border1K: 5 }],
-  plan,
+  plan: { ...plan, cashLimit: 0 },
 });
 assert.ok(allocationMap.portfolio.plan.length > 0);
 assert.equal(allocationMap.portfolio.totalHours, allocationMap.plan.plannedHours, "優先配分の丸め後も予定時間の合計を保つ");
@@ -174,6 +174,7 @@ const archiveMap = buildStrategyMap({
   scans,
   customMachines: [machine],
   plan,
+  targetDate: "2026-07-03",
   archives: [{
     storeId: "s1",
     machineName: "検証機",

@@ -21,7 +21,9 @@ const VERDICT_META = {
   strong:  { label: "本命", color: C.green },
   good:    { label: "候補", color: C.teal },
   watch:   { label: "様子見", color: C.yellow },
+  weak:    { label: "低優先", color: C.red },
   avoid:   { label: "低優先", color: C.red },
+  nodata:  { label: "不足", color: C.sub },
   unknown: { label: "不足", color: C.sub },
 };
 
