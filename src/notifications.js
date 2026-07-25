@@ -18,6 +18,7 @@ export const NOTIF_LEVEL_UP = "level_up";
 export const NOTIF_STREAK = "streak";
 export const NOTIF_VERDICT_CHANGE = "verdict_change";
 export const NOTIF_BADGE_UNLOCKED = "badge_unlocked";
+export const NOTIF_CASH_LIMIT_WARNING = "cash_limit_warning";
 
 export const NOTIFICATION_LOG_MAX = 50;
 
@@ -26,6 +27,7 @@ export const DEFAULT_NOTIFICATION_PREFS = Object.freeze({
   streak: true,
   badge: true,
   verdict: true,
+  cashLimit: true,
 });
 
 const PREF_KEY_BY_TYPE = Object.freeze({
@@ -33,6 +35,7 @@ const PREF_KEY_BY_TYPE = Object.freeze({
   [NOTIF_STREAK]: "streak",
   [NOTIF_BADGE_UNLOCKED]: "badge",
   [NOTIF_VERDICT_CHANGE]: "verdict",
+  [NOTIF_CASH_LIMIT_WARNING]: "cashLimit",
 });
 
 export function normalizeNotificationPrefs(value) {

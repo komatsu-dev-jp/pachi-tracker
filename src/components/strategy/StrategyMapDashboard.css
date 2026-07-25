@@ -225,6 +225,7 @@
 .strategy-live-badge.is-stop, .strategy-live-badge.is-stop_candidate { background: #be123c; }
 .strategy-live-badge.is-compare { background: #a16207; }
 .strategy-live-badge.is-continue, .strategy-live-badge.is-continue_strong { background: #047857; }
+.strategy-live-badge.is-divergence { background: #c2410c; }
 
 .strategy-island-base {
   height: 17px;

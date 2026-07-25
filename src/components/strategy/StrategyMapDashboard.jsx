@@ -14,6 +14,14 @@ import {
   P_EVIDENCE_DEMO_SCANS,
 } from "../evidence/pevidenceDemoData.js";
 import YutimeCalculatorSheet from "../yutime/YutimeCalculatorSheet.jsx";
+import {
+  buildWeeklyBacktestTrend,
+} from "../evidence/pevidenceBacktest.js";
+import { applyCalibrationCandidate } from "../evidence/pevidenceCalibration.js";
+import {
+  buildIslandActivityCalendar,
+  listIslandActivityMonths,
+} from "../evidence/islandActivityCalendar.js";
 
 // 戦略マップ画面（見た目優先プロトタイプ）
 //
@@ -616,8 +624,9 @@ function liveBadgeLabel(decision) {
 
 function HeatMachineCell({ number, machine, dim, selected, opposite, onSelect }) {
   const tone = heatTone(machine);
+  const divergence = machine?.strategyDivergence?.status === "below-lower-bound";
   const label = machine
-    ? `${number}番台 予測回転率${machine.rot} 信頼度${machine.confidence}% ${tone.label}`
+    ? `${number}番台 予測回転率${machine.rot} 信頼度${machine.confidence}% ${tone.label}${divergence ? " 見切り検討" : ""}`
     : `${number}番台 未計測`;
   return (
     <button
@@ -644,9 +653,9 @@ function HeatMachineCell({ number, machine, dim, selected, opposite, onSelect })
         {machine ? fmt(machine.rot, 1) : "—"}
       </span>
       <span className="strategy-heat-unit">{machine ? "回/k" : "未計測"}</span>
-      {machine?.liveDecision && (
-        <span className={`strategy-live-badge is-${machine.liveDecision.action}`}>
-          {liveBadgeLabel(machine.liveDecision)}
+      {(machine?.liveDecision || divergence) && (
+        <span className={`strategy-live-badge ${divergence ? "is-divergence" : `is-${machine.liveDecision.action}`}`}>
+          {divergence ? "見切り検討" : liveBadgeLabel(machine.liveDecision)}
         </span>
       )}
     </button>
@@ -988,6 +997,27 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
             </div>
           )}
 
+          {machine.strategyDivergence?.status === "below-lower-bound" && (
+            <div
+              role="status"
+              style={{
+                marginBottom: 10,
+                padding: "10px 12px",
+                borderRadius: 13,
+                background: "rgba(194,65,12,.13)",
+                border: "1px solid rgba(249,115,22,.48)",
+                color: P.yellow,
+                fontSize: 10,
+                fontWeight: 800,
+                lineHeight: 1.65,
+              }}
+            >
+              見切り検討：実測 {fmt(machine.strategyDivergence.actualPer250, 1)}回/250玉が、実戦値を混ぜる前の予測下限
+              {" "}{fmt(machine.strategyDivergence.predictedLowPer250, 1)}回/250玉を
+              {" "}{fmt(machine.strategyDivergence.shortfall, 1)}回下回っています。自動停止ではなく、追加投資前に見直すための補助表示です。
+            </div>
+          )}
+
           <CashLimitGuide guide={machine.cashLimitGuide} />
 
           <div className="strategy-detail-main">
@@ -1041,10 +1071,218 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
   );
 }
 
-function LearningSummary({ data, selected }) {
+function TrendLine({ values, color, includeZero = false, ariaLabel }) {
+  const width = 210;
+  const height = 44;
+  const pad = 4;
+  const finiteValues = values.map(Number).filter(Number.isFinite);
+  if (!finiteValues.length) return null;
+  const min = Math.min(...finiteValues, ...(includeZero ? [0] : []));
+  const max = Math.max(...finiteValues, ...(includeZero ? [0] : []));
+  const span = max - min || 1;
+  const points = finiteValues.map((value, index) => {
+    const x = finiteValues.length === 1
+      ? width / 2
+      : pad + index * ((width - pad * 2) / (finiteValues.length - 1));
+    const y = pad + (1 - (value - min) / span) * (height - pad * 2);
+    return [x, y];
+  });
+  const path = points
+    .map(([x, y], index) => `${index === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`)
+    .join(" ");
+  const zeroY = includeZero && min <= 0 && max >= 0
+    ? pad + (1 - (0 - min) / span) * (height - pad * 2)
+    : null;
+  return (
+    <svg role="img" aria-label={ariaLabel} viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: 44, display: "block" }}>
+      {zeroY != null && <line x1={pad} x2={width - pad} y1={zeroY} y2={zeroY} stroke={P.lineHi} strokeDasharray="3 3" />}
+      <path d={path} fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+      {points.map(([x, y], index) => <circle key={`${x}-${index}`} cx={x} cy={y} r="2.4" fill={color} />)}
+    </svg>
+  );
+}
+
+function BacktestTrendPanel({ pairs, selected }) {
+  const [scope, setScope] = useState("all");
+  const scopedPairs = useMemo(() => (Array.isArray(pairs) ? pairs : []).filter((pair) => {
+    if (scope === "machine") return String(pair.machineName) === String(selected?.machineName);
+    if (scope === "table") {
+      return String(pair.machineName) === String(selected?.machineName)
+        && String(pair.num) === String(selected?.num);
+    }
+    return true;
+  }), [pairs, scope, selected?.machineName, selected?.num]);
+  const trend = useMemo(
+    () => buildWeeklyBacktestTrend(scopedPairs, { maxWeeks: 12 }),
+    [scopedPairs],
+  );
+  const latest = trend.at(-1) || null;
+  const calibrations = trend.flatMap((week) => week.calibrationEvents || []);
+  return (
+    <div style={{ marginTop: 8, padding: 11, borderRadius: 14, background: P.bg, border: `1px solid ${P.line}` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 900, color: P.text }}>バックテスト週次推移</div>
+          <div style={{ marginTop: 2, fontSize: 8, color: P.sub }}>承認日以降は、その日に有効だった係数で再現</div>
+        </div>
+        <div style={{ display: "flex", gap: 3 }}>
+          {[["all", "全体"], ["machine", "機種"], ["table", `台${selected?.num ?? ""}`]].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setScope(id)}
+              aria-pressed={scope === id}
+              style={{
+                minHeight: 32,
+                borderRadius: 9,
+                padding: "0 8px",
+                border: `1px solid ${scope === id ? P.cyan : P.line}`,
+                background: scope === id ? "color-mix(in srgb, var(--sm-cyan) 12%, var(--sm-card))" : P.card,
+                color: scope === id ? P.cyan : P.subHi,
+                fontSize: 8,
+                fontWeight: 800,
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {trend.length === 0 ? (
+        <div style={{ padding: "14px 0 4px", color: P.sub, fontSize: 9 }}>連続日の予測と実績が揃うと、週ごとの変化を表示します。</div>
+      ) : (
+        <>
+          <div style={{ marginTop: 9, display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
+            {[
+              { label: "MAE", values: trend.map((week) => week.mae), value: `${fmt(latest.mae, 2)}/k`, color: P.cyan, zero: true },
+              { label: "偏り", values: trend.map((week) => week.bias), value: `${signed(latest.bias, 2)}/k`, color: P.yellow, zero: true },
+              { label: "カバレッジ", values: trend.map((week) => week.coverage95 * 100), value: `${fmt(latest.coverage95 * 100)}%`, color: P.green, zero: false },
+            ].map((metric) => (
+              <div key={metric.label} style={{ minWidth: 0, padding: 7, borderRadius: 10, background: P.card, border: `1px solid ${P.line}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 3, fontSize: 8 }}>
+                  <span style={{ color: P.sub }}>{metric.label}</span>
+                  <b style={{ color: metric.color, fontFamily: MONO }}>{metric.value}</b>
+                </div>
+                <TrendLine values={metric.values} color={metric.color} includeZero={metric.zero} ariaLabel={`${metric.label}の週次推移`} />
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", gap: 8, color: P.sub, fontSize: 8 }}>
+            <span>{trend[0].weekStart.slice(5)}週</span>
+            <span>最新週 {fmt(latest.n)}件</span>
+            <span>{latest.weekStart.slice(5)}週</span>
+          </div>
+          {calibrations.length > 0 && (
+            <div style={{ marginTop: 7, color: P.cyan, fontSize: 8, lineHeight: 1.5 }}>
+              校正反映：{calibrations.map((event) => `${event.effectiveFrom} ${fmt(event.previousPriorBalls)}→${fmt(event.appliedPriorBalls)}玉`).join(" ／ ")}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+const ACTIVITY_TONES = {
+  "inactive-high": { color: P.red, label: "未稼働60%以上" },
+  "inactive-partial": { color: P.yellow, label: "一部未稼働" },
+  active: { color: P.green, label: "通常稼働" },
+  invalid: { color: P.gray, label: "読取除外" },
+  "no-data": { color: P.lineHi, label: "データなし" },
+};
+
+function IslandActivityHistoryPanel({ history, selected }) {
+  const islandHistory = useMemo(() => (Array.isArray(history) ? history : [])
+    .filter((entry) => entry.key === selected?.activityHistoryKey), [history, selected?.activityHistoryKey]);
+  const months = useMemo(() => listIslandActivityMonths(islandHistory), [islandHistory]);
+  const [requestedMonth, setRequestedMonth] = useState("");
+  const [selectedDate, setSelectedDate] = useState("");
+  const month = months.includes(requestedMonth)
+    ? requestedMonth
+    : months.at(-1) || "";
+  const selectMonth = (nextMonth) => {
+    setRequestedMonth(nextMonth);
+    setSelectedDate("");
+  };
+  const calendar = useMemo(
+    () => buildIslandActivityCalendar(islandHistory, { month }),
+    [islandHistory, month],
+  );
+  const monthIndex = months.indexOf(calendar.month);
+  const selectedEntry = islandHistory.find((entry) => entry.date === selectedDate)
+    || [...islandHistory].reverse().find((entry) => entry.date.startsWith(`${calendar.month}-`))
+    || null;
+  if (!islandHistory.length) {
+    return <div style={{ marginTop: 7, color: P.sub, fontSize: 8 }}>島活動の履歴はまだありません。</div>;
+  }
+  return (
+    <div style={{ marginTop: 8, padding: 11, borderRadius: 14, background: P.bg, border: `1px solid ${P.line}` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 900, color: P.text }}>島活動シグナル履歴</div>
+          <div style={{ marginTop: 2, fontSize: 8, color: P.sub }}>保存済み差玉から日別に再集計</div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <button type="button" aria-label="前の月" disabled={monthIndex <= 0} onClick={() => selectMonth(months[monthIndex - 1])} style={{ minWidth: 36, minHeight: 36, borderRadius: 9, border: `1px solid ${P.line}`, background: P.card, color: P.text, opacity: monthIndex <= 0 ? .35 : 1 }}>‹</button>
+          <strong style={{ minWidth: 72, textAlign: "center", fontSize: 10, color: P.text }}>{calendar.label}</strong>
+          <button type="button" aria-label="次の月" disabled={monthIndex < 0 || monthIndex >= months.length - 1} onClick={() => selectMonth(months[monthIndex + 1])} style={{ minWidth: 36, minHeight: 36, borderRadius: 9, border: `1px solid ${P.line}`, background: P.card, color: P.text, opacity: monthIndex < 0 || monthIndex >= months.length - 1 ? .35 : 1 }}>›</button>
+        </div>
+      </div>
+      <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3 }}>
+        {calendar.weekdays.map((weekday) => <span key={weekday} style={{ textAlign: "center", color: P.sub, fontSize: 8 }}>{weekday}</span>)}
+        {calendar.cells.map((cell, index) => {
+          if (!cell) return <span key={`blank-${index}`} />;
+          const tone = ACTIVITY_TONES[cell.status] || ACTIVITY_TONES["no-data"];
+          const active = selectedEntry?.date === cell.date;
+          return (
+            <button
+              key={cell.date}
+              type="button"
+              disabled={!cell.entry}
+              onClick={() => cell.entry && setSelectedDate(cell.date)}
+              aria-label={`${cell.date} ${tone.label}`}
+              style={{
+                minWidth: 0,
+                minHeight: 38,
+                borderRadius: 9,
+                border: `1px solid ${active ? P.cyan : `color-mix(in srgb, ${tone.color} 50%, ${P.line})`}`,
+                background: cell.entry ? `color-mix(in srgb, ${tone.color} 16%, ${P.card})` : P.card,
+                color: cell.entry ? P.text : P.sub,
+                fontSize: 9,
+                fontWeight: active ? 900 : 700,
+                opacity: cell.entry ? 1 : .45,
+              }}
+            >
+              {cell.day}
+              <span aria-hidden="true" style={{ display: "block", width: 5, height: 5, borderRadius: "50%", background: tone.color, margin: "3px auto 0" }} />
+            </button>
+          );
+        })}
+      </div>
+      {selectedEntry && (
+        <div style={{ marginTop: 8, padding: 8, borderRadius: 10, background: P.card, border: `1px solid ${P.line}`, color: P.subHi, fontSize: 8, lineHeight: 1.55 }}>
+          <strong style={{ color: ACTIVITY_TONES[selectedEntry.signalCode]?.color || P.text }}>{selectedEntry.date}・{selectedEntry.activitySignal}</strong>
+          <span style={{ display: "block", marginTop: 3 }}>
+            読取{fmt(selectedEntry.scannedMachines)}台 ／ 稼働{fmt(selectedEntry.activeMachines)}台 ／ 未稼働{fmt(selectedEntry.inactiveMachines)}台（{fmt(selectedEntry.inactiveRate * 100)}%） ／ 除外{fmt(selectedEntry.invalidMachines)}台
+          </span>
+        </div>
+      )}
+      <div style={{ marginTop: 7, display: "flex", flexWrap: "wrap", gap: "4px 9px" }}>
+        {Object.entries(ACTIVITY_TONES).map(([key, tone]) => (
+          <span key={key} style={{ display: "inline-flex", alignItems: "center", gap: 4, color: P.sub, fontSize: 7 }}>
+            <i style={{ width: 6, height: 6, borderRadius: "50%", background: tone.color }} />{tone.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LearningSummary({ data, selected, onApproveCalibration, calibrationNotice }) {
   if (!data.analytics || !selected) return null;
   const overall = data.aiProfile?.overall || {};
-  const island = data.islandStats?.find((item) => item.island === data.islands.find((x) => x.id === selected.islandId)?.name);
+  const island = data.islandStats?.find((item) => item.key === selected.activityHistoryKey)
+    || data.islandStats?.find((item) => item.island === data.islands.find((x) => x.id === selected.islandId)?.name);
   const backtest = data.analytics?.backtest || null;
   const selectedBacktest = backtest?.byKeyList?.find((item) =>
     String(item.machineName) === String(selected.machineName)
@@ -1092,6 +1330,11 @@ function LearningSummary({ data, selected }) {
               {island.activitySignal ? `。${island.activitySignal}` : ""}
             </div>
           )}
+          <IslandActivityHistoryPanel
+            key={selected.activityHistoryKey}
+            history={data.islandActivityHistory}
+            selected={selected}
+          />
         </div>
         <div style={{ padding: 12, borderRadius: 16, background: P.card, border: `1px solid ${P.line}`, gridColumn: "1 / -1" }}>
           <div style={{ fontSize: 10, color: P.sub }}>翌日予測の答え合わせ</div>
@@ -1123,14 +1366,54 @@ function LearningSummary({ data, selected }) {
             平均ズレは、前日に予測した回転率と翌日の実績が平均で何回/Kずれたかです。偏りがプラスなら高めの予測です。
           </div>
           {calibration && (
-            <div style={{ marginTop: 6, fontSize: 8, color: calibration.eligible ? P.cyan : P.subHi, lineHeight: 1.5 }}>
-              {calibration.eligible && calibration.recommendedPriorBalls != null
-                ? `学習係数の校正候補：${fmt(calibration.currentPriorBalls)}玉 → ${fmt(calibration.recommendedPriorBalls)}玉（提案のみ・自動変更なし）`
-                : calibration.reason === "missing-current-prior"
-                  ? "学習係数の校正待ち：現在の係数を確認できません。"
-                  : `学習係数の校正まであと${fmt(Math.max(0, Number(calibration.minRequired || 20) - Number(calibration.n || 0)))}件です。`}
+            <div style={{ marginTop: 7, padding: 9, borderRadius: 11, background: P.bg, border: `1px solid ${calibration.eligible ? P.cyan : P.line}`, fontSize: 8, color: calibration.eligible ? P.cyan : P.subHi, lineHeight: 1.55 }}>
+              {calibration.eligible && calibration.recommendedPriorBalls != null ? (
+                <>
+                  <strong style={{ display: "block", fontSize: 9 }}>
+                    学習係数の校正候補：{fmt(calibration.currentPriorBalls)}玉 → {fmt(calibration.recommendedPriorBalls)}玉
+                  </strong>
+                  <span style={{ display: "block", marginTop: 3 }}>
+                    選択店舗の{fmt(calibration.n)}件から算出し、この機種の全店舗予測へ反映します。自動では変更しません。
+                  </span>
+                  {onApproveCalibration && (
+                    <button
+                      type="button"
+                      onClick={() => onApproveCalibration(calibration)}
+                      style={{
+                        width: "100%",
+                        minHeight: 44,
+                        marginTop: 7,
+                        borderRadius: 11,
+                        border: "1px solid color-mix(in srgb, var(--sm-cyan) 60%, transparent)",
+                        background: "color-mix(in srgb, var(--sm-cyan) 16%, var(--sm-card))",
+                        color: P.cyan,
+                        fontSize: 10,
+                        fontWeight: 900,
+                      }}
+                    >
+                      この校正候補を承認して反映
+                    </button>
+                  )}
+                </>
+              ) : calibration.reason === "awaiting-new-samples" ? (
+                `校正は承認済みです。再校正まで新しい実績があと${fmt(calibration.remainingSamples)}件必要です。`
+              ) : calibration.reason === "missing-current-prior" ? (
+                "学習係数の校正待ち：現在の係数を確認できません。"
+              ) : calibration.reason === "ambiguous-machine" ? (
+                "型式を一意に確認できないため、校正は反映しません。"
+              ) : calibration.reason === "no-change" ? (
+                "現在の学習係数が候補と一致しています。"
+              ) : (
+                `学習係数の校正まであと${fmt(Math.max(0, Number(calibration.minRequired || 20) - Number(calibration.n || 0)))}件です。`
+              )}
+              {calibrationNotice?.machineName === selected.machineName && (
+                <strong style={{ display: "block", marginTop: 6, color: calibrationNotice.ok ? P.green : P.red }}>
+                  {calibrationNotice.message}
+                </strong>
+              )}
             </div>
           )}
+          <BacktestTrendPanel pairs={backtest?.pairs || EMPTY_LIST} selected={selected} />
         </div>
       </div>
     </Section>
@@ -1205,7 +1488,8 @@ export default function StrategyMapDashboard({ S, onBack }) {
     ev: S?.ev || {},
     playMode: S?.playMode || "cash",
     settings: { rentBalls: S?.rentBalls, exRate: S?.exRate },
-  } : null, [sessionStarted, selectedStoreId, S?.storeName, S?.machineName, S?.machineNum, S?.sessionStartDate, S?.ev, S?.playMode, S?.rentBalls, S?.exRate]);
+    cashSpentToday: S?.dailyCashSpent,
+  } : null, [sessionStarted, selectedStoreId, S?.storeName, S?.machineName, S?.machineNum, S?.sessionStartDate, S?.ev, S?.playMode, S?.rentBalls, S?.exRate, S?.dailyCashSpent]);
   const deltaScans = useMemo(() => isDemo ? P_EVIDENCE_DEMO_SCANS : savedScans, [isDemo, savedScans]);
   const customMachines = useMemo(
     () => isDemo ? [P_EVIDENCE_DEMO_MACHINE, ...savedCustomMachines] : savedCustomMachines,
@@ -1302,6 +1586,12 @@ export default function StrategyMapDashboard({ S, onBack }) {
   );
   const [helpOpen, setHelpOpen] = useState(false);
   const [yutimeOpen, setYutimeOpen] = useState(false);
+  const [calibrationNotice, setCalibrationNotice] = useState(null);
+  const calibrationApprovalRef = useRef("");
+
+  useEffect(() => {
+    calibrationApprovalRef.current = "";
+  }, [savedCustomMachines]);
 
   useEffect(() => {
     clearStrategyPlanContext?.(null);
@@ -1329,6 +1619,38 @@ export default function StrategyMapDashboard({ S, onBack }) {
     const machines = data.islands.slice(pairStart, pairStart + 2).flatMap((island) => island.machines);
     const lead = [...machines].sort((a, b) => b.score - a.score)[0] || null;
     setSelectedId(lead?.id || null);
+  };
+
+  const approveCalibration = (candidate) => {
+    const approvalKey = `${candidate?.machineRecordName || candidate?.machineName}:${candidate?.evidenceThroughDate}:${candidate?.recommendedPriorBalls}`;
+    if (isDemo || typeof S?.setCustomMachines !== "function" || calibrationApprovalRef.current === approvalKey) return;
+    calibrationApprovalRef.current = approvalKey;
+    const result = applyCalibrationCandidate(savedCustomMachines, candidate, {
+      approvedAt: new Date().toISOString(),
+    });
+    if (!result.ok) {
+      calibrationApprovalRef.current = "";
+      setCalibrationNotice({
+        ok: false,
+        machineName: candidate?.machineName,
+        message: result.reason === "stale-candidate"
+          ? "別の変更が先に反映されています。最新の候補を確認してください。"
+          : "校正値を反映できませんでした。候補を再確認してください。",
+      });
+      return;
+    }
+    // 関数形式で最新の保存値へ適用し、同時に行われた別機種の編集を失わない。
+    S.setCustomMachines((currentMachines) => {
+      const latestResult = applyCalibrationCandidate(currentMachines, candidate, {
+        approvedAt: result.historyEntry.approvedAt,
+      });
+      return latestResult.ok ? latestResult.customMachines : currentMachines;
+    });
+    setCalibrationNotice({
+      ok: true,
+      machineName: candidate.machineName,
+      message: `${fmt(result.historyEntry.previousPriorBalls)}玉 → ${fmt(result.historyEntry.appliedPriorBalls)}玉を承認しました。${result.historyEntry.effectiveFrom}から予測へ反映します。`,
+    });
   };
 
   return (
@@ -1380,7 +1702,12 @@ export default function StrategyMapDashboard({ S, onBack }) {
         onSelect={selectMachine}
       />
       <SelectedOutcomeSection machine={selected} islandAvgRot={data.islandAvgRot} plan={data.plan} />
-      <LearningSummary data={data} selected={selected} />
+      <LearningSummary
+        data={data}
+        selected={selected}
+        onApproveCalibration={isDemo ? null : approveCalibration}
+        calibrationNotice={calibrationNotice}
+      />
       <PortfolioPlan portfolio={data.portfolio} plan={data.plan} />
       {helpOpen && <HelpSheet onClose={() => setHelpOpen(false)} />}
       {yutimeOpen && (

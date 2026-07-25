@@ -1,4 +1,5 @@
 import { heldBallCostPerK } from "./economics.js";
+import { normalizeEvidenceDate } from "./evidenceDate.js";
 
 const finite = (value, fallback = 0) => {
   const number = Number(value);
@@ -135,6 +136,46 @@ export function calculateLiveActualBalance({
   );
 }
 
+function yutimeSupportCash(runs) {
+  return (Array.isArray(runs) ? runs : []).reduce(
+    (sum, run) => sum + Math.max(0, finite(run?.supportCashYen)),
+    0,
+  );
+}
+
+export function calculateDailyCashSpent({
+  archives = [],
+  date = "",
+  currentRawInvest = 0,
+  currentYutimeRuns = [],
+} = {}) {
+  const targetDate = normalizeEvidenceDate(date);
+  const archivedCash = (Array.isArray(archives) ? archives : []).reduce((sum, archive) => {
+    if (!targetDate || normalizeEvidenceDate(archive?.date) !== targetDate) return sum;
+    const stats = archive?.stats || {};
+    const recordedCash = Math.max(
+      0,
+      finite(stats.rawInvest),
+      finite(stats.cashKCount) * 1000,
+    );
+    return sum + recordedCash + yutimeSupportCash(archive?.yutimeRuns);
+  }, 0);
+  return Math.round(
+    archivedCash
+    + Math.max(0, finite(currentRawInvest))
+    + yutimeSupportCash(currentYutimeRuns),
+  );
+}
+
+// start1K は「1,000円あたりの回転数」、P-EVIDENCE の回転率は
+// 「250玉あたりの回転数」。貸玉レートに依存する換算を1か所へ集約する。
+export function rotationPer250FromStart1K(start1K, rentBalls = 250) {
+  const rotationsPerMoney = Math.max(0, finite(start1K));
+  const rentalBalls = Math.max(0, finite(rentBalls));
+  if (rotationsPerMoney <= 0 || rentalBalls <= 0) return 0;
+  return rotationsPerMoney * 250 / rentalBalls;
+}
+
 export function projectCashLimit({
   cashLimit,
   rawInvest = 0,
@@ -192,5 +233,34 @@ export function projectCashLimit({
     remainingHours: calculationReady ? remainingSpins / hourlySpins : null,
     usesCashNow,
     shouldStop,
+  };
+}
+
+export function buildCashLimitPreAlert(guide, { warningMinutes = 30 } = {}) {
+  const thresholdMinutes = Math.max(1, finite(warningMinutes, 30));
+  const remainingHours = Number(guide?.remainingHours);
+  const remainingMinutes = Number.isFinite(remainingHours)
+    ? Math.max(0, remainingHours * 60)
+    : null;
+  const approaching = Boolean(
+    guide?.status === "remaining"
+    && guide?.calculationStatus === "ready"
+    && guide?.usesCashNow === true
+    && remainingMinutes !== null
+    && remainingMinutes > 0
+    && remainingMinutes <= thresholdMinutes
+  );
+  const limitReached = Boolean(
+    guide?.usesCashNow === true
+    && (guide?.status === "limit_reached" || guide?.status === "over_limit")
+  );
+  return {
+    shouldAlert: approaching || limitReached,
+    kind: limitReached ? "limit_reached" : approaching ? "approaching" : "none",
+    warningMinutes: thresholdMinutes,
+    remainingMinutes,
+    remainingCash: Number.isFinite(Number(guide?.remainingCash))
+      ? Math.max(0, Number(guide.remainingCash))
+      : null,
   };
 }

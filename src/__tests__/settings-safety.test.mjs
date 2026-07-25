@@ -21,6 +21,7 @@ import {
   isNotificationEnabled,
   normalizeNotificationPrefs,
   NOTIF_BADGE_UNLOCKED,
+  NOTIF_CASH_LIMIT_WARNING,
   NOTIF_LEVEL_UP,
 } from "../notifications.js";
 
@@ -139,9 +140,12 @@ test("通知設定は既定オンで種類ごとに停止できる", () => {
     streak: true,
     badge: false,
     verdict: true,
+    cashLimit: true,
   });
   assert.equal(isNotificationEnabled(NOTIF_BADGE_UNLOCKED, { badge: false }), false);
   assert.equal(isNotificationEnabled(NOTIF_LEVEL_UP, { badge: false }), true);
+  assert.equal(isNotificationEnabled(NOTIF_CASH_LIMIT_WARNING, {}), true);
+  assert.equal(isNotificationEnabled(NOTIF_CASH_LIMIT_WARNING, { cashLimit: false }), false);
 });
 
 test("自動ロックは指定したタイミングだけ作動する", () => {

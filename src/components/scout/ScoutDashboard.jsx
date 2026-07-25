@@ -137,7 +137,9 @@ function ForecastTab({ S }) {
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: C.text, fontFamily: mono }}>
-                  予測 {Number(m.rot).toLocaleString("ja-JP", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}/k ・ 信頼度 {m.confidence}%
+                  {m.rot == null
+                    ? "予測 算定待ち"
+                    : `予測 ${Number(m.rot).toLocaleString("ja-JP", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}/k ・ 信頼度 ${m.confidence}%`}
                 </div>
                 <div style={{ fontSize: 10, color: C.sub, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {isReference ? "過去データ：" : `${m.predictionDayLabel}の地図：`}{m.nextPrediction}
