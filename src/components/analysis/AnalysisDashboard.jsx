@@ -176,7 +176,14 @@ function buildRealDays(archives, month) {
   );
 }
 
-function buildStoreRanking(archives) {
+// 店舗別の集計（表示専用）。既存の getEvAmount / getActualPL をそのまま合算するだけで、
+// 集計式そのものは変更していない。sortBy / limit は「すべて見る」の一覧画面で使う表示オプション。
+const STORE_SORTS = [
+  { id: "actual", label: "実収支順" },
+  { id: "ev", label: "期待値順" },
+  { id: "days", label: "稼働日数順" },
+];
+function buildStoreRanking(archives, { sortBy = "ev", limit = 5 } = {}) {
   const rows = Array.isArray(archives) ? archives : [];
   const map = new Map();
   rows.forEach((entry) => {
@@ -192,15 +199,19 @@ function buildStoreRanking(archives) {
     }
     map.set(name, current);
   });
-  return [...map.values()]
+  const list = [...map.values()]
     .map((row) => ({
       ...row,
       size: "中型店",
       spin: row.spinCount ? row.spinTotal / row.spinCount : 0,
       days: row.days.size,
     }))
-    .sort((a, b) => b.ev - a.ev)
-    .slice(0, 5);
+    .sort((a, b) => {
+      if (sortBy === "actual") return b.actual - a.actual;
+      if (sortBy === "days") return b.days - a.days || b.actual - a.actual;
+      return b.ev - a.ev;
+    });
+  return limit > 0 ? list.slice(0, limit) : list;
 }
 
 function buildTrend(dayMap, year, month) {
@@ -769,7 +780,7 @@ function TrendPanel({ data }) {
 // 表彰台（1〜3位）。中央＝1位を一回り大きく表示し、実収支の符号で緑/赤に色分けする。
 // rows は既に実収支（actualPL）降順で渡ってくる想定（machineRanking のデフォルト順）。
 const RANK_BADGE = [
-  "bg-[var(--at-gold)] text-[#3d2f00]",
+  "bg-[var(--at-gold)] text-[var(--at-on-gold)]",
   "bg-[var(--at-rowbg)] text-[var(--at-subtle-hi)]",
   "bg-[var(--at-amber)]/20 text-[var(--at-amber)]",
 ];
@@ -836,15 +847,24 @@ function BalanceBars({ rows }) {
 }
 
 // 店舗トップ3。行タップで店舗詳細（storeDetailName）へ遷移する。
-function StorePanel({ rows, onSelect }) {
+function StorePanel({ rows, onSelect, onSeeAll, totalCount }) {
   const top3 = rows.slice(0, 3);
   if (top3.length === 0) {
     return <section className={`${card} p-5 text-center text-[13px] text-[var(--at-mut)]`}>対象期間の記録がありません</section>;
   }
   return (
     <section>
-      {/* 「すべて見る」は従来から表示のみ（遷移先未実装）。削除せずラベル横に残置。 */}
-      <GroupLabel action={<span className="shrink-0 text-[13px] font-semibold text-[var(--at-cyan)]">すべて見る</span>}>店舗トップ3</GroupLabel>
+      {/* 「すべて見る」で全店舗の一覧画面（StoreListScreen）へ遷移する。 */}
+      <GroupLabel
+        action={(
+          <button type="button" onClick={onSeeAll} className="flex h-8 shrink-0 items-center gap-0.5 rounded-full px-1 text-[13px] font-semibold text-[var(--at-cyan)] active:opacity-60">
+            すべて見る{totalCount > 0 ? `（${totalCount}）` : ""}
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        )}
+      >
+        店舗トップ3
+      </GroupLabel>
       <div className={`${card} overflow-hidden`}>
         {top3.map((row, index) => (
           <button
@@ -864,6 +884,91 @@ function StorePanel({ rows, onSelect }) {
         ))}
       </div>
     </section>
+  );
+}
+
+// 店舗トップ3の「すべて見る」で開く全店舗一覧（iOS のプッシュ遷移相当のサブ画面）。
+// 集計は buildStoreRanking（表示専用の純関数）に委譲し、並び替えだけを画面側で持つ。
+function StoreListScreen({ archives, onSelect, onBack, sortBy, setSortBy }) {
+  const rows = useMemo(() => buildStoreRanking(archives, { sortBy, limit: 0 }), [archives, sortBy]);
+  const totals = useMemo(() => rows.reduce(
+    (acc, row) => ({ actual: acc.actual + row.actual, ev: acc.ev + row.ev, days: acc.days + row.days }),
+    { actual: 0, ev: 0, days: 0 },
+  ), [rows]);
+  return (
+    <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--at-page)] text-[var(--at-strong)]">
+      <div className="mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-4 pt-3">
+        {/* iOS のナビゲーションバー（左に戻る・中央にタイトル） */}
+        <div className="mb-2.5 flex h-[52px] shrink-0 items-center gap-1">
+          <RoundButton onClick={onBack} ariaLabel="戻る">
+            <ChevronLeft className="h-[22px] w-[22px]" />
+          </RoundButton>
+          <h1 className="min-w-0 flex-1 truncate text-[20px] font-bold tracking-[-.02em]">店舗一覧</h1>
+          <span className="shrink-0 text-[13px] font-semibold text-[var(--at-mut)]">{rows.length}店舗</span>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain pb-12">
+          {/* 全店舗の合計（この画面の対象範囲＝現在の絞り込み・全期間） */}
+          <section className={`${card} grid grid-cols-3 overflow-hidden`}>
+            {[
+              { label: "合計収支", value: `${signed(totals.actual)}円`, cls: moneyClass(totals.actual) },
+              { label: "期待値", value: `${signed(totals.ev)}円`, cls: "text-[var(--at-cyan)]" },
+              { label: "稼働", value: `${totals.days}日`, cls: "text-[var(--at-strong)]" },
+            ].map((item, index) => (
+              <div key={item.label} className={`min-w-0 px-2 py-3 text-center ${index > 0 ? "border-l border-[var(--at-ln-soft)]" : ""}`}>
+                <div className="text-[11.5px] font-semibold text-[var(--at-mut)]">{item.label}</div>
+                <div className={`mt-1 truncate whitespace-nowrap text-[16px] font-bold tabular-nums ${item.cls}`}>{item.value}</div>
+              </div>
+            ))}
+          </section>
+
+          {/* 並び替え（iOS セグメンテッドコントロール） */}
+          <div className="grid grid-cols-3 gap-1 rounded-[10px] bg-[var(--at-rowbg)] p-1">
+            {STORE_SORTS.map((item) => {
+              const active = sortBy === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setSortBy(item.id)}
+                  aria-pressed={active}
+                  className={`h-9 rounded-[8px] text-[14px] font-semibold transition ${active
+                    ? "bg-[var(--at-panel)] text-[var(--at-strong)] shadow-[0_1px_3px_rgba(0,0,0,.25)]"
+                    : "text-[var(--at-mut)]"}`}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {rows.length === 0 ? (
+            <section className={`${card} p-6 text-center text-[13px] text-[var(--at-mut)]`}>記録のある店舗がありません</section>
+          ) : (
+            <section className={`${card} overflow-hidden`}>
+              {rows.map((row, index) => (
+                <button
+                  key={row.storeName}
+                  type="button"
+                  onClick={() => onSelect(row.storeName)}
+                  className={`flex min-h-[64px] w-full items-center gap-3 px-4 py-3 text-left active:bg-[var(--at-hoverbg)] ${index > 0 ? "border-t border-[var(--at-ln-soft)]" : ""}`}
+                >
+                  <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[13px] font-bold tabular-nums ${index < 3 ? RANK_BADGE[index] : "bg-[var(--at-rowbg)] text-[var(--at-mut)]"}`}>{index + 1}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[15px] font-semibold text-[var(--at-strong)]">{row.storeName}</span>
+                    <span className="mt-0.5 block truncate text-[11px] font-medium tabular-nums text-[var(--at-mut)]">
+                      期待値 {signed(row.ev)} ・ {row.days}日{row.spin > 0 ? ` ・ ${row.spin.toFixed(1)}回/k` : ""}
+                    </span>
+                  </span>
+                  <span className={`shrink-0 text-[15px] font-bold tabular-nums ${moneyClass(row.actual)}`}>{signed(row.actual)}円</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-[var(--at-faint)]" />
+                </button>
+              ))}
+            </section>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1291,66 +1396,61 @@ function StoreDetailScreen({ storeName, archives, isDemo, onBack }) {
 
   return (
     <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--at-page)] text-[var(--at-strong)]">
-      <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-5 pt-4">
-        <div className="flex items-center gap-2.5">
-          <button type="button" onClick={onBack} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[var(--at-ln-md)] bg-[var(--at-panel2)] text-[var(--at-mut)]">
-            <ChevronLeft className="h-5 w-5" />
-          </button>
-          <div className="min-w-0 flex-1">
-            <div className="text-[10px] font-extrabold tracking-[.24em] text-[var(--at-gold)]">STORE REPORT</div>
-            <h1 className="mt-0.5 truncate text-[19px] font-black leading-tight">{storeName}</h1>
-          </div>
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="rounded-full border border-[var(--at-ln-md)] px-3 py-1.5 text-[11px] font-bold text-[var(--at-subtle-hi)]">全期間</span>
+      <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-4 pt-3">
+        {/* iOS のナビゲーションバー（丸型の戻るボタン＋タイトル） */}
+        <div className="mb-2 flex min-h-[52px] shrink-0 items-center gap-1.5">
+          <RoundButton onClick={onBack} ariaLabel="戻る">
+            <ChevronLeft className="h-[22px] w-[22px]" />
+          </RoundButton>
+          <h1 className="min-w-0 flex-1 truncate text-[20px] font-bold leading-tight tracking-[-.02em]">{storeName}</h1>
           {isTopStore && (
-            <span className="rounded-full border border-[var(--at-gold)]/35 bg-[var(--at-gold)]/10 px-3 py-1.5 text-[11px] font-extrabold text-[var(--at-gold)]">店舗1位</span>
+            <span className="shrink-0 rounded-full bg-[var(--at-gold)] px-2.5 py-1 text-[12px] font-bold text-[var(--at-on-gold)]">1位</span>
           )}
         </div>
 
-        <div className="mt-4 flex items-end justify-between gap-3">
-          <div>
-            <div className="text-[12px] font-extrabold tracking-[.14em] text-[var(--at-mut)]">この店舗での収支</div>
-            <div className="mt-1 flex items-baseline gap-1">
-              <span className={`font-mono text-[42px] font-black leading-none tracking-[-.03em] tabular-nums ${moneyClass(heroPL)}`}>{signed(heroPL)}</span>
-              <span className="pb-0.5 text-[14px] font-extrabold text-[var(--at-mut)]">円</span>
+        <section className={`${card} p-4`}>
+          <div className="flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[13px] font-semibold text-[var(--at-mut)]">この店舗での収支（全期間）</div>
+              <div className="mt-1 flex items-baseline gap-1">
+                <span className={`text-[clamp(28px,9vw,40px)] font-bold leading-none tracking-[-.03em] tabular-nums ${moneyClass(heroPL)}`}>{signed(heroPL)}</span>
+                <span className="text-[14px] font-semibold text-[var(--at-mut)]">円</span>
+              </div>
+            </div>
+            <div className="shrink-0 pb-0.5 text-right">
+              <div className="text-[11.5px] font-semibold text-[var(--at-mut)]">平均回転率</div>
+              <div className="mt-1 text-[18px] font-bold tabular-nums">
+                {avgSpin != null ? avgSpin.toFixed(1) : "—"}<span className="ml-0.5 text-[11px] font-semibold text-[var(--at-mut)]">回/k</span>
+              </div>
             </div>
           </div>
-          <div className="pb-1 text-right">
-            <div className="text-[10px] font-extrabold text-[var(--at-mut)]">平均回転率</div>
-            <div className="mt-0.5 font-mono text-[18px] font-black tabular-nums">
-              {avgSpin != null ? avgSpin.toFixed(1) : "—"}<span className="text-[10px] font-bold text-[var(--at-mut)]">回/k</span>
-            </div>
-          </div>
-        </div>
+        </section>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain pb-12 pt-4">
           <section className={`${card} px-4 py-1`}>
             {stats.map((s) => <StoreStatRow key={s.label} {...s} />)}
           </section>
 
-          <section className={`${card} p-0`}>
-            <div className="flex items-center justify-between px-3.5 pb-1.5 pt-3">
-              <h2 className="text-[14px] font-black text-[var(--at-strong)]">実施履歴</h2>
-              <span className="text-[11px] font-bold text-[var(--at-mut)]">収支順</span>
+          <section>
+            <GroupLabel action={<span className="shrink-0 text-[13px] font-semibold text-[var(--at-mut)]">収支順</span>}>実施履歴</GroupLabel>
+            <div className={`${card} overflow-hidden`}>
+              {visits.length === 0 ? (
+                <div className="px-4 py-6 text-center text-[13px] text-[var(--at-mut)]">実戦記録がありません</div>
+              ) : (
+                visits.map((v, index) => (
+                  <div key={v.key} className={`flex min-h-[60px] items-center gap-3 px-4 py-3 ${index > 0 ? "border-t border-[var(--at-ln-soft)]" : ""}`}>
+                    <span className="w-[42px] shrink-0 text-[13px] font-semibold tabular-nums text-[var(--at-mut)]">{v.date?.slice(5).replace("-", "/")}</span>
+                    <span className="min-w-0 flex-1">
+                      <div className="truncate text-[15px] font-semibold">{v.machineName}</div>
+                      <div className="mt-0.5 text-[12px] font-medium text-[var(--at-cyan)]">期待値 {signed(Math.round(v.ev))}円</div>
+                    </span>
+                    <span className={`shrink-0 text-[16px] font-bold tabular-nums ${v.pl != null ? moneyClass(v.pl) : "text-[var(--at-faint)]"}`}>
+                      {v.pl != null ? `${signed(v.pl)}円` : "—"}
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
-            {visits.length === 0 ? (
-              <div className="px-3.5 py-6 text-center text-[11px] text-[var(--at-mut)]">実戦記録がありません</div>
-            ) : (
-              visits.map((v) => (
-                <div key={v.key} className="flex items-center gap-3 border-t border-[var(--at-ln-soft)] px-3.5 py-3">
-                  <span className="w-14 shrink-0 font-mono text-[12px] font-extrabold text-[var(--at-subtle-hi)]">{v.date?.slice(5).replace("-", "/")}</span>
-                  <span className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] font-extrabold">{v.machineName}</div>
-                    <div className="text-[10.5px] font-bold text-[var(--at-cyan)]">期待値 {signed(Math.round(v.ev))}円</div>
-                  </span>
-                  <span className={`shrink-0 font-mono text-[15px] font-black tabular-nums ${v.pl != null ? moneyClass(v.pl) : "text-[var(--at-faint)]"}`}>
-                    {v.pl != null ? `${signed(v.pl)}円` : "—"}
-                  </span>
-                </div>
-              ))
-            )}
           </section>
         </div>
       </div>
@@ -1444,35 +1544,45 @@ function MachineDetailScreen({ machineName, archives, isDemo, onBack }) {
 
   return (
     <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--at-page)] text-[var(--at-strong)]">
-      <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-5 pt-4">
-        <div className="flex items-center gap-2.5">
-          <button type="button" onClick={onBack} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[var(--at-ln-md)] bg-[var(--at-panel2)] text-[var(--at-mut)]">
-            <ChevronLeft className="h-5 w-5" />
-          </button>
-          <div className="min-w-0 flex-1">
-            <div className="text-[10px] font-extrabold tracking-[.24em] text-[var(--at-gold)]">MACHINE REPORT</div>
-            <h1 className="mt-0.5 truncate text-[19px] font-black leading-tight">{machineName}</h1>
+      <div className="relative mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col px-4 pt-3">
+        {/* iOS のナビゲーションバー（丸型の戻るボタン＋タイトル） */}
+        <div className="mb-2 flex min-h-[52px] shrink-0 items-center gap-1.5">
+          <RoundButton onClick={onBack} ariaLabel="戻る">
+            <ChevronLeft className="h-[22px] w-[22px]" />
+          </RoundButton>
+          <h1 className="min-w-0 flex-1 truncate text-[20px] font-bold leading-tight tracking-[-.02em]">{machineName}</h1>
+        </div>
+
+        <section className={`${card} p-4`}>
+          <div className="text-[13px] font-semibold text-[var(--at-mut)]">この機種の通算収支</div>
+          <div className="mt-1 flex items-baseline gap-1">
+            <span className={`text-[clamp(28px,9vw,40px)] font-bold leading-none tracking-[-.03em] tabular-nums ${moneyClass(heroPL)}`}>{signed(heroPL)}</span>
+            <span className="text-[14px] font-semibold text-[var(--at-mut)]">円</span>
           </div>
-        </div>
-
-        <div className="mt-4">
-          <div className="text-[12px] font-extrabold tracking-[.14em] text-[var(--at-mut)]">この機種の通算収支</div>
-          <div className={`mt-1 font-mono text-[42px] font-black leading-none tracking-[-.03em] tabular-nums ${moneyClass(heroPL)}`}>{signed(heroPL)}</div>
-          <div className="mt-2 text-[12px] font-extrabold text-[var(--at-cyan)]">期待値累計 {signed(heroEv)}円</div>
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="rounded-full border border-[var(--at-ln-md)] px-3 py-1.5 text-[11px] font-bold text-[var(--at-subtle-hi)]">
-            実戦 {isDemo ? "—" : summaryX?.count ?? 0}回
-          </span>
-          <span className="rounded-full border border-[var(--at-gold)]/35 bg-[var(--at-gold)]/10 px-3 py-1.5 text-[11px] font-extrabold text-[var(--at-gold)]">
-            勝率 {isDemo ? (demoMachine?.winRate ?? "—") : (summaryX?.winRate ?? "—")}%
-            {!isDemo && summaryX && <>（{summaryX.wins}勝{summaryX.losses}敗）</>}
-          </span>
-          <span className="rounded-full border border-[var(--at-ln-md)] px-3 py-1.5 text-[11px] font-bold text-[var(--at-subtle-hi)]">
-            時給 {!isDemo && summaryX?.wage != null ? `${signed(summaryX.wage)}円/h` : "—"}
-          </span>
-        </div>
+          <div className="mt-2 text-[12.5px] font-semibold text-[var(--at-cyan)]">期待値累計 {signed(heroEv)}円</div>
+          <div className="mt-3.5 grid grid-cols-3 border-t border-[var(--at-ln-soft)] pt-3">
+            {[
+              { label: "実戦", value: `${isDemo ? "—" : summaryX?.count ?? 0}回`, cls: "text-[var(--at-strong)]" },
+              {
+                label: "勝率",
+                value: `${isDemo ? (demoMachine?.winRate ?? "—") : (summaryX?.winRate ?? "—")}%`,
+                sub: !isDemo && summaryX ? `${summaryX.wins}勝${summaryX.losses}敗` : "",
+                cls: "text-[var(--at-strong)]",
+              },
+              {
+                label: "時給",
+                value: !isDemo && summaryX?.wage != null ? `${signed(summaryX.wage)}円` : "—",
+                cls: !isDemo && summaryX?.wage != null ? moneyClass(summaryX.wage) : "text-[var(--at-strong)]",
+              },
+            ].map((item, index) => (
+              <div key={item.label} className={`min-w-0 text-center ${index > 0 ? "border-l border-[var(--at-ln-soft)]" : ""}`}>
+                <div className="text-[11.5px] font-semibold text-[var(--at-mut)]">{item.label}</div>
+                <div className={`mt-1 truncate whitespace-nowrap text-[15px] font-bold tabular-nums ${item.cls}`}>{item.value}</div>
+                {item.sub && <div className="mt-0.5 truncate text-[10.5px] font-medium text-[var(--at-faint2)]">{item.sub}</div>}
+              </div>
+            ))}
+          </div>
+        </section>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain pb-12 pt-4">
           <section className={`${card} overflow-hidden p-3`}>
@@ -1489,19 +1599,19 @@ function MachineDetailScreen({ machineName, archives, isDemo, onBack }) {
                     <ReferenceLine y={0} stroke="rgba(120,120,128,.5)" />
                     <Tooltip contentStyle={{ background: "var(--at-panel)", border: "1px solid var(--at-ln-md)", borderRadius: 8, fontSize: 10 }} formatter={(value) => `${signed(value)}円`} />
                     <Legend iconSize={8} wrapperStyle={{ fontSize: 9 }} />
-                    <Bar dataKey="pl" name="単発収支" radius={[2, 2, 0, 0]} maxBarSize={16}>
-                      {chartRows.map((d, i) => <Cell key={i} fill={(d.pl ?? 0) >= 0 ? "rgba(37,211,102,.5)" : "rgba(255,99,122,.45)"} />)}
+                    <Bar dataKey="pl" name="単発収支" fill="#30D158" radius={[3, 3, 0, 0]} maxBarSize={16}>
+                      {chartRows.map((d, i) => <Cell key={i} fill={(d.pl ?? 0) >= 0 ? "rgba(48,209,88,.55)" : "rgba(255,69,58,.5)"} />)}
                     </Bar>
                     <Line type="monotone" dataKey="cum" name="累計実収支" stroke="#30D158" strokeWidth={2.2} dot={false} />
-                    <Line type="monotone" dataKey="cumEv" name="累計期待値" stroke="#FFC83D" strokeWidth={1.6} strokeDasharray="4 3" dot={false} />
+                    <Line type="monotone" dataKey="cumEv" name="累計期待値" stroke="#FF9F0A" strokeWidth={1.6} strokeDasharray="4 3" dot={false} />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
             )}
           </section>
 
-          <section className={`${card} px-4 py-3`}>
-            <div className="mb-1 text-[14px] font-black">通算サマリー</div>
+          <section className={`${card} px-4 py-3.5`}>
+            <div className="mb-2.5 text-[16px] font-bold">通算サマリー</div>
             <div className="grid grid-cols-3 gap-2">
               <MiniStat label="平均回転率" value={!isDemo && summaryX?.avgSpin != null ? `${summaryX.avgSpin.toFixed(1)}回/k` : (isDemo ? `${demoMachine?.spin ?? "—"}回/k` : "—")} />
               <MiniStat label="総回転数" value={!isDemo && summaryX ? `${fmt(summaryX.totalSpins)}G` : "—"} />
@@ -1509,44 +1619,55 @@ function MachineDetailScreen({ machineName, archives, isDemo, onBack }) {
             </div>
           </section>
 
-          <section className={`${card} p-0`}>
-            <div className="px-3.5 pb-2 pt-3">
-              <h2 className="text-[14px] font-black text-[var(--at-strong)]">実戦履歴</h2>
-              {/* 並び替え（新しい順／回転率順／台番号順）。台番号ごとの回転率比較用の表示専用トグル。 */}
-              <div className="mt-2 grid grid-cols-3 gap-1 rounded-[10px] border border-[var(--at-ln-md)] bg-[var(--at-panel2)] p-1">
-                {[["recent", "新しい順"], ["spin", "回転率順"], ["machineNum", "台番号順"]].map(([key, label]) => (
-                  <button key={key} type="button" onClick={() => setSortMode(key)}
-                    className={`h-10 rounded-[7px] text-[11px] font-bold transition-colors ${sortMode === key
-                      ? "bg-[var(--at-cyan)] text-[var(--at-page)]"
-                      : "text-[var(--at-mut)] active:opacity-70"}`}>
-                    {label}
-                  </button>
-                ))}
-              </div>
+          <section>
+            <GroupLabel>実戦履歴</GroupLabel>
+            {/* 並び替え（新しい順／回転率順／台番号順）。台番号ごとの回転率比較用の表示専用トグル。 */}
+            <div className="mb-2 grid grid-cols-3 gap-1 rounded-[10px] bg-[var(--at-rowbg)] p-1">
+              {[["recent", "新しい順"], ["spin", "回転率順"], ["machineNum", "台番号順"]].map(([key, label]) => (
+                <button key={key} type="button" onClick={() => setSortMode(key)} aria-pressed={sortMode === key}
+                  className={`h-9 rounded-[8px] text-[14px] font-semibold transition ${sortMode === key
+                    ? "bg-[var(--at-panel)] text-[var(--at-strong)] shadow-[0_1px_3px_rgba(0,0,0,.25)]"
+                    : "text-[var(--at-mut)]"}`}>
+                  {label}
+                </button>
+              ))}
             </div>
-            {rows.length === 0 ? (
-              <div className="px-3.5 py-6 text-center text-[11px] text-[var(--at-mut)]">実戦記録がありません</div>
-            ) : (
-              rows.map((r) => (
-                <div key={r.key} className="border-t border-[var(--at-ln-soft)] px-3.5 py-3">
-                  <div className="grid grid-cols-[1fr_66px_66px_62px] items-center gap-1.5 text-right">
-                    <span className="min-w-0 text-left">
-                      <div className="truncate text-[12.5px] font-black">{r.day}</div>
-                      <div className="truncate text-[9.5px] font-bold text-[var(--at-mut)]">{[r.store, r.machineNum ? `${r.machineNum}番台` : ""].filter(Boolean).join(" / ")}</div>
-                    </span>
-                    <span className={`font-mono text-[12px] font-black tabular-nums ${r.pl != null ? moneyClass(r.pl) : "text-[var(--at-faint)]"}`}>{r.pl != null ? signed(r.pl) : "—"}</span>
-                    <span className="font-mono text-[12px] font-black tabular-nums text-[var(--at-cyan)]">{signed(Math.round(r.ev))}</span>
-                    <span className={`font-mono text-[12px] font-black tabular-nums ${moneyClass(r.cum)}`}>{signed(r.cum)}</span>
+            <div className={`${card} overflow-hidden`}>
+              {rows.length === 0 ? (
+                <div className="px-4 py-6 text-center text-[13px] text-[var(--at-mut)]">実戦記録がありません</div>
+              ) : (
+                <>
+                  {/* 3つの数値列が何を指すかが分からなかったため見出し行を追加（表示のみ）。 */}
+                  <div className="grid grid-cols-[1fr_66px_66px_66px] items-center gap-1.5 border-b border-[var(--at-ln-soft)] bg-[var(--at-rowbg)] px-4 py-2 text-right text-[11px] font-semibold text-[var(--at-mut)]">
+                    <span className="text-left">日付 / 店舗</span>
+                    <span>収支</span>
+                    <span>期待値</span>
+                    <span>累計</span>
                   </div>
-                  <div className="mt-1.5 flex items-center gap-3.5 text-[9.5px] font-bold text-[var(--at-mut)]">
-                    <span>投資 <span className="font-mono tabular-nums text-[var(--at-strong)]">{fmt(r.invest)}</span></span>
-                    <span>回収 <span className="font-mono tabular-nums text-[var(--at-strong)]">{fmt(r.recovery)}</span></span>
-                    <span>{r.spin != null ? `${r.spin.toFixed(1)}回/k` : "—"}</span>
-                    <span>{r.hours > 0 ? `${r.hours.toFixed(1)}h` : "—"}</span>
+                  {rows.map((r, index) => (
+                  <div key={r.key} className={`px-4 py-3 ${index > 0 ? "border-t border-[var(--at-ln-soft)]" : ""}`}>
+                    <div className="grid grid-cols-[1fr_66px_66px_66px] items-center gap-1.5 text-right">
+                      <span className="min-w-0 text-left">
+                        <div className="truncate text-[14px] font-semibold">{r.day}</div>
+                        {/* 台番号は幅の余っている下段へ回し、店舗名が省略されないようにする */}
+                        <div className="mt-0.5 truncate text-[11px] font-medium text-[var(--at-mut)]">{r.store}</div>
+                      </span>
+                      <span className={`text-[13px] font-bold tabular-nums ${r.pl != null ? moneyClass(r.pl) : "text-[var(--at-faint)]"}`}>{r.pl != null ? signed(r.pl) : "—"}</span>
+                      <span className="text-[13px] font-bold tabular-nums text-[var(--at-cyan)]">{signed(Math.round(r.ev))}</span>
+                      <span className={`text-[13px] font-bold tabular-nums ${moneyClass(r.cum)}`}>{signed(r.cum)}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-medium text-[var(--at-mut)]">
+                      {r.machineNum && <span className="rounded-full bg-[var(--at-rowbg)] px-2 py-0.5 font-semibold tabular-nums text-[var(--at-subtle-hi)]">{r.machineNum}番台</span>}
+                      <span>投資 <span className="font-semibold tabular-nums text-[var(--at-strong)]">{fmt(r.invest)}</span></span>
+                      <span>回収 <span className="font-semibold tabular-nums text-[var(--at-strong)]">{fmt(r.recovery)}</span></span>
+                      <span className="tabular-nums">{r.spin != null ? `${r.spin.toFixed(1)}回/k` : "—"}</span>
+                      <span className="tabular-nums">{r.hours > 0 ? `${r.hours.toFixed(1)}h` : "—"}</span>
+                    </div>
                   </div>
-                </div>
-              ))
-            )}
+                  ))}
+                </>
+              )}
+            </div>
           </section>
         </div>
       </div>
@@ -1597,6 +1718,10 @@ export default function AnalysisDashboard({
   const [recordsDay, setRecordsDay] = useState(null);
   // 店舗トップ3の行タップで開く店舗詳細のサブ画面状態。null=非表示 / string=対象の店舗名。
   const [storeDetailName, setStoreDetailName] = useState(null);
+  // 「すべて見る」で開く全店舗一覧のサブ画面状態と、その並び替え。
+  // 並び替えは親で持ち、店舗詳細へ進んで戻ってきても選択が保たれるようにする。
+  const [storeListOpen, setStoreListOpen] = useState(false);
+  const [storeListSort, setStoreListSort] = useState("actual");
   // 分析+の機種カルテ行タップで開く機種詳細のサブ画面状態。null=非表示 / string=対象の機種名。
   const [machineDetailName, setMachineDetailName] = useState(null);
   // スワイプ判定用のタッチ開始座標。
@@ -1705,6 +1830,11 @@ export default function AnalysisDashboard({
     }));
   }, [filtered, isDemo]);
   const stores = useMemo(() => isDemo ? DEMO_STORES : buildStoreRanking(filtered), [filtered, isDemo]);
+  // 「すべて見る」のバッジ用。トップ3の裏にいくつ店舗があるかを示す。
+  const storeCount = useMemo(
+    () => isDemo ? DEMO_STORES.length : buildStoreRanking(filtered, { limit: 0 }).length,
+    [filtered, isDemo],
+  );
   const storeOptions = useMemo(() => listAvailableStores(archives), [archives]);
   const machineOptions = useMemo(() => listAvailableMachines(archives), [archives]);
   const filterActive = Boolean(
@@ -1849,6 +1979,20 @@ export default function AnalysisDashboard({
     );
   }
 
+  // 「すべて見る」で開く全店舗一覧のサブ画面。店舗詳細と同じく全期間スコープ。
+  // 行タップで店舗詳細へ進み、そこから戻るとこの一覧に戻る（iOS のプッシュ遷移と同じ積み方）。
+  if (storeListOpen && storeDetailName === null) {
+    return (
+      <StoreListScreen
+        archives={filterArchives(archives, filters)}
+        onSelect={setStoreDetailName}
+        onBack={() => setStoreListOpen(false)}
+        sortBy={storeListSort}
+        setSortBy={setStoreListSort}
+      />
+    );
+  }
+
   // 分析タブの店舗トップ3タップで開く店舗詳細のサブ画面。
   // 分析タブの集計は期間絞り込みなし（periodFilters === {} for "analyzer"）のため、対象は常に全期間。
   if (storeDetailName !== null) {
@@ -1888,7 +2032,7 @@ export default function AnalysisDashboard({
             {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
             <MachinePodium rows={machines} />
             <BalanceBars rows={machines} />
-            <StorePanel rows={stores} onSelect={setStoreDetailName} />
+            <StorePanel rows={stores} onSelect={setStoreDetailName} onSeeAll={() => setStoreListOpen(true)} totalCount={storeCount} />
             <AnalyzerView archives={archives} extraFilters={filters} onSelectMachine={setMachineDetailName} />
           </div>
         </div>
