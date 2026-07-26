@@ -79,6 +79,7 @@ import {
   getActiveYutimeRun,
   sumYutimeSupportCash,
 } from "./components/yutime/yutimeFlow";
+import { attachDataQualitySnapshot } from "./sessionDataQuality";
 
 // 旧タブ名 → 新モード名 のマッピング
 // Tabs.jsx 内から S.setTab("rot" | "calendar" | "settings") が呼ばれるため、
@@ -135,6 +136,9 @@ export default function App() {
   // ホームの「翌日プランを戦略で確認」から移動した時だけ使う、一度限りの引き継ぎ情報。
   // localStorage には保存せず、通常の「台選び」タブでは現在選択中の店舗をそのまま使う。
   const [strategyPlanContext, setStrategyPlanContext] = useState(null);
+  // 台選びで確定した情報を、新規稼働の確認画面へ一度だけ渡す。
+  // 「稼働開始」を押すまではセッション本体を書き換えない。
+  const [recordStartDraft, setRecordStartDraft] = useState(null);
 
   // 分析モード内の表示範囲
   // "month" | "year" | "all" | "analyzer"
@@ -873,7 +877,11 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionStarted]);
 
-  const resetAll = (extraChodamaToStore = 0, { persistStoreBalance = true } = {}) => {
+  const resetAll = (extraChodamaToStore = 0, {
+    persistStoreBalance = true,
+    selectedStoreIdOverride,
+    currentChodamaOverride,
+  } = {}) => {
     // セッション終了直前の atomic スナップショット（reset 前に確保）
     try { takeSnapshotImmediate("session:end", getUndoSnapshot()); } catch { /* ignore */ }
     // セッション終了前に選択中の店舗の貯玉残高を自動更新
@@ -881,8 +889,8 @@ export default function App() {
     // 設定画面からのセッション初期化では店舗資産を変更しない。
     setStores((prev) => updateStoresForSessionReset(prev, {
       persistStoreBalance,
-      selectedStoreId,
-      currentChodama,
+      selectedStoreId: selectedStoreIdOverride !== undefined ? selectedStoreIdOverride : selectedStoreId,
+      currentChodama: currentChodamaOverride !== undefined ? currentChodamaOverride : currentChodama,
       extraChodama: extraChodamaToStore,
     }));
     setSessionStartDate("");
@@ -933,9 +941,14 @@ export default function App() {
     const exactMachineName = String(machineName || "").trim();
     const matchedMachines = exactMachineName ? searchMachines(exactMachineName, customMachines) : [];
     const matchedMachine = findExactMachine(matchedMachines, exactMachineName);
-    const riskBallValueYen = exRate > 0 ? 1000 / exRate : (Number(ballVal) > 0 ? Number(ballVal) : 4);
+    const settlementStore = (stores || []).find((store) => store && typeof store === "object"
+      && settlement?.storeId != null && String(store.id) === String(settlement.storeId));
+    const archiveRentBalls = Number(settlementStore?.rentBalls) > 0 ? Number(settlementStore.rentBalls) : rentBalls;
+    const archiveExRate = Number(settlementStore?.exRate) > 0 ? Number(settlementStore.exRate) : exRate;
+    const archiveBallVal = archiveExRate > 0 ? 1000 / archiveExRate : ballVal;
+    const riskBallValueYen = archiveExRate > 0 ? 1000 / archiveExRate : (Number(archiveBallVal) > 0 ? Number(archiveBallVal) : 4);
     const riskSnapshot = buildRiskSnapshot({ machine: matchedMachine, ballValueYen: riskBallValueYen, capturedAt: now.toISOString() });
-    const archive = {
+    const archiveBase = {
       id: now.getTime(),
       // 回転数・大当たりを記録する既存フローはパチンコ専用。
       // スロットは収支カレンダーの手動記録から独立して追加する。
@@ -945,23 +958,27 @@ export default function App() {
       rotRows: JSON.parse(JSON.stringify(rotRows)),
       jpLog: JSON.parse(JSON.stringify(jpLog)),
       sesLog: JSON.parse(JSON.stringify(sesLog)),
-      settings: { rentBalls, exRate, synthDenom, rotPerHour, border, ballVal },
+      settings: { rentBalls: archiveRentBalls, exRate: archiveExRate, synthDenom, rotPerHour, border, ballVal: archiveBallVal },
       stats: safeStats,
       riskSnapshot,
       totalTrayBalls: totalTrayBalls || 0,
       startRot: startRot || 0,
-      storeName: String(storeName || ""),
-      storeId: selectedStoreId || null,
+      storeName: String(settlement?.storeName ?? storeName ?? ""),
+      storeId: settlement?.storeId ?? selectedStoreId ?? null,
       machineNum: String(machineNum || ""),
       investYen: settlement ? (Number(settlement.investYen) || 0) : (Number(investYen) || 0),
       recoveryYen: settlement ? (Number(settlement.recoveryYen) || 0) : (Number(recoveryYen) || 0),
       // 台移動で持ち込んだ持ち玉の円換算（投資額に含まれる内数。アーカイブ編集の自動初期値で使用）
       carriedInYen: settlement ? (Number(settlement.carriedInYen) || 0) : 0,
       machineName: String(machineName || `1/${synthDenom}`),
+      finalMochiBalls: settlement?.finalMochiBalls != null
+        ? Math.max(0, Math.round(Number(settlement.finalMochiBalls) || 0))
+        : Math.max(0, Math.round(Number(currentMochiBalls) || 0)),
+      settlementMethod: settlement?.method || "",
       initialChodama: initialChodama || 0,
       finalChodama: currentChodama || 0,
       chodamaNetBalls: (currentChodama || 0) - (initialChodama || 0),
-      chodamaYen: Math.round((ev?.chodamaKCount || 0) * heldBallCostPerK(rentBalls, exRate)),
+      chodamaYen: Math.round((ev?.chodamaKCount || 0) * heldBallCostPerK(archiveRentBalls, archiveExRate)),
       isMoveArchive: isMove,
       // 着席判断時点の遊タイム計算を独立保存し、集計時に通常期待値へ加算する。
       yutimeDecision: yutimeDecision ? JSON.parse(JSON.stringify(yutimeDecision)) : null,
@@ -971,7 +988,19 @@ export default function App() {
       sessionTargetEndAt: sessionTargetEndAt || "",
       sessionClosingTime: sessionClosingTime || "",
       sessionPlannedStart1K: Number(sessionPlannedStart1K) || 0,
+      ...((yutimeDecision || (yutimeRuns || []).length > 0) ? {
+        yutimeContext: {
+          storeId: settlement?.storeId ?? selectedStoreId ?? null,
+          storeName: String(settlement?.storeName ?? storeName ?? ""),
+          initialMochiBalls: Math.max(0, Math.round(Number(initialMochiBalls) || 0)),
+          finalMochiBalls: settlement?.finalMochiBalls != null
+            ? Math.max(0, Math.round(Number(settlement.finalMochiBalls) || 0))
+            : Math.max(0, Math.round(Number(currentMochiBalls) || 0)),
+          recordedAt: now.toISOString(),
+        },
+      } : {}),
     };
+    const archive = attachDataQualitySnapshot(archiveBase, { archives, stores, at: now.toISOString() });
     setArchives((prev) => [...prev, archive]);
     // ハンターランク: 実戦アーカイブ確定で XP 加算（Phase 6：レベルアップ検出付き）
     grantXp(XP_SESSION_COMPLETE, "セッション完了");
@@ -1131,10 +1160,24 @@ export default function App() {
   // 精算シートの確定：method="cash"（現金精算）|"chodama"（貯玉化）。
   // invest/recovery は編集後の確定値（円）。貯玉化でも持ち玉の現金換算額を回収額として
   // 記録する（その日の収支は現金精算と同じ＝貯玉価値も収支に反映。後日の貯玉消費コストと相殺）。
-  const confirmEndSession = ({ method, invest, recovery, registerMachine }) => {
+  const confirmEndSession = ({
+    method,
+    invest,
+    recovery,
+    registerMachine,
+    storeId,
+    storeName: confirmedStoreName,
+    heldMochi,
+  }) => {
     const investVal = Math.max(0, Math.round(Number(invest) || 0));
     const recoveryVal = Math.max(0, Math.round(Number(recovery) || 0));
     const sheet = endSheet || {};
+    const targetStoreId = storeId ?? sheet.storeId ?? null;
+    const targetStore = (stores || []).find((store) => (
+      store && typeof store === "object" && String(store.id) === String(targetStoreId)
+    ));
+    const targetStoreName = String(confirmedStoreName ?? targetStore?.name ?? sheet.storeName ?? "");
+    const finalMochiBalls = Math.max(0, Math.round(Number(heldMochi ?? sheet.heldMochi) || 0));
     // 未登録機種を次回用にカスタム機種へ登録（resetAll で機種情報がクリアされる前に実行）。
     // 形式は Tabs の saveMachine / emptyMachine と同一。同名が既にあれば重複登録しない。
     if (registerMachine && sheet.isUnregistered) {
@@ -1169,13 +1212,24 @@ export default function App() {
       }
     }
     let extraChodama = 0;
-    if (method === "chodama" && sheet.storeId && sheet.heldMochi > 0) {
+    if (method === "chodama" && targetStoreId && finalMochiBalls > 0) {
       // 持ち玉を店舗の貯玉残高へ加算（資産として保存）
-      extraChodama = sheet.heldMochi;
-      logMochiToChodama(sheet.storeId, sheet.heldMochi, currentChodama || 0);
+      extraChodama = finalMochiBalls;
+      logMochiToChodama(targetStoreId, finalMochiBalls, currentChodama || 0);
     }
-    archiveCurrentSession(false, { investYen: investVal, recoveryYen: recoveryVal, carriedInYen });
-    resetAll(extraChodama);
+    archiveCurrentSession(false, {
+      investYen: investVal,
+      recoveryYen: recoveryVal,
+      carriedInYen,
+      storeId: targetStoreId,
+      storeName: targetStoreName,
+      finalMochiBalls,
+      method,
+    });
+    resetAll(extraChodama, {
+      selectedStoreIdOverride: targetStoreId,
+      currentChodamaOverride: currentChodama,
+    });
     setEndSheet(null);
     setCurrentMode("record");
   };
@@ -1214,6 +1268,32 @@ export default function App() {
     currentYutimeRuns: yutimeRuns,
   }), [economicArchives, ev?.rawInvest, yutimeRuns]);
 
+  const startRecordFromSelection = useCallback((selection) => {
+    if (sessionStarted) {
+      // 稼働中は既存記録を上書きせず、現在の記録画面へ戻すだけにする。
+      setSessionSubTab("rot");
+      setCurrentMode("record");
+      return;
+    }
+    const selectedStore = (Array.isArray(stores) ? stores : []).find((store) => (
+      store && typeof store === "object" && String(store.id) === String(selection?.storeId)
+    ));
+    setRecordStartDraft({
+      id: `strategy-${Date.now()}`,
+      source: "strategy-map",
+      storeId: selection?.storeId ?? selectedStore?.id ?? null,
+      storeName: String(selection?.storeName || selectedStore?.name || ""),
+      machineName: String(selection?.machineName || ""),
+      machineNum: String(selection?.machineNum ?? selection?.num ?? ""),
+      rentBalls: Number(selectedStore?.rentBalls) || Number(rentBalls) || 250,
+      exRate: Number(selectedStore?.exRate) || Number(exRate) || 250,
+      closingTime: String(selectedStore?.closingTime || ""),
+      plannedStart1K: Number(selection?.plannedStart1K ?? selection?.rot) || 0,
+    });
+    setSessionSubTab("rot");
+    setCurrentMode("record");
+  }, [sessionStarted, stores, rentBalls, exRate, setCurrentMode]);
+
   const S = {
     rentBalls, setRentBalls, exRate, setExRate, synthDenom, setSynthDenom,
     rotPerHour, setRotPerHour, border, setBorder, ballVal, setBallVal,
@@ -1243,6 +1323,8 @@ export default function App() {
     monthlyPlayPlans, setMonthlyPlayPlans,
     dailyResearchPlans, setDailyResearchPlans,
     strategyPlanContext, setStrategyPlanContext,
+    recordStartDraft, setRecordStartDraft,
+    startRecordFromSelection,
     planningNotificationPrefs, setPlanningNotificationPrefs,
     ev, handleMoveTable, handleEndSession,
     theme, setTheme,
@@ -1382,7 +1464,11 @@ export default function App() {
         {/* 台選びタブ＝戦略マップ画面（保護対象・無改変）。
             旧 select の strategy 値で永続化された状態も同じ画面へフォールバックさせる。 */}
         {(currentMode === "select" || currentMode === "strategy") && (
-          <StrategyMapDashboard S={S} onBack={() => setCurrentMode("home")} />
+          <StrategyMapDashboard
+            S={S}
+            onBack={() => setCurrentMode("home")}
+            onStartRecord={startRecordFromSelection}
+          />
         )}
         {/* 差玉解析（独立タブにせず、ホームの「解析する」から起動） */}
         {currentMode === "delta" && (
@@ -1516,6 +1602,7 @@ export default function App() {
       {endSheet && (
         <EndSessionSheet
           sheet={endSheet}
+          stores={stores}
           onConfirm={confirmEndSession}
           onCancel={() => setEndSheet(null)}
         />
@@ -1525,17 +1612,27 @@ export default function App() {
 }
 
 // 実戦終了の精算シート：投資額・回収額（持ち玉の現金換算）を自動表示し、編集して確定する。
-function EndSessionSheet({ sheet, onConfirm, onCancel }) {
-  const hasStore = !!sheet.storeId;
+function EndSessionSheet({ sheet, stores = [], onConfirm, onCancel }) {
+  const [selectedStoreId, setSelectedStoreId] = useState(sheet.storeId ?? "");
+  const selectedStore = (Array.isArray(stores) ? stores : []).find((store) => (
+    store && typeof store === "object" && String(store.id) === String(selectedStoreId)
+  ));
+  const hasStore = selectedStoreId !== "" && selectedStoreId != null;
   const [method, setMethod] = useState("cash"); // "cash" 現金精算 | "chodama" 貯玉化
   const [invest, setInvest] = useState(String(sheet.invest || 0));
+  const [heldMochi, setHeldMochi] = useState(String(sheet.heldMochi || 0));
   const [recovery, setRecovery] = useState(String(sheet.cashYen || 0));
   // 未登録機種を次回用に登録するか（未登録機種のときのみ表示・既定オン）
   const [registerMachine, setRegisterMachine] = useState(true);
+  const heldMochiNum = Math.max(0, Math.round(Number(heldMochi) || 0));
+  const ballYen = Number(selectedStore?.exRate) > 0
+    ? 1000 / Number(selectedStore.exRate)
+    : Math.max(0, Number(sheet.ballYen) || 0);
+  const cashYen = Math.max(0, Math.round(heldMochiNum * ballYen));
   const investNum = Math.max(0, Math.round(Number(invest) || 0));
   // 貯玉化は持ち玉の現金換算額（cashYen）を回収額として扱う＝収支は現金精算と同じ
   const recoveryNum = method === "chodama"
-    ? Math.max(0, Math.round(Number(sheet.cashYen) || 0))
+    ? cashYen
     : Math.max(0, Math.round(Number(recovery) || 0));
   // 打ち始めに消費した貯玉（円）。投資と同じくコストとして収支へ反映（保存は archiveCurrentSession 側で別途記録）。
   const chodamaYen = Math.max(0, Math.round(Number(sheet.chodamaYen) || 0));
@@ -1570,8 +1667,55 @@ function EndSessionSheet({ sheet, onConfirm, onCancel }) {
       }}>
         <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>実戦終了・精算</div>
         <div style={{ fontSize: 12, color: C.sub, lineHeight: 1.6, marginBottom: 16 }}>
-          残った持ち玉 <b style={{ color: C.text }}>{fmt(sheet.heldMochi)}玉</b>
-          （現金換算 約¥{fmt(sheet.cashYen)}）。精算方法を選んで保存します。
+          店舗と残った持ち玉を確認し、精算方法を選んで保存します。
+        </div>
+
+        {/* 終了後でも遊タイム狙いの店舗・持ち玉を修正できる。保存値はアーカイブ編集で再表示する。 */}
+        <div style={{ display: "grid", gridTemplateColumns: "1.25fr .75fr", gap: 8, marginBottom: 12 }}>
+          <label style={{ display: "block" }}>
+            <span style={{ display: "block", fontSize: 11, color: C.sub, marginBottom: 5 }}>実践した店舗</span>
+            <select
+              aria-label="実践した店舗"
+              value={selectedStoreId == null ? "" : String(selectedStoreId)}
+              onChange={(event) => {
+                const nextStoreId = event.target.value;
+                const nextStore = (Array.isArray(stores) ? stores : []).find((store) => (
+                  store && typeof store === "object" && String(store.id) === String(nextStoreId)
+                ));
+                const nextBallYen = Number(nextStore?.exRate) > 0
+                  ? 1000 / Number(nextStore.exRate)
+                  : Math.max(0, Number(sheet.ballYen) || 0);
+                setSelectedStoreId(nextStoreId);
+                setRecovery(String(Math.round(heldMochiNum * nextBallYen)));
+                if (!nextStoreId && method === "chodama") setMethod("cash");
+              }}
+              style={{ ...inputStyle, textAlign: "left", fontSize: 14 }}
+            >
+              <option value="">店舗未設定</option>
+              {(Array.isArray(stores) ? stores : []).filter((store) => store && typeof store === "object").map((store) => (
+                <option key={store.id} value={String(store.id)}>{store.name || "名称未設定"}</option>
+              ))}
+            </select>
+          </label>
+          <label style={{ display: "block" }}>
+            <span style={{ display: "block", fontSize: 11, color: C.sub, marginBottom: 5 }}>終了時の持ち玉</span>
+            <input
+              aria-label="終了時の持ち玉"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={heldMochi}
+              onChange={(event) => {
+                const nextHeldMochi = event.target.value.replace(/[^0-9]/g, "");
+                setHeldMochi(nextHeldMochi);
+                setRecovery(String(Math.round((Number(nextHeldMochi) || 0) * ballYen)));
+              }}
+              style={inputStyle}
+            />
+          </label>
+        </div>
+        <div style={{ marginBottom: 14, fontSize: 10, color: C.sub }}>
+          {selectedStore?.name || sheet.storeName || "店舗未設定"} ・ {fmt(heldMochiNum)}玉 ・ 現金換算 約¥{fmt(cashYen)}
         </div>
 
         {/* 精算方法の選択（貯玉化は店舗選択時のみ） */}
@@ -1625,13 +1769,15 @@ function EndSessionSheet({ sheet, onConfirm, onCancel }) {
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 11, color: C.sub, marginBottom: 5 }}>回収額（円・持ち玉の現金化）</div>
             <input type="text" inputMode="numeric" pattern="[0-9]*" value={recovery}
-              onChange={(e) => setRecovery(e.target.value.replace(/[^0-9]/g, ""))} style={inputStyle} />
+              onChange={(e) => {
+                setRecovery(e.target.value.replace(/[^0-9]/g, ""));
+              }} style={inputStyle} />
           </div>
         ) : (
           <div style={{ marginBottom: 12, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px" }}>
             <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貯玉として保存</div>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>「{sheet.storeName}」へ +{fmt(sheet.heldMochi)}玉</div>
-            <div style={{ fontSize: 11, color: C.sub, marginTop: 4 }}>貯玉価値 約¥{fmt(sheet.cashYen)} を回収額として収支に計上</div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>「{selectedStore?.name || sheet.storeName}」へ +{fmt(heldMochiNum)}玉</div>
+            <div style={{ fontSize: 11, color: C.sub, marginTop: 4 }}>貯玉価値 約¥{fmt(cashYen)} を回収額として収支に計上</div>
           </div>
         )}
 
@@ -1674,7 +1820,15 @@ function EndSessionSheet({ sheet, onConfirm, onCancel }) {
           </button>
         )}
 
-        <button onClick={() => onConfirm({ method, invest: investNum, recovery: recoveryNum, registerMachine: sheet.isUnregistered && registerMachine })}
+        <button onClick={() => onConfirm({
+          method,
+          invest: investNum,
+          recovery: recoveryNum,
+          registerMachine: sheet.isUnregistered && registerMachine,
+          storeId: selectedStore?.id ?? null,
+          storeName: selectedStore?.name || sheet.storeName || "",
+          heldMochi: heldMochiNum,
+        })}
           style={{ width: "100%", height: 60, borderRadius: 12, fontSize: 15, fontWeight: 700, fontFamily: font, border: "none", background: C.blue, color: "#fff", cursor: "pointer" }}>
           実戦終了して保存
         </button>
