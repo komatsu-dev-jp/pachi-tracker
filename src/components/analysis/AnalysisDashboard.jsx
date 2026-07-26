@@ -1201,10 +1201,10 @@ function ShareCard({ year, month, actual, ev, winRate, days, dayMap, onClose }) 
         </div>
         {status && <div className="mt-2 text-center text-[11px] font-bold text-white/80">{status}</div>}
         <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
-          <button type="button" onClick={shareImage} disabled={busy} className="h-12 rounded-xl bg-[var(--at-cyan)] px-4 text-[14px] font-black text-[#03101c] disabled:opacity-60">
+          <button type="button" onClick={shareImage} disabled={busy} className="h-[50px] rounded-[14px] bg-[var(--at-cyan)] px-4 text-[16px] font-semibold text-white transition active:scale-[.99] disabled:opacity-60">
             {busy ? (status ? "共有画面を確認" : "画像を作成中…") : "画像を共有・保存"}
           </button>
-          <button type="button" onClick={onClose} className="h-12 rounded-xl border border-white/20 px-4 text-[13px] font-black text-white">閉じる</button>
+          <button type="button" onClick={onClose} className="h-[50px] rounded-[14px] bg-white/15 px-5 text-[16px] font-semibold text-white transition active:scale-[.99]">閉じる</button>
         </div>
       </div>
     </div>
@@ -1956,16 +1956,16 @@ export default function AnalysisDashboard({
     }
     return (
       <div className="analytics-terminal flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--at-page)] text-[var(--at-strong)]">
-        <div className="mx-auto flex w-full max-w-[430px] shrink-0 items-center gap-2 px-5 pt-4">
-          <button type="button" onClick={() => setRecordsDay(null)} className="flex h-9 shrink-0 items-center gap-1 rounded-lg border border-[var(--at-ln-md)] bg-[var(--at-panel2)] px-3 text-[12px] font-bold text-[var(--at-subtle)]">
-            <ChevronLeft className="h-4 w-4" />戻る
-          </button>
-          <h1 className="min-w-0 flex-1 truncate text-[15px] font-black tracking-[.02em]">{sheetLabel}</h1>
+        <div className="mx-auto flex min-h-[52px] w-full max-w-[430px] shrink-0 items-center gap-1.5 px-4 pt-3">
+          <RoundButton onClick={() => setRecordsDay(null)} ariaLabel="戻る">
+            <ChevronLeft className="h-[22px] w-[22px]" />
+          </RoundButton>
+          <h1 className="min-w-0 flex-1 truncate text-[17px] font-bold tracking-[-.01em]">{sheetLabel}</h1>
           {sheetHasActual && (
-            <span className={`shrink-0 rounded-full border px-2.5 py-1 font-mono text-[11px] font-black tabular-nums ${sheetPL >= 0
-              ? "border-[var(--at-heat-p-bd)] bg-[var(--at-heat-p)] text-[var(--at-pos)]"
-              : "border-[var(--at-heat-m-bd)] bg-[var(--at-heat-m)] text-[var(--at-neg)]"}`}>
-              日計 {signed(sheetPL)}円
+            <span className={`shrink-0 rounded-full px-2.5 py-1 text-[13px] font-bold tabular-nums ${sheetPL >= 0
+              ? "bg-[var(--at-heat-p)] text-[var(--at-pos)]"
+              : "bg-[var(--at-heat-m)] text-[var(--at-neg)]"}`}>
+              {signed(sheetPL)}円
             </span>
           )}
         </div>
