@@ -13,9 +13,17 @@ import {
   Clock3,
   AlertTriangle,
   ChevronRight,
+  ExternalLink,
+  SearchCheck,
 } from "lucide-react";
 import { SectionCard, SectionHeader, StatTile, TabIntro, WarningCard } from "./storeDetailShared";
 import { DETAIL_KEYS } from "./storeDetailPanels";
+import {
+  STORE_RATE_STATUS,
+  formatPachinkoRateResearchSummary,
+  formatResearchDate,
+  storeRateStatusLabel,
+} from "../../storeRateResearch";
 
 function SettingIcon({ icon, label, value, onClick }) {
   const Icon = icon;
@@ -60,6 +68,42 @@ export default function StoreOverviewTab({ data, onNavigateTab, onOpenDetail }) 
           <SettingIcon icon={RotateCw} value={`${currentSettings.replayCapBalls}玉`} label="再プレイ上限" onClick={() => onOpenDetail?.(DETAIL_KEYS.REPLAY_CAP)} />
         </div>
       </SectionCard>
+
+      {data.rateResearch && (
+        <SectionCard>
+          <SectionHeader
+            title="みんパチ交換率調査"
+            action={storeRateStatusLabel(data.rateResearch.status)}
+          />
+          <div className="px-3 pb-4">
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-hi)] p-3">
+              <div className="flex items-start gap-2">
+                <SearchCheck
+                  size={18}
+                  className={data.rateResearch.status === STORE_RATE_STATUS.VERIFIED ? "mt-0.5 shrink-0 text-[var(--green)]" : "mt-0.5 shrink-0 text-[var(--orange)]"}
+                />
+                <div className="min-w-0">
+                  <div className="text-[12px] font-black leading-5 text-[var(--text)]">
+                    {formatPachinkoRateResearchSummary(data.pachinkoRates)}
+                  </div>
+                  <div className="mt-1 text-[10px] leading-5 text-[var(--sub)]">
+                    確認日 {formatResearchDate(data.rateResearch.checkedAt)} ・ {data.rateResearch.note}
+                  </div>
+                </div>
+              </div>
+              <a
+                href={data.rateResearch.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[var(--border)] px-3 text-[11px] font-black text-[var(--blue)]"
+              >
+                参照元（みんパチ）を開く
+                <ExternalLink size={13} />
+              </a>
+            </div>
+          </div>
+        </SectionCard>
+      )}
 
       {/* 2. 貯玉状況 */}
       <SectionCard>

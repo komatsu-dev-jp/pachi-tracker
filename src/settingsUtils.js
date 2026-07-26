@@ -19,6 +19,11 @@ export function createBuiltinStore(store) {
     replayBalls: 0,
     todaySettle: 0,
     memberCard: { ...EMPTY_MEMBER_CARD },
+    sourceName: String(store?.sourceName || ""),
+    pachinkoRates: Array.isArray(store?.pachinkoRates) ? store.pachinkoRates : [],
+    rateResearch: store?.rateResearch && typeof store.rateResearch === "object"
+      ? { ...store.rateResearch }
+      : null,
   };
 }
 
@@ -33,7 +38,20 @@ export function mergeBuiltinStores(existingStores, builtinStores) {
   );
 
   const normalizedExisting = existing.map((store, index) => {
-    if (store && typeof store === "object") return store;
+    if (store && typeof store === "object") {
+      const builtin = builtinByName.get(String(store.name || "").trim());
+      const hasBuiltinResearch = Boolean(
+        builtin?.rateResearch
+        || builtin?.sourceName
+        || (Array.isArray(builtin?.pachinkoRates) && builtin.pachinkoRates.length)
+      );
+      return hasBuiltinResearch ? {
+        ...store,
+        sourceName: builtin.sourceName || store.sourceName || "",
+        pachinkoRates: builtin.pachinkoRates || store.pachinkoRates || [],
+        rateResearch: builtin.rateResearch || store.rateResearch || null,
+      } : store;
+    }
     const name = String(store || "").trim();
     if (!name) return null;
     const builtin = builtinByName.get(name);

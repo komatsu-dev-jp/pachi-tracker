@@ -25,6 +25,7 @@ import {
   projectCashLimit,
   rotationPer250FromStart1K,
 } from "../../sessionProjection.js";
+import { shouldUseArchiveForPrediction } from "../../sessionDataQuality.js";
 
 function round1(value) {
   return Math.round(Number(value || 0) * 10) / 10;
@@ -82,6 +83,7 @@ function hasUsableStrategyRow(row) {
   return !status || ["正常", "ok", "OK", "有効"].includes(status);
 }
 function practiceObservation(record, identity, source) {
+  if (source === "archive" && !shouldUseArchiveForPrediction(record)) return null;
   if (!record || !recordMatchesStore(record, identity.storeId, identity.storeName)) return null;
   if (normalizeEvidenceMachineName(record.machineName) !== normalizeEvidenceMachineName(identity.machineName)) return null;
   if (normalizeEvidenceMachineNumber(record.machineNum ?? record.num) !== normalizeEvidenceMachineNumber(identity.num)) return null;
@@ -910,6 +912,8 @@ export function buildStrategyMap({
       num: Number(row.num) || row.num,
       islandId,
       machineName,
+      storeId: identity.storeId,
+      storeName: identity.storeName,
       rot: currentRowInvalid ? null : round1(predictedRotation),
       confidence: currentRowInvalid ? 0 : confidencePct,
       border: round1(trueBorder),

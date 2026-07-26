@@ -77,6 +77,14 @@ import {
 import YutimeCalculatorSheet from "./yutime/YutimeCalculatorSheet";
 import { makeNotification, NOTIF_CASH_LIMIT_WARNING } from "../notifications";
 import { triggerHaptic } from "../haptics";
+import DataQualityFeedbackCard from "./quality/DataQualityFeedbackCard";
+import { recordArchiveCorrections } from "../sessionDataQuality";
+import {
+    STORE_RATE_STATUS,
+    formatPachinkoRateResearchSummary,
+    formatResearchDate,
+    storeRateStatusLabel,
+} from "../storeRateResearch";
 
 /* ================================================================
    Simple SVG Line Chart component
@@ -1621,8 +1629,107 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     const [setupPlannedStart1K, setSetupPlannedStart1K] = useState("");
     const [setupError, setSetupError] = useState("");
     const [showSetupSpec, setShowSetupSpec] = useState(false);
+    const [setupHandoffSource, setSetupHandoffSource] = useState("");
+    const setupHandoffRestoreRef = useRef(null);
+
+    // 台選びから来た場合だけ、選択済みの店舗・機種・台番号を確認画面へ自動反映する。
+    // 稼働開始前の一時値なので、キャンセルや別の台を選んでも既存記録は上書きしない。
+    useEffect(() => {
+        const draft = S.recordStartDraft;
+        if (!draft?.id || S.sessionStarted) return;
+        const defaultEnd = new Date(Date.now() + 2 * 60 * 60 * 1000);
+        setProjectionNow(Date.now());
+        setSetupStore(String(draft.storeName || ""));
+        setSetupMachineNum(String(draft.machineNum || ""));
+        setSetupMachineName(String(draft.machineName || ""));
+        setSetupStartRot(String(draft.startRot || ""));
+        setSetupInitialBalls(String(draft.initialChodama || ""));
+        setSetupClosingTime(String(draft.closingTime || ""));
+        setSetupPlannedStart1K(Number(draft.plannedStart1K) > 0 ? String(draft.plannedStart1K) : "");
+        setSetupEndTime(timeValueFromDate(defaultEnd));
+        setSetupError("");
+        setSetupHandoffSource(draft.source || "selection");
+        setupHandoffRestoreRef.current = {
+            selectedStoreId: S.selectedStoreId,
+            rentBalls: S.rentBalls,
+            exRate: S.exRate,
+            ballVal: S.ballVal,
+            synthDenom: S.synthDenom,
+            spec1R: S.spec1R,
+            specAvgRounds: S.specAvgRounds,
+            specSapo: S.specSapo,
+            yutimeSession: S.yutimeSession,
+            yutimeDecision: S.yutimeDecision,
+        };
+        if (draft.storeId != null) S.setSelectedStoreId(draft.storeId);
+        if (Number(draft.rentBalls) > 0) S.setRentBalls(Number(draft.rentBalls));
+        if (Number(draft.exRate) > 0) {
+            S.setExRate(Number(draft.exRate));
+            S.setBallVal(1000 / Number(draft.exRate));
+        }
+
+        const machine = searchMachines(String(draft.machineName || ""), S.customMachines)
+            .find((candidate) => String(candidate?.name || "") === String(draft.machineName || ""));
+        if (machine) {
+            const spec = deriveSpecForMachine(machine);
+            const yutime = createYutimeSessionFromMachine(machine, {
+                assumedStart1K: machine.border1K || S.border,
+            });
+            S.setSynthDenom(machine.synthProb);
+            if (spec.spec1R != null) S.setSpec1R(spec.spec1R);
+            if (spec.specAvgRounds != null) S.setSpecAvgRounds(spec.specAvgRounds);
+            if (spec.specSapo != null) S.setSpecSapo(spec.specSapo);
+            S.setYutimeSession(yutime);
+            S.setYutimeDecision(null);
+            setSetupYutimeStart1K(yutime?.assumedStart1K ? String(yutime.assumedStart1K) : "");
+        }
+        setShowSetupModal(true);
+        S.setRecordStartDraft?.(null);
+        // draft.id が変わった時だけ消費する。各 setter は S の最新値を使用する。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [S.recordStartDraft?.id]);
+
+    const restoreHandoffGlobals = () => {
+        const previous = setupHandoffRestoreRef.current;
+        if (!previous) return;
+        S.setSelectedStoreId(previous.selectedStoreId);
+        S.setRentBalls(previous.rentBalls);
+        S.setExRate(previous.exRate);
+        S.setBallVal(previous.ballVal);
+        S.setSynthDenom(previous.synthDenom);
+        S.setSpec1R(previous.spec1R);
+        S.setSpecAvgRounds(previous.specAvgRounds);
+        S.setSpecSapo(previous.specSapo);
+        S.setYutimeSession(previous.yutimeSession);
+        S.setYutimeDecision(previous.yutimeDecision);
+        setupHandoffRestoreRef.current = null;
+    };
+    const clearSetupDraftFields = () => {
+        setSetupStore("");
+        setSetupMachineNum("");
+        setSetupMachineName("");
+        setSetupStartRot("");
+        setSetupInitialBalls("");
+        setSetupSynthDenom("");
+        setSetupBorder1k("");
+        setSetupYutimeLowSpins("");
+        setSetupYutimeStart1K("");
+        setSetupEndTime("");
+        setSetupClosingTime("");
+        setSetupPlannedStart1K("");
+        setSetupError("");
+        setShowSetupSpec(false);
+        setSetupHandoffSource("");
+    };
+    const cancelSetupModal = () => {
+        restoreHandoffGlobals();
+        clearSetupDraftFields();
+        setShowSetupModal(false);
+    };
 
     const openSetupModal = () => {
+        restoreHandoffGlobals();
+        clearSetupDraftFields();
         const defaultEnd = new Date(Date.now() + 2 * 60 * 60 * 1000);
         setProjectionNow(Date.now());
         setSetupEndTime(timeValueFromDate(defaultEnd));
@@ -2018,6 +2125,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         S.pushLog({ type: "スタート", time: tsNow(), rot: val });
 
         // モーダルを閉じてリセット
+        setupHandoffRestoreRef.current = null;
         setShowSetupModal(false);
         setSetupStore("");
         setSetupMachineNum("");
@@ -2033,6 +2141,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         setSetupPlannedStart1K("");
         setSetupError("");
         setShowSetupSpec(false);
+        setSetupHandoffSource("");
     };
 
     // 初当たりボタン → ウィザード開始
@@ -2783,6 +2892,21 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             </div>
 
                             <div style={{ padding: 18 }}>
+                                {setupHandoffSource && (
+                                    <div role="status" style={{
+                                        marginBottom: 14,
+                                        padding: "10px 12px",
+                                        borderRadius: 10,
+                                        border: `1px solid ${C.blue}66`,
+                                        background: `${C.blue}12`,
+                                        color: C.blue,
+                                        fontSize: 11,
+                                        fontWeight: 700,
+                                        lineHeight: 1.55,
+                                    }}>
+                                        台選びの情報を引き継ぎました。店舗・機種・台番号を確認し、必要なら変更できます。
+                                    </div>
+                                )}
                                 {/* 店舗選択 */}
                                 <div style={{ marginBottom: 16, position: "relative" }}>
                                     <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>店舗</div>
@@ -3088,7 +3212,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
 
                                 {/* ボタン - プレミアムデザイン */}
                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                                    <button className="b" onClick={() => setShowSetupModal(false)} style={{
+                                    <button className="b" onClick={cancelSetupModal} style={{
                                         background: "var(--surface-hi)", border: `1px solid ${C.borderHi}`, borderRadius: 14, color: C.text, fontSize: 15, fontWeight: 700, padding: "16px 0", fontFamily: font
                                     }}>キャンセル</button>
                                     <button className="b btn-premium btn-secondary" onClick={handleStartSession}>
@@ -9063,6 +9187,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
     const [editMachineNum, setEditMachineNum] = useState("");
     const [editInvest, setEditInvest] = useState("");
     const [editRecovery, setEditRecovery] = useState("");
+    const [editMochi, setEditMochi] = useState("");
     const [editChodama, setEditChodama] = useState(""); // 貯玉残高（店舗の現在残高を編集）
     const [editPlayHours, setEditPlayHours] = useState(""); // 遊技時間（時間・手入力。実践記録が無い記録の稼働時間/時給に使用）
     const [editSlotRate, setEditSlotRate] = useState("20");
@@ -9290,6 +9415,23 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
     );
 
     const storeList = S.stores || [];
+    const hasYutimeSettlement = (archive) => Boolean(
+        archive?.yutimeDecision
+        || archive?.yutimeContext
+        || (Array.isArray(archive?.yutimeRuns) && archive.yutimeRuns.length > 0)
+    );
+    const updateEditMochi = (value, archive) => {
+        setEditMochi(value);
+        if (String(value).trim() === "") return;
+        const store = storeList.find((item) => item && typeof item === "object" && (
+            (archive?.storeId != null && String(item.id) === String(archive.storeId))
+            || item.name === editStore
+        ));
+        const exchangeBalls = Number(store?.exRate || archive?.settings?.exRate);
+        if (Number(value) >= 0 && exchangeBalls > 0) {
+            setEditRecovery(String(Math.round(Number(value) * (1000 / exchangeBalls))));
+        }
+    };
 
     // 手動記録の保存: 記録がない過去日に最小スキーマのアーカイブを追加する。
     // CSVインポート（isImported）と同型の「後から追加される収支記録」で、
@@ -9441,20 +9583,36 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
             storeName: editStore || a.storeName,
             chodamaStr: gameType === "slot" ? "" : editChodama,
         });
-        S.setArchives(prev => prev.map(ar => ar.id !== a.id ? ar : {
-            ...ar,
-            gameType,
-            storeName: editStore,
-            storeId: resolvedStoreId,
-            machineName: editMachineName.trim(),
-            machineNum: editMachineNum,
-            investYen: Number(editInvest) || 0,
-            recoveryYen: Number(editRecovery) || 0,
-            playMinutes: playHoursToMinutes(editPlayHours), // 遊技時間（分）。稼働時間/時給に使用
-            slotStats: gameType === "slot"
-                ? makeSlotStats({ rate: editSlotRate, games: editSlotGames, bb: editSlotBB, rb: editSlotRB, at: editSlotAT })
-                : null,
-            ...slotOnlyArchive,
+        S.setArchives(prev => prev.map(ar => {
+            if (ar.id !== a.id) return ar;
+            const finalMochiBalls = gameType === "slot" ? 0 : Math.max(0, Number(editMochi) || 0);
+            const next = {
+                ...ar,
+                gameType,
+                storeName: editStore,
+                storeId: resolvedStoreId,
+                machineName: editMachineName.trim(),
+                machineNum: editMachineNum,
+                investYen: Number(editInvest) || 0,
+                recoveryYen: Number(editRecovery) || 0,
+                finalMochiBalls,
+                playMinutes: playHoursToMinutes(editPlayHours), // 遊技時間（分）。稼働時間/時給に使用
+                slotStats: gameType === "slot"
+                    ? makeSlotStats({ rate: editSlotRate, games: editSlotGames, bb: editSlotBB, rb: editSlotRB, at: editSlotAT })
+                    : null,
+                ...(hasYutimeSettlement(ar) ? {
+                    settlementMethod: finalMochiBalls > 0 ? "exchange" : ar.settlementMethod,
+                    yutimeContext: {
+                        ...(ar.yutimeContext || {}),
+                        storeId: resolvedStoreId,
+                        storeName: editStore,
+                        finalMochiBalls,
+                        updatedAt: new Date().toISOString(),
+                    },
+                } : {}),
+                ...slotOnlyArchive,
+            };
+            return recordArchiveCorrections(ar, next, {}, { archives: prev, stores: storeList });
         }));
         if (doReset) onReset();
         // 保存後は詳細ビューを閉じてカレンダー一覧に戻す（視覚的フィードバック）
@@ -9694,6 +9852,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                     const derivedInvest = Math.round(target.stats?.rawInvest || 0) + carriedIn + Math.round(yutimeSupportCash);
                     setEditInvest(targetGameType === "slot" ? (target.investYen || "") : (derivedInvest > 0 ? derivedInvest : (target.investYen || "")));
                     setEditRecovery(target.recoveryYen || "");
+                    setEditMochi(String(target.finalMochiBalls ?? target.yutimeContext?.finalMochiBalls ?? ""));
                     // 貯玉残高はその店舗の現在残高を初期表示（店舗が特定できる場合のみ）
                     const tStore = (S.stores || []).find(st => typeof st === "object" &&
                         (st.id === target.storeId || st.name === target.storeName));
@@ -9964,6 +10123,13 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                                     <div className={labelCls}>回収額（円）</div>
                                     <input {...numProps} value={editRecovery} onChange={e => setEditRecovery(e.target.value)} placeholder="0" className={inputCls} />
                                 </div>
+                                {editGameType !== "slot" && hasYutimeSettlement(sel) && (
+                                    <div>
+                                        <div className={labelCls}>遊タイム終了時の持ち玉（玉）</div>
+                                        <input {...numProps} value={editMochi} onChange={e => updateEditMochi(e.target.value, sel)} placeholder="0" className={inputCls} />
+                                        <div className="mt-1 text-[9px] text-[var(--at-mut)]">交換率から回収額を自動換算します</div>
+                                    </div>
+                                )}
                                 <div>
                                     <div className={labelCls}>遊技時間（時間）</div>
                                     <input {...decProps} value={editPlayHours} onChange={e => setEditPlayHours(e.target.value)} placeholder="例 3.5" className={inputCls} />
@@ -9984,6 +10150,13 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                                 貯玉残高は{selHasChodamaStore ? `「${sel.storeName || ""}」の現在残高に同期されます` : "店舗の現在残高として登録されます（未登録の店舗は自動で追加）"}
                             </div>}
                         </div>
+
+                        <DataQualityFeedbackCard
+                            archive={sel}
+                            archives={archives}
+                            stores={storeList}
+                            onUpdate={(next) => S.setArchives(prev => prev.map(item => item.id === next.id ? next : item))}
+                        />
 
                         {/* EV詳細（既存 ArchiveDetail と同じ値の表示） */}
                         {editGameType !== "slot" && (sst.start1K > 0 || sst.ev1K || sst.wage) ? (
@@ -10304,6 +10477,13 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                                 <NI v={editRecovery} set={setEditRecovery} w="100%" center ph="0" />
                             </div>
                         </div>
+                        {editGameType !== "slot" && hasYutimeSettlement(a) && (
+                            <div style={{ marginBottom: 8 }}>
+                                <div style={{ fontSize: 9, color: C.sub, marginBottom: 4, fontWeight: 600 }}>遊タイム終了時の持ち玉（玉）</div>
+                                <NI v={editMochi} set={(value) => updateEditMochi(value, a)} w="100%" center ph="0" />
+                                <div style={{ fontSize: 9, color: C.sub, marginTop: 4 }}>交換率から回収額を自動換算します</div>
+                            </div>
+                        )}
                         {/* 貯玉残高：この店舗の現在残高を編集（保存で店舗残高に同期） */}
                         {(S.stores || []).some(st => typeof st === "object" && (st.id === a.storeId || st.name === a.storeName)) && (
                             <div style={{ marginBottom: 8 }}>
@@ -10317,6 +10497,13 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                             <Btn label="保存してリセット" onClick={() => updateArchive(true)} bg={C.orange} fg="#fff" bd="none" fs={13} />
                         </div>
                     </Card>
+
+                    <DataQualityFeedbackCard
+                        archive={a}
+                        archives={archives}
+                        stores={storeList}
+                        onUpdate={(next) => S.setArchives(prev => prev.map(item => item.id === next.id ? next : item))}
+                    />
 
                     {/* EV stats */}
                     <Card style={{ overflow: "hidden", marginBottom: 8 }}>
@@ -11768,6 +11955,38 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                         </div>
                     </div>
                 </Card>
+
+                {st.rateResearch && (
+                    <Card style={{ ...cardSt, borderColor: st.rateResearch.status === STORE_RATE_STATUS.VERIFIED ? `${C.green}55` : `${C.yellow}55` }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                            <div style={secTitle}>みんパチ交換率調査</div>
+                            <span style={{
+                                borderRadius: 999,
+                                padding: "4px 9px",
+                                border: `1px solid ${st.rateResearch.status === STORE_RATE_STATUS.VERIFIED ? `${C.green}66` : `${C.yellow}66`}`,
+                                color: st.rateResearch.status === STORE_RATE_STATUS.VERIFIED ? C.green : C.yellow,
+                                fontSize: 9,
+                                fontWeight: 800,
+                            }}>
+                                {storeRateStatusLabel(st.rateResearch.status)}
+                            </span>
+                        </div>
+                        <div style={{ fontSize: 11, lineHeight: 1.7, color: C.text }}>
+                            {formatPachinkoRateResearchSummary(st.pachinkoRates)}
+                        </div>
+                        <div style={{ marginTop: 8, fontSize: 9, lineHeight: 1.6, color: C.sub }}>
+                            確認日 {formatResearchDate(st.rateResearch.checkedAt)} ・ {st.rateResearch.note}
+                        </div>
+                        <a
+                            href={st.rateResearch.sourceUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ display: "inline-block", marginTop: 10, color: C.blue, fontSize: 10, fontWeight: 800 }}
+                        >
+                            参照元（みんパチ）を開く ↗
+                        </a>
+                    </Card>
+                )}
 
                 {/* ② 会員カード情報 */}
                 <Card style={cardSt}>

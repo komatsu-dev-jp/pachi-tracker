@@ -271,6 +271,11 @@ export function resolveStoreDetail(stores, storeId, opts = {}) {
     id: store.id,
     name: store.name || "",
     address: store.address || "",
+    sourceName: store.sourceName || "",
+    pachinkoRates: Array.isArray(store.pachinkoRates) ? store.pachinkoRates : [],
+    rateResearch: store.rateResearch && typeof store.rateResearch === "object"
+      ? { ...store.rateResearch }
+      : null,
     logoUrl: null,
     logoInitial: (store.name || "?").trim().charAt(0) || "?",
     currentSettings: {

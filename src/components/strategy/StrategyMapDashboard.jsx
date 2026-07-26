@@ -462,7 +462,7 @@ function Tabs({ active, onChange }) {
 }
 
 // ============================ A 選択台の今日の見込み ============================
-function SelectedOutcomeSection({ machine, islandAvgRot, plan }) {
+function SelectedOutcomeSection({ machine, islandAvgRot, plan, onStartRecord, sessionStarted }) {
   if (!machine) return null;
   const v = VERDICT[machine.verdict];
   return (
@@ -487,6 +487,32 @@ function SelectedOutcomeSection({ machine, islandAvgRot, plan }) {
           </div>
         )}
         <SelectedDetailCard machine={machine} islandAvgRot={islandAvgRot} plan={plan} />
+        <button
+          type="button"
+          onClick={() => onStartRecord?.(machine)}
+          style={{
+            width: "100%",
+            minHeight: 54,
+            marginTop: 10,
+            borderRadius: 16,
+            border: "none",
+            background: sessionStarted
+              ? "color-mix(in srgb, var(--sm-cyan) 16%, var(--sm-card))"
+              : "linear-gradient(135deg,var(--sm-cyan),#38bdf8)",
+            color: sessionStarted ? P.cyan : "#03131f",
+            fontSize: 14,
+            fontWeight: 900,
+            cursor: "pointer",
+            boxShadow: sessionStarted ? "none" : "0 10px 26px color-mix(in srgb, var(--sm-cyan) 26%, transparent)",
+          }}
+        >
+          {sessionStarted ? "記録中の台へ戻る" : `台${machine.num}で実践を開始`}
+        </button>
+        {!sessionStarted && (
+          <div style={{ marginTop: 6, textAlign: "center", color: P.sub, fontSize: 9 }}>
+            店舗・機種・台番号を記録開始へ引き継ぎます
+          </div>
+        )}
       </div>
     </Section>
   );
@@ -1460,7 +1486,7 @@ function Section({ title, sub, accent, children }) {
 }
 
 // ============================ 本体 ============================
-export default function StrategyMapDashboard({ S, onBack }) {
+export default function StrategyMapDashboard({ S, onBack, onStartRecord }) {
   const rootRef = useRef(null);
   const [entryPlanContext] = useState(() => S?.strategyPlanContext || null);
   const clearStrategyPlanContext = S?.setStrategyPlanContext;
@@ -1602,6 +1628,16 @@ export default function StrategyMapDashboard({ S, onBack }) {
   }, []);
 
   const selected = data.all.find((m) => m.id === selectedId) || null;
+  const handleStartSelected = (machine) => {
+    const start = onStartRecord || S?.startRecordFromSelection;
+    start?.({
+      storeId: machine?.storeId ?? strategyStoreId ?? null,
+      storeName: machine?.storeName || savedStores.find((store) => String(store?.id) === String(strategyStoreId))?.name || "",
+      machineName: machine?.machineName || "",
+      machineNum: machine?.num ?? "",
+      plannedStart1K: machine?.rot,
+    });
+  };
   const effectiveActiveIslandId = data.islands.some((island) => island.id === activeIslandId)
     ? activeIslandId
     : data.islands[0]?.id || null;
@@ -1701,7 +1737,13 @@ export default function StrategyMapDashboard({ S, onBack }) {
         onChangeIsland={changeIsland}
         onSelect={selectMachine}
       />
-      <SelectedOutcomeSection machine={selected} islandAvgRot={data.islandAvgRot} plan={data.plan} />
+      <SelectedOutcomeSection
+        machine={selected}
+        islandAvgRot={data.islandAvgRot}
+        plan={data.plan}
+        onStartRecord={handleStartSelected}
+        sessionStarted={sessionStarted}
+      />
       <LearningSummary
         data={data}
         selected={selected}
