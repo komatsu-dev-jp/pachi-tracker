@@ -2,7 +2,7 @@
 //
 // 役割分離の方針:
 //   - 本画面（島マップ管理）＝「管理」。店舗の島構成（島名・機種名・台番号範囲・台数・並び）を
-//     登録／編集／俯瞰する。推定回転率・確信度・良台率・密度・強ゾーン・候補台・着席推奨・TOP5
+//     登録／編集／俯瞰する。推定回転率・信頼度・良台率・密度・強ゾーン・候補台・着席推奨・TOP5
 //     などの分析情報は一切表示しない（それらは戦略マップ画面の役割）。
 //   - 戦略マップ画面＝「分析」。本画面は触れない。
 //
@@ -661,7 +661,6 @@ function extendRange(s, e, delta) {
   if (dir > 0) return Math.max(s, ne);
   return Math.min(s, Math.max(0, ne));
 }
-
 function EditScreen({ island, islands, index, total, onBack, onSave, onMoveUp, onMoveDown, onRemove }) {
   // 下書き編集 → 「保存」で確定（保存後に戦略マップへ反映）。
   // rows（行数）・gaps（欠け台番号）・extra（追加の連番範囲）も下書きに含め、保存で島データへ永続化する。
@@ -948,7 +947,15 @@ function EditScreen({ island, islands, index, total, onBack, onSave, onMoveUp, o
 }
 
 // ============================ 本体 ============================
-export default function IslandMapManager({ store, stores, onChangeStore, islands, onChangeIslands, onBack }) {
+export default function IslandMapManager({
+  store,
+  stores,
+  onChangeStore,
+  islands,
+  onChangeIslands,
+  onBack,
+  requestConfirmation,
+}) {
   const [tab, setTab] = useState("list"); // 管理画面のため初期表示は島一覧
   const [editId, setEditId] = useState(null); // 編集画面で編集中の島ID（別画面）
   const [expandedId, setExpandedId] = useState(null);
@@ -1001,18 +1008,30 @@ export default function IslandMapManager({ store, stores, onChangeStore, islands
     logChange(`「${editingIsland.name || "島"}」を${dir < 0 ? "上" : "下"}へ移動`);
   };
 
-  const handleRemoveEditing = () => {
+  const handleRemoveEditing = async () => {
     if (!editingIsland) return;
     const label = editingIsland.name ? `「${editingIsland.name}」` : "この島";
-    if (!window.confirm(`${label}を削除しますか？`)) return;
+    const ok = await requestConfirmation?.({
+      title: `${label}を削除しますか？`,
+      message: "この島の配置設定が削除されます。",
+      confirmLabel: "削除する",
+      tone: "danger",
+    });
+    if (!ok) return;
     onChangeIslands(removeIsland(islands, editingIsland.id));
     logChange(`${label}を削除`);
     setEditId(null);
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     if (!islands.length) return;
-    if (!window.confirm("この店舗の島構成をすべて削除しますか？\nこの操作は元に戻せません。")) return;
+    const ok = await requestConfirmation?.({
+      title: "この店舗の島構成をすべて削除しますか？",
+      message: "この操作は元に戻せません。",
+      confirmLabel: "すべて削除",
+      tone: "danger",
+    });
+    if (!ok) return;
     onChangeIslands([]);
     logChange("全島をリセット");
     setExpandedId(null);

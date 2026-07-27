@@ -1,5 +1,4 @@
-// 店舗詳細画面「概要」タブ（見た目優先プロトタイプ）
-// props の data は src/data/mockStoreDetail.js のダミーデータ。実データ接続は次ステップ。
+// 店舗詳細画面「概要」タブ。店舗設定・貯玉・archives の実集計を表示する。
 
 import React from "react";
 import {

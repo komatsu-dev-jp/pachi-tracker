@@ -10,6 +10,7 @@ import { getStoreIslands, setStoreIslands } from "./hallMapSelectors";
 import HallMapEditor from "./HallMapEditor";
 import DeltaAnalyzer from "../delta/DeltaAnalyzer";
 import DeltaMapView from "../delta/DeltaMapView";
+import { decisionLabel } from "../decision/decisionVocabulary";
 
 const FILTERS = [
   { id: "all", label: "全台" },
@@ -18,13 +19,13 @@ const FILTERS = [
 ];
 
 const VERDICT_META = {
-  strong:  { label: "本命", color: C.green },
-  good:    { label: "候補", color: C.teal },
-  watch:   { label: "様子見", color: C.yellow },
-  weak:    { label: "低優先", color: C.red },
-  avoid:   { label: "低優先", color: C.red },
-  nodata:  { label: "不足", color: C.sub },
-  unknown: { label: "不足", color: C.sub },
+  strong:  { label: decisionLabel("strong"), color: C.green },
+  good:    { label: decisionLabel("good"), color: C.teal },
+  watch:   { label: decisionLabel("watch"), color: C.yellow },
+  weak:    { label: decisionLabel("weak"), color: C.red },
+  avoid:   { label: decisionLabel("stop"), color: C.red },
+  nodata:  { label: decisionLabel("nodata"), color: C.sub },
+  unknown: { label: decisionLabel("nodata"), color: C.sub },
 };
 
 function Header({ title, summary, updatedAt }) {
@@ -337,10 +338,10 @@ function MachineCabinet({ machine, activeFilter, selected, onSelect }) {
 
 function Legend() {
   const items = [
-    ["本命", C.green],
-    ["候補", C.teal],
-    ["様子見", C.yellow],
-    ["回収", C.red],
+    [decisionLabel("strong"), C.green],
+    [decisionLabel("good"), C.teal],
+    [decisionLabel("watch"), C.yellow],
+    [decisionLabel("stop"), C.red],
   ];
   return (
     <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
@@ -681,6 +682,7 @@ export default function SelectDashboard({ S, onStart, onOpenStrategy }) {
         aiApiKey={typeof S?.aiApiKey === "string" ? S.aiApiKey : ""}
         onChangeAiApiKey={S?.setAiApiKey}
         customMachines={Array.isArray(S?.customMachines) ? S.customMachines : []}
+        requestConfirmation={S?.requestConfirmation}
       />
     );
   }
@@ -724,6 +726,7 @@ export default function SelectDashboard({ S, onStart, onOpenStrategy }) {
           onChangeStore={handleChangeStore}
           islands={islands}
           onChangeIslands={handleChangeIslands}
+          requestConfirmation={S?.requestConfirmation}
         />
         <DeltaEntryCard onOpen={() => setShowDelta(true)} onOpenMap={() => setShowDeltaMap(true)} />
       </div>

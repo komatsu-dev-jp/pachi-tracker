@@ -1,5 +1,5 @@
-// 店舗詳細画面「分析」タブ（見た目優先プロトタイプ）
-// props の data は src/data/mockStoreDetail.js のダミーデータ。実データ接続は次ステップ。
+// 店舗詳細画面「分析」タブ。保存済み archives の店舗別実集計を表示する。
+// 記録が無い場合だけ空状態を表示し、架空の実績値は使わない。
 
 import React from "react";
 import {
@@ -15,9 +15,12 @@ import {
   AlertTriangle,
   BarChart3,
   ChevronRight,
+  Map,
+  ScanLine,
 } from "lucide-react";
 import { SectionCard, SectionHeader, MiniBarSpark, TabIntro, WarningCard } from "./storeDetailShared";
 import { DETAIL_KEYS } from "./storeDetailPanels";
+import { DECISION_TERMS } from "../decision/decisionVocabulary";
 
 function SufficiencyCard({ icon, label, value, progress, onClick }) {
   const Icon = icon;
@@ -93,7 +96,7 @@ function JudgmentRow({ icon, iconColorClass, label, count, countLabel, onClick }
   );
 }
 
-export default function StoreAnalysisTab({ data, onOpenDetail }) {
+export default function StoreAnalysisTab({ data, onOpenDetail, onOpenStrategy, onOpenDelta }) {
   const { dataSufficiency, trends, judgmentLog, nextToCheck } = data;
   const weekdayProgress = dataSufficiency.dayOfWeekTotal > 0
     ? Math.round((dataSufficiency.dayOfWeekCovered / dataSufficiency.dayOfWeekTotal) * 100)
@@ -109,6 +112,30 @@ export default function StoreAnalysisTab({ data, onOpenDetail }) {
         title="記録から見える傾向"
         description="データの集まり具合と、これまでの判断を読みやすく整理しています。"
       />
+      <div className="mb-3 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={onOpenStrategy}
+          className="flex min-h-12 items-center gap-2 rounded-2xl border border-[var(--blue)]/45 bg-[var(--blue)]/10 px-3 text-left text-[var(--text)] active:bg-[var(--blue)]/20"
+        >
+          <Map size={17} className="shrink-0 text-[var(--blue)]" />
+          <span className="min-w-0">
+            <strong className="block text-[11px]">戦略マップ</strong>
+            <span className="block truncate text-[9px] text-[var(--sub)]">この店舗の候補台を見る</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={onOpenDelta}
+          className="flex min-h-12 items-center gap-2 rounded-2xl border border-[var(--purple)]/45 bg-[var(--purple)]/10 px-3 text-left text-[var(--text)] active:bg-[var(--purple)]/20"
+        >
+          <ScanLine size={17} className="shrink-0 text-[var(--purple)]" />
+          <span className="min-w-0">
+            <strong className="block text-[11px]">差玉解析</strong>
+            <span className="block truncate text-[9px] text-[var(--sub)]">この店舗の資料を解析</span>
+          </span>
+        </button>
+      </div>
       {dataSufficiency.validRecords === 0 && (
         <div className="mb-3 flex items-start gap-3 rounded-2xl border border-[var(--orange)]/40 bg-[var(--orange)]/10 p-3.5">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[var(--orange)]/12 text-[var(--orange)]">
@@ -120,9 +147,9 @@ export default function StoreAnalysisTab({ data, onOpenDetail }) {
           </div>
         </div>
       )}
-      {/* 1. データ充足状況 */}
+      {/* 1. 記録カバー状況 */}
       <SectionCard>
-        <SectionHeader title="データ充足状況" />
+        <SectionHeader title={DECISION_TERMS.coverage} />
         <div className="grid grid-cols-2 gap-2 px-3 pb-3 sm:grid-cols-5">
           <SufficiencyCard icon={CalendarDays} label="曜日" value={`${dataSufficiency.dayOfWeekCovered}/${dataSufficiency.dayOfWeekTotal}`} progress={weekdayProgress} onClick={() => onOpenDetail?.(DETAIL_KEYS.WEEKDAYS)} />
           <SufficiencyCard icon={Clock3} label="時間帯" value={`${dataSufficiency.timeSlotCovered}/${dataSufficiency.timeSlotTotal}`} progress={timeSlotProgress} onClick={() => onOpenDetail?.(DETAIL_KEYS.TIME_SLOTS)} />

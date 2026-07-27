@@ -61,6 +61,7 @@ export const MOCK_STORE_DETAIL = {
   // 設定タブ：店舗基本情報
   basicInfo: {
     name: "店舗未設定",
+    sourceName: "",
     address: "",
     lastVisitLabel: "",
     memo: "",
@@ -80,5 +81,7 @@ export const MOCK_STORE_DETAIL = {
     exchangeBallsPer100: 0,
     ballUnitYen: 0,
     replayCapBalls: 0,
+    pachinkoRates: [],
+    rateResearch: null,
   },
 };

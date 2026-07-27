@@ -230,8 +230,17 @@ export function resolveStoreDetail(stores, storeId, opts = {}) {
   } = opts;
   const list = Array.isArray(stores) ? stores : [];
   if (storeId === MOCK_STORE_DETAIL.id) return { ...MOCK_STORE_DETAIL, isRealStore: false };
-  const store = list.find((item) => item && item.id === storeId) || list[0] || null;
-  if (!store) return { ...MOCK_STORE_DETAIL, isRealStore: false };
+  const store = storeId == null
+    ? list.find((item) => item && typeof item === "object") || null
+    : list.find((item) => item && item.id === storeId) || null;
+  if (!store) {
+    return {
+      ...MOCK_STORE_DETAIL,
+      isRealStore: false,
+      storeNotFound: storeId != null,
+      requestedStoreId: storeId ?? null,
+    };
+  }
 
   const faceRent = toNumber(store.rentBalls || 250) / 10;
   const faceEx = toNumber(store.exRate || 250) / 10;
@@ -243,6 +252,10 @@ export function resolveStoreDetail(stores, storeId, opts = {}) {
   const todaySettle = toNumber(store.todaySettle);
   const memberCard = normalizeMemberCard(store.memberCard);
   const replayCapBalls = toNumber(chodamaReplayLimit);
+  const pachinkoRates = Array.isArray(store.pachinkoRates)
+    ? store.pachinkoRates.map((rate) => ({ ...rate }))
+    : [];
+  const rateResearch = store.rateResearch ? { ...store.rateResearch } : null;
   const analytics = buildStoreAnalytics(archives, store);
   const balanceHistory = (Array.isArray(chodamaLog) ? chodamaLog : [])
     .filter((entry) => recordMatchesStore(entry, store))
@@ -296,6 +309,7 @@ export function resolveStoreDetail(stores, storeId, opts = {}) {
     },
     basicInfo: {
       name: store.name || "",
+      sourceName: store.sourceName || store.name || "",
       address: store.address || "",
       lastVisitLabel: store.lastVisit || "",
       memo: store.memo || "",
@@ -314,6 +328,8 @@ export function resolveStoreDetail(stores, storeId, opts = {}) {
       exchangeBallsPer100: faceEx,
       ballUnitYen: exYenPerBall,
       replayCapBalls,
+      pachinkoRates,
+      rateResearch,
     },
     isRealStore: true,
   };

@@ -44,9 +44,31 @@ export default defineConfig({
         ]
       },
       workbox: {
-        globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,bcmap}'],
-        // メイン画面は圧縮後約580KB。既定の2MiBをわずかに超える非圧縮JSもオフライン利用に含める。
-        maximumFileSizeToCacheInBytes: 2.25 * 1024 * 1024,
+        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        // サイトセブンPDF解析は利用者がPDFを選んだ時だけ必要なため、
+        // 初回インストールのプリキャッシュ（先に一括保存する容量）から外す。
+        // 一度使った端末では下の実行時キャッシュに保存し、次回から再利用する。
+        globIgnores: [
+          '**/siteSevenPdfReader-*.js',
+          '**/siteSevenImageOcr-*.js',
+          '**/siteSevenImageOcrWorker-*.js',
+        ],
+        runtimeCaching: [
+          {
+            urlPattern: /\/assets\/(?:siteSevenPdfReader-|siteSevenImageOcr(?:Worker)?-|pdf\.worker\.min-|Adobe-Japan1-)/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'optional-pdf-tools-v1',
+              expiration: {
+                maxEntries: 6,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+        ],
         cleanupOutdatedCaches: true,
         clientsClaim: true
       }

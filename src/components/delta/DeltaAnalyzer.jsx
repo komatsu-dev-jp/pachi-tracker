@@ -2453,6 +2453,7 @@ function ImportStep({
   onMerge,
   aiApiKey,
   onChangeAiApiKey,
+  requestConfirmation,
   initialDataRows = [],
   initialDataSummary = null,
 }) {
@@ -2716,16 +2717,20 @@ function ImportStep({
       };
     }));
   };
-  const removeDataRow = (index) => {
+  const removeDataRow = async (index) => {
     const target = dataRows[index];
     if (!target || target.sourceType === "missing-placeholder") return;
     const parsedNumber = parseSiteSevenEditableInteger(target.num);
     const rowLabel = parsedNumber !== null && parsedNumber > 0
       ? `台${parsedNumber}`
       : `画像内${target.sourceLine || index + 1}行目`;
-    if (!window.confirm(
-      `${rowLabel}の読み取り行を削除しますか？\n\n平均行や実在しない行の場合だけ削除してください。元の写真・PDF・CSVは削除されません。`,
-    )) return;
+    const confirmed = await requestConfirmation?.({
+      title: `${rowLabel}の読み取り行を削除しますか？`,
+      message: "平均行や実在しない行の場合だけ削除してください。元の写真・PDF・CSVは削除されません。",
+      confirmLabel: "削除する",
+      tone: "danger",
+    });
+    if (!confirmed) return;
 
     const removed = removeSiteSevenImportedRow(dataRows, index, dataSummary, {
       expectedNumbers: [...deltaNumberSet],
@@ -2781,9 +2786,15 @@ function ImportStep({
     setKeyInput("");
     setShowKeyForm(false);
   };
-  const deleteKey = () => {
+  const deleteKey = async () => {
     // 「変更」の隣にあり誤タップで即消えると再設定の手間が大きいため確認を挟む。
-    if (!window.confirm("APIキーを削除しますか？")) return;
+    const confirmed = await requestConfirmation?.({
+      title: "APIキーを削除しますか？",
+      message: "AI読み取りを再び使う場合は、APIキーの再設定が必要です。",
+      confirmLabel: "削除する",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     if (typeof onChangeAiApiKey === "function") onChangeAiApiKey("");
     setShowKeyForm(false);
   };
@@ -3704,6 +3715,7 @@ export default function DeltaAnalyzer({
   aiApiKey,
   onChangeAiApiKey,
   customMachines,
+  requestConfirmation,
 }) {
   const [step, setStep] = useState("upload");
   const [analysisDate, setAnalysisDate] = useState(todayStr);
@@ -3739,10 +3751,15 @@ export default function DeltaAnalyzer({
 
   // この画面から店舗を変える時は、前店舗の解析結果を新店舗へ保存できないよう破棄する。
   // 追加済みファイルは選択ミスを直しただけでも選び直さずに済むよう保持し、再解析を必須にする。
-  const handleChangeStore = (nextStoreId) => {
+  const handleChangeStore = async (nextStoreId) => {
     if (String(nextStoreId ?? "") === String(store?.id ?? "")) return;
     if (rows.length > 0 && !saved) {
-      const confirmed = window.confirm("保存していない解析結果があります。破棄して店舗を変更しますか？");
+      const confirmed = await requestConfirmation?.({
+        title: "保存していない解析結果を破棄しますか？",
+        message: "店舗を変更すると、現在の解析結果は破棄されます。追加済みの資料は残ります。",
+        confirmLabel: "破棄して変更",
+        tone: "danger",
+      });
       if (!confirmed) return;
     }
     const nextStore = (Array.isArray(stores) ? stores : []).find(
@@ -4038,6 +4055,7 @@ export default function DeltaAnalyzer({
           islands={islands}
           islandScopeId={activeIslandScopeId}
           customMachines={customMachines}
+          requestConfirmation={requestConfirmation}
         />
       )}
     </div>

@@ -1,6 +1,12 @@
 // 実戦中の回転率を3K・5K・10K・20Kの固定地点で評価する純粋関数。
 // Kは「1,000円相当の貸玉を使った量」。大当たり回転や出玉収支は混ぜない。
-export const LIVE_CHECKPOINTS_K = [3, 5, 10, 20];
+import {
+  LIVE_ACTION_LABELS,
+  LIVE_CHECKPOINTS_K,
+  LIVE_DECISION_THRESHOLDS,
+} from "./decisionVocabulary.js";
+
+export { LIVE_CHECKPOINTS_K };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -77,26 +83,16 @@ function betaSummary(alpha, beta, targetProbability) {
 
 function actionFor(totalK, probability, prePlayStrong) {
   if (totalK < 3) return "collecting";
-  if (probability < 0.1) return totalK < 5 ? "stop_candidate" : "stop";
-  if (probability < 0.4) return totalK >= 10 ? "stop" : "stop_candidate";
-  if (probability < 0.7) {
+  if (probability < LIVE_DECISION_THRESHOLDS.immediateStop) return totalK < 5 ? "stop_candidate" : "stop";
+  if (probability < LIVE_DECISION_THRESHOLDS.stopOrReview) return totalK >= 10 ? "stop" : "stop_candidate";
+  if (probability < LIVE_DECISION_THRESHOLDS.continue) {
     if (totalK >= 10) return "compare";
     if (totalK >= 5) return prePlayStrong ? "continue" : "compare";
     return "collecting";
   }
-  if (probability < 0.9) return "continue";
+  if (probability < LIVE_DECISION_THRESHOLDS.strongContinue) return "continue";
   return "continue_strong";
 }
-
-const ACTION_LABELS = {
-  no_data: "データ待ち",
-  collecting: "次の判定まで計測",
-  stop_candidate: "撤退候補",
-  compare: "他台と比較",
-  stop: "撤退",
-  continue: "続行",
-  continue_strong: "強く続行",
-};
 
 export function assessLiveRotation(input = {}) {
   const trueBorder = Math.max(0, finite(input.trueBorder));
@@ -118,7 +114,7 @@ export function assessLiveRotation(input = {}) {
   if (!(trueBorder > 0) || !(totalK > 0) || !(normalSpins > 0) || targetRotation >= rentBalls) {
     return {
       action: totalK > 0 ? "collecting" : "no_data",
-      actionLabel: ACTION_LABELS[totalK > 0 ? "collecting" : "no_data"],
+      actionLabel: LIVE_ACTION_LABELS[totalK > 0 ? "collecting" : "no_data"],
       trueBorder, targetMargin, targetRotation, normalSpins, totalK, rentBalls, observedRotation,
       nextCheckpointK, reachedCheckpointK, remainingK, remainingBalls,
       liveProbability: 0, bayesianProbability: 0, decisionProbability: 0,
@@ -165,7 +161,7 @@ export function assessLiveRotation(input = {}) {
 
   return {
     action,
-    actionLabel: ACTION_LABELS[action],
+    actionLabel: LIVE_ACTION_LABELS[action],
     trueBorder,
     targetMargin,
     targetRotation,

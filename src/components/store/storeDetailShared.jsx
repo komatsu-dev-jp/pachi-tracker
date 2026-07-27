@@ -94,7 +94,7 @@ export function TabIntro({ eyebrow, title, description }) {
   );
 }
 
-// 装飾用ミニ棒グラフ（傾向カード用）。将来的にはチェーン履歴・archives 由来の実データに差し替え予定。
+// archives から集計した傾向値を小さく表示するミニ棒グラフ。
 export function MiniBarSpark({ values, colorVar = "var(--blue)" }) {
   return (
     <div className="flex h-5 items-end gap-[2px]">
