@@ -713,9 +713,7 @@ function UploadStep({
     });
     const confirmed = typeof requestConfirmation === "function"
       ? await requestConfirmation(confirmation)
-      : typeof window !== "undefined"
-        ? window.confirm(confirmation.message)
-        : false;
+      : false;
     if (!confirmed) return;
     await start();
   };
