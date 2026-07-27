@@ -27,6 +27,10 @@ import {
   decisionLabel,
   decisionMeta,
 } from "../decision/decisionVocabulary.js";
+import {
+  findDeltaScanDateTargets,
+  updateDeltaScanDate,
+} from "../delta/deltaScanDate.js";
 
 // 戦略マップ画面（見た目優先プロトタイプ）
 //
@@ -1243,18 +1247,31 @@ const ACTIVITY_TONES = {
   "no-data": { color: P.lineHi, label: "データなし" },
 };
 
-function IslandActivityHistoryPanel({ history, selected }) {
+function IslandActivityHistoryPanel({
+  history,
+  selected,
+  scans = EMPTY_LIST,
+  onChangeScanDate,
+  requestConfirmation,
+}) {
   const islandHistory = useMemo(() => (Array.isArray(history) ? history : [])
     .filter((entry) => entry.key === selected?.activityHistoryKey), [history, selected?.activityHistoryKey]);
   const months = useMemo(() => listIslandActivityMonths(islandHistory), [islandHistory]);
   const [requestedMonth, setRequestedMonth] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
+  const [editingDate, setEditingDate] = useState(false);
+  const [draftDate, setDraftDate] = useState("");
+  const [dateError, setDateError] = useState("");
+  const [dateNotice, setDateNotice] = useState("");
   const month = months.includes(requestedMonth)
     ? requestedMonth
     : months.at(-1) || "";
   const selectMonth = (nextMonth) => {
     setRequestedMonth(nextMonth);
     setSelectedDate("");
+    setEditingDate(false);
+    setDateError("");
+    setDateNotice("");
   };
   const calendar = useMemo(
     () => buildIslandActivityCalendar(islandHistory, { month }),
@@ -1264,6 +1281,64 @@ function IslandActivityHistoryPanel({ history, selected }) {
   const selectedEntry = islandHistory.find((entry) => entry.date === selectedDate)
     || [...islandHistory].reverse().find((entry) => entry.date.startsWith(`${calendar.month}-`))
     || null;
+  const targetScans = useMemo(() => {
+    if (!selectedEntry) return [];
+    return findDeltaScanDateTargets(scans, {
+      date: selectedEntry.date,
+      storeKey: selectedEntry.store,
+      island: selectedEntry.island,
+    }).filter((scan) => scan?.id !== null && scan?.id !== undefined);
+  }, [scans, selectedEntry]);
+  const beginDateEdit = () => {
+    if (!selectedEntry || !targetScans.length || !onChangeScanDate) return;
+    setDraftDate(selectedEntry.date);
+    setDateError("");
+    setDateNotice("");
+    setEditingDate(true);
+  };
+  const submitDateEdit = async () => {
+    if (!selectedEntry || !targetScans.length || !onChangeScanDate) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(draftDate)) {
+      setDateError("正しい日付を選んでください。");
+      return;
+    }
+    if (draftDate === selectedEntry.date) {
+      setDateError("変更前と同じ日付です。");
+      return;
+    }
+    const mergesWithExistingDay = islandHistory.some((entry) => entry.date === draftDate);
+    const mergeWarning = mergesWithExistingDay
+      ? "\n変更先にはすでにデータがあります。同じ日のデータとしてまとめて表示されます。"
+      : "";
+    const message = `${selectedEntry.date} を ${draftDate} に変更します。\n`
+      + `対象の差玉解析 ${targetScans.length}件の日付を変更します。${mergeWarning}`;
+    const confirmed = typeof requestConfirmation === "function"
+      ? await requestConfirmation({
+          title: "差玉解析日を変更しますか？",
+          message,
+          confirmLabel: "日付を変更",
+        })
+      : window.confirm(message);
+    if (!confirmed) return;
+
+    const result = onChangeScanDate({
+      scanIds: targetScans.map((scan) => scan.id),
+      fromDate: selectedEntry.date,
+      toDate: draftDate,
+    });
+    if (!result?.ok) {
+      setDateError(result?.reason === "same-date"
+        ? "変更前と同じ日付です。"
+        : "日付を変更できませんでした。もう一度お試しください。");
+      return;
+    }
+
+    setRequestedMonth(draftDate.slice(0, 7));
+    setSelectedDate(draftDate);
+    setEditingDate(false);
+    setDateError("");
+    setDateNotice(`${result.fromDate} から ${result.toDate} へ変更しました。`);
+  };
   if (!islandHistory.length) {
     return <div style={{ marginTop: 7, color: P.sub, fontSize: 8 }}>島活動の履歴はまだありません。</div>;
   }
@@ -1291,7 +1366,13 @@ function IslandActivityHistoryPanel({ history, selected }) {
               key={cell.date}
               type="button"
               disabled={!cell.entry}
-              onClick={() => cell.entry && setSelectedDate(cell.date)}
+              onClick={() => {
+                if (!cell.entry) return;
+                setSelectedDate(cell.date);
+                setEditingDate(false);
+                setDateError("");
+                setDateNotice("");
+              }}
               aria-label={`${cell.date} ${tone.label}`}
               style={{
                 minWidth: 0,
@@ -1313,10 +1394,117 @@ function IslandActivityHistoryPanel({ history, selected }) {
       </div>
       {selectedEntry && (
         <div style={{ marginTop: 8, padding: 8, borderRadius: 10, background: P.card, border: `1px solid ${P.line}`, color: P.subHi, fontSize: 8, lineHeight: 1.55 }}>
-          <strong style={{ color: ACTIVITY_TONES[selectedEntry.signalCode]?.color || P.text }}>{selectedEntry.date}・{selectedEntry.activitySignal}</strong>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <strong style={{ color: ACTIVITY_TONES[selectedEntry.signalCode]?.color || P.text }}>{selectedEntry.date}・{selectedEntry.activitySignal}</strong>
+            {onChangeScanDate && targetScans.length > 0 && (
+              <button
+                type="button"
+                onClick={beginDateEdit}
+                aria-label={`${selectedEntry.date}の日付を修正`}
+                style={{
+                  minHeight: 34,
+                  flexShrink: 0,
+                  padding: "0 10px",
+                  borderRadius: 9,
+                  border: `1px solid ${P.cyan}`,
+                  background: "color-mix(in srgb, var(--sm-cyan) 11%, var(--sm-card))",
+                  color: P.cyan,
+                  fontSize: 8,
+                  fontWeight: 900,
+                }}
+              >
+                日付を修正
+              </button>
+            )}
+          </div>
           <span style={{ display: "block", marginTop: 3 }}>
             読取{fmt(selectedEntry.scannedMachines)}台 ／ 稼働{fmt(selectedEntry.activeMachines)}台 ／ 未稼働{fmt(selectedEntry.inactiveMachines)}台（{fmt(selectedEntry.inactiveRate * 100)}%） ／ 除外{fmt(selectedEntry.invalidMachines)}台
           </span>
+          {editingDate && (
+            <div
+              role="group"
+              aria-label="差玉解析日を修正"
+              style={{
+                marginTop: 8,
+                padding: 9,
+                borderRadius: 10,
+                border: `1px solid ${P.line}`,
+                background: P.bg,
+              }}
+            >
+              <label style={{ display: "block", color: P.text, fontSize: 9, fontWeight: 800 }}>
+                正しい解析日
+                <input
+                  type="date"
+                  value={draftDate}
+                  onChange={(event) => {
+                    setDraftDate(event.target.value);
+                    setDateError("");
+                  }}
+                  aria-invalid={Boolean(dateError)}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    minHeight: 40,
+                    boxSizing: "border-box",
+                    marginTop: 5,
+                    padding: "0 9px",
+                    borderRadius: 9,
+                    border: `1px solid ${dateError ? P.red : P.lineHi}`,
+                    background: P.card,
+                    color: P.text,
+                    colorScheme: "dark",
+                    fontFamily: MONO,
+                    fontSize: 11,
+                  }}
+                />
+              </label>
+              <div style={{ marginTop: 5, color: P.sub, fontSize: 8 }}>
+                この日に保存した対象データ{targetScans.length}件をまとめて変更します。
+              </div>
+              {dateError && <div role="alert" style={{ marginTop: 5, color: P.red, fontSize: 8 }}>{dateError}</div>}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingDate(false);
+                    setDateError("");
+                  }}
+                  style={{
+                    minHeight: 38,
+                    borderRadius: 9,
+                    border: `1px solid ${P.line}`,
+                    background: P.card,
+                    color: P.subHi,
+                    fontSize: 9,
+                    fontWeight: 800,
+                  }}
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="button"
+                  onClick={submitDateEdit}
+                  style={{
+                    minHeight: 38,
+                    borderRadius: 9,
+                    border: `1px solid ${P.cyan}`,
+                    background: P.cyan,
+                    color: P.bg,
+                    fontSize: 9,
+                    fontWeight: 900,
+                  }}
+                >
+                  変更を保存
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {dateNotice && (
+        <div role="status" style={{ marginTop: 7, color: P.green, fontSize: 8, fontWeight: 800 }}>
+          {dateNotice}
         </div>
       )}
       <div style={{ marginTop: 7, display: "flex", flexWrap: "wrap", gap: "4px 9px" }}>
@@ -1330,7 +1518,15 @@ function IslandActivityHistoryPanel({ history, selected }) {
   );
 }
 
-function LearningSummary({ data, selected, onApproveCalibration, calibrationNotice }) {
+function LearningSummary({
+  data,
+  selected,
+  scans,
+  onChangeScanDate,
+  requestConfirmation,
+  onApproveCalibration,
+  calibrationNotice,
+}) {
   if (!data.analytics || !selected) return null;
   const overall = data.aiProfile?.overall || {};
   const island = data.islandStats?.find((item) => item.key === selected.activityHistoryKey)
@@ -1395,6 +1591,9 @@ function LearningSummary({ data, selected, onApproveCalibration, calibrationNoti
             key={selected.activityHistoryKey}
             history={data.islandActivityHistory}
             selected={selected}
+            scans={scans}
+            onChangeScanDate={onChangeScanDate}
+            requestConfirmation={requestConfirmation}
           />
         </div>
         <div style={{ padding: 12, borderRadius: 16, background: P.card, border: `1px solid ${P.line}`, gridColumn: "1 / -1" }}>
@@ -1751,6 +1950,19 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord }) {
     });
   };
 
+  const changeScanDate = ({ scanIds, fromDate, toDate }) => {
+    if (isDemo || typeof S?.setDeltaScans !== "function") {
+      return { ok: false, reason: "unavailable", scans: savedScans, updatedCount: 0 };
+    }
+    const result = updateDeltaScanDate(savedScans, {
+      scanIds,
+      fromDate,
+      toDate,
+    });
+    if (result.ok) S.setDeltaScans(result.scans);
+    return result;
+  };
+
   return (
     <div ref={rootRef} className="strategy-map" style={{ flex: 1, background: P.bg, color: P.text, fontFamily: FONT, paddingBottom: "calc(24px + env(safe-area-inset-bottom))" }}>
       <Header data={data} onBack={onBack} onHelp={() => setHelpOpen(true)} />
@@ -1809,6 +2021,9 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord }) {
       <LearningSummary
         data={data}
         selected={selected}
+        scans={deltaScans}
+        onChangeScanDate={isDemo ? null : changeScanDate}
+        requestConfirmation={S?.requestConfirmation}
         onApproveCalibration={isDemo ? null : approveCalibration}
         calibrationNotice={calibrationNotice}
       />
