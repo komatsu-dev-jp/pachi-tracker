@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import ReactDOM from "react-dom";
 import { C, f, font, mono, localDateStr } from "../../constants";
 import { NI, Card, Btn, SecLabel } from "../Atoms";
-import { searchMachines, deriveSpecForMachine, getEffectiveMachineList } from "../../machineDB";
+import { searchMachines, deriveSpecForMachine, findEffectiveMachineByName } from "../../machineDB";
 import { MACHINE_PROBABILITY_FILTER_OPTIONS, MACHINE_SORT_OPTIONS, filterMachines, getMachineMakerKey, sortMachines } from "../../machineSort";
 import { restoreBackup } from "../../persistence";
 import { exportFullBackup } from "../../backupDownload";
@@ -877,7 +877,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
 
     // 機種DB（標準＋カスタム）から現在設定中の機種を引き当て、DB実戦値ボーダーを優先
     const matchedMachine = s.machineName
-        ? getEffectiveMachineList(s.customMachines).find((machine) => machine?.name === s.machineName)
+        ? findEffectiveMachineByName(s.machineName, s.customMachines)
         : null;
     const dbBorderForKey = matchedMachine && exRateKey && matchedMachine.border?.[exRateKey];
     const calcBorder = dbBorderForKey != null ? Number(dbBorderForKey) : formulaBorder;

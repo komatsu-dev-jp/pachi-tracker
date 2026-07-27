@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import ReactDOM from "react-dom";
 import { C, f, sc, sp, tsNow, font, mono, localDateStr } from "../../constants";
 import { NI, Card, Btn, SecLabel } from "../Atoms";
-import { searchMachines, deriveSpecForMachine, getEffectiveMachineList } from "../../machineDB";
+import { searchMachines, deriveSpecForMachine, findEffectiveMachineByName } from "../../machineDB";
 import { MACHINE_SORT_OPTIONS, sortMachines } from "../../machineSort";
 import { calcPreciseEV } from "../../logic";
 import { applyEconomicEV } from "../../economics";
@@ -773,8 +773,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             S.setBallVal(1000 / Number(draft.exRate));
         }
 
-        const machine = searchMachines(String(draft.machineName || ""), S.customMachines)
-            .find((candidate) => String(candidate?.name || "") === String(draft.machineName || ""));
+        const machine = findEffectiveMachineByName(draft.machineName, S.customMachines);
         if (machine) {
             const spec = deriveSpecForMachine(machine);
             const yutime = createYutimeSessionFromMachine(machine, {
@@ -880,8 +879,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     // 現在の機種からタイプ(ミドル/甘デジ等)を解決
     const currentMachineType = useMemo(() => {
         if (!S.machineName) return "";
-        const hit = getEffectiveMachineList(S.customMachines)
-            .find((machine) => machine && machine.name === S.machineName);
+        const hit = findEffectiveMachineByName(S.machineName, S.customMachines);
         return hit?.type || "パチンコ";
     }, [S.machineName, S.customMachines]);
 
