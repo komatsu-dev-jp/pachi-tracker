@@ -364,7 +364,12 @@ check("T16_直近機種5台の状態別振分を固定", () => {
   ].map(byName);
 
   assert.deepStrictEqual(signature(targets[0].hesoModes[0].rows), [[10, 1500, 50], [2, 300, 1], [10, 1500, 49]]);
+  assert.deepStrictEqual(signature(targets[0].hesoModes[1].rows), [[2, 300, 100]]);
   assert.deepStrictEqual(signature(targets[0].rushModes[0].rows), [["10R×4", 6000, 3], ["10R×2", 3000, 97]]);
+  assert.strictEqual(targets[0].rushEntryRate, 25.5);
+  assert.strictEqual(targets[0].hesoAvgPayout, 894);
+  assert.strictEqual(targets[0].deltaCounterModel.standardPayout, 1500);
+  assert.strictEqual(targets[0].deltaCounterModel.reducedPayout, 300);
   assert.deepStrictEqual(signature(targets[1].rushModes[0].rows), [[10, 1500, 51], [10, 1500, 1], [2, 60, 8], [10, 1500, 40]]);
   assert.deepStrictEqual(signature(targets[2].rushModes[0].rows), [["10R×6", 9000, 1], ["10R×3", 4500, 99]]);
   assert.deepStrictEqual(signature(targets[3].hesoModes[0].rows), [["10R×2+α", "3000発+α", 0.1], ["6R+α", "1800発+α", 2], [2, 300, 49.9], [2, 300, 48]]);

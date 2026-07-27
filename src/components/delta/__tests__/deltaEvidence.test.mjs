@@ -8,6 +8,7 @@ import {
   buildRowDeltaEvidence,
   validateDeltaRowMachineAssignments,
 } from "../deltaEvidence.js";
+import { machineDB } from "../../../machineDB.js";
 
 const machine = {
   name: "P大海物語5 MTE2",
@@ -91,6 +92,41 @@ assert.equal(legacy.derived, true);
 const fallback = resolveMachineStats({ avgPayoutPerHit: 1000, stdDev: 19000 });
 assert.equal(fallback.payoutStdDevPerHit, 100, "振分不明の旧データだけは上限付き10%誤差を使う");
 assert.equal(fallback.sessionStdDev, 19000);
+
+const oldGhoul = findMachineSpec("e東京喰種", [], machineDB);
+const newGhoul = findMachineSpec("e 東京喰種 超デカ超一撃ver.", [], machineDB);
+assert.equal(oldGhoul?.name, "e東京喰種W", "販売名だけの旧東京喰種をW型式へ照合する");
+assert.equal(
+  newGhoul?.name,
+  "e 東京喰種 超デカ超一撃ver.",
+  "販売名だけの旧東京喰種を超デカ超一撃ver.へ誤照合しない",
+);
+
+const ghoulFallback = estimateDeltaObservation(
+  { normalSpins: 700, totalStarts: 5, val: -3000, status: "ok" },
+  oldGhoul,
+);
+assert.equal(ghoulFallback.valid, true);
+assert.ok(Math.abs(ghoulFallback.observedRotation - 20.8346358237) < 1e-9);
+assert.equal(ghoulFallback.payoutEstimateSource, "normal-spins-charge-estimate");
+assert.ok(ghoulFallback.observedRotation >= 10);
+
+const ghoulWithFirstHits = estimateDeltaObservation(
+  { normalSpins: 700, totalStarts: 5, firstHitCount: 3, val: -3000, status: "ok" },
+  oldGhoul,
+);
+assert.equal(ghoulWithFirstHits.valid, true);
+assert.equal(ghoulWithFirstHits.estimatedPayoutBalls, 5682);
+assert.ok(Math.abs(ghoulWithFirstHits.observedRotation - 20.1566459341) < 1e-9);
+assert.equal(ghoulWithFirstHits.payoutEstimateSource, "first-hit-charge-estimate");
+
+const impossibleGhoul = estimateDeltaObservation(
+  { normalSpins: 700, totalStarts: 30, val: -3000, status: "ok" },
+  oldGhoul,
+);
+assert.equal(impossibleGhoul.valid, false);
+assert.equal(impossibleGhoul.reason, "チャージ内訳または大当り回数を確認");
+assert.ok(impossibleGhoul.observedRotation < 10, "10未満を正常値として丸めて表示しない");
 
 const correctedMaster = {
   name: "エヴァンゲリオン15",
