@@ -5,6 +5,66 @@
   padding: 0 14px;
 }
 
+.strategy-kpi-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: 0 14px 8px;
+  color: var(--sm-sub-hi);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.strategy-kpi-context span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.strategy-kpi-context strong {
+  margin-right: 5px;
+  color: var(--sm-cyan);
+  font-size: 9px;
+}
+
+.strategy-kpi-label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.strategy-kpi-label span {
+  width: fit-content;
+  max-width: 100%;
+  padding: 2px 5px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--sm-cyan) 28%, var(--sm-line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sm-cyan) 8%, var(--sm-card));
+  color: var(--sm-cyan);
+  font-size: 7px;
+  font-weight: 900;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.strategy-kpi-label b {
+  overflow: hidden;
+  color: var(--sm-sub);
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.strategy-kpi-note {
+  margin: 7px 14px 0;
+  color: var(--sm-sub);
+  font-size: 8px;
+  line-height: 1.55;
+}
+
 .strategy-islands-scroll {
   display: flex;
   gap: 12px;

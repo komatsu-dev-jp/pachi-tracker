@@ -3,6 +3,7 @@ import {
   applyStrategyPlanEntryContext,
   buildStrategyMap,
   buildStrategyPlanContext,
+  buildStrategyViewScope,
   pairStrategyIslands,
   resolveStrategyPlanHandoff,
 } from "./strategyMapData";
@@ -215,7 +216,7 @@ function BackIcon() {
   );
 }
 
-function Header({ data, onBack, onHelp }) {
+function Header({ data, selected, viewScope, onBack, onHelp }) {
   return (
     <div
       style={{
@@ -252,10 +253,10 @@ function Header({ data, onBack, onHelp }) {
             戦略マップ
           </div>
           <div style={{ fontSize: 11, color: P.subHi, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {data.machineName}
+            {selected?.machineName || viewScope.machineName || "機種未設定"}
           </div>
-          <div style={{ fontSize: 10, color: P.sub, marginTop: 1 }}>
-            島全体 {data.total}台
+          <div style={{ fontSize: 10, color: P.sub, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {selected ? `選択台 ${selected.num}番` : "台未選択"} ・ {viewScope.label} {viewScope.total}台
           </div>
         </div>
 
@@ -276,8 +277,8 @@ function Header({ data, onBack, onHelp }) {
             <div style={{ fontSize: 10, color: P.sub }}>
               {data.freshness?.sourceDate ? `解析 ${data.freshness.sourceDate}` : "解析日なし"}
             </div>
-            <div style={{ fontSize: 13, fontWeight: 900, color: P.cyan, marginTop: 3, fontFamily: MONO }}>
-              候補 {data.kpi.candidates}台
+            <div style={{ fontSize: 11, fontWeight: 900, color: P.cyan, marginTop: 3, fontFamily: MONO, whiteSpace: "nowrap" }}>
+              表示中の候補 {viewScope.candidates}台
             </div>
           </div>
         </div>
@@ -574,44 +575,68 @@ function FreshnessBanner({ freshness, sourceSummary }) {
 }
 
 // ============================ KPIサマリー ============================
-function Kpi({ kpi }) {
+function Kpi({ selected, viewScope }) {
   const items = [
-    { label: "推定期待値", value: signed(kpi.evPerHour), unit: "円/h", color: kpi.evPerHour >= 0 ? P.green : P.red },
-    { label: "予測回転率", value: fmt(kpi.rot, 1), unit: "/k", color: P.cyan },
-    { label: `翌日${DECISION_TERMS.confidence}`, value: fmt(kpi.confidence), unit: "%", color: P.yellow },
-    { label: "候補台数", value: fmt(kpi.candidates), unit: "台", color: P.green },
+    {
+      scope: "選択台",
+      label: "推定期待値",
+      value: signed(selected?.evPerHour),
+      unit: "円/h",
+      color: selected?.evPerHour == null ? P.sub : Number(selected.evPerHour) >= 0 ? P.green : P.red,
+    },
+    { scope: "選択台", label: "予測回転率", value: fmt(selected?.rot, 1), unit: "/k", color: P.cyan },
+    { scope: "選択台", label: `翌日${DECISION_TERMS.confidence}`, value: fmt(selected?.confidence), unit: "%", color: P.yellow },
+    { scope: "表示中の島", label: "候補台数", value: fmt(viewScope.candidates), unit: "台", color: P.green },
   ];
   return (
-    <div className="strategy-kpi-grid">
-      {items.map((it) => (
-        <div
-          key={it.label}
-          style={{
-            background: P.card,
-            border: `1px solid ${P.line}`,
-            borderRadius: 16,
-            padding: "11px 8px 12px",
-            minWidth: 0,
-          }}
-        >
-          <div style={{ fontSize: 9, color: P.sub, fontWeight: 700, whiteSpace: "nowrap" }}>{it.label}</div>
+    <div>
+      <div className="strategy-kpi-context">
+        <span>
+          <strong>選択台の予測</strong>
+          {selected ? `${selected.machineName}・${selected.num}番台` : "台未選択"}
+        </span>
+        <span>
+          <strong>表示範囲の集計</strong>
+          {viewScope.label}・設置{viewScope.total}台
+        </span>
+      </div>
+      <div className="strategy-kpi-grid">
+        {items.map((it) => (
           <div
+            key={`${it.scope}-${it.label}`}
             style={{
-              fontSize: 16,
-              fontWeight: 900,
-              color: it.color,
-              fontFamily: MONO,
-              fontVariantNumeric: "tabular-nums",
-              letterSpacing: -0.8,
-              marginTop: 7,
-              whiteSpace: "nowrap",
+              background: P.card,
+              border: `1px solid ${P.line}`,
+              borderRadius: 16,
+              padding: "9px 8px 12px",
+              minWidth: 0,
             }}
           >
-            {it.value}
+            <div className="strategy-kpi-label">
+              <span>{it.scope}</span>
+              <b>{it.label}</b>
+            </div>
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 900,
+                color: it.color,
+                fontFamily: MONO,
+                fontVariantNumeric: "tabular-nums",
+                letterSpacing: -0.8,
+                marginTop: 7,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {it.value}
+            </div>
+            <div style={{ fontSize: 8, color: P.sub, fontWeight: 700, marginTop: 1 }}>{it.unit}</div>
           </div>
-          <div style={{ fontSize: 8, color: P.sub, fontWeight: 700, marginTop: 1 }}>{it.unit}</div>
-        </div>
-      ))}
+        ))}
+      </div>
+      <div className="strategy-kpi-note">
+        期待値・回転率・翌日{DECISION_TERMS.confidence}は選択台、候補台数は現在表示している島（設置{viewScope.total}台）の集計です。
+      </div>
     </div>
   );
 }
@@ -1998,6 +2023,11 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord }) {
   const effectiveActiveIslandId = data.islands.some((island) => island.id === activeIslandId)
     ? activeIslandId
     : data.islands[0]?.id || null;
+  const viewScope = buildStrategyViewScope({
+    islands: data.islands,
+    activeIslandId: effectiveActiveIslandId,
+    actionable: data.actionable,
+  });
 
   const selectMachine = (machineId) => {
     setSelectedId(machineId);
@@ -2007,11 +2037,12 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord }) {
 
   const changeIsland = (islandId) => {
     setActiveIslandId(islandId);
-    const visiblePair = pairStrategyIslands(data.islands)
-      .find((pair) => pair.some((island) => island.id === islandId));
-    const machines = (visiblePair || []).flatMap((island) => island.machines);
-    const lead = [...machines].sort((a, b) => b.score - a.score)[0] || null;
-    setSelectedId(lead?.id || null);
+    const nextScope = buildStrategyViewScope({
+      islands: data.islands,
+      activeIslandId: islandId,
+      actionable: data.actionable,
+    });
+    setSelectedId(nextScope.leadId);
   };
 
   const approveCalibration = (candidate) => {
@@ -2079,7 +2110,13 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord }) {
 
   return (
     <div ref={rootRef} className="strategy-map" style={{ flex: 1, background: P.bg, color: P.text, fontFamily: FONT, paddingBottom: "calc(24px + env(safe-area-inset-bottom))" }}>
-      <Header data={data} onBack={onBack} onHelp={() => setHelpOpen(true)} />
+      <Header
+        data={data}
+        selected={selected}
+        viewScope={viewScope}
+        onBack={onBack}
+        onHelp={() => setHelpOpen(true)}
+      />
       <PlanHandoffBanner
         plan={planHandoff}
         match={data.planMatch}
@@ -2112,7 +2149,7 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord }) {
         </div>
       )}
       <div style={{ marginTop: 16 }}>
-        <Kpi kpi={data.kpi} />
+        <Kpi selected={selected} viewScope={viewScope} />
       </div>
       <div style={{ marginTop: 14 }}>
         <Tabs active={filter} onChange={setFilter} />
