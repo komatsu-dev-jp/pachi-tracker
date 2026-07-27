@@ -9,7 +9,12 @@
 //  T5 buildMachineOverride は machineDB（ビルトイン）を一切変更しない
 
 import assert from "node:assert";
-import { searchMachines, machineDB } from "../../../machineDB.js";
+import {
+  searchMachines,
+  machineDB,
+  findEffectiveMachineByName,
+  getEffectiveMachineList,
+} from "../../../machineDB.js";
 import {
   normalizeMachine,
   buildMachineOverride,
@@ -254,7 +259,7 @@ check("T11_エヴァ15の公開振分を固定", () => {
 // ── T12: 未検証機種を共通1500発で補完しない ──
 check("T12_未検証振分の架空補完を禁止", () => {
   const unverified = machineDB.filter((m) => m.allocationVerified !== true);
-  assert.strictEqual(unverified.length, 0, "全98機種の振り分けが照合済み");
+  assert.strictEqual(unverified.length, 0, "重複除外後の全97機種の振り分けが照合済み");
   for (const machine of unverified) {
     const model = normalizeMachine(machine);
     assert.strictEqual(model.allocationUsable, false, `${machine.name}: 未検証フラグ`);
@@ -325,6 +330,44 @@ check("T14_古い同名カスタムより更新版マスタを優先", () => {
   assert.strictEqual(hit.border1K, 17);
   assert.strictEqual(hit.rushEntryRate, 70);
   assert.strictEqual(hit.hesoModes[0].rows[1].rounds, 3);
+});
+
+check("T14b_大海5の保存済み旧名を更新版の代表レコードへ統合", () => {
+  const master = machineDB.find((machine) => machine.name === "P大海物語5 MTE2");
+  const staleAliases = ["P大海物語5", "P大海物語5MTE2", "大海物語5"].map((name, id) => ({
+    ...structuredClone(master),
+    id,
+    name,
+    isCustom: true,
+    dataUpdatedAt: "2026-07-14",
+    avgPayoutPerHit: 1350,
+    stdDev: 18000,
+  }));
+
+  const effective = getEffectiveMachineList(staleAliases);
+  assert.strictEqual(
+    effective.filter((machine) => machine.modelName === "P大海物語5MTE2").length,
+    1,
+    "旧名が複数保存されていても代表レコードは1件",
+  );
+  for (const name of ["P大海物語5 MTE2", "P大海物語5", "P大海物語5MTE2", "大海物語5"]) {
+    const hit = findEffectiveMachineByName(name, staleAliases);
+    assert.strictEqual(hit.name, "P大海物語5 MTE2");
+    assert.strictEqual(hit.dataUpdatedAt, "2026-07-27");
+    assert.strictEqual(hit.avgPayoutPerHit, 1400, "7月27日の出玉精度改善を旧データで戻さない");
+    assert.strictEqual(hit.payoutStdDevPerHit, 0);
+    assert.strictEqual(hit.stdDev, 13000);
+  }
+
+  const edited = {
+    ...structuredClone(master),
+    name: "P大海物語5",
+    dataUpdatedAt: "2026-07-28",
+    border1K: 17.1,
+  };
+  const editedHit = findEffectiveMachineByName("P大海物語5", [edited]);
+  assert.strictEqual(editedHit.name, "P大海物語5 MTE2", "編集後も代表名へ統一");
+  assert.strictEqual(editedHit.border1K, 17.1, "マスタより新しいユーザー編集は保持");
 });
 
 // ── T15: 50%上乗せループ機の状態別サマリーを固定 ──
@@ -764,7 +807,7 @@ check("T28_海物語シリーズ追加5機種を固定", () => {
 check("T29_大海5・夜桜2機種・新海・アイマリンを固定", () => {
   const byName = (name) => machineDB.find((m) => m.name === name);
   const sig = (rows) => rows.map((r) => [r.roundsLabel || r.rounds, r.payoutLabel || r.payout, r.rate]);
-  const targets = ["P大海物語5", "PAスーパー海物語IN沖縄5 夜桜超旋風99ver.", "PA新海物語", "Pスーパー海物語IN沖縄5 夜桜超旋風", "PAスーパー海物語IN沖縄5 with アイマリン"].map(byName);
+  const targets = ["P大海物語5 MTE2", "PAスーパー海物語IN沖縄5 夜桜超旋風99ver.", "PA新海物語", "Pスーパー海物語IN沖縄5 夜桜超旋風", "PAスーパー海物語IN沖縄5 with アイマリン"].map(byName);
   assert.deepStrictEqual(sig(targets[0].hesoModes[0].rows), [[10, 1500, 60], [10, 1500, 40]]);
   assert.deepStrictEqual(sig(targets[1].rushModes[0].rows), [[10, 700, 10], [3, 210, 90]]);
   assert.deepStrictEqual(sig(targets[2].hesoModes[0].rows), [[10, 1000, 4], [5, 500, 6], [5, 500, 57], [5, 500, 33]]);
@@ -804,7 +847,7 @@ check("T30_ジューシー3・大海5甘・SEED・リゼロ・沖海5桜199を�
   }
 });
 
-check("T31_残り8機種と全98機種の照合完了を固定", () => {
+check("T31_残り8機種と重複除外後97機種の照合完了を固定", () => {
   const byName = (name) => machineDB.find((m) => m.name === name);
   const sig = (rows) => rows.map((r) => [r.roundsLabel || r.rounds, r.payoutLabel || r.payout, r.rate]);
   const names = [
@@ -824,8 +867,8 @@ check("T31_残り8機種と全98機種の照合完了を固定", () => {
   assert.deepStrictEqual(sig(targets[6].hesoModes[0].rows), [[10, 720, 2], [4, 288, 73], [4, 288, 25]]);
   assert.deepStrictEqual(sig(targets[7].rushModes[0].rows), [[10, 840, 2], [6, 504, 49], [4, 336, 49]]);
 
-  assert.strictEqual(machineDB.length, 125, "登録機種数（遊タイム27スペック統合後）");
-  assert.strictEqual(machineDB.filter((m) => m.allocationVerified === true).length, 125, "全機種照合済み");
+  assert.strictEqual(machineDB.length, 124, "登録機種数（重複除外・遊タイム27スペック統合後）");
+  assert.strictEqual(machineDB.filter((m) => m.allocationVerified === true).length, 124, "全機種照合済み");
   for (const target of targets) {
     assert.ok(target.sourceUrls.length >= 2, `${target.name}: 複数出典`);
     const model = normalizeMachine(target);

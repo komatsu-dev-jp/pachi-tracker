@@ -13,7 +13,7 @@ const rawMachineDB = [
   // ── ミドルスペック ──
   {
     name: "P大海物語5 MTE2",
-    aliases: ["P大海物語5", "大海物語5"],
+    aliases: ["P大海物語5", "大海物語5", "P大海物語5MTE2"],
     maker: "三洋",
     type: "ハイミドル",
     prob: "1/319.6",
@@ -23,6 +23,7 @@ const rawMachineDB = [
     specSapo: 0,
     roundDist: "10R:100%（確変ループ）",
     rushDist: "10R:100%",
+    border1K: 16.7,
     border: { "4.00": 16.7, "3.57": 17.6, "3.33": 18.4, "3.03": 19.3 },
     prize: 3,
     unitCost: 11.4,
@@ -1771,41 +1772,6 @@ const rawMachineDB = [
     ] }],
     allocationNote: "出玉は払い出し。特図は共通ですが、ハピネスチャンス中は全大当り後の電サポが120回となり、同モードがループします。",
     sourceUrls: ["https://p.hisshobon.jp/machine/4095/1/94691", "https://1geki.jp/pachinko/pa_oumi5_agns/29/", "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20230414_3.pdf"],
-    dataUpdatedAt: "2026-07-14",
-    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
-  },
-  {
-    name: "P大海物語5",
-    maker: "三洋",
-    type: "ミドル",
-    prob: "1/319.6",
-    synthProb: 319.6,
-    border1K: 16.7,
-    prize: 1,
-    unitCost: 13.0,
-    avgPayoutPerHit: 1400,
-    stdDev: 18000,
-    stdDevLabel: "P-EVIDENCE推定（確変60%ループ＋時短100回型）",
-    stdDevMethod: "p-evidence-branching-v2",
-    initialProb: 0.5,
-    muraCoef: 80000,
-    spatialSens: 1,
-    regimeSens: 1,
-    hesoAvgPayout: 1500,
-    rushAvgPayout: 1500,
-    rushEntryRate: 60,
-    rushContinueRate: 60,
-    allocationVerified: true,
-    hesoModes: [{ name: "通常時・確変中（特図共通）", rows: [
-      { rounds: 10, payout: 1500, rate: 60, label: "確変・次回まで" },
-      { rounds: 10, payout: 1500, rate: 40, label: "通常・時短100回" },
-    ] }],
-    rushModes: [{ name: "確変・時短中（特図共通）", rows: [
-      { rounds: 10, payout: 1500, rate: 60, label: "確変継続・次回まで" },
-      { rounds: 10, payout: 1500, rate: 40, label: "通常・時短100回" },
-    ] }],
-    allocationNote: "出玉は払い出し。入賞口を問わず全大当りが10R・1500発で、60%が確変、40%が通常です。",
-    sourceUrls: ["https://p.hisshobon.jp/vpage/2486/39", "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20221205_1.pdf", "https://www.sanyobussan.co.jp/products/pachinko/p_daium5/"],
     dataUpdatedAt: "2026-07-14",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
@@ -5001,7 +4967,7 @@ const rawMachineDB = [
 // 「型式確認済み」と「大当り振り分け確認済み」は別の状態として扱う。
 // そのため、ここに型式を登録しても allocationVerified は変更しない。
 export const machineModelRegistry = Object.freeze(Object.fromEntries([
-  ["P大海物語5 MTE2", "P大海物語5MTE2", "https://www.reflex.okinawa/pdf/2022/12.5.pdf"],
+  ["P大海物語5 MTE2", "P大海物語5MTE2", "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20221205_1.pdf"],
   ["ルパン三世 消されたルパン", "P消されたルパンH1AZ1", "https://1geki.jp/pachinko/p_erased_lupin2022/"],
   ["仮面ライダー轟音", "Pぱちんこ仮面ライダー轟音M6", "https://p-town.dmm.com/machines/3689"],
   ["海物語IN沖縄5", "Pスーパー海物語IN沖縄5LTV", "https://1geki.jp/pachinko/p_spumioki5/"],
@@ -5031,7 +4997,6 @@ export const machineModelRegistry = Object.freeze(Object.fromEntries([
   ["P大海物語5ブラック", "P大海物語5HCL", "https://1geki.jp/pachinko/p_daiumi5_black/"],
   ["e新海物語349", "e新海物語349ELTH", "https://www.p-world.co.jp/machine/database/10378"],
   ["PA大海物語5 Withアグネス・ラム", "PA大海物語5ARBC", "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20230602.pdf"],
-  ["P大海物語5", "P大海物語5MTE2", "https://www.sanyobussan.co.jp/products/pachinko/p_daium5/"],
   ["PAスーパー海物語IN沖縄5 夜桜超旋風99ver.", "PAスーパー海物語IN沖縄5YBA", "https://www.sanyobussan.co.jp/products/pachinko/pa_oki5_yozakura/"],
   ["PA新海物語", "PA新海物語ARBB", "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20220603.pdf"],
   ["Pスーパー海物語IN沖縄5 夜桜超旋風", "Pスーパー海物語IN沖縄5YTC", "https://www.sanyobussan.co.jp/products/pachinko/p_oki5_yozakura/"],
@@ -5095,7 +5060,7 @@ export const machineModelRegistry = Object.freeze(Object.fromEntries([
 
 // 遊タイム監査レジストリ。
 // 搭載機だけでなく非搭載・対象外も明示し、新機種を根拠なく「非搭載」と自動判定しない。
-// 現在の98機種はすべて型式または機種別ページで2026-07-17に再確認済み。
+// 重複除外後の97機種はすべて型式または機種別ページで2026-07-17に再確認済み。
 const equippedYutimeRegistry = Object.freeze({
   "仮面ライダー轟音": Object.freeze({
     triggerLowSpins: 950,
@@ -5188,7 +5153,6 @@ const yutimeNotEquippedNames = new Set([
   "PAスーパー海物語IN地中海2",
   "P大海物語5ブラック",
   "e新海物語349",
-  "P大海物語5",
   "PAスーパー海物語IN沖縄5 夜桜超旋風99ver.",
   "Pスーパー海物語IN沖縄5 夜桜超旋風",
   "PAスーパー海物語IN沖縄5 with アイマリン",
@@ -5302,7 +5266,7 @@ export const machineYutimeRegistry = Object.freeze(Object.fromEntries(rawMachine
 })));
 
 // 遊タイム画面専用の参照機種。
-// 98機種のP-EVIDENCE本体へ不完全な振分・標準偏差を混ぜず、確認できた発動条件だけを選択可能にする。
+// 97機種のP-EVIDENCE本体へ不完全な振分・標準偏差を混ぜず、確認できた発動条件だけを選択可能にする。
 // `expectedNetBalls` は「遊タイム突入後の平均獲得玉」を示す根拠がない限り null のままにする。
 export const legacyYutimeReferenceMachines = Object.freeze([
   {
@@ -5524,26 +5488,89 @@ export function isMasterMachineNewer(master, custom) {
   return !!masterDate && (!customDate || masterDate > customDate);
 }
 
-// 旧版アプリで保存された同名カスタムが、新しい標準スペックを隠さないようにする。
+function machineIdentityKey(value) {
+  return String(value ?? "").normalize("NFKC").trim().toLowerCase();
+}
+
+function buildMachineIdentityIndex(machines) {
+  const exactNames = new Map();
+  const aliasCandidates = new Map();
+  machines.forEach((machine) => {
+    const nameKey = machineIdentityKey(machine?.name);
+    if (nameKey) exactNames.set(nameKey, machine);
+    (Array.isArray(machine?.aliases) ? machine.aliases : []).forEach((alias) => {
+      const aliasKey = machineIdentityKey(alias);
+      if (!aliasKey) return;
+      const candidates = aliasCandidates.get(aliasKey) || new Set();
+      candidates.add(machine);
+      aliasCandidates.set(aliasKey, candidates);
+    });
+  });
+  return {
+    resolve(value) {
+      const key = machineIdentityKey(value);
+      if (!key) return null;
+      const exact = exactNames.get(key);
+      if (exact) return exact;
+      const candidates = aliasCandidates.get(key);
+      return candidates?.size === 1 ? [...candidates][0] : null;
+    },
+  };
+}
+
+// 旧版アプリで保存された同名・旧名カスタムが、新しい標準スペックを隠さないようにする。
 // 標準データの更新日が新しい場合は標準を採用し、同日以降に編集した値だけ上書きとして残す。
 export function getEffectiveMachineList(customMachines = [], builtInMachines = machineDB) {
   const customList = Array.isArray(customMachines) ? customMachines : [];
   const builtIns = Array.isArray(builtInMachines) ? builtInMachines : [];
-  const builtInByName = new Map(builtIns.map((machine) => [machine.name, machine]));
-  const effectiveCustom = customList.map((custom) => {
-    const master = builtInByName.get(custom?.name);
-    if (!master) return { ...custom, isCustom: true, isOverride: false };
-    if (isMasterMachineNewer(master, custom)) return master;
-    return { ...master, ...custom, isCustom: true, isOverride: true };
+  const identityIndex = buildMachineIdentityIndex(builtIns);
+  const effectiveCustom = [];
+  const effectiveIndexByMaster = new Map();
+  const resolvedMasterNames = new Set();
+
+  customList.forEach((custom) => {
+    const master = identityIndex.resolve(custom?.name);
+    if (!master) {
+      effectiveCustom.push({ ...custom, isCustom: true, isOverride: false });
+      return;
+    }
+
+    resolvedMasterNames.add(master.name);
+    const effective = isMasterMachineNewer(master, custom)
+      ? master
+      : {
+          ...master,
+          ...custom,
+          name: master.name,
+          aliases: [...new Set([...(master.aliases || []), custom?.name].filter(Boolean))],
+          isCustom: true,
+          isOverride: true,
+        };
+    const existingIndex = effectiveIndexByMaster.get(master.name);
+    if (existingIndex == null) {
+      effectiveIndexByMaster.set(master.name, effectiveCustom.length);
+      effectiveCustom.push(effective);
+      return;
+    }
+
+    const existing = effectiveCustom[existingIndex];
+    if (isMasterMachineNewer(existing, effective)) return;
+    effectiveCustom[existingIndex] = effective;
   });
-  const customNames = new Set(customList.map((machine) => machine?.name));
+
   return [
     ...effectiveCustom,
-    ...builtIns.filter((machine) => !customNames.has(machine.name)),
+    ...builtIns.filter((machine) => !resolvedMasterNames.has(machine.name)),
   ];
 }
 
-// 遊タイム機種選択では、P-EVIDENCE本体98機種と発動条件だけ確認済みの参照機種をまとめる。
+export function findEffectiveMachineByName(name, customMachines = [], builtInMachines = machineDB) {
+  return buildMachineIdentityIndex(
+    getEffectiveMachineList(customMachines, builtInMachines),
+  ).resolve(name);
+}
+
+// 遊タイム機種選択では、P-EVIDENCE本体と発動条件だけ確認済みの参照機種をまとめる。
 // 同名・同型式が後から本体へ登録された場合は、本体側を優先して二重表示しない。
 export function getYutimeSelectionMachines(customMachines = []) {
   const effectiveMachines = getEffectiveMachineList(customMachines);

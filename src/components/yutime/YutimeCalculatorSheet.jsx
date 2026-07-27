@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { localDateStr } from "../../constants";
-import { deriveSpecForMachine, getYutimeSelectionMachines } from "../../machineDB";
+import { deriveSpecForMachine, findEffectiveMachineByName, getYutimeSelectionMachines } from "../../machineDB";
 import { MACHINE_SORT_OPTIONS, filterMachines, sortMachines } from "../../machineSort";
 import {
   PACHINKO_RATE_PRESETS,
@@ -251,13 +251,7 @@ export default function YutimeCalculatorSheet({
 }) {
   const machines = useMemo(() => getYutimeSelectionMachines(S?.customMachines), [S?.customMachines]);
   const initialMachine = useMemo(
-    () => machines.find((machine) => machine.name === initialMachineName)
-      || machines.find((machine) => (
-        initialMachineName
-        && [machine.name, machine.modelName, ...(machine.aliases || [])]
-          .some((value) => String(value || "").normalize("NFKC").toLowerCase().includes(initialMachineName.normalize("NFKC").toLowerCase()))
-      ))
-      || null,
+    () => findEffectiveMachineByName(initialMachineName, [], machines),
     [initialMachineName, machines],
   );
   const machineInitialSession = createYutimeSessionFromMachine(initialMachine, { assumedStart1K: initialMachine?.border1K || S?.border });
