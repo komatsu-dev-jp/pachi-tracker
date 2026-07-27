@@ -3,6 +3,7 @@ import {
   applyStrategyPlanEntryContext,
   buildStrategyMap,
   buildStrategyPlanContext,
+  pairStrategyIslands,
   resolveStrategyPlanHandoff,
 } from "./strategyMapData";
 import { localDateStr } from "../../constants";
@@ -705,37 +706,12 @@ function HeatMachineCell({ number, machine, dim, selected, opposite, onSelect })
   );
 }
 
-function pairIslands(islands) {
-  const pairs = [];
-  const used = new Set();
-  const keyOf = (island) => String(island?.layoutId || island?.id || "");
-  for (const island of islands) {
-    const key = keyOf(island);
-    if (used.has(key)) continue;
-    const partner = island.facingIslandId
-      ? islands.find((candidate) => keyOf(candidate) === String(island.facingIslandId) && !used.has(keyOf(candidate)))
-      : null;
-    const pair = partner ? [island, partner] : [island];
-    pair.confirmed = Boolean(partner);
-    used.add(key);
-    if (partner) used.add(keyOf(partner));
-    pairs.push(pair);
-  }
-  // 旧データは表示だけ隣同士へまとめる。統計補正には使われない。
-  for (let index = 0; index + 1 < pairs.length; index++) {
-    if (pairs[index].confirmed || pairs[index + 1].confirmed) continue;
-    pairs[index].push(pairs[index + 1][0]);
-    pairs.splice(index + 1, 1);
-  }
-  return pairs;
-}
-
 function IslandOverview({ islands, activeIslandId, onChangeIsland }) {
-  const pairs = pairIslands(islands);
+  const pairs = pairStrategyIslands(islands);
   return (
     <div className="strategy-overview-wrap">
       <div className="strategy-overview-labels"><span>入口側</span><span>奥側</span></div>
-      <div className="strategy-island-overview" aria-label="対面島ペアの一覧">
+      <div className="strategy-island-overview" aria-label="島表示の一覧">
         {pairs.map((pair) => {
           const active = pair.some((island) => island.id === activeIslandId);
           const label = pair.map((island) => island.name).join("・");
@@ -746,7 +722,7 @@ function IslandOverview({ islands, activeIslandId, onChangeIsland }) {
               className={`strategy-overview-island${active ? " is-active" : ""}`}
               onClick={() => onChangeIsland(pair[0].id)}
               aria-pressed={active}
-              aria-label={`${label}の対面ペアを表示`}
+              aria-label={`${label}を${pair.length === 2 ? "対面" : "単独"}表示`}
             >
               <span>{label}</span>
               <small>{pair.length === 2 ? "対面表示" : "単独表示"}</small>
@@ -811,28 +787,41 @@ function OppositePairMap({ pair, filter, selectedId, selectedMachine, onSelect }
   const bottomCount = islandNumbers(bottom).length;
   const columns = Math.max(topCount, bottomCount, 1);
   const oppositeNumber = selectedMachine?.pevidence?.opposite?.oppositeNum;
+  const isPaired = Boolean(bottom && pair.confirmed);
   return (
     <div className="strategy-pair-map">
       <div className="strategy-pair-scroll">
         <div className="strategy-pair-canvas" style={{ "--pair-columns": columns, minWidth: columns * 58 - 4 }}>
           <PairIslandRow island={top} reverse={false} filter={filter} selectedId={selectedId} oppositeNumber={oppositeNumber} onSelect={onSelect} />
-          <div className="strategy-opposite-aisle"><span>対面通路</span><i>↕ 同じ縦位置が対面</i></div>
-          <PairIslandRow island={bottom} reverse filter={filter} selectedId={selectedId} oppositeNumber={oppositeNumber} onSelect={onSelect} />
+          {isPaired && (
+            <>
+              <div className="strategy-opposite-aisle"><span>対面通路</span><i>↕ 同じ縦位置が対面</i></div>
+              <PairIslandRow
+                island={bottom}
+                reverse={top.facingReversed !== false}
+                filter={filter}
+                selectedId={selectedId}
+                oppositeNumber={oppositeNumber}
+                onSelect={onSelect}
+              />
+            </>
+          )}
         </div>
       </div>
-      <div className="strategy-map-hint">← 横に動かすと2島が一緒に動きます →</div>
-      {!pair.confirmed && pair.length === 2 && <div className="strategy-layout-note">仮対面表示です。島マップ管理で対面を確認するまで予測補正には使いません</div>}
+      {isPaired
+        ? <div className="strategy-map-hint">← 横に動かすと2島が一緒に動きます →</div>
+        : <div className="strategy-layout-note">対面未設定のため、この島だけを単独表示しています</div>}
       {pair.some((island) => !island.registeredLayout) && <div className="strategy-layout-note">未登録の島は計測済み台から仮配置しています</div>}
     </div>
   );
 }
 
 function HallMap({ data, filter, selectedId, activeIslandId, onChangeIsland, onSelect }) {
-  const pairs = pairIslands(data.islands);
+  const pairs = pairStrategyIslands(data.islands);
   const activePair = pairs.find((pair) => pair.some((island) => island.id === activeIslandId)) || pairs[0] || [];
   const selectedMachine = data.all.find((machine) => machine.id === selectedId) || null;
   return (
-    <Section title="対面ヒートマップ" accent={P.cyan} sub="上下で向かい合う台を比較">
+    <Section title="対面ヒートマップ" accent={P.cyan} sub="設定済みの2島だけを比較・未設定は単独表示">
       <Legend />
       <div style={{ padding: "0 12px 4px" }}>
         <div
@@ -1312,13 +1301,15 @@ function IslandActivityHistoryPanel({
       : "";
     const message = `${selectedEntry.date} を ${draftDate} に変更します。\n`
       + `対象の差玉解析 ${targetScans.length}件の日付を変更します。${mergeWarning}`;
-    const confirmed = typeof requestConfirmation === "function"
-      ? await requestConfirmation({
-          title: "差玉解析日を変更しますか？",
-          message,
-          confirmLabel: "日付を変更",
-        })
-      : window.confirm(message);
+    if (typeof requestConfirmation !== "function") {
+      setDateError("確認画面を開けませんでした。画面を開き直してもう一度お試しください。");
+      return;
+    }
+    const confirmed = await requestConfirmation({
+      title: "差玉解析日を変更しますか？",
+      message,
+      confirmLabel: "日付を変更",
+    });
     if (!confirmed) return;
 
     const result = onChangeScanDate({
@@ -1911,9 +1902,9 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord }) {
 
   const changeIsland = (islandId) => {
     setActiveIslandId(islandId);
-    const index = data.islands.findIndex((item) => item.id === islandId);
-    const pairStart = index < 0 ? 0 : Math.floor(index / 2) * 2;
-    const machines = data.islands.slice(pairStart, pairStart + 2).flatMap((island) => island.machines);
+    const visiblePair = pairStrategyIslands(data.islands)
+      .find((pair) => pair.some((island) => island.id === islandId));
+    const machines = (visiblePair || []).flatMap((island) => island.machines);
     const lead = [...machines].sort((a, b) => b.score - a.score)[0] || null;
     setSelectedId(lead?.id || null);
   };

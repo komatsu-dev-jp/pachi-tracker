@@ -948,7 +948,11 @@ function buildOppositePairs(islands = []) {
   const handled = new Set();
   for (const left of islands || []) {
     const right = byId.get(String(left?.facingIslandId || ""));
-    if (!right || right === left) continue;
+    if (
+      !right
+      || right === left
+      || String(right?.facingIslandId || "") !== String(left?.id || "")
+    ) continue;
     const relationKey = [String(left.id), String(right.id)].sort().join("___");
     if (handled.has(relationKey)) continue;
     handled.add(relationKey);

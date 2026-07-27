@@ -19,7 +19,9 @@ import {
   islandLayoutRows,
   islandRanges,
   addIsland,
+  getFacingIslandCandidates,
   removeIsland,
+  setFacingIsland,
   updateIsland,
   moveIslandUp,
   moveIslandDown,
@@ -678,6 +680,10 @@ function EditScreen({ island, islands, index, total, onBack, onSave, onMoveUp, o
   const endN = Math.max(0, Math.round(Number(String(draft.end).trim() === "" ? startN : draft.end) || 0));
   const rows = Math.max(LAYOUT_ROWS_MIN, Math.min(LAYOUT_ROWS_MAX, Math.round(Number(draft.rows) || 2)));
   const color = tagColor(index);
+  const facingCandidates = useMemo(
+    () => getFacingIslandCandidates(islands, island.id),
+    [islands, island.id],
+  );
 
   // 全行（1行目＋追加行）。行の並び＝入力順、左端＞右端の行は降順。
   const segsAll = [{ start: startN, end: endN }, ...validExtraRanges(draft.extra)];
@@ -833,7 +839,7 @@ function EditScreen({ island, islands, index, total, onBack, onSave, onMoveUp, o
                   style={{ width: "100%", minHeight: 46, marginTop: 5, borderRadius: 12, border: `1px solid ${P.lineHi}`, background: P.bg, color: P.text, padding: "8px 10px" }}
                 >
                   <option value="">未設定</option>
-                  {islands.filter((item) => item.id !== island.id).map((item) => (
+                  {facingCandidates.map((item) => (
                     <option key={item.id} value={item.id}>{item.name || `${item.start}〜${item.end}`}</option>
                   ))}
                 </select>
@@ -982,20 +988,9 @@ export default function IslandMapManager({
 
   const handleSave = (patch) => {
     if (!editingIsland) return;
-    let next = updateIsland(islands, editingIsland.id, patch);
-    next = next.map((item) => {
-      if (item.id === editingIsland.id) return item;
-      if (item.id === patch.facingIslandId) {
-        return { ...item, facingIslandId: editingIsland.id, facingReversed: patch.facingReversed !== false };
-      }
-      if (
-        item.facingIslandId === editingIsland.id
-        || (patch.facingIslandId && item.facingIslandId === patch.facingIslandId)
-      ) {
-        return { ...item, facingIslandId: null };
-      }
-      return item;
-    });
+    const { facingIslandId, facingReversed, ...islandPatch } = patch;
+    let next = updateIsland(islands, editingIsland.id, islandPatch);
+    next = setFacingIsland(next, editingIsland.id, facingIslandId, facingReversed);
     onChangeIslands(next);
     logChange(`「${patch.name || editingIsland.name || "島"}」を更新 ${patch.start}〜${patch.end}`);
     setEditId(null);

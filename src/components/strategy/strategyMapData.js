@@ -809,6 +809,37 @@ function applyHallLayout(analyzedIslands, hallIslands) {
   return [...laidOut, ...extras];
 }
 
+// 戦略マップの表示ペアは、保存済みIDが双方で一致する2島だけに限定する。
+// 表示順・台番号・機種名から対面を推定せず、未設定や片側参照は各島を単独表示する。
+export function pairStrategyIslands(islands = []) {
+  const list = Array.isArray(islands) ? islands.filter(Boolean) : [];
+  const keyOf = (island) => String(island?.layoutId || island?.id || "");
+  const byId = new Map(list.map((island) => [keyOf(island), island]));
+  const used = new Set();
+  const pairs = [];
+
+  for (const island of list) {
+    const islandId = keyOf(island);
+    if (!islandId || used.has(islandId)) continue;
+    const requestedPartnerId = String(island.facingIslandId || "");
+    const candidate = requestedPartnerId ? byId.get(requestedPartnerId) : null;
+    const candidateId = keyOf(candidate);
+    const partner = candidate
+      && candidateId !== islandId
+      && !used.has(candidateId)
+      && String(candidate.facingIslandId || "") === islandId
+      ? candidate
+      : null;
+    const pair = partner ? [island, partner] : [island];
+    pair.confirmed = Boolean(partner);
+    used.add(islandId);
+    if (partner) used.add(candidateId);
+    pairs.push(pair);
+  }
+
+  return pairs;
+}
+
 export function buildStrategyMap({
   playingNum = null,
   liveDecision = null,
