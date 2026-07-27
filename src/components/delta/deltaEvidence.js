@@ -96,6 +96,38 @@ export function findMachineSpec(machineName, customMachines = [], builtInMachine
   })[0];
 }
 
+// 保存候補の全台が機種マスターへ安全に結び付いているかを確認する。
+// 機種名なしの行を保存すると戦略マップで回転率を計算できないため、保存前に必ず止める。
+export function validateDeltaRowMachineAssignments(
+  rows,
+  customMachines = [],
+  builtInMachines = [],
+) {
+  const list = Array.isArray(rows) ? rows : [];
+  const missingIndices = [];
+  const unregisteredIndices = [];
+
+  list.forEach((row, index) => {
+    const machineName = String(row?.machineName || "").trim();
+    if (!machineName) {
+      missingIndices.push(index);
+      return;
+    }
+    if (!findMachineSpec(machineName, customMachines, builtInMachines)) {
+      unregisteredIndices.push(index);
+    }
+  });
+
+  return {
+    valid: missingIndices.length === 0 && unregisteredIndices.length === 0,
+    total: list.length,
+    missingCount: missingIndices.length,
+    missingIndices,
+    unregisteredCount: unregisteredIndices.length,
+    unregisteredIndices,
+  };
+}
+
 // 解析結果1台分を、機種マスタ照合から予測回転率まで一続きで評価する。
 // UI側は hasEstimate / reason を見るだけで「計算済み」か「不足項目あり」かを表示できる。
 export function buildRowDeltaEvidence(row = {}, customMachines = [], builtInMachines = [], options = {}) {

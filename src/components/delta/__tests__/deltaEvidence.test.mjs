@@ -6,6 +6,7 @@ import {
   resolveMachineStats,
   findMachineSpec,
   buildRowDeltaEvidence,
+  validateDeltaRowMachineAssignments,
 } from "../deltaEvidence.js";
 
 const machine = {
@@ -116,6 +117,32 @@ assert.ok(rowPrediction.evidence.predictedRotation > 0);
 assert.equal(
   buildRowDeltaEvidence({ machineName: "未登録機種", normalSpins: 100, totalStarts: 1, val: -1000 }, [], [machine]).reason,
   "機種マスタ未登録",
+);
+
+assert.deepEqual(
+  validateDeltaRowMachineAssignments(
+    [{ machineName: machine.name }, { machineName: "" }, { machineName: "未登録機種" }],
+    [],
+    [machine],
+  ),
+  {
+    valid: false,
+    total: 3,
+    missingCount: 1,
+    missingIndices: [1],
+    unregisteredCount: 1,
+    unregisteredIndices: [2],
+  },
+  "保存候補に機種名なし・未登録機種があれば保存を止める",
+);
+assert.equal(
+  validateDeltaRowMachineAssignments(
+    [{ machineName: "Ｐ大海物語５ MTE2" }],
+    [],
+    [machine],
+  ).valid,
+  true,
+  "表記ゆれでも機種マスターへ安全に照合できれば保存できる",
 );
 
 console.log("deltaEvidence.test.mjs: all tests passed");

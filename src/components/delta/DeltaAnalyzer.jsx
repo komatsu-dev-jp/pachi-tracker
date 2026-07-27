@@ -50,7 +50,10 @@ import {
   buildStoreMachineNumberRelation,
   compareConfirmedMachineNumbers,
 } from "./storeMachineNumberRelation";
-import { buildRowDeltaEvidence } from "./deltaEvidence";
+import {
+  buildRowDeltaEvidence,
+  validateDeltaRowMachineAssignments,
+} from "./deltaEvidence";
 import {
   attachClippedDeltaRanges,
   formatDeltaRange,
@@ -1958,6 +1961,14 @@ function ResultsStep({
   const [machinePickerNumber, setMachinePickerNumber] = useState(null);
 
   const rowValidation = useMemo(() => validateDeltaRows(rows), [rows]);
+  const machineValidation = useMemo(
+    () => validateDeltaRowMachineAssignments(
+      rowValidation.savableRows,
+      customMachines,
+      machineDB,
+    ),
+    [rowValidation.savableRows, customMachines],
+  );
   const resolvedRows = useMemo(
     () => rowValidation.savableRows.filter(hasResolvedDelta),
     [rowValidation],
@@ -2036,7 +2047,8 @@ function ResultsStep({
   const missingDeltaCount = rowValidation.missingIndices.length;
   const hasPartialSave = rowValidation.canSave && !rowValidation.valid;
   const warningOnly = hasPartialSave || (pendingReviewCount > 0 && missingDeltaCount === 0);
-  const saveDisabled = saved || !rowValidation.canSave;
+  const canSaveResult = rowValidation.canSave && machineValidation.valid;
+  const saveDisabled = saved || !canSaveResult;
 
   return (
     <>
@@ -2050,19 +2062,23 @@ function ResultsStep({
             disabled={saveDisabled}
             style={{
               minHeight: TAP, minWidth: 64, borderRadius: 12, padding: "0 14px",
-              border: saved ? "none" : `1px solid ${rowValidation.canSave ? C.blue : C.border}`,
+              border: saved ? "none" : `1px solid ${canSaveResult ? C.blue : C.border}`,
               background: saved ? "color-mix(in srgb, var(--green) 16%, transparent)" : "transparent",
-              color: saved ? C.green : rowValidation.canSave ? C.blue : C.sub,
+              color: saved ? C.green : canSaveResult ? C.blue : C.sub,
               fontSize: 14, fontWeight: 800,
             }}
           >
             {saved
               ? "保存済み ✓"
-              : rowValidation.canSave
-                ? `${rowValidation.savableCount}台を保存`
-                : pendingReviewCount > 0 && missingDeltaCount === 0
+              : !rowValidation.canSave
+                ? pendingReviewCount > 0 && missingDeltaCount === 0
                   ? `確認待ち${pendingReviewCount}`
-                  : "保存不可"}
+                  : "保存不可"
+                : machineValidation.missingCount > 0
+                  ? "機種を選択"
+                  : machineValidation.unregisteredCount > 0
+                    ? "未登録機種"
+                    : `${rowValidation.savableCount}台を保存`}
           </button>
         )}
       />
@@ -2133,6 +2149,24 @@ function ResultsStep({
                 機種名を押すと、記録ページと同じ機種マスターから補正できます。
               </div>
             )}
+          </div>
+        )}
+
+        {rowValidation.canSave && !machineValidation.valid && (
+          <div style={{
+            background: "color-mix(in srgb, var(--yellow) 12%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--yellow) 38%, transparent)",
+            borderRadius: 14, padding: "12px 14px", marginBottom: 12,
+          }}>
+            <div style={{ fontSize: 14, color: C.yellow, fontWeight: 900, marginBottom: 5 }}>
+              機種を確定すると保存できます
+            </div>
+            <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.65, fontWeight: 700 }}>
+              {machineValidation.missingCount > 0
+                && `機種名がない${machineValidation.missingCount}台があります。各台の機種名を押して選択してください。`}
+              {machineValidation.unregisteredCount > 0
+                && ` 登録機種と照合できない${machineValidation.unregisteredCount}台があります。正式な機種を選び直してください。`}
+            </div>
           </div>
         )}
 
@@ -3871,6 +3905,19 @@ export default function DeltaAnalyzer({
       const message = validation.blockingErrors.length
         ? "台番号の空欄・形式・重複を修正してください"
         : "保存できる解析済みデータがありません";
+      setToast(message);
+      setTimeout(() => setToast(""), 3000);
+      return;
+    }
+    const machineValidation = validateDeltaRowMachineAssignments(
+      validation.savableRows,
+      customMachines,
+      machineDB,
+    );
+    if (!machineValidation.valid) {
+      const message = machineValidation.missingCount > 0
+        ? `機種名がない${machineValidation.missingCount}台があります。機種を選んでください`
+        : `登録機種と照合できない${machineValidation.unregisteredCount}台があります`;
       setToast(message);
       setTimeout(() => setToast(""), 3000);
       return;
