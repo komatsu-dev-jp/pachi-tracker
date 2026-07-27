@@ -8,6 +8,7 @@ import {
   findMachineSpec,
   normalizeEvidenceMachineName,
   normalizeEvidenceMachineNumber,
+  resolveMachineStats,
 } from "../delta/deltaEvidence.js";
 import {
   buildPortfolioPlan,
@@ -104,6 +105,153 @@ function practiceObservation(record, identity, source) {
   };
 }
 
+function nextEvidenceDate(value) {
+  const day = dayNumber(value);
+  if (!Number.isFinite(day)) return "";
+  return new Date((day + 1) * 86400000).toISOString().slice(0, 10);
+}
+
+function weightedMedian(items) {
+  const usable = items
+    .filter((item) => Number.isFinite(item?.value) && Number(item?.weight) > 0)
+    .sort((left, right) => left.value - right.value);
+  if (!usable.length) return null;
+  const totalWeight = usable.reduce((sum, item) => sum + item.weight, 0);
+  let cumulative = 0;
+  for (const item of usable) {
+    cumulative += item.weight;
+    if (cumulative >= totalWeight / 2) return item.value;
+  }
+  return usable.at(-1).value;
+}
+
+/**
+ * Learns a store x machine payout factor from same-day scan/practice pairs.
+ *
+ * A learned factor becomes effective on the day after its newest evidence.
+ * That date boundary prevents a practice record from both creating the factor
+ * and being re-estimated by the factor on the same day.
+ */
+export function buildPayoutCorrectionProfiles({
+  scans = [],
+  archives = [],
+  customMachines = [],
+  evidenceBeforeDate = "",
+  minPairs = 10,
+  minPracticeInputBalls = 750,
+} = {}) {
+  const beforeDay = dayNumber(evidenceBeforeDate);
+  const scanRows = collectDeltaRows(scans);
+  const scanByKey = new Map();
+  for (const row of scanRows) {
+    const rowDay = dayNumber(row.date);
+    if (Number.isFinite(beforeDay) && (!Number.isFinite(rowDay) || rowDay >= beforeDay)) continue;
+    const store = String(row.storeId ?? row.storeName ?? "").trim();
+    const key = [
+      store,
+      normalizedDate(row.date),
+      normalizeEvidenceMachineName(row.machineName),
+      normalizeEvidenceMachineNumber(row.num),
+    ].join("___");
+    scanByKey.set(key, row);
+  }
+
+  const pairByScanKey = new Map();
+  for (const archive of Array.isArray(archives) ? archives : []) {
+    if (!shouldUseArchiveForPrediction(archive)) continue;
+    const date = normalizedDate(archive?.date);
+    const archiveDay = dayNumber(date);
+    if (!date || (Number.isFinite(beforeDay) && archiveDay >= beforeDay)) continue;
+    const store = String(archive?.storeId ?? archive?.storeName ?? "").trim();
+    const machineName = String(archive?.machineName || "").trim();
+    const num = archive?.machineNum ?? archive?.num;
+    const key = [
+      store,
+      date,
+      normalizeEvidenceMachineName(machineName),
+      normalizeEvidenceMachineNumber(num),
+    ].join("___");
+    const scanRow = scanByKey.get(key);
+    if (!scanRow) continue;
+    const identity = {
+      storeId: archive?.storeId ?? scanRow.storeId,
+      storeName: archive?.storeName || scanRow.storeName,
+      machineName,
+      num,
+    };
+    const observation = practiceObservation(archive, identity, "archive");
+    if (!observation || observation.inputBalls < minPracticeInputBalls) continue;
+    const normalSpins = Math.max(0, Number(scanRow.normalSpins) || 0);
+    const totalHits = Math.max(0, Number(scanRow.totalStarts) || 0);
+    const deltaBalls = Number(scanRow.val);
+    if (!(normalSpins > 0) || !(totalHits > 0) || !Number.isFinite(deltaBalls)) continue;
+    const machine = findMachineSpec(machineName, customMachines, machineDB);
+    const catalogPayout = resolveMachineStats(machine || {}).avgPayout;
+    if (!(catalogPayout > 0)) continue;
+    const actualInputBalls = 250 * normalSpins / observation.rate;
+    const impliedPayout = (actualInputBalls + deltaBalls) / totalHits;
+    const factor = impliedPayout / catalogPayout;
+    // Values outside this band are much more likely to be a mismatched
+    // session/scan pair than a real store payout difference.
+    if (!(factor >= 0.6 && factor <= 1.4)) continue;
+    const candidate = {
+      store,
+      machineName: machine?.name || machineName,
+      modelName: machine?.modelName || "",
+      date,
+      num: normalizeEvidenceMachineNumber(num),
+      factor,
+      impliedPayout,
+      catalogPayout,
+      weight: Math.min(5000, observation.inputBalls),
+      practiceInputBalls: observation.inputBalls,
+      archiveOrder: String(archive?.endedAt || archive?.createdAt || archive?.id || ""),
+    };
+    const previous = pairByScanKey.get(key);
+    if (!previous || candidate.archiveOrder >= previous.archiveOrder) {
+      pairByScanKey.set(key, candidate);
+    }
+  }
+
+  const groups = new Map();
+  for (const pair of pairByScanKey.values()) {
+    const key = `${pair.store}___${normalizeEvidenceMachineName(pair.machineName)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(pair);
+  }
+  const required = Math.max(3, Math.floor(Number(minPairs) || 10));
+  return [...groups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, pairs]) => {
+      const proposedFactor = weightedMedian(
+        pairs.map((pair) => ({ value: pair.factor, weight: pair.weight })),
+      ) ?? 1;
+      const catalogPayout = weightedMedian(
+        pairs.map((pair) => ({ value: pair.catalogPayout, weight: pair.weight })),
+      ) ?? 0;
+      const evidenceThroughDate = [...pairs].map((pair) => pair.date).sort().at(-1) || "";
+      const eligible = pairs.length >= required;
+      const appliedFactor = eligible ? proposedFactor : 1;
+      return {
+        key,
+        store: pairs[0]?.store || "",
+        machineName: pairs[0]?.machineName || "",
+        modelName: pairs[0]?.modelName || "",
+        n: pairs.length,
+        minRequired: required,
+        eligible,
+        status: eligible ? "active" : "awaiting-pairs",
+        proposedFactor,
+        appliedFactor,
+        catalogAvgPayout: catalogPayout,
+        correctedAvgPayout: catalogPayout * appliedFactor,
+        evidenceThroughDate,
+        effectiveFrom: eligible ? nextEvidenceDate(evidenceThroughDate) : "",
+        method: "same-day-direct-rotation-payout-median-v1",
+      };
+    });
+}
+
 export function assessStrategyPredictionDivergence({
   isPlaying = false,
   actionable = false,
@@ -160,15 +308,36 @@ function fusePracticeEstimate(base, observations, priorBalls = 50000) {
   const observationWeight = inputBalls / (inputBalls + Math.max(2500, Number(priorBalls) || 50000));
   const mean = observedRate * observationWeight + base.mean * (1 - observationWeight);
   const observationSe = 2 / Math.sqrt(Math.max(1, inputBalls / 250));
-  const variance = (observationWeight * observationSe) ** 2
-    + ((1 - observationWeight) ** 2) * Math.max(0.01, base.variance);
+  // Practice observations can reduce measurement uncertainty, but they must
+  // not erase the irreducible overnight nail-change/transition variance.
+  const irreducibleVariance = Math.max(0, Number(base.irreducibleVariance) || 0);
+  const reducibleVariance = Math.max(
+    0.01,
+    (Number(base.variance) || 0) - irreducibleVariance,
+  );
+  const variance = irreducibleVariance
+    + (observationWeight * observationSe) ** 2
+    + ((1 - observationWeight) ** 2) * reducibleVariance;
   const sd = Math.sqrt(variance);
+  const baseDataConfidence = Number(base.dataConfidence);
+  const confidenceCeiling = Number(base.confidenceCeiling);
+  const fusedDataConfidence = Number.isFinite(baseDataConfidence)
+    ? 1 - (1 - Math.min(1, Math.max(0, baseDataConfidence))) * (1 - observationWeight)
+    : null;
+  const confidence = fusedDataConfidence !== null && Number.isFinite(confidenceCeiling)
+    ? fusedDataConfidence * Math.min(0.99, Math.max(0, confidenceCeiling))
+    : 1 - (1 - base.confidence) * (1 - observationWeight);
   return {
     mean,
     low: Math.max(0, mean - 1.96 * sd),
     high: mean + 1.96 * sd,
     variance,
-    confidence: 1 - (1 - base.confidence) * (1 - observationWeight),
+    confidence,
+    dataConfidence: fusedDataConfidence ?? base.dataConfidence,
+    confidenceCeiling: Number.isFinite(confidenceCeiling)
+      ? confidenceCeiling
+      : base.confidenceCeiling,
+    irreducibleVariance,
     inputBalls: (base.inputBalls || 0) + inputBalls,
     sources: ["delta", ...new Set(valid.map((item) => item.source))],
   };
@@ -680,10 +849,17 @@ export function buildStrategyMap({
       && Boolean(analysisStoreName)
       && String(scan?.storeName || "").trim() === String(analysisStoreName).trim();
   });
+  const payoutCorrections = buildPayoutCorrectionProfiles({
+    scans: storeScans,
+    archives,
+    customMachines,
+    evidenceBeforeDate: freshness.sourceDate,
+  });
   const analytics = buildPEvidenceAnalytics({
     scans: storeScans,
     customMachines,
     islands: hallIslands,
+    payoutCorrections,
     params: {
       spinsPerHour: strategyPlan.spinsPerHour,
       sessionSpins: strategyPlan.sessionSpins,
@@ -738,8 +914,9 @@ export function buildStrategyMap({
     const baseMean = pe?.valid ? pe.predictedRotation : evidence.predictedRotation;
     const baseLow = pe?.valid ? pe.predictedLow : evidence.predictedLow;
     const baseHigh = pe?.valid ? pe.predictedHigh : evidence.predictedHigh;
-    const baseVariance = pe?.posteriorVariance
+    const baseVariance = pe?.nextDayVariance ?? pe?.posteriorVariance
       ?? (((Number(baseHigh) - Number(baseLow)) / (2 * 1.96)) ** 2 || 4);
+    const effectiveMachineSpec = pe?.machine || machineSpec;
     const identity = {
       storeId: row.storeId ?? analysisStoreId,
       storeName: row.storeName || analysisStoreName,
@@ -779,12 +956,18 @@ export function buildStrategyMap({
       high: baseHigh,
       variance: baseVariance,
       confidence: pe?.valid ? pe.confidence : evidence.confidence,
+      dataConfidence: pe?.valid ? pe.dataConfidence : evidence.confidence,
+      confidenceCeiling: pe?.valid ? pe.processReliability : null,
+      irreducibleVariance: pe?.valid
+        ? Math.max(0, Number(pe.processVariance) || 0)
+          + Math.max(0, Number(pe.transitionVariance) || 0)
+        : 0,
       inputBalls: baseInputBalls || 0,
     };
     // ライブ乖離の比較線は、今日の実測で自分自身が下がらないよう
     // 現在実戦を混ぜる前の予測として固定する。
-    const preLiveEstimate = fusePracticeEstimate(baseEstimate, newerArchives, machineSpec.muraCoef);
-    const estimate = fusePracticeEstimate(baseEstimate, practiceObservations, machineSpec.muraCoef);
+    const preLiveEstimate = fusePracticeEstimate(baseEstimate, newerArchives, effectiveMachineSpec.muraCoef);
+    const estimate = fusePracticeEstimate(baseEstimate, practiceObservations, effectiveMachineSpec.muraCoef);
     const dataCoverage = buildDataCoverage({
       analyticsHistoryRows: analytics.historyRows,
       pe,
@@ -915,8 +1098,20 @@ export function buildStrategyMap({
       storeId: identity.storeId,
       storeName: identity.storeName,
       rot: currentRowInvalid ? null : round1(predictedRotation),
+      predictedRotation: currentRowInvalid ? null : predictedRotation,
+      nextDayVariance: currentRowInvalid ? null : estimate.variance,
+      lcbK: analytics.params.lcbK,
+      lcbRotation: currentRowInvalid
+        ? null
+        : predictedRotation - analytics.params.lcbK * Math.sqrt(Math.max(0, estimate.variance)),
+      selectionMargin: currentRowInvalid
+        ? null
+        : predictedRotation
+          - analytics.params.lcbK * Math.sqrt(Math.max(0, estimate.variance))
+          - trueBorder,
       confidence: currentRowInvalid ? 0 : confidencePct,
       border: round1(trueBorder),
+      effectiveBorder: trueBorder,
       equivalentBorder: round1(equivalentBorder),
       borderDiff,
       goodMachineScore: round1(contextualScore),
@@ -958,6 +1153,10 @@ export function buildStrategyMap({
         inputBalls: currentRowInvalid ? 0 : estimate.inputBalls,
         regimeStart: pe?.regimeStart || "",
       },
+      processNoiseSd: currentRowInvalid ? null : (pe?.processNoiseSd ?? null),
+      dataConfidence: currentRowInvalid ? 0 : (pe?.dataConfidence ?? confidence),
+      biasRotationAdjustment: currentRowInvalid ? 0 : (pe?.biasRotationAdjustment ?? 0),
+      payoutCorrection: pe?.payoutCorrection || null,
       evidenceSources: currentRowInvalid ? [] : estimate.sources,
       recommendationStatus: machineActionable ? "actionable" : "reference",
       calculationPendingReasons: machineActionable
@@ -1022,7 +1221,7 @@ export function buildStrategyMap({
       atLeastOneHitRate: machineActionable ? (pe?.atLeastOneHitRate ?? null) : null,
       initialAvgPayout: pe?.initialAvgPayout ?? null,
       rushAvgPayout: pe?.rushAvgPayout ?? null,
-      avgPayoutPerHit: pe?.avgPayoutPerHit ?? (Number(machineSpec.avgPayoutPerHit) > 0 ? Math.round(Number(machineSpec.avgPayoutPerHit)) : null),
+      avgPayoutPerHit: pe?.avgPayoutPerHit ?? (Number(effectiveMachineSpec.avgPayoutPerHit) > 0 ? Math.round(Number(effectiveMachineSpec.avgPayoutPerHit)) : null),
       rushEntryRate: pe?.rushEntryRate ?? null,
       rushContinueRate: pe?.rushContinueRate ?? null,
       plannedSpins: pe?.plannedSpins ?? strategyPlan.sessionSpins,
@@ -1139,6 +1338,7 @@ export function buildStrategyMap({
     leadId: lead?.id || null,
     islandAvgRot,
     analytics,
+    payoutCorrections,
     portfolio,
     aiProfile: analytics.aiProfile,
     nextMap: analytics.nextMap,

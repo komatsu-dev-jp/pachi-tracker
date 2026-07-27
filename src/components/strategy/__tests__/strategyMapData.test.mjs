@@ -169,6 +169,16 @@ assert.ok(liveMap.all[0].rot > map.all[0].rot, "現在実戦を同じ台の予�
 assert.deepEqual(liveMap.all[0].evidenceSources, ["delta", "live"]);
 assert.equal(liveMap.all[0].dataCoverage.effectiveDays, 2, "同じ日の現在実戦は日数を二重計上しない");
 assert.ok(liveMap.all[0].dataCoverage.inputBalls > map.all[0].dataCoverage.inputBalls);
+assert.ok(
+  liveMap.all[0].confidence
+    <= Math.round(liveMap.all[0].pevidence.processReliability * 100),
+  "実戦実測を足しても、一晩の日次変動による翌日信頼度の上限を超えない",
+);
+assert.ok(
+  liveMap.all[0].rotationEstimate.variance
+    >= liveMap.all[0].pevidence.processVariance + liveMap.all[0].pevidence.transitionVariance,
+  "実戦実測を足しても、日次変動と締め遷移の分散を消さない",
+);
 
 const archiveMap = buildStrategyMap({
   scans,

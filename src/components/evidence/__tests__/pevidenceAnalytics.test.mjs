@@ -207,7 +207,11 @@ assert.ok(!staleResult.portfolio.plan.some((item) => item.number === "103"), "�
 
 // ポートフォリオに nodata / weak 判定の台を入れない
 for (const item of result.portfolio.plan) {
-  const row = result.latestRows.find((r) => r.num === item.number && r.machineName === item.machineName);
+  const row = result.latestRows.find((r) =>
+    r.num === item.number
+    && r.machineName === item.machineName
+    && r.store === item.store
+  );
   assert.ok(row && (row.verdict === "strong" || row.verdict === "watch"));
 }
 

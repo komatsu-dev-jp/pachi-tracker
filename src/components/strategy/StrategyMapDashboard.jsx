@@ -94,6 +94,13 @@ function tightEvidenceText(evidence) {
   if (evidence.weekday?.total > 0) {
     extras.push(`同曜日 ${fmt(evidence.weekday.successes)}/${fmt(evidence.weekday.total)}件${evidence.weekday.applied ? "を反映" : ""}`);
   }
+  if (evidence.openShock?.detected) {
+    extras.push(
+      evidence.openShock.total > 0
+        ? `急に開いた翌日 ${fmt(evidence.openShock.successes)}/${fmt(evidence.openShock.total)}件${evidence.openShock.applied ? "を反映" : ""}`
+        : "急に開いた状態（条件別実績を収集中）",
+    );
+  }
   if (evidence.event?.total > 0) {
     extras.push(`イベント翌日 ${fmt(evidence.event.successes)}/${fmt(evidence.event.total)}件${evidence.event.applied ? "を反映" : ""}`);
   }
@@ -323,8 +330,9 @@ const HELP_GROUPS = [
     terms: [
       { name: "予測回転率", simple: "1,000円で、だいたい何回まわりそうかの予想です。", read: "ボーダーより大きいほど有利です。ただし、差玉から計算した予想なので必ず同じ回数になるわけではありません。" },
       { name: "ボーダー", simple: "長く遊んだときに、プラスとマイナスの境目になる回転率です。", read: "予測回転率がボーダーを上回る台を探します。例：ボーダー18、予測20なら、1,000円で約2回多く回る予想です。" },
-      { name: "信頼度・確信度", simple: "予想を、どれくらい信用してよいかの目安です。", read: "データが少ないと低く、投入玉や日数が増えると高くなります。高くても未来を保証する数字ではありません。" },
-      { name: "良台スコア", simple: "回転率の良さと、データの確かさを1つにまとめた点数です。", read: "高いほど候補ですが、釘変化や解析翌日の締め確率が危険な場合は点数を下げます。" },
+      { name: "翌日信頼度", simple: "明日も予想どおりになりそうかの目安です。", read: "データ量だけでなく、一晩で釘が変わる日次変動も差し引きます。玉数を増やしても100%には近づきません。" },
+      { name: "安全側回転（LCB）", simple: "予測が下振れした場合を見込んだ、慎重な回転率です。", read: "平均予測から翌日予測の標準偏差を1つ引きます。台の順位は平均値ではなく、この安全側回転とボーダーの差で決めます。" },
+      { name: "良台スコア", simple: "回転率の良さと、データの確かさを1つにまとめた点数です。", read: "表示の強さを表します。実際の台選び順は、予測の上振れをつかみにくい安全側回転を優先します。" },
       { name: "収支プラス見込み", simple: "予定時間の終了時に、収支が0円を超える確率の概算幅です。", read: "本日の予定時間、予測回転率の上下幅、交換率、検証済みの機種ブレから正規近似で計算します。勝利を保証せず、短時間や荒い機種ほど誤差が大きくなります。" },
       { name: "勝てる確率（旧称）", simple: "現在の『収支プラス見込み』と同じ項目です。", read: "別の確率ではありません。画面と説明の呼び方を『収支プラス見込み』へ統一しています。" },
       { name: "初当たり1回以上", simple: "予定回転数の中で、初当たりを1回以上引く理論上の確率です。", read: "大当たり確率と予定回転数だけで計算します。初当たりを引いても最終収支がプラスとは限らないため、収支プラス見込みとは別の数字です。" },
@@ -558,7 +566,7 @@ function Kpi({ kpi }) {
   const items = [
     { label: "推定期待値", value: signed(kpi.evPerHour), unit: "円/h", color: kpi.evPerHour >= 0 ? P.green : P.red },
     { label: "予測回転率", value: fmt(kpi.rot, 1), unit: "/k", color: P.cyan },
-    { label: "確信度", value: fmt(kpi.confidence), unit: "%", color: P.yellow },
+    { label: "翌日信頼度", value: fmt(kpi.confidence), unit: "%", color: P.yellow },
     { label: "候補台数", value: fmt(kpi.candidates), unit: "台", color: P.green },
   ];
   return (
@@ -652,7 +660,7 @@ function HeatMachineCell({ number, machine, dim, selected, opposite, onSelect })
   const tone = heatTone(machine);
   const divergence = machine?.strategyDivergence?.status === "below-lower-bound";
   const label = machine
-    ? `${number}番台 予測回転率${machine.rot} 信頼度${machine.confidence}% ${tone.label}${divergence ? " 見切り検討" : ""}`
+    ? `${number}番台 予測回転率${machine.rot} 翌日信頼度${machine.confidence}% ${tone.label}${divergence ? " 見切り検討" : ""}`
     : `${number}番台 未計測`;
   return (
     <button
@@ -1049,7 +1057,7 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
           <div className="strategy-detail-main">
             <div className="strategy-detail-primary">
               <DetailMetric label="推定回転率" value={fmt(machine.rot, 1)} unit="/k" color={v.color} />
-              <DetailMetric label="確信度" value={fmt(machine.confidence)} unit="%" color={P.yellow} />
+              <DetailMetric label="翌日信頼度" value={fmt(machine.confidence)} unit="%" color={P.yellow} />
               <DetailMetric label="島平均との差" value={signed(diff, 1)} unit="/k" color={diff >= 0 ? P.green : P.red} />
               <DetailMetric label="等価ボーダー" value={fmt(machine.equivalentBorder, 1)} unit="/k" color={P.subHi} />
               <DetailMetric label="実質ボーダー" value={fmt(machine.border, 1)} unit="/k" color={P.cyan} />
@@ -1065,6 +1073,7 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
           </div>
 
           <div className="strategy-detail-secondary">
+            <DetailMetric label="安全側回転" value={fmt(machine.lcbRotation, 1)} unit="/k" color={machine.selectionMargin >= 0 ? P.green : P.red} />
             <DetailMetric label="良台スコア" value={fmt(machine.goodMachineScore, 1)} unit="点" color={v.color} />
             <DetailMetric label="EMA（最近重視）" value={fmt(machine.ema, 1)} unit="/k" color={P.cyan} />
             <DetailMetric
@@ -1079,7 +1088,19 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
           <div style={{ marginTop: 7, fontSize: 9, color: P.sub }}>
             予測データ：{(machine.evidenceSources || []).map((source) => source === "delta" ? "差玉" : source === "archive" ? "完了実戦" : "現在実戦").join("＋") || "機種基準"}
             {machine.rotationEstimate?.inputBalls > 0 ? ` ／ 推定投入 ${fmt(machine.rotationEstimate.inputBalls)}玉` : ""}
+            {machine.processNoiseSd != null ? ` ／ 日次変動 ±${fmt(machine.processNoiseSd, 2)}/k（1σ）` : ""}
           </div>
+          {(machine.biasRotationAdjustment || machine.payoutCorrection) && (
+            <div style={{ marginTop: 4, fontSize: 9, color: P.subHi, lineHeight: 1.5 }}>
+              {machine.biasRotationAdjustment
+                ? `推奨上位の過去偏りを ${signed(machine.biasRotationAdjustment, 2)}/k 補正`
+                : ""}
+              {machine.biasRotationAdjustment && machine.payoutCorrection ? " ／ " : ""}
+              {machine.payoutCorrection
+                ? `実戦実測${fmt(machine.payoutCorrection.n)}件で平均出玉を店舗補正`
+                : ""}
+            </div>
+          )}
           <div style={{ marginTop: 5, fontSize: 9, color: P.subHi, lineHeight: 1.55 }}>
             締め確率の根拠：{tightEvidenceText(machine.tightEvidence)}
           </div>
@@ -1317,6 +1338,15 @@ function LearningSummary({ data, selected, onApproveCalibration, calibrationNoti
   const calibration = backtest?.calibrationCandidates?.find((item) =>
     String(item.machineName) === String(selected.machineName)
   ) || null;
+  const selectionBacktest = backtest?.selection || null;
+  const biasCorrection = selectionBacktest?.biasCorrection || null;
+  const processProfile = data.analytics?.processNoise?.byProfile?.[
+    `${String(selected.storeId ?? selected.storeName ?? "").trim()}___${selected.machineName}`
+  ] || data.analytics?.processNoise?.global || null;
+  const payoutCorrection = (data.payoutCorrections || []).find((item) => (
+    String(item.store) === String(selected.storeId ?? selected.storeName ?? "")
+    && String(item.machineName) === String(selected.machineName)
+  )) || null;
   const profileCounts = (data.aiProfile?.profiles || []).reduce((acc, profile) => {
     acc[profile.type] = (acc[profile.type] || 0) + 1;
     return acc;
@@ -1390,6 +1420,33 @@ function LearningSummary({ data, selected, onApproveCalibration, calibrationNoti
           </div>
           <div style={{ marginTop: 7, fontSize: 8, color: P.sub, lineHeight: 1.5 }}>
             平均ズレは、前日に予測した回転率と翌日の実績が平均で何回/Kずれたかです。偏りがプラスなら高めの予測です。
+          </div>
+          <div style={{ marginTop: 7, padding: 9, borderRadius: 11, background: P.bg, border: `1px solid ${P.line}`, fontSize: 8, color: P.subHi, lineHeight: 1.6 }}>
+            <strong style={{ display: "block", color: P.text, fontSize: 9 }}>精度向上の学習状況</strong>
+            <span style={{ display: "block", marginTop: 3 }}>
+              日次変動：{processProfile
+                ? `±${fmt(processProfile.sd, 2)}/k（${fmt(processProfile.n)}件・${processProfile.source === "default" ? "安全側の初期値" : "実績学習"}）`
+                : "初期値で計算"}
+            </span>
+            <span style={{ display: "block" }}>
+              推奨上位5台：{selectionBacktest?.recommendedTop5?.n > 0
+                ? `${fmt(selectionBacktest.recommendedTop5.n)}件・平均ズレ ${fmt(selectionBacktest.recommendedTop5.mae, 2)}/k`
+                : "答え合わせ待ち"}
+              {biasCorrection
+                ? ` ／ 偏り補正 ${biasCorrection.status === "active"
+                    ? `${signed(biasCorrection.appliedRotationAdjustment, 2)}/kを自動反映`
+                    : biasCorrection.status === "shadow-validation"
+                      ? "過去データで効果確認中"
+                      : `あと${fmt(Math.max(0, biasCorrection.minRequired - biasCorrection.sampleCount))}件`}`
+                : ""}
+            </span>
+            <span style={{ display: "block" }}>
+              店舗別の平均出玉：{payoutCorrection
+                ? payoutCorrection.eligible
+                  ? `${fmt(payoutCorrection.n)}件から×${fmt(payoutCorrection.appliedFactor, 3)}を反映`
+                  : `${fmt(payoutCorrection.n)}件／${fmt(payoutCorrection.minRequired)}件（学習中）`
+                : "同日ペアを収集中"}
+            </span>
           </div>
           {calibration && (
             <div style={{ marginTop: 7, padding: 9, borderRadius: 11, background: P.bg, border: `1px solid ${calibration.eligible ? P.cyan : P.line}`, fontSize: 8, color: calibration.eligible ? P.cyan : P.subHi, lineHeight: 1.55 }}>
