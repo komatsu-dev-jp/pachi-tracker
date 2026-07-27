@@ -43,6 +43,8 @@ export default function NotificationPanel({
   onMarkAllAsRead,
   onMarkAsRead,
   onClear,
+  backupReminder,
+  onOpenBackup,
 }) {
   // useState 初期化関数は React レンダラ的に「pure」扱い。
   // 通知パネルは open=false 時に return null するため、開くたびに新しい now が取れる。
@@ -51,7 +53,12 @@ export default function NotificationPanel({
     () => (Array.isArray(notifications) ? notifications : []),
     [notifications],
   );
-  const unread = useMemo(() => list.filter((n) => n && !n.read).length, [list]);
+  const backupDue = backupReminder?.due === true;
+  const logUnread = useMemo(() => list.filter((n) => n && !n.read).length, [list]);
+  const unread = useMemo(
+    () => logUnread + (backupDue ? 1 : 0),
+    [logUnread, backupDue],
+  );
 
   if (!open) return null;
   if (typeof document === "undefined") return null;
@@ -96,7 +103,7 @@ export default function NotificationPanel({
                   fontWeight: 700,
                   minHeight: 32,
                 }}
-                disabled={unread === 0}
+                disabled={logUnread === 0}
               >
                 すべて既読
               </button>
@@ -121,7 +128,40 @@ export default function NotificationPanel({
           </div>
         </div>
 
-        {list.length === 0 ? (
+        {backupDue && (
+          <button
+            type="button"
+            onClick={onOpenBackup}
+            style={{
+              width: "100%",
+              display: "grid",
+              gridTemplateColumns: "32px 1fr auto",
+              alignItems: "center",
+              gap: 10,
+              marginBottom: 8,
+              padding: "12px",
+              background: "color-mix(in srgb, var(--blue) 12%, transparent)",
+              border: "1px solid var(--blue)",
+              borderRadius: 12,
+              textAlign: "left",
+              color: C.text,
+              minHeight: 58,
+            }}
+          >
+            <span aria-hidden="true" style={{ fontSize: 18, textAlign: "center" }}>☁</span>
+            <span>
+              <strong style={{ display: "block", fontSize: 13 }}>バックアップの時期です</strong>
+              <span style={{ display: "block", marginTop: 3, color: C.subHi, fontSize: 10, lineHeight: 1.5 }}>
+                {backupReminder.neverBackedUp
+                  ? "実戦記録を守るため、最初のバックアップを保存してください。"
+                  : `最後の保存から${backupReminder.daysSince}日経過しています。`}
+              </span>
+            </span>
+            <span style={{ color: C.blue, fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>保存へ ›</span>
+          </button>
+        )}
+
+        {list.length === 0 && !backupDue ? (
           <div
             style={{
               padding: "32px 0",
@@ -132,7 +172,7 @@ export default function NotificationPanel({
           >
             通知はまだありません
           </div>
-        ) : (
+        ) : list.length > 0 ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
             {list.map((n) => {
               const meta = TYPE_META[n.type] || { icon: "·", color: "var(--sub)", label: "" };
@@ -198,7 +238,7 @@ export default function NotificationPanel({
               );
             })}
           </div>
-        )}
+        ) : null}
 
         {list.length > 0 && (
           <button

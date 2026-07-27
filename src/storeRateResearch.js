@@ -50,6 +50,18 @@ export function storeRateStatusLabel(status) {
   return "交換率未確認";
 }
 
+export function storeRateStatusTone(status) {
+  if (status === STORE_RATE_STATUS.VERIFIED) return "green";
+  if (status === STORE_RATE_STATUS.PARTIAL) return "amber";
+  return "neutral";
+}
+
+export function formatLendingYen(value) {
+  const number = toFiniteNumber(value);
+  if (number == null) return "貸玉不明";
+  return `${Number.isInteger(number) ? number : String(number)}円`;
+}
+
 export function formatExchangeRate(rate) {
   const exchangeBalls = toFiniteNumber(rate?.exchangeBallsPer100Yen);
   if (exchangeBalls == null) {

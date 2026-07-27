@@ -309,7 +309,15 @@ function StorePicker({ stores, storeId, storeName, onChangeStore }) {
   );
 }
 
-export default function HallMapEditor({ storeId, storeName, stores, onChangeStore, islands, onChangeIslands }) {
+export default function HallMapEditor({
+  storeId,
+  storeName,
+  stores,
+  onChangeStore,
+  islands,
+  onChangeIslands,
+  requestConfirmation,
+}) {
   const [editing, setEditing] = useState(false);
 
   // 編集対象の店舗が決まらない場合は案内のみ（編集導線は出さない）。
@@ -320,11 +328,16 @@ export default function HallMapEditor({ storeId, storeName, stores, onChangeStor
   const hasIslands = islands.length > 0;
 
   const handleAdd = () => onChangeIslands(addIsland(islands));
-  const handleRemove = (island) => {
+  const handleRemove = async (island) => {
     const label = island.name ? `「${island.name}」` : "この島";
-    if (window.confirm(`${label}を削除しますか？`)) {
-      onChangeIslands(removeIsland(islands, island.id));
-    }
+    const ok = await requestConfirmation?.({
+      title: `${label}を削除しますか？`,
+      message: "この島の配置設定が削除されます。",
+      confirmLabel: "削除する",
+      tone: "danger",
+    });
+    if (!ok) return;
+    onChangeIslands(removeIsland(islands, island.id));
   };
 
   return (

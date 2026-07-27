@@ -6,14 +6,15 @@ import { getStoreRanking } from "./scoutSelectors";
 import { buildStrategyMap, buildStrategyPlanContext } from "../strategy/strategyMapData";
 import { localDateStr } from "../../constants";
 import { estimateStrategyNonCashRatio } from "../../economics";
+import { decisionLabel } from "../decision/decisionVocabulary";
 
 // 本日予測タブ: 保存済み差玉から P-EVIDENCE 解析（buildStrategyMap）で計算した
 // 最新スキャン店舗の狙い台と翌日予測を表示する。仮データ・通信は使わない。
 const FORECAST_VERDICT = {
-  strong: { label: "本命", color: C.green },
-  watch: { label: "様子見", color: C.yellow },
-  weak: { label: "回収", color: C.red },
-  nodata: { label: "不足", color: C.sub },
+  strong: { label: decisionLabel("strong"), color: C.green },
+  watch: { label: decisionLabel("watch"), color: C.yellow },
+  weak: { label: decisionLabel("weak"), color: C.red },
+  nodata: { label: decisionLabel("nodata"), color: C.sub },
 };
 
 const EMPTY_LIST = [];
@@ -98,8 +99,8 @@ function ForecastTab({ S }) {
         {isReference && (
           <div style={{ marginTop: 7, padding: "7px 9px", borderRadius: 8, color: C.yellow, border: `1px solid ${C.yellow}` }}>
             {data.freshness?.status === "stale"
-              ? `解析日は${data.freshness.sourceDate || "不明"}です。2日以上前のため、本命判定を停止しています。`
-              : "解析日を確認できないため、本命判定を停止しています。"}
+              ? `解析日は${data.freshness.sourceDate || "不明"}です。2日以上前のため、有力判定を停止しています。`
+              : "解析日を確認できないため、有力判定を停止しています。"}
           </div>
         )}
         {data.freshness?.status === "prepared" && (

@@ -4,6 +4,7 @@ import App from './App.jsx'
 import './index.css'
 import { registerSW } from 'virtual:pwa-register'
 import { awaitReady, flushAll, clearAll } from './persistence'
+import { exportFullBackup } from './backupDownload'
 
 // Service Worker を登録し、新しいバージョンがあれば更新バナー（ボトムシート）を表示する。
 // ユーザーが「今すぐ更新」を押すと skipWaiting → リロードで最新版を適用。
@@ -34,7 +35,7 @@ const showUpdateBanner = (onUpdate) => {
     updateBannerShown = false
   }
 
-  // ダークテーマ固定の配色（アプリのトーンに合わせる）
+  // アプリ本体のCSS変数を使い、ライト・ダークどちらのテーマにも合わせる。
   const banner = document.createElement('div')
   banner.id = 'pwa-update-banner'
   banner.innerHTML = `
@@ -42,34 +43,36 @@ const showUpdateBanner = (onUpdate) => {
     <div id="pwa-update-sheet" style="
       position:fixed;bottom:0;left:0;right:0;
       max-width:480px;margin:0 auto;
-      background:#0b1320;
-      border-top:1px solid rgba(255,255,255,0.10);
+      background:var(--surface);
+      color:var(--text);
+      border-top:1px solid var(--border);
       border-radius:18px 18px 0 0;
       padding:10px 20px calc(24px + env(safe-area-inset-bottom));
       z-index:9999;
       animation:pwa-slide-up 0.35s cubic-bezier(0.32,0.72,0,1);
       font-family:sans-serif;
+      box-shadow:0 -12px 36px rgba(0,0,0,0.18);
     ">
-      <div style="width:36px;height:4px;background:rgba(255,255,255,0.22);border-radius:2px;margin:0 auto 20px;"></div>
+      <div style="width:36px;height:4px;background:var(--border-hi);border-radius:2px;margin:0 auto 20px;"></div>
       <div style="display:flex;align-items:center;gap:14px;">
-        <div style="width:48px;height:48px;flex-shrink:0;border-radius:12px;background:linear-gradient(135deg,#16C8FF,#6b8bff);display:flex;align-items:center;justify-content:center;">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#04101f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <div style="width:48px;height:48px;flex-shrink:0;border-radius:12px;background:linear-gradient(135deg,var(--blue),var(--purple));display:flex;align-items:center;justify-content:center;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 19V5M5 12l7-7 7 7"/>
           </svg>
         </div>
         <div>
-          <div style="font-size:16px;font-weight:800;color:#f1f5fb;">アップデートがあります</div>
-          <div style="font-size:12px;color:#9aa7bd;margin-top:2px;">新しいバージョンが見つかりました</div>
+          <div style="font-size:16px;font-weight:800;color:var(--text);">アップデートがあります</div>
+          <div style="font-size:12px;color:var(--sub);margin-top:2px;">新しいバージョンが見つかりました</div>
         </div>
       </div>
       <button id="pwa-update-btn" style="
         display:block;width:100%;height:52px;margin-top:20px;
-        background:#1a6fda;color:#fff;border:none;border-radius:14px;
+        background:var(--blue);color:#fff;border:none;border-radius:14px;
         font-size:16px;font-weight:800;font-family:sans-serif;cursor:pointer;
       ">今すぐ更新</button>
       <button id="pwa-dismiss-btn" style="
         display:block;width:100%;height:44px;margin-top:8px;
-        background:transparent;color:#9aa7bd;border:none;border-radius:14px;
+        background:transparent;color:var(--sub-hi);border:none;border-radius:14px;
         font-size:14px;font-weight:600;font-family:sans-serif;cursor:pointer;
       ">後で</button>
     </div>
@@ -118,25 +121,95 @@ const updateSW = registerSW({
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = {
+      hasError: false,
+      error: null,
+      confirmReset: false,
+      busy: false,
+      recoveryMessage: "",
+    };
   }
   static getDerivedStateFromError(error) {
     return { hasError: true, error };
   }
+  exportBackup = async () => {
+    this.setState({ busy: true, recoveryMessage: "" });
+    try {
+      await exportFullBackup();
+      this.setState({ recoveryMessage: "バックアップを書き出しました。保存を確認してからリセットできます。" });
+      return true;
+    } catch (error) {
+      this.setState({ recoveryMessage: `バックアップに失敗しました: ${error?.message || "不明なエラー"}` });
+      return false;
+    } finally {
+      this.setState({ busy: false });
+    }
+  };
+  resetAllData = async ({ backupFirst = false } = {}) => {
+    this.setState({ busy: true, recoveryMessage: "" });
+    try {
+      if (backupFirst) {
+        const exported = await this.exportBackup();
+        if (!exported) return;
+        this.setState({ busy: true });
+      }
+      await clearAll();
+      window.location.reload();
+    } catch (error) {
+      this.setState({
+        busy: false,
+        recoveryMessage: `リセットに失敗しました: ${error?.message || "不明なエラー"}`,
+      });
+    }
+  };
   render() {
     if (this.state.hasError) {
+      const { busy, confirmReset, recoveryMessage } = this.state;
       return (
-        <div style={{ background: '#09090c', color: '#e2e8f0', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: 'sans-serif' }}>
-          <h2 style={{ color: '#ef4444', marginBottom: 12 }}>エラーが発生しました</h2>
-          <p style={{ color: '#94a3b8', fontSize: 13, marginBottom: 20, textAlign: 'center' }}>{String(this.state.error)}</p>
-          <button onClick={async () => { try { await clearAll(); } finally { window.location.reload(); } }} style={{
-            background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10,
-            padding: '12px 24px', fontSize: 14, fontWeight: 700, cursor: 'pointer', marginBottom: 10
-          }}>データをリセットして再起動</button>
-          <button onClick={() => window.location.reload()} style={{
-            background: '#18181f', color: '#94a3b8', border: '1px solid #2c2c3e', borderRadius: 10,
-            padding: '10px 20px', fontSize: 13, cursor: 'pointer'
-          }}>再読み込みのみ</button>
+        <div style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: 'sans-serif' }}>
+          <div style={{ width: '100%', maxWidth: 420, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 18, padding: 20, boxSizing: 'border-box' }}>
+            <h2 style={{ color: 'var(--red)', margin: '0 0 12px' }}>エラーが発生しました</h2>
+            <p style={{ color: 'var(--sub)', fontSize: 13, margin: '0 0 18px', lineHeight: 1.7, overflowWrap: 'anywhere' }}>{String(this.state.error)}</p>
+            {!confirmReset ? (
+              <>
+                <button disabled={busy} onClick={() => window.location.reload()} style={{
+                  width: '100%', minHeight: 50, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12,
+                  padding: '12px 18px', fontSize: 14, fontWeight: 800, cursor: 'pointer', marginBottom: 10
+                }}>データを残して再読み込み</button>
+                <button disabled={busy} onClick={this.exportBackup} style={{
+                  width: '100%', minHeight: 46, background: 'var(--surface-hi)', color: 'var(--text)', border: '1px solid var(--border-hi)', borderRadius: 12,
+                  padding: '10px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer', marginBottom: 10
+                }}>{busy ? '処理中…' : '先にバックアップを書き出す'}</button>
+                <button disabled={busy} onClick={() => this.setState({ confirmReset: true, recoveryMessage: "" })} style={{
+                  width: '100%', minHeight: 44, background: 'transparent', color: 'var(--red)', border: 'none', borderRadius: 12,
+                  padding: '10px 18px', fontSize: 12, fontWeight: 700, cursor: 'pointer'
+                }}>最終手段としてデータをリセット</button>
+              </>
+            ) : (
+              <>
+                <div style={{ padding: 12, marginBottom: 12, borderRadius: 12, background: 'color-mix(in srgb, var(--red) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--red) 45%, transparent)', color: 'var(--text)', fontSize: 12, lineHeight: 1.7 }}>
+                  全実戦記録・設定・保存済み履歴が削除され、元に戻せません。バックアップを書き出してからのリセットを推奨します。
+                </div>
+                <button disabled={busy} onClick={() => this.resetAllData({ backupFirst: true })} style={{
+                  width: '100%', minHeight: 50, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12,
+                  padding: '12px 18px', fontSize: 14, fontWeight: 800, cursor: 'pointer', marginBottom: 10
+                }}>{busy ? '処理中…' : 'バックアップしてからリセット'}</button>
+                <button disabled={busy} onClick={() => this.resetAllData()} style={{
+                  width: '100%', minHeight: 46, background: 'transparent', color: 'var(--red)', border: '1px solid var(--red)', borderRadius: 12,
+                  padding: '10px 18px', fontSize: 13, fontWeight: 800, cursor: 'pointer', marginBottom: 8
+                }}>バックアップせず全データを削除</button>
+                <button disabled={busy} onClick={() => this.setState({ confirmReset: false, recoveryMessage: "" })} style={{
+                  width: '100%', minHeight: 42, background: 'transparent', color: 'var(--sub-hi)', border: 'none', borderRadius: 12,
+                  fontSize: 13, fontWeight: 700, cursor: 'pointer'
+                }}>戻る</button>
+              </>
+            )}
+            {recoveryMessage && (
+              <div role="status" style={{ marginTop: 12, color: recoveryMessage.includes('失敗') ? 'var(--red)' : 'var(--green)', fontSize: 11, lineHeight: 1.6 }}>
+                {recoveryMessage}
+              </div>
+            )}
+          </div>
         </div>
       );
     }

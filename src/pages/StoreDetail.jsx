@@ -1,4 +1,4 @@
-// 店舗詳細ページ（見た目優先プロトタイプ）
+// 店舗詳細ページ
 //
 // 対象: /stores/:storeId 相当の画面。このアプリは react-router 等のルーティングライブラリを
 // 導入しておらず、画面遷移は App.jsx の currentMode（状態文字列）で行う既存方式に統一されている
@@ -13,8 +13,8 @@
 //
 // 店舗基本情報・貯玉・会員カード・交換率は S.stores（pt_stores）から実データを解決する
 // （resolveStoreDetail、Tabs.jsx の Store detail view と同一の計算式を使用）。
-// 分析タブ関連（店舗分析度・データ充足状況・傾向・判断ログ）はまだ実集計ロジックが無いため
-// mockStoreDetail.js のダミー値のまま。TODO: archives ベースの店舗別集計は別ステップで実装。
+// 店舗分析度・データ充足状況・傾向・判断ログは archives の保存済み実戦から集計する。
+// 記録が無い店舗では架空の実績値を出さず、mockStoreDetail.js の空状態だけを使う。
 
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { BarChart3, ChevronLeft, ChevronRight, LayoutDashboard, SlidersHorizontal } from "lucide-react";
@@ -25,6 +25,7 @@ import StoreMetricDetailSheet from "../components/store/StoreMetricDetailSheet";
 import StoreOverviewTab from "../components/store/StoreOverviewTab";
 import StoreAnalysisTab from "../components/store/StoreAnalysisTab";
 import StoreSettingsTab from "../components/store/StoreSettingsTab";
+import { DECISION_TERMS } from "../components/decision/decisionVocabulary";
 
 const TABS = [
   { id: "overview", label: "概要", icon: LayoutDashboard },
@@ -41,7 +42,15 @@ function HeaderMetric({ label, value, valueClassName = "text-[var(--text)]", onC
   );
 }
 
-export default function StoreDetail({ storeId, onBack, onOpenSettings, onStartRecord, S }) {
+export default function StoreDetail({
+  storeId,
+  onBack,
+  onOpenSettings,
+  onStartRecord,
+  onOpenStrategy,
+  onOpenDelta,
+  S,
+}) {
   const [activeTab, setActiveTab] = useState("overview");
   const [activeDetailKey, setActiveDetailKey] = useState(null);
   const pageRef = useRef(null);
@@ -81,8 +90,14 @@ export default function StoreDetail({ storeId, onBack, onOpenSettings, onStartRe
           <div aria-hidden="true" className="h-11 w-11" />
         </div>
         <div className="mx-3 mt-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 text-center shadow-[var(--card-shadow)]">
-          <div className="text-[15px] font-bold text-[var(--text)]">店舗がまだ登録されていません</div>
-          <div className="mt-2 text-[12px] leading-6 text-[var(--sub)]">設定画面で店舗を登録すると、店舗別の記録と分析を確認できます。</div>
+          <div className="text-[15px] font-bold text-[var(--text)]">
+            {data.storeNotFound ? "指定された店舗が見つかりません" : "店舗がまだ登録されていません"}
+          </div>
+          <div className="mt-2 text-[12px] leading-6 text-[var(--sub)]">
+            {data.storeNotFound
+              ? "別の店舗情報を代わりに表示せず、安全のため空の状態に戻しました。"
+              : "設定画面で店舗を登録すると、店舗別の記録と分析を確認できます。"}
+          </div>
           <button type="button" onClick={onOpenSettings} className="mt-4 min-h-11 rounded-xl bg-[var(--blue)] px-5 text-[13px] font-bold text-white">設定画面を開く</button>
         </div>
       </div>
@@ -116,8 +131,8 @@ export default function StoreDetail({ storeId, onBack, onOpenSettings, onStartRe
 
         {/* 店舗カードを廃止し、必要な状態だけを横一列にまとめる。 */}
         <div className="mt-2 grid grid-cols-3 divide-x divide-[var(--border)] overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-[var(--card-shadow)]">
-          <HeaderMetric label="記録充足度" value={`${data.analysisScore}%`} valueClassName="text-[16px] text-[var(--blue)]" onClick={() => openDetail(DETAIL_KEYS.COVERAGE)} />
-          <HeaderMetric label="データ信頼度" value={data.dataReliability} onClick={() => openDetail(DETAIL_KEYS.RELIABILITY)} />
+          <HeaderMetric label={DECISION_TERMS.coverage} value={`${data.analysisScore}%`} valueClassName="text-[16px] text-[var(--blue)]" onClick={() => openDetail(DETAIL_KEYS.COVERAGE)} />
+          <HeaderMetric label={DECISION_TERMS.confidence} value={data.dataReliability} onClick={() => openDetail(DETAIL_KEYS.RELIABILITY)} />
           <HeaderMetric label="最終更新" value={data.lastUpdatedLabel} onClick={() => openDetail(DETAIL_KEYS.FRESHNESS)} />
         </div>
 
@@ -150,7 +165,14 @@ export default function StoreDetail({ storeId, onBack, onOpenSettings, onStartRe
       {/* ページ全体で1つのスクロール領域にし、ヘッダーを自然に画面外へ送れるようにする。 */}
       <div>
         {activeTab === "overview" && <StoreOverviewTab data={data} onNavigateTab={selectTab} onOpenDetail={openDetail} />}
-        {activeTab === "analysis" && <StoreAnalysisTab data={data} onOpenDetail={openDetail} />}
+        {activeTab === "analysis" && (
+          <StoreAnalysisTab
+            data={data}
+            onOpenDetail={openDetail}
+            onOpenStrategy={onOpenStrategy}
+            onOpenDelta={onOpenDelta}
+          />
+        )}
         {activeTab === "settings" && <StoreSettingsTab data={data} onOpenSettings={onOpenSettings} onOpenDetail={openDetail} />}
       </div>
       <StoreMetricDetailSheet panel={activeDetailKey ? detailPanels[activeDetailKey] : null} onClose={closeDetail} onAction={handleDetailAction} />

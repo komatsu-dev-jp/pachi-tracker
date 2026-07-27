@@ -11,9 +11,18 @@ import {
   RotateCw,
   Wallet,
   ChevronRight,
+  ExternalLink,
 } from "lucide-react";
-import { SectionCard, SectionHeader, StatTile, TabIntro } from "./storeDetailShared";
+import { Badge, SectionCard, SectionHeader, StatTile, TabIntro } from "./storeDetailShared";
 import { DETAIL_KEYS } from "./storeDetailPanels";
+import {
+  STORE_RATE_STATUS,
+  formatExchangeRate,
+  formatLendingYen,
+  formatResearchDate,
+  storeRateStatusLabel,
+  storeRateStatusTone,
+} from "../../storeRateResearch";
 
 function InfoRow({ icon, label, value, onClick }) {
   const Icon = icon;
@@ -50,6 +59,8 @@ function RateCell({ icon, label, value, unit, onClick }) {
 
 export default function StoreSettingsTab({ data, onOpenSettings, onOpenDetail }) {
   const { basicInfo, memberCard, chodama, exchangeInfo } = data;
+  const research = exchangeInfo.rateResearch;
+  const researchedRates = exchangeInfo.pachinkoRates || [];
 
   return (
     <div className="px-3 pt-4 pb-8">
@@ -105,7 +116,61 @@ export default function StoreSettingsTab({ data, onOpenSettings, onOpenDetail })
       </SectionCard>
 
       <SectionCard>
-        <SectionHeader title="交換率・貸玉情報" />
+        <SectionHeader title="みんパチ確認記録" />
+        <div className="px-3 pb-3">
+          {research ? (
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-hi)] p-3.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Badge tone={storeRateStatusTone(research.status)} dot>{storeRateStatusLabel(research.status)}</Badge>
+                <span className="text-[10px] font-bold text-[var(--sub)]">確認日 {formatResearchDate(research.checkedAt)}</span>
+              </div>
+              {basicInfo.sourceName && basicInfo.sourceName !== basicInfo.name && (
+                <div className="mt-2 text-[10px] text-[var(--sub)]">みんパチ掲載名: {basicInfo.sourceName}</div>
+              )}
+              <div className="mt-3 space-y-2">
+                {researchedRates.length > 0 ? researchedRates.map((rate) => {
+                  const verified = rate.exchangeStatus === STORE_RATE_STATUS.VERIFIED;
+                  return (
+                    <div key={`${rate.lendingYen}-${rate.exchangeBallsPer100Yen ?? "unknown"}`} className="flex items-start justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5">
+                      <div>
+                        <div className="text-[13px] font-black text-[var(--text)]">{formatLendingYen(rate.lendingYen)}パチンコ</div>
+                        <div className="mt-1 text-[10px] leading-relaxed text-[var(--sub)]">{formatExchangeRate(rate)}</div>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2 py-1 text-[9px] font-black ${verified ? "bg-[var(--green)]/12 text-[var(--green)]" : "bg-[var(--orange)]/12 text-[var(--orange)]"}`}>
+                        {verified ? "確認済み" : "未確認"}
+                      </span>
+                    </div>
+                  );
+                }) : (
+                  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-3 text-[12px] font-bold text-[var(--sub-hi)]">
+                    パチンコ貸玉の掲載なし
+                  </div>
+                )}
+              </div>
+              {research.note && <p className="mt-3 text-[10px] leading-relaxed text-[var(--sub)]">{research.note}</p>}
+              <p className="mt-2 text-[9px] leading-relaxed text-[var(--sub)]">第三者サイトの情報です。古い情報や具体値不明のレートは確認済みにしていません。実戦前は店頭でも確認してください。</p>
+              {research.sourceUrl && (
+                <a
+                  href={research.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-[var(--blue)]/40 bg-[var(--blue)]/10 text-[12px] font-bold text-[var(--blue)]"
+                >
+                  参照元: {research.sourceLabel || "みんパチ"}
+                  <ExternalLink size={14} />
+                </a>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-hi)] p-3.5 text-[12px] text-[var(--sub-hi)]">
+              確認日・参照元は未登録です。
+            </div>
+          )}
+        </div>
+      </SectionCard>
+
+      <SectionCard>
+        <SectionHeader title="PachiTrackerで使う設定" />
         <div className="grid grid-cols-2 gap-2 px-3 pb-3 sm:grid-cols-4">
           <RateCell icon={Target} label="貸玉単価" value={`${exchangeInfo.rentalYenPer100}円`} unit="/1玉" onClick={() => onOpenDetail?.(DETAIL_KEYS.RENTAL_RATE)} />
           <RateCell icon={ArrowLeftRight} label="交換率" value={`${exchangeInfo.exchangeBallsPer100}玉`} unit="/100円" onClick={() => onOpenDetail?.(DETAIL_KEYS.EXCHANGE_RATE)} />

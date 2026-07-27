@@ -22,6 +22,11 @@ import {
   buildIslandActivityCalendar,
   listIslandActivityMonths,
 } from "../evidence/islandActivityCalendar.js";
+import {
+  DECISION_TERMS,
+  decisionLabel,
+  decisionMeta,
+} from "../decision/decisionVocabulary.js";
 
 // 戦略マップ画面（見た目優先プロトタイプ）
 //
@@ -52,10 +57,10 @@ const MONO = "var(--font-mono)";
 const EMPTY_LIST = [];
 
 const VERDICT = {
-  strong: { color: P.green, label: "本命", reco: "着席推奨" },
-  watch: { color: P.yellow, label: "様子見", reco: "様子見" },
-  weak: { color: P.red, label: "回収", reco: "見送り" },
-  nodata: { color: P.gray, label: "不足", reco: "データ不足" },
+  strong: { color: P.green, label: decisionLabel("strong"), reco: decisionMeta("strong").candidateAction },
+  watch: { color: P.yellow, label: decisionLabel("watch"), reco: decisionMeta("watch").candidateAction },
+  weak: { color: P.red, label: decisionLabel("weak"), reco: decisionMeta("weak").candidateAction },
+  nodata: { color: P.gray, label: decisionLabel("nodata"), reco: decisionMeta("nodata").candidateAction },
 };
 
 const TABS = [
@@ -308,7 +313,7 @@ function PlanHandoffBanner({ plan, match, storeName, hasData }) {
         {storeName && <span style={{ marginLeft: "auto", color: P.subHi, fontSize: 10 }}>{storeName}</span>}
       </div>
       <div style={{ marginTop: 6, display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
-        {plan.primary && <strong style={{ color: P.text, fontSize: 14 }}>本命 {plan.primary.name}</strong>}
+        {plan.primary && <strong style={{ color: P.text, fontSize: 14 }}>第一候補 {plan.primary.name}</strong>}
         {backupNames.length > 0 && <span style={{ color: P.subHi, fontSize: 11 }}>予備 {backupNames.join("・")}</span>}
       </div>
       {(plan.requiredSessionEv != null || plan.requiredUnitPrice != null) && (
@@ -318,7 +323,7 @@ function PlanHandoffBanner({ plan, match, storeName, hasData }) {
         </div>
       )}
       <div style={{ marginTop: 6, color: P.sub, fontSize: 10, lineHeight: 1.5 }}>
-        {matchText}。{needsReview ? "ホームの月間プランで本命・予備を選び直してください。" : "判定が弱ければ予備、すべて弱ければ見送ります。"}
+        {matchText}。{needsReview ? "ホームの月間プランで第一候補・予備を選び直してください。" : "判定が弱ければ予備、すべて弱ければ見送ります。"}
       </div>
     </section>
   );
@@ -330,7 +335,7 @@ const HELP_GROUPS = [
     terms: [
       { name: "予測回転率", simple: "1,000円で、だいたい何回まわりそうかの予想です。", read: "ボーダーより大きいほど有利です。ただし、差玉から計算した予想なので必ず同じ回数になるわけではありません。" },
       { name: "ボーダー", simple: "長く遊んだときに、プラスとマイナスの境目になる回転率です。", read: "予測回転率がボーダーを上回る台を探します。例：ボーダー18、予測20なら、1,000円で約2回多く回る予想です。" },
-      { name: "翌日信頼度", simple: "明日も予想どおりになりそうかの目安です。", read: "データ量だけでなく、一晩で釘が変わる日次変動も差し引きます。玉数を増やしても100%には近づきません。" },
+      { name: `翌日${DECISION_TERMS.confidence}`, simple: "明日も予想どおりになりそうかの目安です。", read: "データ量だけでなく、一晩で釘が変わる日次変動も差し引きます。玉数を増やしても100%には近づきません。" },
       { name: "安全側回転（LCB）", simple: "予測が下振れした場合を見込んだ、慎重な回転率です。", read: "平均予測から翌日予測の標準偏差を1つ引きます。台の順位は平均値ではなく、この安全側回転とボーダーの差で決めます。" },
       { name: "良台スコア", simple: "回転率の良さと、データの確かさを1つにまとめた点数です。", read: "表示の強さを表します。実際の台選び順は、予測の上振れをつかみにくい安全側回転を優先します。" },
       { name: "収支プラス見込み", simple: "予定時間の終了時に、収支が0円を超える確率の概算幅です。", read: "本日の予定時間、予測回転率の上下幅、交換率、検証済みの機種ブレから正規近似で計算します。勝利を保証せず、短時間や荒い機種ほど誤差が大きくなります。" },
@@ -539,7 +544,7 @@ function FreshnessBanner({ freshness, sourceSummary }) {
         <strong style={{ display: "block", color: P.cyan, marginBottom: 3 }}>
           前日リサーチ：{freshness.sourceDate}の解析を本日用に表示
         </strong>
-        本命・着席目安・収支見込みを確認できます。実戦前は店内状況と試し打ちの回転率も確認してください。
+        有力・着席目安・収支見込みを確認できます。実戦前は店内状況と試し打ちの回転率も確認してください。
         {sourceSummary?.length > 0 && <span style={{ display: "block", marginTop: 3 }}>使用データ：{sourceSummary.join("＋")}</span>}
       </div>
     );
@@ -555,7 +560,7 @@ function FreshnessBanner({ freshness, sourceSummary }) {
       <strong style={{ display: "block", color: P.yellow, marginBottom: 3 }}>
         {future ? "解析日を確認してください" : `過去参考：${freshness.label}`}
       </strong>
-      本命・着席推奨・今日の収支・翌日予測は停止しています。前日または本日の差玉解析を保存すると再開します。
+      有力・着席推奨・今日の収支・翌日予測は停止しています。前日または本日の差玉解析を保存すると再開します。
       {sourceSummary?.length > 0 && <span style={{ display: "block", marginTop: 3 }}>使用データ：{sourceSummary.join("＋")}</span>}
     </div>
   );
@@ -566,7 +571,7 @@ function Kpi({ kpi }) {
   const items = [
     { label: "推定期待値", value: signed(kpi.evPerHour), unit: "円/h", color: kpi.evPerHour >= 0 ? P.green : P.red },
     { label: "予測回転率", value: fmt(kpi.rot, 1), unit: "/k", color: P.cyan },
-    { label: "翌日信頼度", value: fmt(kpi.confidence), unit: "%", color: P.yellow },
+    { label: `翌日${DECISION_TERMS.confidence}`, value: fmt(kpi.confidence), unit: "%", color: P.yellow },
     { label: "候補台数", value: fmt(kpi.candidates), unit: "台", color: P.green },
   ];
   return (
@@ -1057,7 +1062,7 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
           <div className="strategy-detail-main">
             <div className="strategy-detail-primary">
               <DetailMetric label="推定回転率" value={fmt(machine.rot, 1)} unit="/k" color={v.color} />
-              <DetailMetric label="翌日信頼度" value={fmt(machine.confidence)} unit="%" color={P.yellow} />
+              <DetailMetric label={`翌日${DECISION_TERMS.confidence}`} value={fmt(machine.confidence)} unit="%" color={P.yellow} />
               <DetailMetric label="島平均との差" value={signed(diff, 1)} unit="/k" color={diff >= 0 ? P.green : P.red} />
               <DetailMetric label="等価ボーダー" value={fmt(machine.equivalentBorder, 1)} unit="/k" color={P.subHi} />
               <DetailMetric label="実質ボーダー" value={fmt(machine.border, 1)} unit="/k" color={P.cyan} />

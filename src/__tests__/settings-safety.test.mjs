@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import {
   builtinStoreId,
+  mergeBuiltinStoreResearch,
   mergeBuiltinStores,
   shouldAutoLock,
   updateStoresForSessionReset,
@@ -77,6 +78,42 @@ test("店舗移行は既存編集値を維持し、内蔵店舗の不足分だ�
   assert.equal(result[0].chodama, 999);
   assert.equal(result[1].id, builtinStoreId("内蔵B"));
   assert.equal(result[1].address, "追加住所");
+});
+
+test("店舗レート調査の移行は旧店舗名を引き継ぎ、ユーザー設定を維持する", () => {
+  const existing = [{
+    id: "builtin:旧店舗名",
+    source: "builtin",
+    name: "旧店舗名",
+    address: "ユーザー修正住所",
+    rentBalls: 333,
+    exRate: 360,
+    chodama: 4321,
+    memberCard: { created: true, number: "keep" },
+  }];
+  const result = mergeBuiltinStoreResearch(existing, [{
+    name: "現行店舗名",
+    legacyNames: ["旧店舗名"],
+    address: "内蔵住所",
+    pachinkoRates: [{ lendingYen: 4, exchangeBallsPer100Yen: 27.5 }],
+    rateResearch: {
+      sourceLabel: "みんパチ",
+      sourceUrl: "https://example.com/store/",
+      checkedAt: "2026-07-25",
+      status: "verified",
+    },
+  }]);
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0].id, "builtin:旧店舗名");
+  assert.equal(result[0].name, "現行店舗名");
+  assert.equal(result[0].address, "ユーザー修正住所");
+  assert.equal(result[0].rentBalls, 333);
+  assert.equal(result[0].exRate, 360);
+  assert.equal(result[0].chodama, 4321);
+  assert.equal(result[0].memberCard.number, "keep");
+  assert.equal(result[0].rateResearch.status, "verified");
+  assert.deepEqual(result[0].pachinkoRates, [{ lendingYen: 4, exchangeBallsPer100Yen: 27.5 }]);
 });
 
 test("バックアップからPIN・ロック状態・APIキーを除外する", () => {
@@ -165,7 +202,7 @@ test("設定のリセット経路は店舗残高を保存しない指定で呼�
 });
 
 test("テーマA案は3つの世界観を実際の明暗と強調色へ接続する", async () => {
-  const tabsPath = fileURLToPath(new URL("../components/Tabs.jsx", import.meta.url));
+  const tabsPath = fileURLToPath(new URL("../components/tabs/SettingsTab.jsx", import.meta.url));
   const source = await readFile(tabsPath, "utf8");
 
   assert.match(source, /name: "DEEP NIGHT"[\s\S]*?theme: "dark"[\s\S]*?accent: "purple"/);
@@ -178,7 +215,7 @@ test("テーマA案は3つの世界観を実際の明暗と強調色へ接続す
 
 test("設定トップはダークA案とライトB案を発光なしで切り替える", async () => {
   const cssPath = fileURLToPath(new URL("../index.css", import.meta.url));
-  const tabsPath = fileURLToPath(new URL("../components/Tabs.jsx", import.meta.url));
+  const tabsPath = fileURLToPath(new URL("../components/tabs/SettingsTab.jsx", import.meta.url));
   const [css, tabs] = await Promise.all([
     readFile(cssPath, "utf8"),
     readFile(tabsPath, "utf8"),

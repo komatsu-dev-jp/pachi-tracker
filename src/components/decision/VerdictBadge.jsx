@@ -1,36 +1,37 @@
 import { C, font, mono } from "../../constants";
 import { confidenceAccuracyLabel } from "./confidenceLabels";
+import { DECISION_TERMS, decisionLabel } from "./decisionVocabulary";
 
-// 信頼度（試行充足率）: 1500回転で 100% （evDecision の calcConfidence と整合）
+// 信頼度: 1500回転で100%になる旧計算との後方互換用目安。
 const STABLE_TARGET_ROT = 1500;
 
 const VERDICT_CONFIG = {
   continue_strong: {
     color: C.green,
-    main: "続行",
-    statusLabel: "推奨アクション",
-    hint: "このまま打ち続けてOK",
+    main: decisionLabel("continue_strong"),
+    statusLabel: DECISION_TERMS.status,
+    hint: "固定の判断地点まで続行",
     iconKind: "play",
   },
   continue: {
     color: C.green,
-    main: "続行",
-    statusLabel: "推奨アクション",
-    hint: "このまま打ち続けてOK",
+    main: decisionLabel("continue"),
+    statusLabel: DECISION_TERMS.status,
+    hint: "次の判断地点まで続行",
     iconKind: "play",
   },
   hold: {
     color: C.blue,
-    main: "様子見",
-    statusLabel: "データ蓄積中",
+    main: decisionLabel("hold"),
+    statusLabel: DECISION_TERMS.status,
     hint: "回転数を増やして再判定",
     iconKind: "ekg",
   },
   stop: {
     color: C.red,
-    main: "ヤメ",
-    statusLabel: "推奨アクション",
-    hint: "期待値マイナス・ヤメ推奨",
+    main: decisionLabel("stop"),
+    statusLabel: DECISION_TERMS.status,
+    hint: "資金を守るため撤退を検討",
     iconKind: "stop",
   },
 };
@@ -71,7 +72,7 @@ export function VerdictBadge({ verdict, confidence, netRot, evidenceActive = fal
   const dashOffset = RING_CIRCUMFERENCE * (1 - pct / 100);
   const cls = `rec-verdict-card rec-verdict-card--${verdict || "hold"}`;
 
-  // データ精度（信頼度を 3 段階で言語化）
+  // 信頼度ランク（信頼度を3段階で言語化）
   const accuracyLabel = confidenceAccuracyLabel(confidence);
 
   // 安定まであと: 1500 回転までの残りを表示（既存 ev.netRot を流用、未指定時は非表示）。
@@ -121,7 +122,7 @@ export function VerdictBadge({ verdict, confidence, netRot, evidenceActive = fal
           </div>
         </div>
         <div className="rec-verdict-accuracy" style={{ fontFamily: font }}>
-          データ精度 <strong>{accuracyLabel}</strong>
+          {DECISION_TERMS.confidenceLevel} <strong>{accuracyLabel}</strong>
         </div>
         {remainRot != null && remainRot > 0 && (
           <div className="rec-verdict-stable" style={{ fontFamily: font }}>

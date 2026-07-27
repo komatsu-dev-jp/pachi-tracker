@@ -2,6 +2,11 @@
 // 純粋関数。React/DOM/localStorage 依存ゼロ。
 // opts パラメータは将来の riskAdjusted 切替のために予約（Step 2 以降で追加予定）。
 
+import {
+  EV_DECISION_THRESHOLDS,
+  EV_VERDICT_FROM_LIVE_ACTION,
+} from "./decisionVocabulary.js";
+
 function calcConfidence(ev) {
   if (ev?.evidence?.hasEstimate && Number.isFinite(Number(ev.evidence.confidence))) {
     const total = Math.min(1, Math.max(0, Number(ev.evidence.confidence)));
@@ -43,17 +48,9 @@ export function evDecision(ev) {
   const safeEv = ev || {};
   const liveDecision = safeEv.liveDecision;
   if (liveDecision && liveDecision.action !== "no_data") {
-    const verdictMap = {
-      collecting: "hold",
-      stop_candidate: "stop",
-      compare: "hold",
-      stop: "stop",
-      continue: "continue",
-      continue_strong: "continue_strong",
-    };
     const confidence = Math.min(1, Math.max(0, Number(liveDecision.totalK || 0) / 10));
     return {
-      verdict: verdictMap[liveDecision.action] || "hold",
+      verdict: EV_VERDICT_FROM_LIVE_ACTION[liveDecision.action] || "hold",
       confidence,
       confidenceParts: {
         rot: confidence,
@@ -98,17 +95,18 @@ export function evDecision(ev) {
   }
 
   let verdict;
-  if (evAdj > 300 && conf.total > 0.5 && bDiff > 2.0) verdict = "continue_strong";
-  else if (evAdj > 100 && conf.total > 0.4 && bDiff > 0.5) verdict = "continue";
-  else if (evAdj >= -50 && evAdj <= 100 && conf.total > 0.3) verdict = "hold";
-  else if (evAdj < -50 || bDiff < -1.0) verdict = "stop";
+  const thresholds = EV_DECISION_THRESHOLDS;
+  if (evAdj > thresholds.strongEvPerK && conf.total > thresholds.strongConfidence && bDiff > thresholds.strongBorderDiff) verdict = "continue_strong";
+  else if (evAdj > thresholds.continueEvPerK && conf.total > thresholds.continueConfidence && bDiff > thresholds.continueBorderDiff) verdict = "continue";
+  else if (evAdj >= thresholds.holdEvMin && evAdj <= thresholds.holdEvMax && conf.total > thresholds.holdConfidence) verdict = "hold";
+  else if (evAdj < thresholds.stopEvPerK || bDiff < thresholds.stopBorderDiff) verdict = "stop";
   else verdict = "hold";
 
   const sign = (v) => (v >= 0 ? "+" : "");
   const reasons = [
-    { ok: evAdj > 100,      text: `EV/K ${sign(evAdj)}${Math.round(evAdj)}円（基準 +100超え）` },
-    { ok: bDiff > 0.5,      text: `ボーダー差 ${sign(bDiff)}${bDiff.toFixed(1)}回/K（基準 +0.5超え）` },
-    { ok: conf.total > 0.4, text: `信頼度 ${Math.round(conf.total * 100)}%（基準 40%以上）` },
+    { ok: evAdj > thresholds.continueEvPerK, text: `EV/K ${sign(evAdj)}${Math.round(evAdj)}円（基準 +${thresholds.continueEvPerK}超え）` },
+    { ok: bDiff > thresholds.continueBorderDiff, text: `ボーダー差 ${sign(bDiff)}${bDiff.toFixed(1)}回/K（基準 +${thresholds.continueBorderDiff}超え）` },
+    { ok: conf.total > thresholds.continueConfidence, text: `信頼度 ${Math.round(conf.total * 100)}%（基準 ${Math.round(thresholds.continueConfidence * 100)}%以上）` },
     evidence
       ? {
           ok: (evidence.delta?.observationCount || 0) >= 2 || netRot >= 1500,

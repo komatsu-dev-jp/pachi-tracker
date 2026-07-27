@@ -47,6 +47,15 @@ test("店舗ID未指定でも登録済み店舗を優先し、空のサンプル
   assert.equal(result.analysisScore, 0);
 });
 
+test("未知の店舗IDでは先頭店舗へ暗黙フォールバックしない", () => {
+  const result = resolveStoreDetail([store], "unknown-store", { archives: [] });
+  assert.equal(result.isRealStore, false);
+  assert.equal(result.storeNotFound, true);
+  assert.equal(result.requestedStoreId, "unknown-store");
+  assert.equal(result.id, "unregistered-store");
+  assert.notEqual(result.name, store.name);
+});
+
 test("信頼度は記録件数の境界値で未記録・低・中・高に変わる", () => {
   const makeRecords = (count) => Array.from({ length: count }, (_, index) => ({
     id: `record-${index}`,
@@ -111,4 +120,28 @@ test("店舗の記録にも遊タイム期待値を加算する", () => {
   }], store);
 
   assert.equal(result.analyticsDetail.recentRecords[0].expectedValueYen, 3500);
+});
+
+test("店舗詳細へ複数貸玉レート・確認日・参照元・未確認理由を渡す", () => {
+  const researchedStore = {
+    ...store,
+    sourceName: "みんパチ掲載名",
+    pachinkoRates: [
+      { lendingYen: 4, exchangeBallsPer100Yen: 27.5, exchangeStatus: "verified" },
+      { lendingYen: 1.02, exchangeBallsPer100Yen: null, exchangeStatus: "unconfirmed", unconfirmedReason: "unknown" },
+    ],
+    rateResearch: {
+      sourceLabel: "みんパチ",
+      sourceUrl: "https://minpachi.com/example/",
+      checkedAt: "2026-07-25",
+      status: "partially_verified",
+    },
+  };
+  const result = resolveStoreDetail([researchedStore], researchedStore.id);
+
+  assert.equal(result.basicInfo.sourceName, "みんパチ掲載名");
+  assert.equal(result.exchangeInfo.pachinkoRates.length, 2);
+  assert.equal(result.exchangeInfo.pachinkoRates[1].unconfirmedReason, "unknown");
+  assert.equal(result.exchangeInfo.rateResearch.checkedAt, "2026-07-25");
+  assert.equal(result.exchangeInfo.rateResearch.sourceUrl, "https://minpachi.com/example/");
 });

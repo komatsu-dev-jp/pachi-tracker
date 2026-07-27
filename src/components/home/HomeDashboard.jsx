@@ -38,7 +38,6 @@ import {
 } from "recharts";
 import { getEvAmount } from "../analysis/analysisSelectors";
 import { localDateStr } from "../../constants";
-import { getEffectiveMachineList } from "../../machineDB";
 import {
   buildDeltaStatus,
   buildMonthOverview,
@@ -225,7 +224,7 @@ function MonthlySummaryCard({ overview, projection, plan, goalBackcast, onEdit, 
         <span className={`home-style-dot is-${plan?.researchPackageId || plan?.baseStyle || "unset"}`}><Gauge size={17} /></span>
         <span>
           <small>今月のリサーチプラン</small>
-          <strong>{style ? `${style.label}・${primaryName ? `本命候補 ${primaryName}` : "本命候補を選ぶ"}` : "未設定（最初に決めましょう）"}</strong>
+          <strong>{style ? `${style.label}・${primaryName ? `第一候補 ${primaryName}` : "第一候補を選ぶ"}` : "未設定（最初に決めましょう）"}</strong>
         </span>
         <em>{plan ? `期待値 ${yen(plan.minExpectedValuePerHour || 0)}/h〜` : "設定"}</em>
         <ChevronRight size={17} />
@@ -338,7 +337,7 @@ function GoalBackcastPanel({ backcast, compact = false }) {
 }
 
 function PlanCandidateRow({ candidate, role, needsReview, pinnedSelection = false, onSelectRole, backupDisabled = false }) {
-  const roleLabel = role === "primary" ? "本命候補" : role === "backup" ? "予備" : role === "excluded" ? "除外" : "未選択";
+  const roleLabel = role === "primary" ? "第一候補" : role === "backup" ? "予備" : role === "excluded" ? "除外" : "未選択";
   const riskVerified = candidate.riskVerified ?? (candidate.riskTier !== "unknown" && Number(candidate.stdDev) > 0);
   return (
     <article className={`home-plan-candidate ${role !== "candidate" ? `is-${role}` : ""} ${needsReview ? "needs-review" : ""} ${pinnedSelection ? "is-pinned-selection" : ""}`}>
@@ -361,7 +360,7 @@ function PlanCandidateRow({ candidate, role, needsReview, pinnedSelection = fals
       </div>
       <div className="home-plan-candidate__actions" aria-label={`${candidate.name}の役割`}>
         {[
-          ["primary", "本命候補"],
+          ["primary", "第一候補"],
           ["backup", "予備"],
           ["excluded", "除外"],
         ].map(([nextRole, label]) => (
@@ -515,7 +514,7 @@ function PlanEditor({ current, monthKey, target, currentExpected, archives, dail
       return [...byKey.values()];
     });
     setResearchTargets(next);
-    setSelectionMessage(`${candidate.name}を${role === "primary" ? "本命候補" : role === "backup" ? "予備" : "除外"}${getResearchTargetRole(before, candidate.key) === role ? "から解除" : "に設定"}しました。`);
+    setSelectionMessage(`${candidate.name}を${role === "primary" ? "第一候補" : role === "backup" ? "予備" : "除外"}${getResearchTargetRole(before, candidate.key) === role ? "から解除" : "に設定"}しました。`);
   };
 
   const clearNeedsReview = () => {
@@ -570,7 +569,7 @@ function PlanEditor({ current, monthKey, target, currentExpected, archives, dail
         <div className="home-target-sheet__heading">
           <div>
             <h2 id="home-plan-title">今月の稼働プラン</h2>
-            <p id="home-plan-description">月間目標から必要条件を逆算し、登録済みの全機種から本命を選べます。</p>
+            <p id="home-plan-description">月間目標から必要条件を逆算し、登録済みの全機種から第一候補を選べます。</p>
           </div>
           <button type="button" onClick={onClose} aria-label="閉じる"><X size={20} /></button>
         </div>
@@ -643,7 +642,7 @@ function PlanEditor({ current, monthKey, target, currentExpected, archives, dail
             <div className="home-plan-empty">
               <Store size={22} />
               <strong>先に店舗を選んでください</strong>
-              <span>店舗を基準に候補を保存するため、未選択では本命候補を作りません。</span>
+              <span>店舗を基準に候補を保存するため、未選択では第一候補を作りません。</span>
               {stores.length === 0 && <button type="button" onClick={onOpenStores}>店舗を登録する</button>}
             </div>
           ) : catalogCandidates.length === 0 ? (
@@ -672,7 +671,7 @@ function PlanEditor({ current, monthKey, target, currentExpected, archives, dail
               <div className="home-plan-candidate-summary">
                 <span>{candidateView === "recommended" && !candidateQuery && candidateRiskFilter === "all" ? `${selectedStore.name}・配分に合う参考候補` : `検索結果 ${candidateResults.length}/${catalogCandidates.length}機種`}</span>
                 <em>設置・店舗期待値は未確認</em>
-                <strong>本命 {researchTargets.primaryMachineKey ? 1 : 0}/1 / 予備 {researchTargets.backupMachineKeys.length}/{MAX_RESEARCH_BACKUPS}</strong>
+                <strong>第一候補 {researchTargets.primaryMachineKey ? 1 : 0}/1 / 予備 {researchTargets.backupMachineKeys.length}/{MAX_RESEARCH_BACKUPS}</strong>
               </div>
               <p className="home-machine-picker-note">おすすめは検証済み標準偏差から自動抽出しています。全機種では未検証機種も隠さず選べますが、自動推薦には含めません。</p>
               {needsReviewKeys.length > 0 && (
@@ -711,7 +710,7 @@ function PlanEditor({ current, monthKey, target, currentExpected, archives, dail
                 </>
               )}
               {candidateResults.length > candidates.length && <button type="button" className="home-machine-load-more" onClick={() => setCandidateLimit((value) => value + 20)}>さらに20機種を表示（残り{candidateResults.length - candidates.length}）</button>}
-              <div className="home-plan-selection-message" aria-live="polite">{selectionMessage || "本命候補は1機種、予備は2機種まで選べます。もう一度押すと解除できます。"}</div>
+              <div className="home-plan-selection-message" aria-live="polite">{selectionMessage || "第一候補は1機種、予備は2機種まで選べます。もう一度押すと解除できます。"}</div>
             </>
           )}
         </div>
@@ -830,7 +829,7 @@ function DailyResearchCard({ date, plan, basePlan, goalBackcast, machines, store
               <BrainCircuit size={14} />
               <span>{storeId == null
                 ? "有効な登録店舗がありません。先に店舗を登録・選択してください。店舗が決まるまでは戦略順位へ反映しません。"
-                : "このスタイル用の候補を作り直しました。本命候補を1つ、必要なら予備を2つまで選んでください。選ぶまでは戦略順位へ反映しません。"}</span>
+                : "このスタイル用の候補を作り直しました。第一候補を1つ、必要なら予備を2つまで選んでください。選ぶまでは戦略順位へ反映しません。"}</span>
               {storeId == null && <button type="button" onClick={onOpenStores}>店舗設定を開く</button>}
             </div>
           )}
@@ -864,7 +863,7 @@ function DailyResearchCard({ date, plan, basePlan, goalBackcast, machines, store
             disabled={plan?.status !== "research-ready"}
             onClick={onOpenStrategy}
           >
-            {plan?.status === "research-ready" ? "店舗データと期待値を確認する" : "本命候補を選ぶと確認できます"} <ChevronRight size={16} />
+            {plan?.status === "research-ready" ? "店舗データと期待値を確認する" : "第一候補を選ぶと確認できます"} <ChevronRight size={16} />
           </button>
           <small className="home-research-disclaimer">標準偏差は2,200回転時の出玉ブレを表すP-EVIDENCE推定です。機種名だけで着席を勧めるものではありません。</small>
         </>
@@ -1001,7 +1000,24 @@ export default function HomeDashboard({ S }) {
   const dailyResearchPlansRaw = S?.dailyResearchPlans;
   const archives = useMemo(() => Array.isArray(archivesRaw) ? archivesRaw : [], [archivesRaw]);
   const stores = useMemo(() => Array.isArray(storesRaw) ? storesRaw.filter(Boolean) : [], [storesRaw]);
-  const machines = useMemo(() => getEffectiveMachineList(customMachinesRaw), [customMachinesRaw]);
+  const customMachines = useMemo(
+    () => Array.isArray(customMachinesRaw) ? customMachinesRaw.filter(Boolean) : [],
+    [customMachinesRaw],
+  );
+  const [machines, setMachines] = useState(customMachines);
+  useEffect(() => {
+    let active = true;
+    import("../../machineDB")
+      .then(({ getEffectiveMachineList }) => {
+        if (active) setMachines(getEffectiveMachineList(customMachines));
+      })
+      .catch((error) => {
+        console.error("[home] machine catalog load failed:", error);
+      });
+    return () => {
+      active = false;
+    };
+  }, [customMachines]);
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
@@ -1152,7 +1168,7 @@ export default function HomeDashboard({ S }) {
     if (!monthPlan?.researchTargets?.primaryMachineKey || monthPlan?.status === "needs-review") return {
       kind: "planning",
       title: monthPlan?.status === "needs-review" ? "リサーチ機種を再確認する" : "リサーチ機種を選ぶ",
-      message: "配分に合う機種から、本命候補1つと予備を選びます。",
+      message: "配分に合う機種から、第一候補1つと予備を選びます。",
       tag: "月間プラン",
       actionLabel: monthPlan?.status === "needs-review" ? "再確認する" : "候補を選ぶ",
     };
@@ -1317,7 +1333,8 @@ export default function HomeDashboard({ S }) {
       };
     });
   };
-  const unread = Array.isArray(S?.notificationLog) && S.notificationLog.some((item) => !item?.read);
+  const unread = (Array.isArray(S?.notificationLog) && S.notificationLog.some((item) => !item?.read))
+    || S?.backupReminder?.due === true;
 
   return (
     <div className="home-dashboard">
