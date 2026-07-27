@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local browser and visual QA artifacts
+.playwright-cli/
+output/
