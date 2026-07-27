@@ -18,6 +18,12 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function optionalNonNegative(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, number) : null;
+}
+
 function sameText(a, b) {
   return String(a ?? "").trim() === String(b ?? "").trim();
 }
@@ -299,17 +305,90 @@ export function resolveMachineStats(machine = {}) {
   };
 }
 
+function resolvePayoutObservation(
+  row,
+  machine,
+  stats,
+  normalSpins,
+  totalStarts,
+  payoutStdDevPerHit,
+  payoutStdDevSource,
+) {
+  const counterModel = machine?.deltaCounterModel;
+  if (counterModel?.type !== "counted-awards-with-reduced-payout") {
+    return {
+      available: totalStarts === 0 || stats.avgPayout > 0,
+      estimatedPayoutBalls: totalStarts * stats.avgPayout,
+      payoutVariance: totalStarts * payoutStdDevPerHit ** 2,
+      payoutEstimateSource: "episode-average",
+      estimatedReducedPayoutCount: 0,
+      payoutStdDevPerHit,
+      payoutStdDevSource,
+    };
+  }
+
+  const standardPayout = Math.max(0, num(counterModel.standardPayout));
+  const reducedPayout = Math.max(0, num(counterModel.reducedPayout));
+  const reducedShare = clamp(num(counterModel.reducedPayoutShareOfInitialHits), 0, 1);
+  if (!(standardPayout > 0) || reducedPayout > standardPayout || !(reducedShare > 0)) {
+    return {
+      available: false,
+      estimatedPayoutBalls: 0,
+      payoutVariance: 0,
+      payoutEstimateSource: "counter-model-invalid",
+      estimatedReducedPayoutCount: 0,
+      payoutStdDevPerHit: 0,
+      payoutStdDevSource: "counter-model-invalid",
+    };
+  }
+
+  const firstHitCount = optionalNonNegative(row?.firstHitCount);
+  const boundedFirstHits = firstHitCount === null ? null : Math.min(totalStarts, firstHitCount);
+  const fallbackProbability = Math.max(0, num(counterModel.reducedPayoutProbability));
+  const fallbackReducedCount = fallbackProbability > 0
+    ? normalSpins / fallbackProbability
+    : (num(machine?.synthProb) > 0 ? normalSpins / num(machine.synthProb) * reducedShare : 0);
+  const estimatedReducedPayoutCount = clamp(
+    boundedFirstHits === null ? fallbackReducedCount : boundedFirstHits * reducedShare,
+    0,
+    totalStarts,
+  );
+  const payoutDifference = standardPayout - reducedPayout;
+  const estimatedPayoutBalls = totalStarts * standardPayout
+    - estimatedReducedPayoutCount * payoutDifference;
+  // 初当り回数がある場合は「そのうち何回がチャージ相当か」の二項分散、
+  // 無い旧データは通常回転数から推定したチャージ件数のポアソン分散を使う。
+  const reducedCountVariance = boundedFirstHits === null
+    ? estimatedReducedPayoutCount
+    : boundedFirstHits * reducedShare * (1 - reducedShare);
+  const payoutVariance = reducedCountVariance * payoutDifference ** 2;
+
+  return {
+    available: totalStarts === 0 || estimatedPayoutBalls > 0,
+    estimatedPayoutBalls,
+    payoutVariance,
+    payoutEstimateSource: boundedFirstHits === null
+      ? "normal-spins-charge-estimate"
+      : "first-hit-charge-estimate",
+    estimatedReducedPayoutCount,
+    payoutStdDevPerHit: totalStarts > 0 ? Math.sqrt(payoutVariance / totalStarts) : 0,
+    payoutStdDevSource: "counter-model-charge-mix-v1",
+  };
+}
+
 export function estimateDeltaObservation(row = {}, machine = {}, options = {}) {
   const normalSpins = Math.max(0, num(row.normalSpins));
   const totalStarts = Math.max(0, num(row.totalStarts));
   const rawDelta = row?.val;
   const deltaBalls = Number(rawDelta);
   const stats = resolveMachineStats(machine);
-  const avgPayout = stats.avgPayout;
   const optionPayoutSd = Number(options.payoutStdDevPerHit);
   const payoutStdDevPerHit = Number.isFinite(optionPayoutSd) && optionPayoutSd >= 0
     ? optionPayoutSd
     : stats.payoutStdDevPerHit;
+  const payoutStdDevSource = Number.isFinite(optionPayoutSd) && optionPayoutSd >= 0
+    ? "options-explicit"
+    : stats.payoutStdDevSource;
 
   if (row?.status === "bounded") return { valid: false, reason: "差玉は境界到達記録" };
   if (row?.status === "review" && row?.reviewConfirmed !== true) {
@@ -320,26 +399,47 @@ export function estimateDeltaObservation(row = {}, machine = {}, options = {}) {
     return { valid: false, reason: "確定差玉なし" };
   }
   if (normalSpins <= 0) return { valid: false, reason: "通常回転数なし" };
-  if (totalStarts > 0 && avgPayout <= 0) return { valid: false, reason: "平均出玉なし" };
   if (totalStarts === 0 && deltaBalls > 0) {
     return { valid: false, reason: "当り0で差玉プラス", normalSpins, totalStarts, deltaBalls };
   }
 
+  const payoutObservation = resolvePayoutObservation(
+    row,
+    machine,
+    stats,
+    normalSpins,
+    totalStarts,
+    payoutStdDevPerHit,
+    payoutStdDevSource,
+  );
+  if (!payoutObservation.available) return { valid: false, reason: "平均出玉なし" };
+
   // 差玉 = 払い出し - 投入玉 なので、投入玉 = 払い出し - 差玉。
-  const estimatedInputBalls = totalStarts * avgPayout - deltaBalls;
+  const estimatedInputBalls = payoutObservation.estimatedPayoutBalls - deltaBalls;
   if (estimatedInputBalls < BALLS_PER_1K) return { valid: false, reason: "推定投入玉不足" };
 
   const observedRotation = normalSpins / (estimatedInputBalls / BALLS_PER_1K);
-  const minRate = num(options.minRate, 5);
+  const modelMinRate = Math.max(0, num(machine?.deltaCounterModel?.minPlausibleRotation));
+  const minRate = Math.max(num(options.minRate, 5), modelMinRate);
   const maxRate = num(options.maxRate, 45);
   if (observedRotation < minRate || observedRotation > maxRate) {
-    return { valid: false, reason: "回転率が現実範囲外", observedRotation, estimatedInputBalls };
+    return {
+      valid: false,
+      reason: modelMinRate > 0 && observedRotation < modelMinRate
+        ? "チャージ内訳または大当り回数を確認"
+        : "回転率が現実範囲外",
+      observedRotation,
+      estimatedInputBalls,
+      estimatedPayoutBalls: payoutObservation.estimatedPayoutBalls,
+      estimatedReducedPayoutCount: payoutObservation.estimatedReducedPayoutCount,
+      payoutEstimateSource: payoutObservation.payoutEstimateSource,
+    };
   }
 
   // H（大当り回数）は既に観測済みなので、未知なのは「各大当りの出玉差」と
   // グラフ読取誤差だけ。2,200回転の収支標準偏差は当り回数の乱数まで含む
   // 別単位の値であり、ここへ掛けると同じ不確実性を二重計上する。
-  const payoutVariance = totalStarts * payoutStdDevPerHit ** 2;
+  const payoutVariance = payoutObservation.payoutVariance;
   const graphVariance = (num(options.graphStepBalls, GRAPH_STEP_BALLS) ** 2) / 12;
 
   return {
@@ -348,14 +448,15 @@ export function estimateDeltaObservation(row = {}, machine = {}, options = {}) {
     totalStarts,
     deltaBalls,
     estimatedInputBalls,
+    estimatedPayoutBalls: payoutObservation.estimatedPayoutBalls,
+    estimatedReducedPayoutCount: payoutObservation.estimatedReducedPayoutCount,
+    payoutEstimateSource: payoutObservation.payoutEstimateSource,
     observedRotation,
     inputVariance: payoutVariance + graphVariance,
     payoutVariance,
     graphVariance,
-    payoutStdDevPerHit,
-    payoutStdDevSource: Number.isFinite(optionPayoutSd) && optionPayoutSd >= 0
-      ? "options-explicit"
-      : stats.payoutStdDevSource,
+    payoutStdDevPerHit: payoutObservation.payoutStdDevPerHit,
+    payoutStdDevSource: payoutObservation.payoutStdDevSource,
     sessionStdDevExcluded: stats.sessionStdDev,
     machineStatsDerived: stats.derived,
   };
