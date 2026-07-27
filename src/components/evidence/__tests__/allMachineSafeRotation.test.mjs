@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { machineDB } from "../../../machineDB.js";
 import {
   buildDeltaEvidence,
+  estimateDeltaObservation,
   findMachineSpec,
   machineBorder,
   resolveMachineStats,
@@ -12,12 +13,25 @@ const DAILY_INPUT_BALLS = 11750;
 const FOUR_DAY_INPUT_BALLS = DAILY_INPUT_BALLS * 4;
 const SESSION_STD_DEV_STRESS_VALUE = 99999;
 
-function scansFor(machine, avgPayout, border) {
+function scansFor(machine, border) {
   const observedRate = Math.max(5.1, Math.min(44.9, border + 0.5));
   const dailyHits = [12, 12, 12, 13];
   return dailyHits.map((totalStarts, index) => {
     const day = String(index + 1).padStart(2, "0");
     const date = `2026-07-${day}`;
+    const baseRow = {
+      date,
+      island: "全機種監査島",
+      machineName: machine.name,
+      num: "1",
+      normalSpins: Math.round(observedRate * DAILY_INPUT_BALLS / 250) + (index % 2),
+      totalStarts,
+    };
+    const payoutProbe = estimateDeltaObservation({ ...baseRow, val: 0 }, machine);
+    assert.ok(
+      Number.isFinite(payoutProbe.estimatedPayoutBalls),
+      `${machine.name}: 機種別の大当り計数方式から監査用の払出玉を作れる`,
+    );
     return {
       id: `all-machine-safe-rotation-${machine.name}-${day}`,
       storeId: "all-machine-safe-rotation-audit",
@@ -25,13 +39,8 @@ function scansFor(machine, avgPayout, border) {
       date,
       createdAt: `${date}T20:00:00.000Z`,
       rows: [{
-        date,
-        island: "全機種監査島",
-        machineName: machine.name,
-        num: "1",
-        normalSpins: Math.round(observedRate * DAILY_INPUT_BALLS / 250) + (index % 2),
-        totalStarts,
-        val: totalStarts * avgPayout - DAILY_INPUT_BALLS,
+        ...baseRow,
+        val: payoutProbe.estimatedPayoutBalls - DAILY_INPUT_BALLS,
       }],
     };
   });
@@ -84,7 +93,7 @@ for (const machine of machineDB) {
   }
 
   assert.ok(stats.avgPayout > 0, `${machine.name}: 分析対象には1回平均出玉が必要`);
-  const scans = scansFor(machine, stats.avgPayout, border);
+  const scans = scansFor(machine, border);
   const effectiveMachine = { ...machine, dataUpdatedAt: "9999-12-30" };
   const base = buildPEvidenceAnalytics({
     scans,
