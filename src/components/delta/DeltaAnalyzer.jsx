@@ -80,6 +80,10 @@ import {
   createDeltaCompletionHistoryGuard,
   makeDeltaCompletionSummary,
 } from "./deltaCompletion";
+import {
+  buildDeltaAnalysisConfirmation,
+  DELTA_EVENT_OPTIONS,
+} from "./deltaAnalysisContext";
 
 const TAP = 44; // 最小タップ領域
 const CTA = 48; // 下部固定CTA高さ
@@ -548,6 +552,7 @@ function UploadStep({
   setEventType,
   onAnalyze,
   onClose,
+  requestConfirmation,
 }) {
   const fileRef = useRef(null);
   const analysisRequestIdRef = useRef(0);
@@ -696,6 +701,25 @@ function UploadStep({
     onAnalyze(analysis);
   };
 
+  const confirmAndStart = async () => {
+    if (!images.length || busyRef.current || fileLoadRef.current) return;
+    const confirmation = buildDeltaAnalysisConfirmation({
+      storeName: store?.name || "",
+      analysisDate,
+      eventType,
+      islands,
+      islandScopeId,
+      fileCount: images.length,
+    });
+    const confirmed = typeof requestConfirmation === "function"
+      ? await requestConfirmation(confirmation)
+      : typeof window !== "undefined"
+        ? window.confirm(confirmation.message)
+        : false;
+    if (!confirmed) return;
+    await start();
+  };
+
   return (
     <>
       <TopBar title="差玉解析" onBack={onClose} backDisabled={interactionLocked} />
@@ -778,10 +802,9 @@ function UploadStep({
                 background: C.surfaceHi, color: C.text, padding: "0 28px 0 9px", fontFamily: font,
               }}
             >
-              <option value="">通常日</option>
-              <option value="old-event">旧イベント日</option>
-              <option value="special-day">特定日</option>
-              <option value="store-event">店舗イベント</option>
+              {DELTA_EVENT_OPTIONS.map((option) => (
+                <option key={option.value || "normal"} value={option.value}>{option.label}</option>
+              ))}
             </select>
           </label>
         </Card>
@@ -1018,7 +1041,7 @@ function UploadStep({
         label={busy
           ? `解析中… ${progress.i}/${progress.n}`
           : loadingFiles ? "ファイルを準備中…" : `解析する（${images.length}件）`}
-        onClick={start}
+        onClick={confirmAndStart}
         disabled={!images.length || interactionLocked}
       />
     </>
@@ -4235,6 +4258,7 @@ export default function DeltaAnalyzer({
           }}
           onAnalyze={handleAnalyzed}
           onClose={onClose}
+          requestConfirmation={requestConfirmation}
         />
       )}
       {step === "numbers" && (
