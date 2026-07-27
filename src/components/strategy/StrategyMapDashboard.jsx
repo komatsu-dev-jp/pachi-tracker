@@ -217,6 +217,7 @@ function BackIcon() {
 }
 
 function Header({ data, selected, viewScope, onBack, onHelp }) {
+  const displayedFreshness = selected?.freshness || data.freshness;
   return (
     <div
       style={{
@@ -275,7 +276,7 @@ function Header({ data, selected, viewScope, onBack, onHelp }) {
           </button>
           <div style={{ textAlign: "right", minWidth: 56 }}>
             <div style={{ fontSize: 10, color: P.sub }}>
-              {data.freshness?.sourceDate ? `解析 ${data.freshness.sourceDate}` : "解析日なし"}
+              {displayedFreshness?.sourceDate ? `解析 ${displayedFreshness.sourceDate}` : "解析日なし"}
             </div>
             <div style={{ fontSize: 11, fontWeight: 900, color: P.cyan, marginTop: 3, fontFamily: MONO, whiteSpace: "nowrap" }}>
               表示中の候補 {viewScope.candidates}台
@@ -2123,7 +2124,7 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord }) {
         storeName={plannedStoreName}
         hasData={data.total > 0}
       />
-      <FreshnessBanner freshness={data.freshness} sourceSummary={data.sourceSummary} />
+      <FreshnessBanner freshness={selected?.freshness || data.freshness} sourceSummary={data.sourceSummary} />
       <div style={{ padding: "4px 14px 0" }}>
         <button
           type="button"
