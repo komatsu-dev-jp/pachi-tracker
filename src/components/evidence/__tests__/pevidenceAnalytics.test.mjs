@@ -256,5 +256,14 @@ const pairs = pevidenceInternals.buildOppositePairs([
 ]);
 assert.equal(pairs.get("101"), "203", "向かい合う島は鏡向きに対応する");
 assert.equal(pairs.get("103"), "201");
+const oneSidedOpposite = pevidenceInternals.buildOppositePairs([
+  { id: "a", start: 101, end: 103, facingIslandId: "b", facingReversed: true },
+  { id: "b", start: 201, end: 203 },
+]);
+assert.equal(oneSidedOpposite.size, 0, "片側参照だけの島は対面変化判定へ使わない");
+const orphanOpposite = pevidenceInternals.buildOppositePairs([
+  { id: "a", start: 101, end: 103, facingIslandId: "deleted", facingReversed: true },
+]);
+assert.equal(orphanOpposite.size, 0, "削除済みIDを対面変化判定へ使わない");
 
 console.log("pevidenceAnalytics.test.mjs: all tests passed");

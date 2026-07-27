@@ -6,7 +6,7 @@
 // 読み切れない資料だけホールマップ／手動設定や任意のAI補助へ回す。
 // 画像解析は端末内で完結（外部送信なし）。logic.js・rotRows とは無関係の独立データ。
 //
-// ステップ: upload（共同解析）→ numbers（照合確認）→ results（results から import へ往復）
+// ステップ: upload（共同解析）→ numbers（照合確認）→ results（results から import へ往復）→ complete（保存完了）
 // props: { store, stores, islands, onChangeStore, onClose, onSaveScan }
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -76,6 +76,10 @@ import {
   propagateManualMachineSelections,
   relateRowsToStoreLayout,
 } from "./storeLayoutRowRelation";
+import {
+  createDeltaCompletionHistoryGuard,
+  makeDeltaCompletionSummary,
+} from "./deltaCompletion";
 
 const TAP = 44; // 最小タップ領域
 const CTA = 48; // 下部固定CTA高さ
@@ -84,6 +88,10 @@ const ANALYSIS_ENGINE_VERSION = String(import.meta.env.VITE_BUILD_SHA || "dev").
 
 function todayStr() {
   return localDateStr();
+}
+function defaultIslandScopeId(islands) {
+  const list = Array.isArray(islands) ? islands : [];
+  return list.length === 1 ? String(list[0]?.id ?? "island-0") : "all";
 }
 function todaySlash() {
   const d = new Date();
@@ -2434,6 +2442,131 @@ function ResultsStep({
   );
 }
 
+function CompletionAction({ label, description, onClick, primary = false }) {
+  return (
+    <button
+      type="button"
+      className="b"
+      onClick={onClick}
+      style={{
+        width: "100%",
+        minHeight: 64,
+        display: "grid",
+        gridTemplateColumns: "1fr auto",
+        alignItems: "center",
+        gap: 12,
+        padding: "13px 15px",
+        borderRadius: 16,
+        border: `1px solid ${primary ? C.blue : C.borderHi}`,
+        background: primary ? C.blue : C.surfaceHi,
+        color: primary ? "#fff" : C.text,
+        textAlign: "left",
+        boxShadow: primary ? "0 12px 30px color-mix(in srgb, var(--blue) 25%, transparent)" : "none",
+      }}
+    >
+      <span>
+        <strong style={{ display: "block", fontSize: 15, fontWeight: 900 }}>{label}</strong>
+        <span style={{
+          display: "block",
+          marginTop: 3,
+          color: primary ? "rgba(255,255,255,0.82)" : C.subHi,
+          fontSize: 11,
+          fontWeight: 700,
+          lineHeight: 1.45,
+        }}>
+          {description}
+        </span>
+      </span>
+      <span aria-hidden="true" style={{ fontSize: 20, fontWeight: 900 }}>›</span>
+    </button>
+  );
+}
+
+function SaveCompletionStep({
+  summary,
+  onContinue,
+  onDeltaTop,
+  onHome,
+}) {
+  const savedCount = Number(summary?.savedCount) || 0;
+  const excludedCount = Number(summary?.excludedCount) || 0;
+  return (
+    <>
+      <TopBar title="保存完了" onBack={onDeltaTop} />
+      <div
+        data-testid="delta-save-completion"
+        style={{
+          ...scrollAreaStyle,
+          padding: "18px 16px calc(28px + env(safe-area-inset-bottom, 0px))",
+        }}
+      >
+        <Card style={{ marginBottom: 16 }}>
+          <div style={{ padding: "24px 18px", textAlign: "center" }}>
+            <div
+              aria-hidden="true"
+              style={{
+                width: 64,
+                height: 64,
+                margin: "0 auto 14px",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "color-mix(in srgb, var(--green) 17%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--green) 40%, transparent)",
+                color: C.green,
+                fontSize: 34,
+                fontWeight: 900,
+              }}
+            >
+              ✓
+            </div>
+            <div style={{ color: C.green, fontSize: 13, fontWeight: 900, marginBottom: 7 }}>
+              保存に成功しました
+            </div>
+            <div style={{ color: C.text, fontSize: 21, fontWeight: 900, lineHeight: 1.35 }}>
+              {savedCount}台の差玉解析を保存
+            </div>
+            <div style={{ color: C.subHi, fontSize: 12, fontWeight: 700, lineHeight: 1.65, marginTop: 10 }}>
+              {summary?.storeName || "店舗未設定"} ・ {dateToSlash(summary?.date)}
+              {excludedCount > 0 && (
+                <div style={{ color: C.yellow, marginTop: 4 }}>
+                  未読取・未確認の{excludedCount}台は保存から除外しました
+                </div>
+              )}
+            </div>
+          </div>
+        </Card>
+
+        <div style={{ color: C.text, fontSize: 14, fontWeight: 900, margin: "0 2px 10px" }}>
+          次にすることを選んでください
+        </div>
+        <div style={{ display: "grid", gap: 10 }}>
+          <CompletionAction
+            label="続けて解析する"
+            description="店舗・日付などを引き継ぎ、資料と解析結果を空にして次の解析を始めます"
+            onClick={onContinue}
+            primary
+          />
+          <CompletionAction
+            label="差玉解析トップへ戻る"
+            description="入力内容を初期状態へ戻し、差玉解析の最初の画面を開きます"
+            onClick={onDeltaTop}
+          />
+          <CompletionAction
+            label="ホームへ戻る"
+            description="保存済みデータを残したまま、ホーム画面へ移動します"
+            onClick={onHome}
+          />
+        </div>
+        <div style={{ color: C.sub, fontSize: 10, fontWeight: 700, lineHeight: 1.6, margin: "14px 4px 0" }}>
+          端末の戻る操作では「差玉解析トップへ戻る」と同じ動作になります。
+        </div>
+      </div>
+    </>
+  );
+}
+
 function applyStoreLayoutRelations(rows, islands, scope = "all") {
   const list = Array.isArray(rows) ? rows : [];
   if (!Array.isArray(islands) || islands.length === 0) {
@@ -3754,10 +3887,8 @@ export default function DeltaAnalyzer({
   const [step, setStep] = useState("upload");
   const [analysisDate, setAnalysisDate] = useState(todayStr);
   const [eventType, setEventType] = useState("");
-  const [islandScopeId, setIslandScopeId] = useState(() => {
-    const list = Array.isArray(islands) ? islands : [];
-    return list.length === 1 ? String(list[0]?.id ?? "island-0") : "all";
-  });
+  const defaultScopeId = useMemo(() => defaultIslandScopeId(islands), [islands]);
+  const [islandScopeId, setIslandScopeId] = useState(() => defaultIslandScopeId(islands));
   const [images, setImages] = useState([]);
   const [slots, setSlots] = useState([]); // ピクセル解析の生スロット
   const [analysisReports, setAnalysisReports] = useState([]);
@@ -3769,7 +3900,10 @@ export default function DeltaAnalyzer({
   const [confirmedMachineNumbers, setConfirmedMachineNumbers] = useState([]);
   const [rows, setRows] = useState([]);   // 台番号割り当て後の結果行
   const [saved, setSaved] = useState(false);
+  const [completion, setCompletion] = useState(null);
   const [toast, setToast] = useState("");
+  const saveGuardRef = useRef(false);
+  const completionHistoryGuardRef = useRef(null);
   const clearDerivedAnalysis = useCallback(() => {
     setSlots([]);
     setAnalysisReports([]);
@@ -3781,7 +3915,43 @@ export default function DeltaAnalyzer({
     setConfirmedMachineNumbers([]);
     setRows([]);
     setSaved(false);
+    setCompletion(null);
+    saveGuardRef.current = false;
   }, []);
+
+  const resetForNextAnalysis = useCallback(() => {
+    setImages([]);
+    clearDerivedAnalysis();
+    setStep("upload");
+  }, [clearDerivedAnalysis]);
+
+  const resetToDeltaTop = useCallback(() => {
+    setImages([]);
+    clearDerivedAnalysis();
+    setAnalysisDate(todayStr());
+    setEventType("");
+    setIslandScopeId(defaultScopeId);
+    setStep("upload");
+  }, [clearDerivedAnalysis, defaultScopeId]);
+
+  const runCompletionAction = useCallback((action) => {
+    const guard = completionHistoryGuardRef.current;
+    if (guard) guard.run(action);
+    else action?.();
+  }, []);
+
+  useEffect(() => {
+    if (step !== "complete") return undefined;
+    const guard = createDeltaCompletionHistoryGuard({
+      windowObject: typeof window === "undefined" ? null : window,
+      onBack: resetToDeltaTop,
+    });
+    completionHistoryGuardRef.current = guard;
+    return () => {
+      guard.dispose();
+      if (completionHistoryGuardRef.current === guard) completionHistoryGuardRef.current = null;
+    };
+  }, [step, resetToDeltaTop]);
 
   // この画面から店舗を変える時は、前店舗の解析結果を新店舗へ保存できないよう破棄する。
   // 追加済みファイルは選択ミスを直しただけでも選び直さずに済むよう保持し、再解析を必須にする。
@@ -3900,6 +4070,7 @@ export default function DeltaAnalyzer({
   };
 
   const handleSave = () => {
+    if (saveGuardRef.current || saved) return;
     const validation = validateDeltaRows(rows);
     if (!validation.canSave) {
       const message = validation.blockingErrors.length
@@ -3922,20 +4093,27 @@ export default function DeltaAnalyzer({
       setTimeout(() => setToast(""), 3000);
       return;
     }
-    const scan = makeScan({
-      storeId: store?.id ?? null,
-      storeName: store?.name || "",
-      date: analysisDate || todayStr(),
-      event: eventType,
-      machineName,
-      rows: validation.savableRows,
-    });
-    onSaveScan?.(scan);
-    setSaved(true);
-    setToast(validation.excludedCount > 0
-      ? `${validation.savableCount}台を保存しました（未読取・未確認${validation.excludedCount}台は除外）`
-      : `${validation.savableCount}台を保存しました`);
-    setTimeout(() => setToast(""), 3500);
+    saveGuardRef.current = true;
+    try {
+      const scan = makeScan({
+        storeId: store?.id ?? null,
+        storeName: store?.name || "",
+        date: analysisDate || todayStr(),
+        event: eventType,
+        machineName,
+        rows: validation.savableRows,
+      });
+      onSaveScan?.(scan);
+      setSaved(true);
+      setCompletion(makeDeltaCompletionSummary({ scan, validation }));
+      setToast("");
+      setStep("complete");
+    } catch (error) {
+      saveGuardRef.current = false;
+      console.error("[delta] save failed", error);
+      setToast("保存に失敗しました。内容を確認してもう一度お試しください");
+      setTimeout(() => setToast(""), 3500);
+    }
   };
 
   const handleUpdateReview = (machineNumber, update = {}) => {
@@ -4086,6 +4264,14 @@ export default function DeltaAnalyzer({
           customMachines={customMachines}
           siteSevenSummary={analysisSiteSevenSummary}
           autoImportedCount={autoImportedCount}
+        />
+      )}
+      {step === "complete" && (
+        <SaveCompletionStep
+          summary={completion}
+          onContinue={() => runCompletionAction(resetForNextAnalysis)}
+          onDeltaTop={() => runCompletionAction(resetToDeltaTop)}
+          onHome={() => runCompletionAction(() => onClose?.())}
         />
       )}
       {step === "import" && (

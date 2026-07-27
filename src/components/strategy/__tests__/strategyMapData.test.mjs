@@ -3,6 +3,7 @@ import {
   applyStrategyPlanEntryContext,
   buildStrategyMap,
   buildStrategyPlanContext,
+  pairStrategyIslands,
   resolveStrategyPlanHandoff,
 } from "../strategyMapData.js";
 import {
@@ -502,5 +503,36 @@ assert.equal(mappedLayout.islands[1].name, "1島");
 assert.equal(mappedLayout.islands[1].machines[0].num, 101);
 assert.equal(mappedLayout.islands[1].registeredLayout, true);
 assert.equal(mappedLayout.islands[0].facingIslandId, "layout-a");
+
+const unconfiguredPairs = pairStrategyIslands([
+  { id: "unconfigured-a", name: "未設定A" },
+  { id: "unconfigured-b", name: "未設定B" },
+]);
+assert.deepEqual(
+  unconfiguredPairs.map((pair) => pair.map((island) => island.id)),
+  [["unconfigured-a"], ["unconfigured-b"]],
+  "対面未設定の島を表示順だけで仮ペアにしない",
+);
+
+const oneSidedPairs = pairStrategyIslands([
+  { id: "one-a", name: "片側A", facingIslandId: "one-b" },
+  { id: "one-b", name: "片側B" },
+]);
+assert.deepEqual(
+  oneSidedPairs.map((pair) => pair.map((island) => island.id)),
+  [["one-a"], ["one-b"]],
+  "片側参照だけの旧データを対面表示しない",
+);
+
+const confirmedPairs = pairStrategyIslands([
+  { layoutId: "same-a", id: "data-a", name: "同一機種A", machineName: "同一機種", facingIslandId: "same-b" },
+  { layoutId: "same-b", id: "data-b", name: "同一機種B", machineName: "同一機種", facingIslandId: "same-a" },
+]);
+assert.deepEqual(
+  confirmedPairs.map((pair) => pair.map((island) => island.layoutId)),
+  [["same-a", "same-b"]],
+  "相互参照が保存された同一機種の別島は対面表示する",
+);
+assert.equal(confirmedPairs[0].confirmed, true);
 
 console.log("strategyMapData.test.mjs: all tests passed");

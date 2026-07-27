@@ -15,7 +15,10 @@ import {
   islandLayoutColumns,
   islandRanges,
   addIsland,
+  getFacingIslandCandidates,
+  isConfirmedFacingPair,
   removeIsland,
+  setFacingIsland,
   updateIsland,
   moveIslandUp,
   moveIslandDown,
@@ -108,6 +111,64 @@ test("removeIsland は id 指定で削除する", () => {
   assert.strictEqual(next.length, 1);
   assert.strictEqual(next[0].id, "b");
   assert.strictEqual(next[0].facingIslandId, null);
+});
+
+test("対面候補は同一機種の別島を含み、自分自身だけを除く", () => {
+  const list = [
+    { id: "a", name: "A島", start: 1, end: 10, machineName: "同一機種" },
+    { id: "b", name: "B島", start: 11, end: 20, machineName: "同一機種" },
+    { id: "c", name: "C島", start: 21, end: 30, machineName: "別機種" },
+  ];
+  assert.deepStrictEqual(
+    getFacingIslandCandidates(list, "a").map((island) => island.id),
+    ["b", "c"],
+  );
+});
+
+test("setFacingIsland は同一機種の別島を双方向同期し、保存後も維持する", () => {
+  const list = [
+    { id: "a", name: "A島", start: 1, end: 10, machineName: "同一機種" },
+    { id: "b", name: "B島", start: 11, end: 20, machineName: "同一機種" },
+  ];
+  const linked = setFacingIsland(list, "a", "b", false);
+  assert.equal(linked[0].facingIslandId, "b");
+  assert.equal(linked[1].facingIslandId, "a");
+  assert.equal(linked[0].facingReversed, false);
+  assert.equal(linked[1].facingReversed, false);
+  assert.equal(isConfirmedFacingPair(linked[0], linked[1]), true);
+
+  const afterMachineChange = updateIsland(linked, "a", { machineName: "変更後の機種" });
+  assert.equal(afterMachineChange[0].facingIslandId, "b");
+  assert.equal(afterMachineChange[1].facingIslandId, "a");
+});
+
+test("setFacingIsland は自己参照を拒否し、付け替え時に以前の関係を双方解除する", () => {
+  const list = [
+    { id: "a", name: "A島", start: 1, end: 10, facingIslandId: "b" },
+    { id: "b", name: "B島", start: 11, end: 20, facingIslandId: "a" },
+    { id: "c", name: "C島", start: 21, end: 30, facingIslandId: "d" },
+    { id: "d", name: "D島", start: 31, end: 40, facingIslandId: "c" },
+  ];
+  const relinked = setFacingIsland(list, "a", "c");
+  const byId = new Map(relinked.map((island) => [island.id, island]));
+  assert.equal(byId.get("a").facingIslandId, "c");
+  assert.equal(byId.get("c").facingIslandId, "a");
+  assert.equal(byId.get("b").facingIslandId, null);
+  assert.equal(byId.get("d").facingIslandId, null);
+
+  const selfRejected = setFacingIsland(relinked, "a", "a");
+  assert.equal(selfRejected.find((island) => island.id === "a").facingIslandId, null);
+  assert.equal(selfRejected.find((island) => island.id === "c").facingIslandId, null);
+});
+
+test("normalizeIslands は削除済み・片側だけ・自己参照の対面IDを未設定へ戻す", () => {
+  const normalized = normalizeIslands([
+    { id: "orphan", start: 1, end: 2, facingIslandId: "missing" },
+    { id: "left", start: 3, end: 4, facingIslandId: "right" },
+    { id: "right", start: 5, end: 6 },
+    { id: "self", start: 7, end: 8, facingIslandId: "self" },
+  ]);
+  normalized.forEach((island) => assert.equal(island.facingIslandId, null));
 });
 
 test("updateIsland は対象のみ部分更新する", () => {
