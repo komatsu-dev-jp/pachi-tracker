@@ -3,6 +3,7 @@ import {
   applyStrategyPlanEntryContext,
   buildStrategyMap,
   buildStrategyPlanContext,
+  buildStrategyViewScope,
   pairStrategyIslands,
   revenueLowerBoundPendingReason,
   resolveStrategyPlanHandoff,
@@ -561,5 +562,104 @@ assert.deepEqual(
   "相互参照が保存された同一機種の別島は対面表示する",
 );
 assert.equal(confirmedPairs[0].confirmed, true);
+
+const scopedIslands = [
+  {
+    layoutId: "scope-a",
+    id: "scope-data-a",
+    name: "A島",
+    machineName: "機種A",
+    start: 101,
+    end: 103,
+    facingIslandId: "scope-b",
+    machines: [
+      {
+        id: "a-101",
+        machineName: "機種A",
+        score: 30,
+        recommendationStatus: "actionable",
+        seatDecisionStatus: "candidate",
+        nailAlert: "",
+      },
+    ],
+  },
+  {
+    layoutId: "scope-b",
+    id: "scope-data-b",
+    name: "B島",
+    machineName: "機種B",
+    start: 201,
+    end: 202,
+    facingIslandId: "scope-a",
+    machines: [
+      {
+        id: "b-201",
+        machineName: "機種B",
+        score: 80,
+        recommendationStatus: "actionable",
+        seatDecisionStatus: "candidate",
+        nailAlert: "締め傾向",
+      },
+    ],
+  },
+  {
+    id: "scope-single",
+    name: "C島",
+    machineName: "機種C",
+    machines: [
+      {
+        id: "c-301",
+        machineName: "機種C",
+        score: 50,
+        recommendationStatus: "actionable",
+        seatDecisionStatus: "candidate",
+        nailAlert: "",
+      },
+    ],
+  },
+];
+const pairedScope = buildStrategyViewScope({
+  islands: scopedIslands,
+  activeIslandId: "scope-data-b",
+  actionable: true,
+});
+assert.deepEqual(
+  pairedScope,
+  {
+    label: "A島・B島",
+    machineName: "機種A・機種B",
+    total: 5,
+    candidates: 1,
+    leadId: "b-201",
+  },
+  "表示中の対面2島だけを集計し、締め傾向の台を候補へ含めない",
+);
+
+const singleScope = buildStrategyViewScope({
+  islands: scopedIslands,
+  activeIslandId: "scope-single",
+  actionable: true,
+});
+assert.deepEqual(
+  singleScope,
+  {
+    label: "C島",
+    machineName: "機種C",
+    total: 1,
+    candidates: 1,
+    leadId: "c-301",
+  },
+  "下の島選択を変えると、ヘッダーとカードが参照する機種・台数・候補も切り替わる",
+);
+
+assert.equal(
+  buildStrategyViewScope({
+    islands: scopedIslands,
+    activeIslandId: "scope-single",
+    actionable: false,
+  }).candidates,
+  0,
+  "古い解析日は表示中の島でも候補0台として安全停止する",
+);
 
 console.log("strategyMapData.test.mjs: all tests passed");

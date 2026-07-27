@@ -845,6 +845,51 @@ export function pairStrategyIslands(islands = []) {
   return pairs;
 }
 
+function isStrategyCandidate(machine) {
+  return machine?.recommendationStatus === "actionable"
+    && machine?.seatDecisionStatus === "candidate"
+    && !String(machine?.nailAlert || "").includes("締め");
+}
+
+function strategyIslandDisplayCount(island) {
+  const start = Number(island?.start);
+  const end = Number(island?.end);
+  if (Number.isFinite(start) && start > 0 && Number.isFinite(end) && end >= start) {
+    return Math.min(200, end - start + 1);
+  }
+  return Array.isArray(island?.machines) ? island.machines.length : 0;
+}
+
+// ヘッダーとKPIが参照する「現在表示中の島」を1か所で定義する。
+// 店舗全体の集計と混同しないよう、対面設定済みなら2島、未設定なら1島だけを対象にする。
+export function buildStrategyViewScope({
+  islands = [],
+  activeIslandId = null,
+  actionable = false,
+} = {}) {
+  const pairs = pairStrategyIslands(islands);
+  const activePair = pairs.find((pair) => pair.some((island) => island.id === activeIslandId))
+    || pairs[0]
+    || [];
+  const machines = activePair.flatMap((island) => (
+    Array.isArray(island?.machines) ? island.machines : []
+  ));
+  const machineNames = [...new Set(activePair
+    .map((island) => island?.machineName || island?.machines?.[0]?.machineName || "")
+    .filter(Boolean))];
+  const lead = [...machines].sort(
+    (left, right) => Number(right?.score || 0) - Number(left?.score || 0),
+  )[0] || null;
+
+  return {
+    label: activePair.map((island) => island?.name).filter(Boolean).join("・") || "表示中の島",
+    machineName: machineNames.join("・"),
+    total: activePair.reduce((sum, island) => sum + strategyIslandDisplayCount(island), 0),
+    candidates: actionable ? machines.filter(isStrategyCandidate).length : 0,
+    leadId: lead?.id || null,
+  };
+}
+
 export function buildStrategyMap({
   playingNum = null,
   liveDecision = null,
@@ -1359,11 +1404,7 @@ export function buildStrategyMap({
   const islands = applyHallLayout(analyzedIslands, hallIslands);
   const all = islands.flatMap((island) => island.machines);
   if (!all.length) return emptyMap(playingNum, planHandoff, strategyPlan, freshness);
-  const candidatePool = all.filter((machine) =>
-    machine.recommendationStatus === "actionable"
-    && machine.seatDecisionStatus === "candidate"
-    && !String(machine.nailAlert || "").includes("締め")
-  );
+  const candidatePool = all.filter(isStrategyCandidate);
   const candidates = actionable
     ? (planHandoff
         ? [...candidatePool].sort(compareStrategyPriority)
