@@ -5,7 +5,6 @@ import { normalizeEvidenceDate } from "../../evidenceDate.js";
 import { predictionInterval95 } from "../evidence/rotationForecast.js";
 
 const BALLS_PER_1K = 250;
-const DEFAULT_BORDER = 18;
 const DEFAULT_PRIOR_VARIANCE = 4;
 const DEFAULT_FALLBACK_HIT_PAYOUT_CV = 0.1;
 const GRAPH_STEP_BALLS = 500;
@@ -40,27 +39,34 @@ export function normalizeEvidenceMachineNumber(value) {
   return normalized;
 }
 
-function machineNameVariants(machine = {}) {
-  return [machine?.name, ...(Array.isArray(machine?.aliases) ? machine.aliases : [])]
-    .map((value) => String(value ?? "").trim())
-    .filter(Boolean);
-}
-
 function machineNameScore(machine, inputName) {
   const input = String(inputName ?? "").trim();
   const normalizedInput = normalizeEvidenceMachineName(input);
   if (!normalizedInput) return 0;
+
+  const canonicalName = String(machine?.name ?? "").trim();
+  const normalizedCanonicalName = normalizeEvidenceMachineName(canonicalName);
+  if (canonicalName === input) return 5;
+  if (normalizedCanonicalName && normalizedCanonicalName === normalizedInput) return 4;
+
+  const aliases = (Array.isArray(machine?.aliases) ? machine.aliases : [])
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
   let score = 0;
-  for (const variant of machineNameVariants(machine)) {
-    if (variant === input) return 3;
+  for (const alias of aliases) {
+    if (alias === input) score = Math.max(score, 3);
+    else if (normalizeEvidenceMachineName(alias) === normalizedInput) score = Math.max(score, 2);
+  }
+  if (score > 0) return score;
+
+  for (const variant of [canonicalName, ...aliases]) {
     const normalizedVariant = normalizeEvidenceMachineName(variant);
-    if (normalizedVariant === normalizedInput) score = Math.max(score, 2);
-    else if (
+    if (
       normalizedVariant.length >= 6 && normalizedInput.length >= 6 &&
       (normalizedVariant.includes(normalizedInput) || normalizedInput.includes(normalizedVariant))
-    ) score = Math.max(score, 1);
+    ) return 1;
   }
-  return score;
+  return 0;
 }
 
 export function findMachineSpec(machineName, customMachines = [], builtInMachines = []) {
@@ -73,11 +79,10 @@ export function findMachineSpec(machineName, customMachines = [], builtInMachine
 
   const highestScore = Math.max(...scored.map((item) => item.score));
   const matched = scored.filter((item) => item.score === highestScore);
-  // 部分一致は型式違いの誤照合を避けるため、同じ正規化機種名に絞れる場合だけ採用する。
-  if (highestScore === 1) {
-    const canonicalNames = new Set(matched.map((item) => normalizeEvidenceMachineName(item.machine?.name)));
-    if (canonicalNames.size !== 1) return null;
-  }
+  // 正式名を別名より優先する。最高得点が複数の正式機種にまたがる場合は、
+  // 型式違いの誤照合を避けるため推測せず未登録扱いにする。
+  const canonicalNames = new Set(matched.map((item) => normalizeEvidenceMachineName(item.machine?.name)));
+  if (canonicalNames.size !== 1) return null;
 
   const master = matched.find((item) => item.source === "master")?.machine;
   const custom = matched.find((item) => item.source === "custom")?.machine;
@@ -150,12 +155,18 @@ export function buildRowDeltaEvidence(row = {}, customMachines = [], builtInMach
     machine,
     estimate,
     evidence,
-    reason: evidence.hasEstimate ? "" : "計算データ不足",
+    reason: evidence.hasEstimate ? "" : (evidence.reason || "計算データ不足"),
   };
 }
 
 export function machineBorder(machine = {}) {
-  return num(machine.border1K ?? machine.border?.["4.00"] ?? machine.border, DEFAULT_BORDER);
+  const rawBorder = machine.border1K
+    ?? machine.border?.["4.00"]
+    ?? (typeof machine.border === "number" || typeof machine.border === "string"
+      ? machine.border
+      : null);
+  const border = Number(rawBorder);
+  return Number.isFinite(border) && border > 0 ? border : 0;
 }
 
 function percent(value) {
@@ -399,10 +410,24 @@ export function collectDeltaRows(scans = [], filters = {}) {
 }
 
 export function buildDeltaEvidence(rows = [], machine = {}, options = {}) {
+  const border = machineBorder(machine);
+  if (!(border > 0)) {
+    return {
+      hasEstimate: false,
+      trueBorder: 0,
+      predictedRotation: 0,
+      confidence: 0,
+      goodMachineScore: 0,
+      observations: [],
+      rejectedCount: (rows || []).length,
+      reason: "ボーダー未設定",
+      grade: "データ不足",
+    };
+  }
+
   const observations = (rows || [])
     .map((row) => ({ row, estimate: estimateDeltaObservation(row, machine, options) }))
     .filter((item) => item.estimate.valid);
-  const border = machineBorder(machine);
 
   if (!observations.length) {
     return {
