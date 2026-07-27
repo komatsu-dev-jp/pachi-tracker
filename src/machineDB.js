@@ -28,6 +28,7 @@ const rawMachineDB = [
     unitCost: 11.4,
     avgPayoutPerHit: 1350,
     stdDev: 13000,
+    muraCoef: 50000,
     hesoAvgPayout: 1500,
     rushAvgPayout: 1500,
     rushEntryRate: 60,

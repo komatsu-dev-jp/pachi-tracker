@@ -144,7 +144,7 @@ test("score判定は信頼度20%・score10/50の境界で全画面共通にな�
   assert.equal(classifyEvidenceScore(50, 100), "strong");
 });
 
-test("締め兆候がある台はscoreが高くても共通portfolioから除外する", () => {
+test("明示した締め確率ゲートと現在の締めアラートはportfolioの安全弁になる", () => {
   const base = {
     machineName: auditMachine.name,
     hourly: 2000,
@@ -163,12 +163,13 @@ test("締め兆候がある台はscoreが高くても共通portfolioから除外
     plannedHours: 6,
     spinsPerHour: 210,
     rentBalls: 250,
+    maxTightProbability: 0.6,
   });
 
   assert.deepEqual(
     result.plan.map((item) => String(item.number)),
     ["103"],
-    "釘アラートだけでなく締め確率60%以上も配分から外す",
+    "数値予測へ織り込んだ後でも、明示した安全ゲートは利用できる",
   );
   assert.equal(result.totalHours, 6);
 });

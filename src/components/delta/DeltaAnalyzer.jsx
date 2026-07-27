@@ -533,6 +533,8 @@ function UploadStep({
   setImages,
   analysisDate,
   setAnalysisDate,
+  eventType,
+  setEventType,
   onAnalyze,
   onClose,
 }) {
@@ -744,6 +746,32 @@ function UploadStep({
                 background: C.surfaceHi, color: C.text, padding: "0 9px", fontFamily: mono,
               }}
             />
+          </label>
+          <label style={{
+            display: "flex", alignItems: "center", gap: 12, padding: "10px 14px 12px",
+            borderTop: `1px solid ${C.border}`, color: C.subHi, fontSize: 12, fontWeight: 700,
+          }}>
+            <span style={{ flex: 1 }}>
+              イベント日
+              <small style={{ display: "block", marginTop: 2, color: C.sub, fontSize: 9 }}>
+                翌日の締めやすさを学習します
+              </small>
+            </span>
+            <select
+              aria-label="イベント日の種類"
+              value={eventType}
+              disabled={interactionLocked}
+              onChange={(event) => setEventType?.(event.target.value)}
+              style={{
+                minHeight: 38, maxWidth: 150, borderRadius: 9, border: `1px solid ${C.borderHi}`,
+                background: C.surfaceHi, color: C.text, padding: "0 28px 0 9px", fontFamily: font,
+              }}
+            >
+              <option value="">通常日</option>
+              <option value="old-event">旧イベント日</option>
+              <option value="special-day">特定日</option>
+              <option value="store-event">店舗イベント</option>
+            </select>
           </label>
         </Card>
 
@@ -3679,6 +3707,7 @@ export default function DeltaAnalyzer({
 }) {
   const [step, setStep] = useState("upload");
   const [analysisDate, setAnalysisDate] = useState(todayStr);
+  const [eventType, setEventType] = useState("");
   const [islandScopeId, setIslandScopeId] = useState(() => {
     const list = Array.isArray(islands) ? islands : [];
     return list.length === 1 ? String(list[0]?.id ?? "island-0") : "all";
@@ -3722,6 +3751,7 @@ export default function DeltaAnalyzer({
     clearDerivedAnalysis();
     setStep("upload");
     setIslandScopeId("all");
+    setEventType("");
     setToast(`${nextStore?.name || "店舗"}へ切り替えました。資料を解析し直してください`);
     setTimeout(() => setToast(""), 3000);
     onChangeStore?.(nextStoreId);
@@ -3832,6 +3862,7 @@ export default function DeltaAnalyzer({
       storeId: store?.id ?? null,
       storeName: store?.name || "",
       date: analysisDate || todayStr(),
+      event: eventType,
       machineName,
       rows: validation.savableRows,
     });
@@ -3954,6 +3985,8 @@ export default function DeltaAnalyzer({
           images={images}
           analysisDate={analysisDate}
           setAnalysisDate={setAnalysisDate}
+          eventType={eventType}
+          setEventType={setEventType}
           setImages={(updater) => {
             setImages(updater);
             clearDerivedAnalysis();

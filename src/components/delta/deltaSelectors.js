@@ -695,8 +695,16 @@ function compactDeltaRowForStorage(row) {
 }
 
 // 保存用スキャンレコードを生成する。
-// スキーマ: { id, storeId, storeName, date("YYYY-MM-DD"), machineName, rows, createdAt }
-export function makeScan({ id, storeId = null, storeName = "", date, machineName = "", rows = [] } = {}) {
+// スキーマ: { id, storeId, storeName, date("YYYY-MM-DD"), event, machineName, rows, createdAt }
+export function makeScan({
+  id,
+  storeId = null,
+  storeName = "",
+  date,
+  event = "",
+  machineName = "",
+  rows = [],
+} = {}) {
   const now = new Date();
   const createdAt = now.toISOString();
   // 既定日はローカル日付にする（toISOString は UTC のため 0:00〜9:00 JST に前日となる）
@@ -706,6 +714,7 @@ export function makeScan({ id, storeId = null, storeName = "", date, machineName
     storeId: storeId ?? null,
     storeName: storeName || "",
     date: day,
+    event: String(event || "").trim(),
     machineName: machineName || "",
     rows: Array.isArray(rows) ? rows.map(compactDeltaRowForStorage) : [],
     createdAt,
