@@ -26,13 +26,16 @@ const rawMachineDB = [
     border: { "4.00": 16.7, "3.57": 17.6, "3.33": 18.4, "3.03": 19.3 },
     prize: 3,
     unitCost: 11.4,
-    avgPayoutPerHit: 1350,
+    avgPayoutPerHit: 1400,
+    payoutStdDevPerHit: 0,
+    payoutStdDevPerHitLabel: "特図1・特図2とも10R・実出玉1,400発固定",
+    payoutStdDevPerHitMethod: "allocation-exact-v1",
     stdDev: 13000,
     muraCoef: 50000,
     hesoAvgPayout: 1500,
     rushAvgPayout: 1500,
     rushEntryRate: 60,
-    rushContinueRate: 75,
+    rushContinueRate: 60,
     hesoDist: [{ payout: 1500, rate: 60 }, { payout: 1500, rate: 40 }],
     allocationVerified: true,
     hesoModes: [
@@ -54,8 +57,12 @@ const rawMachineDB = [
       },
     ],
     allocationNote: "出玉は払い出し。ヘソ・電チューともに10R・1500発で、確変60%／通常40%です。",
-    sourceUrls: ["https://www.p-world.co.jp/machine/database/9768", "https://1geki.jp/pachinko/p_oumi5/11/"],
-    dataUpdatedAt: "2026-07-13",
+    sourceUrls: [
+      "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20221205_1.pdf",
+      "https://www.reflex.okinawa/pdf/2022/12.5.pdf",
+      "https://p.hisshobon.jp/vpage/2486/39",
+    ],
+    dataUpdatedAt: "2026-07-27",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
@@ -4977,6 +4984,7 @@ const rawMachineDB = [
 // 「型式確認済み」と「大当り振り分け確認済み」は別の状態として扱う。
 // そのため、ここに型式を登録しても allocationVerified は変更しない。
 export const machineModelRegistry = Object.freeze(Object.fromEntries([
+  ["P大海物語5 MTE2", "P大海物語5MTE2", "https://www.reflex.okinawa/pdf/2022/12.5.pdf"],
   ["ルパン三世 消されたルパン", "P消されたルパンH1AZ1", "https://1geki.jp/pachinko/p_erased_lupin2022/"],
   ["仮面ライダー轟音", "Pぱちんこ仮面ライダー轟音M6", "https://p-town.dmm.com/machines/3689"],
   ["海物語IN沖縄5", "Pスーパー海物語IN沖縄5LTV", "https://1geki.jp/pachinko/p_spumioki5/"],

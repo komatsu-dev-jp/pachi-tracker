@@ -9,7 +9,7 @@ import {
 } from "../../../machineDB.js";
 import { normalizeMachine } from "../machineSpecModel.js";
 
-assert.equal(Object.keys(machineModelRegistry).length, 84, "正式型式レジストリは84件必要です");
+assert.equal(Object.keys(machineModelRegistry).length, 85, "正式型式レジストリは85件必要です");
 const targetMachines = Object.keys(machineModelRegistry).map((name) => {
   const machine = machineDB.find((item) => item.name === name);
   assert.ok(machine, `${name}: 型式登録対象が機種DBにありません`);
@@ -25,6 +25,12 @@ for (const machine of targetMachines) {
   assert.equal(normalized.modelName, machine.modelName, `${machine.name}: 詳細表示への型式連携`);
   assert.equal(normalized.modelVerified, true, `${machine.name}: 詳細表示への確認状態連携`);
 }
+
+const oumi5Mte2 = machineDB.find((machine) => machine.name === "P大海物語5 MTE2");
+assert.equal(oumi5Mte2?.modelName, "P大海物語5MTE2", "大海5は正式型式MTE2へ一意に結び付ける");
+assert.equal(oumi5Mte2?.avgPayoutPerHit, 1400, "固定10Rの実出玉は1,400玉");
+assert.equal(oumi5Mte2?.payoutStdDevPerHit, 0, "固定10Rは大当り1回ごとの出玉分散0");
+assert.equal(oumi5Mte2?.rushContinueRate, 60, "確変ループ継続率は60%");
 
 const modelCodeResults = searchMachines("LTM-JH");
 assert.ok(
@@ -100,4 +106,4 @@ const eacModes = searchMachines("eACわんわんセレブレーション");
 assert.equal(eacModes.length, 2, "2in1機は77ver.と49ver.を別々に選べます");
 assert.equal(getYutimeSelectionMachines().length, 125, "統合後の全スペックを遊タイム選択画面へ連携します");
 
-console.log("machineModels: 型式84件 + 125スペック遊タイム監査 + 参照27スペック PASS");
+console.log("machineModels: 型式85件 + 125スペック遊タイム監査 + 参照27スペック PASS");

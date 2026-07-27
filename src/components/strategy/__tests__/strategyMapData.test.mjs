@@ -4,6 +4,7 @@ import {
   buildStrategyMap,
   buildStrategyPlanContext,
   pairStrategyIslands,
+  revenueLowerBoundPendingReason,
   resolveStrategyPlanHandoff,
 } from "../strategyMapData.js";
 import {
@@ -35,7 +36,7 @@ const scans = [
   },
   {
     id: "d2", storeId: "s1", storeName: "検証店", date: "2026-07-02", createdAt: "2026-07-02T12:00:00Z",
-    rows: [{ num: "101", machineName: "検証機", island: "1島", normalSpins: 900, totalStarts: 12, val: 1000 }],
+    rows: [{ num: "101", machineName: "検証機", island: "1島", normalSpins: 900, totalStarts: 12, val: 3300 }],
   },
 ];
 
@@ -59,6 +60,17 @@ assert.equal(map.all[0].liveDecision, liveDecision);
 assert.equal(map.all[0].evidence.observationCount, 2);
 assert.ok(map.all[0].rot > 0);
 assert.ok(map.all[0].confidence >= 0 && map.all[0].confidence <= 100);
+assert.ok(map.all[0].decisionLowerRotation <= map.all[0].predictedRotation);
+assert.equal(map.all[0].seatThreshold, map.all[0].effectiveBorder + 0.5);
+assert.ok(map.all[0].seatThresholdProbability >= 0 && map.all[0].seatThresholdProbability <= 1);
+assert.ok(["candidate", "trial", "skip"].includes(map.all[0].seatDecisionStatus));
+assert.equal(map.all[0].decisionLowerTargetCoverage, 0.8);
+assert.equal(map.all[0].decisionCalibrationStatus, "awaiting-samples");
+assert.equal(
+  map.candidates.length,
+  map.all.filter((item) => item.seatDecisionStatus === "candidate").length,
+  "候補数は良台スコアではなく判断用下限で決める",
+);
 assert.equal(map.all[0].history.length, 2);
 assert.equal(map.all[0].historyDayCount, 2);
 assert.deepEqual(map.all[0].dataCoverage, {
@@ -106,11 +118,23 @@ const lowerPendingMap = buildStrategyMap({
   plan: demoPlan,
   targetDate: demoDate,
 });
-const lowerPendingMachine = lowerPendingMap.all.find((item) => item.revenueRangeStatus === "lower-bound-missing");
-assert.ok(lowerPendingMachine, "予測下限が0回/Kまで広がる台を検出する");
-assert.equal(lowerPendingMachine.hourlyLow, null, "下振れ金額を0円と誤表示しない");
-assert.equal(lowerPendingMachine.dailyLow, null, "予定収支の下振れも算定待ちにする");
-assert.ok(lowerPendingMachine.dataCoverage.effectiveDays > 0);
+assert.ok(
+  lowerPendingMap.all.every((item) => item.revenueRangeStatus === "ready"),
+  "収支標準偏差を回転率誤差へ混ぜず、十分なデモ履歴の予測下限を不自然に0へ落とさない",
+);
+assert.ok(lowerPendingMap.all.every((item) => Number.isFinite(item.hourlyLow)));
+assert.equal(
+  revenueLowerBoundPendingReason({
+    lowRotation: 0,
+    predictedRotation: 18,
+    border: 17,
+    variance: 4,
+    confidence: 0.5,
+    rawDailyLow: -10000,
+  }),
+  "non-positive",
+  "本当に下限が0以下なら金額を算定待ちにする防御は残す",
+);
 
 const allocationMap = buildStrategyMap({
   scans,
@@ -119,6 +143,9 @@ const allocationMap = buildStrategyMap({
 });
 assert.ok(allocationMap.portfolio.plan.length > 0);
 assert.equal(allocationMap.portfolio.totalHours, allocationMap.plan.plannedHours, "優先配分の丸め後も予定時間の合計を保つ");
+assert.ok(allocationMap.candidates.length > 0);
+assert.ok(allocationMap.candidates.every((item) => item.seatDecisionStatus === "candidate"));
+assert.ok(allocationMap.candidates.every((item) => item.isStar), "★も判断用下限を満たす候補だけに付ける");
 
 const preparedMap = buildStrategyMap({ scans, customMachines: [machine], plan, targetDate: "2026-07-03" });
 assert.equal(preparedMap.freshness.status, "prepared");

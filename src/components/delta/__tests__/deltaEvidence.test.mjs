@@ -12,15 +12,20 @@ import {
 const machine = {
   name: "P大海物語5 MTE2",
   border: { "4.00": 16.7 },
-  avgPayoutPerHit: 1350,
+  avgPayoutPerHit: 1400,
+  payoutStdDevPerHit: 0,
+  payoutStdDevPerHitMethod: "allocation-exact-v1",
   stdDev: 13000,
 };
 
 // P-EVIDENCE raw_data の実例: 666回転、17回当り、差玉+15,000玉。
 const observed = estimateDeltaObservation({ normalSpins: 666, totalStarts: 17, val: 15000 }, machine);
 assert.equal(observed.valid, true);
-assert.equal(observed.estimatedInputBalls, 7950);
-assert.ok(Math.abs(observed.observedRotation - 20.9433962264) < 1e-9);
+assert.equal(observed.estimatedInputBalls, 8800);
+assert.ok(Math.abs(observed.observedRotation - 18.9204545455) < 1e-9);
+assert.equal(observed.payoutVariance, 0, "固定10R機は大当り1回ごとの出玉分散を足さない");
+assert.equal(observed.payoutStdDevPerHit, 0);
+assert.equal(observed.sessionStdDevExcluded, 13000, "実戦収支の荒さは観測誤差から分離する");
 
 assert.equal(estimateDeltaObservation({ normalSpins: 100, totalStarts: 1, val: 5000 }, machine).valid, false);
 assert.equal(estimateDeltaObservation({ normalSpins: 0, totalStarts: 0, val: -5000 }, machine).valid, false);
@@ -63,20 +68,29 @@ assert.ok(result.predictedHigh >= result.predictedRotation);
 
 const lowSd = buildDeltaEvidence(scans[0].rows, { ...machine, stdDev: 3000 });
 const highSd = buildDeltaEvidence(scans[0].rows, { ...machine, stdDev: 19000 });
-assert.ok(lowSd.confidence > highSd.confidence, "標準偏差が大きい機種ほど信頼度を下げる");
+assert.equal(lowSd.confidence, highSd.confidence, "実戦収支の標準偏差は回転率の観測誤差へ流用しない");
+assert.equal(lowSd.predictedLow, highSd.predictedLow);
+assert.equal(lowSd.predictedHigh, highSd.predictedHigh);
 
 // 信頼区間: SE×信頼度の二重掛けを廃止（ベイズ事後分散へ統一）したため、
-// ブレが大きい機種ほど予測レンジが広く、かつ事前分布の幅（±1.96×2回/K）を超えない
-const lowSdWidth = lowSd.predictedHigh - lowSd.predictedLow;
-const highSdWidth = highSd.predictedHigh - highSd.predictedLow;
-assert.ok(highSdWidth > lowSdWidth, "標準偏差が大きい機種ほど予測レンジを広げる");
-assert.ok(highSdWidth <= 2 * 1.96 * 2 + 1e-9, "予測レンジは事前分布の幅を超えない");
-assert.ok(lowSdWidth > 0, "データが少なくても予測レンジが幅0に潰れない");
+// 1回当り出玉のばらつきが大きい場合だけ観測信頼度を下げ、予測レンジを広げる。
+const fixedPayout = buildDeltaEvidence(scans[0].rows, { ...machine, payoutStdDevPerHit: 0 });
+const variablePayout = buildDeltaEvidence(scans[0].rows, { ...machine, payoutStdDevPerHit: 500 });
+const fixedWidth = fixedPayout.predictedHigh - fixedPayout.predictedLow;
+const variableWidth = variablePayout.predictedHigh - variablePayout.predictedLow;
+assert.ok(fixedPayout.confidence > variablePayout.confidence, "大当り1回ごとの出玉誤差が大きいほど信頼度を下げる");
+assert.ok(variableWidth > fixedWidth, "大当り1回ごとの出玉誤差が大きいほど予測レンジを広げる");
+assert.ok(variableWidth <= 2 * 1.96 * 2 + 1e-9, "予測レンジは事前分布の幅を超えない");
+assert.ok(fixedWidth > 0, "データが少なくても予測レンジが幅0に潰れない");
 
 const legacy = resolveMachineStats({ spec1R: 130, roundDist: "4R:50%, 10R:50%" });
 assert.equal(legacy.avgPayout, 910);
-assert.ok(legacy.stdDev >= 3000);
+assert.equal(legacy.sessionStdDev, 0);
+assert.equal(legacy.payoutStdDevPerHit, 390);
 assert.equal(legacy.derived, true);
+const fallback = resolveMachineStats({ avgPayoutPerHit: 1000, stdDev: 19000 });
+assert.equal(fallback.payoutStdDevPerHit, 100, "振分不明の旧データだけは上限付き10%誤差を使う");
+assert.equal(fallback.sessionStdDev, 19000);
 
 const correctedMaster = {
   name: "エヴァンゲリオン15",

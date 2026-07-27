@@ -1,4 +1,13 @@
 import { evidenceDayNumber, normalizeEvidenceDate } from "../../evidenceDate.js";
+import {
+  DECISION_LOWER_DEFAULT_Z,
+  DECISION_LOWER_QUANTILE,
+  DECISION_LOWER_TARGET_COVERAGE,
+  NORMAL_95_Z,
+  decisionLowerBound,
+  probabilityAboveThreshold,
+  quantilePinballLoss,
+} from "./rotationForecast.js";
 
 export const PE_BACKTEST_DEFAULTS = Object.freeze({
   minCalibrationSamples: 20,
@@ -14,7 +23,13 @@ export const PE_BACKTEST_DEFAULTS = Object.freeze({
   selectionBiasValidationWarmup: 10,
   selectionBiasPriorSamples: 20,
   selectionBiasMax: 3,
-  lcbK: 1,
+  lcbK: DECISION_LOWER_DEFAULT_Z,
+  decisionLowerQuantile: DECISION_LOWER_QUANTILE,
+  decisionLowerTargetCoverage: DECISION_LOWER_TARGET_COVERAGE,
+  decisionCalibrationMinSamples: 100,
+  decisionCalibrationWindow: 300,
+  decisionCalibrationMinK: 0.25,
+  decisionCalibrationMaxK: 2.5,
 });
 
 function finite(value) {
@@ -63,7 +78,7 @@ function forecastFrom(row) {
     || predictedHigh === null
     || predictedLow > predictedHigh
   ) return null;
-  const intervalSd = (predictedHigh - predictedLow) / (2 * 1.96);
+  const intervalSd = (predictedHigh - predictedLow) / (2 * NORMAL_95_Z);
   const forecastVariance = finite(row?.nextDayVariance ?? row?.posteriorVariance);
   return {
     predictedRotation,
@@ -89,6 +104,19 @@ function scoreBand(score, confidence) {
   return "0-9";
 }
 
+function confidenceBand(confidence) {
+  if (confidence < 0.4) return "low";
+  if (confidence < 0.7) return "medium";
+  return "high";
+}
+
+function dataVolumeBand(inputBalls) {
+  const balls = finite(inputBalls);
+  if (balls === null || balls < 50000) return "under-50k";
+  if (balls < 200000) return "50k-199k";
+  return "200k+";
+}
+
 function annotateSelectionRanks(pairs, lcbK) {
   const groups = new Map();
   for (const pair of pairs) {
@@ -107,7 +135,7 @@ function annotateSelectionRanks(pairs, lcbK) {
     group.forEach((pair, index) => {
       pair.selectionRank = index + 1;
       pair.recommendedTop5 = index < 5;
-      pair.lcbK = lcbK;
+      pair.lcbK = finite(pair.lcbK) ?? lcbK;
     });
   }
 }
@@ -185,12 +213,42 @@ export function buildBacktestPairs(rows = []) {
       const forecastScore = effectiveBorder === null
         ? 0
         : Math.max(0, (forecast.predictedRotation - effectiveBorder) * confidence * 100);
-      const forecastSd = Math.sqrt(Math.max(0, forecast.forecastVariance));
-      const selectionMargin = effectiveBorder === null
+      const decisionLowerK = Math.max(
+        0,
+        finite(previous.row?.decisionLowerK ?? previous.row?.lcbK)
+          ?? PE_BACKTEST_DEFAULTS.lcbK,
+      );
+      const storedDecisionLower = finite(
+        previous.row?.decisionLowerRotation ?? previous.row?.lcbRotation,
+      );
+      const decisionLowerRotation = storedDecisionLower
+        ?? decisionLowerBound(
+          forecast.predictedRotation,
+          forecast.forecastVariance,
+          decisionLowerK,
+        );
+      const seatThreshold = finite(previous.row?.seatThreshold)
+        ?? (effectiveBorder === null ? null : effectiveBorder + 0.5);
+      const storedThresholdProbability = finite(previous.row?.seatThresholdProbability);
+      const seatThresholdProbability = storedThresholdProbability === null
+        ? probabilityAboveThreshold(
+          forecast.predictedRotation,
+          forecast.forecastVariance,
+          seatThreshold,
+        )
+        : clamp(storedThresholdProbability, 0, 1);
+      const selectionMargin = seatThreshold === null || decisionLowerRotation === null
         ? -Infinity
-        : forecast.predictedRotation - PE_BACKTEST_DEFAULTS.lcbK * forecastSd - effectiveBorder;
+        : decisionLowerRotation - seatThreshold;
       const absoluteError = Math.abs(error);
       const actualStandardError = finite(actual.row?.dailyStandardError);
+      const coveredDecisionLower = decisionLowerRotation === null
+        ? null
+        : actualRotation >= decisionLowerRotation;
+      const seatOutcome = seatThreshold === null ? null : actualRotation >= seatThreshold;
+      const wouldSit = seatThreshold === null || decisionLowerRotation === null
+        ? null
+        : decisionLowerRotation >= seatThreshold;
 
       pairs.push({
         id: `${history.key}___${previous.date}->${actual.date}`,
@@ -220,8 +278,40 @@ export function buildBacktestPairs(rows = []) {
         forecastScore,
         forecastVerdict: forecastVerdict(forecastScore, confidence),
         scoreBand: scoreBand(forecastScore, confidence),
-        lcbRotation: forecast.predictedRotation - PE_BACKTEST_DEFAULTS.lcbK * forecastSd,
+        confidenceBand: confidenceBand(confidence),
+        dataVolumeBand: dataVolumeBand(previous.row?.cumulativeInputBalls),
+        cumulativeInputBalls: finite(previous.row?.cumulativeInputBalls),
+        decisionLowerRotation,
+        decisionLowerK,
+        decisionLowerQuantile: finite(previous.row?.decisionLowerQuantile)
+          ?? PE_BACKTEST_DEFAULTS.decisionLowerQuantile,
+        decisionLowerTargetCoverage: finite(previous.row?.decisionLowerTargetCoverage)
+          ?? PE_BACKTEST_DEFAULTS.decisionLowerTargetCoverage,
+        coveredDecisionLower,
+        decisionLowerPinballLoss: decisionLowerRotation === null
+          ? null
+          : quantilePinballLoss(
+            actualRotation,
+            decisionLowerRotation,
+            finite(previous.row?.decisionLowerQuantile)
+              ?? PE_BACKTEST_DEFAULTS.decisionLowerQuantile,
+          ),
+        lcbRotation: decisionLowerRotation,
+        lcbK: decisionLowerK,
         selectionMargin,
+        seatThreshold,
+        seatThresholdProbability,
+        seatOutcome,
+        wouldSit,
+        falseSit: wouldSit === null || seatOutcome === null
+          ? null
+          : wouldSit && !seatOutcome,
+        falseSkip: wouldSit === null || seatOutcome === null
+          ? null
+          : !wouldSit && seatOutcome,
+        thresholdBrierError: seatThresholdProbability === null || seatOutcome === null
+          ? null
+          : (seatThresholdProbability - (seatOutcome ? 1 : 0)) ** 2,
         currentPriorBalls: currentPriorBalls !== null && currentPriorBalls > 0
           ? currentPriorBalls
           : null,
@@ -253,6 +343,17 @@ export function summarizeBacktestPairs(pairs = []) {
       rmse: null,
       within1Rate: null,
       coverage95: null,
+      decisionLowerCoverage: null,
+      decisionLowerTargetCoverage: PE_BACKTEST_DEFAULTS.decisionLowerTargetCoverage,
+      decisionLowerCalibrationError: null,
+      averageDecisionLowerWidth: null,
+      decisionLowerPinballLoss: null,
+      thresholdSampleCount: 0,
+      thresholdBrierScore: null,
+      sitCount: 0,
+      skipCount: 0,
+      falseSitRate: null,
+      falseSkipRate: null,
     };
   }
 
@@ -270,6 +371,40 @@ export function summarizeBacktestPairs(pairs = []) {
     covered95: 0,
   });
 
+  const lowerPairs = usable.filter((pair) => (
+    typeof pair?.coveredDecisionLower === "boolean"
+    && finite(pair?.decisionLowerRotation) !== null
+  ));
+  const lowerCoverage = lowerPairs.length
+    ? lowerPairs.filter((pair) => pair.coveredDecisionLower).length / lowerPairs.length
+    : null;
+  const targetValues = lowerPairs
+    .map((pair) => finite(pair?.decisionLowerTargetCoverage))
+    .filter((value) => value !== null);
+  const lowerTarget = targetValues.length
+    ? targetValues.reduce((sum, value) => sum + value, 0) / targetValues.length
+    : PE_BACKTEST_DEFAULTS.decisionLowerTargetCoverage;
+  const lowerWidths = lowerPairs
+    .map((pair) => {
+      const predicted = finite(pair?.predictedRotation);
+      const lower = finite(pair?.decisionLowerRotation);
+      return predicted === null || lower === null ? null : Math.max(0, predicted - lower);
+    })
+    .filter((value) => value !== null);
+  const pinballLosses = lowerPairs
+    .map((pair) => finite(pair?.decisionLowerPinballLoss))
+    .filter((value) => value !== null);
+  const thresholdPairs = usable.filter((pair) => (
+    typeof pair?.seatOutcome === "boolean"
+    && finite(pair?.seatThresholdProbability) !== null
+    && typeof pair?.wouldSit === "boolean"
+  ));
+  const sitPairs = thresholdPairs.filter((pair) => pair.wouldSit);
+  const skipPairs = thresholdPairs.filter((pair) => !pair.wouldSit);
+  const brierErrors = thresholdPairs
+    .map((pair) => finite(pair?.thresholdBrierError))
+    .filter((value) => value !== null);
+
   return {
     n,
     mae: totals.absoluteError / n,
@@ -277,6 +412,142 @@ export function summarizeBacktestPairs(pairs = []) {
     rmse: Math.sqrt(totals.squaredError / n),
     within1Rate: totals.within1 / n,
     coverage95: totals.covered95 / n,
+    decisionLowerCoverage: lowerCoverage,
+    decisionLowerTargetCoverage: lowerTarget,
+    decisionLowerCalibrationError: lowerCoverage === null ? null : lowerCoverage - lowerTarget,
+    averageDecisionLowerWidth: lowerWidths.length
+      ? lowerWidths.reduce((sum, value) => sum + value, 0) / lowerWidths.length
+      : null,
+    decisionLowerPinballLoss: pinballLosses.length
+      ? pinballLosses.reduce((sum, value) => sum + value, 0) / pinballLosses.length
+      : null,
+    thresholdSampleCount: thresholdPairs.length,
+    thresholdBrierScore: brierErrors.length
+      ? brierErrors.reduce((sum, value) => sum + value, 0) / brierErrors.length
+      : null,
+    sitCount: sitPairs.length,
+    skipCount: skipPairs.length,
+    falseSitRate: sitPairs.length
+      ? sitPairs.filter((pair) => pair.falseSit === true).length / sitPairs.length
+      : null,
+    falseSkipRate: skipPairs.length
+      ? skipPairs.filter((pair) => pair.falseSkip === true).length / skipPairs.length
+      : null,
+  };
+}
+
+function decisionCalibrationOptions(overrides = {}) {
+  const configuredQuantile = clamp(
+    finite(overrides?.decisionLowerQuantile) ?? PE_BACKTEST_DEFAULTS.decisionLowerQuantile,
+    0.01,
+    0.49,
+  );
+  const targetCoverage = clamp(
+    finite(overrides?.decisionLowerTargetCoverage) ?? (1 - configuredQuantile),
+    0.51,
+    0.99,
+  );
+  const minSamples = Math.max(
+    PE_BACKTEST_DEFAULTS.decisionCalibrationMinSamples,
+    Math.floor(
+      finite(overrides?.decisionCalibrationMinSamples)
+        ?? PE_BACKTEST_DEFAULTS.decisionCalibrationMinSamples,
+    ),
+  );
+  return {
+    ...PE_BACKTEST_DEFAULTS,
+    ...overrides,
+    decisionLowerQuantile: 1 - targetCoverage,
+    decisionLowerTargetCoverage: targetCoverage,
+    decisionCalibrationMinSamples: minSamples,
+    decisionCalibrationWindow: Math.max(
+      minSamples,
+      Math.floor(
+        finite(overrides?.decisionCalibrationWindow)
+          ?? PE_BACKTEST_DEFAULTS.decisionCalibrationWindow,
+      ),
+    ),
+    decisionCalibrationMinK: Math.max(
+      0,
+      finite(overrides?.decisionCalibrationMinK)
+        ?? PE_BACKTEST_DEFAULTS.decisionCalibrationMinK,
+    ),
+    decisionCalibrationMaxK: Math.max(
+      finite(overrides?.decisionCalibrationMinK)
+        ?? PE_BACKTEST_DEFAULTS.decisionCalibrationMinK,
+      finite(overrides?.decisionCalibrationMaxK)
+        ?? PE_BACKTEST_DEFAULTS.decisionCalibrationMaxK,
+    ),
+    lcbK: Math.max(
+      0,
+      finite(overrides?.lcbK) ?? PE_BACKTEST_DEFAULTS.lcbK,
+    ),
+  };
+}
+
+function empiricalUpperQuantile(values, coverage) {
+  if (!values.length) return null;
+  const ordered = [...values].sort((left, right) => left - right);
+  // Split conformal と同じ有限標本補正。80%なら ceil((n+1)*0.8) 番目を採る。
+  const index = clamp(Math.ceil((ordered.length + 1) * coverage) - 1, 0, ordered.length - 1);
+  return ordered[index];
+}
+
+/**
+ * 翌日実績だけで判断用下限の係数を校正する。
+ *
+ * z = (予測 - 実測) / 予測SD の80%点を使うため、実測が判断用下限以上に
+ * なる割合を約80%へ合わせる。100件未満はデータに合わせず既定値を使う。
+ */
+export function buildDecisionLowerCalibration(pairs = [], overrides = {}) {
+  const options = decisionCalibrationOptions(overrides);
+  const usable = (Array.isArray(pairs) ? pairs : [])
+    .filter((pair) => (
+      finite(pair?.error) !== null
+      && finite(pair?.forecastVariance) !== null
+      && finite(pair?.forecastVariance) > 0
+    ))
+    .sort((left, right) => (
+      (dayNumber(left.actualDate) ?? -Infinity) - (dayNumber(right.actualDate) ?? -Infinity)
+      || String(left.id || "").localeCompare(String(right.id || ""))
+    ))
+    .slice(-options.decisionCalibrationWindow);
+  const standardizedErrors = usable.map(
+    (pair) => pair.error / Math.sqrt(pair.forecastVariance),
+  );
+  const rawK = empiricalUpperQuantile(
+    standardizedErrors,
+    options.decisionLowerTargetCoverage,
+  );
+  const calibrated = usable.length >= options.decisionCalibrationMinSamples && rawK !== null;
+  const k = calibrated
+    ? clamp(
+      rawK,
+      options.decisionCalibrationMinK,
+      options.decisionCalibrationMaxK,
+    )
+    : options.lcbK;
+  const observedCoverageAt = (multiplier) => standardizedErrors.length
+    ? standardizedErrors.filter((value) => value <= multiplier).length / standardizedErrors.length
+    : null;
+
+  return {
+    status: calibrated ? "calibrated" : "awaiting-samples",
+    k,
+    defaultK: options.lcbK,
+    rawK,
+    sampleCount: usable.length,
+    minRequired: options.decisionCalibrationMinSamples,
+    remainingSamples: Math.max(0, options.decisionCalibrationMinSamples - usable.length),
+    window: options.decisionCalibrationWindow,
+    quantile: options.decisionLowerQuantile,
+    targetCoverage: options.decisionLowerTargetCoverage,
+    observedCoverage: observedCoverageAt(k),
+    observedCoverageAtDefault: observedCoverageAt(options.lcbK),
+    evidenceThroughDate: usable.at(-1)?.actualDate || "",
+    method: calibrated
+      ? "rolling-standardized-quantile-v1"
+      : "normal-q20-provisional-v1",
   };
 }
 
@@ -512,6 +783,8 @@ export function buildSelectionBacktest(pairs = [], overrides = {}) {
     recommendedTop5: top5,
     byVerdict: groupedMetrics(usable, "forecastVerdict", ["nodata", "weak", "watch", "strong"]),
     byScoreBand: groupedMetrics(usable, "scoreBand", ["nodata", "0-9", "10-49", "50+"]),
+    byConfidenceBand: groupedMetrics(usable, "confidenceBand", ["low", "medium", "high"]),
+    byDataVolumeBand: groupedMetrics(usable, "dataVolumeBand", ["under-50k", "50k-199k", "200k+"]),
     biasCorrection: {
       sampleCount: top5.n,
       minRequired: options.selectionBiasMinSamples,
@@ -754,6 +1027,7 @@ export function buildPEvidenceBacktest(rows = [], options = {}) {
     }));
   const byKey = Object.fromEntries(byKeyList.map((summary) => [summary.key, summary]));
   const selection = buildSelectionBacktest(pairs, options);
+  const decisionLowerCalibration = buildDecisionLowerCalibration(pairs, options);
 
   return {
     pairs,
@@ -764,6 +1038,7 @@ export function buildPEvidenceBacktest(rows = [], options = {}) {
     weeklyTrend: buildWeeklyBacktestTrend(pairs, options),
     selection,
     biasCorrection: selection.biasCorrection,
+    decisionLowerCalibration,
     biasDefinition: "prediction-minus-actual",
   };
 }
