@@ -2,11 +2,12 @@
 // Google Sheets には接続せず、保存済み pt_deltaScans だけを使う純粋関数。
 
 import { normalizeEvidenceDate } from "../../evidenceDate.js";
+import { predictionInterval95 } from "../evidence/rotationForecast.js";
 
 const BALLS_PER_1K = 250;
 const DEFAULT_BORDER = 18;
 const DEFAULT_PRIOR_VARIANCE = 4;
-const DEFAULT_STD_SCALE = 0.25;
+const DEFAULT_FALLBACK_HIT_PAYOUT_CV = 0.1;
 const GRAPH_STEP_BALLS = 500;
 
 function num(value, fallback = 0) {
@@ -178,10 +179,85 @@ function payoutFromRoundDist(text, spec1R) {
   return avgRounds * num(spec1R);
 }
 
+function payoutRowsFromRoundDist(text, spec1R) {
+  const oneRound = num(spec1R);
+  if (!(oneRound > 0)) return [];
+  return [...String(text || "").matchAll(/(\d+(?:\.\d+)?)R[^0-9]*(\d+(?:\.\d+)?)%/gi)]
+    .map((match) => ({
+      payout: num(match[1]) * oneRound,
+      rate: num(match[2]),
+    }))
+    .filter((row) => row.payout >= 0 && row.rate > 0);
+}
+
+function payoutDistributionStats(rows, targetMean = null) {
+  const usable = (Array.isArray(rows) ? rows : [])
+    .map((row) => ({
+      payout: Number(row?.payout),
+      rate: Number(row?.rate),
+    }))
+    .filter((row) => Number.isFinite(row.payout) && row.payout >= 0
+      && Number.isFinite(row.rate) && row.rate > 0);
+  const totalRate = usable.reduce((sum, row) => sum + row.rate, 0);
+  if (!(totalRate > 0)) return null;
+  const rawMean = usable.reduce((sum, row) => sum + row.payout * row.rate, 0) / totalRate;
+  const requestedMean = Number(targetMean);
+  const scale = rawMean > 0 && Number.isFinite(requestedMean) && requestedMean >= 0
+    ? requestedMean / rawMean
+    : 1;
+  const mean = rawMean * scale;
+  const variance = usable.reduce(
+    (sum, row) => sum + row.rate * ((row.payout * scale - mean) ** 2),
+    0,
+  ) / totalRate;
+  return {
+    mean,
+    variance: Math.max(0, variance),
+    sd: Math.sqrt(Math.max(0, variance)),
+    sampleOutcomes: usable.length,
+  };
+}
+
+function measurementPayoutRows(machine = {}) {
+  const primaryHesoMode = (Array.isArray(machine.hesoModes) ? machine.hesoModes : [])
+    .find((mode) => Array.isArray(mode?.rows) && mode.rows.length);
+  if (primaryHesoMode) return primaryHesoMode.rows;
+  if (Array.isArray(machine.hesoDist) && machine.hesoDist.length) return machine.hesoDist;
+  return payoutRowsFromRoundDist(machine.roundDist, machine.spec1R);
+}
+
+function resolveHitPayoutStdDev(machine, avgPayout) {
+  const explicit = Number(machine?.payoutStdDevPerHit);
+  if (Number.isFinite(explicit) && explicit >= 0) {
+    return {
+      value: explicit,
+      source: machine.payoutStdDevPerHitMethod || "machine-explicit",
+      derived: false,
+    };
+  }
+
+  const distribution = payoutDistributionStats(measurementPayoutRows(machine), avgPayout);
+  if (distribution) {
+    return {
+      value: distribution.sd,
+      source: "initial-hit-allocation-v1",
+      derived: true,
+    };
+  }
+
+  // 振分がない旧データだけの後方互換。2,200回転の収支標準偏差は
+  // 1回当り出玉誤差とは単位が違うため、ここへ流用しない。
+  return {
+    value: Math.max(0, avgPayout * DEFAULT_FALLBACK_HIT_PAYOUT_CV),
+    source: "bounded-hit-cv-fallback-v1",
+    derived: true,
+  };
+}
+
 // P-EVIDENCE m_master と同じ考え方で、直接値がない旧機種も平均出玉を補完する。
 export function resolveMachineStats(machine = {}) {
   let avgPayout = Math.max(0, num(machine.avgPayoutPerHit));
-  let derived = false;
+  let avgPayoutDerived = false;
   if (!(avgPayout > 0)) {
     const heso = num(machine.hesoAvgPayout) || weightedPayout(machine.hesoDist);
     const right = Math.max(0, num(machine.rushAvgPayout));
@@ -190,16 +266,26 @@ export function resolveMachineStats(machine = {}) {
     if (heso > 0 && right > 0 && entry > 0 && cont > 0 && cont < 1) {
       const averageRightHits = entry * (cont / (1 - cont));
       avgPayout = ((heso + averageRightHits * right) / (1 + averageRightHits)) * 0.9;
-      derived = true;
+      avgPayoutDerived = true;
     }
   }
   if (!(avgPayout > 0)) {
     avgPayout = payoutFromRoundDist(machine.roundDist, machine.spec1R);
-    derived = avgPayout > 0;
+    avgPayoutDerived = avgPayout > 0;
   }
-  const directStdDev = Math.max(0, num(machine.stdDev));
-  const stdDev = directStdDev > 0 ? directStdDev : (avgPayout > 0 ? Math.max(3000, avgPayout * 4) : 0);
-  return { avgPayout, stdDev, derived: derived || !(directStdDev > 0) };
+  const sessionStdDev = Math.max(0, num(machine.stdDev));
+  const hitPayout = resolveHitPayoutStdDev(machine, avgPayout);
+  return {
+    avgPayout,
+    avgPayoutDerived,
+    // stdDev は既存呼び出しとの互換用。回転率の観測誤差には使用しない。
+    stdDev: sessionStdDev,
+    sessionStdDev,
+    payoutStdDevPerHit: hitPayout.value,
+    payoutStdDevSource: hitPayout.source,
+    payoutStdDevDerived: hitPayout.derived,
+    derived: avgPayoutDerived || hitPayout.derived,
+  };
 }
 
 export function estimateDeltaObservation(row = {}, machine = {}, options = {}) {
@@ -209,7 +295,10 @@ export function estimateDeltaObservation(row = {}, machine = {}, options = {}) {
   const deltaBalls = Number(rawDelta);
   const stats = resolveMachineStats(machine);
   const avgPayout = stats.avgPayout;
-  const stdDev = stats.stdDev;
+  const optionPayoutSd = Number(options.payoutStdDevPerHit);
+  const payoutStdDevPerHit = Number.isFinite(optionPayoutSd) && optionPayoutSd >= 0
+    ? optionPayoutSd
+    : stats.payoutStdDevPerHit;
 
   if (row?.status === "bounded") return { valid: false, reason: "差玉は境界到達記録" };
   if (row?.status === "review" && row?.reviewConfirmed !== true) {
@@ -236,10 +325,10 @@ export function estimateDeltaObservation(row = {}, machine = {}, options = {}) {
     return { valid: false, reason: "回転率が現実範囲外", observedRotation, estimatedInputBalls };
   }
 
-  // 大当り出玉のブレと、グラフが500玉刻みで丸められる誤差を合算する。
-  // stdScale=0.25 は P-EVIDENCE 過去1,645件の時系列検証で最小誤差だった値。
-  const stdScale = num(options.stdScale, DEFAULT_STD_SCALE);
-  const payoutVariance = totalStarts * (stdDev * stdScale) ** 2;
+  // H（大当り回数）は既に観測済みなので、未知なのは「各大当りの出玉差」と
+  // グラフ読取誤差だけ。2,200回転の収支標準偏差は当り回数の乱数まで含む
+  // 別単位の値であり、ここへ掛けると同じ不確実性を二重計上する。
+  const payoutVariance = totalStarts * payoutStdDevPerHit ** 2;
   const graphVariance = (num(options.graphStepBalls, GRAPH_STEP_BALLS) ** 2) / 12;
 
   return {
@@ -250,6 +339,13 @@ export function estimateDeltaObservation(row = {}, machine = {}, options = {}) {
     estimatedInputBalls,
     observedRotation,
     inputVariance: payoutVariance + graphVariance,
+    payoutVariance,
+    graphVariance,
+    payoutStdDevPerHit,
+    payoutStdDevSource: Number.isFinite(optionPayoutSd) && optionPayoutSd >= 0
+      ? "options-explicit"
+      : stats.payoutStdDevSource,
+    sessionStdDevExcluded: stats.sessionStdDev,
     machineStatsDerived: stats.derived,
   };
 }
@@ -340,8 +436,9 @@ export function buildDeltaEvidence(rows = [], machine = {}, options = {}) {
   // 従来の SE×conf は stdDev 由来の不確かさを SE と信頼度の両方に二重に掛けており、
   // ブレが大きい機種ほど予測レンジが狭く見える逆転が起きていた。
   const posteriorSd = Math.sqrt((confidence * standardError) ** 2 + ((1 - confidence) ** 2) * priorVariance);
-  const predictedLow = Math.max(0, predictedRotation - 1.96 * posteriorSd);
-  const predictedHigh = predictedRotation + 1.96 * posteriorSd;
+  const predictionInterval = predictionInterval95(predictedRotation, posteriorSd ** 2);
+  const predictedLow = predictionInterval.low;
+  const predictedHigh = predictionInterval.high;
 
   let grade = "回収注意";
   if (confidence < 0.2) grade = "データ収集中";
@@ -369,4 +466,8 @@ export function buildDeltaEvidence(rows = [], machine = {}, options = {}) {
   };
 }
 
-export { BALLS_PER_1K, DEFAULT_PRIOR_VARIANCE, DEFAULT_STD_SCALE };
+export {
+  BALLS_PER_1K,
+  DEFAULT_FALLBACK_HIT_PAYOUT_CV,
+  DEFAULT_PRIOR_VARIANCE,
+};

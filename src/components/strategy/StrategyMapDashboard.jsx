@@ -341,8 +341,9 @@ const HELP_GROUPS = [
       { name: "予測回転率", simple: "1,000円で、だいたい何回まわりそうかの予想です。", read: "ボーダーより大きいほど有利です。ただし、差玉から計算した予想なので必ず同じ回数になるわけではありません。" },
       { name: "ボーダー", simple: "長く遊んだときに、プラスとマイナスの境目になる回転率です。", read: "予測回転率がボーダーを上回る台を探します。例：ボーダー18、予測20なら、1,000円で約2回多く回る予想です。" },
       { name: `翌日${DECISION_TERMS.confidence}`, simple: "明日も予想どおりになりそうかの目安です。", read: "データ量だけでなく、一晩で釘が変わる日次変動も差し引きます。玉数を増やしても100%には近づきません。" },
-      { name: "安全側回転（LCB）", simple: "予測が下振れした場合を見込んだ、慎重な回転率です。", read: "平均予測から翌日予測の標準偏差を1つ引きます。台の順位は平均値ではなく、この安全側回転とボーダーの差で決めます。" },
-      { name: "良台スコア", simple: "回転率の良さと、データの確かさを1つにまとめた点数です。", read: "表示の強さを表します。実際の台選び順は、予測の上振れをつかみにくい安全側回転を優先します。" },
+      { name: "判断用下限（80%目標）", simple: "予測が下振れした場合を見込んだ、着席判断用の回転率です。", read: "同じ予測を100回したとき、実際の回転率がこの下限以上になる回数を約80回に合わせます。翌日実績が100件未満は統計の標準値を使い、100件から過去実績で校正します。" },
+      { name: "座る基準超え確率", simple: "翌日の回転率が、実質ボーダー＋0.5回を超える見込みです。", read: "平均予測と翌日の予測幅から計算します。50%だけでは候補にせず、判断用下限まで基準を超えた台を候補にします。" },
+      { name: "良台スコア", simple: "回転率の良さと、データの確かさを1つにまとめた点数です。", read: "表示の強さを表す補助指標です。実際の候補判定と順位は、判断用下限と座る基準の差を優先します。" },
       { name: "収支プラス見込み", simple: "予定時間の終了時に、収支が0円を超える確率の概算幅です。", read: "本日の予定時間、予測回転率の上下幅、交換率、検証済みの機種ブレから正規近似で計算します。勝利を保証せず、短時間や荒い機種ほど誤差が大きくなります。" },
       { name: "勝てる確率（旧称）", simple: "現在の『収支プラス見込み』と同じ項目です。", read: "別の確率ではありません。画面と説明の呼び方を『収支プラス見込み』へ統一しています。" },
       { name: "初当たり1回以上", simple: "予定回転数の中で、初当たりを1回以上引く理論上の確率です。", read: "大当たり確率と予定回転数だけで計算します。初当たりを引いても最終収支がプラスとは限らないため、収支プラス見込みとは別の数字です。" },
@@ -982,12 +983,20 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
   if (!machine) return null;
   const v = VERDICT[machine.verdict];
   const diff = Math.round((machine.rot - islandAvgRot(machine.islandId)) * 10) / 10;
-  const seatThreshold = Math.ceil((Number(machine.border || 0) + 0.5) * 10) / 10;
+  const seatThreshold = Math.ceil(
+    Number(machine.seatThreshold ?? (Number(machine.border || 0) + 0.5)) * 10,
+  ) / 10;
+  const decisionTargetPct = Math.round(Number(machine.decisionLowerTargetCoverage || 0.8) * 100);
   const recommendation = plan?.isSkip
     ? "本日見送り"
     : machine.recommendationStatus === "reference" ? "過去参考"
-    : machine.profitChanceStatus === "ready" ? v.reco : "要確認";
-  const recommendationColor = plan?.isSkip || machine.recommendationStatus === "reference" || machine.profitChanceStatus !== "ready" ? P.yellow : v.color;
+      : machine.seatDecisionStatus === "candidate" ? "安全側で候補"
+        : machine.seatDecisionStatus === "trial" ? "試し打ちで確認"
+          : machine.seatDecisionStatus === "skip" ? "見送り寄り" : "算定待ち";
+  const recommendationColor = plan?.isSkip || machine.recommendationStatus === "reference"
+    ? P.yellow
+    : machine.seatDecisionStatus === "candidate" ? P.green
+      : machine.seatDecisionStatus === "skip" ? P.red : P.yellow;
   return (
     <div className="strategy-selected-detail-card" style={{ background: P.card, border: `1px solid color-mix(in srgb, ${v.color} 30%, ${P.line})`, borderRadius: RADIUS, padding: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
@@ -1021,11 +1030,15 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
             <div className="strategy-a-decision is-skip">
               <div><span>本日の判断</span><b>前日または本日の解析がないため、着席判断を停止しています</b></div>
             </div>
+          ) : machine.seatDecisionStatus === "skip" ? (
+            <div className="strategy-a-decision is-skip">
+              <div><span>本日の判断</span><b>{machine.nailAlert.includes("締め") ? "締め傾向を検知したため見送り寄り" : `判断用下限が座る基準 ${fmt(seatThreshold, 1)}/k 未満`}</b></div>
+            </div>
           ) : (
             <div className="strategy-a-decision">
-              <div><span>座る目安</span><b>試し打ちで1,000円あたり{fmt(seatThreshold, 1)}回以上</b></div>
+              <div><span>本日の判断</span><b>{machine.seatDecisionStatus === "candidate" ? "判断用下限でも基準超え" : "試し打ちで基準超えを確認"}</b></div>
               <i aria-hidden="true">→</i>
-              <div><span>見送る目安</span><b>基準未満・締め傾向・データ不足</b></div>
+              <div><span>座る目安</span><b>1,000円あたり{fmt(seatThreshold, 1)}回以上</b></div>
             </div>
           )}
 
@@ -1071,7 +1084,13 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
           </div>
 
           <div className="strategy-detail-secondary">
-            <DetailMetric label="安全側回転" value={fmt(machine.lcbRotation, 1)} unit="/k" color={machine.selectionMargin >= 0 ? P.green : P.red} />
+            <DetailMetric label={`判断用下限（${decisionTargetPct}%目標）`} value={fmt(machine.decisionLowerRotation ?? machine.lcbRotation, 1)} unit="/k" color={machine.selectionMargin >= 0 ? P.green : P.red} />
+            <DetailMetric
+              label="座る基準超え"
+              value={isFiniteValue(machine.seatThresholdProbability) ? fmt(machine.seatThresholdProbability * 100) : "算定待ち"}
+              unit={isFiniteValue(machine.seatThresholdProbability) ? "%" : ""}
+              color={machine.seatThresholdProbability >= 0.5 ? P.green : P.red}
+            />
             <DetailMetric label="良台スコア" value={fmt(machine.goodMachineScore, 1)} unit="点" color={v.color} />
             <DetailMetric label="EMA（最近重視）" value={fmt(machine.ema, 1)} unit="/k" color={P.cyan} />
             <DetailMetric
@@ -1087,6 +1106,8 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
             予測データ：{(machine.evidenceSources || []).map((source) => source === "delta" ? "差玉" : source === "archive" ? "完了実戦" : "現在実戦").join("＋") || "機種基準"}
             {machine.rotationEstimate?.inputBalls > 0 ? ` ／ 推定投入 ${fmt(machine.rotationEstimate.inputBalls)}玉` : ""}
             {machine.processNoiseSd != null ? ` ／ 日次変動 ±${fmt(machine.processNoiseSd, 2)}/k（1σ）` : ""}
+            {` ／ 下限校正 ${fmt(machine.decisionCalibrationSampleCount || 0)}/${fmt(machine.decisionCalibrationMinRequired || 100)}件`}
+            {machine.decisionCalibrationStatus === "calibrated" ? "（実績校正済み）" : "（暫定値）"}
           </div>
           {(machine.biasRotationAdjustment || machine.payoutCorrection) && (
             <div style={{ marginTop: 4, fontSize: 9, color: P.subHi, lineHeight: 1.5 }}>
@@ -1197,11 +1218,12 @@ function BacktestTrendPanel({ pairs, selected }) {
         <div style={{ padding: "14px 0 4px", color: P.sub, fontSize: 9 }}>連続日の予測と実績が揃うと、週ごとの変化を表示します。</div>
       ) : (
         <>
-          <div style={{ marginTop: 9, display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
+          <div style={{ marginTop: 9, display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6 }}>
             {[
               { label: "MAE", values: trend.map((week) => week.mae), value: `${fmt(latest.mae, 2)}/k`, color: P.cyan, zero: true },
               { label: "偏り", values: trend.map((week) => week.bias), value: `${signed(latest.bias, 2)}/k`, color: P.yellow, zero: true },
-              { label: "カバレッジ", values: trend.map((week) => week.coverage95 * 100), value: `${fmt(latest.coverage95 * 100)}%`, color: P.green, zero: false },
+              { label: "95%範囲内", values: trend.map((week) => week.coverage95 * 100), value: `${fmt(latest.coverage95 * 100)}%`, color: P.green, zero: false },
+              { label: "判断下限以上", values: trend.map((week) => week.decisionLowerCoverage * 100), value: `${fmt(latest.decisionLowerCoverage * 100)}%`, color: P.cyan, zero: false },
             ].map((metric) => (
               <div key={metric.label} style={{ minWidth: 0, padding: 7, borderRadius: 10, background: P.card, border: `1px solid ${P.line}` }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 3, fontSize: 8 }}>
@@ -1216,6 +1238,11 @@ function BacktestTrendPanel({ pairs, selected }) {
             <span>{trend[0].weekStart.slice(5)}週</span>
             <span>最新週 {fmt(latest.n)}件</span>
             <span>{latest.weekStart.slice(5)}週</span>
+          </div>
+          <div style={{ marginTop: 5, color: P.subHi, fontSize: 8, lineHeight: 1.5 }}>
+            下限誤差 {fmt(latest.decisionLowerPinballLoss, 3)} ／
+            誤着席 {latest.falseSitRate == null ? "—" : `${fmt(latest.falseSitRate * 100)}%`} ／
+            見逃し {latest.falseSkipRate == null ? "—" : `${fmt(latest.falseSkipRate * 100)}%`}
           </div>
           {calibrations.length > 0 && (
             <div style={{ marginTop: 7, color: P.cyan, fontSize: 8, lineHeight: 1.5 }}>
@@ -1523,6 +1550,7 @@ function LearningSummary({
   const island = data.islandStats?.find((item) => item.key === selected.activityHistoryKey)
     || data.islandStats?.find((item) => item.island === data.islands.find((x) => x.id === selected.islandId)?.name);
   const backtest = data.analytics?.backtest || null;
+  const decisionLowerCalibration = backtest?.decisionLowerCalibration || null;
   const selectedBacktest = backtest?.byKeyList?.find((item) =>
     String(item.machineName) === String(selected.machineName)
     && String(item.num) === String(selected.num)
@@ -1597,7 +1625,8 @@ function LearningSummary({
               </div>
               {backtest?.overall?.n > 0 && (
                 <div style={{ marginTop: 3, fontSize: 8, color: P.sub }}>
-                  {fmt(backtest.overall.n)}件・偏り {signed(backtest.overall.bias, 2)}/k・予測範囲内 {fmt(backtest.overall.coverage95 * 100)}%
+                  {fmt(backtest.overall.n)}件・偏り {signed(backtest.overall.bias, 2)}/k・95%範囲内 {fmt(backtest.overall.coverage95 * 100)}%
+                  ・判断下限以上 {fmt(backtest.overall.decisionLowerCoverage * 100)}%
                 </div>
               )}
             </div>
@@ -1608,13 +1637,14 @@ function LearningSummary({
               </div>
               {selectedBacktest?.n > 0 && (
                 <div style={{ marginTop: 3, fontSize: 8, color: P.sub }}>
-                  {fmt(selectedBacktest.n)}件・偏り {signed(selectedBacktest.bias, 2)}/k・予測範囲内 {fmt(selectedBacktest.coverage95 * 100)}%
+                  {fmt(selectedBacktest.n)}件・偏り {signed(selectedBacktest.bias, 2)}/k・95%範囲内 {fmt(selectedBacktest.coverage95 * 100)}%
+                  ・判断下限以上 {fmt(selectedBacktest.decisionLowerCoverage * 100)}%
                 </div>
               )}
             </div>
           </div>
           <div style={{ marginTop: 7, fontSize: 8, color: P.sub, lineHeight: 1.5 }}>
-            平均ズレは、前日に予測した回転率と翌日の実績が平均で何回/Kずれたかです。偏りがプラスなら高めの予測です。
+            平均ズレは、前日に予測した回転率と翌日の実績が平均で何回/Kずれたかです。判断下限以上は80%が目標で、偏りがプラスなら高めの予測です。
           </div>
           <div style={{ marginTop: 7, padding: 9, borderRadius: 11, background: P.bg, border: `1px solid ${P.line}`, fontSize: 8, color: P.subHi, lineHeight: 1.6 }}>
             <strong style={{ display: "block", color: P.text, fontSize: 9 }}>精度向上の学習状況</strong>
@@ -1622,6 +1652,13 @@ function LearningSummary({
               日次変動：{processProfile
                 ? `±${fmt(processProfile.sd, 2)}/k（${fmt(processProfile.n)}件・${processProfile.source === "default" ? "安全側の初期値" : "実績学習"}）`
                 : "初期値で計算"}
+            </span>
+            <span style={{ display: "block" }}>
+              判断用下限：{decisionLowerCalibration
+                ? decisionLowerCalibration.status === "calibrated"
+                  ? `${fmt(decisionLowerCalibration.sampleCount)}件で実績校正済み（実測 ${fmt(decisionLowerCalibration.observedCoverage * 100)}%）`
+                  : `${fmt(decisionLowerCalibration.sampleCount)}/${fmt(decisionLowerCalibration.minRequired)}件・暫定値（あと${fmt(decisionLowerCalibration.remainingSamples)}件）`
+                : "暫定値で計算"}
             </span>
             <span style={{ display: "block" }}>
               推奨上位5台：{selectionBacktest?.recommendedTop5?.n > 0

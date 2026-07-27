@@ -22,6 +22,15 @@ import {
   estimateProcessNoise,
 } from "./pevidenceBacktest.js";
 import { priorBallsForEvidenceDate } from "./pevidenceCalibration.js";
+import {
+  DECISION_LOWER_DEFAULT_Z,
+  DECISION_LOWER_QUANTILE,
+  DECISION_LOWER_TARGET_COVERAGE,
+  decisionLowerBound,
+  normalCdf as forecastNormalCdf,
+  predictionInterval95,
+  probabilityAboveThreshold,
+} from "./rotationForecast.js";
 
 export const PE_PARAMS = Object.freeze({
   emaAlpha: 2 / 8,
@@ -46,7 +55,13 @@ export const PE_PARAMS = Object.freeze({
   processShrinkageSamples: 20,
   minProcessNoiseSd: 1.5,
   maxProcessNoiseSd: 5,
-  lcbK: 1,
+  lcbK: DECISION_LOWER_DEFAULT_Z,
+  decisionLowerQuantile: DECISION_LOWER_QUANTILE,
+  decisionLowerTargetCoverage: DECISION_LOWER_TARGET_COVERAGE,
+  decisionCalibrationMinSamples: 100,
+  decisionCalibrationWindow: 300,
+  decisionCalibrationMinK: 0.25,
+  decisionCalibrationMaxK: 2.5,
   selectionBiasMinSamples: 20,
   selectionBiasValidationWarmup: 10,
   selectionBiasPriorSamples: 20,
@@ -73,24 +88,7 @@ function round(value, digits = 2) {
   return Math.round(num(value) * p) / p;
 }
 
-export function normalCdf(x) {
-  if (x < -10) return 0;
-  if (x > 10) return 1;
-  const a1 = 0.254829592;
-  const a2 = -0.284496736;
-  const a3 = 1.421413741;
-  const a4 = -1.453152027;
-  const a5 = 1.061405429;
-  const p = 0.3275911;
-  const sign = x < 0 ? -1 : 1;
-  // normal CDF = 0.5 * (1 + erf(x / sqrt(2))).
-  // The previous implementation passed x directly to the erf approximation,
-  // which overstated positive probabilities (for example, z=1 became 92.1%).
-  const ax = Math.abs(x) / Math.SQRT2;
-  const t = 1 / (1 + p * ax);
-  const erf = sign * (1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-ax * ax));
-  return 0.5 * (1 + erf);
-}
+export const normalCdf = forecastNormalCdf;
 
 function atLeastOneHitProbability(spins, denominator) {
   const n = Math.max(0, num(spins));
@@ -606,8 +604,9 @@ function createProcessedRows(rawRows, customMachines, params, payoutCorrections 
       // 合成なので、区間幅も conf²·SE² + (1-conf)²·priorVariance のベイズ事後分散から取る。
       // 従来の SE×conf は信頼度ゼロ付近で区間幅0（＝データなしで断定）に潰れていた。
       const posteriorSd = Math.sqrt((confidence * standardError) ** 2 + ((1 - confidence) ** 2) * DEFAULT_PRIOR_VARIANCE);
-      const predictedLow = Math.max(0, predictedRotation - 1.96 * posteriorSd);
-      const predictedHigh = predictedRotation + 1.96 * posteriorSd;
+      const posteriorInterval = predictionInterval95(predictedRotation, posteriorSd ** 2);
+      const predictedLow = posteriorInterval.low;
+      const predictedHigh = posteriorInterval.high;
 
       output.push({
         ...row,
@@ -654,7 +653,7 @@ function applyProcessNoise(rows, processNoise, params) {
     );
     const posteriorVariance = Math.max(0, num(row.posteriorVariance));
     const nextDayVariance = posteriorVariance + processVariance;
-    const predictiveSd = Math.sqrt(nextDayVariance);
+    const predictiveInterval = predictionInterval95(row.predictedRotation, nextDayVariance);
     const dataConfidence = clamp(num(row.dataConfidence ?? row.confidence), 0, 1);
     // DEFAULT_PRIOR_VARIANCE is four (SD=2 rotations/k). Comparing the
     // irreducible overnight variance with that scale gives an interpretable
@@ -674,8 +673,8 @@ function applyProcessNoise(rows, processNoise, params) {
       processNoiseSource: profile?.source || "default",
       processNoiseSamples: Math.max(0, num(profile?.n)),
       nextDayVariance,
-      predictedLow: Math.max(0, row.predictedRotation - 1.96 * predictiveSd),
-      predictedHigh: row.predictedRotation + 1.96 * predictiveSd,
+      predictedLow: predictiveInterval.low,
+      predictedHigh: predictiveInterval.high,
     };
   });
 }
@@ -1196,8 +1195,21 @@ export function buildIslandActivityHistory(rows = []) {
     ));
 }
 
-function applyDecision(latest, profiles, markov, spatial, opposite, params, biasCorrection = null) {
+function applyDecision(
+  latest,
+  profiles,
+  markov,
+  spatial,
+  opposite,
+  params,
+  biasCorrection = null,
+  decisionCalibration = null,
+) {
   void profiles;
+  const activeDecisionK = Math.max(
+    0,
+    num(decisionCalibration?.k, params.lcbK),
+  );
   const biasEligible = new Set();
   const biasGroups = new Map();
   for (const row of latest.filter((item) => item.valid)) {
@@ -1208,10 +1220,10 @@ function applyDecision(latest, profiles, markov, spatial, opposite, params, bias
   for (const group of biasGroups.values()) {
     group.sort((left, right) => {
       const leftMargin = num(left.predictedRotation)
-        - Math.max(0, num(params.lcbK, 1)) * Math.sqrt(Math.max(0, num(left.nextDayVariance)))
+        - activeDecisionK * Math.sqrt(Math.max(0, num(left.nextDayVariance)))
         - num(left.border);
       const rightMargin = num(right.predictedRotation)
-        - Math.max(0, num(params.lcbK, 1)) * Math.sqrt(Math.max(0, num(right.nextDayVariance)))
+        - activeDecisionK * Math.sqrt(Math.max(0, num(right.nextDayVariance)))
         - num(right.border);
       return rightMargin - leftMargin || historyKey(left).localeCompare(historyKey(right));
     });
@@ -1230,6 +1242,21 @@ function applyDecision(latest, profiles, markov, spatial, opposite, params, bias
           minRequired: params.markovMinTransitions,
         },
         nailAlert: row.inactive ? "未稼働" : "データ除外",
+        decisionLowerK: activeDecisionK,
+        decisionLowerRotation: null,
+        decisionLowerTargetCoverage: num(
+          decisionCalibration?.targetCoverage,
+          params.decisionLowerTargetCoverage,
+        ),
+        decisionCalibrationStatus: decisionCalibration?.status || "awaiting-samples",
+        decisionCalibrationSampleCount: num(decisionCalibration?.sampleCount),
+        decisionCalibrationMinRequired: num(
+          decisionCalibration?.minRequired,
+          params.decisionCalibrationMinSamples,
+        ),
+        seatThreshold: null,
+        seatThresholdProbability: null,
+        seatDecisionStatus: "pending",
         score: 0,
         verdict: "nodata",
       };
@@ -1331,7 +1358,6 @@ function applyDecision(latest, profiles, markov, spatial, opposite, params, bias
     const adjustedRotation = Math.max(0, transitionMean + biasRotationAdjustment);
     const nextDayVariance = Math.max(0, num(row.nextDayVariance ?? row.posteriorVariance))
       + transitionVariance;
-    const predictiveSd = Math.sqrt(nextDayVariance);
     const transitionReliability = DEFAULT_PRIOR_VARIANCE / (
       DEFAULT_PRIOR_VARIANCE + transitionVariance
     );
@@ -1340,13 +1366,14 @@ function applyDecision(latest, profiles, markov, spatial, opposite, params, bias
     // nextDayVariance and therefore affects the LCB/range, not confidence a
     // second time.
     const forecastConfidence = clamp(num(row.confidence), 0, 0.99);
+    const forecastInterval = predictionInterval95(adjustedRotation, nextDayVariance);
     const forecastRow = {
       ...row,
       confidence: forecastConfidence,
       forecastConfidence,
       predictedRotation: adjustedRotation,
-      predictedLow: Math.max(0, adjustedRotation - 1.96 * predictiveSd),
-      predictedHigh: adjustedRotation + 1.96 * predictiveSd,
+      predictedLow: forecastInterval.low,
+      predictedHigh: forecastInterval.high,
       nextDayVariance,
     };
 
@@ -1383,9 +1410,25 @@ function applyDecision(latest, profiles, markov, spatial, opposite, params, bias
     contextAdjustment = clamp(contextAdjustment, -15, 15);
     const score = Math.max(0, baseScore + contextAdjustment);
     const verdict = classifyEvidenceScore(score, forecastRow.confidence);
-    const lcbK = Math.max(0, num(params.lcbK, 1));
-    const lcbRotation = forecastRow.predictedRotation - lcbK * predictiveSd;
-    const selectionMargin = lcbRotation - finance.effectiveBorder;
+    const decisionLowerK = activeDecisionK;
+    const decisionLowerRotation = decisionLowerBound(
+      forecastRow.predictedRotation,
+      nextDayVariance,
+      decisionLowerK,
+    );
+    const seatThreshold = finance.effectiveBorder + 0.5;
+    const seatThresholdProbability = probabilityAboveThreshold(
+      forecastRow.predictedRotation,
+      nextDayVariance,
+      seatThreshold,
+    );
+    const statisticalSeatDecisionStatus = decisionLowerRotation >= seatThreshold
+      ? "candidate"
+      : seatThresholdProbability >= 0.5 ? "trial" : "skip";
+    const seatDecisionStatus = nailAlert.includes("締め")
+      ? "skip"
+      : statisticalSeatDecisionStatus;
+    const selectionMargin = decisionLowerRotation - seatThreshold;
     return {
       ...forecastRow,
       spatial: spatialInfo,
@@ -1403,14 +1446,44 @@ function applyDecision(latest, profiles, markov, spatial, opposite, params, bias
       weekdaySampleCount: dowProfile?.total || 0,
       nailAlert,
       borderDifference,
-      lcbK,
-      lcbRotation,
+      decisionLowerK,
+      decisionLowerRotation,
+      decisionLowerQuantile: num(
+        decisionCalibration?.quantile,
+        params.decisionLowerQuantile,
+      ),
+      decisionLowerTargetCoverage: num(
+        decisionCalibration?.targetCoverage,
+        params.decisionLowerTargetCoverage,
+      ),
+      decisionCalibrationStatus: decisionCalibration?.status || "awaiting-samples",
+      decisionCalibrationSampleCount: num(decisionCalibration?.sampleCount),
+      decisionCalibrationMinRequired: num(
+        decisionCalibration?.minRequired,
+        params.decisionCalibrationMinSamples,
+      ),
+      decisionCalibrationRemainingSamples: num(
+        decisionCalibration?.remainingSamples,
+        params.decisionCalibrationMinSamples,
+      ),
+      decisionCalibrationMethod: decisionCalibration?.method || "normal-q20-provisional-v1",
+      seatThreshold,
+      seatThresholdProbability,
+      statisticalSeatDecisionStatus,
+      seatDecisionStatus,
+      // lcb* は保存済み表示との互換名。意味は上記の判断用下限。
+      lcbK: decisionLowerK,
+      lcbRotation: decisionLowerRotation,
       selectionMargin,
       contextAdjustment,
       score,
       verdict,
       ...finance,
-      action: nailAlert.includes("締め") ? "見送り・撤退を優先" : verdict === "strong" ? "最優先候補" : verdict === "watch" ? "実測を見て判断" : "見送り",
+      action: nailAlert.includes("締め")
+        ? "見送り・撤退を優先"
+        : seatDecisionStatus === "candidate"
+          ? "安全側で候補"
+          : seatDecisionStatus === "trial" ? "試し打ちで確認" : "見送り",
     };
   });
 }
@@ -1452,6 +1525,7 @@ function buildRollingDecisionRows(baseRows, islands, params) {
       opposite,
       params,
       priorBacktest.biasCorrection,
+      priorBacktest.decisionLowerCalibration,
     ));
   }
 
@@ -1486,7 +1560,7 @@ export function priorityScoreOf(row) {
     ?? row?.posteriorVariance,
   );
   const border = Number(row?.effectiveBorder ?? row?.border);
-  const lcbK = Math.max(0, num(row?.lcbK, 1));
+  const lcbK = Math.max(0, num(row?.decisionLowerK ?? row?.lcbK, DECISION_LOWER_DEFAULT_Z));
   if (
     Number.isFinite(predictedRotation)
     && Number.isFinite(variance)
@@ -1526,7 +1600,11 @@ export function buildPortfolioPlan(rows = [], options = {}) {
       && hourly > 0
       && hourlyRisk > 0
       && num(row?.sharpe) > 0
-      && (row?.verdict === "strong" || row?.verdict === "watch")
+      && (
+        row?.seatDecisionStatus
+          ? row.seatDecisionStatus === "candidate"
+          : row?.verdict === "strong" || row?.verdict === "watch"
+      )
       && !String(row?.nailAlert || "").includes("締め")
       && (!hasExplicitTightGate || tightProbability == null || tightProbability < maxTightProbability);
   })).slice(0, maxCandidates);

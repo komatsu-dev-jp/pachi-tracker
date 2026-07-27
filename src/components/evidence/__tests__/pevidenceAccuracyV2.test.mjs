@@ -69,7 +69,7 @@ test("日次変動は大量データでも翌日信頼度を上限化し、予�
   assert.ok(row.dataConfidence > 0.98);
   assert.ok(processOnlyRow.confidence >= 0.5 && processOnlyRow.confidence <= 0.65);
   assert.ok(row.confidence <= processOnlyRow.confidence);
-  assert.ok(row.predictedHigh - row.predictedLow >= 2 * 1.96 * 1.75);
+  assert.ok(row.predictedHigh - row.predictedLow >= 2 * 1.959963984540054 * 1.75);
 });
 
 test("部分プーリングは同日peerを使い、未来日の追加では過去予測を変えない", () => {
@@ -135,7 +135,7 @@ test("急に開いた翌日の締め確率は平均予測と分散へ一度だ�
   assert.notEqual(current.contextAdjustment, -8);
 });
 
-test("LCBランキングは平均が少し高い不安定台より、下限が高い安定台を上位にする", () => {
+test("判断用下限ランキングは平均が少し高い不安定台より、下限が高い安定台を上位にする", () => {
   const unstable = {
     machineName: "不安定台",
     num: "101",
@@ -209,4 +209,37 @@ test("推奨上位5台のバックテストだけを層別し、過去だけで�
       < backtest.biasCorrection.validation.raw.mae,
   );
   assert.ok(backtest.selection.byVerdict.strong.n > 0);
+  assert.equal(backtest.decisionLowerCalibration.status, "calibrated");
+  assert.equal(backtest.decisionLowerCalibration.sampleCount, 150);
+  assert.ok(backtest.overall.decisionLowerPinballLoss >= 0);
+  assert.ok(backtest.overall.thresholdBrierScore >= 0);
+});
+
+test("判断用下限は100件までは暫定値、100件から過去実績だけで校正する", () => {
+  const dates = Array.from({ length: 105 }, (_, index) => (
+    new Date(Date.UTC(2026, 0, 1) + index * 86400000).toISOString().slice(0, 10)
+  ));
+  const longScans = dates.map((date, index) => (
+    scan(date, [rowForRate("901", index % 3 === 0 ? 22 : 19, date)])
+  ));
+  const through100 = buildPEvidenceAnalytics({
+    scans: longScans.slice(0, 100),
+    customMachines: [machine],
+  });
+  const through105 = buildPEvidenceAnalytics({
+    scans: longScans,
+    customMachines: [machine],
+  });
+
+  assert.equal(through100.currentRows[0].decisionCalibrationStatus, "awaiting-samples");
+  assert.equal(through100.currentRows[0].decisionCalibrationSampleCount, 99);
+  assert.equal(through105.currentRows[0].decisionCalibrationStatus, "calibrated");
+  assert.equal(through105.currentRows[0].decisionCalibrationSampleCount, 104);
+
+  const historicalDate = dates[98];
+  const beforeFuture = through100.backtest.pairs.find((pair) => pair.predictionDate === historicalDate);
+  const afterFuture = through105.backtest.pairs.find((pair) => pair.predictionDate === historicalDate);
+  assert.equal(afterFuture.predictedRotation, beforeFuture.predictedRotation);
+  assert.equal(afterFuture.decisionLowerRotation, beforeFuture.decisionLowerRotation);
+  assert.equal(afterFuture.decisionLowerK, beforeFuture.decisionLowerK);
 });

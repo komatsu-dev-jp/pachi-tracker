@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   buildBacktestPairs,
   buildCalibrationCandidates,
+  buildDecisionLowerCalibration,
   buildPEvidenceBacktest,
   summarizeBacktestPairs,
 } from "../pevidenceBacktest.js";
@@ -72,6 +73,12 @@ assert.equal(result.overall.bias, 0.5, "bias は予測 - 実測。正なら過�
 assert.equal(result.overall.rmse, Math.sqrt(2.5));
 assert.equal(result.overall.within1Rate, 0.5);
 assert.equal(result.overall.coverage95, 0.5);
+assert.equal(result.overall.decisionLowerCoverage, 0.5);
+assert.equal(result.overall.decisionLowerTargetCoverage, 0.8);
+assert.equal(result.overall.sitCount, 2);
+assert.equal(result.overall.falseSitRate, 0.5);
+assert.ok(result.overall.decisionLowerPinballLoss > 0);
+assert.ok(result.overall.thresholdBrierScore >= 0);
 assert.deepEqual(result.byKeyList, [result.byKey[key]]);
 assert.equal(result.byKey[key].n, 2);
 assert.equal(result.biasDefinition, "prediction-minus-actual");
@@ -84,7 +91,41 @@ assert.deepEqual(emptyMetrics, {
   rmse: null,
   within1Rate: null,
   coverage95: null,
+  decisionLowerCoverage: null,
+  decisionLowerTargetCoverage: 0.8,
+  decisionLowerCalibrationError: null,
+  averageDecisionLowerWidth: null,
+  decisionLowerPinballLoss: null,
+  thresholdSampleCount: 0,
+  thresholdBrierScore: null,
+  sitCount: 0,
+  skipCount: 0,
+  falseSitRate: null,
+  falseSkipRate: null,
 });
+
+assert.equal(result.decisionLowerCalibration.status, "awaiting-samples");
+assert.equal(result.decisionLowerCalibration.minRequired, 100);
+assert.equal(result.decisionLowerCalibration.remainingSamples, 98);
+
+const standardizedPairs = Array.from({ length: 100 }, (_, index) => ({
+  id: `pair-${index}`,
+  actualDate: `2026-${String(Math.floor(index / 28) + 1).padStart(2, "0")}-${String((index % 28) + 1).padStart(2, "0")}`,
+  error: index < 81 ? 0.9 : 2,
+  forecastVariance: 1,
+}));
+const calibratedLower = buildDecisionLowerCalibration(standardizedPairs);
+assert.equal(calibratedLower.status, "calibrated");
+assert.equal(calibratedLower.sampleCount, 100);
+assert.equal(calibratedLower.k, 0.9);
+assert.equal(calibratedLower.observedCoverage, 0.81);
+assert.equal(
+  buildDecisionLowerCalibration(standardizedPairs.slice(0, 99), {
+    decisionCalibrationMinSamples: 1,
+  }).status,
+  "awaiting-samples",
+  "判断用下限は指定で安全最低件数100を下回れない",
+);
 
 // 店舗・機種・台番号のどれかが違えば、別履歴として扱う。
 const identityPairs = buildBacktestPairs([

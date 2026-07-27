@@ -27,6 +27,11 @@ import {
   rotationPer250FromStart1K,
 } from "../../sessionProjection.js";
 import { shouldUseArchiveForPrediction } from "../../sessionDataQuality.js";
+import {
+  NORMAL_95_Z,
+  decisionLowerBound,
+  probabilityAboveThreshold,
+} from "../evidence/rotationForecast.js";
 
 function round1(value) {
   return Math.round(Number(value || 0) * 10) / 10;
@@ -753,16 +758,16 @@ function summarizeIsland(island) {
     machine.recommendationStatus === "actionable"
     && machine.verdict !== "nodata"
   );
-  const strong = eligible.filter((machine) => machine.verdict === "strong");
-  const goodRate = eligible.length ? strong.length / eligible.length : 0;
-  const best = [...strong].sort((a, b) => b.score - a.score)[0] || null;
+  const candidates = eligible.filter((machine) => machine.seatDecisionStatus === "candidate");
+  const goodRate = eligible.length ? candidates.length / eligible.length : 0;
+  const best = [...candidates].sort(compareStrategyPriority)[0] || null;
   return {
     ...island,
     grade: eligible.length ? islandGrade(goodRate) : "—",
     goodRate: eligible.length ? Math.round(goodRate * 100) : null,
-    candidates: strong.length,
-    evDensity: strong.length
-      ? Math.round(strong.reduce((sum, machine) => sum + machine.evPerHour, 0) / strong.length)
+    candidates: candidates.length,
+    evDensity: candidates.length
+      ? Math.round(candidates.reduce((sum, machine) => sum + Number(machine.evPerHour || 0), 0) / candidates.length)
       : 0,
     strongZone: best ? `${best.num}番周辺` : "—",
     analyzedMachines: eligible.length,
@@ -946,7 +951,7 @@ export function buildStrategyMap({
     const baseLow = pe?.valid ? pe.predictedLow : evidence.predictedLow;
     const baseHigh = pe?.valid ? pe.predictedHigh : evidence.predictedHigh;
     const baseVariance = pe?.nextDayVariance ?? pe?.posteriorVariance
-      ?? (((Number(baseHigh) - Number(baseLow)) / (2 * 1.96)) ** 2 || 4);
+      ?? (((Number(baseHigh) - Number(baseLow)) / (2 * NORMAL_95_Z)) ** 2 || 4);
     const effectiveMachineSpec = pe?.machine || machineSpec;
     const identity = {
       storeId: row.storeId ?? analysisStoreId,
@@ -1121,6 +1126,33 @@ export function buildStrategyMap({
     const hasPlanEvidence = machineActionable && verdict !== "nodata" && evPerHour != null;
     const goalEligible = planHandoff ? Boolean(hasPlanEvidence && evPerHour >= minPlanEv) : machineActionable;
     const planEligible = Boolean(planTarget && goalEligible);
+    const decisionLowerK = Math.max(
+      0,
+      Number(
+        pe?.decisionLowerK
+          ?? analytics.backtest?.decisionLowerCalibration?.k
+          ?? analytics.params.lcbK,
+      ) || 0,
+    );
+    const decisionLowerRotation = currentRowInvalid
+      ? null
+      : decisionLowerBound(predictedRotation, estimate.variance, decisionLowerK);
+    const seatThreshold = currentRowInvalid ? null : trueBorder + 0.5;
+    const seatThresholdProbability = currentRowInvalid
+      ? null
+      : probabilityAboveThreshold(predictedRotation, estimate.variance, seatThreshold);
+    const hasSeatDecision = Number.isFinite(decisionLowerRotation)
+      && Number.isFinite(seatThreshold)
+      && Number.isFinite(seatThresholdProbability);
+    const statisticalSeatDecisionStatus = currentRowInvalid || !hasSeatDecision
+      ? "pending"
+      : decisionLowerRotation >= seatThreshold
+        ? "candidate"
+        : seatThresholdProbability >= 0.5 ? "trial" : "skip";
+    const nailAlert = currentRowInvalid ? "データ除外" : (pe?.nailAlert || "データ収集中");
+    const seatDecisionStatus = !machineActionable || statisticalSeatDecisionStatus === "pending"
+      ? "pending"
+      : String(nailAlert).includes("締め") ? "skip" : statisticalSeatDecisionStatus;
     const machine = {
       id: `m-${machineName}-${row.num}`,
       num: Number(row.num) || row.num,
@@ -1131,15 +1163,33 @@ export function buildStrategyMap({
       rot: currentRowInvalid ? null : round1(predictedRotation),
       predictedRotation: currentRowInvalid ? null : predictedRotation,
       nextDayVariance: currentRowInvalid ? null : estimate.variance,
-      lcbK: analytics.params.lcbK,
-      lcbRotation: currentRowInvalid
-        ? null
-        : predictedRotation - analytics.params.lcbK * Math.sqrt(Math.max(0, estimate.variance)),
+      decisionLowerK,
+      decisionLowerRotation,
+      decisionLowerQuantile: pe?.decisionLowerQuantile
+        ?? analytics.backtest?.decisionLowerCalibration?.quantile
+        ?? analytics.params.decisionLowerQuantile,
+      decisionLowerTargetCoverage: pe?.decisionLowerTargetCoverage
+        ?? analytics.backtest?.decisionLowerCalibration?.targetCoverage
+        ?? analytics.params.decisionLowerTargetCoverage,
+      decisionCalibrationStatus: pe?.decisionCalibrationStatus
+        ?? analytics.backtest?.decisionLowerCalibration?.status
+        ?? "awaiting-samples",
+      decisionCalibrationSampleCount: pe?.decisionCalibrationSampleCount
+        ?? analytics.backtest?.decisionLowerCalibration?.sampleCount
+        ?? 0,
+      decisionCalibrationMinRequired: pe?.decisionCalibrationMinRequired
+        ?? analytics.backtest?.decisionLowerCalibration?.minRequired
+        ?? analytics.params.decisionCalibrationMinSamples,
+      seatThreshold,
+      seatThresholdProbability,
+      statisticalSeatDecisionStatus,
+      seatDecisionStatus,
+      // lcb* は旧保存データ・既存表示との互換名。
+      lcbK: decisionLowerK,
+      lcbRotation: decisionLowerRotation,
       selectionMargin: currentRowInvalid
         ? null
-        : predictedRotation
-          - analytics.params.lcbK * Math.sqrt(Math.max(0, estimate.variance))
-          - trueBorder,
+        : decisionLowerRotation - seatThreshold,
       confidence: currentRowInvalid ? 0 : confidencePct,
       border: round1(trueBorder),
       effectiveBorder: trueBorder,
@@ -1151,7 +1201,7 @@ export function buildStrategyMap({
       goalEligible,
       goalThresholdActive: Boolean(planHandoff),
       verdict,
-      isStar: machineActionable && verdict === "strong" && contextualScore >= 50,
+      isStar: machineActionable && seatDecisionStatus === "candidate",
       isPlaying,
       liveDecision: isPlaying ? liveDecision : null,
       strategyDivergence,
@@ -1197,7 +1247,7 @@ export function buildStrategyMap({
       ema: currentRowInvalid ? 0 : round1(pe?.ema || 0),
       cusumUp: currentRowInvalid ? 0 : round1(pe?.cusumUp || 0),
       cusumDown: currentRowInvalid ? 0 : round1(pe?.cusumDown || 0),
-      nailAlert: currentRowInvalid ? "データ除外" : (pe?.nailAlert || "データ収集中"),
+      nailAlert,
       regimeStart: currentRowInvalid ? "" : (pe?.regimeStart || ""),
       tomorrowTight: machineActionable
         && pe?.valid
@@ -1311,7 +1361,7 @@ export function buildStrategyMap({
   if (!all.length) return emptyMap(playingNum, planHandoff, strategyPlan, freshness);
   const candidatePool = all.filter((machine) =>
     machine.recommendationStatus === "actionable"
-    && machine.verdict === "strong"
+    && machine.seatDecisionStatus === "candidate"
     && !String(machine.nailAlert || "").includes("締め")
   );
   const candidates = actionable
