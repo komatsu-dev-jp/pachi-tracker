@@ -29,6 +29,7 @@ import {
   decisionMeta,
 } from "../decision/decisionVocabulary.js";
 import {
+  deleteDeltaScans,
   findDeltaScanDateTargets,
   updateDeltaScanDate,
 } from "../delta/deltaScanDate.js";
@@ -1268,6 +1269,7 @@ function IslandActivityHistoryPanel({
   selected,
   scans = EMPTY_LIST,
   onChangeScanDate,
+  onDeleteScans,
   requestConfirmation,
 }) {
   const islandHistory = useMemo(() => (Array.isArray(history) ? history : [])
@@ -1357,8 +1359,50 @@ function IslandActivityHistoryPanel({
     setDateError("");
     setDateNotice(`${result.fromDate} から ${result.toDate} へ変更しました。`);
   };
+  const submitDelete = async () => {
+    if (!selectedEntry || !targetScans.length || !onDeleteScans) return;
+    if (typeof requestConfirmation !== "function") {
+      setDateError("確認画面を開けませんでした。画面を開き直してもう一度お試しください。");
+      return;
+    }
+    const rowCount = targetScans.reduce(
+      (sum, scan) => sum + (Array.isArray(scan?.rows) ? scan.rows.length : 0),
+      0,
+    );
+    const confirmed = await requestConfirmation({
+      title: "この日の差玉解析を削除しますか？",
+      message: `${selectedEntry.date} の対象データ ${targetScans.length}件（${rowCount}台分）を削除します。\n`
+        + "別の日付のデータを誤って登録した場合に使う操作です。削除後は元に戻せません。",
+      confirmLabel: "データを削除",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+
+    const result = onDeleteScans({
+      scanIds: targetScans.map((scan) => scan.id),
+      fromDate: selectedEntry.date,
+    });
+    if (!result?.ok) {
+      setDateError("データを削除できませんでした。画面を開き直してもう一度お試しください。");
+      return;
+    }
+
+    setSelectedDate("");
+    setEditingDate(false);
+    setDateError("");
+    setDateNotice(`${result.fromDate} の差玉解析 ${result.deletedCount}件（${result.deletedRowCount}台分）を削除しました。`);
+  };
   if (!islandHistory.length) {
-    return <div style={{ marginTop: 7, color: P.sub, fontSize: 8 }}>島活動の履歴はまだありません。</div>;
+    return (
+      <>
+        {dateNotice && (
+          <div role="status" style={{ marginTop: 7, color: P.green, fontSize: 8, fontWeight: 800 }}>
+            {dateNotice}
+          </div>
+        )}
+        <div style={{ marginTop: 7, color: P.sub, fontSize: 8 }}>島活動の履歴はまだありません。</div>
+      </>
+    );
   }
   return (
     <div style={{ marginTop: 8, padding: 11, borderRadius: 14, background: P.bg, border: `1px solid ${P.line}` }}>
@@ -1413,26 +1457,48 @@ function IslandActivityHistoryPanel({
       {selectedEntry && (
         <div style={{ marginTop: 8, padding: 8, borderRadius: 10, background: P.card, border: `1px solid ${P.line}`, color: P.subHi, fontSize: 8, lineHeight: 1.55 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-            <strong style={{ color: ACTIVITY_TONES[selectedEntry.signalCode]?.color || P.text }}>{selectedEntry.date}・{selectedEntry.activitySignal}</strong>
-            {onChangeScanDate && targetScans.length > 0 && (
-              <button
-                type="button"
-                onClick={beginDateEdit}
-                aria-label={`${selectedEntry.date}の日付を修正`}
-                style={{
-                  minHeight: 34,
-                  flexShrink: 0,
-                  padding: "0 10px",
-                  borderRadius: 9,
-                  border: `1px solid ${P.cyan}`,
-                  background: "color-mix(in srgb, var(--sm-cyan) 11%, var(--sm-card))",
-                  color: P.cyan,
-                  fontSize: 8,
-                  fontWeight: 900,
-                }}
-              >
-                日付を修正
-              </button>
+            <strong style={{ flex: 1, color: ACTIVITY_TONES[selectedEntry.signalCode]?.color || P.text }}>{selectedEntry.date}・{selectedEntry.activitySignal}</strong>
+            {targetScans.length > 0 && (
+              <div style={{ display: "flex", flexShrink: 0, gap: 5 }}>
+                {onChangeScanDate && (
+                  <button
+                    type="button"
+                    onClick={beginDateEdit}
+                    aria-label={`${selectedEntry.date}の日付を修正`}
+                    style={{
+                      minHeight: 34,
+                      padding: "0 9px",
+                      borderRadius: 9,
+                      border: `1px solid ${P.cyan}`,
+                      background: "color-mix(in srgb, var(--sm-cyan) 11%, var(--sm-card))",
+                      color: P.cyan,
+                      fontSize: 8,
+                      fontWeight: 900,
+                    }}
+                  >
+                    日付を修正
+                  </button>
+                )}
+                {onDeleteScans && (
+                  <button
+                    type="button"
+                    onClick={submitDelete}
+                    aria-label={`${selectedEntry.date}の差玉解析を削除`}
+                    style={{
+                      minHeight: 34,
+                      padding: "0 9px",
+                      borderRadius: 9,
+                      border: `1px solid color-mix(in srgb, ${P.red} 70%, ${P.line})`,
+                      background: "color-mix(in srgb, var(--sm-red) 9%, var(--sm-card))",
+                      color: P.red,
+                      fontSize: 8,
+                      fontWeight: 900,
+                    }}
+                  >
+                    データを削除
+                  </button>
+                )}
+              </div>
             )}
           </div>
           <span style={{ display: "block", marginTop: 3 }}>
@@ -1541,6 +1607,7 @@ function LearningSummary({
   selected,
   scans,
   onChangeScanDate,
+  onDeleteScans,
   requestConfirmation,
   onApproveCalibration,
   calibrationNotice,
@@ -1612,6 +1679,7 @@ function LearningSummary({
             selected={selected}
             scans={scans}
             onChangeScanDate={onChangeScanDate}
+            onDeleteScans={onDeleteScans}
             requestConfirmation={requestConfirmation}
           />
         </div>
@@ -1991,6 +2059,24 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord }) {
     return result;
   };
 
+  const removeScans = ({ scanIds, fromDate }) => {
+    if (isDemo || typeof S?.setDeltaScans !== "function") {
+      return {
+        ok: false,
+        reason: "unavailable",
+        scans: savedScans,
+        deletedCount: 0,
+        deletedRowCount: 0,
+      };
+    }
+    const result = deleteDeltaScans(savedScans, {
+      scanIds,
+      fromDate,
+    });
+    if (result.ok) S.setDeltaScans(result.scans);
+    return result;
+  };
+
   return (
     <div ref={rootRef} className="strategy-map" style={{ flex: 1, background: P.bg, color: P.text, fontFamily: FONT, paddingBottom: "calc(24px + env(safe-area-inset-bottom))" }}>
       <Header data={data} onBack={onBack} onHelp={() => setHelpOpen(true)} />
@@ -2051,6 +2137,7 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord }) {
         selected={selected}
         scans={deltaScans}
         onChangeScanDate={isDemo ? null : changeScanDate}
+        onDeleteScans={isDemo ? null : removeScans}
         requestConfirmation={S?.requestConfirmation}
         onApproveCalibration={isDemo ? null : approveCalibration}
         calibrationNotice={calibrationNotice}

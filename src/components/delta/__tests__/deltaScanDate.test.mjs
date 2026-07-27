@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  deleteDeltaScans,
   findDeltaScanDateTargets,
   updateDeltaScanDate,
 } from "../deltaScanDate.js";
@@ -103,6 +104,36 @@ assert.equal(updateDeltaScanDate(scans, {
   scanIds: ["missing"],
   fromDate: "2026-07-27",
   toDate: "2026-07-26",
+}).reason, "no-target");
+
+const deleted = deleteDeltaScans(scans, {
+  scanIds: ["scan-a"],
+  fromDate: "2026-07-27",
+});
+assert.equal(deleted.ok, true);
+assert.equal(deleted.deletedCount, 1);
+assert.equal(deleted.deletedRowCount, 2);
+assert.deepEqual(deleted.scans.map((scan) => scan.id), ["scan-b", "scan-c"]);
+assert.equal(deleted.scans[0], scans[1], "削除対象外のデータは変更しない");
+
+const staleDelete = deleteDeltaScans(scans, {
+  scanIds: ["scan-a"],
+  fromDate: "2026-07-26",
+});
+assert.deepEqual(staleDelete, {
+  ok: false,
+  reason: "no-target",
+  scans,
+  deletedCount: 0,
+  deletedRowCount: 0,
+});
+assert.equal(deleteDeltaScans(scans, {
+  scanIds: ["scan-a"],
+  fromDate: "2026-02-30",
+}).reason, "invalid-date");
+assert.equal(deleteDeltaScans(scans, {
+  scanIds: [],
+  fromDate: "2026-07-27",
 }).reason, "no-target");
 
 console.log("deltaScanDate.test.mjs: all tests passed");

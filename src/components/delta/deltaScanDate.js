@@ -102,3 +102,49 @@ export function updateDeltaScanDate(scans = [], {
     toDate: nextDate,
   };
 }
+
+export function deleteDeltaScans(scans = [], {
+  scanIds = [],
+  fromDate = "",
+} = {}) {
+  const list = Array.isArray(scans) ? scans : [];
+  const sourceDate = normalizeEvidenceDate(fromDate);
+  if (!sourceDate) {
+    return { ok: false, reason: "invalid-date", scans: list, deletedCount: 0, deletedRowCount: 0 };
+  }
+
+  const targetIds = new Set(
+    (Array.isArray(scanIds) ? scanIds : [])
+      .filter((id) => id !== null && id !== undefined)
+      .map(String),
+  );
+  if (!targetIds.size) {
+    return { ok: false, reason: "no-target", scans: list, deletedCount: 0, deletedRowCount: 0 };
+  }
+
+  let deletedCount = 0;
+  let deletedRowCount = 0;
+  const nextScans = list.filter((scan) => {
+    const shouldDelete = Boolean(
+      scan
+      && targetIds.has(String(scan.id))
+      && normalizeEvidenceDate(scan.date) === sourceDate
+    );
+    if (!shouldDelete) return true;
+    deletedCount += 1;
+    deletedRowCount += Array.isArray(scan.rows) ? scan.rows.length : 0;
+    return false;
+  });
+
+  if (!deletedCount) {
+    return { ok: false, reason: "no-target", scans: list, deletedCount: 0, deletedRowCount: 0 };
+  }
+  return {
+    ok: true,
+    reason: null,
+    scans: nextScans,
+    deletedCount,
+    deletedRowCount,
+    fromDate: sourceDate,
+  };
+}
