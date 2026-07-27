@@ -265,6 +265,100 @@ assert.ok(
   "選択店舗以外の新しいスキャンへ切り替わらない"
 );
 
+// 別機種に新しい解析があっても、東京喰種の直近保存を未計測へ戻さない。
+const ghoulRows26 = Array.from({ length: 56 }, (_, index) => ({
+  num: String(758 + index),
+  machineName: "e東京喰種",
+  island: "東京喰種",
+  normalSpins: 800,
+  totalStarts: 10,
+  val: 2000,
+  status: "ok",
+}));
+const mixedDateScans = [
+  {
+    id: "other-machine-28",
+    storeId: "s1",
+    storeName: "検証店",
+    date: "2026-07-28",
+    createdAt: "2026-07-28T00:30:00Z",
+    rows: [{
+      num: "479",
+      machineName: "検証機",
+      island: "大海物語",
+      normalSpins: 800,
+      totalStarts: 10,
+      val: 2000,
+      status: "ok",
+    }],
+  },
+  {
+    id: "tokyo-ghoul-26",
+    storeId: "s1",
+    storeName: "検証店",
+    date: "2026-07-26",
+    createdAt: "2026-07-28T00:40:00Z",
+    rows: ghoulRows26,
+  },
+];
+const mixedDateHallMaps = {
+  s1: [
+    { id: "sea", name: "大海物語", machineName: "検証機", start: 479, end: 484 },
+    { id: "tokyo-ghoul", name: "東京喰種", machineName: "e東京喰種", start: 758, end: 813 },
+  ],
+};
+const mixedDateMap = buildStrategyMap({
+  scans: mixedDateScans,
+  customMachines: [machine],
+  hallMaps: mixedDateHallMaps,
+  selectedStoreId: "s1",
+  targetDate: "2026-07-28",
+  stores: [{ id: "s1", name: "検証店" }],
+});
+const mixedDateGhoul = mixedDateMap.islands.find((island) => island.name === "東京喰種");
+assert.equal(mixedDateMap.freshness.sourceDate, "2026-07-28", "店舗全体の最新解析日は維持する");
+assert.equal(mixedDateGhoul.machines.length, 56, "東京喰種の26日分56台も表示対象へ残す");
+assert.ok(mixedDateGhoul.machines.every((item) => item.rot > 0), "26日分も未計測ではなく予測回転率を表示する");
+assert.ok(mixedDateGhoul.machines.every((item) => item.freshness.sourceDate === "2026-07-26"));
+assert.ok(mixedDateGhoul.machines.every((item) => item.freshness.status === "stale"));
+assert.ok(
+  mixedDateGhoul.machines.every((item) => item.recommendationStatus === "reference"),
+  "2日前のデータは表示しても候補判定には使わない",
+);
+
+// 同じ機種を一部だけ再解析した場合も、未再解析50台の過去保存を消さない。
+const partialRefreshMap = buildStrategyMap({
+  scans: [
+    ...mixedDateScans,
+    {
+      id: "tokyo-ghoul-partial-28",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-28",
+      createdAt: "2026-07-28T00:50:00Z",
+      rows: ghoulRows26.slice(0, 6).map((row) => ({ ...row, val: 2500 })),
+    },
+  ],
+  customMachines: [machine],
+  hallMaps: mixedDateHallMaps,
+  selectedStoreId: "s1",
+  targetDate: "2026-07-28",
+  stores: [{ id: "s1", name: "検証店" }],
+});
+const partialRefreshGhoul = partialRefreshMap.islands.find((island) => island.name === "東京喰種").machines;
+assert.equal(partialRefreshGhoul.length, 56);
+assert.equal(
+  partialRefreshGhoul.filter((item) => item.freshness.sourceDate === "2026-07-28").length,
+  6,
+  "再解析した6台だけ28日分へ更新する",
+);
+assert.equal(
+  partialRefreshGhoul.filter((item) => item.freshness.sourceDate === "2026-07-26").length,
+  50,
+  "未再解析50台は26日分の回転率を保持する",
+);
+assert.ok(partialRefreshGhoul.every((item) => item.rot > 0));
+
 const primaryKey = "s1::候補機::P候補機";
 const backupKey = "s1::検証機::P検証機";
 const monthlyPlayPlans = {
