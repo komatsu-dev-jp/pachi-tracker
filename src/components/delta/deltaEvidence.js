@@ -361,15 +361,19 @@ function resolvePayoutObservation(
   const reducedCountVariance = boundedFirstHits === null
     ? estimatedReducedPayoutCount
     : boundedFirstHits * reducedShare * (1 - reducedShare);
-  const payoutVariance = reducedCountVariance * payoutDifference ** 2;
+  // 初当りの公表振分に幅がある機種では、その1回ごとの出玉分散も加える。
+  // 未設定の既存機種は従来どおり0として扱う。
+  const reducedPayoutStdDev = Math.max(0, num(counterModel.reducedPayoutStdDev));
+  const reducedPayoutVariance = estimatedReducedPayoutCount * reducedPayoutStdDev ** 2;
+  const payoutVariance = reducedCountVariance * payoutDifference ** 2 + reducedPayoutVariance;
 
   return {
     available: totalStarts === 0 || estimatedPayoutBalls > 0,
     estimatedPayoutBalls,
     payoutVariance,
     payoutEstimateSource: boundedFirstHits === null
-      ? "normal-spins-charge-estimate"
-      : "first-hit-charge-estimate",
+      ? (counterModel.fallbackEstimateSource || "normal-spins-charge-estimate")
+      : (counterModel.firstHitEstimateSource || "first-hit-charge-estimate"),
     estimatedReducedPayoutCount,
     payoutStdDevPerHit: totalStarts > 0 ? Math.sqrt(payoutVariance / totalStarts) : 0,
     payoutStdDevSource: "counter-model-charge-mix-v1",

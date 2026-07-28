@@ -58,6 +58,17 @@ test("parseTaiData: 差玉つき8列を台番号ごとに認識", () => {
   assert.strictEqual(rows[0].totalStarts, 12);
 });
 
+test("parseTaiData: 差玉・初当り回数つき9列を認識", () => {
+  const text = "2026/07/27\t写真再現店\tリコリス島\teリコリス・リコイル\t663\t-1,500\t850\t3\t16";
+  const { rows, skipped } = parseTaiDataText(text);
+  assert.strictEqual(skipped.length, 0);
+  assert.strictEqual(rows.length, 1);
+  assert.strictEqual(rows[0].val, -1500);
+  assert.strictEqual(rows[0].normalSpins, 850);
+  assert.strictEqual(rows[0].firstHitCount, 3);
+  assert.strictEqual(rows[0].totalStarts, 16);
+});
+
 test("parseTaiData: 連続空白区切りで7列になる行を再試行で拾う", () => {
   const text = "2026/02/13 店A 島A 機種A 818 1580 15";
   const { rows, skipped } = parseTaiDataText(text);
@@ -249,10 +260,18 @@ test("mergeTaiData: 台番号一致で回転数等をマージ", () => {
     { num: "818", val: 24500, rank: getRank(24500).rank },
     { num: "824", val: -12000, rank: getRank(-12000).rank },
   ];
-  const tai = [{ num: "818", island: "島A", machineName: "機種A", normalSpins: 1239, totalStarts: 12 }];
+  const tai = [{
+    num: "818",
+    island: "島A",
+    machineName: "機種A",
+    normalSpins: 1239,
+    firstHitCount: 5,
+    totalStarts: 12,
+  }];
   const { rows: merged, matched } = mergeTaiData(rows, tai);
   assert.strictEqual(matched, 1);
   assert.strictEqual(merged[0].normalSpins, 1239);
+  assert.strictEqual(merged[0].firstHitCount, 5);
   assert.strictEqual(merged[0].machineName, "機種A");
   assert.strictEqual(merged[1].normalSpins, undefined);
 });

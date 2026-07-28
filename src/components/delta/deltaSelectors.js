@@ -48,9 +48,9 @@ export function normalizeMachineNumber(value) {
 }
 
 // AI出力TSVをパースする。
-// 新形式の列順: 日付 / 店舗名 / 島名 / 機種名 / 台番号 / 差玉 / 通常回転数 / 総当り回数（8列）。
-// 旧形式（差玉なしの7列）も、端末内ピクセル解析の差玉を残すため後方互換で受け付ける。
-// タブ区切りを優先し、7/8列にならない行は連続空白区切りで再試行する。
+// 新形式の列順: 日付 / 店舗名 / 島名 / 機種名 / 台番号 / 差玉 / 通常回転数 / 初当り回数 / 総当り回数（9列）。
+// 旧形式（初当りなしの8列・差玉なしの7列）も後方互換で受け付ける。
+// タブ区切りを優先し、7〜9列にならない行は連続空白区切りで再試行する。
 // それでも列数が合わない行・台番号や数値が数値化できない行はスキップして理由を集める。
 export function parseTaiDataText(text) {
   const rows = [];
@@ -61,32 +61,40 @@ export function parseTaiDataText(text) {
     const line = rawLine.replace(/\s+$/, "");
     if (!line.trim()) continue; // 空行は静かに無視
 
-    // タブ区切り優先 → 7/8列でなければ連続空白で再試行
+    // タブ区切り優先 → 7〜9列でなければ連続空白で再試行
     let cols = line.split("\t").map((c) => c.trim());
-    if (cols.length !== 7 && cols.length !== 8) {
+    if (![7, 8, 9].includes(cols.length)) {
       const bySpace = line.trim().split(/\s+/);
-      if (bySpace.length === 7 || bySpace.length === 8) cols = bySpace;
+      if ([7, 8, 9].includes(bySpace.length)) cols = bySpace;
     }
 
-    if (cols.length !== 7 && cols.length !== 8) {
+    if (![7, 8, 9].includes(cols.length)) {
       skipped.push({ line: line.trim(), reason: "列数不足" });
       continue;
     }
 
-    const hasDelta = cols.length === 8;
+    const hasDelta = cols.length >= 8;
+    const hasFirstHitCount = cols.length === 9;
     const [date, store, island, machineName, numRaw] = cols;
     const deltaRaw = hasDelta ? cols[5] : null;
     const spinsRaw = cols[hasDelta ? 6 : 5];
-    const startsRaw = cols[hasDelta ? 7 : 6];
+    const firstHitsRaw = hasFirstHitCount ? cols[7] : null;
+    const startsRaw = cols[hasFirstHitCount ? 8 : (hasDelta ? 7 : 6)];
     const num = parseNumberToken(numRaw);
     if (num === null) {
       skipped.push({ line: line.trim(), reason: "台番号が数値化できない" });
       continue;
     }
     const normalSpins = parseIntLoose(spinsRaw);
+    const firstHitCount = hasFirstHitCount ? parseIntLoose(firstHitsRaw) : null;
     const totalStarts = parseIntLoose(startsRaw);
     const val = hasDelta ? parseIntLoose(deltaRaw) : null;
-    if (normalSpins === null || totalStarts === null || (hasDelta && val === null)) {
+    if (
+      normalSpins === null
+      || totalStarts === null
+      || (hasFirstHitCount && firstHitCount === null)
+      || (hasDelta && val === null)
+    ) {
       skipped.push({ line: line.trim(), reason: "数値が数値化できない" });
       continue;
     }
@@ -101,6 +109,7 @@ export function parseTaiDataText(text) {
       totalStarts,
     };
     if (hasDelta) parsedRow.val = val;
+    if (hasFirstHitCount) parsedRow.firstHitCount = firstHitCount;
     rows.push(parsedRow);
   }
 
@@ -129,7 +138,8 @@ export function buildOcrPrompt({ dateText = "", storeName = "" } = {}) {
 5.	台番号
 6.	差玉（差玉データの「○○番台 差玉」の数値。プラスは正数、マイナスは負数）
 7.	通常回転数（大当たり情報の「通常中スタート」の数値を抽出）
-8.	総当り回数（大当たり情報の「大当り回数」の数値を抽出）
+8.	初当り回数（大当たり情報の「初当り回数」の数値を抽出）
+9.	総当り回数（大当たり情報の「大当り回数」の数値を抽出）
 【重要ルール】
 ・列タイトル（見出し）は出力しない
 ・数値は半角数字で出力する
@@ -140,8 +150,8 @@ export function buildOcrPrompt({ dateText = "", storeName = "" } = {}) {
 ・「確率」「最大持玉」などの不要な列は出力しない
 ・説明文、補足文、前置きは一切書かない
 【出力例（形式のみ）】
-2026/02/13	スーパーキスケPAO	P北斗の拳強敵SSPA島	P北斗の拳強敵SSPA	267	-4500	1239	12
-2026/02/13	スーパーキスケPAO	P北斗の拳強敵SSPA島	P北斗の拳強敵SSPA	268	8200	204	2
+2026/02/13	スーパーキスケPAO	P北斗の拳強敵SSPA島	P北斗の拳強敵SSPA	267	-4500	1239	4	12
+2026/02/13	スーパーキスケPAO	P北斗の拳強敵SSPA島	P北斗の拳強敵SSPA	268	8200	204	1	2
 では、添付資料を台番号で照合し、すべてこの形式で出力してください。
 【固定情報】
 日付：${dateText}

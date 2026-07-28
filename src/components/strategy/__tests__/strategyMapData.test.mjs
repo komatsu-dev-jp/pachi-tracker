@@ -1086,4 +1086,44 @@ assert.equal(
   "古い解析日は表示中の島でも候補0台として安全停止する",
 );
 
+// 利用者画像の再現: 5Rごとに増える大当り回数へ旧平均1200玉を掛けると、
+// リコリス663〜668番台が9〜12回/Kへ沈む。750玉単位＋初当り平均で復元する。
+const lycorisRows = [
+  { num: "663", normalSpins: 850, totalStarts: 16, firstHitCount: 3, val: -1500 },
+  { num: "664", normalSpins: 900, totalStarts: 17, firstHitCount: 4, val: -1800 },
+  { num: "665", normalSpins: 800, totalStarts: 14, firstHitCount: 3, val: -1000 },
+  { num: "666", normalSpins: 950, totalStarts: 18, firstHitCount: 4, val: -2500 },
+  { num: "667", normalSpins: 700, totalStarts: 12, firstHitCount: 3, val: -700 },
+  { num: "668", normalSpins: 1000, totalStarts: 20, firstHitCount: 4, val: -3000 },
+].map((row) => ({
+  ...row,
+  machineName: "eリコリス・リコイル",
+  island: "リコリスリコイル",
+  status: "ok",
+}));
+const lycorisScan = {
+  id: "lycoris-counter-regression",
+  storeId: "photo-store",
+  storeName: "写真再現店",
+  date: "2026-07-27",
+  createdAt: "2026-07-27T12:00:00.000Z",
+  machineName: "eリコリス・リコイル",
+  rows: lycorisRows,
+};
+const lycorisMap = buildStrategyMap({
+  scans: [lycorisScan],
+  selectedStoreId: "photo-store",
+  targetDate: "2026-07-28",
+});
+const fixedLycorisMachines = lycorisMap.all;
+assert.equal(fixedLycorisMachines.length, 6);
+assert.deepEqual(fixedLycorisMachines.map((item) => item.num), [663, 664, 665, 666, 667, 668]);
+assert.ok(
+  fixedLycorisMachines.every((item) => item.rot >= 14.5 && item.rot <= 20),
+  "5R分割当りと初当り小出玉を補正し、9〜12回/K帯から現実的な範囲へ戻す",
+);
+const lycoris663 = fixedLycorisMachines.find((item) => item.num === 663);
+assert.ok(Math.abs(lycoris663.rotationEstimate.inputBalls - 12835.2) < 1e-9);
+assert.equal(lycoris663.initialAvgPayout, 528);
+
 console.log("strategyMapData.test.mjs: all tests passed");

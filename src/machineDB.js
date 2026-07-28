@@ -1143,13 +1143,27 @@ const rawMachineDB = [
     border1K: 16.7,
     prize: 1,
     unitCost: 14.0,
-    avgPayoutPerHit: 1200,
+    // ホールの大当り回数は、右打ち中の5R・750個が1回ずつ積み上がる。
+    // 3000個・6000個を1回として扱う平均ではなく、カウンター1回の基準値を置く。
+    avgPayoutPerHit: 750,
+    deltaCounterModel: {
+      type: "counted-awards-with-reduced-payout",
+      standardPayout: 750,
+      // 初当り平均: 1500×0.1% + 600×74.9% + 310×25.0% = 528.4個。
+      reducedPayout: 528.4,
+      reducedPayoutStdDev: 129.3,
+      reducedPayoutShareOfInitialHits: 1,
+      reducedPayoutProbability: 259.7,
+      firstHitEstimateSource: "first-hit-initial-award-mix",
+      fallbackEstimateSource: "normal-spins-initial-award-mix",
+      minPlausibleRotation: 10,
+    },
     stdDev: 13000,
     initialProb: 0.5,
     muraCoef: 80000,
     spatialSens: 1,
     regimeSens: 1,
-    hesoAvgPayout: 1000,
+    hesoAvgPayout: 528.4,
     rushAvgPayout: 2500,
     rushEntryRate: 50,
     rushContinueRate: 75,
@@ -1198,8 +1212,8 @@ const rawMachineDB = [
       sourceUrl: "https://www.newgin.co.jp/pub/machine/elycorisrecoil/spec.html",
     }],
     allocationNote: "出玉は払い出し。モードA・モードB・アルティメットドライブを混ぜず、実際の状態別に表示しています。",
-    sourceUrls: ["https://www.newgin.co.jp/pub/machine/elycorisrecoil/spec.html", "https://p.hisshobon.jp/machine/4723/1/114574"],
-    dataUpdatedAt: "2026-07-14",
+    sourceUrls: ["https://www.newgin.co.jp/pub/machine/elycorisrecoil/spec.html", "https://nana-press.com/kaiseki/machine/1129/36090/", "https://daiichi.net/pdf/newgin/w239.pdf", "https://papimo.jp/h/00031571/hit/view/69/20260727", "https://p.hisshobon.jp/machine/4723/1/114574"],
+    dataUpdatedAt: "2026-07-28",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   // ── 海シリーズ（最新追加：P機 / e機 / PA甘デジ／CSV準拠フォーマットへ更新） ──
