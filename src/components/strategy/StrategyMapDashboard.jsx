@@ -216,7 +216,16 @@ function BackIcon() {
   );
 }
 
-function Header({ data, selected, viewScope, onBack, onHelp }) {
+function Header({
+  data,
+  selected,
+  viewScope,
+  storeName,
+  storePickerOpen,
+  onBack,
+  onHelp,
+  onOpenStorePicker,
+}) {
   const displayedFreshness = selected?.freshness || data.freshness;
   return (
     <div
@@ -284,6 +293,22 @@ function Header({ data, selected, viewScope, onBack, onHelp }) {
           </div>
         </div>
       </div>
+      <button
+        type="button"
+        className="strategy-store-trigger"
+        onClick={onOpenStorePicker}
+        aria-haspopup="dialog"
+        aria-expanded={storePickerOpen}
+        aria-label={`表示店舗を選択。現在は${storeName}`}
+      >
+        <span className="strategy-store-trigger-icon" aria-hidden="true">⌖</span>
+        <span className="strategy-store-trigger-copy">
+          <small>表示店舗</small>
+          <strong>{storeName}</strong>
+        </span>
+        <span className="strategy-store-trigger-action">切り替え</span>
+        <span className="strategy-store-trigger-chevron" aria-hidden="true">⌄</span>
+      </button>
     </div>
   );
 }
@@ -431,6 +456,153 @@ function HelpSheet({ onClose }) {
           <div style={{ marginTop: 18, padding: 12, borderRadius: 14, background: "rgba(234,179,8,.08)", border: "1px solid rgba(234,179,8,.2)", fontSize: 10, lineHeight: 1.7, color: P.subHi }}>
             大切：どの数字も「未来の約束」ではありません。データが少ないときは信頼度を確認し、実際の回り方と合わせて判断してください。
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function buildStrategyStoreOptions(stores, scans) {
+  const registered = (Array.isArray(stores) ? stores : [])
+    .filter((store) => store && typeof store === "object" && store.id != null)
+    .map((store) => ({
+      id: store.id,
+      name: String(store.name || "名称未設定の店舗").trim() || "名称未設定の店舗",
+      city: String(store.city || "").trim(),
+      address: String(store.address || "").trim(),
+      legacyNames: Array.isArray(store.legacyNames)
+        ? store.legacyNames.map((name) => String(name || "").trim()).filter(Boolean)
+        : [],
+      registered: true,
+    }));
+  const knownIds = new Set(registered.map((store) => String(store.id)));
+  const scanOnlyById = new Map();
+
+  for (const scan of Array.isArray(scans) ? scans : []) {
+    if (scan?.storeId == null || knownIds.has(String(scan.storeId))) continue;
+    const key = String(scan.storeId);
+    if (!scanOnlyById.has(key)) {
+      scanOnlyById.set(key, {
+        id: scan.storeId,
+        name: String(scan.storeName || "解析データの店舗").trim() || "解析データの店舗",
+        city: "",
+        address: "",
+        legacyNames: [],
+        registered: false,
+      });
+    }
+  }
+
+  const sourceScans = Array.isArray(scans) ? scans : [];
+  return [...registered, ...scanOnlyById.values()].map((store) => {
+    const names = new Set([store.name, ...store.legacyNames].filter(Boolean));
+    const matchingScans = sourceScans.filter((scan) => (
+      String(scan?.storeId ?? "") === String(store.id)
+      || (scan?.storeId == null && names.has(String(scan?.storeName || "").trim()))
+    ));
+    const latestDate = matchingScans
+      .map((scan) => String(scan?.date || ""))
+      .filter(Boolean)
+      .sort()
+      .at(-1) || "";
+    return {
+      ...store,
+      latestDate,
+    };
+  });
+}
+
+function StorePickerSheet({ stores, selectedStoreId, onSelect, onClose }) {
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLocaleLowerCase("ja-JP");
+  const visibleStores = useMemo(() => {
+    if (!normalizedQuery) return stores;
+    return stores.filter((store) =>
+      [store.name, store.city, store.address]
+        .join(" ")
+        .toLocaleLowerCase("ja-JP")
+        .includes(normalizedQuery)
+    );
+  }, [normalizedQuery, stores]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="strategy-store-picker-title"
+      className="strategy-store-picker-backdrop"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="strategy-store-picker-sheet">
+        <div className="strategy-store-picker-head">
+          <div>
+            <div id="strategy-store-picker-title">店舗を選択</div>
+            <p>この戦略マップに表示する店舗を切り替えます</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="店舗選択を閉じる">×</button>
+        </div>
+
+        <div className="strategy-store-picker-search">
+          <span aria-hidden="true">⌕</span>
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="店舗名・市区町村で検索"
+            aria-label="店舗を検索"
+          />
+        </div>
+
+        <div className="strategy-store-picker-note">
+          表示だけを切り替えます。実戦中の店舗や貸玉設定は変更しません。
+        </div>
+
+        <div className="strategy-store-picker-list">
+          {visibleStores.map((store) => {
+            const active = String(store.id) === String(selectedStoreId);
+            return (
+              <button
+                type="button"
+                key={String(store.id)}
+                className={`strategy-store-option ${active ? "is-active" : ""}`}
+                onClick={() => onSelect(store.id)}
+                aria-pressed={active}
+              >
+                <span className="strategy-store-option-mark" aria-hidden="true">
+                  {active ? "✓" : "⌖"}
+                </span>
+                <span className="strategy-store-option-copy">
+                  <strong>{store.name}</strong>
+                  <small>
+                    {[store.city, store.address].filter(Boolean).join("・")
+                      || (store.registered ? "登録済み店舗" : "解析データから検出")}
+                  </small>
+                </span>
+                <span className={`strategy-store-option-data ${store.latestDate ? "has-data" : ""}`}>
+                  {store.latestDate ? (
+                    <>
+                      <b>解析あり</b>
+                      <small>{store.latestDate}</small>
+                    </>
+                  ) : (
+                    <>
+                      <b>未解析</b>
+                      <small>差玉データなし</small>
+                    </>
+                  )}
+                </span>
+              </button>
+            );
+          })}
+          {visibleStores.length === 0 && (
+            <div className="strategy-store-picker-empty">
+              {stores.length === 0
+                ? "登録済みの店舗がありません。設定画面で店舗を登録すると選べます。"
+                : "検索に一致する店舗がありません。"}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1890,36 +2062,23 @@ function Section({ title, sub, accent, children }) {
 }
 
 // ============================ 本体 ============================
-export default function StrategyMapDashboard({ S, onBack, onStartRecord }) {
+export default function StrategyMapDashboard({ S, onBack, onStartRecord, onSelectStore }) {
   const rootRef = useRef(null);
   const [entryPlanContext] = useState(() => S?.strategyPlanContext || null);
   const clearStrategyPlanContext = S?.setStrategyPlanContext;
-  const playingNum = S?.sessionStarted ? S?.machineNum : null;
   const isDemo = import.meta.env.DEV && new URLSearchParams(window.location.search).get("pevidenceDemo") === "1";
   const savedStores = Array.isArray(S?.stores) ? S.stores : EMPTY_LIST;
-  const selectedStoreId = S?.selectedStoreId;
+  const activeSessionStoreId = S?.selectedStoreId;
   const exchangeRateRaw = S?.exRate;
   const ballValueRaw = S?.ballVal;
   const savedDailyResearchPlans = S?.dailyResearchPlans;
   const savedMonthlyPlayPlans = S?.monthlyPlayPlans;
   const rotationsPerHour = S?.rotPerHour;
   const savedHallMaps = S?.hallMaps;
-  const liveDecision = S?.ev?.liveDecision || null;
   const savedArchives = Array.isArray(S?.archives) ? S.archives : EMPTY_LIST;
   const savedScans = Array.isArray(S?.deltaScans) ? S.deltaScans : EMPTY_LIST;
   const savedCustomMachines = Array.isArray(S?.customMachines) ? S.customMachines : EMPTY_LIST;
   const sessionStarted = Boolean(S?.sessionStarted);
-  const liveSession = useMemo(() => sessionStarted ? {
-    storeId: selectedStoreId,
-    storeName: S?.storeName || "",
-    machineName: S?.machineName || "",
-    machineNum: S?.machineNum,
-    date: S?.sessionStartDate || localDateStr(new Date()),
-    ev: S?.ev || {},
-    playMode: S?.playMode || "cash",
-    settings: { rentBalls: S?.rentBalls, exRate: S?.exRate },
-    cashSpentToday: S?.dailyCashSpent,
-  } : null, [sessionStarted, selectedStoreId, S?.storeName, S?.machineName, S?.machineNum, S?.sessionStartDate, S?.ev, S?.playMode, S?.rentBalls, S?.exRate, S?.dailyCashSpent]);
   const deltaScans = useMemo(() => isDemo ? P_EVIDENCE_DEMO_SCANS : savedScans, [isDemo, savedScans]);
   const customMachines = useMemo(
     () => isDemo ? [P_EVIDENCE_DEMO_MACHINE, ...savedCustomMachines] : savedCustomMachines,
@@ -1944,7 +2103,21 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord }) {
   ), [isDemo, entryPlanContext, savedMonthlyPlayPlans, savedDailyResearchPlans, availableStoreIds]);
   const strategyStoreId = isDemo
     ? "pe-demo-store"
-    : planHandoff?.defaultStoreId ?? selectedStoreId;
+    : S?.analysisStoreId ?? planHandoff?.defaultStoreId ?? activeSessionStoreId;
+  const sessionMatchesStrategyStore = String(activeSessionStoreId ?? "") === String(strategyStoreId ?? "");
+  const playingNum = sessionStarted && sessionMatchesStrategyStore ? S?.machineNum : null;
+  const liveDecision = sessionMatchesStrategyStore ? S?.ev?.liveDecision || null : null;
+  const liveSession = useMemo(() => sessionStarted && sessionMatchesStrategyStore ? {
+    storeId: activeSessionStoreId,
+    storeName: S?.storeName || "",
+    machineName: S?.machineName || "",
+    machineNum: S?.machineNum,
+    date: S?.sessionStartDate || localDateStr(new Date()),
+    ev: S?.ev || {},
+    playMode: S?.playMode || "cash",
+    settings: { rentBalls: S?.rentBalls, exRate: S?.exRate },
+    cashSpentToday: S?.dailyCashSpent,
+  } : null, [sessionStarted, sessionMatchesStrategyStore, activeSessionStoreId, S?.storeName, S?.machineName, S?.machineNum, S?.sessionStartDate, S?.ev, S?.playMode, S?.rentBalls, S?.exRate, S?.dailyCashSpent]);
   const strategyPlan = useMemo(() => {
     const date = entryPlanContext?.date || localDateStr(new Date());
     const selectedStore = savedStores.find((store) => String(store?.id) === String(strategyStoreId)) || null;
@@ -2004,6 +2177,15 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord }) {
     archives: isDemo ? EMPTY_LIST : savedArchives,
     liveSession: isDemo ? null : liveSession,
   }), [playingNum, liveDecision, deltaScans, customMachines, isDemo, savedHallMaps, strategyStoreId, planHandoff, strategyPlan, targetDate, savedStores, savedArchives, liveSession]);
+  const storeOptions = useMemo(
+    () => buildStrategyStoreOptions(savedStores, deltaScans),
+    [savedStores, deltaScans],
+  );
+  const displayedStoreId = data.storeId ?? strategyStoreId;
+  const displayedStore = storeOptions.find((store) => String(store.id) === String(displayedStoreId)) || null;
+  const displayedStoreName = isDemo
+    ? "P-EVIDENCE デモ店舗"
+    : data.storeName || displayedStore?.name || "店舗を選択";
   const plannedStore = savedStores.find((item) => (
     item && typeof item === "object" && planHandoff?.defaultStoreId != null
       && String(item.id) === String(planHandoff.defaultStoreId)
@@ -2016,6 +2198,7 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord }) {
   );
   const [helpOpen, setHelpOpen] = useState(false);
   const [yutimeOpen, setYutimeOpen] = useState(false);
+  const [storePickerOpen, setStorePickerOpen] = useState(false);
   const [calibrationNotice, setCalibrationNotice] = useState(null);
   const calibrationApprovalRef = useRef("");
 
@@ -2031,7 +2214,10 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord }) {
     rootRef.current?.closest("main")?.scrollTo({ top: 0, left: 0 });
   }, []);
 
-  const selected = data.all.find((m) => m.id === selectedId) || null;
+  const effectiveSelectedId = data.all.some((machine) => machine.id === selectedId)
+    ? selectedId
+    : data.leadId || null;
+  const selected = data.all.find((machine) => machine.id === effectiveSelectedId) || null;
   const handleStartSelected = (machine) => {
     const start = onStartRecord || S?.startRecordFromSelection;
     start?.({
@@ -2136,8 +2322,11 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord }) {
         data={data}
         selected={selected}
         viewScope={viewScope}
+        storeName={displayedStoreName}
+        storePickerOpen={storePickerOpen}
         onBack={onBack}
         onHelp={() => setHelpOpen(true)}
+        onOpenStorePicker={() => setStorePickerOpen(true)}
       />
       <PlanHandoffBanner
         plan={planHandoff}
@@ -2164,7 +2353,11 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord }) {
       </div>
       {data.total === 0 && (
         <div style={{ margin: "18px 14px 0", padding: "20px 16px", borderRadius: 18, background: P.card, border: `1px solid ${P.line}`, textAlign: "center" }}>
-          <div style={{ fontSize: 15, fontWeight: 900, color: P.text }}>差玉データがありません</div>
+          <div style={{ fontSize: 15, fontWeight: 900, color: P.text }}>
+            {displayedStoreName === "店舗を選択"
+              ? "差玉データがありません"
+              : `${displayedStoreName}の差玉データがありません`}
+          </div>
           <div style={{ marginTop: 7, fontSize: 12, lineHeight: 1.7, color: P.subHi }}>
             ホームの「差玉解析」で、差玉・通常回転数・大当り回数を保存すると予測を表示します
           </div>
@@ -2179,7 +2372,7 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord }) {
       <HallMap
         data={data}
         filter={filter}
-        selectedId={selectedId}
+        selectedId={effectiveSelectedId}
         activeIslandId={effectiveActiveIslandId}
         onChangeIsland={changeIsland}
         onSelect={selectMachine}
@@ -2203,6 +2396,17 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord }) {
       />
       <PortfolioPlan portfolio={data.portfolio} plan={data.plan} />
       {helpOpen && <HelpSheet onClose={() => setHelpOpen(false)} />}
+      {storePickerOpen && (
+        <StorePickerSheet
+          stores={storeOptions}
+          selectedStoreId={displayedStoreId}
+          onSelect={(storeId) => {
+            onSelectStore?.(storeId);
+            setStorePickerOpen(false);
+          }}
+          onClose={() => setStorePickerOpen(false)}
+        />
+      )}
       {yutimeOpen && (
         <YutimeCalculatorSheet
           S={S}
