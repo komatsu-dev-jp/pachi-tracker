@@ -9,6 +9,7 @@ import {
   compareMachineNumberSet,
   readPanelMachineNumber,
 } from "../machineNumberOcr.js";
+import { retainDetectedGraphSlotsAfterOcr } from "../deltaWorkflowState.js";
 
 const FIXTURE_DIR = path.resolve("src/components/delta/__tests__/fixtures/p-analysis-2026-02-13");
 const FIXTURES = [
@@ -328,4 +329,14 @@ test("判読限界まで縮小された画像は誤保存せずページ拒否�
   assert.equal(page.accepted, false);
   assert.equal(page.numbers.length, 0);
   assert.ok(page.slots.every((slot) => slot.machineNumber === null));
+
+  const combined = combineMachineNumberPages([page], { allowPartialPages: true });
+  assert.equal(combined.slots.length, 0, "OCR不合格ページは自動確定対象から外れること");
+  const resolved = retainDetectedGraphSlotsAfterOcr([page], combined);
+  assert.equal(resolved.manualFallback, true);
+  assert.equal(resolved.slots.length, analysis.results.length);
+  assert.deepEqual(
+    resolved.slots.map((slot) => [slot.val, slot.bbox.x, slot.bbox.y]),
+    analysis.results.map((slot) => [slot.val, slot.bbox.x, slot.bbox.y]),
+  );
 });
