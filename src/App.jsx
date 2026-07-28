@@ -1676,6 +1676,7 @@ export default function App() {
             S={S}
             onBack={() => setCurrentMode("home")}
             onStartRecord={startRecordFromSelection}
+            onSelectStore={setAnalysisStoreId}
           />
         )}
         {/* 差玉解析（独立タブにせず、ホームの「解析する」から起動） */}

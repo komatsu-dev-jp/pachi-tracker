@@ -54,6 +54,8 @@ const plan = buildStrategyPlanContext({
 });
 const map = buildStrategyMap({ scans, customMachines: [machine], playingNum: 101, liveDecision, plan });
 assert.equal(map.source, "delta");
+assert.equal(map.storeId, "s1");
+assert.equal(map.storeName, "検証店");
 assert.equal(map.total, 1);
 assert.equal(map.all[0].num, 101);
 assert.equal(map.all[0].isPlaying, true);
@@ -109,6 +111,15 @@ assert.equal(mapWithBoundedHistory.all[0].history.length, 2, "範囲だけの日
 assert.ok(map.all[0].rotationEstimate.low <= map.all[0].rot && map.all[0].rot <= map.all[0].rotationEstimate.high);
 assert.ok(map.all[0].dailyLow <= map.all[0].daily && map.all[0].daily <= map.all[0].dailyHigh);
 assert.ok(map.all[0].profitChanceLow <= map.all[0].winRate && map.all[0].winRate <= map.all[0].profitChanceHigh);
+
+const emptySelectedStore = buildStrategyMap({
+  scans,
+  selectedStoreId: "s2",
+  stores: [{ id: "s2", name: "未解析店" }],
+});
+assert.equal(emptySelectedStore.total, 0);
+assert.equal(emptySelectedStore.storeId, "s2");
+assert.equal(emptySelectedStore.storeName, "未解析店");
 
 const demoDate = P_EVIDENCE_DEMO_SCANS.at(-1).date;
 const demoPlan = buildStrategyPlanContext({ date: demoDate, spinsPerHour: 250, defaultHours: 3 });

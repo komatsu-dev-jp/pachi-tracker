@@ -1013,6 +1013,8 @@ export function buildStrategyMap({
     defaultHours: 6,
     spinsPerHour: 210,
   });
+  const requestedStore = (stores || [])
+    .find((store) => String(store?.id) === String(selectedStoreId)) || null;
   const selectedStoreScans = strategyStoreScans(scans, selectedStoreId, stores);
   const normalizedTargetDate = normalizedDate(targetDate);
   // 過去日の戦略マップへ、その日より後に保存された解析を混ぜない。
@@ -1024,7 +1026,13 @@ export function buildStrategyMap({
     currentScans.length ? currentScans : selectedStoreScans,
     targetDate,
   );
-  if (!currentScans.length) return emptyMap(playingNum, planHandoff, strategyPlan, freshness);
+  if (!currentScans.length) {
+    return {
+      ...emptyMap(playingNum, planHandoff, strategyPlan, freshness),
+      storeId: selectedStoreId,
+      storeName: requestedStore?.name || "",
+    };
+  }
 
   const latestScan = [...currentScans].sort(compareScanRecency)[0] || currentScans[0];
   const scopedStoreIds = [...new Set(currentScans
@@ -1683,6 +1691,8 @@ export function buildStrategyMap({
 
   return {
     source: "delta",
+    storeId: analysisStoreId,
+    storeName: analysisStoreName,
     machineName: machineNames.length === 1 ? machineNames[0] : `${machineNames.length}機種`,
     total: all.length,
     border: lead?.border || 0,
