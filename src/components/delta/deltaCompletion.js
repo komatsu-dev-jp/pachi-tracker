@@ -115,3 +115,46 @@ export function getDeltaSaveReadiness({
     canSaveWithRotation: allSavableRowsHavePrediction,
   };
 }
+
+function normalizedCount(value) {
+  return Math.max(0, Math.trunc(Number(value) || 0));
+}
+
+// 結果画面の保存ボタンは差玉履歴の保存可否だけで制御する。
+// 回転率データの不足は案内として残すが、保存操作そのものは止めない。
+export function getDeltaSaveControlState({
+  saved = false,
+  canSaveRows = false,
+  canSaveDeltaOnly = false,
+  savableCount = 0,
+  pendingReviewCount = 0,
+  missingDeltaCount = 0,
+  hasNumberAssignmentError = false,
+  machineMissingCount = 0,
+  machineUnregisteredCount = 0,
+} = {}) {
+  const savable = normalizedCount(savableCount);
+  const pending = normalizedCount(pendingReviewCount);
+  const missing = normalizedCount(missingDeltaCount);
+  const machineMissing = normalizedCount(machineMissingCount);
+  const machineUnregistered = normalizedCount(machineUnregisteredCount);
+
+  let label = `${savable}台を保存`;
+  if (saved) {
+    label = "保存済み ✓";
+  } else if (!canSaveRows) {
+    if (hasNumberAssignmentError) label = "台番号未確定";
+    else if (pending > 0 && missing === 0) label = `差玉確認待ち ${pending}台`;
+    else if (pending + missing > 0) label = `差玉未確定 ${pending + missing}台`;
+    else label = "保存対象なし";
+  } else if (machineMissing > 0) {
+    label = `機種未確定 ${machineMissing}台`;
+  } else if (machineUnregistered > 0) {
+    label = `機種照合待ち ${machineUnregistered}台`;
+  }
+
+  return {
+    disabled: Boolean(saved || !canSaveDeltaOnly),
+    label,
+  };
+}

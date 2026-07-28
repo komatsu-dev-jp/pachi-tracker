@@ -81,6 +81,26 @@ test("境界到達記録に一点値またはランクが混ざった行は有�
   assert.equal(isBoundedDeltaRow({ ...bounded, rank: "SSS" }), false);
 });
 
+test("手入力した候補値は台データ統合後の境界判定で巻き戻さない", () => {
+  const [bounded] = attachClippedDeltaRanges([clipped548()]);
+
+  for (const valueSource of ["manual-review-candidate", "manual-review"]) {
+    const manual = {
+      ...bounded,
+      val: 35000,
+      rank: "SSS",
+      status: "review",
+      reviewConfirmed: false,
+      valueSource,
+    };
+    const [afterMerge] = attachClippedDeltaRanges([manual]);
+    assert.strictEqual(afterMerge, manual);
+    assert.equal(afterMerge.val, 35000);
+    assert.equal(afterMerge.status, "review");
+    assert.equal(afterMerge.valueSource, valueSource);
+  }
+});
+
 test("最高出玉が未確認または共同照合なしでもグラフ接触の事実だけを保存する", () => {
   const withoutJoint = clipped548({ jointMatch: null });
   assert.deepEqual(deriveClippedDeltaRange(withoutJoint), {

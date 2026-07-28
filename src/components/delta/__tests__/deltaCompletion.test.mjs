@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createDeltaCompletionHistoryGuard,
+  getDeltaSaveControlState,
   getDeltaSaveReadiness,
   makeDeltaCompletionSummary,
 } from "../deltaCompletion.js";
@@ -79,7 +80,7 @@ test("完了サマリーは保存件数と除外件数を安全な数値へ揃�
   );
 });
 
-test("回転率を計算できない70台は通常保存を止め、台データ追加へ案内する", () => {
+test("回転率を計算できない70台でも差玉のみ保存を許可し、台データ追加を案内する", () => {
   assert.deepEqual(
     getDeltaSaveReadiness({
       canSaveRows: true,
@@ -92,6 +93,53 @@ test("回転率を計算できない70台は通常保存を止め、台データ
       allSavableRowsHavePrediction: false,
       needsPredictionData: true,
       canSaveWithRotation: false,
+    },
+  );
+});
+
+test("回転率不足を保存ボタンの無効化理由にしない", () => {
+  const readiness = getDeltaSaveReadiness({
+    canSaveRows: true,
+    machineAssignmentsValid: true,
+    savableCount: 3,
+    predictedCount: 2,
+  });
+  const control = getDeltaSaveControlState({
+    canSaveRows: true,
+    canSaveDeltaOnly: readiness.canSaveDeltaOnly,
+    savableCount: 3,
+  });
+
+  assert.equal(readiness.needsPredictionData, true);
+  assert.deepEqual(control, {
+    disabled: false,
+    label: "3台を保存",
+  });
+});
+
+test("保存できないボタンは操作名ではなく未確定の状態と台数を示す", () => {
+  assert.deepEqual(
+    getDeltaSaveControlState({
+      canSaveRows: false,
+      canSaveDeltaOnly: false,
+      pendingReviewCount: 1,
+      missingDeltaCount: 2,
+    }),
+    {
+      disabled: true,
+      label: "差玉未確定 3台",
+    },
+  );
+  assert.deepEqual(
+    getDeltaSaveControlState({
+      canSaveRows: true,
+      canSaveDeltaOnly: false,
+      savableCount: 3,
+      machineMissingCount: 2,
+    }),
+    {
+      disabled: true,
+      label: "機種未確定 2台",
     },
   );
 });

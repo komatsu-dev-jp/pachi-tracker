@@ -79,7 +79,8 @@ export function isBoundedDeltaRow(row) {
 
 export function attachClippedDeltaRanges(rows) {
   return (Array.isArray(rows) ? rows : []).map((row) => {
-    if (!row || row?.reviewConfirmed === true) return row;
+    const manuallyReviewed = ["manual-review", "manual-review-candidate"].includes(row?.valueSource);
+    if (!row || row?.reviewConfirmed === true || manuallyReviewed) return row;
     const range = deriveClippedDeltaRange(row);
     if (!range) return row;
     const previousRaw = row?.rawGraphCandidate && typeof row.rawGraphCandidate === "object"
