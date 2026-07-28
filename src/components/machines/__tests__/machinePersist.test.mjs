@@ -370,12 +370,33 @@ check("T14b_大海5の保存済み旧名を更新版の代表レコードへ統�
   assert.strictEqual(editedHit.border1K, 17.1, "マスタより新しいユーザー編集は保持");
 });
 
+check("T14d_リコリスの旧平均出玉より5Rカウンター補正版マスタを優先", () => {
+  const master = machineDB.find((machine) => machine.name === "eリコリス・リコイル");
+  const stale = {
+    ...structuredClone(master),
+    dataUpdatedAt: "2026-07-14",
+    avgPayoutPerHit: 1200,
+    hesoAvgPayout: 1000,
+  };
+  delete stale.deltaCounterModel;
+
+  const effective = findEffectiveMachineByName("eリコリス・リコイル", [stale]);
+  assert.strictEqual(effective.dataUpdatedAt, "2026-07-28");
+  assert.strictEqual(effective.avgPayoutPerHit, 750);
+  assert.strictEqual(effective.hesoAvgPayout, 528.4);
+  assert.strictEqual(effective.deltaCounterModel.standardPayout, 750);
+  assert.strictEqual(effective.deltaCounterModel.reducedPayout, 528.4);
+});
+
 // ── T15: 50%上乗せループ機の状態別サマリーを固定 ──
 check("T15_炎炎とリコリスの状態別振分を固定", () => {
   const signature = (rows) => rows.map((r) => [r.roundsLabel || r.rounds, r.payoutLabel || r.payout, r.rate]);
 
   const lycoris = machineDB.find((m) => m.name === "eリコリス・リコイル");
   assert.strictEqual(lycoris.allocationVerified, true);
+  assert.strictEqual(lycoris.avgPayoutPerHit, 750, "大当りカウンター1回＝5R・750玉を基準にする");
+  assert.strictEqual(lycoris.hesoAvgPayout, 528.4, "3RチンアナゴBONUSを含む初当り平均");
+  assert.strictEqual(lycoris.deltaCounterModel.reducedPayoutShareOfInitialHits, 1);
   assert.deepStrictEqual(signature(lycoris.hesoModes[0].rows), [[10, 1500, 0.1], [4, 600, 44.9], [3, 310, 5], [4, 600, 30], [3, 310, 20]]);
   assert.deepStrictEqual(signature(lycoris.rushModes[1].rows), [["5R×8", 6000, 50], ["5R×4", 3000, 50]]);
   assert.deepStrictEqual(signature(lycoris.rushModes[2].rows), [["5R×4上乗せ", 3000, 50], ["上乗せなし", 0, 50]]);

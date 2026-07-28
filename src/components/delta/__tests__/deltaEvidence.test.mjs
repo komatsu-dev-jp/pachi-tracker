@@ -102,6 +102,48 @@ assert.equal(
   "販売名だけの旧東京喰種を超デカ超一撃ver.へ誤照合しない",
 );
 
+const lycorisMachine = machineDB.find((item) => item.name === "eリコリス・リコイル");
+const lycorisCounterRow = {
+  normalSpins: 1000,
+  totalStarts: 15,
+  firstHitCount: 4,
+  val: -2161,
+  status: "ok",
+};
+const lycorisLegacyEstimate = estimateDeltaObservation(
+  lycorisCounterRow,
+  { ...lycorisMachine, avgPayoutPerHit: 1200, deltaCounterModel: undefined },
+);
+assert.ok(
+  Math.abs(lycorisLegacyEstimate.observedRotation - 12.4001785626) < 1e-9,
+  "旧式は5Rの分割当り15回を各1200玉として12.4回/Kへ誤落下する",
+);
+
+const lycorisCounterEstimate = estimateDeltaObservation(lycorisCounterRow, lycorisMachine);
+assert.equal(lycorisCounterEstimate.valid, true);
+assert.equal(lycorisCounterEstimate.payoutEstimateSource, "first-hit-initial-award-mix");
+assert.equal(lycorisCounterEstimate.estimatedReducedPayoutCount, 4);
+assert.ok(Math.abs(lycorisCounterEstimate.estimatedPayoutBalls - 10363.6) < 1e-9);
+assert.ok(
+  Math.abs(lycorisCounterEstimate.observedRotation - 19.9607173083) < 1e-9,
+  "5R・750玉単位と初当り平均528.4玉へ直すと現実的な約20回/Kへ戻る",
+);
+assert.ok(
+  lycorisCounterEstimate.inputVariance > (500 ** 2) / 12,
+  "3R/4R/10Rの初当り振分による出玉幅も観測誤差へ含める",
+);
+
+const lycorisFallbackEstimate = estimateDeltaObservation(
+  { normalSpins: 700, totalStarts: 10, val: -3000, status: "ok" },
+  lycorisMachine,
+);
+assert.equal(lycorisFallbackEstimate.valid, true);
+assert.equal(lycorisFallbackEstimate.payoutEstimateSource, "normal-spins-initial-award-mix");
+assert.ok(
+  Math.abs(lycorisFallbackEstimate.observedRotation - 17.6719562318) < 1e-9,
+  "初当り回数がない旧保存データも通常回転数と1/259.7から安全に補正する",
+);
+
 const ghoulFallback = estimateDeltaObservation(
   { normalSpins: 700, totalStarts: 5, val: -3000, status: "ok" },
   oldGhoul,
