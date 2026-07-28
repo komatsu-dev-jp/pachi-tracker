@@ -19,7 +19,10 @@ import {
   priorityScoreOf,
   rankStrategyCandidates,
 } from "../evidence/pevidenceAnalytics.js";
-import { getStoreIslands } from "../select/hallMapSelectors.js";
+import {
+  getStoreIslands,
+  islandLayoutCells,
+} from "../select/hallMapSelectors.js";
 import { calculateStrategyEconomics } from "../../economics.js";
 import { evidenceDayNumber, normalizeEvidenceDate } from "../../evidenceDate.js";
 import {
@@ -506,6 +509,92 @@ function strategyStoreScans(scans, selectedStoreId = null, stores = []) {
   ));
 }
 
+// 旧版アプリで機種名なしのまま保存された行も、台番号がホールマップ上の
+// 1つの島だけに一致する場合は、戦略マップ内だけで安全に関連付け直す。
+// 保存データ自体は書き換えず、複数の島に同じ番号がある場合は推測しない。
+function associateStrategyScansWithHallLayout(scans, hallIslands, customMachines = []) {
+  if (!Array.isArray(scans) || !scans.length || !Array.isArray(hallIslands) || !hallIslands.length) {
+    return scans;
+  }
+
+  const layoutsByNumber = new Map();
+  hallIslands.forEach((layout, layoutIndex) => {
+    const layoutId = String(layout?.id ?? `layout-${layoutIndex}`);
+    const layoutKey = `${layoutIndex}:${layoutId}`;
+    const machineName = String(layout?.machineName || "").trim();
+    const machine = machineName
+      ? findMachineSpec(machineName, customMachines, machineDB)
+      : null;
+    for (const cell of islandLayoutCells(layout, 10_000)) {
+      if (cell?.gap) continue;
+      const number = normalizeEvidenceMachineNumber(cell?.num);
+      if (!number) continue;
+      const candidates = layoutsByNumber.get(number) || [];
+      if (!candidates.some((candidate) => candidate.layoutKey === layoutKey)) {
+        candidates.push({
+          layout,
+          layoutId,
+          layoutKey,
+          machineName,
+          machine,
+        });
+        layoutsByNumber.set(number, candidates);
+      }
+    }
+  });
+
+  return scans.map((scan) => {
+    let changed = false;
+    const rows = (scan?.rows || []).map((row) => {
+      const number = normalizeEvidenceMachineNumber(row?.num);
+      const candidates = number ? (layoutsByNumber.get(number) || []) : [];
+      if (candidates.length !== 1) return row;
+
+      const [candidate] = candidates;
+      if (!candidate.machineName || !candidate.machine) return row;
+
+      const currentMachineName = String(row?.machineName || scan?.machineName || "").trim();
+      const currentMachine = currentMachineName
+        ? findMachineSpec(currentMachineName, customMachines, machineDB)
+        : null;
+      // 登録済みの別機種名がある場合は、ホールマップより行の明示値を優先する。
+      if (currentMachineName && !currentMachine) return row;
+      if (
+        currentMachine
+        && normalizeEvidenceMachineName(currentMachine.name)
+          !== normalizeEvidenceMachineName(candidate.machine.name)
+      ) {
+        return row;
+      }
+
+      const machineName = currentMachineName || candidate.machineName;
+      const island = String(candidate.layout?.name || row?.island || "").trim();
+      const islandId = candidate.layout?.id ?? row?.islandId;
+      if (
+        String(row?.machineName || "").trim() === machineName
+        && String(row?.island || "").trim() === island
+        && String(row?.islandId ?? "") === String(islandId ?? "")
+      ) {
+        return row;
+      }
+
+      changed = true;
+      return {
+        ...row,
+        machineName,
+        island,
+        islandId,
+        strategyLayoutAssociation: {
+          source: "hall-layout",
+          layoutId: candidate.layoutId,
+          recoveredMachineName: !currentMachineName,
+        },
+      };
+    });
+    return changed ? { ...scan, rows } : scan;
+  });
+}
+
 function localDateKey(value = new Date()) {
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
   const date = value instanceof Date ? value : new Date(value);
@@ -925,7 +1014,11 @@ export function buildStrategyMap({
   const hallIslands = getStoreIslands(hallMaps, analysisStoreId);
   // ポートフォリオ・翌日予測に他店舗の台が混ざらないよう、
   // 解析対象は表示中の店舗の履歴に限定する。
-  const storeScans = currentScans;
+  const storeScans = associateStrategyScansWithHallLayout(
+    currentScans,
+    hallIslands,
+    customMachines,
+  );
   const payoutCorrections = buildPayoutCorrectionProfiles({
     scans: storeScans,
     archives,
@@ -953,7 +1046,7 @@ export function buildStrategyMap({
     item,
   ]));
 
-  const currentRows = currentScans.flatMap((scan) =>
+  const currentRows = storeScans.flatMap((scan) =>
     (scan.rows || []).map((row) => ({
       ...row,
       machineName: row.machineName || scan.machineName || "",

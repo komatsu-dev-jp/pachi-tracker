@@ -359,6 +359,98 @@ assert.equal(
 );
 assert.ok(partialRefreshGhoul.every((item) => item.rot > 0));
 
+// 更新前のアプリで機種名なし保存になっていても、台番号が1島だけに一致すれば復旧する。
+const missingMachineNameRows = Array.from({ length: 70 }, (_, index) => ({
+  num: String(758 + index),
+  machineName: "",
+  island: "",
+  normalSpins: 800,
+  totalStarts: 10,
+  val: 2000,
+  status: "ok",
+}));
+const missingMachineNameMap = buildStrategyMap({
+  scans: [
+    {
+      id: "other-machine-28-for-missing-name",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-28",
+      createdAt: "2026-07-28T01:00:00Z",
+      rows: [{
+        num: "479",
+        machineName: "検証機",
+        island: "大海物語",
+        normalSpins: 800,
+        totalStarts: 10,
+        val: 2000,
+        status: "ok",
+      }],
+    },
+    {
+      id: "tokyo-ghoul-26-missing-name",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-26",
+      createdAt: "2026-07-28T00:50:00Z",
+      rows: missingMachineNameRows,
+    },
+  ],
+  customMachines: [machine],
+  hallMaps: {
+    s1: [
+      { id: "sea", name: "大海物語", machineName: "検証機", start: 479, end: 484 },
+      { id: "tokyo-ghoul", name: "東京喰種", machineName: "e東京喰種", start: 758, end: 827 },
+    ],
+  },
+  selectedStoreId: "s1",
+  targetDate: "2026-07-28",
+  stores: [{ id: "s1", name: "検証店" }],
+});
+const recoveredMissingNameGhoul = missingMachineNameMap.islands.find(
+  (island) => island.name === "東京喰種",
+).machines;
+assert.equal(recoveredMissingNameGhoul.length, 70, "機種名なしの東京喰種70台を表示対象へ復旧する");
+assert.ok(
+  recoveredMissingNameGhoul.every((item) => item.rot > 0),
+  "復旧した全70台へ予測回転率を表示する",
+);
+assert.ok(recoveredMissingNameGhoul.every((item) => item.machineName === "e東京喰種"));
+assert.ok(recoveredMissingNameGhoul.every((item) => item.freshness.sourceDate === "2026-07-26"));
+
+// 同じ台番号を含む島が複数ある場合は、機種名なし行を推測で関連付けない。
+const overlappingLayoutMap = buildStrategyMap({
+  scans: [{
+    id: "ambiguous-missing-name",
+    storeId: "s1",
+    storeName: "検証店",
+    date: "2026-07-28",
+    createdAt: "2026-07-28T01:10:00Z",
+    rows: [{
+      num: "101",
+      machineName: "",
+      normalSpins: 800,
+      totalStarts: 10,
+      val: 2000,
+      status: "ok",
+    }],
+  }],
+  customMachines: [
+    machine,
+    { ...machine, name: "別の検証機", modelName: "P別の検証機TEST" },
+  ],
+  hallMaps: {
+    s1: [
+      { id: "overlap-a", name: "重複A", machineName: "検証機", start: 101, end: 101 },
+      { id: "overlap-b", name: "重複B", machineName: "別の検証機", start: 101, end: 101 },
+    ],
+  },
+  selectedStoreId: "s1",
+  targetDate: "2026-07-28",
+  stores: [{ id: "s1", name: "検証店" }],
+});
+assert.equal(overlappingLayoutMap.total, 0, "複数島に重なる機種名なし行は推測で復旧しない");
+
 const primaryKey = "s1::候補機::P候補機";
 const backupKey = "s1::検証機::P検証機";
 const monthlyPlayPlans = {
