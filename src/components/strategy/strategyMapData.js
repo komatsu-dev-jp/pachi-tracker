@@ -1003,22 +1003,52 @@ export function buildStrategyMap({
     defaultHours: 6,
     spinsPerHour: 210,
   });
-  const currentScans = strategyStoreScans(scans, selectedStoreId, stores);
-  const freshness = getStrategyFreshness(currentScans, targetDate);
+  const selectedStoreScans = strategyStoreScans(scans, selectedStoreId, stores);
+  const normalizedTargetDate = normalizedDate(targetDate);
+  // 過去日の戦略マップへ、その日より後に保存された解析を混ぜない。
+  // 対象日以前の解析が1件もない場合だけ、未来日であることを freshness に残す。
+  const currentScans = normalizedTargetDate
+    ? selectedStoreScans.filter((scan) => normalizedDate(scan?.date) <= normalizedTargetDate)
+    : selectedStoreScans;
+  const freshness = getStrategyFreshness(
+    currentScans.length ? currentScans : selectedStoreScans,
+    targetDate,
+  );
   if (!currentScans.length) return emptyMap(playingNum, planHandoff, strategyPlan, freshness);
 
   const latestScan = [...currentScans].sort(compareScanRecency)[0] || currentScans[0];
-  const analysisStoreId = latestScan?.storeId ?? selectedStoreId;
+  const scopedStoreIds = [...new Set(currentScans
+    .map((scan) => scan?.storeId)
+    .filter((storeId) => storeId != null)
+    .map(String))];
+  const matchingRegisteredStores = (stores || []).filter((store) => (
+    String(store?.name || "").trim() === String(latestScan?.storeName || "").trim()
+  ));
+  const inferredStoreId = scopedStoreIds.length === 1
+    ? scopedStoreIds[0]
+    : matchingRegisteredStores.length === 1 ? matchingRegisteredStores[0]?.id : null;
+  const analysisStoreId = latestScan?.storeId ?? selectedStoreId ?? inferredStoreId;
   const selectedStore = (stores || []).find((store) => String(store?.id) === String(analysisStoreId)) || null;
   const analysisStoreName = latestScan?.storeName || selectedStore?.name || "";
   const hallIslands = getStoreIslands(hallMaps, analysisStoreId);
   // ポートフォリオ・翌日予測に他店舗の台が混ざらないよう、
   // 解析対象は表示中の店舗の履歴に限定する。
-  const storeScans = associateStrategyScansWithHallLayout(
+  const associatedStoreScans = associateStrategyScansWithHallLayout(
     currentScans,
     hallIslands,
     customMachines,
   );
+  // 旧版の保存には storeId がなく店舗名だけの行がある。strategyStoreScans で
+  // 選択店舗と同名だと確認済みのスキャンだけ、現在の店舗IDへ揃えて同一台として扱う。
+  const storeScans = associatedStoreScans.map((scan) => (
+    scan?.storeId == null && analysisStoreId != null
+      ? {
+          ...scan,
+          storeId: analysisStoreId,
+          storeName: scan.storeName || analysisStoreName,
+        }
+      : scan
+  ));
   const payoutCorrections = buildPayoutCorrectionProfiles({
     scans: storeScans,
     archives,
@@ -1041,11 +1071,6 @@ export function buildStrategyMap({
       ballValueYen: strategyPlan.ballValueYen,
     },
   });
-  const analyticsByMachine = new Map((analytics.statusRows || analytics.latestRows).map((item) => [
-    `${item.store}___${item.machineName}___${item.num}`,
-    item,
-  ]));
-
   const currentRows = storeScans.flatMap((scan) =>
     (scan.rows || []).map((row) => ({
       ...row,
@@ -1057,21 +1082,75 @@ export function buildStrategyMap({
       sourceScanDate: normalizedDate(scan.date),
     }))
   );
-  const uniqueRows = new Map();
-  for (const row of currentRows) {
-    const canonicalMachineName = findMachineSpec(row.machineName, customMachines, machineDB)?.name
-      || row.machineName;
-    const key = `${normalizeEvidenceMachineName(canonicalMachineName)}:${normalizeEvidenceMachineNumber(row.num)}`;
-    const previous = uniqueRows.get(key);
-    const rowDate = normalizedDate(row.date || row.sourceScanDate);
-    const previousDate = normalizedDate(previous?.date || previous?.sourceScanDate);
-    if (
-      !previous
-      || rowDate > previousDate
-      || (rowDate === previousDate && String(row.createdAt || "") >= String(previous.createdAt || ""))
-    ) {
-      uniqueRows.set(key, row);
+  const identityKey = (row) => {
+    const canonicalMachineName = findMachineSpec(row?.machineName, customMachines, machineDB)?.name
+      || row?.machineName
+      || "";
+    const store = String(row?.storeId ?? row?.store ?? row?.storeName ?? "").trim();
+    return [
+      store,
+      normalizeEvidenceMachineName(canonicalMachineName),
+      normalizeEvidenceMachineNumber(row?.num),
+    ].join("___");
+  };
+  const compareRowRecency = (left, right) => (
+    normalizedDate(right?.date || right?.sourceScanDate)
+      .localeCompare(normalizedDate(left?.date || left?.sourceScanDate))
+    || String(right?.createdAt || "").localeCompare(String(left?.createdAt || ""))
+  );
+  const latestStatusByIdentity = new Map();
+  for (const item of analytics.statusRows || analytics.latestRows || []) {
+    const key = identityKey(item);
+    const previous = latestStatusByIdentity.get(key);
+    if (!previous || compareRowRecency(item, previous) < 0) {
+      latestStatusByIdentity.set(key, item);
     }
+  }
+  const latestValidByIdentity = new Map();
+  for (const item of analytics.historyRows || []) {
+    if (item?.valid !== true) continue;
+    const key = identityKey(item);
+    const previous = latestValidByIdentity.get(key);
+    if (!previous || compareRowRecency(item, previous) < 0) {
+      latestValidByIdentity.set(key, item);
+    }
+  }
+  const rowsByIdentity = new Map();
+  for (const row of currentRows) {
+    const key = identityKey(row);
+    const rows = rowsByIdentity.get(key) || [];
+    rows.push(row);
+    rowsByIdentity.set(key, rows);
+  }
+  const uniqueRows = new Map();
+  for (const [key, rows] of rowsByIdentity) {
+    const ordered = [...rows].sort(compareRowRecency);
+    const latestRow = ordered[0];
+    const latestStatus = latestStatusByIdentity.get(key) || null;
+    const latestValid = latestValidByIdentity.get(key) || null;
+    if (latestStatus?.valid === false && latestValid) {
+      const validDate = normalizedDate(latestValid.date);
+      const validRow = ordered.find((row) => (
+        normalizedDate(row.date || row.sourceScanDate) === validDate
+        && String(row.createdAt || "") === String(latestValid.createdAt || "")
+      )) || ordered.find((row) => normalizedDate(row.date || row.sourceScanDate) === validDate);
+      if (validRow) {
+        uniqueRows.set(key, {
+          ...validRow,
+          strategyPevidence: latestValid,
+          strategyReferenceFallback: {
+            sourceDate: validDate,
+            latestSourceDate: normalizedDate(latestStatus.date || latestRow?.sourceScanDate),
+            reason: latestStatus.exclusionReason || "最新データは回転率を計算できません",
+          },
+        });
+        continue;
+      }
+    }
+    uniqueRows.set(key, {
+      ...latestRow,
+      strategyPevidence: latestStatus,
+    });
   }
 
   const islandMap = new Map();
@@ -1085,8 +1164,12 @@ export function buildStrategyMap({
     );
     // 差玉リサーチは通常、実戦日の前日に行う。
     // 鮮度は店舗全体ではなく台ごとに判定し、古い台は回転率を参考表示しつつ候補から外す。
-    const rowActionable = rowFreshness.status === "fresh" || rowFreshness.status === "prepared";
-    const predictionDayLabel = rowFreshness.status === "prepared" ? "本日" : "明日";
+    const referenceFallback = row.strategyReferenceFallback || null;
+    const rowActionable = !referenceFallback
+      && (rowFreshness.status === "fresh" || rowFreshness.status === "prepared");
+    const predictionDayLabel = referenceFallback
+      ? "過去参考"
+      : rowFreshness.status === "prepared" ? "本日" : "明日";
     const historyRows = collectDeltaRows(storeScans, {
       storeId: row.storeId,
       storeName: row.storeId == null ? row.storeName : "",
@@ -1095,7 +1178,12 @@ export function buildStrategyMap({
     });
     const evidence = buildDeltaEvidence(historyRows, machineSpec);
     const rowStore = String(row.storeId ?? row.storeName ?? "").trim();
-    const pe = analyticsByMachine.get(`${rowStore}___${machineName}___${String(row.num).replace(/_旧.*/, "").trim()}`);
+    const pe = row.strategyPevidence
+      || latestStatusByIdentity.get(identityKey({
+        ...row,
+        store: rowStore,
+        machineName,
+      }));
     const equivalentBorder = pe?.valid
       ? Number(pe.equivalentBorder ?? pe.border)
       : Number(evidence.trueBorder);
@@ -1179,7 +1267,8 @@ export function buildStrategyMap({
     const centerEconomics = calculateStrategyEconomics({ ...economicOptions, rotation: predictedRotation });
     const trueBorder = centerEconomics.effectiveBorder;
     const currentRowDate = normalizedDate(row.date || row.sourceScanDate);
-    const currentRowInvalid = !hasUsableStrategyRow(row)
+    const currentRowInvalid = Boolean(referenceFallback)
+      || !hasUsableStrategyRow(row)
       || !currentRowDate
       || currentRowDate !== row.sourceScanDate
       || Boolean(pe && !pe.valid);
@@ -1252,8 +1341,10 @@ export function buildStrategyMap({
           cashLimit: strategyPlan.cashLimit,
         })
       : null;
-    const revenueRangeStatus = !rowActionable
-      ? "stale-scan"
+    const revenueRangeStatus = referenceFallback
+      ? "data-missing"
+      : !rowActionable
+        ? "stale-scan"
       : currentRowInvalid
         ? "data-missing"
       : !hasLowRotation || !hasHighRotation
@@ -1312,8 +1403,16 @@ export function buildStrategyMap({
       machineName,
       storeId: identity.storeId,
       storeName: identity.storeName,
-      rot: currentRowInvalid ? null : round1(predictedRotation),
-      predictedRotation: currentRowInvalid ? null : predictedRotation,
+      rot: currentRowInvalid
+        ? (referenceFallback && Number.isFinite(Number(predictedRotation))
+            ? round1(predictedRotation)
+            : null)
+        : round1(predictedRotation),
+      predictedRotation: currentRowInvalid
+        ? (referenceFallback && Number.isFinite(Number(predictedRotation))
+            ? predictedRotation
+            : null)
+        : predictedRotation,
       nextDayVariance: currentRowInvalid ? null : estimate.variance,
       decisionLowerK,
       decisionLowerRotation,
@@ -1392,10 +1491,13 @@ export function buildStrategyMap({
       payoutCorrection: pe?.payoutCorrection || null,
       evidenceSources: currentRowInvalid ? [] : estimate.sources,
       freshness: rowFreshness,
+      referenceFallback,
       recommendationStatus: machineActionable ? "actionable" : "reference",
       calculationPendingReasons: machineActionable
         ? []
-        : [currentRowInvalid
+        : [referenceFallback
+            ? `最新${referenceFallback.latestSourceDate || "日"}データは${referenceFallback.reason}のため、${referenceFallback.sourceDate || "過去"}を参考表示`
+            : currentRowInvalid
             ? (pe?.exclusionReason || "最新データを計算から除外しました")
             : `${rowFreshness.sourceDate || "日付不明"}の解析は参考表示です`],
       predictionDayLabel,
@@ -1436,8 +1538,10 @@ export function buildStrategyMap({
       winRate: scenarioWinRate == null ? null : Math.round(scenarioWinRate * 100),
       profitChanceLow: scenarioChanceBand?.low ?? null,
       profitChanceHigh: scenarioChanceBand?.high ?? null,
-      profitChanceStatus: !rowActionable
-        ? "stale-scan"
+      profitChanceStatus: referenceFallback
+        ? "data-missing"
+        : !rowActionable
+          ? "stale-scan"
         : currentRowInvalid
           ? (pe?.profitChanceStatus || "data-missing")
           : profitChanceReady
@@ -1545,10 +1649,15 @@ export function buildStrategyMap({
   const islandAvgRot = (id) => {
     const list = all.filter((machine) =>
       machine.islandId === id
-      && machine.recommendationStatus === "actionable"
-      && machine.verdict !== "nodata"
       && machine.rot > 0
-      && Number(machine.rotationEstimate?.inputBalls || 0) > 0
+      && (
+        machine.referenceFallback
+        || (
+          machine.recommendationStatus === "actionable"
+          && machine.verdict !== "nodata"
+          && Number(machine.rotationEstimate?.inputBalls || 0) > 0
+        )
+      )
     );
     return list.length ? round1(list.reduce((sum, machine) => sum + machine.rot, 0) / list.length) : 0;
   };
