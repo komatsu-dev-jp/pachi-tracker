@@ -285,7 +285,7 @@ test("nodata台は島平均と島の分析済み台数から除外する", () =>
   assert.equal(island?.analyzedMachines, 1);
 });
 
-test("最新日の読取失敗で前日の予測・稼働状態を復活させない", () => {
+test("最新日の読取失敗時は前日値を参考表示しても候補・稼働状態を復活させない", () => {
   const previous = scanOf([activeRow("101", "2026-07-09")], {
     id: "previous-valid",
     date: "2026-07-09",
@@ -311,7 +311,9 @@ test("最新日の読取失敗で前日の予測・稼働状態を復活させ�
 
   assert.equal(machine.verdict, "nodata");
   assert.equal(machine.recommendationStatus, "reference");
-  assert.equal(machine.rot, null);
+  assert.ok(machine.rot > 0, "計算可能だった前日値は過去参考として数値を残す");
+  assert.equal(machine.referenceFallback?.sourceDate, "2026-07-09");
+  assert.equal(machine.referenceFallback?.latestSourceDate, "2026-07-10");
   assert.equal(machine.confidence, 0);
   assert.equal(machine.activityStatus, "invalid");
   assert.equal(machine.profitChanceStatus, "data-missing");
@@ -321,7 +323,7 @@ test("最新日の読取失敗で前日の予測・稼働状態を復活させ�
   assert.equal(island.activitySignal, "読取除外あり");
 });
 
-test("行の日付が不正・スキャン日と不一致でも前日予測を復活させない", () => {
+test("行の日付が不正・スキャン日と不一致でも前日値を候補へ復活させない", () => {
   const previous = scanOf([activeRow("101", "2026-07-09")], {
     id: "date-defense-previous",
     date: "2026-07-09",
@@ -343,7 +345,9 @@ test("行の日付が不正・スキャン日と不一致でも前日予測を�
   assert.equal(map.freshness.status, "fresh");
   assert.equal(machine.verdict, "nodata");
   assert.equal(machine.recommendationStatus, "reference");
-  assert.equal(machine.rot, null);
+  assert.ok(machine.rot > 0, "日付不正行の代わりに前日の計算可能値を参考表示する");
+  assert.equal(machine.referenceFallback?.sourceDate, "2026-07-09");
+  assert.equal(machine.referenceFallback?.latestSourceDate, "2026-07-10");
   assert.equal(machine.confidence, 0);
   assert.equal(machine.activityStatus, "invalid");
   assert.equal(machine.profitChanceStatus, "data-missing");

@@ -359,6 +359,193 @@ assert.equal(
 );
 assert.ok(partialRefreshGhoul.every((item) => item.rot > 0));
 
+// 新しい差玉だけの保存があっても、26日の最新「計算可能」データを参考表示する。
+// 最新の不完全行を今日の候補として復活させず、過去値の数値だけを残す。
+const ghoulRows70 = Array.from({ length: 70 }, (_, index) => ({
+  num: String(758 + index),
+  machineName: "e東京喰種",
+  island: "東京喰種",
+  normalSpins: 800,
+  totalStarts: 10,
+  val: 2000,
+  status: "ok",
+}));
+const incompleteRefreshMap = buildStrategyMap({
+  scans: [
+    {
+      id: "tokyo-ghoul-complete-26",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-26",
+      createdAt: "2026-07-26T12:00:00Z",
+      rows: ghoulRows70,
+    },
+    {
+      id: "tokyo-ghoul-incomplete-28",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-28",
+      createdAt: "2026-07-28T01:30:00Z",
+      rows: ghoulRows70.map(({ num, machineName, island }) => ({
+        num,
+        machineName,
+        island,
+        val: -4000,
+        status: "ok",
+      })),
+    },
+  ],
+  customMachines: [machine],
+  hallMaps: {
+    s1: [
+      { id: "tokyo-ghoul", name: "東京喰種", machineName: "e東京喰種", start: 758, end: 827 },
+    ],
+  },
+  selectedStoreId: "s1",
+  targetDate: "2026-07-28",
+  stores: [{ id: "s1", name: "検証店" }],
+});
+const incompleteRefreshGhoul = incompleteRefreshMap.islands.find(
+  (island) => island.name === "東京喰種",
+).machines;
+assert.equal(incompleteRefreshGhoul.length, 70);
+assert.ok(
+  incompleteRefreshGhoul.every((item) => Number.isFinite(item.rot) && item.rot > 0),
+  "不完全な28日分に隠されていた26日分70台の回転率を数値表示する",
+);
+assert.ok(incompleteRefreshGhoul.every((item) => item.freshness.sourceDate === "2026-07-26"));
+assert.ok(incompleteRefreshGhoul.every((item) => item.referenceFallback?.latestSourceDate === "2026-07-28"));
+assert.ok(incompleteRefreshGhoul.every((item) => item.recommendationStatus === "reference"));
+assert.ok(incompleteRefreshGhoul.every((item) => item.calculationPendingReasons[0].includes("通常回転数なし")));
+assert.equal(incompleteRefreshMap.candidates.length, 0, "過去参考値を28日の候補へ昇格させない");
+assert.ok(incompleteRefreshMap.islandAvgRot("東京喰種") > 0, "過去参考同士の島平均との差を0基準にしない");
+
+// 旧版の店舗IDなし行と、現在の店舗ID付き行も同じ70台の履歴として結合する。
+const legacyStoreIdentityMap = buildStrategyMap({
+  scans: [
+    {
+      id: "tokyo-ghoul-legacy-store-name-only-26",
+      storeName: "検証店",
+      date: "2026-07-26",
+      createdAt: "2026-07-26T12:00:00Z",
+      rows: ghoulRows70,
+    },
+    {
+      id: "tokyo-ghoul-current-store-id-28",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-28",
+      createdAt: "2026-07-28T01:30:00Z",
+      rows: ghoulRows70.map(({ num, machineName, island }) => ({
+        num,
+        machineName,
+        island,
+        val: -4000,
+        status: "ok",
+      })),
+    },
+  ],
+  customMachines: [machine],
+  hallMaps: {
+    s1: [
+      { id: "tokyo-ghoul", name: "東京喰種", machineName: "e東京喰種", start: 758, end: 827 },
+    ],
+  },
+  selectedStoreId: "s1",
+  targetDate: "2026-07-28",
+  stores: [{ id: "s1", name: "検証店" }],
+});
+const legacyStoreIdentityGhoul = legacyStoreIdentityMap.islands.find(
+  (island) => island.name === "東京喰種",
+).machines;
+assert.equal(legacyStoreIdentityGhoul.length, 70, "店舗IDの有無で同じ70台を二重表示しない");
+assert.ok(legacyStoreIdentityGhoul.every((item) => Number.isFinite(item.rot) && item.rot > 0));
+assert.ok(legacyStoreIdentityGhoul.every((item) => item.referenceFallback?.sourceDate === "2026-07-26"));
+assert.equal(legacyStoreIdentityMap.candidates.length, 0);
+
+// 店舗選択が未設定で、古い正常行だけに店舗IDがある逆向きの混在も統合する。
+const inferredStoreIdentityMap = buildStrategyMap({
+  scans: [
+    {
+      id: "tokyo-ghoul-store-id-only-26",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-26",
+      createdAt: "2026-07-26T12:00:00Z",
+      rows: ghoulRows70,
+    },
+    {
+      id: "tokyo-ghoul-latest-name-only-28",
+      storeName: "検証店",
+      date: "2026-07-28",
+      createdAt: "2026-07-28T01:30:00Z",
+      rows: ghoulRows70.map(({ num, machineName, island }) => ({
+        num,
+        machineName,
+        island,
+        val: -4000,
+        status: "ok",
+      })),
+    },
+  ],
+  customMachines: [machine],
+  hallMaps: {
+    s1: [
+      { id: "tokyo-ghoul", name: "東京喰種", machineName: "e東京喰種", start: 758, end: 827 },
+    ],
+  },
+  selectedStoreId: null,
+  targetDate: "2026-07-28",
+  stores: [{ id: "s1", name: "検証店" }],
+});
+const inferredStoreIdentityGhoul = inferredStoreIdentityMap.islands.find(
+  (island) => island.name === "東京喰種",
+).machines;
+assert.equal(inferredStoreIdentityGhoul.length, 70, "店舗未選択でも同じ70台を二重表示しない");
+assert.ok(inferredStoreIdentityGhoul.every((item) => Number.isFinite(item.rot) && item.rot > 0));
+assert.ok(inferredStoreIdentityGhoul.every((item) => item.referenceFallback?.sourceDate === "2026-07-26"));
+assert.equal(inferredStoreIdentityMap.candidates.length, 0);
+
+// 対象日より未来の解析は、過去参考の数値にも予測にも混ぜない。
+const futureOnlyMap = buildStrategyMap({
+  scans: [
+    {
+      id: "tokyo-ghoul-future-valid-29",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-29",
+      createdAt: "2026-07-29T12:00:00Z",
+      rows: ghoulRows70,
+    },
+    {
+      id: "tokyo-ghoul-future-invalid-30",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-30",
+      createdAt: "2026-07-30T12:00:00Z",
+      rows: ghoulRows70.map(({ num, machineName, island }) => ({
+        num,
+        machineName,
+        island,
+        val: -4000,
+        status: "ok",
+      })),
+    },
+  ],
+  customMachines: [machine],
+  hallMaps: {
+    s1: [
+      { id: "tokyo-ghoul", name: "東京喰種", machineName: "e東京喰種", start: 758, end: 827 },
+    ],
+  },
+  selectedStoreId: "s1",
+  targetDate: "2026-07-28",
+  stores: [{ id: "s1", name: "検証店" }],
+});
+assert.equal(futureOnlyMap.total, 0, "対象日より未来の回転率を表示しない");
+assert.equal(futureOnlyMap.freshness.status, "future");
+assert.equal(futureOnlyMap.freshness.sourceDate, "2026-07-30");
+
 // 更新前のアプリで機種名なし保存になっていても、台番号が1島だけに一致すれば復旧する。
 const missingMachineNameRows = Array.from({ length: 70 }, (_, index) => ({
   num: String(758 + index),

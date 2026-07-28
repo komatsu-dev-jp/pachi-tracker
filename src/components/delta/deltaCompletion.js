@@ -94,3 +94,24 @@ export function makeDeltaCompletionSummary({ scan, validation } = {}) {
     excludedCount: Math.max(0, Number(validation?.excludedCount) || 0),
   };
 }
+
+export function getDeltaSaveReadiness({
+  canSaveRows = false,
+  machineAssignmentsValid = false,
+  savableCount = 0,
+  predictedCount = 0,
+} = {}) {
+  const normalizedSavableCount = Math.max(0, Number(savableCount) || 0);
+  const normalizedPredictedCount = Math.max(0, Number(predictedCount) || 0);
+  const canSaveDeltaOnly = Boolean(canSaveRows && machineAssignmentsValid);
+  const allSavableRowsHavePrediction = canSaveDeltaOnly
+    && normalizedSavableCount > 0
+    && normalizedPredictedCount === normalizedSavableCount;
+
+  return {
+    canSaveDeltaOnly,
+    allSavableRowsHavePrediction,
+    needsPredictionData: canSaveDeltaOnly && !allSavableRowsHavePrediction,
+    canSaveWithRotation: allSavableRowsHavePrediction,
+  };
+}

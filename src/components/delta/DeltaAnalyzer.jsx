@@ -78,6 +78,7 @@ import {
 } from "./storeLayoutRowRelation";
 import {
   createDeltaCompletionHistoryGuard,
+  getDeltaSaveReadiness,
   makeDeltaCompletionSummary,
 } from "./deltaCompletion";
 import {
@@ -2070,14 +2071,26 @@ function ResultsStep({
     return state;
   }, { matched: 0, manual: 0, machineMissing: 0, conflicts: 0, ambiguous: 0, unmapped: 0 }), [rows]);
   const predictedCount = Array.from(predictionByNum.values()).filter((item) => item.hasEstimate).length;
+  const savablePredictionCount = rowValidation.savableRows.filter((row) => (
+    predictionByNum.get(String(row.num))?.hasEstimate === true
+  )).length;
   const pendingReviewCount = rowValidation.pendingReviewIndices.length;
   const confirmedReviewCount = rowValidation.confirmedReviewIndices.length;
   const boundedCount = rowValidation.boundedCount || 0;
   const missingDeltaCount = rowValidation.missingIndices.length;
   const hasPartialSave = rowValidation.canSave && !rowValidation.valid;
   const warningOnly = hasPartialSave || (pendingReviewCount > 0 && missingDeltaCount === 0);
-  const canSaveResult = rowValidation.canSave && machineValidation.valid;
-  const saveDisabled = saved || !canSaveResult;
+  const {
+    needsPredictionData,
+    canSaveWithRotation: canSaveResult,
+  } = getDeltaSaveReadiness({
+    canSaveRows: rowValidation.canSave,
+    machineAssignmentsValid: machineValidation.valid,
+    savableCount: rowValidation.savableCount,
+    predictedCount: savablePredictionCount,
+  });
+  const saveDisabled = saved || (!canSaveResult && !needsPredictionData);
+  const primaryAction = needsPredictionData ? onOpenImport : onSave;
 
   return (
     <>
@@ -2087,7 +2100,7 @@ function ResultsStep({
         right={(
           <button
             className="b"
-            onClick={saveDisabled ? undefined : onSave}
+            onClick={saveDisabled ? undefined : primaryAction}
             disabled={saveDisabled}
             style={{
               minHeight: TAP, minWidth: 64, borderRadius: 12, padding: "0 14px",
@@ -2107,7 +2120,9 @@ function ResultsStep({
                   ? "機種を選択"
                   : machineValidation.unregisteredCount > 0
                     ? "未登録機種"
-                    : `${rowValidation.savableCount}台を保存`}
+                    : needsPredictionData
+                      ? `台データを追加 ${savablePredictionCount}/${rowValidation.savableCount}`
+                      : `${rowValidation.savableCount}台を保存`}
           </button>
         )}
       />
@@ -2196,6 +2211,35 @@ function ResultsStep({
               {machineValidation.unregisteredCount > 0
                 && ` 登録機種と照合できない${machineValidation.unregisteredCount}台があります。正式な機種を選び直してください。`}
             </div>
+          </div>
+        )}
+
+        {needsPredictionData && (
+          <div style={{
+            background: "color-mix(in srgb, var(--yellow) 12%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--yellow) 38%, transparent)",
+            borderRadius: 14, padding: "12px 14px", marginBottom: 12,
+          }}>
+            <div style={{ fontSize: 14, color: C.yellow, fontWeight: 900, marginBottom: 5 }}>
+              回転率を表示できるのは{savablePredictionCount}/{rowValidation.savableCount}台です
+            </div>
+            <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.65, fontWeight: 700 }}>
+              通常中スタート・大当り回数・確定差玉が揃っていない台は、戦略マップで回転率を計算できません。
+              上の「台データを追加」から不足データを取り込んでください。
+            </div>
+            <button
+              type="button"
+              className="b"
+              onClick={saved ? undefined : onSave}
+              disabled={saved}
+              style={{
+                width: "100%", minHeight: TAP, marginTop: 10, borderRadius: 11,
+                border: `1px solid ${C.borderHi}`, background: C.surface,
+                color: C.subHi, fontSize: 12, fontWeight: 800,
+              }}
+            >
+              {saved ? "差玉履歴を保存済み ✓" : "回転率なしで差玉履歴だけ保存"}
+            </button>
           </div>
         )}
 

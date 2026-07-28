@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createDeltaCompletionHistoryGuard,
+  getDeltaSaveReadiness,
   makeDeltaCompletionSummary,
 } from "../deltaCompletion.js";
 
@@ -76,4 +77,51 @@ test("完了サマリーは保存件数と除外件数を安全な数値へ揃�
       excludedCount: 3,
     },
   );
+});
+
+test("回転率を計算できない70台は通常保存を止め、台データ追加へ案内する", () => {
+  assert.deepEqual(
+    getDeltaSaveReadiness({
+      canSaveRows: true,
+      machineAssignmentsValid: true,
+      savableCount: 70,
+      predictedCount: 0,
+    }),
+    {
+      canSaveDeltaOnly: true,
+      allSavableRowsHavePrediction: false,
+      needsPredictionData: true,
+      canSaveWithRotation: false,
+    },
+  );
+});
+
+test("70台すべての回転率が計算可能なら通常保存できる", () => {
+  assert.deepEqual(
+    getDeltaSaveReadiness({
+      canSaveRows: true,
+      machineAssignmentsValid: true,
+      savableCount: 70,
+      predictedCount: 70,
+    }),
+    {
+      canSaveDeltaOnly: true,
+      allSavableRowsHavePrediction: true,
+      needsPredictionData: false,
+      canSaveWithRotation: true,
+    },
+  );
+});
+
+test("機種割り当てが不正なら差玉のみ保存も許可しない", () => {
+  const readiness = getDeltaSaveReadiness({
+    canSaveRows: true,
+    machineAssignmentsValid: false,
+    savableCount: 70,
+    predictedCount: 70,
+  });
+
+  assert.equal(readiness.canSaveDeltaOnly, false);
+  assert.equal(readiness.needsPredictionData, false);
+  assert.equal(readiness.canSaveWithRotation, false);
 });
