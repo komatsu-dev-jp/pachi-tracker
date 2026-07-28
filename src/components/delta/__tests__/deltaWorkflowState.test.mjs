@@ -4,6 +4,7 @@ import {
   buildPartialMachineNumberAssignment,
   canAutoAcceptSiteSevenReports,
   createImageSelectionSnapshot,
+  retainDetectedGraphSlotsAfterOcr,
   seedPartialMachineNumberInputs,
   shouldAcceptImageAnalysis,
   summarizeSiteSevenReviewState,
@@ -65,6 +66,54 @@ test("解析開始後に画像の追加・削除・並べ替えがあれば古�
     selectionSnapshot: snapshot,
     currentImages: [first],
   }), false);
+});
+
+test("全ページの台番号OCRが失敗しても検出済みグラフを手動確認用に保持する", () => {
+  const pages = [
+    {
+      accepted: false,
+      slots: [
+        { val: 1000, source: { imageIndex: 0, panelIndex: 0 } },
+        { val: -2000, source: { imageIndex: 0, panelIndex: 1 } },
+      ],
+    },
+    {
+      accepted: false,
+      slots: [{
+        val: 3000,
+        machineNumberCandidate: "100",
+        machineNumberOcr: { accepted: true, candidate: "100" },
+        source: { imageIndex: 1, panelIndex: 0 },
+      }],
+    },
+  ];
+  const combined = {
+    accepted: false,
+    status: "failed",
+    reasonCodes: ["empty-slots"],
+    failedPageIndices: [0, 1],
+    excludedSlotCount: 3,
+    slots: [],
+  };
+  const resolved = retainDetectedGraphSlotsAfterOcr(pages, combined);
+
+  assert.equal(resolved.accepted, false);
+  assert.equal(resolved.manualFallback, true);
+  assert.equal(resolved.source, "manual-fallback");
+  assert.equal(resolved.slotCount, 3);
+  assert.equal(resolved.excludedSlotCount, 0);
+  assert.deepEqual(resolved.failedPageIndices, []);
+  assert.deepEqual(resolved.unresolvedIndices, [0, 1]);
+  assert.deepEqual(resolved.slots.map((slot) => slot.val), [1000, -2000, 3000]);
+  assert.ok(resolved.slots.every((slot) => slot.machineNumber === null));
+  assert.ok(resolved.reasonCodes.includes("manual-number-fallback"));
+
+  const empty = retainDetectedGraphSlotsAfterOcr(
+    [{ accepted: false, slots: [] }],
+    { accepted: false, slots: [], reasonCodes: ["empty-slots"] },
+  );
+  assert.equal(empty.manualFallback, undefined);
+  assert.deepEqual(empty.slots, []);
 });
 
 test("部分照合の固定番号は変更せず、未解決slotだけ手入力を採用する", () => {

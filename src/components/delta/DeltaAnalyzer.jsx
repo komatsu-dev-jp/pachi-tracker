@@ -66,6 +66,7 @@ import {
   buildPartialMachineNumberAssignment,
   canAutoAcceptSiteSevenReports,
   createImageSelectionSnapshot,
+  retainDetectedGraphSlotsAfterOcr,
   seedPartialMachineNumberInputs,
   shouldAcceptImageAnalysis,
   summarizeSiteSevenReviewState,
@@ -340,7 +341,10 @@ async function analyzeImages(images, onProgress, {
       });
     }
   }
-  const combinedNumbers = combineMachineNumberPages(numberPages, { allowPartialPages: true });
+  const combinedNumbers = retainDetectedGraphSlotsAfterOcr(
+    numberPages,
+    combineMachineNumberPages(numberPages, { allowPartialPages: true }),
+  );
   const excludedPageSet = new Set(combinedNumbers.failedPageIndices || []);
   const mergeExpectedNumbers = expectCompleteTable
     ? tableExpectation.numbers
@@ -1289,14 +1293,20 @@ function NumbersStep({
         {numberOcr && !numberOcr.accepted && numberOcr.source !== "joint-partial" && (
           <div style={{ background: "color-mix(in srgb, var(--yellow) 12%, transparent)", border: `1px solid color-mix(in srgb, var(--yellow) 38%, transparent)`, borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
             <div style={{ fontSize: 14, color: C.yellow, fontWeight: 900, marginBottom: 4 }}>
-              台番号OCRは一部のみ成功（{recognizedNumberCount}/{slotCount}台）
+              {numberOcr.manualFallback
+                ? "グラフは読み込めました"
+                : `台番号OCRは一部のみ成功（${recognizedNumberCount}/${slotCount}台）`}
             </div>
             <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.65, fontWeight: 700 }}>
-              小さい文字を無理に推測しません。
-              {hasFixedNumberAssignments
-                ? " 確実に読めた番号は固定し、未確認の台だけ入力してください。"
-                : " 下の島または区間で番号を割り当て、画像ごとの範囲を確認してください。"}
-              OCRで確実に読めた番号と1台でも矛盾する場合は確定できません。
+              {numberOcr.manualFallback
+                ? " 台番号だけ自動で読めなかったため、下の島または区間で設定してください。グラフの解析結果は失われていません。"
+                : <>
+                  小さい文字を無理に推測しません。
+                  {hasFixedNumberAssignments
+                    ? " 確実に読めた番号は固定し、未確認の台だけ入力してください。"
+                    : " 下の島または区間で番号を割り当て、画像ごとの範囲を確認してください。"}
+                  OCRで確実に読めた番号と1台でも矛盾する場合は確定できません。
+                </>}
             </div>
           </div>
         )}

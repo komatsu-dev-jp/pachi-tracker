@@ -30,6 +30,71 @@ export function shouldAcceptImageAnalysis({
     && selectionSnapshot === createImageSelectionSnapshot(currentImages);
 }
 
+// 全ページの台番号OCRが不合格でも、グラフ枠の検出結果まで捨てない。
+// OCRで確定できない番号はnullのまま保持し、後続の手動確認へ渡す。
+export function retainDetectedGraphSlotsAfterOcr(pages, combinedResult) {
+  const sourcePages = Array.isArray(pages) ? pages : [];
+  const combined = combinedResult && typeof combinedResult === "object"
+    ? combinedResult
+    : {};
+  if (Array.isArray(combined.slots) && combined.slots.length > 0) return combined;
+
+  const includedPageIndices = [];
+  const slots = [];
+  sourcePages.forEach((page, pageIndex) => {
+    const pageSlots = Array.isArray(page?.slots) ? page.slots : [];
+    if (!pageSlots.length) return;
+    includedPageIndices.push(pageIndex);
+    pageSlots.forEach((slot) => {
+      slots.push({
+        ...(slot && typeof slot === "object" ? slot : {}),
+        machineNumber: null,
+      });
+    });
+  });
+  if (!slots.length) return combined;
+
+  const failedPageIndices = sourcePages
+    .map((_, index) => index)
+    .filter((index) => !includedPageIndices.includes(index));
+  const unresolvedIndices = slots
+    .map((slot, index) => (slot?.machineNumberOcr?.accepted === true ? -1 : index))
+    .filter((index) => index >= 0);
+  const candidates = slots.map((slot) => (
+    slot?.machineNumberCandidate
+    ?? slot?.machineNumberOcr?.candidate
+    ?? null
+  ));
+  const recognizedCount = slots.length - unresolvedIndices.length;
+
+  return {
+    ...combined,
+    accepted: false,
+    status: "review",
+    source: "manual-fallback",
+    manualFallback: true,
+    reasonCodes: [...new Set([
+      ...(combined.reasonCodes || []),
+      "manual-number-fallback",
+    ])],
+    pageCount: sourcePages.length,
+    includedPageCount: includedPageIndices.length,
+    slotCount: slots.length,
+    excludedSlotCount: 0,
+    failedPageIndices,
+    unresolvedIndices,
+    partial: false,
+    warningCodes: [...new Set([
+      ...(combined.warningCodes || []),
+      "manual-number-fallback",
+    ])],
+    candidates,
+    numbers: [],
+    slots,
+    recognizedCount,
+  };
+}
+
 export function trustedMachineNumberForSlot(slot, { jointOnly = false } = {}) {
   if (slot?.jointMatch?.accepted === true) {
     return normalizedMachineNumber(slot.jointMatch.resolvedNum);
