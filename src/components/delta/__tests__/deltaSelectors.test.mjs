@@ -13,6 +13,8 @@ import {
   validateReviewedNumberAssignment,
   isResolvedDeltaRow,
   isDeltaValueWithinConstraint,
+  isDeltaReviewEditable,
+  shouldCommitDeltaReviewValue,
   updateDeltaReview,
   validateDeltaRows,
   islandToNumbers,
@@ -554,6 +556,31 @@ test("validateDeltaRows: 修正して確認した行は次の保存判定で対�
   assert.strictEqual(after.savableRows[1].val, 3000);
 });
 
+test("未読取行へ0を手入力しても変更として扱い、確認後は保存対象へ戻る", () => {
+  const failed = { num: "568", val: null, rank: null, status: "failed" };
+  assert.strictEqual(isDeltaReviewEditable(failed), true);
+  assert.strictEqual(shouldCommitDeltaReviewValue(failed.val, 0), true);
+  assert.strictEqual(shouldCommitDeltaReviewValue(0, 0), false);
+
+  const candidate = updateDeltaReview(failed, { value: 0 });
+  assert.strictEqual(candidate.val, 0);
+  assert.strictEqual(candidate.status, "review");
+  assert.strictEqual(candidate.valueSource, "manual-review-candidate");
+  assert.strictEqual(candidate.reviewConfirmed, false);
+
+  const confirmed = updateDeltaReview(candidate, {
+    value: 0,
+    confirmed: true,
+    reviewedAt: "2026-07-28T00:00:00.000Z",
+  });
+  assert.strictEqual(confirmed.valueSource, "manual-review");
+  assert.strictEqual(confirmed.reviewConfirmed, true);
+  assert.deepStrictEqual(
+    validateDeltaRows([confirmed]).savableRows.map((row) => row.num),
+    ["568"],
+  );
+});
+
 test("validateDeltaRows: 読み取れた行が1台もなければ保存不可", () => {
   const result = validateDeltaRows([
     { num: "568", val: null, status: "failed" },
@@ -617,6 +644,7 @@ test("validateDeltaRows: 一点値を捏造せずbounded範囲のまま保存可
   assert.deepEqual(result.boundedIndices, [1]);
   assert.equal(result.unresolvedCount, 0);
   assert.equal(isResolvedDeltaRow(bounded), false, "範囲値を正確な差玉として扱わない");
+  assert.equal(isDeltaReviewEditable(bounded), true);
 });
 
 test("validateDeltaRows: 見かけだけのbounded範囲は保存可能にしない", () => {

@@ -27,6 +27,8 @@ import {
   validateDeltaRows,
   isResolvedDeltaRow,
   isDeltaValueWithinConstraint,
+  isDeltaReviewEditable,
+  shouldCommitDeltaReviewValue,
   updateDeltaReview,
   islandToNumbers,
   buildSegmentsNumbers,
@@ -78,6 +80,7 @@ import {
 } from "./storeLayoutRowRelation";
 import {
   createDeltaCompletionHistoryGuard,
+  getDeltaSaveControlState,
   getDeltaSaveReadiness,
   makeDeltaCompletionSummary,
 } from "./deltaCompletion";
@@ -501,7 +504,7 @@ export function TopBar({ title, onBack, right, backDisabled = false }) {
 }
 
 // ── 下部固定CTA ──
-function BottomCta({ label, onClick, disabled }) {
+function BottomCta({ label, onClick, disabled, testId }) {
   return (
     <div style={{
       flexShrink: 0,
@@ -510,6 +513,7 @@ function BottomCta({ label, onClick, disabled }) {
     }}>
       <button
         className="b"
+        data-testid={testId}
         onClick={disabled ? undefined : onClick}
         disabled={disabled}
         style={{
@@ -1748,6 +1752,9 @@ function hasResolvedDelta(row) {
 
 function reviewReasonText(row) {
   const reasons = Array.isArray(row?.reasonCodes) ? row.reasonCodes : [];
+  if (row?.status === "failed") {
+    return "折れ線を読み取れませんでした。元画像を確認し、差玉を手入力してください。";
+  }
   if (reasons.includes("zero-length-series") && reasons.includes("table-low-activity")) {
     return "低稼働・当り0の表データと照合した0玉候補です。元画像を確認してください。";
   }
@@ -1826,8 +1833,9 @@ function ReviewValueEditor({ row, onUpdate }) {
   const parsedValue = numericValid ? Number(normalized) : null;
   const constraintValid = numericValid && isDeltaValueWithinConstraint(row, parsedValue);
   const valid = numericValid && constraintValid;
-  const emptyBoundedDraft = bounded && !draft.trim();
-  const showInputError = !valid && !emptyBoundedDraft;
+  const emptyDraft = !draft.trim();
+  const emptyBoundedDraft = bounded && emptyDraft;
+  const showInputError = !valid && !emptyDraft;
   const canRestoreBounded = !bounded
     && row?.deltaRange
     && row?.rawGraphCandidate
@@ -1835,7 +1843,7 @@ function ReviewValueEditor({ row, onUpdate }) {
   const commit = () => {
     if (!valid) return;
     const value = parsedValue;
-    if (value !== Number(row?.val)) onUpdate({ value });
+    if (shouldCommitDeltaReviewValue(row?.val, value)) onUpdate({ value });
   };
   const reviewConfirmed = row?.reviewConfirmed === true
     && isDeltaValueWithinConstraint(row, row?.val);
@@ -1852,14 +1860,19 @@ function ReviewValueEditor({ row, onUpdate }) {
     <>
       <div style={{ flex: 1, minWidth: 132 }}>
         <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, marginBottom: 4 }}>
-          {bounded ? "正確な差玉が分かる場合のみ入力（任意）" : "確認後の差玉"}
+          {bounded
+            ? "正確な差玉が分かる場合のみ入力（任意）"
+            : row?.status === "failed" ? "差玉を手入力" : "確認後の差玉"}
         </div>
         <input
           type="text"
           inputMode="numeric"
           value={draft}
           disabled={reviewConfirmed}
-          aria-label={`台${row?.num}の確認後差玉`}
+          placeholder={row?.status === "failed" ? "差玉を入力" : undefined}
+          aria-label={row?.status === "failed"
+            ? `台${row?.num}の差玉を手入力`
+            : `台${row?.num}の確認後差玉`}
           aria-invalid={showInputError}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commit}
@@ -1875,7 +1888,7 @@ function ReviewValueEditor({ row, onUpdate }) {
             padding: "0 10px", opacity: reviewConfirmed ? 0.72 : 1,
           }}
         />
-        {!valid && !reviewConfirmed && (!bounded || draft.trim()) && (
+        {!valid && !reviewConfirmed && !emptyDraft && (
           <div role="alert" style={{ color: C.red, fontSize: 10, fontWeight: 800, marginTop: 4 }}>
             {numericValid ? constraintText(row) || "許可された範囲で入力してください" : "数字で入力してください"}
           </div>
@@ -2081,16 +2094,26 @@ function ResultsStep({
   const hasPartialSave = rowValidation.canSave && !rowValidation.valid;
   const warningOnly = hasPartialSave || (pendingReviewCount > 0 && missingDeltaCount === 0);
   const {
+    canSaveDeltaOnly,
     needsPredictionData,
-    canSaveWithRotation: canSaveResult,
   } = getDeltaSaveReadiness({
     canSaveRows: rowValidation.canSave,
     machineAssignmentsValid: machineValidation.valid,
     savableCount: rowValidation.savableCount,
     predictedCount: savablePredictionCount,
   });
-  const saveDisabled = saved || (!canSaveResult && !needsPredictionData);
-  const primaryAction = needsPredictionData ? onOpenImport : onSave;
+  const saveControl = getDeltaSaveControlState({
+    saved,
+    canSaveRows: rowValidation.canSave,
+    canSaveDeltaOnly,
+    savableCount: rowValidation.savableCount,
+    pendingReviewCount,
+    missingDeltaCount,
+    hasNumberAssignmentError: rowValidation.blockingErrors.some((error) => error !== "empty"),
+    machineMissingCount: machineValidation.missingCount,
+    machineUnregisteredCount: machineValidation.unregisteredCount,
+  });
+  const saveDisabled = saveControl.disabled;
 
   return (
     <>
@@ -2100,29 +2123,18 @@ function ResultsStep({
         right={(
           <button
             className="b"
-            onClick={saveDisabled ? undefined : primaryAction}
+            data-testid="delta-save-top"
+            onClick={saveDisabled ? undefined : onSave}
             disabled={saveDisabled}
             style={{
               minHeight: TAP, minWidth: 64, borderRadius: 12, padding: "0 14px",
-              border: saved ? "none" : `1px solid ${canSaveResult ? C.blue : C.border}`,
+              border: saved ? "none" : `1px solid ${saveDisabled ? C.border : C.blue}`,
               background: saved ? "color-mix(in srgb, var(--green) 16%, transparent)" : "transparent",
-              color: saved ? C.green : canSaveResult ? C.blue : C.sub,
+              color: saved ? C.green : saveDisabled ? C.sub : C.blue,
               fontSize: 14, fontWeight: 800,
             }}
           >
-            {saved
-              ? "保存済み ✓"
-              : !rowValidation.canSave
-                ? pendingReviewCount > 0 && missingDeltaCount === 0
-                  ? `確認待ち${pendingReviewCount}`
-                  : "保存不可"
-                : machineValidation.missingCount > 0
-                  ? "機種を選択"
-                  : machineValidation.unregisteredCount > 0
-                    ? "未登録機種"
-                    : needsPredictionData
-                      ? `台データを追加 ${savablePredictionCount}/${rowValidation.savableCount}`
-                      : `${rowValidation.savableCount}台を保存`}
+            {saveControl.label}
           </button>
         )}
       />
@@ -2225,20 +2237,20 @@ function ResultsStep({
             </div>
             <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.65, fontWeight: 700 }}>
               通常中スタート・大当り回数・確定差玉が揃っていない台は、戦略マップで回転率を計算できません。
-              上の「台データを追加」から不足データを取り込んでください。
+              差玉履歴はこのまま保存できます。回転率も表示したい場合だけ、不足データを追加してください。
             </div>
             <button
               type="button"
               className="b"
-              onClick={saved ? undefined : onSave}
-              disabled={saved}
+              data-testid="delta-add-prediction-data"
+              onClick={onOpenImport}
               style={{
                 width: "100%", minHeight: TAP, marginTop: 10, borderRadius: 11,
                 border: `1px solid ${C.borderHi}`, background: C.surface,
                 color: C.subHi, fontSize: 12, fontWeight: 800,
               }}
             >
-              {saved ? "差玉履歴を保存済み ✓" : "回転率なしで差玉履歴だけ保存"}
+              回転数・大当りデータを追加
             </button>
           </div>
         )}
@@ -2309,7 +2321,10 @@ function ResultsStep({
         {sorted.map((r, i) => {
           const resolved = hasResolvedDelta(r);
           const bounded = isBoundedDeltaRow(r);
-          const isReview = r.status === "review" || bounded;
+          const isReview = isDeltaReviewEditable(r);
+          const hasReviewCandidate = r.status === "review"
+            && r.val !== null
+            && Number.isFinite(Number(r.val));
           const reviewConfirmed = isReview && resolved && r.reviewConfirmed === true;
           const tone = resolved
             ? getRankTone(r.rank)
@@ -2337,7 +2352,9 @@ function ResultsStep({
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
                   <span style={{ fontSize: resolved && !reviewConfirmed ? 20 : 11, fontWeight: 900, color: tone.color, fontFamily: mono, textAlign: "center", lineHeight: 1.25 }}>
-                    {reviewConfirmed ? "確認済" : resolved ? r.rank : bounded ? "境界" : isReview ? "要確認" : "未読取"}
+                    {reviewConfirmed
+                      ? "確認済"
+                      : resolved ? r.rank : bounded ? "境界" : r.status === "failed" ? "要入力" : isReview ? "要確認" : "未読取"}
                   </span>
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -2403,9 +2420,9 @@ function ResultsStep({
                     </div>
                   ) : null}
                 </div>
-                <div style={{ fontSize: resolved || isReview ? (bounded ? 13 : 21) : 15, fontWeight: 900, fontFamily: mono, color: resolved ? (r.val >= 0 ? C.green : C.red) : tone.color, flexShrink: 0, textAlign: "right", maxWidth: bounded ? 150 : "none" }}>
-                  {bounded ? formatDeltaRange(r.deltaRange, sp) : resolved || isReview ? sp(r.val) : "—"}
-                  {isReview && !reviewConfirmed && !bounded && <div style={{ fontSize: 9, color: C.yellow, marginTop: 2 }}>候補値</div>}
+                <div style={{ fontSize: bounded ? 13 : resolved || hasReviewCandidate ? 21 : 15, fontWeight: 900, fontFamily: mono, color: resolved ? (r.val >= 0 ? C.green : C.red) : tone.color, flexShrink: 0, textAlign: "right", maxWidth: bounded ? 150 : "none" }}>
+                  {bounded ? formatDeltaRange(r.deltaRange, sp) : resolved || hasReviewCandidate ? sp(r.val) : "—"}
+                  {hasReviewCandidate && !reviewConfirmed && <div style={{ fontSize: 9, color: C.yellow, marginTop: 2 }}>候補値</div>}
                 </div>
               </div>
 
@@ -2427,7 +2444,7 @@ function ResultsStep({
                   />
                   <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginTop: 10 }}>
                     <ReviewValueEditor
-                      key={`${r.num}-${bounded ? "bounded" : reviewConfirmed ? "confirmed" : "review"}`}
+                      key={`${r.num}-${bounded ? "bounded" : reviewConfirmed ? "confirmed" : r.status}`}
                       row={r}
                       onUpdate={(update) => onUpdateReview?.(r.num, update)}
                     />
@@ -2490,6 +2507,12 @@ function ResultsStep({
           {siteSevenSummary?.rowCount > 0 ? "台データを確認・追加" : "大当たり・回転数データを一括取り込み"}
         </button>
       </div>
+      <BottomCta
+        testId="delta-save-bottom"
+        label={saveControl.label}
+        onClick={onSave}
+        disabled={saveDisabled}
+      />
       <MachinePickerSheet
         open={machinePickerNumber !== null}
         title={machinePickerNumber ? `台${machinePickerNumber}の機種を選択` : "機種を選択"}
@@ -4276,6 +4299,7 @@ export default function DeltaAnalyzer({
           zIndex: 70, background: C.green, color: "#fff",
           padding: "10px 18px", borderRadius: 999, fontSize: 14, fontWeight: 800,
           boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+          pointerEvents: "none",
         }}>
           {toast}
         </div>

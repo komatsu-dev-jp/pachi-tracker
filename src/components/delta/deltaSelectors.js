@@ -154,6 +154,21 @@ function finiteDelta(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+// 入力欄の現在値が null のときも、手入力した 0 を変更として扱う。
+export function shouldCommitDeltaReviewValue(currentValue, nextValue) {
+  const next = finiteDelta(nextValue);
+  if (next === null) return false;
+  const current = finiteDelta(currentValue);
+  return current === null || current !== next;
+}
+
+// 読み取り失敗行にも、利用者が元画像を見て差玉を手入力できる入口を出す。
+export function isDeltaReviewEditable(row) {
+  return row?.status === "review"
+    || row?.status === "failed"
+    || isBoundedDeltaRow(row);
+}
+
 // 取り込み値はユーザー確認後に使うが、桁欠落・列ずれを確定値にしないため
 // 日次の1台差玉として明らかに異常な値と小数は拒否する。
 export const MAX_IMPORTED_DELTA_ABS = 500000;
