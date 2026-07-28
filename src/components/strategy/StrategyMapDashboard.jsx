@@ -1069,6 +1069,27 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
             </div>
           )}
 
+          {machine.referenceFallback?.usedForDecision && (
+            <div
+              role="status"
+              style={{
+                marginBottom: 10,
+                padding: "9px 11px",
+                borderRadius: 12,
+                background: "color-mix(in srgb, var(--sm-yellow) 10%, var(--sm-card))",
+                border: "1px solid color-mix(in srgb, var(--sm-yellow) 42%, var(--sm-line))",
+                color: P.subHi,
+                fontSize: 9,
+                fontWeight: 700,
+                lineHeight: 1.65,
+              }}
+            >
+              {machine.referenceFallback.latestSourceDate || "最新日"}の保存は
+              {machine.referenceFallback.reason || "計算データ不足"}のため判定へ混ぜず、
+              {machine.referenceFallback.sourceDate || "直近"}の計算可能データで色と本日の判断を表示しています。
+            </div>
+          )}
+
           {machine.strategyDivergence?.status === "below-lower-bound" && (
             <div
               role="status"
