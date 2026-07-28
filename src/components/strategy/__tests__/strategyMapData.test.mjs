@@ -359,6 +359,57 @@ assert.equal(
 );
 assert.ok(partialRefreshGhoul.every((item) => item.rot > 0));
 
+// 画像再現: 前日の東京喰種56台は計算可能だが、当日に差玉だけの保存が追加された状態。
+// 当日の不完全行は履歴へ残しつつ、前日の正常値によるヒートマップ色と判断を消さない。
+const preparedGhoulFallbackMap = buildStrategyMap({
+  scans: [
+    {
+      id: "tokyo-ghoul-complete-27",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-27",
+      createdAt: "2026-07-27T12:00:00Z",
+      rows: ghoulRows26,
+    },
+    {
+      id: "tokyo-ghoul-delta-only-28",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-28",
+      createdAt: "2026-07-28T01:30:00Z",
+      rows: ghoulRows26.map(({ num, machineName, island }) => ({
+        num,
+        machineName,
+        island,
+        val: -4000,
+        status: "ok",
+      })),
+    },
+  ],
+  hallMaps: mixedDateHallMaps,
+  selectedStoreId: "s1",
+  targetDate: "2026-07-28",
+  stores: [{ id: "s1", name: "検証店" }],
+});
+const preparedGhoulFallback = preparedGhoulFallbackMap.islands.find(
+  (island) => island.name === "東京喰種",
+).machines;
+assert.equal(preparedGhoulFallback.length, 56);
+assert.ok(preparedGhoulFallback.every((item) => item.freshness.sourceDate === "2026-07-27"));
+assert.ok(preparedGhoulFallback.every((item) => item.recommendationStatus === "actionable"));
+assert.ok(preparedGhoulFallback.every((item) => Number.isFinite(item.borderDiff)));
+assert.ok(preparedGhoulFallback.every((item) => item.confidence > 0));
+assert.ok(preparedGhoulFallback.every((item) => item.referenceFallback?.usedForDecision === true));
+assert.ok(preparedGhoulFallback.every((item) => item.calculationPendingReasons.length === 0));
+assert.equal(preparedGhoulFallbackMap.actionable, true);
+assert.equal(
+  preparedGhoulFallbackMap.islandActivityHistory.find(
+    (entry) => entry.date === "2026-07-28" && entry.island === "東京喰種",
+  )?.invalidMachines,
+  56,
+  "当日の不完全保存は履歴上の除外56台として残す",
+);
+
 // 新しい差玉だけの保存があっても、26日の最新「計算可能」データを参考表示する。
 // 最新の不完全行を今日の候補として復活させず、過去値の数値だけを残す。
 const ghoulRows70 = Array.from({ length: 70 }, (_, index) => ({

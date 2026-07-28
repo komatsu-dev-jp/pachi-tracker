@@ -91,6 +91,16 @@ function hasUsableStrategyRow(row) {
   if (status === "review" && row?.reviewConfirmed === true) return true;
   return !status || ["正常", "ok", "OK", "有効"].includes(status);
 }
+
+const NON_BLOCKING_FALLBACK_REASONS = new Set([
+  "通常回転数なし",
+]);
+
+function canUseReferenceFallbackForDecision(referenceFallback, freshness) {
+  if (!referenceFallback || !NON_BLOCKING_FALLBACK_REASONS.has(referenceFallback.reason)) return false;
+  return freshness?.status === "fresh" || freshness?.status === "prepared";
+}
+
 function practiceObservation(record, identity, source) {
   if (source === "archive" && !shouldUseArchiveForPrediction(record)) return null;
   if (!record || !recordMatchesStore(record, identity.storeId, identity.storeName)) return null;
@@ -1165,11 +1175,18 @@ export function buildStrategyMap({
     // 差玉リサーチは通常、実戦日の前日に行う。
     // 鮮度は店舗全体ではなく台ごとに判定し、古い台は回転率を参考表示しつつ候補から外す。
     const referenceFallback = row.strategyReferenceFallback || null;
-    const rowActionable = !referenceFallback
+    // 後から保存された「差玉だけ」の行は回転率の新情報を持たないため、
+    // 本日または前日の計算可能データまで判定待ちへ戻さない。
+    // 読取失敗・日付不整合・異常値は従来どおり安全側で判定を停止する。
+    const referenceFallbackUsedForDecision = canUseReferenceFallbackForDecision(
+      referenceFallback,
+      rowFreshness,
+    );
+    const rowActionable = (!referenceFallback || referenceFallbackUsedForDecision)
       && (rowFreshness.status === "fresh" || rowFreshness.status === "prepared");
-    const predictionDayLabel = referenceFallback
-      ? "過去参考"
-      : rowFreshness.status === "prepared" ? "本日" : "明日";
+    const predictionDayLabel = rowActionable
+      ? (rowFreshness.status === "prepared" ? "本日" : "明日")
+      : referenceFallback ? "過去参考" : "明日";
     const historyRows = collectDeltaRows(storeScans, {
       storeId: row.storeId,
       storeName: row.storeId == null ? row.storeName : "",
@@ -1267,7 +1284,7 @@ export function buildStrategyMap({
     const centerEconomics = calculateStrategyEconomics({ ...economicOptions, rotation: predictedRotation });
     const trueBorder = centerEconomics.effectiveBorder;
     const currentRowDate = normalizedDate(row.date || row.sourceScanDate);
-    const currentRowInvalid = Boolean(referenceFallback)
+    const currentRowInvalid = Boolean(referenceFallback && !referenceFallbackUsedForDecision)
       || !hasUsableStrategyRow(row)
       || !currentRowDate
       || currentRowDate !== row.sourceScanDate
@@ -1341,7 +1358,7 @@ export function buildStrategyMap({
           cashLimit: strategyPlan.cashLimit,
         })
       : null;
-    const revenueRangeStatus = referenceFallback
+    const revenueRangeStatus = referenceFallback && !referenceFallbackUsedForDecision
       ? "data-missing"
       : !rowActionable
         ? "stale-scan"
@@ -1491,7 +1508,9 @@ export function buildStrategyMap({
       payoutCorrection: pe?.payoutCorrection || null,
       evidenceSources: currentRowInvalid ? [] : estimate.sources,
       freshness: rowFreshness,
-      referenceFallback,
+      referenceFallback: referenceFallback
+        ? { ...referenceFallback, usedForDecision: referenceFallbackUsedForDecision }
+        : null,
       recommendationStatus: machineActionable ? "actionable" : "reference",
       calculationPendingReasons: machineActionable
         ? []
@@ -1538,7 +1557,7 @@ export function buildStrategyMap({
       winRate: scenarioWinRate == null ? null : Math.round(scenarioWinRate * 100),
       profitChanceLow: scenarioChanceBand?.low ?? null,
       profitChanceHigh: scenarioChanceBand?.high ?? null,
-      profitChanceStatus: referenceFallback
+      profitChanceStatus: referenceFallback && !referenceFallbackUsedForDecision
         ? "data-missing"
         : !rowActionable
           ? "stale-scan"

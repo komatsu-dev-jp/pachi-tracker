@@ -285,6 +285,45 @@ test("nodata台は島平均と島の分析済み台数から除外する", () =>
   assert.equal(island?.analyzedMachines, 1);
 });
 
+test("最新保存が通常回転数なしでも前日の計算可能値で本日の色判定を続ける", () => {
+  const previous = scanOf([activeRow("101", "2026-07-09")], {
+    id: "previous-calculable",
+    date: "2026-07-09",
+    createdAt: "2026-07-09T12:00:00.000Z",
+  });
+  const deltaOnly = scanOf([{
+    date: "2026-07-10",
+    num: "101",
+    machineName: auditMachine.name,
+    island: "A島",
+    val: -4000,
+    status: "ok",
+  }], {
+    id: "current-delta-only",
+    date: "2026-07-10",
+    createdAt: "2026-07-10T12:00:00.000Z",
+  });
+  const map = buildStrategyMap({
+    scans: [previous, deltaOnly],
+    customMachines: [auditMachine],
+    selectedStoreId: "audit-store",
+    targetDate: "2026-07-10",
+  });
+  const machine = map.all[0];
+
+  assert.equal(machine.referenceFallback?.reason, "通常回転数なし");
+  assert.equal(machine.referenceFallback?.sourceDate, "2026-07-09");
+  assert.equal(machine.referenceFallback?.latestSourceDate, "2026-07-10");
+  assert.equal(machine.freshness.status, "prepared");
+  assert.equal(machine.recommendationStatus, "actionable");
+  assert.notEqual(machine.verdict, "nodata");
+  assert.ok(Number.isFinite(machine.borderDiff), "ヒートマップの赤・黄・緑を決められる");
+  assert.ok(machine.confidence > 0);
+  assert.deepEqual(machine.calculationPendingReasons, []);
+  assert.equal(machine.referenceFallback?.usedForDecision, true);
+  assert.equal(map.actionable, true);
+});
+
 test("最新日の読取失敗時は前日値を参考表示しても候補・稼働状態を復活させない", () => {
   const previous = scanOf([activeRow("101", "2026-07-09")], {
     id: "previous-valid",
