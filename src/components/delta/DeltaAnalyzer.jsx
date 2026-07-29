@@ -135,7 +135,9 @@ function fileToAttachment(file) {
   });
 }
 
-async function analyzeImages(images, onProgress, {
+// 自動解析専用ページから同じ端末内OCRを再利用する。関数自体は保存処理を持たない。
+// eslint-disable-next-line react-refresh/only-export-components
+export async function analyzeImages(images, onProgress, {
   dateText = "",
   storeName = "",
   expectedNumbers = [],

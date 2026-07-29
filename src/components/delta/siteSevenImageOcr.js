@@ -2,6 +2,7 @@
 // 外部APIや汎用OCRを使わず、表の罫線と検証済み固定数字テンプレートで各セルを独立認識する。
 
 import { SITE_SEVEN_MAX_PAYOUT_DIGIT_SAMPLES } from "./siteSevenMaxPayoutDigitSamples.js";
+import { SITE_SEVEN_AUX_DIGIT_SAMPLES } from "./siteSevenAuxDigitSamples.js";
 import {
   alignSiteSevenTableRows,
   resolveAlignedMachineNumber,
@@ -336,6 +337,7 @@ function classifyGlyph(glyph, prototypes) {
 let embeddedPrototypesCache = null;
 let embeddedMachinePrototypesCache = null;
 let embeddedMaxPayoutPrototypesCache = null;
+let embeddedAuxPrototypesCache = null;
 let ocrWorkerState = null;
 let ocrWorkerRequestId = 0;
 function prototypesFromSerializedSamples(serialized) {
@@ -364,6 +366,12 @@ function embeddedMachineDigitPrototypes() {
   if (embeddedMachinePrototypesCache) return embeddedMachinePrototypesCache;
   embeddedMachinePrototypesCache = prototypesFromSerializedSamples(EMBEDDED_MACHINE_DIGIT_SAMPLES);
   return embeddedMachinePrototypesCache;
+}
+
+function embeddedAuxDigitPrototypes() {
+  if (embeddedAuxPrototypesCache) return embeddedAuxPrototypesCache;
+  embeddedAuxPrototypesCache = prototypesFromSerializedSamples(SITE_SEVEN_AUX_DIGIT_SAMPLES);
+  return embeddedAuxPrototypesCache;
 }
 
 function machineCellForRow(image, verticalLines, row) {
@@ -834,7 +842,9 @@ export function createSiteSevenDigitTemplateFixture(image, {
     const truth = groundTruthRows[rowIndex];
     if (!truth) throw new Error(`${rowIndex + 1}行目の正解データがありません`);
     const labeledCells = [
+      [2, truth.cumulativeStarts],
       [3, truth.normalSpins],
+      [4, truth.firstHitCount],
       [5, truth.maxPayout],
       [6, truth.totalStarts],
     ].filter(([, rawValue]) => rawValue !== null && rawValue !== undefined && rawValue !== "");
@@ -1014,10 +1024,21 @@ export function parseSiteSevenTableImageData(image, {
   const maxPayoutDigitPrototypes = maxPayoutDigitSamples
     ? prototypesFromSerializedSamples(maxPayoutDigitSamples)
     : embeddedMaxPayoutDigitPrototypes();
+  const auxDigitPrototypes = embeddedAuxDigitPrototypes();
   const recognizedRows = [];
   for (let index = 0; index < mapping.mapped.length; index += 1) {
     const mappedRow = mapping.mapped[index];
+    const cumulative = recognizeCellEnsemble(
+      normalizedImage,
+      rowCellBounds(geometry.lines, mappedRow, 2),
+      auxDigitPrototypes,
+    );
     const normal = recognizeCellEnsemble(normalizedImage, rowCellBounds(geometry.lines, mappedRow, 3), digitPrototypes);
+    const firstHit = recognizeCellEnsemble(
+      normalizedImage,
+      rowCellBounds(geometry.lines, mappedRow, 4),
+      auxDigitPrototypes,
+    );
     const maxPayout = recognizeCellEnsemble(
       normalizedImage,
       rowCellBounds(geometry.lines, mappedRow, 5),
@@ -1026,7 +1047,9 @@ export function parseSiteSevenTableImageData(image, {
     );
     const jackpot = recognizeCellEnsemble(normalizedImage, rowCellBounds(geometry.lines, mappedRow, 6), digitPrototypes);
     recognizedRows.push({
+      cumulative,
       normal,
+      firstHit,
       maxPayout,
       jackpot,
       mappedRow,
@@ -1081,6 +1104,14 @@ export function parseSiteSevenTableImageData(image, {
       ? ""
       : recognitionReviewReason("最高出玉", recognition);
   };
+  const auxReviewReasonFor = (label, recognition) => {
+    const exactTemplateMatch = /^\d+$/u.test(recognition.value || "")
+      && (!strictRecognition || recognition.confidence >= 0.5)
+      && recognition.glyphs?.length > 0
+      && recognition.glyphs.every((glyph) => glyph.distance <= 0.002)
+      && (recognition.candidates?.[0]?.distance ?? 1) <= 0.002;
+    return exactTemplateMatch ? "" : recognitionReviewReason(label, recognition);
+  };
   const exactTemplateMajority = (recognition) => {
     const value = String(recognition?.value || "");
     const agreeingVariants = (recognition?.variants || [])
@@ -1095,18 +1126,31 @@ export function parseSiteSevenTableImageData(image, {
   };
   const rows = [];
   const skipped = [];
-  for (const { normal, maxPayout, jackpot, mappedRow, index } of recognizedRows) {
+  for (const {
+    cumulative,
+    normal,
+    firstHit,
+    maxPayout,
+    jackpot,
+    mappedRow,
+    index,
+  } of recognizedRows) {
     // 3段階の二値化のうち2つが一致し、選択字体がテンプレートとほぼ完全一致する場合は、
     // 1段階だけにじみで別候補になっても安全な多数決として扱う。
+    const cumulativeReviewReason = auxReviewReasonFor("累計スタート", cumulative);
     const normalReviewReason = exactTemplateMajority(normal)
       ? ""
       : recognitionReviewReason("通常中スタート", normal);
+    const firstHitReviewReason = auxReviewReasonFor("初当たり回数", firstHit);
     const maxPayoutReviewReason = maxPayoutReviewReasonFor(maxPayout);
     const jackpotReviewReason = exactTemplateMajority(jackpot)
       ? ""
       : recognitionReviewReason("大当たり回数", jackpot);
     const nonNumberReviewMessages = [
+      ...(cumulativeReviewReason ? [cumulativeReviewReason] : []),
       ...(normalReviewReason ? [normalReviewReason] : []),
+      ...(firstHitReviewReason ? [firstHitReviewReason] : []),
+      ...(maxPayoutReviewReason ? [maxPayoutReviewReason] : []),
       ...(jackpotReviewReason ? [jackpotReviewReason] : []),
     ].filter(Boolean);
     const rowReviewMessages = [
@@ -1124,7 +1168,9 @@ export function parseSiteSevenTableImageData(image, {
       machineNumberSuggested: mappedRow.machineNumberSuggested || "",
       machineNumberResolutionSource: mappedRow.machineNumberResolutionSource || "",
       machineNumberAlignment: mappedRow.machineNumberAlignment || null,
+      cumulativeStarts: cumulative.value,
       normalSpins: normal.value,
+      firstHitCount: firstHit.value,
       maxPayout: maxPayout.value,
       totalStarts: jackpot.value,
       sourceFile: String(fileName || ""),
@@ -1137,44 +1183,56 @@ export function parseSiteSevenTableImageData(image, {
       nonNumberReviewReason: [...new Set(nonNumberReviewMessages)].join("。"),
       ocrConfidence: Math.min(
         mappedRow.machineNumberRecognition.confidence,
+        cumulative.confidence,
         normal.confidence,
+        firstHit.confidence,
+        maxPayout.confidence,
         jackpot.confidence
       ),
       reviewReason: [...new Set(rowReviewMessages)].join("。"),
-      // 既存の reviewRequired / ocrConfidence は、これまでと同じ3項目の集約を維持する。
-      // 最高出玉はグラフとの照合用フィールドなので、低信頼時も他の正しい行を巻き込まず
-      // field-level の状態だけで安全に止める。
       numAccepted: mappedRow.machineNumberAccepted,
+      cumulativeStartsAccepted: !cumulativeReviewReason,
       normalSpinsAccepted: !normalReviewReason,
+      firstHitCountAccepted: !firstHitReviewReason,
       maxPayoutAccepted: !maxPayoutReviewReason,
       totalStartsAccepted: !jackpotReviewReason,
       numConfidence: mappedRow.machineNumberRecognition.confidence,
+      cumulativeStartsConfidence: cumulative.confidence,
       normalSpinsConfidence: normal.confidence,
+      firstHitCountConfidence: firstHit.confidence,
       maxPayoutConfidence: maxPayout.confidence,
       totalStartsConfidence: jackpot.confidence,
       numCandidates: mappedRow.machineNumberRecognition.candidates || [],
       maxPayoutCandidates: maxPayout.candidates || [],
       fieldConfidence: {
         num: mappedRow.machineNumberRecognition.confidence,
+        cumulativeStarts: cumulative.confidence,
         normalSpins: normal.confidence,
+        firstHitCount: firstHit.confidence,
         maxPayout: maxPayout.confidence,
         totalStarts: jackpot.confidence,
       },
       fieldAccepted: {
         num: mappedRow.machineNumberAccepted,
+        cumulativeStarts: !cumulativeReviewReason,
         normalSpins: !normalReviewReason,
+        firstHitCount: !firstHitReviewReason,
         maxPayout: !maxPayoutReviewReason,
         totalStarts: !jackpotReviewReason,
       },
       fieldReviewRequired: {
         num: !mappedRow.machineNumberAccepted,
+        cumulativeStarts: Boolean(cumulativeReviewReason),
         normalSpins: Boolean(normalReviewReason),
+        firstHitCount: Boolean(firstHitReviewReason),
         maxPayout: Boolean(maxPayoutReviewReason),
         totalStarts: Boolean(jackpotReviewReason),
       },
       fieldReviewReason: {
         num: mappedRow.machineNumberReviewReason || "",
+        cumulativeStarts: cumulativeReviewReason,
         normalSpins: normalReviewReason,
+        firstHitCount: firstHitReviewReason,
         maxPayout: maxPayoutReviewReason,
         totalStarts: jackpotReviewReason,
       },
@@ -1186,7 +1244,10 @@ export function parseSiteSevenTableImageData(image, {
         num: mappedRow.num,
         reason: row.reviewReason,
         machineNumberReasons: mappedRow.machineNumberRecognition.reasons,
+        cumulativeReasons: cumulative.reasons,
         normalReasons: normal.reasons,
+        firstHitReasons: firstHit.reasons,
+        maxPayoutReasons: maxPayout.reasons,
         jackpotReasons: jackpot.reasons,
       });
     }

@@ -10,6 +10,7 @@ import { getStoreIslands, setStoreIslands } from "./hallMapSelectors";
 import HallMapEditor from "./HallMapEditor";
 import DeltaAnalyzer from "../delta/DeltaAnalyzer";
 import DeltaMapView from "../delta/DeltaMapView";
+import { appendScanWithoutLoss } from "../delta/deltaSelectors";
 import { decisionLabel } from "../decision/decisionVocabulary";
 
 const FILTERS = [
@@ -659,17 +660,19 @@ export default function SelectDashboard({ S, onStart, onOpenStrategy }) {
     S.setSelectedStoreId(nextStoreId);
   };
 
-  // 差玉解析スキャンの保存（pt_deltaScans へ追加。同一 id は置換）。
+  // 差玉解析スキャンの保存（pt_deltaScans へ安全に追記）。
   // 読み取り（マップで見る）用に配列を解決する（配列でなければ空扱い）。
   const deltaScans = Array.isArray(S?.deltaScans) ? S.deltaScans : [];
   const setDeltaScans = S?.setDeltaScans;
   const handleSaveScan = (scan) => {
-    if (typeof setDeltaScans !== "function") return;
-    setDeltaScans((prev) => {
-      const list = Array.isArray(prev) ? prev : [];
-      const without = list.filter((s) => s && s.id !== scan.id);
-      return [...without, scan];
-    });
+    if (typeof setDeltaScans !== "function") {
+      return Promise.resolve({ status: "unavailable", scans: deltaScans });
+    }
+    let saveResult;
+    return Promise.resolve(setDeltaScans((prev) => {
+      saveResult = appendScanWithoutLoss(prev, scan);
+      return saveResult.scans;
+    })).then(() => saveResult);
   };
 
   if (showDelta) {

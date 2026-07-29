@@ -18,6 +18,7 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['favicon-32.png', 'icon-192.png', 'icon-512.png'],
       manifest: {
+        id: '/pachi-tracker/',
         name: 'パチトラッカー',
         short_name: 'パチトラ',
         description: 'Pro EV Engine - パチンコ期待値トラッカー',
@@ -44,6 +45,9 @@ export default defineConfig({
         ]
       },
       workbox: {
+        // 生成される Service Worker に、iPhone の Web Push 受信処理だけを追加する。
+        // push-sw.js は解析済みデータを専用受信箱へ追記するだけで、既存記録は変更しない。
+        importScripts: ['push-sw.js'],
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         // サイトセブンPDF解析は利用者がPDFを選んだ時だけ必要なため、
         // 初回インストールのプリキャッシュ（先に一括保存する容量）から外す。
@@ -74,5 +78,13 @@ export default defineConfig({
       }
     })
   ],
+  build: {
+    rollupOptions: {
+      input: {
+        main: 'index.html',
+        autoWorker: 'auto-worker.html',
+      },
+    },
+  },
   base: '/pachi-tracker/',
 })

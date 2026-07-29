@@ -8,7 +8,13 @@ import React, {
   useRef,
 } from "react";
 import { useLS, calcPreciseEV } from "./logic";
-import { flushAll, set as persistSet } from "./persistence";
+import {
+  PERSISTENCE_EXCLUSIVE_END_EVENT,
+  PERSISTENCE_EXCLUSIVE_START_EVENT,
+  PERSISTENCE_UPDATED_EVENT,
+  getPersistenceEpochSync,
+  updateKeyAtomically,
+} from "./persistence";
 import {
   applyEconomicEV,
   heldBallCostPerK,
@@ -49,6 +55,7 @@ import {
   findMachineSpec,
 } from "./components/delta/deltaEvidence";
 import { appendScanWithoutLoss } from "./components/delta/deltaSelectors";
+import { processPendingPushImports } from "./pushImportProcessor";
 import {
   addNotification as appendNotification,
   makeNotification,
@@ -464,12 +471,46 @@ export default function App() {
   // スキーマ: Scan[] / Scan = { id, storeId, storeName, date("YYYY-MM-DD"), machineName, rows, createdAt }
   //   rows[] = { num, val, px, rank, island?, machineName?, normalSpins?, totalStarts? }
   // 台選び専用の独立データ。rotRows（回転数記録）とは無関係に保つ。
-  const [deltaScans, setDeltaScans] = useLS("pt_deltaScans", []);
+  const [deltaScans, setDeltaScansState] = useLS("pt_deltaScans", []);
   const deltaScansRef = useRef(deltaScans);
   const deltaScanSaveQueueRef = useRef(Promise.resolve());
   useEffect(() => {
     deltaScansRef.current = Array.isArray(deltaScans) ? deltaScans : [];
   }, [deltaScans]);
+  const mutateDeltaScans = useCallback((mutator, { signal, expectedEpoch } = {}) => {
+    // 呼出し時点の世代を固定し、復元待ちのキューが新しいDBへ古い値を書かないようにする。
+    const capturedEpoch = expectedEpoch || getPersistenceEpochSync();
+    const task = deltaScanSaveQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        let mutationResult;
+        const nextScans = await updateKeyAtomically(
+          "pt_deltaScans",
+          (current) => {
+            const list = Array.isArray(current) ? current : [];
+            mutationResult = mutator(list);
+            const next = mutationResult?.scans ?? mutationResult;
+            if (!Array.isArray(next)) {
+              throw new Error("差玉解析データの更新結果が不正です");
+            }
+            return next;
+          },
+          { signal, expectedEpoch: capturedEpoch },
+        );
+        deltaScansRef.current = nextScans;
+        // updateKeyAtomicallyが同じ配列をmemCacheへ反映済みなので、
+        // useLS側では重複書込みにならず画面だけが更新される。
+        setDeltaScansState(nextScans);
+        return mutationResult;
+      });
+    deltaScanSaveQueueRef.current = task.catch(() => undefined);
+    return task;
+  }, [setDeltaScansState]);
+  const setDeltaScans = useCallback((valueOrUpdater) => mutateDeltaScans((current) => (
+    typeof valueOrUpdater === "function"
+      ? valueOrUpdater(current)
+      : valueOrUpdater
+  )), [mutateDeltaScans]);
 
   // 差玉解析：AI読み取り用のAnthropic APIキー（任意設定・この端末のみに保存）
   const [aiApiKey, setAiApiKey] = useLS("pt_aiApiKey", "");
@@ -1437,26 +1478,103 @@ export default function App() {
   const deltaIslands = getStoreIslands(hallMaps, deltaActiveStore?.id ?? null);
   // 差玉解析スキャンは追記専用。同一資料・同一 id は既存データを変更せず拒否する。
   // IndexedDBへの書込み完了を待ってから、保存成功を呼び出し元へ返す。
-  const handleSaveDeltaScan = (scan) => {
-    // 連続タップなどで複数保存が重なっても、直前の追記完了後に次を処理して取りこぼさない。
-    const task = deltaScanSaveQueueRef.current
-      .catch(() => undefined)
-      .then(async () => {
-        if (typeof setDeltaScans !== "function") {
-          return { status: "unavailable", scans: deltaScansRef.current };
-        }
-        const result = appendScanWithoutLoss(deltaScansRef.current, scan);
-        if (result.status !== "saved") return result;
+  const handleSaveDeltaScan = (scan, { signal, expectedEpoch } = {}) => (
+    mutateDeltaScans(
+      (current) => appendScanWithoutLoss(current, scan),
+      { signal, expectedEpoch },
+    )
+  );
+  const pushImportSaveRef = useRef(handleSaveDeltaScan);
+  pushImportSaveRef.current = handleSaveDeltaScan;
 
-        persistSet("pt_deltaScans", result.scans);
-        await flushAll();
-        deltaScansRef.current = result.scans;
-        setDeltaScans(result.scans);
-        return result;
+  // Push受信箱は、アプリ起動時・復帰時にだけ既存の追記専用保存経路へ通す。
+  // 解析が曖昧、店舗や機種が未登録、既存IDと内容が衝突する場合は保存せず保留する。
+  useEffect(() => {
+    let disposed = false;
+    let exclusivePaused = false;
+    let retryTimer = null;
+    let processController = new AbortController();
+    const processNow = () => {
+      if (disposed || exclusivePaused) return;
+      if (processController.signal.aborted) {
+        processController = new AbortController();
+      }
+      const signal = processController.signal;
+      processPendingPushImports({
+        saveScan: (scan, options = {}) => pushImportSaveRef.current(scan, {
+          signal: options.signal || signal,
+          expectedEpoch: options.expectedEpoch,
+        }),
+        stores,
+        customMachines,
+        hallMaps,
+        signal,
+      }).then((summary) => {
+        if (disposed || signal.aborted || typeof window === "undefined") return;
+        window.dispatchEvent(new CustomEvent("pachi:push-import-summary", {
+          detail: summary,
+        }));
+      }).catch((error) => {
+        if (error?.name === "AbortError") return;
+        console.error("[push-import] failed:", error);
       });
-    deltaScanSaveQueueRef.current = task.catch(() => undefined);
-    return task;
-  };
+    };
+    const processWhenVisible = () => {
+      if (!document.hidden) processNow();
+    };
+    const processServiceWorkerMessage = (event) => {
+      if (event?.data?.type === "PUSH_INBOX_UPDATED") processNow();
+    };
+    const pauseForExclusiveOperation = () => {
+      exclusivePaused = true;
+      processController.abort();
+    };
+    const resumeAfterExclusiveOperation = (event) => {
+      if (disposed) return;
+      const operation = event?.detail?.operation;
+      if (operation === "restore" || operation === "clear-all") {
+        // 復元・全削除後は、全タブの古いReact状態や未書込みキャッシュを
+        // 再利用しない。DBを読み直すため各タブを再読み込みする。
+        window.setTimeout(() => window.location.reload(), 0);
+        return;
+      }
+      exclusivePaused = false;
+      processController = new AbortController();
+      processNow();
+    };
+    const syncUpdatedDeltaScans = (event) => {
+      if (event?.detail?.key !== "pt_deltaScans") return;
+      const next = event.detail.value;
+      if (!Array.isArray(next)) return;
+      deltaScansRef.current = next;
+      setDeltaScansState(next);
+    };
+
+    processNow();
+    // 初回店舗シードが同じ起動時に走る場合の再確認。元データはpendingのままなので安全。
+    retryTimer = window.setTimeout(processNow, 750);
+    window.addEventListener("focus", processNow);
+    window.addEventListener("pageshow", processNow);
+    window.addEventListener("pachi:process-push-inbox", processNow);
+    window.addEventListener(PERSISTENCE_EXCLUSIVE_START_EVENT, pauseForExclusiveOperation);
+    window.addEventListener(PERSISTENCE_EXCLUSIVE_END_EVENT, resumeAfterExclusiveOperation);
+    window.addEventListener(PERSISTENCE_UPDATED_EVENT, syncUpdatedDeltaScans);
+    document.addEventListener("visibilitychange", processWhenVisible);
+    navigator.serviceWorker?.addEventListener("message", processServiceWorkerMessage);
+    return () => {
+      disposed = true;
+      processController.abort();
+      if (retryTimer != null) window.clearTimeout(retryTimer);
+      window.removeEventListener("focus", processNow);
+      window.removeEventListener("pageshow", processNow);
+      window.removeEventListener("pachi:process-push-inbox", processNow);
+      window.removeEventListener(PERSISTENCE_EXCLUSIVE_START_EVENT, pauseForExclusiveOperation);
+      window.removeEventListener(PERSISTENCE_EXCLUSIVE_END_EVENT, resumeAfterExclusiveOperation);
+      window.removeEventListener(PERSISTENCE_UPDATED_EVENT, syncUpdatedDeltaScans);
+      document.removeEventListener("visibilitychange", processWhenVisible);
+      navigator.serviceWorker?.removeEventListener("message", processServiceWorkerMessage);
+    };
+  }, [stores, customMachines, hallMaps, setDeltaScansState]);
 
   // 過去記録は元データを壊さず、参照時に現行の経済価値へ再計算する。
   // 新規アーカイブは calculationVersion=2 のため、そのまま返る。
