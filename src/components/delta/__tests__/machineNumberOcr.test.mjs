@@ -107,6 +107,22 @@ test("入力台番号集合との照合は件数・不足・余分を個別に�
   assert.ok(rejected.reasonCodes.includes("ocr-page-rejected"));
 });
 
+test("2桁の台番号集合を受け入れつつ1桁・4桁は拒否する", () => {
+  const page = { accepted: true, candidates: ["17", "18", "19"] };
+  const matched = compareMachineNumberSet(page, [17, 18, 19]);
+  assert.equal(matched.matched, true);
+  assert.equal(matched.orderMatches, true);
+  assert.deepEqual(matched.reasonCodes, []);
+
+  const invalid = compareMachineNumberSet(
+    { accepted: true, candidates: ["7", "1000"] },
+    [7, 1000],
+  );
+  assert.equal(invalid.matched, false);
+  assert.deepEqual(invalid.invalidExpectedIndices, [0, 1]);
+  assert.ok(invalid.reasonCodes.includes("invalid-expected-number"));
+});
+
 test("複数ページは全ページ合格・全体一意の時だけ番号順に確定する", () => {
   const pageA = {
     accepted: true,

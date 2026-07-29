@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
+import { readFile } from "node:fs/promises";
 
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 
@@ -11,7 +11,7 @@ import {
   recognizeGraphPanelMaxPayout,
 } from "../graphPanelMetadataOcr.js";
 
-const FIXTURE_ROOT = fileURLToPath(new URL("./fixtures/p-analysis-review-52/", import.meta.url));
+const FIXTURE_ROOT = new URL("./fixtures/p-analysis-review-52/", import.meta.url);
 
 const FIXTURES = Object.freeze([
   Object.freeze({
@@ -38,7 +38,7 @@ const FIXTURES = Object.freeze([
 ]);
 
 async function loadFixture(file) {
-  const source = await loadImage(new URL(file, `file:///${FIXTURE_ROOT.replaceAll("\\", "/")}/`));
+  const source = await loadImage(await readFile(new URL(file, FIXTURE_ROOT)));
   const canvas = createCanvas(source.width, source.height);
   const context = canvas.getContext("2d");
   context.drawImage(source, 0, 0);

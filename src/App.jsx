@@ -8,6 +8,7 @@ import React, {
   useRef,
 } from "react";
 import { useLS, calcPreciseEV } from "./logic";
+import { flushAll, set as persistSet } from "./persistence";
 import {
   applyEconomicEV,
   heldBallCostPerK,
@@ -47,7 +48,7 @@ import {
   collectDeltaRows,
   findMachineSpec,
 } from "./components/delta/deltaEvidence";
-import { pruneScans } from "./components/delta/deltaSelectors";
+import { appendScanWithoutLoss } from "./components/delta/deltaSelectors";
 import {
   addNotification as appendNotification,
   makeNotification,
@@ -464,6 +465,11 @@ export default function App() {
   //   rows[] = { num, val, px, rank, island?, machineName?, normalSpins?, totalStarts? }
   // 台選び専用の独立データ。rotRows（回転数記録）とは無関係に保つ。
   const [deltaScans, setDeltaScans] = useLS("pt_deltaScans", []);
+  const deltaScansRef = useRef(deltaScans);
+  const deltaScanSaveQueueRef = useRef(Promise.resolve());
+  useEffect(() => {
+    deltaScansRef.current = Array.isArray(deltaScans) ? deltaScans : [];
+  }, [deltaScans]);
 
   // 差玉解析：AI読み取り用のAnthropic APIキー（任意設定・この端末のみに保存）
   const [aiApiKey, setAiApiKey] = useLS("pt_aiApiKey", "");
@@ -1429,15 +1435,27 @@ export default function App() {
     return list.find((st) => st && typeof st === "object") || null;
   })();
   const deltaIslands = getStoreIslands(hallMaps, deltaActiveStore?.id ?? null);
-  // 差玉解析スキャンの保存（pt_deltaScans へ追加。同一 id は置換）。
-  // 保存のたびに保持ポリシー（90日/300件）で古いスキャンを剪定し、localStorageの肥大化を防ぐ。
+  // 差玉解析スキャンは追記専用。同一資料・同一 id は既存データを変更せず拒否する。
+  // IndexedDBへの書込み完了を待ってから、保存成功を呼び出し元へ返す。
   const handleSaveDeltaScan = (scan) => {
-    if (typeof setDeltaScans !== "function") return;
-    setDeltaScans((prev) => {
-      const list = Array.isArray(prev) ? prev : [];
-      const without = list.filter((s) => s && s.id !== scan.id);
-      return pruneScans([...without, scan]);
-    });
+    // 連続タップなどで複数保存が重なっても、直前の追記完了後に次を処理して取りこぼさない。
+    const task = deltaScanSaveQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        if (typeof setDeltaScans !== "function") {
+          return { status: "unavailable", scans: deltaScansRef.current };
+        }
+        const result = appendScanWithoutLoss(deltaScansRef.current, scan);
+        if (result.status !== "saved") return result;
+
+        persistSet("pt_deltaScans", result.scans);
+        await flushAll();
+        deltaScansRef.current = result.scans;
+        setDeltaScans(result.scans);
+        return result;
+      });
+    deltaScanSaveQueueRef.current = task.catch(() => undefined);
+    return task;
   };
 
   // 過去記録は元データを壊さず、参照時に現行の経済価値へ再計算する。

@@ -204,10 +204,12 @@ function connectedComponents(mask) {
 }
 
 function validLabelGeometry(components) {
-  if (components.length !== 5) return { valid: false, reason: "label-component-count" };
-  const [openBracket, ...rest] = components;
-  const closeBracket = rest[rest.length - 1];
-  const digits = rest.slice(0, 3);
+  if (components.length !== 4 && components.length !== 5) {
+    return { valid: false, reason: "label-component-count" };
+  }
+  const openBracket = components[0];
+  const closeBracket = components[components.length - 1];
+  const digits = components.slice(1, -1);
   const bracketValid = [openBracket, closeBracket].every((component) => (
     component.width >= 2 && component.width <= 8
     && component.height >= 23 && component.height <= 31
@@ -357,7 +359,7 @@ function compactAttempt(attempt, darkThreshold) {
 function mostFrequentCandidate(attempts) {
   const counts = new Map();
   for (const attempt of attempts) {
-    if (!/^\d{3}$/.test(String(attempt?.candidate || ""))) continue;
+    if (!/^\d{2,3}$/.test(String(attempt?.candidate || ""))) continue;
     counts.set(attempt.candidate, (counts.get(attempt.candidate) || 0) + 1);
   }
   return [...counts.entries()]
@@ -625,7 +627,7 @@ export function combineMachineNumberPages(pages, options = {}) {
 
 function normalizedNumber(value) {
   const text = String(value ?? "").trim();
-  return /^\d{3}$/.test(text) ? text : "";
+  return /^\d{2,3}$/.test(text) ? text : "";
 }
 
 // UIで入力・選択された台番号集合との完全一致を確認する。
