@@ -194,12 +194,12 @@ notepad.exe ".\watch-config.json"
   "stateDirectory": "C:\\Users\\YOUR_NAME\\AppData\\Local\\PachiTrackerBridge\\watch-state",
   "distDirectory": "..\\pachi-tracker-latest\\dist",
   "context": {
+    "identityMode": "site7-header-auto",
     "storeId": null,
-    "storeName": "実際の店舗名",
+    "storeName": "",
     "date": "auto",
     "event": "",
-    "machineName": "実際の機種名",
-    "expectCompleteTable": true
+    "machineName": ""
   },
   "push": {
     "enabled": false,
@@ -214,12 +214,15 @@ notepad.exe ".\watch-config.json"
 注意点:
 
 - WindowsのJSONでは、フォルダの区切りを`\\`と2本書く
-- `storeName`と`machineName`は、パチトラッカーに登録された表記と一致させる
+- 店舗名・機種名・台番号一覧を設定へ書く必要はない
+- `site7-header-auto`は、表画像上部をWindows標準OCRで2通り以上読み、一致した名前だけを使う
+- 未登録の店舗・機種も画像で観測した名前として保存するが、交換率や機種スペックは推測登録しない
 - 初回テストが終わるまでは`push.enabled`を`false`にする
 - 秘密鍵はOneDriveやiCloudではなく、`AppData\Local`へ置く
 - `stateDirectory`は処理済み画像の指紋や保留理由を記録するWindows内の管理場所
 - `date`が`"auto"`の場合、`01_入力`直下ではなく`YYYY-MM-DD`フォルダへ画像を保存する
 - 異なる店舗や機種の画像を、同じ撮影・同期の1組に混ぜない
+- 1組には、店舗名・機種名が見える表画像を最低1枚含める（グラフ画像だけでは安全のため保留）
 
 ### 5. WindowsとiPhoneを初回連携する
 
@@ -448,7 +451,7 @@ Web Push本文の暗号化方式は[RFC 8291](https://www.rfc-editor.org/rfc/rfc
 2. Windows側の画像に緑色のチェックが付いているか
 3. `npm.cmd run build`後、`dist/auto-worker.html`があるか
 4. PowerShellに`入力監視を開始しました`と表示されているか
-5. `watch-config.json`の店舗名、機種名、日付、フォルダが正しいか
+5. `watch-config.json`が`site7-header-auto`で、日付とフォルダが正しいか
 6. iPhone版に`Windows自動取込`メニューがあるか
 7. ホーム画面のアプリから開いているか
 8. iPhoneで通知が許可されているか
