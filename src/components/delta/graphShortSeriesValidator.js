@@ -41,6 +41,12 @@ const NEAR_ZERO_ALLOWED_EVIDENCE_REASONS = new Set([
   "short-series-threshold-value-disagreement",
   "short-series-primary-value-disagreement",
 ]);
+const THREE_OF_FOUR_ALLOWED_EVIDENCE_REASONS = new Set([
+  "short-series-threshold-value-disagreement",
+]);
+const THREE_OF_FOUR_MAX_ROUNDED_VALUE_SPREAD = 500;
+const THREE_OF_FOUR_MAX_COMPONENT_SPAN_SPREAD = 2;
+const THREE_OF_FOUR_NARROW_COMPONENT_SPAN_SPREAD = 3;
 
 function normalizeMachineNumber(value) {
   const text = String(value ?? "").trim();
@@ -495,6 +501,199 @@ function validateNearZeroGraphEvidence(slot) {
   };
 }
 
+function validateThreeOfFourGraphEvidence(slot) {
+  const reasons = [];
+  const slotReasons = Array.isArray(slot?.reasonCodes) ? slot.reasonCodes : [];
+  const evidence = slot?.shortSeriesEvidence;
+  const attempts = Array.isArray(evidence?.attempts) ? evidence.attempts : [];
+  const calibration = slot?.calibration;
+  const primaryValue = Number(slot?.val);
+  const profileNames = attempts.map((attempt) => attempt?.profile);
+  const expectedProfilesPresent = attempts.length === NEAR_ZERO_PROFILE_NAMES.length
+    && new Set(profileNames).size === NEAR_ZERO_PROFILE_NAMES.length
+    && NEAR_ZERO_PROFILE_NAMES.every((name) => profileNames.includes(name));
+  const profileValues = attempts.map((attempt) => Number(attempt?.roundedValue));
+  const valueCounts = new Map();
+  for (const value of profileValues) {
+    if (!Number.isFinite(value)) continue;
+    valueCounts.set(value, (valueCounts.get(value) || 0) + 1);
+  }
+  const majorityEntry = [...valueCounts.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0] - right[0])[0] || null;
+  const majorityValue = majorityEntry?.[0] ?? null;
+  const majorityCount = majorityEntry?.[1] ?? 0;
+  const derivedValueSpread = profileValues.length === NEAR_ZERO_PROFILE_NAMES.length
+    && profileValues.every(Number.isFinite)
+    ? Math.max(...profileValues) - Math.min(...profileValues)
+    : null;
+  const endpointValues = attempts.map((attempt) => Number(attempt?.endpointLocalY));
+  const startValues = attempts.map((attempt) => Number(attempt?.bounds?.minX));
+  const endValues = attempts.map((attempt) => Number(attempt?.bounds?.maxX));
+  const spanValues = attempts.map((attempt) => Number(attempt?.span));
+  const spread = (values) => (
+    values.length === NEAR_ZERO_PROFILE_NAMES.length && values.every(Number.isFinite)
+      ? Math.max(...values) - Math.min(...values)
+      : null
+  );
+  const derivedEndpointSpread = spread(endpointValues);
+  const derivedStartSpread = spread(startValues);
+  const derivedEndSpread = spread(endValues);
+  const derivedComponentSpanSpread = spread(spanValues);
+  const componentSpansMatchBounds = attempts.length === NEAR_ZERO_PROFILE_NAMES.length
+    && attempts.every((attempt) => (
+      Number.isFinite(Number(attempt?.span))
+      && Number.isFinite(Number(attempt?.bounds?.minX))
+      && Number.isFinite(Number(attempt?.bounds?.maxX))
+      && Number(attempt.span)
+        === Number(attempt.bounds.maxX) - Number(attempt.bounds.minX) + 1
+    ));
+  // A three-pixel span difference can be produced by the already-accepted
+  // one-pixel start and two-pixel end shifts moving in opposite directions.
+  // Permit that exact geometry only when endpoint agreement is even tighter;
+  // larger or internally inconsistent component differences still fail closed.
+  const componentSpanSpreadAccepted = Number.isFinite(derivedComponentSpanSpread)
+    && (
+      derivedComponentSpanSpread <= THREE_OF_FOUR_MAX_COMPONENT_SPAN_SPREAD
+      || (
+        derivedComponentSpanSpread <= THREE_OF_FOUR_NARROW_COMPONENT_SPAN_SPREAD
+        && Number.isFinite(derivedEndpointSpread)
+        && Number.isFinite(derivedStartSpread)
+        && Number.isFinite(derivedEndSpread)
+        && derivedEndpointSpread <= 1
+        && derivedStartSpread <= 1
+        && derivedEndSpread <= 2
+      )
+    );
+  const maximumEndpointSpread = Number(evidence?.maximumEndpointSpread);
+  const endpointSpread = Number(evidence?.endpointSpread);
+  const startSpread = Number(evidence?.startSpread);
+  const endSpread = Number(evidence?.endSpread);
+  const roundedValueSpread = Number(evidence?.roundedValueSpread);
+  const endpointLocalY = Number(evidence?.endpointLocalY);
+  const plotTopY = Number(calibration?.plotTopY);
+  const plotBottomY = Number(calibration?.plotBottomY);
+  const gridSpacing = Number(calibration?.gridSpacing);
+  const boundaryMargin = Number.isFinite(gridSpacing)
+    ? Math.max(2.5, gridSpacing * 0.08)
+    : null;
+
+  addReason(reasons, slot?.status !== "review", "three-of-four-not-review");
+  addReason(
+    reasons,
+    !slotReasons.includes("short-series"),
+    "three-of-four-short-series-reason-missing",
+  );
+  addReason(
+    reasons,
+    slotReasons.some((reason) => !SAFE_SHORT_SERIES_REASONS.has(reason)),
+    "three-of-four-has-unsafe-graph-reason",
+  );
+  addReason(reasons, !Number.isFinite(primaryValue), "three-of-four-primary-value-missing");
+  addReason(reasons, Number(slot?.confidence) < 0.8, "three-of-four-confidence-too-low");
+  addReason(reasons, calibration?.source !== "panel", "three-of-four-panel-calibration-missing");
+  addReason(reasons, Number(calibration?.quality) < 0.7, "three-of-four-calibration-too-low");
+  addReason(
+    reasons,
+    !Number.isInteger(evidence?.profileCount)
+      || evidence.profileCount !== NEAR_ZERO_PROFILE_NAMES.length
+      || evidence.requiredProfileCount !== NEAR_ZERO_PROFILE_NAMES.length
+      || !expectedProfilesPresent,
+    "three-of-four-named-profiles-missing",
+  );
+  addReason(
+    reasons,
+    evidence?.accepted !== false
+      || !Array.isArray(evidence?.reasonCodes)
+      || evidence.reasonCodes.length !== THREE_OF_FOUR_ALLOWED_EVIDENCE_REASONS.size
+      || [...THREE_OF_FOUR_ALLOWED_EVIDENCE_REASONS].some(
+        (reason) => !evidence.reasonCodes.includes(reason),
+      )
+      || evidence.reasonCodes.some(
+        (reason) => !THREE_OF_FOUR_ALLOWED_EVIDENCE_REASONS.has(reason),
+      ),
+    "three-of-four-has-unsafe-consensus-reason",
+  );
+  addReason(
+    reasons,
+    majorityCount < 3
+      || !Number.isFinite(majorityValue)
+      || !Number.isFinite(primaryValue)
+      || majorityValue !== primaryValue
+      || evidence?.primaryValueAgrees !== true
+      || Number(evidence?.roundedValue) !== primaryValue,
+    "three-of-four-primary-majority-missing",
+  );
+  addReason(
+    reasons,
+    !Number.isFinite(roundedValueSpread)
+      || !Number.isFinite(derivedValueSpread)
+      || roundedValueSpread !== derivedValueSpread
+      || derivedValueSpread <= 0
+      || derivedValueSpread > THREE_OF_FOUR_MAX_ROUNDED_VALUE_SPREAD,
+    "three-of-four-rounded-value-spread-too-large",
+  );
+  addReason(
+    reasons,
+    !Number.isFinite(maximumEndpointSpread)
+      || !Number.isFinite(endpointSpread)
+      || !Number.isFinite(derivedEndpointSpread)
+      || endpointSpread > maximumEndpointSpread
+      || derivedEndpointSpread > maximumEndpointSpread,
+    "three-of-four-endpoint-disagreement",
+  );
+  addReason(
+    reasons,
+    !Number.isFinite(startSpread)
+      || !Number.isFinite(endSpread)
+      || !Number.isFinite(derivedStartSpread)
+      || !Number.isFinite(derivedEndSpread)
+      || !Number.isFinite(derivedComponentSpanSpread)
+      || !componentSpansMatchBounds
+      || startSpread > 2
+      || derivedStartSpread > 2
+      || endSpread > 3
+      || derivedEndSpread > 3
+      || !componentSpanSpreadAccepted,
+    "three-of-four-component-disagreement",
+  );
+  addReason(
+    reasons,
+    slot?.boundaryObservation !== null && slot?.boundaryObservation !== undefined,
+    "three-of-four-boundary-observation",
+  );
+  addReason(
+    reasons,
+    slot?.valueConstraint !== null && slot?.valueConstraint !== undefined,
+    "three-of-four-value-constraint",
+  );
+  addReason(
+    reasons,
+    !Number.isFinite(endpointLocalY)
+      || !Number.isFinite(plotTopY)
+      || !Number.isFinite(plotBottomY)
+      || !Number.isFinite(boundaryMargin)
+      || endpointLocalY - plotTopY <= boundaryMargin
+      || plotBottomY - endpointLocalY <= boundaryMargin,
+    "three-of-four-endpoint-near-boundary",
+  );
+
+  return {
+    accepted: reasons.length === 0,
+    reasonCodes: reasons,
+    primaryValue: Number.isFinite(primaryValue) ? primaryValue : null,
+    majorityValue: Number.isFinite(majorityValue) ? majorityValue : null,
+    majorityCount,
+    profileValues: profileValues.every(Number.isFinite) ? profileValues : [],
+    roundedValueSpread: Number.isFinite(derivedValueSpread) ? derivedValueSpread : null,
+    endpointSpread: Number.isFinite(derivedEndpointSpread) ? derivedEndpointSpread : null,
+    startSpread: Number.isFinite(derivedStartSpread) ? derivedStartSpread : null,
+    endSpread: Number.isFinite(derivedEndSpread) ? derivedEndSpread : null,
+    componentSpanSpread: Number.isFinite(derivedComponentSpanSpread)
+      ? derivedComponentSpanSpread
+      : null,
+  };
+}
+
 function validateNearZeroTableEvidence(match) {
   const reasons = [];
   const tableRow = match?.tableRow;
@@ -630,6 +829,62 @@ export function validateNearZeroShortSeriesEstimate(
   };
 }
 
+export function validateThreeOfFourShortSeriesConsensus(
+  slots,
+  graphIndex,
+  jointMatch,
+) {
+  const list = Array.isArray(slots) ? slots : [];
+  const matches = Array.isArray(jointMatch?.matches) ? jointMatch.matches : [];
+  const matchByGraphIndex = new Map(
+    matches
+      .filter((match) => Number.isInteger(match?.graphIndex))
+      .map((match) => [match.graphIndex, match]),
+  );
+  const slot = list[graphIndex];
+  const match = matchByGraphIndex.get(graphIndex);
+  const graph = validateThreeOfFourGraphEvidence(slot);
+  const machine = validateMachineEvidence(slot, match);
+  const payout = validateMaxPayoutEvidence(slot, match);
+  const order = validateOrderEvidence(list, graphIndex, matchByGraphIndex);
+  const reasonCodes = [...new Set([
+    ...graph.reasonCodes,
+    ...machine.reasonCodes,
+    ...payout.reasonCodes,
+    ...order.reasonCodes,
+  ])];
+
+  return {
+    accepted: reasonCodes.length === 0,
+    reasonCodes,
+    estimated: true,
+    machineNumber: machine.machineNumber,
+    originalValue: Number.isFinite(Number(slot?.val)) ? Number(slot.val) : null,
+    validatedValue: graph.majorityValue,
+    maxPayout: payout.maxPayout,
+    maxPayoutEvidenceMode: payout.evidenceMode,
+    maxPayoutBestCandidateScore: payout.bestCandidateScore,
+    maxPayoutCandidateGap: payout.candidateGap,
+    previousMachineNumber: order.previousNumber,
+    nextMachineNumber: order.nextNumber,
+    profileValues: graph.profileValues,
+    majorityValue: graph.majorityValue,
+    majorityCount: graph.majorityCount,
+    roundedValueSpread: graph.roundedValueSpread,
+    endpointSpread: graph.endpointSpread,
+    startSpread: graph.startSpread,
+    endSpread: graph.endSpread,
+    componentSpanSpread: graph.componentSpanSpread,
+    estimationReasonCodes: [
+      "three-of-four-named-profiles-share-primary-rounded-value",
+      "single-profile-rounding-boundary-outlier-within-500",
+      "tight-endpoint-and-component-consensus",
+      "exact-machine-number-order-and-table-max",
+    ],
+    validationSource: "three-of-four-rounded-consensus+joint-number-order+table-max",
+  };
+}
+
 export function validateShortSeriesSlot(
   slots,
   graphIndex,
@@ -680,6 +935,27 @@ export function applySafeShortSeriesValidation(slots, jointMatch) {
 
     const validation = validateShortSeriesSlot(list, graphIndex, jointMatch);
     if (!validation.accepted) {
+      const threeOfFourConsensus = validateThreeOfFourShortSeriesConsensus(
+        list,
+        graphIndex,
+        jointMatch,
+      );
+      if (threeOfFourConsensus.accepted) {
+        return {
+          ...slot,
+          val: threeOfFourConsensus.validatedValue,
+          status: "ok",
+          estimated: true,
+          reasonCodes: slot.reasonCodes.filter(
+            (reason) => !SAFE_SHORT_SERIES_REASONS.has(reason),
+          ),
+          machineNumber: threeOfFourConsensus.machineNumber,
+          shortSeriesValidation: {
+            ...threeOfFourConsensus,
+            standardValidationReasonCodes: validation.reasonCodes,
+          },
+        };
+      }
       const nearZeroEstimate = validateNearZeroShortSeriesEstimate(
         list,
         graphIndex,
@@ -698,6 +974,7 @@ export function applySafeShortSeriesValidation(slots, jointMatch) {
           shortSeriesValidation: {
             ...nearZeroEstimate,
             standardValidationReasonCodes: validation.reasonCodes,
+            threeOfFourValidationReasonCodes: threeOfFourConsensus.reasonCodes,
           },
         };
       }
@@ -705,6 +982,7 @@ export function applySafeShortSeriesValidation(slots, jointMatch) {
         ...slot,
         shortSeriesValidation: {
           ...validation,
+          threeOfFourConsensus,
           nearZeroEstimate,
         },
       };

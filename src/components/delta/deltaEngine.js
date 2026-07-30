@@ -305,6 +305,53 @@ function calibratePanel(data, imageWidth, panel) {
   };
 }
 
+// SiteSeven のフルページ画像には、ページ上端の見出しや下端の操作欄が
+// 左右それぞれの暗い長方形として写り、グラフ枠と同じ一次判定を通ることがある。
+// ただし本物のグラフ枠はページ内で横幅と余白が揃い、目盛りから校正できる。
+//
+// 校正済みの本物が複数あるページだけ、そのレイアウトより明らかに横へ広い
+// 「全幅・校正不可」の候補をページ部品として除外する。折れ線の長さや終点位置は
+// 判定に使わないため、短い線や上下端で切れた線は削除しない。また、同じ横幅の
+// 校正不可枠は従来どおり画像内中央値による fallback 候補として残す。
+function filterFullBleedPageChrome(data, imageWidth, panels, calibrationCache) {
+  if (panels.length < 3) return panels;
+
+  const midX = Math.floor(imageWidth / 2);
+  const measured = panels.map((panel) => {
+    const calibration = calibratePanel(data, imageWidth, panel);
+    calibrationCache.set(panel, calibration);
+    return { panel, calibration };
+  });
+  const references = measured.filter(({ calibration }) => (
+    calibration.valid && calibration.quality >= 0.55
+  ));
+  if (references.length < 2) return panels;
+
+  const widthRatio = (panel) => {
+    const columnStart = panel.column === 0 ? 0 : midX;
+    const columnEnd = panel.column === 0 ? midX : imageWidth;
+    return panel.bbox.width / Math.max(1, columnEnd - columnStart);
+  };
+  const typicalWidthRatio = median(references.map(({ panel }) => widthRatio(panel)));
+  // 全幅レイアウトそのものを採用している画像では、この判定を使わない。
+  if (!Number.isFinite(typicalWidthRatio) || typicalWidthRatio >= 0.97) return panels;
+
+  const widerThanGraphBy = Math.max(0.04, typicalWidthRatio * 0.04);
+  return measured.filter(({ panel, calibration }) => {
+    if (calibration.valid) return true;
+
+    const columnStart = panel.column === 0 ? 0 : midX;
+    const columnEnd = panel.column === 0 ? midX : imageWidth;
+    const columnWidth = Math.max(1, columnEnd - columnStart);
+    const edgeTolerance = Math.max(2, Math.round(columnWidth * 0.015));
+    const leftGap = panel.bbox.x - columnStart;
+    const rightGap = columnEnd - (panel.bbox.x + panel.bbox.width);
+    const isFullBleed = leftGap <= edgeTolerance && rightGap <= edgeTolerance;
+    const isWiderThanGraph = widthRatio(panel) >= typicalWidthRatio + widerThanGraphBy;
+    return !(isFullBleed && isWiderThanGraph);
+  }).map(({ panel }) => panel);
+}
+
 function hueDegrees(r, g, b, max, delta) {
   if (delta === 0) return 0;
   let hue;
@@ -880,11 +927,22 @@ export function runAnalysis(data, w, h) {
   }
 
   const midX = Math.floor(w / 2);
-  const leftPanels = findPanelsInHalf(data, w, h, 0, midX, 0);
-  const rightPanels = findPanelsInHalf(data, w, h, midX, w, 1);
+  const rawLeftPanels = findPanelsInHalf(data, w, h, 0, midX, 0);
+  const rawRightPanels = findPanelsInHalf(data, w, h, midX, w, 1);
+  const calibrationCache = new Map();
+  const filteredPanels = filterFullBleedPageChrome(
+    data,
+    w,
+    [...rawLeftPanels, ...rawRightPanels],
+    calibrationCache,
+  );
+  const leftPanels = filteredPanels.filter((panel) => panel.column === 0);
+  const rightPanels = filteredPanels.filter((panel) => panel.column === 1);
   const panels = assignPanelRows([...leftPanels, ...rightPanels]).sort((a, b) => (
     a.row - b.row || a.column - b.column || a.bbox.x - b.bbox.x
   ));
+  const filteredCount = rawLeftPanels.length + rawRightPanels.length - panels.length;
+  if (filteredCount > 0) log(`ページ見出し・操作欄候補を${filteredCount}枠除外`);
   diagnostics.detection.left = leftPanels.length;
   diagnostics.detection.right = rightPanels.length;
   diagnostics.detection.panels = panels.length;
@@ -893,7 +951,9 @@ export function runAnalysis(data, w, h) {
 
   if (!panels.length) return { results: [], logs, diagnostics, error: "グラフ枠なし" };
 
-  const calibrations = panels.map((panel) => calibratePanel(data, w, panel));
+  const calibrations = panels.map((panel) => (
+    calibrationCache.get(panel) || calibratePanel(data, w, panel)
+  ));
   const goodCalibrationEntries = calibrations
     .map((calibration, index) => ({ calibration, panel: panels[index] }))
     .filter(({ calibration }) => calibration.valid && calibration.quality >= 0.55);
