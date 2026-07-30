@@ -12,6 +12,9 @@ export const DELTA_IMPORT_SCHEMA = "pachi-tracker.delta-import";
 export const PAIR_REQUEST_SCHEMA = "pachi-tracker.pair-request";
 export const PAIR_RESPONSE_SCHEMA = "pachi-tracker.pair-response";
 export const PUSH_SCHEMA_VERSION = 1;
+export const AUTO_HEADER_CONTEXT_ENGINE_VERSION =
+  "windows-local-v1-auto-worker-header-v1";
+export const AUTO_HEADER_CONTEXT_SOURCE = "windows-ocr-site7-header-consensus";
 export const SUPPORTED_ANALYSIS_ENGINE_VERSIONS = Object.freeze([
   "windows-local-v1",
   "windows-local-v1-*",
@@ -47,10 +50,17 @@ const SCAN_KEYS = new Set([
   "machineName",
   "sourceFingerprint",
   "analysisEngineVersion",
+  "contextEvidence",
   "observedAt",
   "rows",
 ]);
 const FINGERPRINT_KEYS = new Set(["algorithm", "hash", "fileCount", "fileHashes"]);
+const CONTEXT_EVIDENCE_KEYS = new Set([
+  "source",
+  "version",
+  "profileVotes",
+  "headerFileCount",
+]);
 const OBJECT_ROW_KEYS = new Set([
   "num",
   "val",
@@ -84,6 +94,7 @@ const MAX_COUNTER = 100_000_000;
 const MAX_ABS_DELTA = 10_000_000;
 const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
 const MAX_PAIRING_LIFETIME_MS = 24 * 60 * 60 * 1000;
+const BIDI_CONTROL_PATTERN = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
 const PUSH_BATCH_STATUSES = new Set([
   "pending",
   "imported",
@@ -107,6 +118,15 @@ function isSizedString(value, { allowEmpty = true, max = MAX_STRING } = {}) {
   return typeof value === "string"
     && value.length <= max
     && (allowEmpty || value.trim().length > 0);
+}
+
+function hasUnsafeText(value) {
+  if (typeof value !== "string") return false;
+  if (BIDI_CONTROL_PATTERN.test(value)) return true;
+  return [...value].some((character) => {
+    const codePoint = character.codePointAt(0);
+    return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f);
+  });
 }
 
 function isIsoTimestamp(value) {
@@ -168,11 +188,52 @@ function validateNullableCounter(value, field, errors, path) {
 
 function validateNullableMachineName(value, errors, path) {
   if (value === null || value === undefined) return null;
-  if (!isSizedString(value)) {
+  if (!isSizedString(value) || hasUnsafeText(value)) {
     errors.push(`${path}.machineName: 240文字以内の文字列またはnullが必要です`);
     return null;
   }
   return value.trim();
+}
+
+function validateContextEvidence(value, errors) {
+  const path = "payload.scan.contextEvidence";
+  if (!isPlainObject(value)) {
+    errors.push(`${path}: object required`);
+    return null;
+  }
+  const extra = unexpectedKeys(value, CONTEXT_EVIDENCE_KEYS);
+  if (extra.length) errors.push(`${path}: unsupported fields ${extra.join(", ")}`);
+  if (value.source !== AUTO_HEADER_CONTEXT_SOURCE || hasUnsafeText(value.source)) {
+    errors.push(`${path}.source: ${AUTO_HEADER_CONTEXT_SOURCE} required`);
+  }
+  if (value.version !== 1) {
+    errors.push(`${path}.version: 1 required`);
+  }
+  if (!integerInRange(value.profileVotes, 2, 1024)) {
+    errors.push(`${path}.profileVotes: integer from 2 to 1024 required`);
+  }
+  if (!integerInRange(value.headerFileCount, 1, 64)) {
+    errors.push(`${path}.headerFileCount: integer from 1 to 64 required`);
+  }
+  if (errors.some((error) => error.startsWith(path))) return null;
+  return {
+    source: AUTO_HEADER_CONTEXT_SOURCE,
+    version: 1,
+    profileVotes: value.profileVotes,
+    headerFileCount: value.headerFileCount,
+  };
+}
+
+export function hasTrustedHeaderContextEvidence(scan) {
+  if (scan?.analysisEngineVersion !== AUTO_HEADER_CONTEXT_ENGINE_VERSION) return false;
+  const evidence = scan?.contextEvidence;
+  return isPlainObject(evidence)
+    && unexpectedKeys(evidence, CONTEXT_EVIDENCE_KEYS).length === 0
+    && evidence.source === AUTO_HEADER_CONTEXT_SOURCE
+    && !hasUnsafeText(evidence.source)
+    && evidence.version === 1
+    && integerInRange(evidence.profileVotes, 2, 1024)
+    && integerInRange(evidence.headerFileCount, 1, 64);
 }
 
 function normalizeRow(rawRow, index, compactRows, errors) {
@@ -379,21 +440,30 @@ export function decodeDeltaImportPayload(payload, { createdAt, now = Date.now() 
   }
   if (sourceScan.storeId !== null
     && sourceScan.storeId !== undefined
-    && !isSizedString(String(sourceScan.storeId), { allowEmpty: false, max: 120 })) {
+    && (
+      !isSizedString(String(sourceScan.storeId), { allowEmpty: false, max: 120 })
+      || hasUnsafeText(String(sourceScan.storeId))
+    )) {
     errors.push("payload.scan.storeId: 120文字以内の値またはnullが必要です");
   }
-  if (!isSizedString(sourceScan.storeName)) {
+  if (!isSizedString(sourceScan.storeName) || hasUnsafeText(sourceScan.storeName)) {
     errors.push("payload.scan.storeName: 240文字以内の文字列が必要です");
   }
   if (!isCalendarDate(sourceScan.date)) errors.push("payload.scan.date: 実在するYYYY-MM-DDが必要です");
-  if (!isSizedString(sourceScan.event)) errors.push("payload.scan.event: 240文字以内の文字列が必要です");
-  if (!isSizedString(sourceScan.machineName)) {
+  if (!isSizedString(sourceScan.event) || hasUnsafeText(sourceScan.event)) {
+    errors.push("payload.scan.event: 安全な240文字以内の文字列が必要です");
+  }
+  if (!isSizedString(sourceScan.machineName) || hasUnsafeText(sourceScan.machineName)) {
     errors.push("payload.scan.machineName: 240文字以内の文字列が必要です");
   }
   if (!isSizedString(sourceScan.analysisEngineVersion, { allowEmpty: false, max: 120 })
+    || hasUnsafeText(sourceScan.analysisEngineVersion)
     || !isSupportedAnalysisEngineVersion(sourceScan.analysisEngineVersion)) {
     errors.push("payload.scan.analysisEngineVersion: 対応しているWindowsローカル解析版が必要です");
   }
+  const contextEvidence = sourceScan.contextEvidence === undefined
+    ? null
+    : validateContextEvidence(sourceScan.contextEvidence, errors);
   if (!isIsoTimestamp(sourceScan.observedAt)) {
     errors.push("payload.scan.observedAt: ISO日時が必要です");
   } else {
@@ -451,6 +521,7 @@ export function decodeDeltaImportPayload(payload, { createdAt, now = Date.now() 
     createdAt: sourceScan.observedAt,
     sourceFingerprint: fingerprint,
     analysisEngineVersion: sourceScan.analysisEngineVersion.trim(),
+    ...(contextEvidence ? { contextEvidence } : {}),
     importSource: "paired-windows-push",
   };
   return { valid: true, errors: [], scan };

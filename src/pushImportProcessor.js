@@ -1,4 +1,5 @@
 import {
+  hasTrustedHeaderContextEvidence,
   isStrictAutoImportCandidate,
   listPendingPushBatches,
   markPushBatchStatus,
@@ -8,7 +9,11 @@ import {
   validateDeltaRows,
 } from "./components/delta/deltaSelectors.js";
 import { getRank } from "./components/delta/deltaEngine.js";
-import { validateDeltaRowMachineAssignments } from "./components/delta/deltaEvidence.js";
+import {
+  findMachineSpec,
+  normalizeEvidenceMachineName,
+  validateDeltaRowMachineAssignments,
+} from "./components/delta/deltaEvidence.js";
 import { relateRowsToStoreLayout } from "./components/delta/storeLayoutRowRelation.js";
 import { getStoreIslands } from "./components/select/hallMapSelectors.js";
 import {
@@ -37,7 +42,11 @@ function fingerprintOf(scan) {
   return String(scan?.sourceFingerprint?.hash || "").toLowerCase();
 }
 
-export function resolveRegisteredPushStore(scan, stores = []) {
+export function resolveRegisteredPushStore(
+  scan,
+  stores = [],
+  { allowObservedLabel = false } = {},
+) {
   const list = (Array.isArray(stores) ? stores : [])
     .filter((store) => store && typeof store === "object");
   const sourceId = scan?.storeId;
@@ -64,6 +73,14 @@ export function resolveRegisteredPushStore(scan, stores = []) {
     (store) => normalizeStoreName(store.name) === normalizeStoreName(sourceName),
   );
   if (matches.length === 0) {
+    if (allowObservedLabel) {
+      return {
+        status: "ready",
+        code: "",
+        store: null,
+        observedLabel: true,
+      };
+    }
     return { status: "waiting", code: "store-not-registered", store: null };
   }
   if (matches.length > 1) {
@@ -105,7 +122,10 @@ export function evaluateDecodedPushScan(
     };
   }
 
-  const storeResult = resolveRegisteredPushStore(scan, stores);
+  const allowObservedLabels = hasTrustedHeaderContextEvidence(scan);
+  const storeResult = resolveRegisteredPushStore(scan, stores, {
+    allowObservedLabel: allowObservedLabels,
+  });
   if (storeResult.status !== "ready") {
     return {
       status: storeResult.status,
@@ -116,7 +136,9 @@ export function evaluateDecodedPushScan(
   }
 
   const canonicalStore = storeResult.store;
-  const configuredIslands = getStoreIslands(hallMaps, canonicalStore.id);
+  const configuredIslands = canonicalStore
+    ? getStoreIslands(hallMaps, canonicalStore.id)
+    : [];
   const layoutRelation = configuredIslands.length > 0
     ? relateRowsToStoreLayout(validation.savableRows, {
       islands: configuredIslands,
@@ -139,9 +161,14 @@ export function evaluateDecodedPushScan(
       layoutRelation,
     };
   }
-  const canonicalRows = layoutRelation?.rows || validation.savableRows;
+  const relatedRows = layoutRelation?.rows || validation.savableRows;
   const machineValidation = validateDeltaRowMachineAssignments(
-    canonicalRows,
+    relatedRows,
+    customMachines,
+    builtInMachines,
+  );
+  const canonicalScanMachine = findMachineSpec(
+    scan.machineName,
     customMachines,
     builtInMachines,
   );
@@ -155,7 +182,27 @@ export function evaluateDecodedPushScan(
       machineValidation,
     };
   }
-  if (!machineValidation.valid) {
+  if (
+    (!canonicalScanMachine || machineValidation.unregisteredCount > 0)
+    && allowObservedLabels
+  ) {
+    const normalizedScanMachine = normalizeEvidenceMachineName(scan.machineName);
+    const everyRowMatchesScan = normalizedScanMachine
+      && relatedRows.every(
+        (row) => normalizeEvidenceMachineName(row?.machineName) === normalizedScanMachine,
+      );
+    if (!everyRowMatchesScan) {
+      return {
+        status: "rejected",
+        code: "machine-name-conflict",
+        scan: null,
+        validation,
+        layoutRelation,
+        machineValidation,
+      };
+    }
+  }
+  if (!machineValidation.valid && !allowObservedLabels) {
     return {
       status: "waiting",
       code: "machine-not-registered",
@@ -165,6 +212,17 @@ export function evaluateDecodedPushScan(
       machineValidation,
     };
   }
+  const canonicalRows = relatedRows.map((row) => {
+    const machine = findMachineSpec(row?.machineName, customMachines, builtInMachines);
+    return {
+      ...row,
+      machineName: String(
+        machine?.name
+        || (allowObservedLabels ? scan.machineName : row?.machineName)
+        || "",
+      ).trim(),
+    };
+  });
   return {
     status: "ready",
     code: "",
@@ -173,8 +231,9 @@ export function evaluateDecodedPushScan(
     layoutRelation,
     scan: {
       ...scan,
-      storeId: canonicalStore.id,
-      storeName: String(canonicalStore.name || scan.storeName || "").trim(),
+      storeId: canonicalStore?.id ?? null,
+      storeName: String(canonicalStore?.name || scan.storeName || "").trim(),
+      machineName: String(canonicalScanMachine?.name || scan.machineName || "").trim(),
       rows: canonicalRows.map((row) => ({
         ...row,
         rank: getRank(row.val).rank,

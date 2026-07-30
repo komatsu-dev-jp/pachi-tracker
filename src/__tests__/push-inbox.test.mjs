@@ -3,8 +3,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 import {
+  AUTO_HEADER_CONTEXT_ENGINE_VERSION,
+  AUTO_HEADER_CONTEXT_SOURCE,
   canonicalJson,
   decodeDeltaImportPayload,
+  hasTrustedHeaderContextEvidence,
   isStrictAutoImportCandidate,
   parsePairingRequestText,
   sha256Digest,
@@ -22,6 +25,16 @@ function makeFingerprint() {
     hash: "a".repeat(64),
     fileCount: 1,
     fileHashes: ["b".repeat(64)],
+  };
+}
+
+function makeContextEvidence(overrides = {}) {
+  return {
+    source: AUTO_HEADER_CONTEXT_SOURCE,
+    version: 1,
+    profileVotes: 2,
+    headerFileCount: 1,
+    ...overrides,
   };
 }
 
@@ -81,6 +94,74 @@ test("compact行をアプリ用scanへ展開する", () => {
   assert.equal(result.scan.observedAt, "2026-07-30T02:50:00.000Z");
   assert.equal(result.scan.createdAt, "2026-07-30T02:50:00.000Z");
   assert.equal(isStrictAutoImportCandidate(result.scan), true);
+});
+
+test("header consensus context evidence is strictly decoded and preserved", () => {
+  const payload = makePayload();
+  payload.scan.analysisEngineVersion = AUTO_HEADER_CONTEXT_ENGINE_VERSION;
+  payload.scan.contextEvidence = makeContextEvidence({
+    profileVotes: 1024,
+    headerFileCount: 64,
+  });
+  const result = decodeDeltaImportPayload(payload, {
+    createdAt: "2026-07-30T03:00:00.000Z",
+    now: FIXED_NOW,
+  });
+  assert.equal(result.valid, true, result.errors.join("\n"));
+  assert.deepEqual(result.scan.contextEvidence, payload.scan.contextEvidence);
+  assert.equal(hasTrustedHeaderContextEvidence(result.scan), true);
+  assert.equal(result.scan.rows[0].machineName, result.scan.machineName);
+});
+
+test("context evidence rejects unknown fields, invalid bounds, controls, and bidi", () => {
+  const invalidEvidence = [
+    null,
+    makeContextEvidence({ extra: true }),
+    makeContextEvidence({ source: `${AUTO_HEADER_CONTEXT_SOURCE}\n` }),
+    makeContextEvidence({ version: 2 }),
+    makeContextEvidence({ profileVotes: 1 }),
+    makeContextEvidence({ profileVotes: 1025 }),
+    makeContextEvidence({ headerFileCount: 0 }),
+    makeContextEvidence({ headerFileCount: 65 }),
+  ];
+  for (const contextEvidence of invalidEvidence) {
+    const payload = makePayload();
+    payload.scan.analysisEngineVersion = AUTO_HEADER_CONTEXT_ENGINE_VERSION;
+    payload.scan.contextEvidence = contextEvidence;
+    const result = decodeDeltaImportPayload(payload, { now: FIXED_NOW });
+    assert.equal(result.valid, false, JSON.stringify(contextEvidence));
+    assert.match(result.errors.join("\n"), /contextEvidence/u);
+  }
+
+  const unsafeLabels = [
+    ["storeName", "店舗\u0000名"],
+    ["storeId", "store\u202e1"],
+    ["event", "旧イベント\n"],
+    ["machineName", "P\u2066テスト"],
+  ];
+  for (const [field, value] of unsafeLabels) {
+    const payload = makePayload();
+    payload.scan[field] = value;
+    const result = decodeDeltaImportPayload(payload, { now: FIXED_NOW });
+    assert.equal(result.valid, false, field);
+  }
+
+  const unsafeRow = makePayload();
+  unsafeRow.scan.rows[0][4] = "P\u200fテスト";
+  assert.equal(decodeDeltaImportPayload(unsafeRow, { now: FIXED_NOW }).valid, false);
+});
+
+test("trusted context requires the exact header worker engine version", () => {
+  const payload = makePayload();
+  payload.scan.contextEvidence = makeContextEvidence();
+  const oldEngine = decodeDeltaImportPayload(payload, { now: FIXED_NOW });
+  assert.equal(oldEngine.valid, true, oldEngine.errors.join("\n"));
+  assert.equal(hasTrustedHeaderContextEvidence(oldEngine.scan), false);
+
+  payload.scan.analysisEngineVersion = "windows-local-v1-auto-worker-header-v1-extra";
+  const suffixEngine = decodeDeltaImportPayload(payload, { now: FIXED_NOW });
+  assert.equal(suffixEngine.valid, true, suffixEngine.errors.join("\n"));
+  assert.equal(hasTrustedHeaderContextEvidence(suffixEngine.scan), false);
 });
 
 test("通常オブジェクト行も検証して展開する", () => {
