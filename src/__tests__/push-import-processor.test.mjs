@@ -6,6 +6,10 @@ import {
   evaluateDecodedPushScan,
   resolveRegisteredPushStore,
 } from "../pushImportProcessor.js";
+import {
+  AUTO_HEADER_CONTEXT_ENGINE_VERSION,
+  AUTO_HEADER_CONTEXT_SOURCE,
+} from "../pushInbox.js";
 
 const fingerprint = {
   algorithm: "SHA-256",
@@ -15,6 +19,13 @@ const fingerprint = {
 };
 const stores = [{ id: "store-1", name: "テスト中央店" }];
 const machines = [{ name: "Pテスト 1/319" }];
+
+const contextEvidence = {
+  source: AUTO_HEADER_CONTEXT_SOURCE,
+  version: 1,
+  profileVotes: 2,
+  headerFileCount: 1,
+};
 
 function makeScan(overrides = {}) {
   return {
@@ -107,6 +118,188 @@ test("未登録機種は削除・保存せず、登録後に再試行できるpe
   assert.deepEqual(
     { status: result.status, code: result.code },
     { status: "waiting", code: "machine-not-registered" },
+  );
+});
+
+test("trusted header consensus permits unknown store and machine as observed labels", () => {
+  const observedMachine = "P現地表示だけの機種";
+  const scan = makeScan({
+    storeId: null,
+    storeName: "現地表示だけの店舗",
+    machineName: observedMachine,
+    analysisEngineVersion: AUTO_HEADER_CONTEXT_ENGINE_VERSION,
+    contextEvidence,
+    rows: [{
+      ...makeScan().rows[0],
+      machineName: "Ｐ現地表示だけの機種",
+    }],
+  });
+  const result = evaluateDecodedPushScan(scan, {
+    stores,
+    builtInMachines: [],
+  });
+  assert.equal(result.status, "ready");
+  assert.equal(result.scan.storeId, null);
+  assert.equal(result.scan.storeName, "現地表示だけの店舗");
+  assert.equal(result.scan.machineName, observedMachine);
+  assert.equal(result.scan.rows[0].machineName, observedMachine);
+  assert.deepEqual(result.scan.contextEvidence, contextEvidence);
+  assert.equal(result.machineValidation.unregisteredCount, 1);
+});
+
+test("trusted unknown machine rejects mixed row labels", () => {
+  const baseRow = makeScan().rows[0];
+  const scan = makeScan({
+    storeId: null,
+    storeName: "現地店舗",
+    machineName: "P観測機種A",
+    analysisEngineVersion: AUTO_HEADER_CONTEXT_ENGINE_VERSION,
+    contextEvidence,
+    rows: [
+      { ...baseRow, machineName: "Ｐ観測機種Ａ" },
+      { ...baseRow, num: "18", machineName: "P観測機種B" },
+    ],
+  });
+  const result = evaluateDecodedPushScan(scan, {
+    stores,
+    builtInMachines: [],
+  });
+  assert.deepEqual(
+    { status: result.status, code: result.code },
+    { status: "rejected", code: "machine-name-conflict" },
+  );
+});
+
+test("unknown labels keep the legacy waiting behavior without exact trusted context", () => {
+  const base = makeScan({
+    storeId: null,
+    storeName: "未登録店舗",
+    machineName: "P未登録",
+    rows: [{ ...makeScan().rows[0], machineName: "P未登録" }],
+  });
+  const withoutEvidence = evaluateDecodedPushScan(base, {
+    stores,
+    builtInMachines: [],
+  });
+  assert.deepEqual(
+    { status: withoutEvidence.status, code: withoutEvidence.code },
+    { status: "waiting", code: "store-not-registered" },
+  );
+
+  const wrongEngine = evaluateDecodedPushScan({
+    ...base,
+    analysisEngineVersion: "windows-local-v1-auto-worker",
+    contextEvidence,
+  }, {
+    stores,
+    builtInMachines: [],
+  });
+  assert.deepEqual(
+    { status: wrongEngine.status, code: wrongEngine.code },
+    { status: "waiting", code: "store-not-registered" },
+  );
+
+  const invalidEvidence = evaluateDecodedPushScan({
+    ...base,
+    analysisEngineVersion: AUTO_HEADER_CONTEXT_ENGINE_VERSION,
+    contextEvidence: { ...contextEvidence, profileVotes: 1 },
+  }, {
+    stores,
+    builtInMachines: [],
+  });
+  assert.deepEqual(
+    { status: invalidEvidence.status, code: invalidEvidence.code },
+    { status: "waiting", code: "store-not-registered" },
+  );
+});
+
+test("known store and machine labels are canonicalized to master names", () => {
+  const canonicalStores = [{ id: "known-store", name: "正式 店舗Ａ" }];
+  const canonicalMachines = [{
+    name: "P正式機種 1/319",
+    aliases: ["P観測機種"],
+  }];
+  const scan = makeScan({
+    storeId: null,
+    storeName: "正式店舗A",
+    machineName: "P観測機種",
+    analysisEngineVersion: AUTO_HEADER_CONTEXT_ENGINE_VERSION,
+    contextEvidence,
+    rows: [{ ...makeScan().rows[0], machineName: "P観測機種" }],
+  });
+  const result = evaluateDecodedPushScan(scan, {
+    stores: canonicalStores,
+    builtInMachines: canonicalMachines,
+  });
+  assert.equal(result.status, "ready");
+  assert.equal(result.scan.storeId, "known-store");
+  assert.equal(result.scan.storeName, "正式 店舗Ａ");
+  assert.equal(result.scan.machineName, "P正式機種 1/319");
+  assert.equal(result.scan.rows[0].machineName, "P正式機種 1/319");
+});
+
+test("trusted context never bypasses store ID conflicts or configured layout review", () => {
+  const unknownId = evaluateDecodedPushScan(makeScan({
+    storeId: "not-registered-id",
+    analysisEngineVersion: AUTO_HEADER_CONTEXT_ENGINE_VERSION,
+    contextEvidence,
+  }), {
+    stores,
+    builtInMachines: machines,
+  });
+  assert.deepEqual(
+    { status: unknownId.status, code: unknownId.code },
+    { status: "waiting", code: "store-not-registered" },
+  );
+
+  const nameConflict = evaluateDecodedPushScan(makeScan({
+    storeName: "別の店舗",
+    analysisEngineVersion: AUTO_HEADER_CONTEXT_ENGINE_VERSION,
+    contextEvidence,
+  }), {
+    stores,
+    builtInMachines: machines,
+  });
+  assert.deepEqual(
+    { status: nameConflict.status, code: nameConflict.code },
+    { status: "rejected", code: "store-name-conflict" },
+  );
+
+  const layoutMismatch = evaluateDecodedPushScan(makeScan({
+    analysisEngineVersion: AUTO_HEADER_CONTEXT_ENGINE_VERSION,
+    contextEvidence,
+  }), {
+    stores,
+    builtInMachines: machines,
+    hallMaps: {
+      "store-1": [{
+        id: "outside",
+        name: "別島",
+        machineName: machines[0].name,
+        start: 100,
+        end: 120,
+      }],
+    },
+  });
+  assert.deepEqual(
+    { status: layoutMismatch.status, code: layoutMismatch.code },
+    { status: "waiting", code: "store-layout-review" },
+  );
+});
+
+test("trusted context does not permit a missing machine label", () => {
+  const scan = makeScan({
+    analysisEngineVersion: AUTO_HEADER_CONTEXT_ENGINE_VERSION,
+    contextEvidence,
+    rows: [{ ...makeScan().rows[0], machineName: "" }],
+  });
+  const result = evaluateDecodedPushScan(scan, {
+    stores,
+    builtInMachines: machines,
+  });
+  assert.deepEqual(
+    { status: result.status, code: result.code },
+    { status: "rejected", code: "machine-name-missing" },
   );
 });
 
