@@ -14,6 +14,7 @@ import MachineSpecWorkspace from "../machines/MachineSpecWorkspace";
 import IslandMapManager from "../select/IslandMapManager";
 import { getStoreIslands, setStoreIslands } from "../select/hallMapSelectors";
 import { createYutimeSessionFromMachine } from "../yutime/yutimeCalculator";
+import PushSyncSettings from "../PushSyncSettings";
 
 export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     const [confirming, setConfirming] = useState(false);
@@ -111,6 +112,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     const [showBackupView, setShowBackupView] = useState(false);
     const [showAdvancedView, setShowAdvancedView] = useState(false);
     const [showHallMapView, setShowHallMapView] = useState(false);
+    const [showPushSyncView, setShowPushSyncView] = useState(false);
     useEffect(() => {
         if (s.settingsIntent?.section !== "backup") return;
         setShowBackupView(true);
@@ -2762,6 +2764,19 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
         );
     }
 
+    // ── Windows自動解析・Push連携サブビュー ──
+    if (showPushSyncView) {
+        return (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <SubHeader title="Windows自動取込" onBack={() => setShowPushSyncView(false)} />
+                <div style={{ flex: 1, overflowY: "auto", padding: "14px 14px calc(84px + env(safe-area-inset-bottom))" }}>
+                    <PushSyncSettings requestConfirmation={s.requestConfirmation} />
+                </div>
+                <ToastPortal />
+            </div>
+        );
+    }
+
     // ── バックアップサブビュー ──
     if (showBackupView) {
         return (
@@ -2773,7 +2788,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                     <Section>
                         <div style={{ padding: "14px 16px" }}>
                             <div style={{ fontSize: 12, color: C.sub, marginBottom: 14, lineHeight: 1.6 }}>
-                                実践記録・収支・設定・機種・店舗など、端末内の全データを1つのファイルに保存します。アプリを削除する前に実行してください。
+                                実践記録・収支・設定・機種・店舗・Windowsから届いた解析原本を、1つのファイルに保存します。アプリを削除する前に実行してください。
                             </div>
                             <div style={{ fontSize: 11, color: C.orange, marginBottom: 14, lineHeight: 1.6 }}>
                                 PINとAI APIキーは安全のため含まれません。利用再開時にこの端末で再設定してください。
@@ -3118,6 +3133,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                 <SectionCard>
                     {(() => {
                         const items = [
+                            { color: "var(--green)", icon: IconCloud,      label: "Windows自動取込",    sub: "iCloud解析結果を暗号化して受信",          onPress: () => setShowPushSyncView(true) },
                             { color: "var(--blue)", icon: IconCloud,      label: "データの保存・復元", sub: "JSON全体バックアップ",                  onPress: () => setShowBackupView(true) },
                             { color: "var(--purple)", icon: IconCsv,        label: "CSV入出力",         sub: "収支データのインポート / エクスポート",  onPress: () => setShowBackupView(true) },
                             { color: "var(--red)", icon: IconTrash,       label: "データをリセット",   sub: "現在のセッションだけを初期化",            onPress: () => setShowAdvancedView(true) },

@@ -15,6 +15,7 @@ import { Card } from "../Atoms";
 import { runAnalysis, getRankTone } from "./deltaEngine";
 import { attachMachineNumbersToSlots, combineMachineNumberPages } from "./machineNumberOcr";
 import { attachGraphPanelMetadata } from "./graphPanelMetadataOcr";
+import { applySafeShortSeriesValidation } from "./graphShortSeriesValidator";
 import { matchSiteSevenGraphPanels } from "./siteSevenJointMatcher";
 import { resolveMatchedSiteSevenRows } from "./siteSevenJointResolution";
 import {
@@ -85,6 +86,7 @@ import {
   getDeltaSaveReadiness,
   makeDeltaCompletionSummary,
 } from "./deltaCompletion";
+import { createSourceFingerprint } from "./sourceFingerprint";
 import {
   buildDeltaAnalysisConfirmation,
   DELTA_EVENT_OPTIONS,
@@ -134,7 +136,9 @@ function fileToAttachment(file) {
   });
 }
 
-async function analyzeImages(images, onProgress, {
+// 自動解析専用ページから同じ端末内OCRを再利用する。関数自体は保存処理を持たない。
+// eslint-disable-next-line react-refresh/only-export-components
+export async function analyzeImages(images, onProgress, {
   dateText = "",
   storeName = "",
   expectedNumbers = [],
@@ -383,7 +387,7 @@ async function analyzeImages(images, onProgress, {
     && canAutoAcceptSiteSevenReports(siteSevenReports)
     && jointNumbers.every(Boolean)
     && new Set(jointNumbers).size === jointNumbers.length;
-  const resolvedSlots = combinedNumbers.slots.map((slot, graphIndex) => {
+  const jointlyResolvedSlots = combinedNumbers.slots.map((slot, graphIndex) => {
     const match = jointNumberByGraphIndex.get(graphIndex);
     if (!match) return slot;
     return {
@@ -400,6 +404,10 @@ async function analyzeImages(images, onProgress, {
       },
     };
   });
+  const resolvedSlots = applySafeShortSeriesValidation(
+    jointlyResolvedSlots,
+    jointMatch,
+  );
   const resolvedNumberOcr = jointAccepted
     ? {
       ...combinedNumbers,
@@ -925,6 +933,12 @@ function UploadStep({
           </div>
           <div style={{ fontSize: 11, color: C.subHi, lineHeight: 1.55, marginTop: 10 }}>
             文字を選択できるPDF・CSVは写真より正確です。画像だけのPDFは、元の写真も一緒に選んでください。
+          </div>
+          <div style={{ fontSize: 11, color: C.green, lineHeight: 1.55, marginTop: 8, fontWeight: 700 }}>
+            iPhoneでは「ブラウズ → iCloud Drive → サイトセブンOCR → 01_入力」からまとめて選択
+          </div>
+          <div style={{ fontSize: 10, color: C.sub, lineHeight: 1.5, marginTop: 5 }}>
+            通常の解析は端末内だけで行い、選んだ元画像を削除・変更しません
           </div>
         </div>
 
@@ -2721,6 +2735,7 @@ function ImportStep({
   requestConfirmation,
   initialDataRows = [],
   initialDataSummary = null,
+  initialSourceFiles = [],
 }) {
   const prompt = useMemo(
     () => buildOcrPrompt({ dateText: dateToSlash(analysisDate), storeName: store?.name || "" }),
@@ -2742,6 +2757,9 @@ function ImportStep({
   const [dataBusy, setDataBusy] = useState(false);
   const [dataError, setDataError] = useState("");
   const [dataSummary, setDataSummary] = useState(() => initialDataSummary);
+  const [dataSourceFiles, setDataSourceFiles] = useState(() => (
+    Array.isArray(initialSourceFiles) ? initialSourceFiles.filter(Boolean) : []
+  ));
   const [dataFilter, setDataFilter] = useState("");
   const [showAllDataRows, setShowAllDataRows] = useState(false);
   const [machinePickerRowIndex, setMachinePickerRowIndex] = useState(null);
@@ -2773,6 +2791,21 @@ function ImportStep({
       if (selected.length) setDataError("PDF・JPEG/PNG/WebP画像・CSVのいずれかを選んでください");
       return;
     }
+    const hasManualWork = dataRows.some((row) => (
+      (Array.isArray(row?.editedFields) && row.editedFields.length > 0)
+      || row?.reviewConfirmed === true
+      || row?.machineNameSource === "manual"
+      || row?.storeLayoutRelation?.manuallySelected === true
+    ));
+    if (hasManualWork) {
+      const confirmed = await requestConfirmation?.({
+        title: "手修正した台データを置き換えますか？",
+        message: "別のファイルを読み込むと、現在の数字修正・確認済みチェック・機種選択を新しい読取結果へ置き換えます。",
+        confirmLabel: "置き換えて読み込む",
+        tone: "danger",
+      });
+      if (!confirmed) return;
+    }
 
     const pdfFiles = classified.filter(({ kind }) => kind === "pdf").map(({ file }) => file);
     const csvFiles = classified.filter(({ kind }) => kind === "csv").map(({ file }) => file);
@@ -2782,14 +2815,11 @@ function ImportStep({
 
     setDataBusy(true);
     setAiBusy(false);
-    setDataRows([]);
     setDataError("");
-    setDataSummary(null);
     setDataFilter("");
     setShowAllDataRows(false);
     setMachinePickerRowIndex(null);
     setBulkMessage("");
-    setText("");
     try {
       const results = [];
       const failedFiles = [];
@@ -2853,6 +2883,10 @@ function ImportStep({
       }
 
       const expectedNumbers = (Array.isArray(deltaRows) ? deltaRows : []).map((row) => row?.num);
+      if (failedFiles.length) {
+        setDataError(`読み取れないファイルが${failedFiles.length}件ありました。現在の台データは変更していません。${failedFiles.map((item) => `${item.name}：${item.message}`).join("／")}`);
+        return;
+      }
       if (!results.length) {
         const failureDetail = failedFiles[0]
           ? `（${failedFiles[0].name}：${failedFiles[0].message}）`
@@ -2885,12 +2919,9 @@ function ImportStep({
         degradedImageCount,
         failedFileCount: failedFiles.length,
       });
-      if (failedFiles.length) {
-        setDataError(`読み取れないファイルが${failedFiles.length}件ありました。成功したファイルの結果は残しています。${failedFiles.map((item) => `${item.name}：${item.message}`).join("／")}`);
-      }
+      setDataSourceFiles(classified.map(({ file }) => file));
     } catch (error) {
       if (requestId !== dataRequestIdRef.current) return;
-      setDataRows([]);
       setDataError(error instanceof Error ? error.message : "台データの読み取りに失敗しました");
     } finally {
       if (requestId === dataRequestIdRef.current) setDataBusy(false);
@@ -3889,7 +3920,7 @@ function ImportStep({
           : deferredImportCount > 0
             ? `要確認${deferredImportCount}台（安全に統合できる台なし）`
           : "台データと差玉を台番号で統合する"}
-        onClick={() => onMerge(importRows, { dataRows, dataSummary })}
+        onClick={() => onMerge(importRows, { dataRows, dataSummary, sourceFiles: dataSourceFiles })}
         disabled={recognized === 0
           || dataBusy
           || aiBusy
@@ -3994,6 +4025,7 @@ export default function DeltaAnalyzer({
   const [analysisJointMatch, setAnalysisJointMatch] = useState(null);
   const [analysisSiteSevenRows, setAnalysisSiteSevenRows] = useState([]);
   const [analysisSiteSevenSummary, setAnalysisSiteSevenSummary] = useState(null);
+  const [supplementalSourceFiles, setSupplementalSourceFiles] = useState([]);
   const [autoImportedCount, setAutoImportedCount] = useState(0);
   const [confirmedMachineNumbers, setConfirmedMachineNumbers] = useState([]);
   const [rows, setRows] = useState([]);   // 台番号割り当て後の結果行
@@ -4009,6 +4041,7 @@ export default function DeltaAnalyzer({
     setAnalysisJointMatch(null);
     setAnalysisSiteSevenRows([]);
     setAnalysisSiteSevenSummary(null);
+    setSupplementalSourceFiles([]);
     setAutoImportedCount(0);
     setConfirmedMachineNumbers([]);
     setRows([]);
@@ -4167,7 +4200,7 @@ export default function DeltaAnalyzer({
     setStep("results");
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (saveGuardRef.current || saved) return;
     const validation = validateDeltaRows(rows);
     if (!validation.canSave) {
@@ -4193,6 +4226,12 @@ export default function DeltaAnalyzer({
     }
     saveGuardRef.current = true;
     try {
+      const sourceFingerprint = await createSourceFingerprint(
+        [
+          ...images.map((image) => image?.file),
+          ...supplementalSourceFiles,
+        ].filter(Boolean),
+      );
       const scan = makeScan({
         storeId: store?.id ?? null,
         storeName: store?.name || "",
@@ -4200,8 +4239,21 @@ export default function DeltaAnalyzer({
         event: eventType,
         machineName,
         rows: validation.savableRows,
+        sourceFingerprint,
+        analysisEngineVersion: ANALYSIS_ENGINE_VERSION,
       });
-      onSaveScan?.(scan);
+      const saveResult = await onSaveScan?.(scan);
+      if (saveResult?.status && saveResult.status !== "saved") {
+        saveGuardRef.current = false;
+        const message = saveResult.status === "duplicate"
+          ? "同じ資料はすでに保存済みです。既存データは変更していません"
+          : saveResult.status === "id-conflict"
+            ? "保存IDが重複したため追加を止めました。既存データは変更していません"
+            : "保存を開始できませんでした。既存データは変更していません";
+        setToast(message);
+        setTimeout(() => setToast(""), 4000);
+        return;
+      }
       setSaved(true);
       setCompletion(makeDeltaCompletionSummary({ scan, validation }));
       setToast("");
@@ -4287,6 +4339,9 @@ export default function DeltaAnalyzer({
         reviewedSourceRows,
       ));
     }
+    setSupplementalSourceFiles(
+      Array.isArray(importState?.sourceFiles) ? importState.sourceFiles.filter(Boolean) : [],
+    );
     setAutoImportedCount(matched || 0);
     setSaved(false);
     setStep("results");
@@ -4385,6 +4440,7 @@ export default function DeltaAnalyzer({
           onChangeAiApiKey={onChangeAiApiKey}
           initialDataRows={analysisSiteSevenRows}
           initialDataSummary={analysisSiteSevenSummary}
+          initialSourceFiles={supplementalSourceFiles}
           islands={islands}
           islandScopeId={activeIslandScopeId}
           customMachines={customMachines}

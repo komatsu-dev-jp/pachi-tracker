@@ -25,7 +25,8 @@ test("ErrorBoundaryは再読み込みを主導線にし、削除前にバック�
   assert.match(source, /データを残して再読み込み/);
   assert.match(source, /先にバックアップを書き出す/);
   assert.match(source, /バックアップしてからリセット/);
-  assert.match(source, /全実戦記録・設定・保存済み履歴が削除され、元に戻せません/);
+  assert.match(source, /実戦記録・設定・保存済み履歴を初期化します/);
+  assert.match(source, /Windowsから届いた解析原本は削除しません/);
   assert.ok(
     source.indexOf("データを残して再読み込み") < source.indexOf("バックアップしてからリセット"),
     "安全な再読み込みを破壊的リセットより先に表示する",

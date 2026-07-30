@@ -1560,7 +1560,7 @@ function IslandActivityHistoryPanel({
     });
     if (!confirmed) return;
 
-    const result = onChangeScanDate({
+    const result = await onChangeScanDate({
       scanIds: targetScans.map((scan) => scan.id),
       fromDate: selectedEntry.date,
       toDate: draftDate,
@@ -1597,7 +1597,7 @@ function IslandActivityHistoryPanel({
     });
     if (!confirmed) return;
 
-    const result = onDeleteScans({
+    const result = await onDeleteScans({
       scanIds: targetScans.map((scan) => scan.id),
       fromDate: selectedEntry.date,
     });
@@ -2285,20 +2285,23 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord, onSelec
     });
   };
 
-  const changeScanDate = ({ scanIds, fromDate, toDate }) => {
+  const changeScanDate = async ({ scanIds, fromDate, toDate }) => {
     if (isDemo || typeof S?.setDeltaScans !== "function") {
       return { ok: false, reason: "unavailable", scans: savedScans, updatedCount: 0 };
     }
-    const result = updateDeltaScanDate(savedScans, {
-      scanIds,
-      fromDate,
-      toDate,
+    let result;
+    await S.setDeltaScans((current) => {
+      result = updateDeltaScanDate(current, {
+        scanIds,
+        fromDate,
+        toDate,
+      });
+      return result.ok ? result.scans : current;
     });
-    if (result.ok) S.setDeltaScans(result.scans);
     return result;
   };
 
-  const removeScans = ({ scanIds, fromDate }) => {
+  const removeScans = async ({ scanIds, fromDate }) => {
     if (isDemo || typeof S?.setDeltaScans !== "function") {
       return {
         ok: false,
@@ -2308,11 +2311,14 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord, onSelec
         deletedRowCount: 0,
       };
     }
-    const result = deleteDeltaScans(savedScans, {
-      scanIds,
-      fromDate,
+    let result;
+    await S.setDeltaScans((current) => {
+      result = deleteDeltaScans(current, {
+        scanIds,
+        fromDate,
+      });
+      return result.ok ? result.scans : current;
     });
-    if (result.ok) S.setDeltaScans(result.scans);
     return result;
   };
 

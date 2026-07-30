@@ -720,7 +720,8 @@ function compactDeltaRowForStorage(row) {
 }
 
 // 保存用スキャンレコードを生成する。
-// スキーマ: { id, storeId, storeName, date("YYYY-MM-DD"), event, machineName, rows, createdAt }
+// スキーマ: { id, storeId, storeName, date("YYYY-MM-DD"), event, machineName, rows,
+//   createdAt, sourceFingerprint?, analysisEngineVersion? }
 export function makeScan({
   id,
   storeId = null,
@@ -729,9 +730,27 @@ export function makeScan({
   event = "",
   machineName = "",
   rows = [],
+  sourceFingerprint = null,
+  analysisEngineVersion = "",
 } = {}) {
   const now = new Date();
   const createdAt = now.toISOString();
+  const fingerprint = sourceFingerprint && typeof sourceFingerprint === "object"
+    ? {
+      algorithm: sourceFingerprint.algorithm === "SHA-256" ? "SHA-256" : "",
+      hash: String(sourceFingerprint.hash || "").toLowerCase(),
+      fileCount: Number(sourceFingerprint.fileCount) || 0,
+      fileHashes: Array.isArray(sourceFingerprint.fileHashes)
+        ? sourceFingerprint.fileHashes.map((value) => String(value).toLowerCase())
+        : [],
+    }
+    : null;
+  const validFingerprint = fingerprint
+    && fingerprint.algorithm === "SHA-256"
+    && /^[a-f0-9]{64}$/u.test(fingerprint.hash)
+    && fingerprint.fileCount > 0
+    && fingerprint.fileHashes.length === fingerprint.fileCount
+    && fingerprint.fileHashes.every((value) => /^[a-f0-9]{64}$/u.test(value));
   // 既定日はローカル日付にする（toISOString は UTC のため 0:00〜9:00 JST に前日となる）
   const day = typeof date === "string" && date ? date : toLocalDay(now);
   return {
@@ -743,11 +762,36 @@ export function makeScan({
     machineName: machineName || "",
     rows: Array.isArray(rows) ? rows.map(compactDeltaRowForStorage) : [],
     createdAt,
+    ...(validFingerprint ? { sourceFingerprint: fingerprint } : {}),
+    ...(analysisEngineVersion ? { analysisEngineVersion: String(analysisEngineVersion) } : {}),
   };
 }
 
-// スキャンの保持ポリシー。localStorage（実質5MB）の肥大化を防ぐため、
-// 保存時に古いスキャンを剪定する。90日 or 300件を超えた分は古い順に削除。
+export function appendScanWithoutLoss(list, scan) {
+  // 壊れた旧要素が混ざっていても、通常保存が既存配列を勝手に掃除しないようそのまま保持する。
+  const scans = Array.isArray(list) ? [...list] : [];
+  if (!scan || typeof scan !== "object" || scan.id == null || String(scan.id) === "") {
+    return { status: "invalid", scans, existing: null };
+  }
+
+  const sameId = scans.find((current) => String(current?.id) === String(scan.id));
+  if (sameId) {
+    return { status: "id-conflict", scans, existing: sameId };
+  }
+
+  const fingerprint = String(scan?.sourceFingerprint?.hash || "").toLowerCase();
+  if (/^[a-f0-9]{64}$/u.test(fingerprint)) {
+    const duplicate = scans.find((current) => (
+      String(current?.sourceFingerprint?.hash || "").toLowerCase() === fingerprint
+    ));
+    if (duplicate) return { status: "duplicate", scans, existing: duplicate };
+  }
+
+  return { status: "saved", scans: [...scans, scan], existing: null };
+}
+
+// 旧保存データとの互換・明示的な手動整理用に残す。通常保存では呼び出さない。
+// 自動適用すると古い記録が消えるため、appendScanWithoutLossとは組み合わせない。
 export const SCAN_RETENTION = Object.freeze({ maxAgeDays: 90, maxCount: 300 });
 
 // スキャン一覧を保持ポリシーで剪定した新しい配列を返す（元配列は変更しない）。

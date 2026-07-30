@@ -188,7 +188,7 @@ class ErrorBoundary extends React.Component {
             ) : (
               <>
                 <div style={{ padding: 12, marginBottom: 12, borderRadius: 12, background: 'color-mix(in srgb, var(--red) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--red) 45%, transparent)', color: 'var(--text)', fontSize: 12, lineHeight: 1.7 }}>
-                  全実戦記録・設定・保存済み履歴が削除され、元に戻せません。バックアップを書き出してからのリセットを推奨します。
+                  実戦記録・設定・保存済み履歴を初期化します。Windowsから届いた解析原本は削除しません。バックアップを書き出してからのリセットを推奨します。
                 </div>
                 <button disabled={busy} onClick={() => this.resetAllData({ backupFirst: true })} style={{
                   width: '100%', minHeight: 50, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12,
@@ -197,7 +197,7 @@ class ErrorBoundary extends React.Component {
                 <button disabled={busy} onClick={() => this.resetAllData()} style={{
                   width: '100%', minHeight: 46, background: 'transparent', color: 'var(--red)', border: '1px solid var(--red)', borderRadius: 12,
                   padding: '10px 18px', fontSize: 13, fontWeight: 800, cursor: 'pointer', marginBottom: 8
-                }}>バックアップせず全データを削除</button>
+                }}>バックアップせず実戦記録・設定をリセット</button>
                 <button disabled={busy} onClick={() => this.setState({ confirmReset: false, recoveryMessage: "" })} style={{
                   width: '100%', minHeight: 42, background: 'transparent', color: 'var(--sub-hi)', border: 'none', borderRadius: 12,
                   fontSize: 13, fontWeight: 700, cursor: 'pointer'
