@@ -1,7 +1,9 @@
 // A short trace is never accepted from a single permissive pixel threshold.
-// Promotion requires exact agreement across conservative threshold profiles,
-// plus independent table/graph identity, order, and max-payout evidence. Any
-// missing or conflicting signal leaves the original review result unchanged.
+// Normal promotion requires exact agreement across conservative profiles and
+// independent table/graph evidence. One user-approved near-zero approximation
+// exists for an exceptionally narrow low-activity signature; every listed
+// graph, table, identity, and order condition must match or the slot stays in
+// review.
 
 const SAFE_SHORT_SERIES_REASONS = new Set([
   "short-series",
@@ -16,6 +18,28 @@ const TRUSTED_NUMBER_MATCH_TYPES = new Set([
 const TRUSTED_NUMBER_MATCHED_BY = new Set([
   "num",
   "num+max",
+]);
+
+const NEAR_ZERO_PROFILE_NAMES = Object.freeze([
+  "strict",
+  "standard",
+  "jpeg-tolerant",
+  "faint",
+]);
+
+const NEAR_ZERO_ESTIMATED_VALUE = -500;
+const NEAR_ZERO_MIN_PROFILE_VALUE = -1500;
+const NEAR_ZERO_MAX_PROFILE_VALUE = -500;
+const NEAR_ZERO_MAX_PROFILE_SPAN = 13;
+const NEAR_ZERO_MAX_PROFILE_SPAN_RATIO = 0.04;
+const NEAR_ZERO_MAX_ENDPOINT_DISTANCE_PX = 7;
+const NEAR_ZERO_MIN_ENDPOINT_GRID_RATIO = 0.08;
+const NEAR_ZERO_MAX_ENDPOINT_GRID_RATIO = 0.16;
+const NEAR_ZERO_MAX_PAYOUT = 10;
+const NEAR_ZERO_MAX_STARTS = 100;
+const NEAR_ZERO_ALLOWED_EVIDENCE_REASONS = new Set([
+  "short-series-threshold-value-disagreement",
+  "short-series-primary-value-disagreement",
 ]);
 
 function normalizeMachineNumber(value) {
@@ -278,6 +302,334 @@ function validateOrderEvidence(slots, graphIndex, matchByGraphIndex) {
   };
 }
 
+function validateNearZeroGraphEvidence(slot) {
+  const reasons = [];
+  const slotReasons = Array.isArray(slot?.reasonCodes) ? slot.reasonCodes : [];
+  const evidence = slot?.shortSeriesEvidence;
+  const attempts = Array.isArray(evidence?.attempts) ? evidence.attempts : [];
+  const calibration = slot?.calibration;
+  const panelWidth = Number(slot?.bbox?.width);
+  const zeroY = Number(calibration?.zeroY);
+  const plotTopY = Number(calibration?.plotTopY);
+  const plotBottomY = Number(calibration?.plotBottomY);
+  const gridSpacing = Number(calibration?.gridSpacing);
+  const endpointLocalY = Number(evidence?.endpointLocalY);
+  const profileNames = attempts.map((attempt) => attempt?.profile);
+  const expectedProfilesPresent = attempts.length === NEAR_ZERO_PROFILE_NAMES.length
+    && new Set(profileNames).size === NEAR_ZERO_PROFILE_NAMES.length
+    && NEAR_ZERO_PROFILE_NAMES.every((name) => profileNames.includes(name));
+  const attemptValues = attempts.map((attempt) => Number(attempt?.roundedValue));
+  const attemptValueSpread = attemptValues.every(Number.isFinite)
+    ? Math.max(...attemptValues) - Math.min(...attemptValues)
+    : null;
+  const allAttemptValuesNearZeroNegative = attemptValues.length === NEAR_ZERO_PROFILE_NAMES.length
+    && attemptValues.every((value) => (
+      Number.isFinite(value)
+      && value >= NEAR_ZERO_MIN_PROFILE_VALUE
+      && value <= NEAR_ZERO_MAX_PROFILE_VALUE
+    ));
+  const primaryValue = Number(slot?.val);
+  const attemptEndpointDistances = attempts.map(
+    (attempt) => Number(attempt?.endpointLocalY) - zeroY,
+  );
+  const attemptEndpointGridRatios = attemptEndpointDistances.map(
+    (distance) => distance / gridSpacing,
+  );
+  const allAttemptEndpointsNearZeroBelow = Number.isFinite(zeroY)
+    && Number.isFinite(gridSpacing)
+    && gridSpacing > 0
+    && attemptEndpointDistances.length === NEAR_ZERO_PROFILE_NAMES.length
+    && attemptEndpointDistances.every((distance, index) => (
+      Number.isFinite(distance)
+      && distance > 0
+      && distance <= NEAR_ZERO_MAX_ENDPOINT_DISTANCE_PX
+      && Number.isFinite(attemptEndpointGridRatios[index])
+      && attemptEndpointGridRatios[index] >= NEAR_ZERO_MIN_ENDPOINT_GRID_RATIO
+      && attemptEndpointGridRatios[index] <= NEAR_ZERO_MAX_ENDPOINT_GRID_RATIO
+    ));
+  const attemptSpans = attempts.map((attempt) => Number(attempt?.span));
+  const allAttemptComponentsShort = attempts.length === NEAR_ZERO_PROFILE_NAMES.length
+    && Number.isFinite(panelWidth)
+    && panelWidth > 0
+    && attempts.every((attempt) => (
+      Number.isFinite(Number(attempt?.span))
+      && Number(attempt.span) >= 1
+      && Number(attempt.span) <= NEAR_ZERO_MAX_PROFILE_SPAN
+      && Number(attempt.span) / panelWidth <= NEAR_ZERO_MAX_PROFILE_SPAN_RATIO
+      && Number.isFinite(Number(attempt?.bounds?.minX))
+      && Number.isFinite(Number(attempt?.bounds?.maxX))
+    ));
+  const endpointBoundaryMargin = Number.isFinite(gridSpacing)
+    ? Math.max(2.5, gridSpacing * 0.08)
+    : null;
+
+  addReason(reasons, slot?.status !== "review", "near-zero-not-review");
+  addReason(reasons, !slotReasons.includes("short-series"), "near-zero-short-series-reason-missing");
+  addReason(
+    reasons,
+    slotReasons.some((reason) => !SAFE_SHORT_SERIES_REASONS.has(reason)),
+    "near-zero-has-unsafe-graph-reason",
+  );
+  addReason(reasons, !Number.isFinite(primaryValue), "near-zero-primary-value-missing");
+  addReason(
+    reasons,
+    !Number.isFinite(primaryValue)
+      || primaryValue < NEAR_ZERO_MIN_PROFILE_VALUE
+      || primaryValue > NEAR_ZERO_MAX_PROFILE_VALUE,
+    "near-zero-primary-value-outside-negative-band",
+  );
+  addReason(reasons, Number(slot?.confidence) < 0.8, "near-zero-confidence-too-low");
+  addReason(reasons, calibration?.source !== "panel", "near-zero-panel-calibration-missing");
+  addReason(reasons, Number(calibration?.quality) < 0.95, "near-zero-calibration-too-low");
+  addReason(
+    reasons,
+    !Number.isInteger(evidence?.profileCount)
+      || evidence.profileCount !== NEAR_ZERO_PROFILE_NAMES.length
+      || evidence.requiredProfileCount !== NEAR_ZERO_PROFILE_NAMES.length
+      || !expectedProfilesPresent,
+    "near-zero-four-profiles-missing",
+  );
+  addReason(
+    reasons,
+    !allAttemptValuesNearZeroNegative,
+    "near-zero-profile-values-not-all-negative-near-zero",
+  );
+  addReason(
+    reasons,
+    !Number.isFinite(Number(evidence?.roundedValueSpread))
+      || Number(evidence.roundedValueSpread) !== 500
+      || !Number.isFinite(Number(evidence?.roundedValue))
+      || !Number.isFinite(primaryValue)
+      || Math.abs(Number(evidence.roundedValue) - primaryValue) !== 500
+      || attemptValueSpread !== 500,
+    "near-zero-value-spread-too-large",
+  );
+  addReason(
+    reasons,
+    evidence?.accepted !== false
+      || evidence?.primaryValueAgrees !== false
+      || !Array.isArray(evidence?.reasonCodes)
+      || evidence.reasonCodes.length !== NEAR_ZERO_ALLOWED_EVIDENCE_REASONS.size
+      || [...NEAR_ZERO_ALLOWED_EVIDENCE_REASONS].some(
+        (reason) => !evidence.reasonCodes.includes(reason),
+      )
+      || evidence.reasonCodes.some(
+        (reason) => !NEAR_ZERO_ALLOWED_EVIDENCE_REASONS.has(reason),
+      ),
+    "near-zero-has-unsafe-consensus-reason",
+  );
+  addReason(
+    reasons,
+    !allAttemptEndpointsNearZeroBelow,
+    "near-zero-profile-endpoints-not-below-zero-nearby",
+  );
+  addReason(
+    reasons,
+    !allAttemptComponentsShort,
+    "near-zero-profile-components-not-extremely-short",
+  );
+  addReason(
+    reasons,
+    !Number.isFinite(Number(evidence?.endpointSpread))
+      || !Number.isFinite(Number(evidence?.maximumEndpointSpread))
+      || Number(evidence.endpointSpread) > Number(evidence.maximumEndpointSpread),
+    "near-zero-endpoint-disagreement",
+  );
+  addReason(
+    reasons,
+    Number(evidence?.endpointSpread) > 1.5,
+    "near-zero-endpoint-spread-too-large",
+  );
+  addReason(
+    reasons,
+    !Number.isFinite(Number(evidence?.startSpread))
+      || !Number.isFinite(Number(evidence?.endSpread))
+      || Number(evidence.startSpread) > 2
+      || Number(evidence.endSpread) > 3
+      || !attemptSpans.every(Number.isFinite)
+      || Math.max(...attemptSpans) - Math.min(...attemptSpans) > 2,
+    "near-zero-component-disagreement",
+  );
+  addReason(
+    reasons,
+    !Number.isFinite(endpointLocalY)
+      || !Number.isFinite(zeroY)
+      || endpointLocalY <= zeroY
+      || endpointLocalY - zeroY > NEAR_ZERO_MAX_ENDPOINT_DISTANCE_PX,
+    "near-zero-consensus-endpoint-not-below-zero-nearby",
+  );
+  addReason(
+    reasons,
+    slot?.boundaryObservation !== null && slot?.boundaryObservation !== undefined,
+    "near-zero-boundary-observation",
+  );
+  addReason(
+    reasons,
+    slot?.valueConstraint !== null && slot?.valueConstraint !== undefined,
+    "near-zero-value-constraint",
+  );
+  addReason(
+    reasons,
+    !Number.isFinite(plotTopY)
+      || !Number.isFinite(plotBottomY)
+      || !Number.isFinite(endpointBoundaryMargin)
+      || endpointLocalY - plotTopY <= endpointBoundaryMargin
+      || plotBottomY - endpointLocalY <= endpointBoundaryMargin,
+    "near-zero-endpoint-near-panel-boundary",
+  );
+
+  return {
+    accepted: reasons.length === 0,
+    reasonCodes: reasons,
+    primaryValue: Number.isFinite(primaryValue) ? primaryValue : null,
+    profileValues: attemptValues.every(Number.isFinite) ? attemptValues : [],
+    maximumProfileSpanRatio: allAttemptComponentsShort
+      ? Math.max(...attemptSpans) / panelWidth
+      : null,
+    maximumProfileSpan: attempts.length
+      ? Math.max(...attempts.map((attempt) => Number(attempt?.span)))
+      : null,
+    maximumEndpointDistancePx: attemptEndpointDistances.every(Number.isFinite)
+      ? Math.max(...attemptEndpointDistances)
+      : null,
+  };
+}
+
+function validateNearZeroTableEvidence(match) {
+  const reasons = [];
+  const tableRow = match?.tableRow;
+  const cumulativeStarts = finiteNonNegativeInteger(tableRow?.cumulativeStarts);
+  const normalSpins = finiteNonNegativeInteger(tableRow?.normalSpins);
+  const firstHitCount = finiteNonNegativeInteger(tableRow?.firstHitCount);
+  const maxPayout = finiteNonNegativeInteger(tableRow?.maxPayout);
+  const totalStarts = finiteNonNegativeInteger(tableRow?.totalStarts);
+
+  addReason(
+    reasons,
+    cumulativeStarts === null
+      || cumulativeStarts < 1
+      || cumulativeStarts > NEAR_ZERO_MAX_STARTS,
+    "near-zero-table-cumulative-starts-too-large",
+  );
+  addReason(
+    reasons,
+    normalSpins === null
+      || normalSpins < 1
+      || normalSpins > NEAR_ZERO_MAX_STARTS,
+    "near-zero-table-normal-spins-too-large",
+  );
+  addReason(
+    reasons,
+    cumulativeStarts === null
+      || normalSpins === null
+      || cumulativeStarts !== normalSpins,
+    "near-zero-table-start-counts-differ",
+  );
+  addReason(
+    reasons,
+    tableRow?.fieldAccepted?.cumulativeStarts !== true
+      || tableRow?.fieldAccepted?.normalSpins !== true
+      || tableRow?.fieldAccepted?.firstHitCount !== true
+      || tableRow?.fieldAccepted?.totalStarts !== true
+      || tableRow?.fieldAccepted?.maxPayout !== true,
+    "near-zero-table-start-counts-untrusted",
+  );
+  addReason(
+    reasons,
+    firstHitCount !== 0,
+    "near-zero-table-first-hit-not-zero",
+  );
+  addReason(
+    reasons,
+    tableRow?.fieldAccepted?.firstHitCount !== true,
+    "near-zero-table-first-hit-untrusted",
+  );
+  addReason(
+    reasons,
+    totalStarts !== 0,
+    "near-zero-table-total-starts-not-zero",
+  );
+  addReason(
+    reasons,
+    maxPayout !== NEAR_ZERO_MAX_PAYOUT,
+    "near-zero-table-max-payout-not-minimum",
+  );
+  addReason(
+    reasons,
+    tableRow?.maxPayoutAccepted !== true
+      || tableRow?.fieldAccepted?.maxPayout !== true,
+    "near-zero-table-max-payout-untrusted",
+  );
+
+  return {
+    accepted: reasons.length === 0,
+    reasonCodes: reasons,
+    cumulativeStarts,
+    normalSpins,
+    firstHitCount,
+    totalStarts,
+    maxPayout,
+  };
+}
+
+export function validateNearZeroShortSeriesEstimate(
+  slots,
+  graphIndex,
+  jointMatch,
+) {
+  const list = Array.isArray(slots) ? slots : [];
+  const matches = Array.isArray(jointMatch?.matches) ? jointMatch.matches : [];
+  const matchByGraphIndex = new Map(
+    matches
+      .filter((match) => Number.isInteger(match?.graphIndex))
+      .map((match) => [match.graphIndex, match]),
+  );
+  const slot = list[graphIndex];
+  const match = matchByGraphIndex.get(graphIndex);
+  const graph = validateNearZeroGraphEvidence(slot);
+  const machine = validateMachineEvidence(slot, match);
+  const payout = validateMaxPayoutEvidence(slot, match);
+  const table = validateNearZeroTableEvidence(match);
+  const order = validateOrderEvidence(list, graphIndex, matchByGraphIndex);
+  const reasonCodes = [...new Set([
+    ...graph.reasonCodes,
+    ...machine.reasonCodes,
+    ...payout.reasonCodes,
+    ...table.reasonCodes,
+    ...order.reasonCodes,
+  ])];
+
+  return {
+    accepted: reasonCodes.length === 0,
+    reasonCodes,
+    estimated: true,
+    machineNumber: machine.machineNumber,
+    originalValue: Number.isFinite(Number(slot?.val)) ? Number(slot.val) : null,
+    validatedValue: NEAR_ZERO_ESTIMATED_VALUE,
+    cumulativeStarts: table.cumulativeStarts,
+    normalSpins: table.normalSpins,
+    firstHitCount: table.firstHitCount,
+    totalStarts: table.totalStarts,
+    maxPayout: table.maxPayout,
+    maxPayoutEvidenceMode: payout.evidenceMode,
+    maxPayoutBestCandidateScore: payout.bestCandidateScore,
+    maxPayoutCandidateGap: payout.candidateGap,
+    previousMachineNumber: order.previousNumber,
+    nextMachineNumber: order.nextNumber,
+    profileValues: graph.profileValues,
+    maximumProfileSpan: graph.maximumProfileSpan,
+    maximumProfileSpanRatio: graph.maximumProfileSpanRatio,
+    maximumEndpointDistancePx: graph.maximumEndpointDistancePx,
+    estimationReasonCodes: [
+      "four-profiles-negative-and-near-zero",
+      "extremely-short-component-consensus",
+      "exact-machine-number-and-order",
+      "zero-first-hit-and-low-max-payout",
+    ],
+    validationSource: "user-approved-near-zero-low-activity-approximation",
+  };
+}
+
 export function validateShortSeriesSlot(
   slots,
   graphIndex,
@@ -328,9 +680,33 @@ export function applySafeShortSeriesValidation(slots, jointMatch) {
 
     const validation = validateShortSeriesSlot(list, graphIndex, jointMatch);
     if (!validation.accepted) {
+      const nearZeroEstimate = validateNearZeroShortSeriesEstimate(
+        list,
+        graphIndex,
+        jointMatch,
+      );
+      if (nearZeroEstimate.accepted) {
+        return {
+          ...slot,
+          val: nearZeroEstimate.validatedValue,
+          status: "ok",
+          estimated: true,
+          reasonCodes: slot.reasonCodes.filter(
+            (reason) => !SAFE_SHORT_SERIES_REASONS.has(reason),
+          ),
+          machineNumber: nearZeroEstimate.machineNumber,
+          shortSeriesValidation: {
+            ...nearZeroEstimate,
+            standardValidationReasonCodes: validation.reasonCodes,
+          },
+        };
+      }
       return {
         ...slot,
-        shortSeriesValidation: validation,
+        shortSeriesValidation: {
+          ...validation,
+          nearZeroEstimate,
+        },
       };
     }
     return {

@@ -55,6 +55,12 @@ function syntheticSafetyCase() {
       plotTopY: 20,
       plotBottomY: 290,
     },
+    bbox: {
+      x: 0,
+      y: 0,
+      width: 330,
+      height: 310,
+    },
     shortSeriesEvidence: {
       accepted: true,
       profileCount: 4,
@@ -102,7 +108,14 @@ function syntheticSafetyCase() {
       numAccepted: true,
       maxPayout: index === 1 ? 7777 : 9001 + index,
       maxPayoutAccepted: true,
-      fieldAccepted: { maxPayout: true },
+      fieldAccepted: {
+        cumulativeStarts: true,
+        normalSpins: true,
+        firstHitCount: true,
+        totalStarts: true,
+        maxPayout: true,
+      },
+      structuredRowTrusted: true,
       sourceIndex: 0,
       rowIndex: index,
       rowId: `table:${index}`,
@@ -132,6 +145,320 @@ test("合成3台: 四つの閾値・台番号順・表の最大出玉が一致�
     "table-corroborated-best-candidate",
   );
 });
+
+function syntheticNearZeroCase() {
+  const safetyCase = syntheticSafetyCase();
+  const slot = safetyCase.slots[1];
+  const tableRow = safetyCase.jointMatch.matches[1].tableRow;
+  slot.val = -1000;
+  slot.calibration.zeroY = 100;
+  slot.shortSeriesEvidence = {
+    accepted: false,
+    profileCount: 4,
+    requiredProfileCount: 4,
+    roundedValue: -1500,
+    thresholdRoundedValues: [-1000, -1500],
+    roundedValueSpread: 500,
+    endpointLocalY: 106,
+    endpointSpread: 1,
+    maximumEndpointSpread: 2.25,
+    startSpread: 1,
+    endSpread: 1,
+    primaryRoundedValue: -1000,
+    primaryValueAgrees: false,
+    reasonCodes: [
+      "short-series-threshold-value-disagreement",
+      "short-series-primary-value-disagreement",
+    ],
+    attempts: [
+      {
+        profile: "strict",
+        endpointLocalY: 105.5,
+        roundedValue: -1000,
+        span: 9,
+        bounds: { minX: 30, maxX: 38 },
+      },
+      {
+        profile: "standard",
+        endpointLocalY: 106,
+        roundedValue: -1500,
+        span: 10,
+        bounds: { minX: 30, maxX: 39 },
+      },
+      {
+        profile: "jpeg-tolerant",
+        endpointLocalY: 106,
+        roundedValue: -1500,
+        span: 10,
+        bounds: { minX: 30, maxX: 39 },
+      },
+      {
+        profile: "faint",
+        endpointLocalY: 106.5,
+        roundedValue: -1500,
+        span: 11,
+        bounds: { minX: 29, maxX: 39 },
+      },
+    ],
+  };
+  slot.graphMaxPayout = {
+    accepted: false,
+    value: 10,
+    candidates: [
+      { value: 10, score: 0.1 },
+      { value: 20, score: 0.18 },
+    ],
+  };
+  tableRow.cumulativeStarts = 50;
+  tableRow.normalSpins = 50;
+  tableRow.firstHitCount = 0;
+  tableRow.totalStarts = 0;
+  tableRow.maxPayout = 10;
+  tableRow.maxPayoutAccepted = true;
+
+  return safetyCase;
+}
+
+test("near-zero estimate: a four-profile, zero-hit, low-activity trace is explicitly marked as estimated -500", () => {
+  const { slots, jointMatch } = syntheticNearZeroCase();
+  const resolved = applySafeShortSeriesValidation(slots, jointMatch);
+  const result = resolved[1];
+
+  assert.equal(result.status, "ok");
+  assert.equal(result.val, -500);
+  assert.equal(result.estimated, true);
+  assert.deepEqual(result.reasonCodes, []);
+  assert.equal(result.shortSeriesValidation.accepted, true);
+  assert.equal(result.shortSeriesValidation.estimated, true);
+  assert.equal(result.shortSeriesValidation.originalValue, -1000);
+  assert.equal(result.shortSeriesValidation.validatedValue, -500);
+  assert.equal(result.shortSeriesValidation.cumulativeStarts, 50);
+  assert.equal(result.shortSeriesValidation.normalSpins, 50);
+  assert.equal(result.shortSeriesValidation.firstHitCount, 0);
+  assert.equal(result.shortSeriesValidation.totalStarts, 0);
+  assert.equal(result.shortSeriesValidation.maxPayout, 10);
+  assert.equal(
+    result.shortSeriesValidation.validationSource,
+    "user-approved-near-zero-low-activity-approximation",
+  );
+  assert.ok(
+    result.shortSeriesValidation.standardValidationReasonCodes.includes(
+      "short-series-primary-value-conflict",
+    ),
+  );
+  assert.deepEqual(
+    result.shortSeriesValidation.estimationReasonCodes,
+    [
+      "four-profiles-negative-and-near-zero",
+      "extremely-short-component-consensus",
+      "exact-machine-number-and-order",
+      "zero-first-hit-and-low-max-payout",
+    ],
+  );
+});
+
+const NEAR_ZERO_FAIL_CLOSED_CASES = Object.freeze([
+  {
+    name: "minus 2000 is outside the narrowly approved band",
+    reason: "near-zero-primary-value-outside-negative-band",
+    mutate({ slots }) {
+      slots[1].val = -2000;
+      slots[1].shortSeriesEvidence.attempts.forEach((attempt) => {
+        attempt.roundedValue = -2000;
+      });
+    },
+  },
+  {
+    name: "a mixed positive and negative profile is not an all-negative observation",
+    reason: "near-zero-profile-values-not-all-negative-near-zero",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.attempts[3].roundedValue = 500;
+    },
+  },
+  {
+    name: "a machine with a first hit is not treated as a near-zero idle trace",
+    reason: "near-zero-table-first-hit-not-zero",
+    mutate({ jointMatch }) {
+      jointMatch.matches[1].tableRow.firstHitCount = 1;
+    },
+  },
+  {
+    name: "a payout other than the minimum observed value is not treated as near zero",
+    reason: "near-zero-table-max-payout-not-minimum",
+    mutate({ slots, jointMatch }) {
+      slots[1].graphMaxPayout.value = 21;
+      slots[1].graphMaxPayout.candidates[0].value = 21;
+      jointMatch.matches[1].tableRow.maxPayout = 21;
+    },
+  },
+  {
+    name: "more than 100 cumulative starts is outside the narrow exception",
+    reason: "near-zero-table-cumulative-starts-too-large",
+    mutate({ jointMatch }) {
+      jointMatch.matches[1].tableRow.cumulativeStarts = 101;
+    },
+  },
+  {
+    name: "more than 100 normal spins is outside the narrow exception",
+    reason: "near-zero-table-normal-spins-too-large",
+    mutate({ jointMatch }) {
+      jointMatch.matches[1].tableRow.normalSpins = 101;
+    },
+  },
+  {
+    name: "cumulative starts and normal spins differ",
+    reason: "near-zero-table-start-counts-differ",
+    mutate({ jointMatch }) {
+      jointMatch.matches[1].tableRow.normalSpins = 49;
+    },
+  },
+  {
+    name: "total starts is not zero",
+    reason: "near-zero-table-total-starts-not-zero",
+    mutate({ jointMatch }) {
+      jointMatch.matches[1].tableRow.totalStarts = 1;
+    },
+  },
+  {
+    name: "a related table field is not independently accepted",
+    reason: "near-zero-table-start-counts-untrusted",
+    mutate({ jointMatch }) {
+      jointMatch.matches[1].tableRow.fieldAccepted.normalSpins = false;
+    },
+  },
+  {
+    name: "panel calibration quality is below 0.95",
+    reason: "near-zero-calibration-too-low",
+    mutate({ slots }) {
+      slots[1].calibration.quality = 0.949;
+    },
+  },
+  {
+    name: "the component occupies more than four percent of the panel",
+    reason: "near-zero-profile-components-not-extremely-short",
+    mutate({ slots }) {
+      slots[1].bbox.width = 250;
+    },
+  },
+  {
+    name: "profile spans disagree by more than two pixels",
+    reason: "near-zero-component-disagreement",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.attempts[3].span = 11;
+      slots[1].shortSeriesEvidence.attempts[0].span = 8;
+    },
+  },
+  {
+    name: "the endpoint is too close to zero relative to grid spacing",
+    reason: "near-zero-profile-endpoints-not-below-zero-nearby",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.attempts[0].endpointLocalY = 103;
+    },
+  },
+  {
+    name: "the profile value spread is more than 500",
+    reason: "near-zero-value-spread-too-large",
+    mutate({ slots }) {
+      slots[1].val = -500;
+      slots[1].shortSeriesEvidence.roundedValue = -1500;
+      slots[1].shortSeriesEvidence.roundedValueSpread = 1000;
+      slots[1].shortSeriesEvidence.attempts[0].roundedValue = -500;
+      slots[1].shortSeriesEvidence.attempts[1].roundedValue = -1500;
+    },
+  },
+  {
+    name: "the value spread is zero instead of the observed 500 boundary disagreement",
+    reason: "near-zero-value-spread-too-large",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.roundedValueSpread = 0;
+    },
+  },
+  {
+    name: "the consensus and primary values do not differ by exactly 500",
+    reason: "near-zero-value-spread-too-large",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.roundedValue = -1000;
+    },
+  },
+  {
+    name: "the four attempt values do not span exactly 500",
+    reason: "near-zero-value-spread-too-large",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.attempts.forEach((attempt) => {
+        attempt.roundedValue = -1000;
+      });
+    },
+  },
+  {
+    name: "the consensus engine already marked the evidence accepted",
+    reason: "near-zero-has-unsafe-consensus-reason",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.accepted = true;
+    },
+  },
+  {
+    name: "the primary value was already marked as agreeing",
+    reason: "near-zero-has-unsafe-consensus-reason",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.primaryValueAgrees = true;
+    },
+  },
+  {
+    name: "the two expected consensus disagreement reasons are not both present",
+    reason: "near-zero-has-unsafe-consensus-reason",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.reasonCodes = [
+        "short-series-threshold-value-disagreement",
+      ];
+    },
+  },
+  {
+    name: "a 14-pixel component is not extremely short",
+    reason: "near-zero-profile-components-not-extremely-short",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.attempts[3].span = 14;
+      slots[1].shortSeriesEvidence.attempts[3].bounds.maxX = 42;
+    },
+  },
+  {
+    name: "an endpoint more than 7 pixels below zero is not near zero",
+    reason: "near-zero-profile-endpoints-not-below-zero-nearby",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.attempts[3].endpointLocalY = 107.5;
+    },
+  },
+  {
+    name: "all four named threshold profiles are mandatory",
+    reason: "near-zero-four-profiles-missing",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.attempts[3].profile = "standard";
+    },
+  },
+]);
+
+for (const scenario of NEAR_ZERO_FAIL_CLOSED_CASES) {
+  test(`near-zero estimate stays in review when ${scenario.name}`, () => {
+    const safetyCase = syntheticNearZeroCase();
+    scenario.mutate(safetyCase);
+    const originalValue = safetyCase.slots[1].val;
+    const resolved = applySafeShortSeriesValidation(
+      safetyCase.slots,
+      safetyCase.jointMatch,
+    );
+
+    assert.equal(resolved[1].status, "review");
+    assert.equal(resolved[1].val, originalValue);
+    assert.notEqual(resolved[1].estimated, true);
+    assert.ok(
+      resolved[1].shortSeriesValidation.nearZeroEstimate.reasonCodes.includes(
+        scenario.reason,
+      ),
+      `${scenario.reason}: ${JSON.stringify(
+        resolved[1].shortSeriesValidation.nearZeroEstimate.reasonCodes,
+      )}`,
+    );
+  });
+}
 
 const FAIL_CLOSED_CASES = Object.freeze([
   {
