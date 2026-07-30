@@ -146,6 +146,224 @@ test("合成3台: 四つの閾値・台番号順・表の最大出玉が一致�
   );
 });
 
+function syntheticThreeOfFourCase() {
+  const safetyCase = syntheticSafetyCase();
+  const slot = safetyCase.slots[1];
+  slot.shortSeriesEvidence = {
+    accepted: false,
+    profileCount: 4,
+    requiredProfileCount: 4,
+    roundedValue: 2500,
+    thresholdRoundedValues: [2500, 3000],
+    roundedValueSpread: 500,
+    endpointLocalY: 170,
+    endpointSpread: 1,
+    maximumEndpointSpread: 2.25,
+    startSpread: 1,
+    endSpread: 1,
+    primaryRoundedValue: 2500,
+    primaryValueAgrees: true,
+    reasonCodes: [
+      "short-series-threshold-value-disagreement",
+    ],
+    attempts: [
+      {
+        profile: "strict",
+        endpointLocalY: 169.5,
+        roundedValue: 2500,
+        span: 27,
+        bounds: { minX: 14, maxX: 40 },
+      },
+      {
+        profile: "standard",
+        endpointLocalY: 170,
+        roundedValue: 2500,
+        span: 28,
+        bounds: { minX: 14, maxX: 41 },
+      },
+      {
+        profile: "jpeg-tolerant",
+        endpointLocalY: 170,
+        roundedValue: 2500,
+        span: 29,
+        bounds: { minX: 14, maxX: 42 },
+      },
+      {
+        profile: "faint",
+        endpointLocalY: 170.5,
+        roundedValue: 3000,
+        span: 30,
+        bounds: { minX: 13, maxX: 42 },
+      },
+    ],
+  };
+  return safetyCase;
+}
+
+test("3-of-4 rounding consensus: one 500-ball boundary outlier is safely estimated", () => {
+  const { slots, jointMatch } = syntheticThreeOfFourCase();
+  const resolved = applySafeShortSeriesValidation(slots, jointMatch);
+  const result = resolved[1];
+
+  assert.equal(result.status, "ok");
+  assert.equal(result.val, 2500);
+  assert.equal(result.machineNumber, "502");
+  assert.equal(result.estimated, true);
+  assert.deepEqual(result.reasonCodes, []);
+  assert.equal(result.shortSeriesValidation.accepted, true);
+  assert.equal(result.shortSeriesValidation.majorityCount, 3);
+  assert.equal(result.shortSeriesValidation.majorityValue, 2500);
+  assert.equal(result.shortSeriesValidation.componentSpanSpread, 3);
+  assert.deepEqual(
+    result.shortSeriesValidation.profileValues,
+    [2500, 2500, 2500, 3000],
+  );
+  assert.equal(
+    result.shortSeriesValidation.validationSource,
+    "three-of-four-rounded-consensus+joint-number-order+table-max",
+  );
+});
+
+const THREE_OF_FOUR_FAIL_CLOSED_CASES = Object.freeze([
+  {
+    name: "only two profiles share the primary rounded value",
+    reason: "three-of-four-primary-majority-missing",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.attempts[2].roundedValue = 3000;
+    },
+  },
+  {
+    name: "the three-profile majority differs from the primary value",
+    reason: "three-of-four-primary-majority-missing",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.attempts[0].roundedValue = 3000;
+      slots[1].shortSeriesEvidence.attempts[1].roundedValue = 3000;
+      slots[1].shortSeriesEvidence.attempts[2].roundedValue = 3000;
+    },
+  },
+  {
+    name: "one of the four named profiles is duplicated",
+    reason: "three-of-four-named-profiles-missing",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.attempts[3].profile = "standard";
+    },
+  },
+  {
+    name: "the consensus engine reports any additional failure",
+    reason: "three-of-four-has-unsafe-consensus-reason",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.reasonCodes.push(
+        "short-series-endpoint-disagreement",
+      );
+    },
+  },
+  {
+    name: "the four rounded values span more than 500",
+    reason: "three-of-four-rounded-value-spread-too-large",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.attempts[3].roundedValue = 3500;
+      slots[1].shortSeriesEvidence.roundedValueSpread = 1000;
+    },
+  },
+  {
+    name: "the derived endpoint spread exceeds its calibrated limit",
+    reason: "three-of-four-endpoint-disagreement",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.attempts[3].endpointLocalY = 173;
+    },
+  },
+  {
+    name: "the component span spread exceeds the narrow three-pixel exception",
+    reason: "three-of-four-component-disagreement",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.attempts[3].bounds.maxX = 43;
+      slots[1].shortSeriesEvidence.attempts[3].span = 31;
+      slots[1].shortSeriesEvidence.endSpread = 3;
+    },
+  },
+  {
+    name: "a three-pixel span difference has endpoint spread over one pixel",
+    reason: "three-of-four-component-disagreement",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.attempts[3].endpointLocalY = 171;
+      slots[1].shortSeriesEvidence.endpointSpread = 1.5;
+    },
+  },
+  {
+    name: "a reported component span does not match its pixel bounds",
+    reason: "three-of-four-component-disagreement",
+    mutate({ slots }) {
+      slots[1].shortSeriesEvidence.attempts[3].span = 29;
+    },
+  },
+  {
+    name: "the graph has a boundary observation",
+    reason: "three-of-four-boundary-observation",
+    mutate({ slots }) {
+      slots[1].boundaryObservation = { boundary: "bottom" };
+    },
+  },
+  {
+    name: "the graph has a value constraint",
+    reason: "three-of-four-value-constraint",
+    mutate({ slots }) {
+      slots[1].valueConstraint = { maximum: -10000 };
+    },
+  },
+  {
+    name: "confidence falls below the existing short-series threshold",
+    reason: "three-of-four-confidence-too-low",
+    mutate({ slots }) {
+      slots[1].confidence = 0.799;
+    },
+  },
+  {
+    name: "the exact graph/table machine number check fails",
+    reason: "short-series-machine-number-conflict",
+    mutate({ slots }) {
+      slots[1].machineNumberOcr.candidate = "999";
+    },
+  },
+  {
+    name: "the exact graph/table max payout check fails",
+    reason: "short-series-max-payout-conflict",
+    mutate({ jointMatch }) {
+      jointMatch.matches[1].tableRow.maxPayout = 8888;
+    },
+  },
+  {
+    name: "the exact neighboring table order check fails",
+    reason: "short-series-table-order-not-consecutive",
+    mutate({ jointMatch }) {
+      jointMatch.matches[1].tableIndex = 4;
+    },
+  },
+]);
+
+for (const scenario of THREE_OF_FOUR_FAIL_CLOSED_CASES) {
+  test(`3-of-4 rounding consensus stays in review when ${scenario.name}`, () => {
+    const safetyCase = syntheticThreeOfFourCase();
+    scenario.mutate(safetyCase);
+    const resolved = applySafeShortSeriesValidation(
+      safetyCase.slots,
+      safetyCase.jointMatch,
+    );
+    const result = resolved[1];
+
+    assert.equal(result.status, "review");
+    assert.equal(result.val, 2500);
+    assert.notEqual(result.estimated, true);
+    assert.ok(
+      result.shortSeriesValidation.threeOfFourConsensus.reasonCodes.includes(
+        scenario.reason,
+      ),
+      `${scenario.reason}: ${JSON.stringify(
+        result.shortSeriesValidation.threeOfFourConsensus.reasonCodes,
+      )}`,
+    );
+  });
+}
+
 function syntheticNearZeroCase() {
   const safetyCase = syntheticSafetyCase();
   const slot = safetyCase.slots[1];

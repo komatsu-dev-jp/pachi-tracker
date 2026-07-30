@@ -160,6 +160,71 @@ test("目盛りを読めない枠だけ、同一画像の良好枠中央値で�
   assert.equal(diagnostics.calibration.fallback, 1);
 });
 
+test("フルページの見出し・操作欄を除外し、短線・境界切れ・同形fallback枠を維持する", () => {
+  const image = createRgba(260, 410);
+
+  // サイトの見出しとフッターを模した全幅の暗い領域。
+  fillRect(image, 0, 0, 130, 32, PANEL);
+  fillRect(image, 130, 0, 130, 32, PANEL);
+  fillRect(image, 0, 304, 130, 96, PANEL);
+  fillRect(image, 130, 304, 130, 96, PANEL);
+
+  drawPanel(image, {
+    x: 10,
+    y: 55,
+    zeroY: 50,
+    spacing: 12,
+    series: [[6, 50], [80, 38]],
+  });
+  drawPanel(image, {
+    x: 140,
+    y: 55,
+    zeroY: 50,
+    spacing: 12,
+    // 短い折れ線でも、本物のグラフ枠なら残す。
+    series: [[6, 50], [14, 49]],
+  });
+  drawPanel(image, {
+    x: 10,
+    y: 180,
+    // 目盛りを読めない枠も、本物と同じ横幅ならfallback用に残す。
+    series: [[6, 50], [80, 38]],
+  });
+  drawPanel(image, {
+    x: 140,
+    y: 180,
+    zeroY: 50,
+    spacing: 12,
+    // 終点がグラフ上端で切れた枠も残す。
+    series: [[6, 50], [45, 25], [80, 14]],
+  });
+
+  const { results, logs, diagnostics } = runAnalysis(
+    image.data,
+    image.width,
+    image.height,
+  );
+
+  assert.equal(results.length, 4);
+  assert.deepEqual(
+    results.map(({ row, column }) => [row, column]),
+    [[0, 0], [0, 1], [1, 0], [1, 1]],
+  );
+  assert.equal(results[1].status, "review");
+  assert.ok(results[1].reasonCodes.includes("short-series"));
+  assert.equal(results[2].calibration.source, "image-median");
+  assert.ok(results[2].reasonCodes.includes("fallback-calibration"));
+  assert.equal(results[3].status, "review");
+  assert.ok(results[3].reasonCodes.includes("endpoint-clipped-top"));
+  assert.ok(logs.includes("ページ見出し・操作欄候補を4枠除外"));
+  assert.deepEqual(diagnostics.detection, {
+    left: 2,
+    right: 2,
+    panels: 4,
+    rows: 2,
+  });
+});
+
 test("画像内に良好な校正元がなければ固定位置を推測しない", () => {
   const image = createRgba(260, 120);
   drawPanel(image, {

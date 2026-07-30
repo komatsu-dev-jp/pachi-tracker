@@ -10,6 +10,20 @@ const MAX_OCR_HINT_BYTES = 16 * 1024 * 1024;
 const MAX_OCR_HINT_SUMMARY_BYTES = 256 * 1024;
 const ACCEPTED_KINDS = new Set(["image", "pdf", "csv"]);
 const SHA256_HEX = /^[a-f0-9]{64}$/u;
+const BOUNDED_DELTA_APPROVAL_SCHEMA =
+  "site7-push-bridge.bounded-delta-approval";
+const BOUNDED_DELTA_APPROVAL_METHOD =
+  "explicit-user-confirmation";
+const BOUNDED_DELTA_APPROVAL_KEYS = new Set([
+  "schema",
+  "version",
+  "jobId",
+  "aggregateFingerprint",
+  "machineNumber",
+  "value",
+  "approvedAt",
+  "approvalMethod",
+]);
 
 export const AUTO_WORKER_POLICY = Object.freeze({
   localhostOnly: true,
@@ -123,6 +137,59 @@ function normalizeContext(rawContext) {
     normalized.customMachines = context.customMachines.slice(0, 2_000);
   }
   return normalized;
+}
+
+function normalizeBoundedDeltaApprovals(
+  rawApprovals,
+  { jobId, aggregateFingerprint } = {},
+) {
+  if (rawApprovals === undefined) return [];
+  if (
+    !Array.isArray(rawApprovals)
+    || rawApprovals.length < 1
+    || rawApprovals.length > 16
+    || !SHA256_HEX.test(String(aggregateFingerprint || ""))
+  ) {
+    throw new Error("bounded delta approvals are invalid");
+  }
+  const seen = new Set();
+  return rawApprovals.map((approval) => {
+    if (
+      !approval
+      || typeof approval !== "object"
+      || Array.isArray(approval)
+      || Object.keys(approval).some((key) => !BOUNDED_DELTA_APPROVAL_KEYS.has(key))
+      || approval.schema !== BOUNDED_DELTA_APPROVAL_SCHEMA
+      || approval.version !== 1
+      || approval.jobId !== jobId
+      || approval.aggregateFingerprint !== aggregateFingerprint
+      || !Number.isSafeInteger(approval.machineNumber)
+      || approval.machineNumber < 1
+      || approval.machineNumber > 999_999
+      || seen.has(approval.machineNumber)
+      || !Number.isSafeInteger(approval.value)
+      || approval.value < -10_000_000
+      || approval.value > 10_000_000
+      || approval.value % 500 !== 0
+      || typeof approval.approvedAt !== "string"
+      || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u.test(approval.approvedAt)
+      || !Number.isFinite(Date.parse(approval.approvedAt))
+      || approval.approvalMethod !== BOUNDED_DELTA_APPROVAL_METHOD
+    ) {
+      throw new Error("bounded delta approval does not match the job");
+    }
+    seen.add(approval.machineNumber);
+    return {
+      schema: BOUNDED_DELTA_APPROVAL_SCHEMA,
+      version: 1,
+      jobId,
+      aggregateFingerprint,
+      machineNumber: approval.machineNumber,
+      value: approval.value,
+      approvedAt: approval.approvedAt,
+      approvalMethod: BOUNDED_DELTA_APPROVAL_METHOD,
+    };
+  });
 }
 
 function serializedUtf8Size(value) {
@@ -405,6 +472,11 @@ export function normalizeJobManifest(rawManifest, originLike) {
     throw new Error("ジョブ情報がJSONオブジェクトではありません");
   }
   const jobId = safeJobId(manifest.jobId);
+  const aggregateFingerprint = stringValue(manifest.aggregateFingerprint, 64)
+    .toLowerCase();
+  if (manifest.aggregateFingerprint !== undefined && !SHA256_HEX.test(aggregateFingerprint)) {
+    throw new Error("aggregateFingerprint must be a SHA-256 value");
+  }
   const sourceFiles = Array.isArray(manifest.files) ? manifest.files : [];
   if (!sourceFiles.length) throw new Error("解析するファイルがありません");
   if (sourceFiles.length > MAX_JOB_FILES) {
@@ -443,11 +515,16 @@ export function normalizeJobManifest(rawManifest, originLike) {
   return {
     protocolVersion: AUTO_WORKER_PROTOCOL_VERSION,
     jobId,
+    aggregateFingerprint: aggregateFingerprint || null,
     files,
     context: normalizeContext(manifest.context),
     ocrHints: manifest.ocrHintSummary !== undefined
       ? normalizePersistedWindowsOcrHintSummary(manifest.ocrHintSummary, files.length)
       : normalizeWindowsOcrHintSummary(manifest.ocrHints, files.length),
+    boundedDeltaApprovals: normalizeBoundedDeltaApprovals(
+      manifest.boundedDeltaApprovals,
+      { jobId, aggregateFingerprint },
+    ),
     resultUrl,
   };
 }
@@ -523,17 +600,147 @@ function addBlockingReason(reasons, condition, code) {
   if (condition && !reasons.includes(code)) reasons.push(code);
 }
 
-export async function buildAutoWorkerCandidate(analysis, context = {}) {
+function finiteInteger(value) {
+  const normalized = typeof value === "string" && /^-?\d+$/u.test(value)
+    ? Number(value)
+    : value;
+  return Number.isSafeInteger(normalized) ? normalized : null;
+}
+
+function boundedApprovalEligibility(row, approval) {
+  const machineNumber = finiteInteger(row?.num);
+  const observation = row?.boundaryObservation
+    ?? row?.rawGraphCandidate?.boundaryObservation;
+  const boundaryValue = finiteInteger(observation?.value);
+  const observedCandidate = finiteInteger(
+    row?.deltaRange?.observedCandidate
+      ?? row?.rawGraphCandidate?.val,
+  );
+  const roundedTop = observedCandidate === null
+    ? null
+    : Math.round(observedCandidate / 500) * 500;
+  const reasonCodes = Array.isArray(row?.reasonCodes) ? row.reasonCodes : [];
+  const eligible = (
+    machineNumber === approval.machineNumber
+    && row?.machineNumberVerified === true
+    && row?.jointMatch?.accepted === true
+    && row?.status === "bounded"
+    && row?.valueSource === "bounded-range"
+    && row?.val === null
+    && row?.deltaRange?.kind === "censored-top"
+    && row?.deltaRange?.boundary === "top"
+    && row?.deltaRange?.exact === false
+    && observation?.kind === "censored-top"
+    && observation?.boundary === "top"
+    && observation?.exact === false
+    && reasonCodes.includes("endpoint-clipped-top")
+    && reasonCodes.includes("clipped-series")
+    && row?.calibration?.source === "panel"
+    && Number(row?.calibration?.quality) >= 0.7
+    && Number(row?.rawGraphCandidate?.confidence) >= 0.7
+    && boundaryValue !== null
+    && observedCandidate !== null
+    && approval.value >= boundaryValue
+    && approval.value === roundedTop
+  );
+  return {
+    eligible,
+    boundaryValue,
+    observedCandidate,
+    roundedTop,
+    reasonCodes,
+  };
+}
+
+export function applyApprovedBoundedDeltas(
+  rows,
+  {
+    jobId,
+    aggregateFingerprint,
+    approvals = [],
+    getRank: getRankImpl = (value) => ({ rank: String(value) }),
+  } = {},
+) {
+  const list = Array.isArray(rows) ? rows : [];
+  const applied = [];
+  const rejected = [];
+  const byMachine = new Map(
+    (Array.isArray(approvals) ? approvals : [])
+      .map((approval) => [approval.machineNumber, approval]),
+  );
+  const transformed = list.map((row) => {
+    const machineNumber = finiteInteger(row?.num);
+    const approval = byMachine.get(machineNumber);
+    if (!approval) return row;
+    const evidence = boundedApprovalEligibility(row, approval);
+    if (!evidence.eligible) {
+      rejected.push({
+        machineNumber,
+        value: approval.value,
+        reason: "bounded-evidence-mismatch",
+      });
+      return row;
+    }
+    const audit = {
+      schema: BOUNDED_DELTA_APPROVAL_SCHEMA,
+      version: 1,
+      jobId,
+      aggregateFingerprint,
+      machineNumber,
+      value: approval.value,
+      approvedAt: approval.approvedAt,
+      approvalMethod: BOUNDED_DELTA_APPROVAL_METHOD,
+      boundaryKind: "censored-top",
+      boundaryValue: evidence.boundaryValue,
+      observedCandidate: evidence.observedCandidate,
+      reasonCodes: ["endpoint-clipped-top", "clipped-series"],
+    };
+    applied.push(audit);
+    return {
+      ...row,
+      val: approval.value,
+      rank: getRankImpl(approval.value).rank,
+      status: "ok",
+      confidence: 0.7,
+      estimated: true,
+      valueSource: "explicit-bounded-user-approval",
+      reviewConfirmed: true,
+      reviewedAt: approval.approvedAt,
+      boundedDeltaApprovalAudit: audit,
+    };
+  });
+  const presentMachines = new Set(
+    list.map((row) => finiteInteger(row?.num)).filter((value) => value !== null),
+  );
+  for (const approval of byMachine.values()) {
+    if (!presentMachines.has(approval.machineNumber)) {
+      rejected.push({
+        machineNumber: approval.machineNumber,
+        value: approval.value,
+        reason: "approved-machine-missing",
+      });
+    }
+  }
+  return { rows: transformed, applied, rejected };
+}
+
+export async function buildAutoWorkerCandidate(
+  analysis,
+  context = {},
+  approvalContext = {},
+) {
   const [
     selectors,
     siteSevenInput,
     bounded,
     evidence,
+    deltaEngine,
   ] = await Promise.all([
     import("./components/delta/deltaSelectors.js"),
     import("./components/delta/siteSevenDataInput.js"),
     import("./components/delta/deltaBounded.js"),
     import("./components/delta/deltaEvidence.js"),
+    import("./components/delta/deltaEngine.js"),
   ]);
   const slots = Array.isArray(analysis?.slots) ? analysis.slots : [];
   const numberOcr = analysis?.numberOcr || null;
@@ -562,7 +769,14 @@ export async function buildAutoWorkerCandidate(analysis, context = {}) {
       conflictNumbers: [],
       unverifiedDeltaNumbers: [],
     };
-  const candidateRows = bounded.attachClippedDeltaRanges(mergeResult.rows);
+  const boundedRows = bounded.attachClippedDeltaRanges(mergeResult.rows);
+  const approvalResult = applyApprovedBoundedDeltas(boundedRows, {
+    jobId: approvalContext.jobId,
+    aggregateFingerprint: approvalContext.aggregateFingerprint,
+    approvals: approvalContext.boundedDeltaApprovals,
+    getRank: deltaEngine.getRank,
+  });
+  const candidateRows = approvalResult.rows;
   const validation = selectors.validateDeltaRows(candidateRows);
   let machineValidation = null;
   if (Array.isArray(context?.customMachines)) {
@@ -609,8 +823,18 @@ export async function buildAutoWorkerCandidate(analysis, context = {}) {
   );
   addBlockingReason(
     blockingReasons,
-    slots.some((slot) => slot?.status !== "ok" || !Number.isFinite(Number(slot?.val))),
+    slots.some((slot, index) => (
+      (slot?.status !== "ok" || !Number.isFinite(Number(slot?.val)))
+      && !candidateRows[index]?.boundedDeltaApprovalAudit
+    )),
     "graph-slot-not-ok",
+  );
+  addBlockingReason(
+    blockingReasons,
+    approvalResult.rejected.length !== 0
+      || approvalResult.applied.length
+        !== (approvalContext.boundedDeltaApprovals?.length || 0),
+    "bounded-approval-not-applicable",
   );
   addBlockingReason(blockingReasons, numberOcr?.accepted !== true, "machine-number-ocr-not-accepted");
   addBlockingReason(blockingReasons, numbers.length !== slots.length, "machine-number-count-mismatch");
@@ -651,6 +875,8 @@ export async function buildAutoWorkerCandidate(analysis, context = {}) {
     blockingReasons,
     validation,
     machineValidation,
+    appliedBoundedDeltaApprovals: approvalResult.applied,
+    rejectedBoundedDeltaApprovals: approvalResult.rejected,
     preparedSiteSeven: {
       rowCount: preparedRows.rows.length,
       invalidCount: preparedRows.invalidCount,
@@ -679,7 +905,11 @@ function publicContext(context) {
 }
 
 export async function buildCompletedPayload(job, analysis) {
-  const candidate = await buildAutoWorkerCandidate(analysis, job.context);
+  const candidate = await buildAutoWorkerCandidate(analysis, job.context, {
+    jobId: job.jobId,
+    aggregateFingerprint: job.aggregateFingerprint,
+    boundedDeltaApprovals: job.boundedDeltaApprovals,
+  });
   return {
     protocolVersion: AUTO_WORKER_PROTOCOL_VERSION,
     jobId: job.jobId,
@@ -697,6 +927,7 @@ export async function buildCompletedPayload(job, analysis) {
     candidateRows: candidate.candidateRows,
     strictReady: candidate.strictReady,
     blockingReasons: candidate.blockingReasons,
+    appliedBoundedDeltaApprovals: candidate.appliedBoundedDeltaApprovals,
     diagnostics: {
       validation: candidate.validation,
       machineValidation: candidate.machineValidation,

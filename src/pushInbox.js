@@ -51,6 +51,7 @@ const SCAN_KEYS = new Set([
   "sourceFingerprint",
   "analysisEngineVersion",
   "contextEvidence",
+  "estimatedRows",
   "observedAt",
   "rows",
 ]);
@@ -94,6 +95,11 @@ const MAX_COUNTER = 100_000_000;
 const MAX_ABS_DELTA = 10_000_000;
 const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
 const MAX_PAIRING_LIFETIME_MS = 24 * 60 * 60 * 1000;
+const ESTIMATE_SOURCES = new Set([
+  "short-3of4",
+  "short-near-zero",
+  "user-censored-top",
+]);
 const BIDI_CONTROL_PATTERN = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
 const PUSH_BATCH_STATUSES = new Set([
   "pending",
@@ -352,6 +358,68 @@ function validateFingerprint(value, errors) {
   };
 }
 
+function validateEstimatedRows(value, rows, fingerprint, errors) {
+  const path = "payload.scan.estimatedRows";
+  if (!Array.isArray(value) || value.length < 1 || value.length > rows.length) {
+    errors.push(`${path}: 1件以上かつ行数以下の配列が必要です`);
+    return [];
+  }
+  const rowValues = new Map(rows.map((row) => [Number(row?.num), row?.val]));
+  const seen = new Set();
+  const normalized = [];
+  value.forEach((entry, index) => {
+    const entryPath = `${path}[${index}]`;
+    if (!Array.isArray(entry) || entry.length !== 6) {
+      errors.push(`${entryPath}: 6項目の配列が必要です`);
+      return;
+    }
+    const machineNumber = entry[0];
+    const estimatedValue = entry[1];
+    const source = entry[2];
+    if (
+      !integerInRange(machineNumber, 1, 999_999)
+      || !integerInRange(estimatedValue, -MAX_ABS_DELTA, MAX_ABS_DELTA)
+      || !ESTIMATE_SOURCES.has(source)
+      || seen.has(machineNumber)
+      || rowValues.get(machineNumber) !== estimatedValue
+    ) {
+      errors.push(`${entryPath}: 元の行と一致する一意な推定値が必要です`);
+      return;
+    }
+    seen.add(machineNumber);
+    if (source === "user-censored-top") {
+      const approvedAt = entry[3];
+      const boundaryValue = entry[4];
+      const jobId = entry[5];
+      if (
+        !isIsoTimestamp(approvedAt)
+        || !integerInRange(boundaryValue, -MAX_ABS_DELTA, MAX_ABS_DELTA)
+        || estimatedValue % 500 !== 0
+        || estimatedValue < boundaryValue
+        || jobId !== `job-${fingerprint?.hash?.slice(0, 32)}`
+      ) {
+        errors.push(`${entryPath}: 承認日時・上限境界・元画像識別値が一致しません`);
+        return;
+      }
+      normalized.push([
+        machineNumber,
+        estimatedValue,
+        source,
+        approvedAt,
+        boundaryValue,
+        jobId,
+      ]);
+      return;
+    }
+    if (entry[3] !== null || entry[4] !== null || entry[5] !== null) {
+      errors.push(`${entryPath}: 自動推定に利用者承認項目は指定できません`);
+      return;
+    }
+    normalized.push([machineNumber, estimatedValue, source, null, null, null]);
+  });
+  return normalized;
+}
+
 export function canonicalJson(value) {
   const stack = new Set();
 
@@ -497,6 +565,9 @@ export function decodeDeltaImportPayload(payload, { createdAt, now = Date.now() 
     ))
     : [];
   const validRows = rows.filter(Boolean);
+  const estimatedRows = sourceScan.estimatedRows === undefined
+    ? []
+    : validateEstimatedRows(sourceScan.estimatedRows, validRows, fingerprint, errors);
   const duplicates = validRows
     .map((row) => row.num)
     .filter((num, index, values) => values.indexOf(num) !== index);
@@ -513,15 +584,39 @@ export function decodeDeltaImportPayload(payload, { createdAt, now = Date.now() 
     date: sourceScan.date,
     event: sourceScan.event.trim(),
     machineName: sourceScan.machineName.trim(),
-    rows: validRows.map((row) => ({
-      ...row,
-      machineName: row.machineName || sourceScan.machineName.trim(),
-    })),
+    rows: validRows.map((row) => {
+      const estimate = estimatedRows.find(
+        (entry) => entry[0] === Number(row.num) && entry[1] === row.val,
+      );
+      return {
+        ...row,
+        machineName: row.machineName || sourceScan.machineName.trim(),
+        ...(estimate
+          ? {
+            estimated: true,
+            valueSource: estimate[2] === "user-censored-top"
+              ? "paired-windows-user-approved-estimate"
+              : "paired-windows-estimate",
+            estimateAudit: {
+              source: estimate[2],
+              ...(estimate[2] === "user-censored-top"
+                ? {
+                  approvedAt: estimate[3],
+                  boundaryValue: estimate[4],
+                  jobId: estimate[5],
+                }
+                : {}),
+            },
+          }
+          : {}),
+      };
+    }),
     observedAt: sourceScan.observedAt,
     createdAt: sourceScan.observedAt,
     sourceFingerprint: fingerprint,
     analysisEngineVersion: sourceScan.analysisEngineVersion.trim(),
     ...(contextEvidence ? { contextEvidence } : {}),
+    ...(estimatedRows.length ? { estimatedRows } : {}),
     importSource: "paired-windows-push",
   };
   return { valid: true, errors: [], scan };
