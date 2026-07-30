@@ -4,6 +4,10 @@
 import { SITE_SEVEN_MAX_PAYOUT_DIGIT_SAMPLES } from "./siteSevenMaxPayoutDigitSamples.js";
 import { SITE_SEVEN_AUX_DIGIT_SAMPLES } from "./siteSevenAuxDigitSamples.js";
 import {
+  SITE_SEVEN_NATIVE_DIGIT_SAMPLES,
+  SITE_SEVEN_NATIVE_MACHINE_DIGIT_SAMPLES,
+} from "./siteSevenNativeDigitSamples.js";
+import {
   alignSiteSevenTableRows,
   resolveAlignedMachineNumber,
 } from "./siteSevenTableRowAlignment.js";
@@ -16,6 +20,8 @@ const GRID_MAX_CHANNEL_GAP = 18;
 const NORMALIZED_WIDTH = 12;
 const NORMALIZED_HEIGHT = 14;
 const COLUMN_RATIOS = [0, 0.101, 0.237, 0.39, 0.544, 0.695, 0.846, 1];
+const NATIVE_TABLE_MIN_WIDTH = 500;
+const FULL_PAGE_MIN_ASPECT = 4.5;
 // テンプレート版1（2026-07-20）。正解ラベルを明示したfixtureから生成。
 // fixture SHA-256: 68AD166AECBBFC0DD5E4AA4526DBB248D2D507B23C2782C22358797F573C664C
 // 台番号リンクの青い数字字体。期待台番号とは独立に各行を直接読む。
@@ -338,6 +344,8 @@ let embeddedPrototypesCache = null;
 let embeddedMachinePrototypesCache = null;
 let embeddedMaxPayoutPrototypesCache = null;
 let embeddedAuxPrototypesCache = null;
+let embeddedNativePrototypesCache = null;
+let embeddedNativeMachinePrototypesCache = null;
 let ocrWorkerState = null;
 let ocrWorkerRequestId = 0;
 function prototypesFromSerializedSamples(serialized) {
@@ -366,6 +374,25 @@ function embeddedMachineDigitPrototypes() {
   if (embeddedMachinePrototypesCache) return embeddedMachinePrototypesCache;
   embeddedMachinePrototypesCache = prototypesFromSerializedSamples(EMBEDDED_MACHINE_DIGIT_SAMPLES);
   return embeddedMachinePrototypesCache;
+}
+
+function isNativeFullPageTable(image, tableWidth) {
+  return tableWidth >= NATIVE_TABLE_MIN_WIDTH
+    && image.height / Math.max(1, image.width) >= FULL_PAGE_MIN_ASPECT;
+}
+
+function embeddedNativeDigitPrototypes() {
+  if (embeddedNativePrototypesCache) return embeddedNativePrototypesCache;
+  embeddedNativePrototypesCache = prototypesFromSerializedSamples(SITE_SEVEN_NATIVE_DIGIT_SAMPLES);
+  return embeddedNativePrototypesCache;
+}
+
+function embeddedNativeMachineDigitPrototypes() {
+  if (embeddedNativeMachinePrototypesCache) return embeddedNativeMachinePrototypesCache;
+  embeddedNativeMachinePrototypesCache = prototypesFromSerializedSamples(
+    SITE_SEVEN_NATIVE_MACHINE_DIGIT_SAMPLES,
+  );
+  return embeddedNativeMachinePrototypesCache;
 }
 
 function embeddedAuxDigitPrototypes() {
@@ -432,6 +459,31 @@ function hasSummaryRowBackground(image, verticalLines, row) {
   return sampled > 0 && greenBackground / sampled >= 0.6;
 }
 
+function selectDominantConsecutiveRowRun(rows) {
+  if (rows.length < 2) return rows;
+  let best = [];
+  for (const seed of rows) {
+    const seedHeight = seed.bottom.start - seed.top.end;
+    const tolerance = Math.max(2, seedHeight * 0.06);
+    const similar = rows.filter((row) => {
+      const height = row.bottom.start - row.top.end;
+      return Math.abs(height - seedHeight) <= tolerance;
+    });
+    let run = [];
+    for (const row of similar) {
+      const previous = run.at(-1);
+      if (!previous || row.lineIndex === previous.lineIndex + 1) {
+        run.push(row);
+      } else {
+        if (run.length > best.length) best = run;
+        run = [row];
+      }
+    }
+    if (run.length > best.length) best = run;
+  }
+  return best.length >= 2 ? best : rows;
+}
+
 function dataRowCandidates(image, horizontalLines, verticalLines) {
   const rows = [];
   for (let index = 0; index < horizontalLines.length - 1; index += 1) {
@@ -447,7 +499,13 @@ function dataRowCandidates(image, horizontalLines, verticalLines) {
     if (bluePixelRatio(image, verticalLines, row) < 0.08) continue;
     rows.push({ ...row, machineCell, machineGroups: groups });
   }
-  return rows;
+  // A full-page Site Seven capture also contains long rules in the navigation,
+  // date selector and footer. The real data rows form the longest consecutive
+  // run with a stable height, while those page controls are isolated outliers.
+  const tableWidth = verticalLines.at(-1).center - verticalLines[0].center;
+  return isNativeFullPageTable(image, tableWidth)
+    ? selectDominantConsecutiveRowRun(rows)
+    : rows;
 }
 
 function validateExpectedNumbers(expectedNumbers, { allowEmpty = false } = {}) {
@@ -547,16 +605,19 @@ function groupsForExactCount(cell, expectedCount) {
 
 function recognizeMachineMapping(image, rows, expectedNumbers, verticalLines, {
   allowRawMachineNumbers = false,
+  digitPrototypes = null,
+  recognitionOptions = {},
 } = {}) {
   const expected = validateExpectedNumbers(expectedNumbers, { allowEmpty: allowRawMachineNumbers });
   const expectedSet = new Set(expected);
   const hasExpectedNumbers = expectedSet.size > 0;
-  const prototypes = embeddedMachineDigitPrototypes();
+  const prototypes = digitPrototypes || embeddedMachineDigitPrototypes();
   const rawMapped = rows.map((row) => {
     const recognition = recognizeCellEnsemble(
       image,
       rowCellBounds(verticalLines, row, 1),
-      prototypes
+      prototypes,
+      recognitionOptions,
     );
     const candidate = recognition.value || "";
     const unanimous = recognition.variants.length === 3
@@ -801,6 +862,7 @@ function normalizeTableScale(image) {
     reasons: [],
     resampled: false,
     tableWidth: null,
+    profile: "legacy-small",
   };
   try {
     const horizontalLines = detectHorizontalLines(image);
@@ -808,6 +870,13 @@ function normalizeTableScale(image) {
     const tableWidth = geometry.tableRight - geometry.tableLeft;
     const targetTableWidth = 338;
     result.tableWidth = tableWidth;
+    if (isNativeFullPageTable(image, tableWidth)) {
+      // Current iPhone full-page captures contain an approximately 783px table.
+      // Keep those source pixels intact: shrinking the already JPEG-compressed
+      // digits to the legacy 338px fixture destroys thin strokes.
+      result.profile = "native-large";
+      return result;
+    }
     if (Math.abs(tableWidth - targetTableWidth) <= 3) return result;
     const scale = targetTableWidth / Math.max(1, tableWidth);
     // 小さい写真の再拡大は、見た目だけを補間して誤読を増やすため行わない。
@@ -981,15 +1050,31 @@ export function inspectSiteSevenTableStructure(image) {
 export function inspectSiteSevenTableImage(image, {
   expectedNumbers = [],
   allowRawMachineNumbers = false,
+  machineDigitSamples = null,
+  profile = "auto",
 } = {}) {
   const structure = inspectSiteSevenTableStructure(image);
   const { rows } = structure;
+  const useNativeLargeProfile = profile === "native-large"
+    || (profile === "auto"
+      && isNativeFullPageTable(
+        image,
+        structure.geometry.tableRight - structure.geometry.tableLeft,
+      ));
   const mapping = recognizeMachineMapping(
     image,
     rows,
     expectedNumbers,
     structure.geometry.lines,
-    { allowRawMachineNumbers },
+    {
+      allowRawMachineNumbers,
+      digitPrototypes: machineDigitSamples
+        ? prototypesFromSerializedSamples(machineDigitSamples)
+        : useNativeLargeProfile
+          ? embeddedNativeMachineDigitPrototypes()
+          : null,
+      recognitionOptions: useNativeLargeProfile ? { widthPenaltyWeight: 0 } : {},
+    },
   );
   return { ...structure, mapping };
 }
@@ -1010,21 +1095,33 @@ export function parseSiteSevenTableImageData(image, {
   fileName = "",
   digitSamples = null,
   maxPayoutDigitSamples = null,
+  machineDigitSamples = null,
 } = {}) {
   const scaleInfo = normalizeTableScale(image);
   const normalizedImage = scaleInfo.image;
   const inspected = inspectSiteSevenTableImage(normalizedImage, {
     expectedNumbers,
     allowRawMachineNumbers,
+    machineDigitSamples,
+    profile: scaleInfo.profile,
   });
   const { geometry, mapping } = inspected;
   const digitPrototypes = digitSamples
     ? prototypesFromSerializedSamples(digitSamples)
-    : embeddedDigitPrototypes();
+    : scaleInfo.profile === "native-large"
+      ? embeddedNativeDigitPrototypes()
+      : embeddedDigitPrototypes();
   const maxPayoutDigitPrototypes = maxPayoutDigitSamples
     ? prototypesFromSerializedSamples(maxPayoutDigitSamples)
-    : embeddedMaxPayoutDigitPrototypes();
-  const auxDigitPrototypes = embeddedAuxDigitPrototypes();
+    : scaleInfo.profile === "native-large"
+      ? digitPrototypes
+      : embeddedMaxPayoutDigitPrototypes();
+  const auxDigitPrototypes = scaleInfo.profile === "native-large"
+    ? digitPrototypes
+    : embeddedAuxDigitPrototypes();
+  const cellRecognitionOptions = scaleInfo.profile === "native-large"
+    ? { widthPenaltyWeight: 0 }
+    : {};
   const recognizedRows = [];
   for (let index = 0; index < mapping.mapped.length; index += 1) {
     const mappedRow = mapping.mapped[index];
@@ -1032,12 +1129,19 @@ export function parseSiteSevenTableImageData(image, {
       normalizedImage,
       rowCellBounds(geometry.lines, mappedRow, 2),
       auxDigitPrototypes,
+      cellRecognitionOptions,
     );
-    const normal = recognizeCellEnsemble(normalizedImage, rowCellBounds(geometry.lines, mappedRow, 3), digitPrototypes);
+    const normal = recognizeCellEnsemble(
+      normalizedImage,
+      rowCellBounds(geometry.lines, mappedRow, 3),
+      digitPrototypes,
+      cellRecognitionOptions,
+    );
     const firstHit = recognizeCellEnsemble(
       normalizedImage,
       rowCellBounds(geometry.lines, mappedRow, 4),
       auxDigitPrototypes,
+      cellRecognitionOptions,
     );
     const maxPayout = recognizeCellEnsemble(
       normalizedImage,
@@ -1045,7 +1149,12 @@ export function parseSiteSevenTableImageData(image, {
       maxPayoutDigitPrototypes,
       { widthPenaltyWeight: 0 },
     );
-    const jackpot = recognizeCellEnsemble(normalizedImage, rowCellBounds(geometry.lines, mappedRow, 6), digitPrototypes);
+    const jackpot = recognizeCellEnsemble(
+      normalizedImage,
+      rowCellBounds(geometry.lines, mappedRow, 6),
+      digitPrototypes,
+      cellRecognitionOptions,
+    );
     recognizedRows.push({
       cumulative,
       normal,

@@ -111,8 +111,8 @@ iCloud Driveが表示されない場合は、`設定 → 自分の名前 → iCl
 Windows上の場所は環境によって、たとえば次のどちらかになります。
 
 ```text
-C:\Users\softt\iCloudDrive
-C:\Users\softt\iCloud Drive
+C:\Users\<Windowsユーザー名>\iCloudDrive
+C:\Users\<Windowsユーザー名>\iCloud Drive
 ```
 
 名前を推測せず、エクスプローラーで`01_入力`を開き、アドレス欄に表示された実際の場所を使ってください。
@@ -154,7 +154,7 @@ iOS 26のショートカットでは、スクリーンショットが保存さ�
 PowerShellを開き、次を実行します。
 
 ```powershell
-cd "C:\Users\softt\OneDrive\ドキュメント\New project 2\pachi-tracker-latest"
+cd "C:\path\to\New project 2\pachi-tracker-latest"
 npm.cmd run build
 Test-Path -LiteralPath ".\dist\auto-worker.html"
 ```
@@ -174,7 +174,7 @@ node --version
 PowerShellで監視用フォルダへ移動します。
 
 ```powershell
-cd "C:\Users\softt\OneDrive\ドキュメント\New project 2\site7-push-bridge"
+cd "C:\path\to\New project 2\site7-push-bridge"
 Test-Path -LiteralPath ".\watch-config.json"
 ```
 
@@ -189,21 +189,21 @@ notepad.exe ".\watch-config.json"
 
 ```json
 {
-  "inputDirectory": "C:\\Users\\softt\\iCloudDrive\\サイトセブンOCR\\01_入力",
-  "outputDirectory": "C:\\Users\\softt\\iCloudDrive\\サイトセブンOCR\\03_出力",
-  "stateDirectory": "C:\\Users\\softt\\AppData\\Local\\PachiTrackerBridge\\watch-state",
+  "inputDirectory": "C:\\Users\\YOUR_NAME\\iCloudDrive\\サイトセブンOCR\\01_入力",
+  "outputDirectory": "C:\\Users\\YOUR_NAME\\iCloudDrive\\サイトセブンOCR\\03_出力",
+  "stateDirectory": "C:\\Users\\YOUR_NAME\\AppData\\Local\\PachiTrackerBridge\\watch-state",
   "distDirectory": "..\\pachi-tracker-latest\\dist",
   "context": {
     "storeId": null,
-    "storeName": "セントラルディーボ空港通店",
+    "storeName": "実際の店舗名",
     "date": "auto",
     "event": "",
-    "machineName": "P大海物語5 MTE2",
+    "machineName": "実際の機種名",
     "expectCompleteTable": true
   },
   "push": {
     "enabled": false,
-    "configPath": "C:\\Users\\softt\\AppData\\Local\\PachiTrackerBridge\\bridge-config.dpapi",
+    "configPath": "C:\\Users\\YOUR_NAME\\AppData\\Local\\PachiTrackerBridge\\bridge-config.dpapi",
     "deviceId": null
   }
 }
@@ -226,9 +226,9 @@ notepad.exe ".\watch-config.json"
 まずPowerShellで、実際のiCloud Driveの場所を指定します。次は`iCloudDrive`だった場合の例です。
 
 ```powershell
-cd "C:\Users\softt\OneDrive\ドキュメント\New project 2\site7-push-bridge"
-$site7Icloud = "C:\Users\softt\iCloudDrive\サイトセブンOCR"
-$bridgeSecret = "C:\Users\softt\AppData\Local\PachiTrackerBridge\bridge-config.dpapi"
+cd "C:\path\to\New project 2\site7-push-bridge"
+$site7Icloud = Join-Path $env:USERPROFILE "iCloudDrive\サイトセブンOCR"
+$bridgeSecret = Join-Path $env:LOCALAPPDATA "PachiTrackerBridge\bridge-config.dpapi"
 Test-Path -LiteralPath $bridgeSecret
 ```
 
@@ -280,7 +280,7 @@ node .\src\cli.mjs import-pairing --config $bridgeSecret --response "ここに�
 PowerShellで次を実行し、その後にテスト用スクリーンショットを保存します。
 
 ```powershell
-cd "C:\Users\softt\OneDrive\ドキュメント\New project 2\site7-push-bridge"
+cd "C:\path\to\New project 2\site7-push-bridge"
 node .\src\cli.mjs watch --watch-config .\watch-config.json --once
 ```
 
@@ -337,7 +337,7 @@ node .\src\cli.mjs watch --watch-config .\watch-config.json
 9. `開始`に次を入れる。ここには引用符を付けない
 
 ```text
-C:\Users\softt\OneDrive\ドキュメント\New project 2\site7-push-bridge
+C:\path\to\New project 2\site7-push-bridge
 ```
 
 10. `設定`で、失敗した場合に再起動するよう設定する

@@ -15,6 +15,7 @@ import { Card } from "../Atoms";
 import { runAnalysis, getRankTone } from "./deltaEngine";
 import { attachMachineNumbersToSlots, combineMachineNumberPages } from "./machineNumberOcr";
 import { attachGraphPanelMetadata } from "./graphPanelMetadataOcr";
+import { applySafeShortSeriesValidation } from "./graphShortSeriesValidator";
 import { matchSiteSevenGraphPanels } from "./siteSevenJointMatcher";
 import { resolveMatchedSiteSevenRows } from "./siteSevenJointResolution";
 import {
@@ -386,7 +387,7 @@ export async function analyzeImages(images, onProgress, {
     && canAutoAcceptSiteSevenReports(siteSevenReports)
     && jointNumbers.every(Boolean)
     && new Set(jointNumbers).size === jointNumbers.length;
-  const resolvedSlots = combinedNumbers.slots.map((slot, graphIndex) => {
+  const jointlyResolvedSlots = combinedNumbers.slots.map((slot, graphIndex) => {
     const match = jointNumberByGraphIndex.get(graphIndex);
     if (!match) return slot;
     return {
@@ -403,6 +404,10 @@ export async function analyzeImages(images, onProgress, {
       },
     };
   });
+  const resolvedSlots = applySafeShortSeriesValidation(
+    jointlyResolvedSlots,
+    jointMatch,
+  );
   const resolvedNumberOcr = jointAccepted
     ? {
       ...combinedNumbers,

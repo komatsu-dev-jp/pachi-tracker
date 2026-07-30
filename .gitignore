@@ -26,3 +26,6 @@ dist-ssr
 # Local browser and visual QA artifacts
 .playwright-cli/
 output/
+
+# Private Site Seven full-page test images (use SITE7_FULL_PAGE_FIXTURE_DIR)
+src/components/delta/__tests__/fixtures/site-seven-short-series-*/

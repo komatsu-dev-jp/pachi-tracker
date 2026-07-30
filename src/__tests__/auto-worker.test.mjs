@@ -91,6 +91,81 @@ function completeAnalysis(overrides = {}) {
   };
 }
 
+function advisoryWindowsOcrHints(overrides = {}) {
+  return {
+    schema: "site7-push-bridge.windows-ocr-hints",
+    version: 1,
+    generatedAt: "2026-07-30T08:00:00.000Z",
+    advisoryOnly: true,
+    engine: "Windows.Media.Ocr",
+    policy: {
+      requiresIndependentMatch: true,
+      requiresMultiProfileAgreement: true,
+      minimumMatchingProfiles: 2,
+      maySetStrictReady: false,
+      engineConfidenceAvailable: false,
+      networkUsed: false,
+      sourceModified: false,
+    },
+    files: [{
+      fileIndex: 0,
+      source: {
+        sha256: "a".repeat(64),
+        readOnlyAccess: true,
+        unchanged: true,
+      },
+      profiles: [
+        { profileId: "full-original", numericTokens: [{ value: 17 }] },
+        { profileId: "full-shrink-075", numericTokens: [{ value: 17 }] },
+      ],
+    }],
+    ...overrides,
+  };
+}
+
+function advisoryWindowsOcrHintSummary(overrides = {}) {
+  return {
+    schema: "site7-push-bridge.windows-ocr-hints-summary",
+    version: 1,
+    generatedAt: "2026-07-30T08:00:00.000Z",
+    advisoryOnly: true,
+    summaryOnly: true,
+    engine: "Windows.Media.Ocr",
+    policy: {
+      requiresIndependentMatch: true,
+      requiresMultiProfileAgreement: true,
+      minimumMatchingProfiles: 2,
+      maySetStrictReady: false,
+      engineConfidenceAvailable: false,
+      networkUsed: false,
+      sourceModified: false,
+    },
+    retention: {
+      rawHintsPersisted: false,
+      rawHintsIncludedInManifest: false,
+      coordinatesPersisted: false,
+      recognizedTextPersisted: false,
+    },
+    rawHintsSha256: "b".repeat(64),
+    rawHintsBytes: 16 * 1024 * 1024,
+    fileCount: 1,
+    profileCount: 8,
+    numericTokenCount: 10_000,
+    files: [{
+      fileIndex: 0,
+      source: {
+        sha256: "a".repeat(64),
+        size: 123_456,
+        readOnlyAccess: true,
+        unchanged: true,
+      },
+      profileCount: 8,
+      numericTokenCount: 10_000,
+    }],
+    ...overrides,
+  };
+}
+
 test("localhost以外のページと外部URLを拒否する", () => {
   assert.equal(worker.isLoopbackHostname("localhost"), true);
   assert.equal(worker.isLoopbackHostname("127.0.0.1"), true);
@@ -125,6 +200,36 @@ test("ジョブ情報は同一オリジンの許可形式だけに正規化す�
   assert.equal(job.files[0].url, "http://127.0.0.1:43123/api/files/graph.png");
   assert.equal(job.resultUrl, "http://127.0.0.1:43123/api/auto-worker/jobs/job-001/result");
   assert.equal(job.context.storeName, "テスト店");
+});
+
+test("Windows標準OCRは安全ルールを再検査し、判断に使わない要約だけを保持する", () => {
+  const manifest = {
+    jobId: "job-ocr-hints",
+    files: [{ name: "table.jpg", type: "image/jpeg", url: "/api/files/table.jpg" }],
+    context: {},
+    ocrHints: advisoryWindowsOcrHints(),
+    resultUrl: "/api/results/job-ocr-hints",
+  };
+  const job = worker.normalizeJobManifest(manifest, "http://127.0.0.1:43123");
+
+  assert.equal(job.ocrHints.advisoryOnly, true);
+  assert.equal(job.ocrHints.policy.maySetStrictReady, false);
+  assert.equal(job.ocrHints.fileCount, 1);
+  assert.equal(job.ocrHints.profileCount, 2);
+  assert.equal(job.ocrHints.numericTokenCount, 2);
+  assert.equal("profiles" in job.ocrHints.files[0], false);
+  assert.throws(
+    () => worker.normalizeJobManifest({
+      ...manifest,
+      ocrHints: advisoryWindowsOcrHints({
+        policy: {
+          ...advisoryWindowsOcrHints().policy,
+          maySetStrictReady: true,
+        },
+      }),
+    }, "http://127.0.0.1:43123"),
+    /安全ルール/u,
+  );
 });
 
 test("全検証を通過した解析だけstrictReadyになる", async () => {
@@ -274,4 +379,44 @@ test("解析失敗も既存データを変更せず失敗結果として返す",
   assert.deepEqual(postedPayload.candidateRows, []);
   assert.deepEqual(postedPayload.blockingReasons, ["worker-error"]);
   assert.match(postedPayload.diagnostics.error.message, /OCR failure/u);
+});
+
+test("persisted Windows OCR summary remains advisory and contains no raw values", () => {
+  const manifest = {
+    jobId: "job-ocr-summary",
+    files: [{ name: "table.jpg", type: "image/jpeg", url: "/api/files/table.jpg" }],
+    context: {},
+    ocrHintSummary: advisoryWindowsOcrHintSummary(),
+    resultUrl: "/api/results/job-ocr-summary",
+  };
+  const job = worker.normalizeJobManifest(manifest, "http://127.0.0.1:43123");
+
+  assert.equal(job.ocrHints.summaryOnly, true);
+  assert.equal(job.ocrHints.policy.maySetStrictReady, false);
+  assert.equal(job.ocrHints.retention.rawHintsPersisted, false);
+  assert.equal(job.ocrHints.fileCount, 1);
+  assert.equal(job.ocrHints.profileCount, 8);
+  assert.equal(job.ocrHints.numericTokenCount, 10_000);
+  assert.equal("profiles" in job.ocrHints.files[0], false);
+  assert.equal("numericTokens" in job.ocrHints.files[0], false);
+
+  assert.throws(
+    () => worker.normalizeJobManifest({
+      ...manifest,
+      ocrHintSummary: advisoryWindowsOcrHintSummary({
+        policy: {
+          ...advisoryWindowsOcrHintSummary().policy,
+          maySetStrictReady: true,
+        },
+      }),
+    }, "http://127.0.0.1:43123"),
+    /安全ルール/u,
+  );
+  assert.throws(
+    () => worker.normalizeJobManifest({
+      ...manifest,
+      ocrHints: advisoryWindowsOcrHints(),
+    }, "http://127.0.0.1:43123"),
+    /同時/u,
+  );
 });

@@ -6,7 +6,10 @@ const DEFAULT_POLL_INTERVAL_MS = 1500;
 const MAX_JOB_FILES = 64;
 const MAX_FILE_BYTES = 30 * 1024 * 1024;
 const MAX_JOB_BYTES = 256 * 1024 * 1024;
+const MAX_OCR_HINT_BYTES = 16 * 1024 * 1024;
+const MAX_OCR_HINT_SUMMARY_BYTES = 256 * 1024;
 const ACCEPTED_KINDS = new Set(["image", "pdf", "csv"]);
+const SHA256_HEX = /^[a-f0-9]{64}$/u;
 
 export const AUTO_WORKER_POLICY = Object.freeze({
   localhostOnly: true,
@@ -122,6 +125,278 @@ function normalizeContext(rawContext) {
   return normalized;
 }
 
+function serializedUtf8Size(value) {
+  const serialized = JSON.stringify(value);
+  if (typeof TextEncoder === "function") {
+    return new TextEncoder().encode(serialized).byteLength;
+  }
+  return serialized.length;
+}
+
+function normalizePersistedWindowsOcrHintSummary(rawSummary, fileCount) {
+  if (!rawSummary || typeof rawSummary !== "object" || Array.isArray(rawSummary)) {
+    throw new Error("Windows OCR要約はJSONオブジェクトである必要があります");
+  }
+  if (serializedUtf8Size(rawSummary) > MAX_OCR_HINT_SUMMARY_BYTES) {
+    throw new Error("Windows OCR要約がサイズ上限を超えています");
+  }
+  if (
+    rawSummary.schema !== "site7-push-bridge.windows-ocr-hints-summary"
+    || rawSummary.version !== 1
+    || rawSummary.advisoryOnly !== true
+    || rawSummary.summaryOnly !== true
+    || rawSummary.engine !== "Windows.Media.Ocr"
+  ) {
+    throw new Error("Windows OCR要約の形式が未対応です");
+  }
+  const policy = rawSummary.policy;
+  if (
+    !policy
+    || typeof policy !== "object"
+    || Array.isArray(policy)
+    || policy.requiresIndependentMatch !== true
+    || policy.requiresMultiProfileAgreement !== true
+    || policy.minimumMatchingProfiles !== 2
+    || policy.maySetStrictReady !== false
+    || policy.engineConfidenceAvailable !== false
+    || policy.networkUsed !== false
+    || policy.sourceModified !== false
+  ) {
+    throw new Error("Windows OCR要約の安全ルールが一致しません");
+  }
+  const retention = rawSummary.retention;
+  if (
+    !retention
+    || typeof retention !== "object"
+    || Array.isArray(retention)
+    || retention.rawHintsPersisted !== false
+    || retention.rawHintsIncludedInManifest !== false
+    || retention.coordinatesPersisted !== false
+    || retention.recognizedTextPersisted !== false
+  ) {
+    throw new Error("Windows OCR要約の保存ルールが一致しません");
+  }
+  const generatedAt = stringValue(rawSummary.generatedAt, 35);
+  if (
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u.test(generatedAt)
+    || !Number.isFinite(Date.parse(generatedAt))
+    || !SHA256_HEX.test(String(rawSummary.rawHintsSha256 || "").toLowerCase())
+    || !Number.isSafeInteger(rawSummary.rawHintsBytes)
+    || rawSummary.rawHintsBytes < 1
+    || rawSummary.rawHintsBytes > 64 * 1024 * 1024
+  ) {
+    throw new Error("Windows OCR要約の監査情報が不正です");
+  }
+  if (
+    !Array.isArray(rawSummary.files)
+    || rawSummary.files.length < 1
+    || rawSummary.files.length > MAX_JOB_FILES
+    || rawSummary.files.length !== fileCount
+    || rawSummary.fileCount !== fileCount
+  ) {
+    throw new Error("Windows OCR要約と画像の件数が一致しません");
+  }
+  const seenIndexes = new Set();
+  const seenHashes = new Set();
+  const files = rawSummary.files.map((entry) => {
+    const fileIndex = entry?.fileIndex;
+    const source = entry?.source;
+    if (
+      !Number.isSafeInteger(fileIndex)
+      || fileIndex < 0
+      || fileIndex >= fileCount
+      || seenIndexes.has(fileIndex)
+      || !source
+      || typeof source !== "object"
+      || Array.isArray(source)
+      || source.readOnlyAccess !== true
+      || source.unchanged !== true
+      || !SHA256_HEX.test(String(source.sha256 || "").toLowerCase())
+      || seenHashes.has(String(source.sha256).toLowerCase())
+      || !Number.isSafeInteger(source.size)
+      || source.size < 1
+      || source.size > 100 * 1024 * 1024
+      || !Number.isSafeInteger(entry.profileCount)
+      || entry.profileCount < 1
+      || entry.profileCount > 16
+      || !Number.isSafeInteger(entry.numericTokenCount)
+      || entry.numericTokenCount < 0
+      || entry.numericTokenCount > 320_000
+    ) {
+      throw new Error("Windows OCR要約の画像対応が不正です");
+    }
+    seenIndexes.add(fileIndex);
+    const sha256 = String(source.sha256).toLowerCase();
+    seenHashes.add(sha256);
+    return {
+      fileIndex,
+      sha256,
+      sourceSize: source.size,
+      sourceUnchanged: true,
+      readOnlyAccess: true,
+      profileCount: entry.profileCount,
+      numericTokenCount: entry.numericTokenCount,
+    };
+  });
+  const profileCount = files.reduce((sum, file) => sum + file.profileCount, 0);
+  const numericTokenCount = files.reduce((sum, file) => sum + file.numericTokenCount, 0);
+  if (
+    rawSummary.profileCount !== profileCount
+    || rawSummary.numericTokenCount !== numericTokenCount
+  ) {
+    throw new Error("Windows OCR要約の集計件数が一致しません");
+  }
+  return {
+    schema: rawSummary.schema,
+    version: 1,
+    generatedAt,
+    advisoryOnly: true,
+    summaryOnly: true,
+    engine: "Windows.Media.Ocr",
+    policy: {
+      requiresIndependentMatch: true,
+      requiresMultiProfileAgreement: true,
+      minimumMatchingProfiles: 2,
+      maySetStrictReady: false,
+      engineConfidenceAvailable: false,
+      networkUsed: false,
+      sourceModified: false,
+    },
+    retention: {
+      rawHintsPersisted: false,
+      rawHintsIncludedInManifest: false,
+      coordinatesPersisted: false,
+      recognizedTextPersisted: false,
+    },
+    rawHintsSha256: String(rawSummary.rawHintsSha256).toLowerCase(),
+    rawHintsBytes: rawSummary.rawHintsBytes,
+    fileCount,
+    profileCount,
+    numericTokenCount,
+    files,
+  };
+}
+
+function normalizeWindowsOcrHintSummary(rawHints, fileCount) {
+  if (rawHints === undefined || rawHints === null) return null;
+  if (!rawHints || typeof rawHints !== "object" || Array.isArray(rawHints)) {
+    throw new Error("Windows OCR補助情報がJSONオブジェクトではありません");
+  }
+  if (serializedUtf8Size(rawHints) > MAX_OCR_HINT_BYTES) {
+    throw new Error("Windows OCR補助情報がサイズ上限を超えています");
+  }
+  if (
+    rawHints.schema !== "site7-push-bridge.windows-ocr-hints"
+    || rawHints.version !== 1
+    || rawHints.advisoryOnly !== true
+    || rawHints.engine !== "Windows.Media.Ocr"
+  ) {
+    throw new Error("Windows OCR補助情報の形式が未対応です");
+  }
+  const policy = rawHints.policy;
+  if (
+    !policy
+    || typeof policy !== "object"
+    || Array.isArray(policy)
+    || policy.requiresIndependentMatch !== true
+    || policy.requiresMultiProfileAgreement !== true
+    || policy.minimumMatchingProfiles !== 2
+    || policy.maySetStrictReady !== false
+    || policy.engineConfidenceAvailable !== false
+    || policy.networkUsed !== false
+    || policy.sourceModified !== false
+  ) {
+    throw new Error("Windows OCR補助情報の安全ルールが一致しません");
+  }
+  const generatedAt = stringValue(rawHints.generatedAt, 35);
+  if (
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u.test(generatedAt)
+    || !Number.isFinite(Date.parse(generatedAt))
+  ) {
+    throw new Error("Windows OCR補助情報の作成日時が不正です");
+  }
+  if (
+    !Array.isArray(rawHints.files)
+    || rawHints.files.length < 1
+    || rawHints.files.length > MAX_JOB_FILES
+    || rawHints.files.length !== fileCount
+  ) {
+    throw new Error("Windows OCR補助情報と画像の件数が一致しません");
+  }
+  const seenIndexes = new Set();
+  const seenHashes = new Set();
+  const files = rawHints.files.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error("Windows OCR補助情報の画像項目が不正です");
+    }
+    const fileIndex = Number(entry.fileIndex);
+    const source = entry.source;
+    const profiles = entry.profiles;
+    if (
+      !Number.isInteger(fileIndex)
+      || fileIndex < 0
+      || fileIndex >= fileCount
+      || seenIndexes.has(fileIndex)
+      || !source
+      || typeof source !== "object"
+      || Array.isArray(source)
+      || source.readOnlyAccess !== true
+      || source.unchanged !== true
+      || !SHA256_HEX.test(String(source.sha256 || "").toLowerCase())
+      || seenHashes.has(String(source.sha256).toLowerCase())
+      || !Array.isArray(profiles)
+      || profiles.length < 1
+      || profiles.length > 16
+    ) {
+      throw new Error("Windows OCR補助情報の画像対応が不正です");
+    }
+    seenIndexes.add(fileIndex);
+    const sha256 = String(source.sha256).toLowerCase();
+    seenHashes.add(sha256);
+    const profileIds = new Set();
+    let numericTokenCount = 0;
+    for (const profile of profiles) {
+      const profileId = stringValue(profile?.profileId, 100);
+      if (
+        !/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u.test(profileId)
+        || profileIds.has(profileId)
+        || !Array.isArray(profile?.numericTokens)
+        || profile.numericTokens.length > 20_000
+      ) {
+        throw new Error("Windows OCR補助情報の読取りプロファイルが不正です");
+      }
+      profileIds.add(profileId);
+      numericTokenCount += profile.numericTokens.length;
+    }
+    return {
+      fileIndex,
+      sha256,
+      profileCount: profiles.length,
+      numericTokenCount,
+    };
+  });
+  return {
+    schema: rawHints.schema,
+    version: 1,
+    generatedAt,
+    advisoryOnly: true,
+    engine: "Windows.Media.Ocr",
+    policy: {
+      requiresIndependentMatch: true,
+      requiresMultiProfileAgreement: true,
+      minimumMatchingProfiles: 2,
+      maySetStrictReady: false,
+      engineConfidenceAvailable: false,
+      networkUsed: false,
+      sourceModified: false,
+    },
+    fileCount: files.length,
+    profileCount: files.reduce((sum, file) => sum + file.profileCount, 0),
+    numericTokenCount: files.reduce((sum, file) => sum + file.numericTokenCount, 0),
+    files,
+  };
+}
+
 export function normalizeJobManifest(rawManifest, originLike) {
   const manifest = rawManifest?.job && typeof rawManifest.job === "object"
     ? rawManifest.job
@@ -162,11 +437,17 @@ export function normalizeJobManifest(rawManifest, originLike) {
     manifest.resultUrl || `/api/auto-worker/jobs/${encodeURIComponent(jobId)}/result`,
     originLike,
   );
+  if (manifest.ocrHintSummary !== undefined && manifest.ocrHints !== undefined) {
+    throw new Error("Windows OCRの生データと要約を同時に受け取ることはできません");
+  }
   return {
     protocolVersion: AUTO_WORKER_PROTOCOL_VERSION,
     jobId,
     files,
     context: normalizeContext(manifest.context),
+    ocrHints: manifest.ocrHintSummary !== undefined
+      ? normalizePersistedWindowsOcrHintSummary(manifest.ocrHintSummary, files.length)
+      : normalizeWindowsOcrHintSummary(manifest.ocrHints, files.length),
     resultUrl,
   };
 }
@@ -423,6 +704,7 @@ export async function buildCompletedPayload(job, analysis) {
       merge: candidate.mergeSummary,
       graphSlotCount: Array.isArray(analysis?.slots) ? analysis.slots.length : 0,
       tableRowCount: Array.isArray(analysis?.siteSevenRows) ? analysis.siteSevenRows.length : 0,
+      windowsOcrHints: job.ocrHints,
     },
     analysis,
   };
@@ -446,6 +728,7 @@ function failedPayload(job, error) {
         name: error instanceof Error ? error.name : "Error",
         message: error instanceof Error ? error.message : String(error || "自動解析に失敗しました"),
       },
+      windowsOcrHints: job.ocrHints,
     },
     analysis: null,
   };
