@@ -802,13 +802,23 @@ function historyFor(scans, machineName, num, machine) {
     if (!byDate.has(row.date)) byDate.set(row.date, []);
     byDate.get(row.date).push(row);
   }
-  const points = [...byDate.entries()]
+  const entries = [...byDate.entries()]
     .sort(([a], [b]) => String(a).localeCompare(String(b)))
     .slice(-7)
-    .map(([, rows]) => buildDeltaEvidence(rows, machine))
-    .filter((evidence) => evidence.hasEstimate === true)
-    .map((evidence) => round1(evidence.predictedRotation));
-  return { points, dayCount: points.length };
+    .map(([date, rows]) => ({
+      date: normalizedDate(date),
+      evidence: buildDeltaEvidence(rows, machine),
+    }))
+    .filter((entry) => entry.date && entry.evidence.hasEstimate === true)
+    .map((entry) => ({
+      date: entry.date,
+      rotation: round1(entry.evidence.predictedRotation),
+    }));
+  return {
+    entries,
+    points: entries.map((entry) => entry.rotation),
+    dayCount: entries.length,
+  };
 }
 
 function buildDataCoverage({
@@ -1496,6 +1506,7 @@ export function buildStrategyMap({
             historySummary.points[0] ?? round1(evidence.predictedRotation),
             historySummary.points[0] ?? round1(evidence.predictedRotation),
           ],
+      historyEntries: historySummary.entries,
       historyDayCount: historySummary.dayCount,
       dataCoverage,
       activityStatus: currentRowInvalid ? "invalid" : (pe?.activityStatus || (pe?.valid ? "active" : "invalid")),
