@@ -305,6 +305,53 @@ function calibratePanel(data, imageWidth, panel) {
   };
 }
 
+// SiteSeven のフルページ画像には、ページ上端の見出しや下端の操作欄が
+// 左右それぞれの暗い長方形として写り、グラフ枠と同じ一次判定を通ることがある。
+// ただし本物のグラフ枠はページ内で横幅と余白が揃い、目盛りから校正できる。
+//
+// 校正済みの本物が複数あるページだけ、そのレイアウトより明らかに横へ広い
+// 「全幅・校正不可」の候補をページ部品として除外する。折れ線の長さや終点位置は
+// 判定に使わないため、短い線や上下端で切れた線は削除しない。また、同じ横幅の
+// 校正不可枠は従来どおり画像内中央値による fallback 候補として残す。
+function filterFullBleedPageChrome(data, imageWidth, panels, calibrationCache) {
+  if (panels.length < 3) return panels;
+
+  const midX = Math.floor(imageWidth / 2);
+  const measured = panels.map((panel) => {
+    const calibration = calibratePanel(data, imageWidth, panel);
+    calibrationCache.set(panel, calibration);
+    return { panel, calibration };
+  });
+  const references = measured.filter(({ calibration }) => (
+    calibration.valid && calibration.quality >= 0.55
+  ));
+  if (references.length < 2) return panels;
+
+  const widthRatio = (panel) => {
+    const columnStart = panel.column === 0 ? 0 : midX;
+    const columnEnd = panel.column === 0 ? midX : imageWidth;
+    return panel.bbox.width / Math.max(1, columnEnd - columnStart);
+  };
+  const typicalWidthRatio = median(references.map(({ panel }) => widthRatio(panel)));
+  // 全幅レイアウトそのものを採用している画像では、この判定を使わない。
+  if (!Number.isFinite(typicalWidthRatio) || typicalWidthRatio >= 0.97) return panels;
+
+  const widerThanGraphBy = Math.max(0.04, typicalWidthRatio * 0.04);
+  return measured.filter(({ panel, calibration }) => {
+    if (calibration.valid) return true;
+
+    const columnStart = panel.column === 0 ? 0 : midX;
+    const columnEnd = panel.column === 0 ? midX : imageWidth;
+    const columnWidth = Math.max(1, columnEnd - columnStart);
+    const edgeTolerance = Math.max(2, Math.round(columnWidth * 0.015));
+    const leftGap = panel.bbox.x - columnStart;
+    const rightGap = columnEnd - (panel.bbox.x + panel.bbox.width);
+    const isFullBleed = leftGap <= edgeTolerance && rightGap <= edgeTolerance;
+    const isWiderThanGraph = widthRatio(panel) >= typicalWidthRatio + widerThanGraphBy;
+    return !(isFullBleed && isWiderThanGraph);
+  }).map(({ panel }) => panel);
+}
+
 function hueDegrees(r, g, b, max, delta) {
   if (delta === 0) return 0;
   let hue;
@@ -339,6 +386,34 @@ function isFaintYellowPixel(data, index) {
   if (max < 35 || Math.min(r, g) - b < 12) return false;
   const hue = hueDegrees(r, g, b, max, delta);
   return hue >= 35 && hue <= 85;
+}
+
+function isStrictYellowPixel(data, index) {
+  const r = data[index];
+  const g = data[index + 1];
+  const b = data[index + 2];
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  if (max < 100
+    || delta / Math.max(max, 1) < 0.45
+    || Math.min(r, g) - b < 24) return false;
+  const hue = hueDegrees(r, g, b, max, delta);
+  return hue >= 42 && hue <= 70;
+}
+
+function isJpegTolerantYellowPixel(data, index) {
+  const r = data[index];
+  const g = data[index + 1];
+  const b = data[index + 2];
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  if (max < 60
+    || delta / Math.max(max, 1) < 0.3
+    || Math.min(r, g) - b < 14) return false;
+  const hue = hueDegrees(r, g, b, max, delta);
+  return hue >= 36 && hue <= 82;
 }
 
 function findYellowComponents(data, imageWidth, panel, options = {}) {
@@ -401,6 +476,188 @@ function findYellowComponents(data, imageWidth, panel, options = {}) {
     components.push({ points, minX, maxX, minY, maxY, px: points.length });
   }
   return components;
+}
+
+function seriesFromComponent(selected, panel, leftAnchor, detectionSource) {
+  const { width, height, x: panelX, y: panelY } = panel.bbox;
+
+  // Use the rightmost two columns. This avoids moving the endpoint backwards
+  // along a diagonal line because of the anti-aliased stroke width.
+  const endpointBandWidth = 1;
+  const terminal = selected.points.filter((point) => point.x >= selected.maxX - endpointBandWidth);
+  const terminalYs = terminal.map((point) => point.y);
+  let endpointY = median(terminalYs);
+
+  // If the tail is vertical, the point farther from the preceding path is the
+  // chronological endpoint.
+  const verticalTailWidth = Math.max(2, Math.round(width * 0.012));
+  const verticalTerminal = selected.points.filter((point) => (
+    point.x >= selected.maxX - verticalTailWidth
+  ));
+  const verticalYs = verticalTerminal.map((point) => point.y);
+  const terminalMin = Math.min(...verticalYs);
+  const terminalMax = Math.max(...verticalYs);
+  const previous = selected.points.filter((point) => (
+    point.x >= selected.maxX - verticalTailWidth * 4
+    && point.x < selected.maxX - verticalTailWidth
+  ));
+  const approachY = median(previous.map((point) => point.y));
+  if (terminalMax - terminalMin >= Math.max(8, height * 0.04)) {
+    if (Number.isFinite(approachY)) {
+      endpointY = Math.abs(terminalMin - approachY) > Math.abs(terminalMax - approachY)
+        ? terminalMin
+        : terminalMax;
+    }
+  }
+
+  const span = selected.maxX - selected.minX + 1;
+  const anchorQuality = clamp01(1 - selected.minX / (leftAnchor + 1));
+  const spanQuality = clamp01(span / (width * 0.15));
+  const densityQuality = clamp01(selected.px / Math.max(1, span * 1.5));
+  const quality = clamp01(anchorQuality * 0.35 + spanQuality * 0.4 + densityQuality * 0.25);
+
+  return {
+    px: selected.px,
+    quality,
+    span,
+    detectionSource,
+    bounds: {
+      minX: selected.minX,
+      maxX: selected.maxX,
+      minY: selected.minY,
+      maxY: selected.maxY,
+    },
+    terminalBounds: {
+      minY: terminalMin,
+      maxY: terminalMax,
+    },
+    endpoint: {
+      x: panelX + selected.maxX,
+      y: panelY + endpointY,
+      localX: selected.maxX,
+      localY: endpointY,
+      approachLocalY: Number.isFinite(approachY) ? approachY : null,
+    },
+  };
+}
+
+const SHORT_SERIES_PIXEL_PROFILES = Object.freeze([
+  Object.freeze({ name: "strict", pixelMatcher: isStrictYellowPixel }),
+  Object.freeze({ name: "standard", pixelMatcher: isYellowPixel }),
+  Object.freeze({ name: "jpeg-tolerant", pixelMatcher: isJpegTolerantYellowPixel }),
+  Object.freeze({ name: "faint", pixelMatcher: isFaintYellowPixel }),
+]);
+
+function extractShortSeriesConsensus(data, imageWidth, panel, calibration) {
+  if (calibration?.source !== "panel"
+    || !Number.isFinite(calibration.zeroY)
+    || !Number.isFinite(calibration.gridSpacing)
+    || calibration.gridSpacing <= 0
+    || calibration.quality < 0.7) return null;
+
+  const { width, height } = panel.bbox;
+  const leftAnchor = Math.max(8, Math.round(width * 0.08));
+  const scanRight = Math.max(leftAnchor, Math.round(width * 0.2));
+  const minimumSpan = Math.max(8, Math.round(width * 0.025));
+  const zeroTolerance = Math.max(3, calibration.gridSpacing * 0.2);
+  const scanTop = Number.isFinite(calibration.plotTopY)
+    ? calibration.plotTopY - 2
+    : 0;
+  const scanBottom = Number.isFinite(calibration.plotBottomY)
+    ? calibration.plotBottomY + 2
+    : height - 1;
+
+  const attempts = SHORT_SERIES_PIXEL_PROFILES.map(({ name, pixelMatcher }) => {
+    const candidates = findYellowComponents(data, imageWidth, panel, {
+      pixelMatcher,
+      scanRight,
+      scanTop,
+      scanBottom,
+    }).filter((component) => (
+      component.minX <= leftAnchor
+      && component.maxX - component.minX + 1 >= minimumSpan
+      && component.px >= 12
+      && component.maxY >= calibration.zeroY - zeroTolerance
+      && component.minY <= calibration.zeroY + zeroTolerance
+    ));
+    candidates.sort((a, b) => {
+      const scoreA = (a.maxX - a.minX) * 4 + a.px * 0.15 - a.minX;
+      const scoreB = (b.maxX - b.minX) * 4 + b.px * 0.15 - b.minX;
+      return scoreB - scoreA;
+    });
+    if (!candidates[0]) return null;
+    const series = seriesFromComponent(candidates[0], panel, leftAnchor, name);
+    const rawValue = (
+      (calibration.zeroY - series.endpoint.localY) / calibration.gridSpacing
+    ) * 10000;
+    const roundedValue = Math.round(rawValue / 500) * 500;
+    return {
+      profile: name,
+      endpointLocalY: series.endpoint.localY,
+      roundedValue: Object.is(roundedValue, -0) ? 0 : roundedValue,
+      span: series.span,
+      px: series.px,
+      bounds: series.bounds,
+    };
+  }).filter(Boolean);
+
+  const attemptRoundedValues = attempts.map((attempt) => attempt.roundedValue);
+  const roundedValues = [...new Set(attemptRoundedValues)];
+  const endpointYs = attempts.map((attempt) => attempt.endpointLocalY);
+  const minXs = attempts.map((attempt) => attempt.bounds.minX);
+  const maxXs = attempts.map((attempt) => attempt.bounds.maxX);
+  const endpointSpread = endpointYs.length
+    ? Math.max(...endpointYs) - Math.min(...endpointYs)
+    : null;
+  const startSpread = minXs.length ? Math.max(...minXs) - Math.min(...minXs) : null;
+  const endSpread = maxXs.length ? Math.max(...maxXs) - Math.min(...maxXs) : null;
+  const maximumEndpointSpread = Math.max(1.5, calibration.gridSpacing * 0.05);
+  const consensusEndpointLocalY = endpointYs.length ? median(endpointYs) : null;
+  const consensusRawValue = Number.isFinite(consensusEndpointLocalY)
+    ? ((calibration.zeroY - consensusEndpointLocalY) / calibration.gridSpacing) * 10000
+    : null;
+  const consensusRoundedValue = Number.isFinite(consensusRawValue)
+    ? Math.round(consensusRawValue / 500) * 500
+    : null;
+  const roundedValueSpread = attemptRoundedValues.length
+    ? Math.max(...attemptRoundedValues) - Math.min(...attemptRoundedValues)
+    : null;
+  const reasonCodes = [];
+  if (attempts.length !== SHORT_SERIES_PIXEL_PROFILES.length) {
+    reasonCodes.push("short-series-threshold-profile-missing");
+  }
+  // The four profiles inspect the same source image, so a one-pixel
+  // anti-aliasing difference is not independent proof. If that difference
+  // straddles a 500-ball rounding boundary, keep the slot for review instead
+  // of choosing the median automatically.
+  if (!Number.isFinite(roundedValueSpread) || roundedValueSpread !== 0) {
+    reasonCodes.push("short-series-threshold-value-disagreement");
+  }
+  if (!Number.isFinite(endpointSpread) || endpointSpread > maximumEndpointSpread) {
+    reasonCodes.push("short-series-endpoint-disagreement");
+  }
+  if (!Number.isFinite(startSpread) || !Number.isFinite(endSpread)
+    || startSpread > 2 || endSpread > 3) {
+    reasonCodes.push("short-series-component-disagreement");
+  }
+
+  return {
+    accepted: reasonCodes.length === 0,
+    profileCount: attempts.length,
+    requiredProfileCount: SHORT_SERIES_PIXEL_PROFILES.length,
+    roundedValue: Number.isFinite(consensusRoundedValue)
+      ? (Object.is(consensusRoundedValue, -0) ? 0 : consensusRoundedValue)
+      : null,
+    thresholdRoundedValues: roundedValues,
+    roundedValueSpread,
+    endpointLocalY: consensusEndpointLocalY,
+    endpointSpread,
+    maximumEndpointSpread,
+    startSpread,
+    endSpread,
+    attempts,
+    reasonCodes,
+  };
 }
 
 function extractSeries(data, imageWidth, panel, calibration) {
@@ -643,6 +900,7 @@ function failedSeriesResult(panel, calibration) {
     visibleValueRange: null,
     boundaryObservation: null,
     valueConstraint: null,
+    shortSeriesEvidence: null,
     px: 0,
     bbox: { ...panel.bbox },
     row: panel.row,
@@ -669,11 +927,22 @@ export function runAnalysis(data, w, h) {
   }
 
   const midX = Math.floor(w / 2);
-  const leftPanels = findPanelsInHalf(data, w, h, 0, midX, 0);
-  const rightPanels = findPanelsInHalf(data, w, h, midX, w, 1);
+  const rawLeftPanels = findPanelsInHalf(data, w, h, 0, midX, 0);
+  const rawRightPanels = findPanelsInHalf(data, w, h, midX, w, 1);
+  const calibrationCache = new Map();
+  const filteredPanels = filterFullBleedPageChrome(
+    data,
+    w,
+    [...rawLeftPanels, ...rawRightPanels],
+    calibrationCache,
+  );
+  const leftPanels = filteredPanels.filter((panel) => panel.column === 0);
+  const rightPanels = filteredPanels.filter((panel) => panel.column === 1);
   const panels = assignPanelRows([...leftPanels, ...rightPanels]).sort((a, b) => (
     a.row - b.row || a.column - b.column || a.bbox.x - b.bbox.x
   ));
+  const filteredCount = rawLeftPanels.length + rawRightPanels.length - panels.length;
+  if (filteredCount > 0) log(`ページ見出し・操作欄候補を${filteredCount}枠除外`);
   diagnostics.detection.left = leftPanels.length;
   diagnostics.detection.right = rightPanels.length;
   diagnostics.detection.panels = panels.length;
@@ -682,7 +951,9 @@ export function runAnalysis(data, w, h) {
 
   if (!panels.length) return { results: [], logs, diagnostics, error: "グラフ枠なし" };
 
-  const calibrations = panels.map((panel) => calibratePanel(data, w, panel));
+  const calibrations = panels.map((panel) => (
+    calibrationCache.get(panel) || calibratePanel(data, w, panel)
+  ));
   const goodCalibrationEntries = calibrations
     .map((calibration, index) => ({ calibration, panel: panels[index] }))
     .filter(({ calibration }) => calibration.valid && calibration.quality >= 0.55);
@@ -745,6 +1016,7 @@ export function runAnalysis(data, w, h) {
         visibleValueRange: null,
         boundaryObservation: null,
         valueConstraint: null,
+        shortSeriesEvidence: null,
         px: series.px,
         bbox: { ...panel.bbox },
         row: panel.row,
@@ -762,6 +1034,24 @@ export function runAnalysis(data, w, h) {
     if (calibration.source === "image-median") reasonCodes.push("fallback-calibration");
     if (series.detectionSource === "faint-short") reasonCodes.push("faint-series");
     const isShortSeries = series.span < panel.bbox.width * 0.12;
+    const rawShortSeriesEvidence = isShortSeries
+      ? extractShortSeriesConsensus(data, w, panel, calibration)
+      : null;
+    const primaryValueAgrees = rawShortSeriesEvidence?.roundedValue === val;
+    const shortSeriesEvidence = rawShortSeriesEvidence
+      ? {
+        ...rawShortSeriesEvidence,
+        accepted: rawShortSeriesEvidence.accepted && primaryValueAgrees,
+        reasonCodes: primaryValueAgrees
+          ? rawShortSeriesEvidence.reasonCodes
+          : [
+            ...rawShortSeriesEvidence.reasonCodes,
+            "short-series-primary-value-disagreement",
+          ],
+        primaryRoundedValue: val,
+        primaryValueAgrees,
+      }
+      : null;
     const boundaryContact = classifySeriesBoundaryContact(series, calibration);
     const isEndpointClipped = Boolean(boundaryContact.endpointBoundary);
     const isEndpointBoundaryUncertain = Boolean(boundaryContact.uncertainEndpointBoundary);
@@ -808,6 +1098,7 @@ export function runAnalysis(data, w, h) {
       visibleValueRange,
       boundaryObservation,
       valueConstraint: null,
+      shortSeriesEvidence,
       px: series.px,
       bbox: { ...panel.bbox },
       row: panel.row,

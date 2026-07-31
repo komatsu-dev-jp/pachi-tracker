@@ -11,3 +11,14 @@ db.version(1).stores({
     snapshots: "++id, ts",
     meta: "key",
 });
+
+// Pushで受け取った解析結果は、既存データへ直接書き込まず受信箱へ保管する。
+// batchIdを主キーにすることで、同じPushの再送は追加できない（上書きもしない）。
+db.version(2).stores({
+    kv: "key",
+    snapshots: "++id, ts",
+    meta: "key",
+    pushInbox: "batchId, receivedAt",
+    // pushInbox本体は不変のまま、処理結果だけを別テーブルへ記録する。
+    pushInboxStatus: "batchId, status, updatedAt",
+});

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { getSync, set as persistSet } from "./persistence.js";
 
 // useLS: 同期 setter / 同期初期値取得という外部契約を維持したまま、
@@ -10,7 +10,7 @@ export function useLS(key, init) {
         return cached !== undefined ? cached : init;
     });
 
-    const set = (v) => {
+    const set = useCallback((v) => {
         setVal(prev => {
             const s = v instanceof Function ? v(prev) : v;
             try {
@@ -20,7 +20,7 @@ export function useLS(key, init) {
             }
             return s;
         });
-    };
+    }, [key]);
 
     return [val, set];
 }

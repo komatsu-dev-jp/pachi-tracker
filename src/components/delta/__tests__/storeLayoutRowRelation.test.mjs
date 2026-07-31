@@ -61,6 +61,40 @@ test("島全体より少ない部分写真でも、各台番号が範囲内な�
   assert.deepEqual(result.rows.map((row) => row.islandId), ["ghoul", "ghoul", "ghoul"]);
 });
 
+test("東京喰種822〜827番の解析結果へ機種名を自動反映する", () => {
+  const islands = [
+    {
+      id: "sea",
+      name: "大海物語",
+      machineName: "P大海物語5 MTE2",
+      start: 479,
+      end: 484,
+    },
+    {
+      id: "tokyo-ghoul",
+      name: "東京喰種",
+      machineName: "e東京喰種",
+      start: 822,
+      end: 827,
+    },
+  ];
+  const rows = [827, 826, 825, 824, 823, 822].map((num) => ({
+    num: String(num),
+    val: 1000,
+    status: "ok",
+  }));
+
+  const result = relateRowsToStoreLayout(rows, { islands });
+
+  assert.equal(result.summary.mappedCount, 6);
+  assert.equal(result.summary.reviewCount, 0);
+  assert.ok(result.rows.every((row) => (
+    row.machineName === "e東京喰種"
+      && row.islandId === "tokyo-ghoul"
+      && row.storeLayoutRelation.machineNameApplied === true
+  )));
+});
+
 test("ranges・gaps・降順をislandToNumbersどおり反映し、欠け台を範囲外にする", () => {
   const island = {
     id: "layout",

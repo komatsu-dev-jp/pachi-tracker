@@ -6,7 +6,7 @@
 // 読み切れない資料だけホールマップ／手動設定や任意のAI補助へ回す。
 // 画像解析は端末内で完結（外部送信なし）。logic.js・rotRows とは無関係の独立データ。
 //
-// ステップ: upload（共同解析）→ numbers（照合確認）→ results（results から import へ往復）
+// ステップ: upload（共同解析）→ numbers（照合確認）→ results（results から import へ往復）→ complete（保存完了）
 // props: { store, stores, islands, onChangeStore, onClose, onSaveScan }
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -15,6 +15,7 @@ import { Card } from "../Atoms";
 import { runAnalysis, getRankTone } from "./deltaEngine";
 import { attachMachineNumbersToSlots, combineMachineNumberPages } from "./machineNumberOcr";
 import { attachGraphPanelMetadata } from "./graphPanelMetadataOcr";
+import { applySafeShortSeriesValidation } from "./graphShortSeriesValidator";
 import { matchSiteSevenGraphPanels } from "./siteSevenJointMatcher";
 import { resolveMatchedSiteSevenRows } from "./siteSevenJointResolution";
 import {
@@ -27,6 +28,8 @@ import {
   validateDeltaRows,
   isResolvedDeltaRow,
   isDeltaValueWithinConstraint,
+  isDeltaReviewEditable,
+  shouldCommitDeltaReviewValue,
   updateDeltaReview,
   islandToNumbers,
   buildSegmentsNumbers,
@@ -50,7 +53,10 @@ import {
   buildStoreMachineNumberRelation,
   compareConfirmedMachineNumbers,
 } from "./storeMachineNumberRelation";
-import { buildRowDeltaEvidence } from "./deltaEvidence";
+import {
+  buildRowDeltaEvidence,
+  validateDeltaRowMachineAssignments,
+} from "./deltaEvidence";
 import {
   attachClippedDeltaRanges,
   formatDeltaRange,
@@ -61,6 +67,7 @@ import {
   buildPartialMachineNumberAssignment,
   canAutoAcceptSiteSevenReports,
   createImageSelectionSnapshot,
+  retainDetectedGraphSlotsAfterOcr,
   seedPartialMachineNumberInputs,
   shouldAcceptImageAnalysis,
   summarizeSiteSevenReviewState,
@@ -73,6 +80,17 @@ import {
   propagateManualMachineSelections,
   relateRowsToStoreLayout,
 } from "./storeLayoutRowRelation";
+import {
+  createDeltaCompletionHistoryGuard,
+  getDeltaSaveControlState,
+  getDeltaSaveReadiness,
+  makeDeltaCompletionSummary,
+} from "./deltaCompletion";
+import { createSourceFingerprint } from "./sourceFingerprint";
+import {
+  buildDeltaAnalysisConfirmation,
+  DELTA_EVENT_OPTIONS,
+} from "./deltaAnalysisContext";
 
 const TAP = 44; // 最小タップ領域
 const CTA = 48; // 下部固定CTA高さ
@@ -81,6 +99,10 @@ const ANALYSIS_ENGINE_VERSION = String(import.meta.env.VITE_BUILD_SHA || "dev").
 
 function todayStr() {
   return localDateStr();
+}
+function defaultIslandScopeId(islands) {
+  const list = Array.isArray(islands) ? islands : [];
+  return list.length === 1 ? String(list[0]?.id ?? "island-0") : "all";
 }
 function todaySlash() {
   const d = new Date();
@@ -114,7 +136,9 @@ function fileToAttachment(file) {
   });
 }
 
-async function analyzeImages(images, onProgress, {
+// 自動解析専用ページから同じ端末内OCRを再利用する。関数自体は保存処理を持たない。
+// eslint-disable-next-line react-refresh/only-export-components
+export async function analyzeImages(images, onProgress, {
   dateText = "",
   storeName = "",
   expectedNumbers = [],
@@ -321,7 +345,10 @@ async function analyzeImages(images, onProgress, {
       });
     }
   }
-  const combinedNumbers = combineMachineNumberPages(numberPages, { allowPartialPages: true });
+  const combinedNumbers = retainDetectedGraphSlotsAfterOcr(
+    numberPages,
+    combineMachineNumberPages(numberPages, { allowPartialPages: true }),
+  );
   const excludedPageSet = new Set(combinedNumbers.failedPageIndices || []);
   const mergeExpectedNumbers = expectCompleteTable
     ? tableExpectation.numbers
@@ -360,7 +387,7 @@ async function analyzeImages(images, onProgress, {
     && canAutoAcceptSiteSevenReports(siteSevenReports)
     && jointNumbers.every(Boolean)
     && new Set(jointNumbers).size === jointNumbers.length;
-  const resolvedSlots = combinedNumbers.slots.map((slot, graphIndex) => {
+  const jointlyResolvedSlots = combinedNumbers.slots.map((slot, graphIndex) => {
     const match = jointNumberByGraphIndex.get(graphIndex);
     if (!match) return slot;
     return {
@@ -377,6 +404,10 @@ async function analyzeImages(images, onProgress, {
       },
     };
   });
+  const resolvedSlots = applySafeShortSeriesValidation(
+    jointlyResolvedSlots,
+    jointMatch,
+  );
   const resolvedNumberOcr = jointAccepted
     ? {
       ...combinedNumbers,
@@ -485,7 +516,7 @@ export function TopBar({ title, onBack, right, backDisabled = false }) {
 }
 
 // ── 下部固定CTA ──
-function BottomCta({ label, onClick, disabled }) {
+function BottomCta({ label, onClick, disabled, testId }) {
   return (
     <div style={{
       flexShrink: 0,
@@ -494,6 +525,7 @@ function BottomCta({ label, onClick, disabled }) {
     }}>
       <button
         className="b"
+        data-testid={testId}
         onClick={disabled ? undefined : onClick}
         disabled={disabled}
         style={{
@@ -533,8 +565,11 @@ function UploadStep({
   setImages,
   analysisDate,
   setAnalysisDate,
+  eventType,
+  setEventType,
   onAnalyze,
   onClose,
+  requestConfirmation,
 }) {
   const fileRef = useRef(null);
   const analysisRequestIdRef = useRef(0);
@@ -683,6 +718,23 @@ function UploadStep({
     onAnalyze(analysis);
   };
 
+  const confirmAndStart = async () => {
+    if (!images.length || busyRef.current || fileLoadRef.current) return;
+    const confirmation = buildDeltaAnalysisConfirmation({
+      storeName: store?.name || "",
+      analysisDate,
+      eventType,
+      islands,
+      islandScopeId,
+      fileCount: images.length,
+    });
+    const confirmed = typeof requestConfirmation === "function"
+      ? await requestConfirmation(confirmation)
+      : false;
+    if (!confirmed) return;
+    await start();
+  };
+
   return (
     <>
       <TopBar title="差玉解析" onBack={onClose} backDisabled={interactionLocked} />
@@ -744,6 +796,31 @@ function UploadStep({
                 background: C.surfaceHi, color: C.text, padding: "0 9px", fontFamily: mono,
               }}
             />
+          </label>
+          <label style={{
+            display: "flex", alignItems: "center", gap: 12, padding: "10px 14px 12px",
+            borderTop: `1px solid ${C.border}`, color: C.subHi, fontSize: 12, fontWeight: 700,
+          }}>
+            <span style={{ flex: 1 }}>
+              イベント日
+              <small style={{ display: "block", marginTop: 2, color: C.sub, fontSize: 9 }}>
+                翌日の締めやすさを学習します
+              </small>
+            </span>
+            <select
+              aria-label="イベント日の種類"
+              value={eventType}
+              disabled={interactionLocked}
+              onChange={(event) => setEventType?.(event.target.value)}
+              style={{
+                minHeight: 38, maxWidth: 150, borderRadius: 9, border: `1px solid ${C.borderHi}`,
+                background: C.surfaceHi, color: C.text, padding: "0 28px 0 9px", fontFamily: font,
+              }}
+            >
+              {DELTA_EVENT_OPTIONS.map((option) => (
+                <option key={option.value || "normal"} value={option.value}>{option.label}</option>
+              ))}
+            </select>
           </label>
         </Card>
 
@@ -856,6 +933,12 @@ function UploadStep({
           </div>
           <div style={{ fontSize: 11, color: C.subHi, lineHeight: 1.55, marginTop: 10 }}>
             文字を選択できるPDF・CSVは写真より正確です。画像だけのPDFは、元の写真も一緒に選んでください。
+          </div>
+          <div style={{ fontSize: 11, color: C.green, lineHeight: 1.55, marginTop: 8, fontWeight: 700 }}>
+            iPhoneでは「ブラウズ → iCloud Drive → サイトセブンOCR → 01_入力」からまとめて選択
+          </div>
+          <div style={{ fontSize: 10, color: C.sub, lineHeight: 1.5, marginTop: 5 }}>
+            通常の解析は端末内だけで行い、選んだ元画像を削除・変更しません
           </div>
         </div>
 
@@ -979,7 +1062,7 @@ function UploadStep({
         label={busy
           ? `解析中… ${progress.i}/${progress.n}`
           : loadingFiles ? "ファイルを準備中…" : `解析する（${images.length}件）`}
-        onClick={start}
+        onClick={confirmAndStart}
         disabled={!images.length || interactionLocked}
       />
     </>
@@ -1224,14 +1307,20 @@ function NumbersStep({
         {numberOcr && !numberOcr.accepted && numberOcr.source !== "joint-partial" && (
           <div style={{ background: "color-mix(in srgb, var(--yellow) 12%, transparent)", border: `1px solid color-mix(in srgb, var(--yellow) 38%, transparent)`, borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
             <div style={{ fontSize: 14, color: C.yellow, fontWeight: 900, marginBottom: 4 }}>
-              台番号OCRは一部のみ成功（{recognizedNumberCount}/{slotCount}台）
+              {numberOcr.manualFallback
+                ? "グラフは読み込めました"
+                : `台番号OCRは一部のみ成功（${recognizedNumberCount}/${slotCount}台）`}
             </div>
             <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.65, fontWeight: 700 }}>
-              小さい文字を無理に推測しません。
-              {hasFixedNumberAssignments
-                ? " 確実に読めた番号は固定し、未確認の台だけ入力してください。"
-                : " 下の島または区間で番号を割り当て、画像ごとの範囲を確認してください。"}
-              OCRで確実に読めた番号と1台でも矛盾する場合は確定できません。
+              {numberOcr.manualFallback
+                ? " 台番号だけ自動で読めなかったため、下の島または区間で設定してください。グラフの解析結果は失われていません。"
+                : <>
+                  小さい文字を無理に推測しません。
+                  {hasFixedNumberAssignments
+                    ? " 確実に読めた番号は固定し、未確認の台だけ入力してください。"
+                    : " 下の島または区間で番号を割り当て、画像ごとの範囲を確認してください。"}
+                  OCRで確実に読めた番号と1台でも矛盾する場合は確定できません。
+                </>}
             </div>
           </div>
         )}
@@ -1687,6 +1776,9 @@ function hasResolvedDelta(row) {
 
 function reviewReasonText(row) {
   const reasons = Array.isArray(row?.reasonCodes) ? row.reasonCodes : [];
+  if (row?.status === "failed") {
+    return "折れ線を読み取れませんでした。元画像を確認し、差玉を手入力してください。";
+  }
   if (reasons.includes("zero-length-series") && reasons.includes("table-low-activity")) {
     return "低稼働・当り0の表データと照合した0玉候補です。元画像を確認してください。";
   }
@@ -1765,8 +1857,9 @@ function ReviewValueEditor({ row, onUpdate }) {
   const parsedValue = numericValid ? Number(normalized) : null;
   const constraintValid = numericValid && isDeltaValueWithinConstraint(row, parsedValue);
   const valid = numericValid && constraintValid;
-  const emptyBoundedDraft = bounded && !draft.trim();
-  const showInputError = !valid && !emptyBoundedDraft;
+  const emptyDraft = !draft.trim();
+  const emptyBoundedDraft = bounded && emptyDraft;
+  const showInputError = !valid && !emptyDraft;
   const canRestoreBounded = !bounded
     && row?.deltaRange
     && row?.rawGraphCandidate
@@ -1774,7 +1867,7 @@ function ReviewValueEditor({ row, onUpdate }) {
   const commit = () => {
     if (!valid) return;
     const value = parsedValue;
-    if (value !== Number(row?.val)) onUpdate({ value });
+    if (shouldCommitDeltaReviewValue(row?.val, value)) onUpdate({ value });
   };
   const reviewConfirmed = row?.reviewConfirmed === true
     && isDeltaValueWithinConstraint(row, row?.val);
@@ -1791,14 +1884,19 @@ function ReviewValueEditor({ row, onUpdate }) {
     <>
       <div style={{ flex: 1, minWidth: 132 }}>
         <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, marginBottom: 4 }}>
-          {bounded ? "正確な差玉が分かる場合のみ入力（任意）" : "確認後の差玉"}
+          {bounded
+            ? "正確な差玉が分かる場合のみ入力（任意）"
+            : row?.status === "failed" ? "差玉を手入力" : "確認後の差玉"}
         </div>
         <input
           type="text"
           inputMode="numeric"
           value={draft}
           disabled={reviewConfirmed}
-          aria-label={`台${row?.num}の確認後差玉`}
+          placeholder={row?.status === "failed" ? "差玉を入力" : undefined}
+          aria-label={row?.status === "failed"
+            ? `台${row?.num}の差玉を手入力`
+            : `台${row?.num}の確認後差玉`}
           aria-invalid={showInputError}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commit}
@@ -1814,7 +1912,7 @@ function ReviewValueEditor({ row, onUpdate }) {
             padding: "0 10px", opacity: reviewConfirmed ? 0.72 : 1,
           }}
         />
-        {!valid && !reviewConfirmed && (!bounded || draft.trim()) && (
+        {!valid && !reviewConfirmed && !emptyDraft && (
           <div role="alert" style={{ color: C.red, fontSize: 10, fontWeight: 800, marginTop: 4 }}>
             {numericValid ? constraintText(row) || "許可された範囲で入力してください" : "数字で入力してください"}
           </div>
@@ -1930,6 +2028,14 @@ function ResultsStep({
   const [machinePickerNumber, setMachinePickerNumber] = useState(null);
 
   const rowValidation = useMemo(() => validateDeltaRows(rows), [rows]);
+  const machineValidation = useMemo(
+    () => validateDeltaRowMachineAssignments(
+      rowValidation.savableRows,
+      customMachines,
+      machineDB,
+    ),
+    [rowValidation.savableRows, customMachines],
+  );
   const resolvedRows = useMemo(
     () => rowValidation.savableRows.filter(hasResolvedDelta),
     [rowValidation],
@@ -2002,13 +2108,36 @@ function ResultsStep({
     return state;
   }, { matched: 0, manual: 0, machineMissing: 0, conflicts: 0, ambiguous: 0, unmapped: 0 }), [rows]);
   const predictedCount = Array.from(predictionByNum.values()).filter((item) => item.hasEstimate).length;
+  const savablePredictionCount = rowValidation.savableRows.filter((row) => (
+    predictionByNum.get(String(row.num))?.hasEstimate === true
+  )).length;
   const pendingReviewCount = rowValidation.pendingReviewIndices.length;
   const confirmedReviewCount = rowValidation.confirmedReviewIndices.length;
   const boundedCount = rowValidation.boundedCount || 0;
   const missingDeltaCount = rowValidation.missingIndices.length;
   const hasPartialSave = rowValidation.canSave && !rowValidation.valid;
   const warningOnly = hasPartialSave || (pendingReviewCount > 0 && missingDeltaCount === 0);
-  const saveDisabled = saved || !rowValidation.canSave;
+  const {
+    canSaveDeltaOnly,
+    needsPredictionData,
+  } = getDeltaSaveReadiness({
+    canSaveRows: rowValidation.canSave,
+    machineAssignmentsValid: machineValidation.valid,
+    savableCount: rowValidation.savableCount,
+    predictedCount: savablePredictionCount,
+  });
+  const saveControl = getDeltaSaveControlState({
+    saved,
+    canSaveRows: rowValidation.canSave,
+    canSaveDeltaOnly,
+    savableCount: rowValidation.savableCount,
+    pendingReviewCount,
+    missingDeltaCount,
+    hasNumberAssignmentError: rowValidation.blockingErrors.some((error) => error !== "empty"),
+    machineMissingCount: machineValidation.missingCount,
+    machineUnregisteredCount: machineValidation.unregisteredCount,
+  });
+  const saveDisabled = saveControl.disabled;
 
   return (
     <>
@@ -2018,23 +2147,18 @@ function ResultsStep({
         right={(
           <button
             className="b"
+            data-testid="delta-save-top"
             onClick={saveDisabled ? undefined : onSave}
             disabled={saveDisabled}
             style={{
               minHeight: TAP, minWidth: 64, borderRadius: 12, padding: "0 14px",
-              border: saved ? "none" : `1px solid ${rowValidation.canSave ? C.blue : C.border}`,
+              border: saved ? "none" : `1px solid ${saveDisabled ? C.border : C.blue}`,
               background: saved ? "color-mix(in srgb, var(--green) 16%, transparent)" : "transparent",
-              color: saved ? C.green : rowValidation.canSave ? C.blue : C.sub,
+              color: saved ? C.green : saveDisabled ? C.sub : C.blue,
               fontSize: 14, fontWeight: 800,
             }}
           >
-            {saved
-              ? "保存済み ✓"
-              : rowValidation.canSave
-                ? `${rowValidation.savableCount}台を保存`
-                : pendingReviewCount > 0 && missingDeltaCount === 0
-                  ? `確認待ち${pendingReviewCount}`
-                  : "保存不可"}
+            {saveControl.label}
           </button>
         )}
       />
@@ -2108,6 +2232,53 @@ function ResultsStep({
           </div>
         )}
 
+        {rowValidation.canSave && !machineValidation.valid && (
+          <div style={{
+            background: "color-mix(in srgb, var(--yellow) 12%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--yellow) 38%, transparent)",
+            borderRadius: 14, padding: "12px 14px", marginBottom: 12,
+          }}>
+            <div style={{ fontSize: 14, color: C.yellow, fontWeight: 900, marginBottom: 5 }}>
+              機種を確定すると保存できます
+            </div>
+            <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.65, fontWeight: 700 }}>
+              {machineValidation.missingCount > 0
+                && `機種名がない${machineValidation.missingCount}台があります。各台の機種名を押して選択してください。`}
+              {machineValidation.unregisteredCount > 0
+                && ` 登録機種と照合できない${machineValidation.unregisteredCount}台があります。正式な機種を選び直してください。`}
+            </div>
+          </div>
+        )}
+
+        {needsPredictionData && (
+          <div style={{
+            background: "color-mix(in srgb, var(--yellow) 12%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--yellow) 38%, transparent)",
+            borderRadius: 14, padding: "12px 14px", marginBottom: 12,
+          }}>
+            <div style={{ fontSize: 14, color: C.yellow, fontWeight: 900, marginBottom: 5 }}>
+              回転率を表示できるのは{savablePredictionCount}/{rowValidation.savableCount}台です
+            </div>
+            <div style={{ fontSize: 12, color: C.subHi, lineHeight: 1.65, fontWeight: 700 }}>
+              通常中スタート・大当り回数・確定差玉が揃っていない台は、戦略マップで回転率を計算できません。
+              差玉履歴はこのまま保存できます。回転率も表示したい場合だけ、不足データを追加してください。
+            </div>
+            <button
+              type="button"
+              className="b"
+              data-testid="delta-add-prediction-data"
+              onClick={onOpenImport}
+              style={{
+                width: "100%", minHeight: TAP, marginTop: 10, borderRadius: 11,
+                border: `1px solid ${C.borderHi}`, background: C.surface,
+                color: C.subHi, fontSize: 12, fontWeight: 800,
+              }}
+            >
+              回転数・大当りデータを追加
+            </button>
+          </div>
+        )}
+
         {!rowValidation.valid && (
           <div style={{
             background: warningOnly
@@ -2174,7 +2345,10 @@ function ResultsStep({
         {sorted.map((r, i) => {
           const resolved = hasResolvedDelta(r);
           const bounded = isBoundedDeltaRow(r);
-          const isReview = r.status === "review" || bounded;
+          const isReview = isDeltaReviewEditable(r);
+          const hasReviewCandidate = r.status === "review"
+            && r.val !== null
+            && Number.isFinite(Number(r.val));
           const reviewConfirmed = isReview && resolved && r.reviewConfirmed === true;
           const tone = resolved
             ? getRankTone(r.rank)
@@ -2202,7 +2376,9 @@ function ResultsStep({
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
                   <span style={{ fontSize: resolved && !reviewConfirmed ? 20 : 11, fontWeight: 900, color: tone.color, fontFamily: mono, textAlign: "center", lineHeight: 1.25 }}>
-                    {reviewConfirmed ? "確認済" : resolved ? r.rank : bounded ? "境界" : isReview ? "要確認" : "未読取"}
+                    {reviewConfirmed
+                      ? "確認済"
+                      : resolved ? r.rank : bounded ? "境界" : r.status === "failed" ? "要入力" : isReview ? "要確認" : "未読取"}
                   </span>
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -2268,9 +2444,9 @@ function ResultsStep({
                     </div>
                   ) : null}
                 </div>
-                <div style={{ fontSize: resolved || isReview ? (bounded ? 13 : 21) : 15, fontWeight: 900, fontFamily: mono, color: resolved ? (r.val >= 0 ? C.green : C.red) : tone.color, flexShrink: 0, textAlign: "right", maxWidth: bounded ? 150 : "none" }}>
-                  {bounded ? formatDeltaRange(r.deltaRange, sp) : resolved || isReview ? sp(r.val) : "—"}
-                  {isReview && !reviewConfirmed && !bounded && <div style={{ fontSize: 9, color: C.yellow, marginTop: 2 }}>候補値</div>}
+                <div style={{ fontSize: bounded ? 13 : resolved || hasReviewCandidate ? 21 : 15, fontWeight: 900, fontFamily: mono, color: resolved ? (r.val >= 0 ? C.green : C.red) : tone.color, flexShrink: 0, textAlign: "right", maxWidth: bounded ? 150 : "none" }}>
+                  {bounded ? formatDeltaRange(r.deltaRange, sp) : resolved || hasReviewCandidate ? sp(r.val) : "—"}
+                  {hasReviewCandidate && !reviewConfirmed && <div style={{ fontSize: 9, color: C.yellow, marginTop: 2 }}>候補値</div>}
                 </div>
               </div>
 
@@ -2292,7 +2468,7 @@ function ResultsStep({
                   />
                   <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginTop: 10 }}>
                     <ReviewValueEditor
-                      key={`${r.num}-${bounded ? "bounded" : reviewConfirmed ? "confirmed" : "review"}`}
+                      key={`${r.num}-${bounded ? "bounded" : reviewConfirmed ? "confirmed" : r.status}`}
                       row={r}
                       onUpdate={(update) => onUpdateReview?.(r.num, update)}
                     />
@@ -2355,6 +2531,12 @@ function ResultsStep({
           {siteSevenSummary?.rowCount > 0 ? "台データを確認・追加" : "大当たり・回転数データを一括取り込み"}
         </button>
       </div>
+      <BottomCta
+        testId="delta-save-bottom"
+        label={saveControl.label}
+        onClick={onSave}
+        disabled={saveDisabled}
+      />
       <MachinePickerSheet
         open={machinePickerNumber !== null}
         title={machinePickerNumber ? `台${machinePickerNumber}の機種を選択` : "機種を選択"}
@@ -2368,6 +2550,131 @@ function ResultsStep({
           setMachinePickerNumber(null);
         }}
       />
+    </>
+  );
+}
+
+function CompletionAction({ label, description, onClick, primary = false }) {
+  return (
+    <button
+      type="button"
+      className="b"
+      onClick={onClick}
+      style={{
+        width: "100%",
+        minHeight: 64,
+        display: "grid",
+        gridTemplateColumns: "1fr auto",
+        alignItems: "center",
+        gap: 12,
+        padding: "13px 15px",
+        borderRadius: 16,
+        border: `1px solid ${primary ? C.blue : C.borderHi}`,
+        background: primary ? C.blue : C.surfaceHi,
+        color: primary ? "#fff" : C.text,
+        textAlign: "left",
+        boxShadow: primary ? "0 12px 30px color-mix(in srgb, var(--blue) 25%, transparent)" : "none",
+      }}
+    >
+      <span>
+        <strong style={{ display: "block", fontSize: 15, fontWeight: 900 }}>{label}</strong>
+        <span style={{
+          display: "block",
+          marginTop: 3,
+          color: primary ? "rgba(255,255,255,0.82)" : C.subHi,
+          fontSize: 11,
+          fontWeight: 700,
+          lineHeight: 1.45,
+        }}>
+          {description}
+        </span>
+      </span>
+      <span aria-hidden="true" style={{ fontSize: 20, fontWeight: 900 }}>›</span>
+    </button>
+  );
+}
+
+function SaveCompletionStep({
+  summary,
+  onContinue,
+  onDeltaTop,
+  onHome,
+}) {
+  const savedCount = Number(summary?.savedCount) || 0;
+  const excludedCount = Number(summary?.excludedCount) || 0;
+  return (
+    <>
+      <TopBar title="保存完了" onBack={onDeltaTop} />
+      <div
+        data-testid="delta-save-completion"
+        style={{
+          ...scrollAreaStyle,
+          padding: "18px 16px calc(28px + env(safe-area-inset-bottom, 0px))",
+        }}
+      >
+        <Card style={{ marginBottom: 16 }}>
+          <div style={{ padding: "24px 18px", textAlign: "center" }}>
+            <div
+              aria-hidden="true"
+              style={{
+                width: 64,
+                height: 64,
+                margin: "0 auto 14px",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "color-mix(in srgb, var(--green) 17%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--green) 40%, transparent)",
+                color: C.green,
+                fontSize: 34,
+                fontWeight: 900,
+              }}
+            >
+              ✓
+            </div>
+            <div style={{ color: C.green, fontSize: 13, fontWeight: 900, marginBottom: 7 }}>
+              保存に成功しました
+            </div>
+            <div style={{ color: C.text, fontSize: 21, fontWeight: 900, lineHeight: 1.35 }}>
+              {savedCount}台の差玉解析を保存
+            </div>
+            <div style={{ color: C.subHi, fontSize: 12, fontWeight: 700, lineHeight: 1.65, marginTop: 10 }}>
+              {summary?.storeName || "店舗未設定"} ・ {dateToSlash(summary?.date)}
+              {excludedCount > 0 && (
+                <div style={{ color: C.yellow, marginTop: 4 }}>
+                  未読取・未確認の{excludedCount}台は保存から除外しました
+                </div>
+              )}
+            </div>
+          </div>
+        </Card>
+
+        <div style={{ color: C.text, fontSize: 14, fontWeight: 900, margin: "0 2px 10px" }}>
+          次にすることを選んでください
+        </div>
+        <div style={{ display: "grid", gap: 10 }}>
+          <CompletionAction
+            label="続けて解析する"
+            description="店舗・日付などを引き継ぎ、資料と解析結果を空にして次の解析を始めます"
+            onClick={onContinue}
+            primary
+          />
+          <CompletionAction
+            label="差玉解析トップへ戻る"
+            description="入力内容を初期状態へ戻し、差玉解析の最初の画面を開きます"
+            onClick={onDeltaTop}
+          />
+          <CompletionAction
+            label="ホームへ戻る"
+            description="保存済みデータを残したまま、ホーム画面へ移動します"
+            onClick={onHome}
+          />
+        </div>
+        <div style={{ color: C.sub, fontSize: 10, fontWeight: 700, lineHeight: 1.6, margin: "14px 4px 0" }}>
+          端末の戻る操作では「差玉解析トップへ戻る」と同じ動作になります。
+        </div>
+      </div>
     </>
   );
 }
@@ -2425,8 +2732,10 @@ function ImportStep({
   onMerge,
   aiApiKey,
   onChangeAiApiKey,
+  requestConfirmation,
   initialDataRows = [],
   initialDataSummary = null,
+  initialSourceFiles = [],
 }) {
   const prompt = useMemo(
     () => buildOcrPrompt({ dateText: dateToSlash(analysisDate), storeName: store?.name || "" }),
@@ -2448,6 +2757,9 @@ function ImportStep({
   const [dataBusy, setDataBusy] = useState(false);
   const [dataError, setDataError] = useState("");
   const [dataSummary, setDataSummary] = useState(() => initialDataSummary);
+  const [dataSourceFiles, setDataSourceFiles] = useState(() => (
+    Array.isArray(initialSourceFiles) ? initialSourceFiles.filter(Boolean) : []
+  ));
   const [dataFilter, setDataFilter] = useState("");
   const [showAllDataRows, setShowAllDataRows] = useState(false);
   const [machinePickerRowIndex, setMachinePickerRowIndex] = useState(null);
@@ -2479,6 +2791,21 @@ function ImportStep({
       if (selected.length) setDataError("PDF・JPEG/PNG/WebP画像・CSVのいずれかを選んでください");
       return;
     }
+    const hasManualWork = dataRows.some((row) => (
+      (Array.isArray(row?.editedFields) && row.editedFields.length > 0)
+      || row?.reviewConfirmed === true
+      || row?.machineNameSource === "manual"
+      || row?.storeLayoutRelation?.manuallySelected === true
+    ));
+    if (hasManualWork) {
+      const confirmed = await requestConfirmation?.({
+        title: "手修正した台データを置き換えますか？",
+        message: "別のファイルを読み込むと、現在の数字修正・確認済みチェック・機種選択を新しい読取結果へ置き換えます。",
+        confirmLabel: "置き換えて読み込む",
+        tone: "danger",
+      });
+      if (!confirmed) return;
+    }
 
     const pdfFiles = classified.filter(({ kind }) => kind === "pdf").map(({ file }) => file);
     const csvFiles = classified.filter(({ kind }) => kind === "csv").map(({ file }) => file);
@@ -2488,14 +2815,11 @@ function ImportStep({
 
     setDataBusy(true);
     setAiBusy(false);
-    setDataRows([]);
     setDataError("");
-    setDataSummary(null);
     setDataFilter("");
     setShowAllDataRows(false);
     setMachinePickerRowIndex(null);
     setBulkMessage("");
-    setText("");
     try {
       const results = [];
       const failedFiles = [];
@@ -2559,6 +2883,10 @@ function ImportStep({
       }
 
       const expectedNumbers = (Array.isArray(deltaRows) ? deltaRows : []).map((row) => row?.num);
+      if (failedFiles.length) {
+        setDataError(`読み取れないファイルが${failedFiles.length}件ありました。現在の台データは変更していません。${failedFiles.map((item) => `${item.name}：${item.message}`).join("／")}`);
+        return;
+      }
       if (!results.length) {
         const failureDetail = failedFiles[0]
           ? `（${failedFiles[0].name}：${failedFiles[0].message}）`
@@ -2591,12 +2919,9 @@ function ImportStep({
         degradedImageCount,
         failedFileCount: failedFiles.length,
       });
-      if (failedFiles.length) {
-        setDataError(`読み取れないファイルが${failedFiles.length}件ありました。成功したファイルの結果は残しています。${failedFiles.map((item) => `${item.name}：${item.message}`).join("／")}`);
-      }
+      setDataSourceFiles(classified.map(({ file }) => file));
     } catch (error) {
       if (requestId !== dataRequestIdRef.current) return;
-      setDataRows([]);
       setDataError(error instanceof Error ? error.message : "台データの読み取りに失敗しました");
     } finally {
       if (requestId === dataRequestIdRef.current) setDataBusy(false);
@@ -2688,16 +3013,20 @@ function ImportStep({
       };
     }));
   };
-  const removeDataRow = (index) => {
+  const removeDataRow = async (index) => {
     const target = dataRows[index];
     if (!target || target.sourceType === "missing-placeholder") return;
     const parsedNumber = parseSiteSevenEditableInteger(target.num);
     const rowLabel = parsedNumber !== null && parsedNumber > 0
       ? `台${parsedNumber}`
       : `画像内${target.sourceLine || index + 1}行目`;
-    if (!window.confirm(
-      `${rowLabel}の読み取り行を削除しますか？\n\n平均行や実在しない行の場合だけ削除してください。元の写真・PDF・CSVは削除されません。`,
-    )) return;
+    const confirmed = await requestConfirmation?.({
+      title: `${rowLabel}の読み取り行を削除しますか？`,
+      message: "平均行や実在しない行の場合だけ削除してください。元の写真・PDF・CSVは削除されません。",
+      confirmLabel: "削除する",
+      tone: "danger",
+    });
+    if (!confirmed) return;
 
     const removed = removeSiteSevenImportedRow(dataRows, index, dataSummary, {
       expectedNumbers: [...deltaNumberSet],
@@ -2753,9 +3082,15 @@ function ImportStep({
     setKeyInput("");
     setShowKeyForm(false);
   };
-  const deleteKey = () => {
+  const deleteKey = async () => {
     // 「変更」の隣にあり誤タップで即消えると再設定の手間が大きいため確認を挟む。
-    if (!window.confirm("APIキーを削除しますか？")) return;
+    const confirmed = await requestConfirmation?.({
+      title: "APIキーを削除しますか？",
+      message: "AI読み取りを再び使う場合は、APIキーの再設定が必要です。",
+      confirmLabel: "削除する",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     if (typeof onChangeAiApiKey === "function") onChangeAiApiKey("");
     setShowKeyForm(false);
   };
@@ -3585,7 +3920,7 @@ function ImportStep({
           : deferredImportCount > 0
             ? `要確認${deferredImportCount}台（安全に統合できる台なし）`
           : "台データと差玉を台番号で統合する"}
-        onClick={() => onMerge(importRows, { dataRows, dataSummary })}
+        onClick={() => onMerge(importRows, { dataRows, dataSummary, sourceFiles: dataSourceFiles })}
         disabled={recognized === 0
           || dataBusy
           || aiBusy
@@ -3676,13 +4011,13 @@ export default function DeltaAnalyzer({
   aiApiKey,
   onChangeAiApiKey,
   customMachines,
+  requestConfirmation,
 }) {
   const [step, setStep] = useState("upload");
   const [analysisDate, setAnalysisDate] = useState(todayStr);
-  const [islandScopeId, setIslandScopeId] = useState(() => {
-    const list = Array.isArray(islands) ? islands : [];
-    return list.length === 1 ? String(list[0]?.id ?? "island-0") : "all";
-  });
+  const [eventType, setEventType] = useState("");
+  const defaultScopeId = useMemo(() => defaultIslandScopeId(islands), [islands]);
+  const [islandScopeId, setIslandScopeId] = useState(() => defaultIslandScopeId(islands));
   const [images, setImages] = useState([]);
   const [slots, setSlots] = useState([]); // ピクセル解析の生スロット
   const [analysisReports, setAnalysisReports] = useState([]);
@@ -3690,11 +4025,15 @@ export default function DeltaAnalyzer({
   const [analysisJointMatch, setAnalysisJointMatch] = useState(null);
   const [analysisSiteSevenRows, setAnalysisSiteSevenRows] = useState([]);
   const [analysisSiteSevenSummary, setAnalysisSiteSevenSummary] = useState(null);
+  const [supplementalSourceFiles, setSupplementalSourceFiles] = useState([]);
   const [autoImportedCount, setAutoImportedCount] = useState(0);
   const [confirmedMachineNumbers, setConfirmedMachineNumbers] = useState([]);
   const [rows, setRows] = useState([]);   // 台番号割り当て後の結果行
   const [saved, setSaved] = useState(false);
+  const [completion, setCompletion] = useState(null);
   const [toast, setToast] = useState("");
+  const saveGuardRef = useRef(false);
+  const completionHistoryGuardRef = useRef(null);
   const clearDerivedAnalysis = useCallback(() => {
     setSlots([]);
     setAnalysisReports([]);
@@ -3702,18 +4041,60 @@ export default function DeltaAnalyzer({
     setAnalysisJointMatch(null);
     setAnalysisSiteSevenRows([]);
     setAnalysisSiteSevenSummary(null);
+    setSupplementalSourceFiles([]);
     setAutoImportedCount(0);
     setConfirmedMachineNumbers([]);
     setRows([]);
     setSaved(false);
+    setCompletion(null);
+    saveGuardRef.current = false;
   }, []);
+
+  const resetForNextAnalysis = useCallback(() => {
+    setImages([]);
+    clearDerivedAnalysis();
+    setStep("upload");
+  }, [clearDerivedAnalysis]);
+
+  const resetToDeltaTop = useCallback(() => {
+    setImages([]);
+    clearDerivedAnalysis();
+    setAnalysisDate(todayStr());
+    setEventType("");
+    setIslandScopeId(defaultScopeId);
+    setStep("upload");
+  }, [clearDerivedAnalysis, defaultScopeId]);
+
+  const runCompletionAction = useCallback((action) => {
+    const guard = completionHistoryGuardRef.current;
+    if (guard) guard.run(action);
+    else action?.();
+  }, []);
+
+  useEffect(() => {
+    if (step !== "complete") return undefined;
+    const guard = createDeltaCompletionHistoryGuard({
+      windowObject: typeof window === "undefined" ? null : window,
+      onBack: resetToDeltaTop,
+    });
+    completionHistoryGuardRef.current = guard;
+    return () => {
+      guard.dispose();
+      if (completionHistoryGuardRef.current === guard) completionHistoryGuardRef.current = null;
+    };
+  }, [step, resetToDeltaTop]);
 
   // この画面から店舗を変える時は、前店舗の解析結果を新店舗へ保存できないよう破棄する。
   // 追加済みファイルは選択ミスを直しただけでも選び直さずに済むよう保持し、再解析を必須にする。
-  const handleChangeStore = (nextStoreId) => {
+  const handleChangeStore = async (nextStoreId) => {
     if (String(nextStoreId ?? "") === String(store?.id ?? "")) return;
     if (rows.length > 0 && !saved) {
-      const confirmed = window.confirm("保存していない解析結果があります。破棄して店舗を変更しますか？");
+      const confirmed = await requestConfirmation?.({
+        title: "保存していない解析結果を破棄しますか？",
+        message: "店舗を変更すると、現在の解析結果は破棄されます。追加済みの資料は残ります。",
+        confirmLabel: "破棄して変更",
+        tone: "danger",
+      });
       if (!confirmed) return;
     }
     const nextStore = (Array.isArray(stores) ? stores : []).find(
@@ -3722,6 +4103,7 @@ export default function DeltaAnalyzer({
     clearDerivedAnalysis();
     setStep("upload");
     setIslandScopeId("all");
+    setEventType("");
     setToast(`${nextStore?.name || "店舗"}へ切り替えました。資料を解析し直してください`);
     setTimeout(() => setToast(""), 3000);
     onChangeStore?.(nextStoreId);
@@ -3818,7 +4200,8 @@ export default function DeltaAnalyzer({
     setStep("results");
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (saveGuardRef.current || saved) return;
     const validation = validateDeltaRows(rows);
     if (!validation.canSave) {
       const message = validation.blockingErrors.length
@@ -3828,19 +4211,59 @@ export default function DeltaAnalyzer({
       setTimeout(() => setToast(""), 3000);
       return;
     }
-    const scan = makeScan({
-      storeId: store?.id ?? null,
-      storeName: store?.name || "",
-      date: analysisDate || todayStr(),
-      machineName,
-      rows: validation.savableRows,
-    });
-    onSaveScan?.(scan);
-    setSaved(true);
-    setToast(validation.excludedCount > 0
-      ? `${validation.savableCount}台を保存しました（未読取・未確認${validation.excludedCount}台は除外）`
-      : `${validation.savableCount}台を保存しました`);
-    setTimeout(() => setToast(""), 3500);
+    const machineValidation = validateDeltaRowMachineAssignments(
+      validation.savableRows,
+      customMachines,
+      machineDB,
+    );
+    if (!machineValidation.valid) {
+      const message = machineValidation.missingCount > 0
+        ? `機種名がない${machineValidation.missingCount}台があります。機種を選んでください`
+        : `登録機種と照合できない${machineValidation.unregisteredCount}台があります`;
+      setToast(message);
+      setTimeout(() => setToast(""), 3000);
+      return;
+    }
+    saveGuardRef.current = true;
+    try {
+      const sourceFingerprint = await createSourceFingerprint(
+        [
+          ...images.map((image) => image?.file),
+          ...supplementalSourceFiles,
+        ].filter(Boolean),
+      );
+      const scan = makeScan({
+        storeId: store?.id ?? null,
+        storeName: store?.name || "",
+        date: analysisDate || todayStr(),
+        event: eventType,
+        machineName,
+        rows: validation.savableRows,
+        sourceFingerprint,
+        analysisEngineVersion: ANALYSIS_ENGINE_VERSION,
+      });
+      const saveResult = await onSaveScan?.(scan);
+      if (saveResult?.status && saveResult.status !== "saved") {
+        saveGuardRef.current = false;
+        const message = saveResult.status === "duplicate"
+          ? "同じ資料はすでに保存済みです。既存データは変更していません"
+          : saveResult.status === "id-conflict"
+            ? "保存IDが重複したため追加を止めました。既存データは変更していません"
+            : "保存を開始できませんでした。既存データは変更していません";
+        setToast(message);
+        setTimeout(() => setToast(""), 4000);
+        return;
+      }
+      setSaved(true);
+      setCompletion(makeDeltaCompletionSummary({ scan, validation }));
+      setToast("");
+      setStep("complete");
+    } catch (error) {
+      saveGuardRef.current = false;
+      console.error("[delta] save failed", error);
+      setToast("保存に失敗しました。内容を確認してもう一度お試しください");
+      setTimeout(() => setToast(""), 3500);
+    }
   };
 
   const handleUpdateReview = (machineNumber, update = {}) => {
@@ -3916,6 +4339,9 @@ export default function DeltaAnalyzer({
         reviewedSourceRows,
       ));
     }
+    setSupplementalSourceFiles(
+      Array.isArray(importState?.sourceFiles) ? importState.sourceFiles.filter(Boolean) : [],
+    );
     setAutoImportedCount(matched || 0);
     setSaved(false);
     setStep("results");
@@ -3938,6 +4364,7 @@ export default function DeltaAnalyzer({
           zIndex: 70, background: C.green, color: "#fff",
           padding: "10px 18px", borderRadius: 999, fontSize: 14, fontWeight: 800,
           boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+          pointerEvents: "none",
         }}>
           {toast}
         </div>
@@ -3954,12 +4381,15 @@ export default function DeltaAnalyzer({
           images={images}
           analysisDate={analysisDate}
           setAnalysisDate={setAnalysisDate}
+          eventType={eventType}
+          setEventType={setEventType}
           setImages={(updater) => {
             setImages(updater);
             clearDerivedAnalysis();
           }}
           onAnalyze={handleAnalyzed}
           onClose={onClose}
+          requestConfirmation={requestConfirmation}
         />
       )}
       {step === "numbers" && (
@@ -3991,6 +4421,14 @@ export default function DeltaAnalyzer({
           autoImportedCount={autoImportedCount}
         />
       )}
+      {step === "complete" && (
+        <SaveCompletionStep
+          summary={completion}
+          onContinue={() => runCompletionAction(resetForNextAnalysis)}
+          onDeltaTop={() => runCompletionAction(resetToDeltaTop)}
+          onHome={() => runCompletionAction(() => onClose?.())}
+        />
+      )}
       {step === "import" && (
         <ImportStep
           store={store}
@@ -4002,9 +4440,11 @@ export default function DeltaAnalyzer({
           onChangeAiApiKey={onChangeAiApiKey}
           initialDataRows={analysisSiteSevenRows}
           initialDataSummary={analysisSiteSevenSummary}
+          initialSourceFiles={supplementalSourceFiles}
           islands={islands}
           islandScopeId={activeIslandScopeId}
           customMachines={customMachines}
+          requestConfirmation={requestConfirmation}
         />
       )}
     </div>

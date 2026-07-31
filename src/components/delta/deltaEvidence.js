@@ -2,11 +2,11 @@
 // Google Sheets には接続せず、保存済み pt_deltaScans だけを使う純粋関数。
 
 import { normalizeEvidenceDate } from "../../evidenceDate.js";
+import { predictionInterval95 } from "../evidence/rotationForecast.js";
 
 const BALLS_PER_1K = 250;
-const DEFAULT_BORDER = 18;
 const DEFAULT_PRIOR_VARIANCE = 4;
-const DEFAULT_STD_SCALE = 0.25;
+const DEFAULT_FALLBACK_HIT_PAYOUT_CV = 0.1;
 const GRAPH_STEP_BALLS = 500;
 
 function num(value, fallback = 0) {
@@ -16,6 +16,12 @@ function num(value, fallback = 0) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function optionalNonNegative(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, number) : null;
 }
 
 function sameText(a, b) {
@@ -39,27 +45,34 @@ export function normalizeEvidenceMachineNumber(value) {
   return normalized;
 }
 
-function machineNameVariants(machine = {}) {
-  return [machine?.name, ...(Array.isArray(machine?.aliases) ? machine.aliases : [])]
-    .map((value) => String(value ?? "").trim())
-    .filter(Boolean);
-}
-
 function machineNameScore(machine, inputName) {
   const input = String(inputName ?? "").trim();
   const normalizedInput = normalizeEvidenceMachineName(input);
   if (!normalizedInput) return 0;
+
+  const canonicalName = String(machine?.name ?? "").trim();
+  const normalizedCanonicalName = normalizeEvidenceMachineName(canonicalName);
+  if (canonicalName === input) return 5;
+  if (normalizedCanonicalName && normalizedCanonicalName === normalizedInput) return 4;
+
+  const aliases = (Array.isArray(machine?.aliases) ? machine.aliases : [])
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
   let score = 0;
-  for (const variant of machineNameVariants(machine)) {
-    if (variant === input) return 3;
+  for (const alias of aliases) {
+    if (alias === input) score = Math.max(score, 3);
+    else if (normalizeEvidenceMachineName(alias) === normalizedInput) score = Math.max(score, 2);
+  }
+  if (score > 0) return score;
+
+  for (const variant of [canonicalName, ...aliases]) {
     const normalizedVariant = normalizeEvidenceMachineName(variant);
-    if (normalizedVariant === normalizedInput) score = Math.max(score, 2);
-    else if (
+    if (
       normalizedVariant.length >= 6 && normalizedInput.length >= 6 &&
       (normalizedVariant.includes(normalizedInput) || normalizedInput.includes(normalizedVariant))
-    ) score = Math.max(score, 1);
+    ) return 1;
   }
-  return score;
+  return 0;
 }
 
 export function findMachineSpec(machineName, customMachines = [], builtInMachines = []) {
@@ -72,11 +85,10 @@ export function findMachineSpec(machineName, customMachines = [], builtInMachine
 
   const highestScore = Math.max(...scored.map((item) => item.score));
   const matched = scored.filter((item) => item.score === highestScore);
-  // 部分一致は型式違いの誤照合を避けるため、同じ正規化機種名に絞れる場合だけ採用する。
-  if (highestScore === 1) {
-    const canonicalNames = new Set(matched.map((item) => normalizeEvidenceMachineName(item.machine?.name)));
-    if (canonicalNames.size !== 1) return null;
-  }
+  // 正式名を別名より優先する。最高得点が複数の正式機種にまたがる場合は、
+  // 型式違いの誤照合を避けるため推測せず未登録扱いにする。
+  const canonicalNames = new Set(matched.map((item) => normalizeEvidenceMachineName(item.machine?.name)));
+  if (canonicalNames.size !== 1) return null;
 
   const master = matched.find((item) => item.source === "master")?.machine;
   const custom = matched.find((item) => item.source === "custom")?.machine;
@@ -94,6 +106,38 @@ export function findMachineSpec(machineName, customMachines = [], builtInMachine
       (num(machine?.muraCoef) > 0 ? 1 : 0);
     return score(b) - score(a);
   })[0];
+}
+
+// 保存候補の全台が機種マスターへ安全に結び付いているかを確認する。
+// 機種名なしの行を保存すると戦略マップで回転率を計算できないため、保存前に必ず止める。
+export function validateDeltaRowMachineAssignments(
+  rows,
+  customMachines = [],
+  builtInMachines = [],
+) {
+  const list = Array.isArray(rows) ? rows : [];
+  const missingIndices = [];
+  const unregisteredIndices = [];
+
+  list.forEach((row, index) => {
+    const machineName = String(row?.machineName || "").trim();
+    if (!machineName) {
+      missingIndices.push(index);
+      return;
+    }
+    if (!findMachineSpec(machineName, customMachines, builtInMachines)) {
+      unregisteredIndices.push(index);
+    }
+  });
+
+  return {
+    valid: missingIndices.length === 0 && unregisteredIndices.length === 0,
+    total: list.length,
+    missingCount: missingIndices.length,
+    missingIndices,
+    unregisteredCount: unregisteredIndices.length,
+    unregisteredIndices,
+  };
 }
 
 // 解析結果1台分を、機種マスタ照合から予測回転率まで一続きで評価する。
@@ -117,12 +161,18 @@ export function buildRowDeltaEvidence(row = {}, customMachines = [], builtInMach
     machine,
     estimate,
     evidence,
-    reason: evidence.hasEstimate ? "" : "計算データ不足",
+    reason: evidence.hasEstimate ? "" : (evidence.reason || "計算データ不足"),
   };
 }
 
 export function machineBorder(machine = {}) {
-  return num(machine.border1K ?? machine.border?.["4.00"] ?? machine.border, DEFAULT_BORDER);
+  const rawBorder = machine.border1K
+    ?? machine.border?.["4.00"]
+    ?? (typeof machine.border === "number" || typeof machine.border === "string"
+      ? machine.border
+      : null);
+  const border = Number(rawBorder);
+  return Number.isFinite(border) && border > 0 ? border : 0;
 }
 
 function percent(value) {
@@ -146,10 +196,85 @@ function payoutFromRoundDist(text, spec1R) {
   return avgRounds * num(spec1R);
 }
 
+function payoutRowsFromRoundDist(text, spec1R) {
+  const oneRound = num(spec1R);
+  if (!(oneRound > 0)) return [];
+  return [...String(text || "").matchAll(/(\d+(?:\.\d+)?)R[^0-9]*(\d+(?:\.\d+)?)%/gi)]
+    .map((match) => ({
+      payout: num(match[1]) * oneRound,
+      rate: num(match[2]),
+    }))
+    .filter((row) => row.payout >= 0 && row.rate > 0);
+}
+
+function payoutDistributionStats(rows, targetMean = null) {
+  const usable = (Array.isArray(rows) ? rows : [])
+    .map((row) => ({
+      payout: Number(row?.payout),
+      rate: Number(row?.rate),
+    }))
+    .filter((row) => Number.isFinite(row.payout) && row.payout >= 0
+      && Number.isFinite(row.rate) && row.rate > 0);
+  const totalRate = usable.reduce((sum, row) => sum + row.rate, 0);
+  if (!(totalRate > 0)) return null;
+  const rawMean = usable.reduce((sum, row) => sum + row.payout * row.rate, 0) / totalRate;
+  const requestedMean = Number(targetMean);
+  const scale = rawMean > 0 && Number.isFinite(requestedMean) && requestedMean >= 0
+    ? requestedMean / rawMean
+    : 1;
+  const mean = rawMean * scale;
+  const variance = usable.reduce(
+    (sum, row) => sum + row.rate * ((row.payout * scale - mean) ** 2),
+    0,
+  ) / totalRate;
+  return {
+    mean,
+    variance: Math.max(0, variance),
+    sd: Math.sqrt(Math.max(0, variance)),
+    sampleOutcomes: usable.length,
+  };
+}
+
+function measurementPayoutRows(machine = {}) {
+  const primaryHesoMode = (Array.isArray(machine.hesoModes) ? machine.hesoModes : [])
+    .find((mode) => Array.isArray(mode?.rows) && mode.rows.length);
+  if (primaryHesoMode) return primaryHesoMode.rows;
+  if (Array.isArray(machine.hesoDist) && machine.hesoDist.length) return machine.hesoDist;
+  return payoutRowsFromRoundDist(machine.roundDist, machine.spec1R);
+}
+
+function resolveHitPayoutStdDev(machine, avgPayout) {
+  const explicit = Number(machine?.payoutStdDevPerHit);
+  if (Number.isFinite(explicit) && explicit >= 0) {
+    return {
+      value: explicit,
+      source: machine.payoutStdDevPerHitMethod || "machine-explicit",
+      derived: false,
+    };
+  }
+
+  const distribution = payoutDistributionStats(measurementPayoutRows(machine), avgPayout);
+  if (distribution) {
+    return {
+      value: distribution.sd,
+      source: "initial-hit-allocation-v1",
+      derived: true,
+    };
+  }
+
+  // 振分がない旧データだけの後方互換。2,200回転の収支標準偏差は
+  // 1回当り出玉誤差とは単位が違うため、ここへ流用しない。
+  return {
+    value: Math.max(0, avgPayout * DEFAULT_FALLBACK_HIT_PAYOUT_CV),
+    source: "bounded-hit-cv-fallback-v1",
+    derived: true,
+  };
+}
+
 // P-EVIDENCE m_master と同じ考え方で、直接値がない旧機種も平均出玉を補完する。
 export function resolveMachineStats(machine = {}) {
   let avgPayout = Math.max(0, num(machine.avgPayoutPerHit));
-  let derived = false;
+  let avgPayoutDerived = false;
   if (!(avgPayout > 0)) {
     const heso = num(machine.hesoAvgPayout) || weightedPayout(machine.hesoDist);
     const right = Math.max(0, num(machine.rushAvgPayout));
@@ -158,16 +283,101 @@ export function resolveMachineStats(machine = {}) {
     if (heso > 0 && right > 0 && entry > 0 && cont > 0 && cont < 1) {
       const averageRightHits = entry * (cont / (1 - cont));
       avgPayout = ((heso + averageRightHits * right) / (1 + averageRightHits)) * 0.9;
-      derived = true;
+      avgPayoutDerived = true;
     }
   }
   if (!(avgPayout > 0)) {
     avgPayout = payoutFromRoundDist(machine.roundDist, machine.spec1R);
-    derived = avgPayout > 0;
+    avgPayoutDerived = avgPayout > 0;
   }
-  const directStdDev = Math.max(0, num(machine.stdDev));
-  const stdDev = directStdDev > 0 ? directStdDev : (avgPayout > 0 ? Math.max(3000, avgPayout * 4) : 0);
-  return { avgPayout, stdDev, derived: derived || !(directStdDev > 0) };
+  const sessionStdDev = Math.max(0, num(machine.stdDev));
+  const hitPayout = resolveHitPayoutStdDev(machine, avgPayout);
+  return {
+    avgPayout,
+    avgPayoutDerived,
+    // stdDev は既存呼び出しとの互換用。回転率の観測誤差には使用しない。
+    stdDev: sessionStdDev,
+    sessionStdDev,
+    payoutStdDevPerHit: hitPayout.value,
+    payoutStdDevSource: hitPayout.source,
+    payoutStdDevDerived: hitPayout.derived,
+    derived: avgPayoutDerived || hitPayout.derived,
+  };
+}
+
+function resolvePayoutObservation(
+  row,
+  machine,
+  stats,
+  normalSpins,
+  totalStarts,
+  payoutStdDevPerHit,
+  payoutStdDevSource,
+) {
+  const counterModel = machine?.deltaCounterModel;
+  if (counterModel?.type !== "counted-awards-with-reduced-payout") {
+    return {
+      available: totalStarts === 0 || stats.avgPayout > 0,
+      estimatedPayoutBalls: totalStarts * stats.avgPayout,
+      payoutVariance: totalStarts * payoutStdDevPerHit ** 2,
+      payoutEstimateSource: "episode-average",
+      estimatedReducedPayoutCount: 0,
+      payoutStdDevPerHit,
+      payoutStdDevSource,
+    };
+  }
+
+  const standardPayout = Math.max(0, num(counterModel.standardPayout));
+  const reducedPayout = Math.max(0, num(counterModel.reducedPayout));
+  const reducedShare = clamp(num(counterModel.reducedPayoutShareOfInitialHits), 0, 1);
+  if (!(standardPayout > 0) || reducedPayout > standardPayout || !(reducedShare > 0)) {
+    return {
+      available: false,
+      estimatedPayoutBalls: 0,
+      payoutVariance: 0,
+      payoutEstimateSource: "counter-model-invalid",
+      estimatedReducedPayoutCount: 0,
+      payoutStdDevPerHit: 0,
+      payoutStdDevSource: "counter-model-invalid",
+    };
+  }
+
+  const firstHitCount = optionalNonNegative(row?.firstHitCount);
+  const boundedFirstHits = firstHitCount === null ? null : Math.min(totalStarts, firstHitCount);
+  const fallbackProbability = Math.max(0, num(counterModel.reducedPayoutProbability));
+  const fallbackReducedCount = fallbackProbability > 0
+    ? normalSpins / fallbackProbability
+    : (num(machine?.synthProb) > 0 ? normalSpins / num(machine.synthProb) * reducedShare : 0);
+  const estimatedReducedPayoutCount = clamp(
+    boundedFirstHits === null ? fallbackReducedCount : boundedFirstHits * reducedShare,
+    0,
+    totalStarts,
+  );
+  const payoutDifference = standardPayout - reducedPayout;
+  const estimatedPayoutBalls = totalStarts * standardPayout
+    - estimatedReducedPayoutCount * payoutDifference;
+  // 初当り回数がある場合は「そのうち何回がチャージ相当か」の二項分散、
+  // 無い旧データは通常回転数から推定したチャージ件数のポアソン分散を使う。
+  const reducedCountVariance = boundedFirstHits === null
+    ? estimatedReducedPayoutCount
+    : boundedFirstHits * reducedShare * (1 - reducedShare);
+  // 初当りの公表振分に幅がある機種では、その1回ごとの出玉分散も加える。
+  // 未設定の既存機種は従来どおり0として扱う。
+  const reducedPayoutStdDev = Math.max(0, num(counterModel.reducedPayoutStdDev));
+  const reducedPayoutVariance = estimatedReducedPayoutCount * reducedPayoutStdDev ** 2;
+  const payoutVariance = reducedCountVariance * payoutDifference ** 2 + reducedPayoutVariance;
+
+  return {
+    available: totalStarts === 0 || estimatedPayoutBalls > 0,
+    estimatedPayoutBalls,
+    payoutVariance,
+    payoutEstimateSource: boundedFirstHits === null
+      ? (counterModel.fallbackEstimateSource || "normal-spins-charge-estimate")
+      : (counterModel.firstHitEstimateSource || "first-hit-charge-estimate"),
+    estimatedReducedPayoutCount,
+    payoutStdDevPerHit: totalStarts > 0 ? Math.sqrt(payoutVariance / totalStarts) : 0,
+    payoutStdDevSource: "counter-model-charge-mix-v1",
+  };
 }
 
 export function estimateDeltaObservation(row = {}, machine = {}, options = {}) {
@@ -176,8 +386,13 @@ export function estimateDeltaObservation(row = {}, machine = {}, options = {}) {
   const rawDelta = row?.val;
   const deltaBalls = Number(rawDelta);
   const stats = resolveMachineStats(machine);
-  const avgPayout = stats.avgPayout;
-  const stdDev = stats.stdDev;
+  const optionPayoutSd = Number(options.payoutStdDevPerHit);
+  const payoutStdDevPerHit = Number.isFinite(optionPayoutSd) && optionPayoutSd >= 0
+    ? optionPayoutSd
+    : stats.payoutStdDevPerHit;
+  const payoutStdDevSource = Number.isFinite(optionPayoutSd) && optionPayoutSd >= 0
+    ? "options-explicit"
+    : stats.payoutStdDevSource;
 
   if (row?.status === "bounded") return { valid: false, reason: "差玉は境界到達記録" };
   if (row?.status === "review" && row?.reviewConfirmed !== true) {
@@ -188,26 +403,47 @@ export function estimateDeltaObservation(row = {}, machine = {}, options = {}) {
     return { valid: false, reason: "確定差玉なし" };
   }
   if (normalSpins <= 0) return { valid: false, reason: "通常回転数なし" };
-  if (totalStarts > 0 && avgPayout <= 0) return { valid: false, reason: "平均出玉なし" };
   if (totalStarts === 0 && deltaBalls > 0) {
     return { valid: false, reason: "当り0で差玉プラス", normalSpins, totalStarts, deltaBalls };
   }
 
+  const payoutObservation = resolvePayoutObservation(
+    row,
+    machine,
+    stats,
+    normalSpins,
+    totalStarts,
+    payoutStdDevPerHit,
+    payoutStdDevSource,
+  );
+  if (!payoutObservation.available) return { valid: false, reason: "平均出玉なし" };
+
   // 差玉 = 払い出し - 投入玉 なので、投入玉 = 払い出し - 差玉。
-  const estimatedInputBalls = totalStarts * avgPayout - deltaBalls;
+  const estimatedInputBalls = payoutObservation.estimatedPayoutBalls - deltaBalls;
   if (estimatedInputBalls < BALLS_PER_1K) return { valid: false, reason: "推定投入玉不足" };
 
   const observedRotation = normalSpins / (estimatedInputBalls / BALLS_PER_1K);
-  const minRate = num(options.minRate, 5);
+  const modelMinRate = Math.max(0, num(machine?.deltaCounterModel?.minPlausibleRotation));
+  const minRate = Math.max(num(options.minRate, 5), modelMinRate);
   const maxRate = num(options.maxRate, 45);
   if (observedRotation < minRate || observedRotation > maxRate) {
-    return { valid: false, reason: "回転率が現実範囲外", observedRotation, estimatedInputBalls };
+    return {
+      valid: false,
+      reason: modelMinRate > 0 && observedRotation < modelMinRate
+        ? "チャージ内訳または大当り回数を確認"
+        : "回転率が現実範囲外",
+      observedRotation,
+      estimatedInputBalls,
+      estimatedPayoutBalls: payoutObservation.estimatedPayoutBalls,
+      estimatedReducedPayoutCount: payoutObservation.estimatedReducedPayoutCount,
+      payoutEstimateSource: payoutObservation.payoutEstimateSource,
+    };
   }
 
-  // 大当り出玉のブレと、グラフが500玉刻みで丸められる誤差を合算する。
-  // stdScale=0.25 は P-EVIDENCE 過去1,645件の時系列検証で最小誤差だった値。
-  const stdScale = num(options.stdScale, DEFAULT_STD_SCALE);
-  const payoutVariance = totalStarts * (stdDev * stdScale) ** 2;
+  // H（大当り回数）は既に観測済みなので、未知なのは「各大当りの出玉差」と
+  // グラフ読取誤差だけ。2,200回転の収支標準偏差は当り回数の乱数まで含む
+  // 別単位の値であり、ここへ掛けると同じ不確実性を二重計上する。
+  const payoutVariance = payoutObservation.payoutVariance;
   const graphVariance = (num(options.graphStepBalls, GRAPH_STEP_BALLS) ** 2) / 12;
 
   return {
@@ -216,8 +452,16 @@ export function estimateDeltaObservation(row = {}, machine = {}, options = {}) {
     totalStarts,
     deltaBalls,
     estimatedInputBalls,
+    estimatedPayoutBalls: payoutObservation.estimatedPayoutBalls,
+    estimatedReducedPayoutCount: payoutObservation.estimatedReducedPayoutCount,
+    payoutEstimateSource: payoutObservation.payoutEstimateSource,
     observedRotation,
     inputVariance: payoutVariance + graphVariance,
+    payoutVariance,
+    graphVariance,
+    payoutStdDevPerHit: payoutObservation.payoutStdDevPerHit,
+    payoutStdDevSource: payoutObservation.payoutStdDevSource,
+    sessionStdDevExcluded: stats.sessionStdDev,
     machineStatsDerived: stats.derived,
   };
 }
@@ -271,10 +515,24 @@ export function collectDeltaRows(scans = [], filters = {}) {
 }
 
 export function buildDeltaEvidence(rows = [], machine = {}, options = {}) {
+  const border = machineBorder(machine);
+  if (!(border > 0)) {
+    return {
+      hasEstimate: false,
+      trueBorder: 0,
+      predictedRotation: 0,
+      confidence: 0,
+      goodMachineScore: 0,
+      observations: [],
+      rejectedCount: (rows || []).length,
+      reason: "ボーダー未設定",
+      grade: "データ不足",
+    };
+  }
+
   const observations = (rows || [])
     .map((row) => ({ row, estimate: estimateDeltaObservation(row, machine, options) }))
     .filter((item) => item.estimate.valid);
-  const border = machineBorder(machine);
 
   if (!observations.length) {
     return {
@@ -308,8 +566,9 @@ export function buildDeltaEvidence(rows = [], machine = {}, options = {}) {
   // 従来の SE×conf は stdDev 由来の不確かさを SE と信頼度の両方に二重に掛けており、
   // ブレが大きい機種ほど予測レンジが狭く見える逆転が起きていた。
   const posteriorSd = Math.sqrt((confidence * standardError) ** 2 + ((1 - confidence) ** 2) * priorVariance);
-  const predictedLow = Math.max(0, predictedRotation - 1.96 * posteriorSd);
-  const predictedHigh = predictedRotation + 1.96 * posteriorSd;
+  const predictionInterval = predictionInterval95(predictedRotation, posteriorSd ** 2);
+  const predictedLow = predictionInterval.low;
+  const predictedHigh = predictionInterval.high;
 
   let grade = "回収注意";
   if (confidence < 0.2) grade = "データ収集中";
@@ -337,4 +596,8 @@ export function buildDeltaEvidence(rows = [], machine = {}, options = {}) {
   };
 }
 
-export { BALLS_PER_1K, DEFAULT_PRIOR_VARIANCE, DEFAULT_STD_SCALE };
+export {
+  BALLS_PER_1K,
+  DEFAULT_FALLBACK_HIT_PAYOUT_CV,
+  DEFAULT_PRIOR_VARIANCE,
+};

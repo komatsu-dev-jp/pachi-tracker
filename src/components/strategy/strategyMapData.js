@@ -8,6 +8,7 @@ import {
   findMachineSpec,
   normalizeEvidenceMachineName,
   normalizeEvidenceMachineNumber,
+  resolveMachineStats,
 } from "../delta/deltaEvidence.js";
 import {
   buildPortfolioPlan,
@@ -18,13 +19,22 @@ import {
   priorityScoreOf,
   rankStrategyCandidates,
 } from "../evidence/pevidenceAnalytics.js";
-import { getStoreIslands } from "../select/hallMapSelectors.js";
+import {
+  getStoreIslands,
+  islandLayoutCells,
+} from "../select/hallMapSelectors.js";
 import { calculateStrategyEconomics } from "../../economics.js";
 import { evidenceDayNumber, normalizeEvidenceDate } from "../../evidenceDate.js";
 import {
   projectCashLimit,
   rotationPer250FromStart1K,
 } from "../../sessionProjection.js";
+import { shouldUseArchiveForPrediction } from "../../sessionDataQuality.js";
+import {
+  NORMAL_95_Z,
+  decisionLowerBound,
+  probabilityAboveThreshold,
+} from "../evidence/rotationForecast.js";
 
 function round1(value) {
   return Math.round(Number(value || 0) * 10) / 10;
@@ -81,7 +91,18 @@ function hasUsableStrategyRow(row) {
   if (status === "review" && row?.reviewConfirmed === true) return true;
   return !status || ["正常", "ok", "OK", "有効"].includes(status);
 }
+
+const NON_BLOCKING_FALLBACK_REASONS = new Set([
+  "通常回転数なし",
+]);
+
+function canUseReferenceFallbackForDecision(referenceFallback, freshness) {
+  if (!referenceFallback || !NON_BLOCKING_FALLBACK_REASONS.has(referenceFallback.reason)) return false;
+  return freshness?.status === "fresh" || freshness?.status === "prepared";
+}
+
 function practiceObservation(record, identity, source) {
+  if (source === "archive" && !shouldUseArchiveForPrediction(record)) return null;
   if (!record || !recordMatchesStore(record, identity.storeId, identity.storeName)) return null;
   if (normalizeEvidenceMachineName(record.machineName) !== normalizeEvidenceMachineName(identity.machineName)) return null;
   if (normalizeEvidenceMachineNumber(record.machineNum ?? record.num) !== normalizeEvidenceMachineNumber(identity.num)) return null;
@@ -100,6 +121,153 @@ function practiceObservation(record, identity, source) {
     rate: ratePerMoneyK * 250 / ballsPerMoneyK,
     inputBalls: kCount * ballsPerMoneyK,
   };
+}
+
+function nextEvidenceDate(value) {
+  const day = dayNumber(value);
+  if (!Number.isFinite(day)) return "";
+  return new Date((day + 1) * 86400000).toISOString().slice(0, 10);
+}
+
+function weightedMedian(items) {
+  const usable = items
+    .filter((item) => Number.isFinite(item?.value) && Number(item?.weight) > 0)
+    .sort((left, right) => left.value - right.value);
+  if (!usable.length) return null;
+  const totalWeight = usable.reduce((sum, item) => sum + item.weight, 0);
+  let cumulative = 0;
+  for (const item of usable) {
+    cumulative += item.weight;
+    if (cumulative >= totalWeight / 2) return item.value;
+  }
+  return usable.at(-1).value;
+}
+
+/**
+ * Learns a store x machine payout factor from same-day scan/practice pairs.
+ *
+ * A learned factor becomes effective on the day after its newest evidence.
+ * That date boundary prevents a practice record from both creating the factor
+ * and being re-estimated by the factor on the same day.
+ */
+export function buildPayoutCorrectionProfiles({
+  scans = [],
+  archives = [],
+  customMachines = [],
+  evidenceBeforeDate = "",
+  minPairs = 10,
+  minPracticeInputBalls = 750,
+} = {}) {
+  const beforeDay = dayNumber(evidenceBeforeDate);
+  const scanRows = collectDeltaRows(scans);
+  const scanByKey = new Map();
+  for (const row of scanRows) {
+    const rowDay = dayNumber(row.date);
+    if (Number.isFinite(beforeDay) && (!Number.isFinite(rowDay) || rowDay >= beforeDay)) continue;
+    const store = String(row.storeId ?? row.storeName ?? "").trim();
+    const key = [
+      store,
+      normalizedDate(row.date),
+      normalizeEvidenceMachineName(row.machineName),
+      normalizeEvidenceMachineNumber(row.num),
+    ].join("___");
+    scanByKey.set(key, row);
+  }
+
+  const pairByScanKey = new Map();
+  for (const archive of Array.isArray(archives) ? archives : []) {
+    if (!shouldUseArchiveForPrediction(archive)) continue;
+    const date = normalizedDate(archive?.date);
+    const archiveDay = dayNumber(date);
+    if (!date || (Number.isFinite(beforeDay) && archiveDay >= beforeDay)) continue;
+    const store = String(archive?.storeId ?? archive?.storeName ?? "").trim();
+    const machineName = String(archive?.machineName || "").trim();
+    const num = archive?.machineNum ?? archive?.num;
+    const key = [
+      store,
+      date,
+      normalizeEvidenceMachineName(machineName),
+      normalizeEvidenceMachineNumber(num),
+    ].join("___");
+    const scanRow = scanByKey.get(key);
+    if (!scanRow) continue;
+    const identity = {
+      storeId: archive?.storeId ?? scanRow.storeId,
+      storeName: archive?.storeName || scanRow.storeName,
+      machineName,
+      num,
+    };
+    const observation = practiceObservation(archive, identity, "archive");
+    if (!observation || observation.inputBalls < minPracticeInputBalls) continue;
+    const normalSpins = Math.max(0, Number(scanRow.normalSpins) || 0);
+    const totalHits = Math.max(0, Number(scanRow.totalStarts) || 0);
+    const deltaBalls = Number(scanRow.val);
+    if (!(normalSpins > 0) || !(totalHits > 0) || !Number.isFinite(deltaBalls)) continue;
+    const machine = findMachineSpec(machineName, customMachines, machineDB);
+    const catalogPayout = resolveMachineStats(machine || {}).avgPayout;
+    if (!(catalogPayout > 0)) continue;
+    const actualInputBalls = 250 * normalSpins / observation.rate;
+    const impliedPayout = (actualInputBalls + deltaBalls) / totalHits;
+    const factor = impliedPayout / catalogPayout;
+    // Values outside this band are much more likely to be a mismatched
+    // session/scan pair than a real store payout difference.
+    if (!(factor >= 0.6 && factor <= 1.4)) continue;
+    const candidate = {
+      store,
+      machineName: machine?.name || machineName,
+      modelName: machine?.modelName || "",
+      date,
+      num: normalizeEvidenceMachineNumber(num),
+      factor,
+      impliedPayout,
+      catalogPayout,
+      weight: Math.min(5000, observation.inputBalls),
+      practiceInputBalls: observation.inputBalls,
+      archiveOrder: String(archive?.endedAt || archive?.createdAt || archive?.id || ""),
+    };
+    const previous = pairByScanKey.get(key);
+    if (!previous || candidate.archiveOrder >= previous.archiveOrder) {
+      pairByScanKey.set(key, candidate);
+    }
+  }
+
+  const groups = new Map();
+  for (const pair of pairByScanKey.values()) {
+    const key = `${pair.store}___${normalizeEvidenceMachineName(pair.machineName)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(pair);
+  }
+  const required = Math.max(3, Math.floor(Number(minPairs) || 10));
+  return [...groups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, pairs]) => {
+      const proposedFactor = weightedMedian(
+        pairs.map((pair) => ({ value: pair.factor, weight: pair.weight })),
+      ) ?? 1;
+      const catalogPayout = weightedMedian(
+        pairs.map((pair) => ({ value: pair.catalogPayout, weight: pair.weight })),
+      ) ?? 0;
+      const evidenceThroughDate = [...pairs].map((pair) => pair.date).sort().at(-1) || "";
+      const eligible = pairs.length >= required;
+      const appliedFactor = eligible ? proposedFactor : 1;
+      return {
+        key,
+        store: pairs[0]?.store || "",
+        machineName: pairs[0]?.machineName || "",
+        modelName: pairs[0]?.modelName || "",
+        n: pairs.length,
+        minRequired: required,
+        eligible,
+        status: eligible ? "active" : "awaiting-pairs",
+        proposedFactor,
+        appliedFactor,
+        catalogAvgPayout: catalogPayout,
+        correctedAvgPayout: catalogPayout * appliedFactor,
+        evidenceThroughDate,
+        effectiveFrom: eligible ? nextEvidenceDate(evidenceThroughDate) : "",
+        method: "same-day-direct-rotation-payout-median-v1",
+      };
+    });
 }
 
 export function assessStrategyPredictionDivergence({
@@ -158,15 +326,36 @@ function fusePracticeEstimate(base, observations, priorBalls = 50000) {
   const observationWeight = inputBalls / (inputBalls + Math.max(2500, Number(priorBalls) || 50000));
   const mean = observedRate * observationWeight + base.mean * (1 - observationWeight);
   const observationSe = 2 / Math.sqrt(Math.max(1, inputBalls / 250));
-  const variance = (observationWeight * observationSe) ** 2
-    + ((1 - observationWeight) ** 2) * Math.max(0.01, base.variance);
+  // Practice observations can reduce measurement uncertainty, but they must
+  // not erase the irreducible overnight nail-change/transition variance.
+  const irreducibleVariance = Math.max(0, Number(base.irreducibleVariance) || 0);
+  const reducibleVariance = Math.max(
+    0.01,
+    (Number(base.variance) || 0) - irreducibleVariance,
+  );
+  const variance = irreducibleVariance
+    + (observationWeight * observationSe) ** 2
+    + ((1 - observationWeight) ** 2) * reducibleVariance;
   const sd = Math.sqrt(variance);
+  const baseDataConfidence = Number(base.dataConfidence);
+  const confidenceCeiling = Number(base.confidenceCeiling);
+  const fusedDataConfidence = Number.isFinite(baseDataConfidence)
+    ? 1 - (1 - Math.min(1, Math.max(0, baseDataConfidence))) * (1 - observationWeight)
+    : null;
+  const confidence = fusedDataConfidence !== null && Number.isFinite(confidenceCeiling)
+    ? fusedDataConfidence * Math.min(0.99, Math.max(0, confidenceCeiling))
+    : 1 - (1 - base.confidence) * (1 - observationWeight);
   return {
     mean,
     low: Math.max(0, mean - 1.96 * sd),
     high: mean + 1.96 * sd,
     variance,
-    confidence: 1 - (1 - base.confidence) * (1 - observationWeight),
+    confidence,
+    dataConfidence: fusedDataConfidence ?? base.dataConfidence,
+    confidenceCeiling: Number.isFinite(confidenceCeiling)
+      ? confidenceCeiling
+      : base.confidenceCeiling,
+    irreducibleVariance,
     inputBalls: (base.inputBalls || 0) + inputBalls,
     sources: ["delta", ...new Set(valid.map((item) => item.source))],
   };
@@ -298,7 +487,15 @@ function emptyMap(playingNum, planHandoff = null, plan = null, freshness = null)
   };
 }
 
-function latestScanGroup(scans, selectedStoreId = null, stores = []) {
+function compareScanRecency(left, right) {
+  return normalizedDate(right?.date).localeCompare(normalizedDate(left?.date))
+    || String(right?.createdAt || "").localeCompare(String(left?.createdAt || ""));
+}
+
+// 戦略マップでは、選択店舗の「全履歴」を保持したまま台ごとの最新保存を選ぶ。
+// 店舗全体の最新日だけへ絞ると、別機種を後日解析しただけで他機種の保存済み台が
+// すべて未計測へ戻るため、ここでは店舗の選択だけを行い日付では切り捨てない。
+function strategyStoreScans(scans, selectedStoreId = null, stores = []) {
   const selectedStore = (stores || []).find((store) => String(store?.id) === String(selectedStoreId)) || null;
   const valid = (scans || []).filter((scan) => (
     Boolean(normalizedDate(scan?.date))
@@ -312,17 +509,100 @@ function latestScanGroup(scans, selectedStoreId = null, stores = []) {
     )
   ));
   if (!valid.length) return [];
-  const latest = [...valid].sort((a, b) =>
-    normalizedDate(b.date).localeCompare(normalizedDate(a.date)) ||
-    String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
-  )[0];
-  return valid.filter((scan) => (
-    normalizedDate(scan.date) === normalizedDate(latest.date)
-    && (
-      selectedStoreId != null
-      || String(scan?.storeId ?? scan?.storeName ?? "") === String(latest?.storeId ?? latest?.storeName ?? "")
-    )
+  if (selectedStoreId != null) return valid;
+
+  const latest = [...valid].sort(compareScanRecency)[0];
+  return valid.filter((scan) => recordMatchesStore(
+    scan,
+    latest?.storeId ?? null,
+    latest?.storeName || "",
   ));
+}
+
+// 旧版アプリで機種名なしのまま保存された行も、台番号がホールマップ上の
+// 1つの島だけに一致する場合は、戦略マップ内だけで安全に関連付け直す。
+// 保存データ自体は書き換えず、複数の島に同じ番号がある場合は推測しない。
+function associateStrategyScansWithHallLayout(scans, hallIslands, customMachines = []) {
+  if (!Array.isArray(scans) || !scans.length || !Array.isArray(hallIslands) || !hallIslands.length) {
+    return scans;
+  }
+
+  const layoutsByNumber = new Map();
+  hallIslands.forEach((layout, layoutIndex) => {
+    const layoutId = String(layout?.id ?? `layout-${layoutIndex}`);
+    const layoutKey = `${layoutIndex}:${layoutId}`;
+    const machineName = String(layout?.machineName || "").trim();
+    const machine = machineName
+      ? findMachineSpec(machineName, customMachines, machineDB)
+      : null;
+    for (const cell of islandLayoutCells(layout, 10_000)) {
+      if (cell?.gap) continue;
+      const number = normalizeEvidenceMachineNumber(cell?.num);
+      if (!number) continue;
+      const candidates = layoutsByNumber.get(number) || [];
+      if (!candidates.some((candidate) => candidate.layoutKey === layoutKey)) {
+        candidates.push({
+          layout,
+          layoutId,
+          layoutKey,
+          machineName,
+          machine,
+        });
+        layoutsByNumber.set(number, candidates);
+      }
+    }
+  });
+
+  return scans.map((scan) => {
+    let changed = false;
+    const rows = (scan?.rows || []).map((row) => {
+      const number = normalizeEvidenceMachineNumber(row?.num);
+      const candidates = number ? (layoutsByNumber.get(number) || []) : [];
+      if (candidates.length !== 1) return row;
+
+      const [candidate] = candidates;
+      if (!candidate.machineName || !candidate.machine) return row;
+
+      const currentMachineName = String(row?.machineName || scan?.machineName || "").trim();
+      const currentMachine = currentMachineName
+        ? findMachineSpec(currentMachineName, customMachines, machineDB)
+        : null;
+      // 登録済みの別機種名がある場合は、ホールマップより行の明示値を優先する。
+      if (currentMachineName && !currentMachine) return row;
+      if (
+        currentMachine
+        && normalizeEvidenceMachineName(currentMachine.name)
+          !== normalizeEvidenceMachineName(candidate.machine.name)
+      ) {
+        return row;
+      }
+
+      const machineName = currentMachineName || candidate.machineName;
+      const island = String(candidate.layout?.name || row?.island || "").trim();
+      const islandId = candidate.layout?.id ?? row?.islandId;
+      if (
+        String(row?.machineName || "").trim() === machineName
+        && String(row?.island || "").trim() === island
+        && String(row?.islandId ?? "") === String(islandId ?? "")
+      ) {
+        return row;
+      }
+
+      changed = true;
+      return {
+        ...row,
+        machineName,
+        island,
+        islandId,
+        strategyLayoutAssociation: {
+          source: "hall-layout",
+          layoutId: candidate.layoutId,
+          recoveredMachineName: !currentMachineName,
+        },
+      };
+    });
+    return changed ? { ...scan, rows } : scan;
+  });
 }
 
 function localDateKey(value = new Date()) {
@@ -522,13 +802,23 @@ function historyFor(scans, machineName, num, machine) {
     if (!byDate.has(row.date)) byDate.set(row.date, []);
     byDate.get(row.date).push(row);
   }
-  const points = [...byDate.entries()]
+  const entries = [...byDate.entries()]
     .sort(([a], [b]) => String(a).localeCompare(String(b)))
     .slice(-7)
-    .map(([, rows]) => buildDeltaEvidence(rows, machine))
-    .filter((evidence) => evidence.hasEstimate === true)
-    .map((evidence) => round1(evidence.predictedRotation));
-  return { points, dayCount: points.length };
+    .map(([date, rows]) => ({
+      date: normalizedDate(date),
+      evidence: buildDeltaEvidence(rows, machine),
+    }))
+    .filter((entry) => entry.date && entry.evidence.hasEstimate === true)
+    .map((entry) => ({
+      date: entry.date,
+      rotation: round1(entry.evidence.predictedRotation),
+    }));
+  return {
+    entries,
+    points: entries.map((entry) => entry.rotation),
+    dayCount: entries.length,
+  };
 }
 
 function buildDataCoverage({
@@ -582,16 +872,16 @@ function summarizeIsland(island) {
     machine.recommendationStatus === "actionable"
     && machine.verdict !== "nodata"
   );
-  const strong = eligible.filter((machine) => machine.verdict === "strong");
-  const goodRate = eligible.length ? strong.length / eligible.length : 0;
-  const best = [...strong].sort((a, b) => b.score - a.score)[0] || null;
+  const candidates = eligible.filter((machine) => machine.seatDecisionStatus === "candidate");
+  const goodRate = eligible.length ? candidates.length / eligible.length : 0;
+  const best = [...candidates].sort(compareStrategyPriority)[0] || null;
   return {
     ...island,
     grade: eligible.length ? islandGrade(goodRate) : "—",
     goodRate: eligible.length ? Math.round(goodRate * 100) : null,
-    candidates: strong.length,
-    evDensity: strong.length
-      ? Math.round(strong.reduce((sum, machine) => sum + machine.evPerHour, 0) / strong.length)
+    candidates: candidates.length,
+    evDensity: candidates.length
+      ? Math.round(candidates.reduce((sum, machine) => sum + Number(machine.evPerHour || 0), 0) / candidates.length)
       : 0,
     strongZone: best ? `${best.num}番周辺` : "—",
     analyzedMachines: eligible.length,
@@ -638,6 +928,82 @@ function applyHallLayout(analyzedIslands, hallIslands) {
   return [...laidOut, ...extras];
 }
 
+// 戦略マップの表示ペアは、保存済みIDが双方で一致する2島だけに限定する。
+// 表示順・台番号・機種名から対面を推定せず、未設定や片側参照は各島を単独表示する。
+export function pairStrategyIslands(islands = []) {
+  const list = Array.isArray(islands) ? islands.filter(Boolean) : [];
+  const keyOf = (island) => String(island?.layoutId || island?.id || "");
+  const byId = new Map(list.map((island) => [keyOf(island), island]));
+  const used = new Set();
+  const pairs = [];
+
+  for (const island of list) {
+    const islandId = keyOf(island);
+    if (!islandId || used.has(islandId)) continue;
+    const requestedPartnerId = String(island.facingIslandId || "");
+    const candidate = requestedPartnerId ? byId.get(requestedPartnerId) : null;
+    const candidateId = keyOf(candidate);
+    const partner = candidate
+      && candidateId !== islandId
+      && !used.has(candidateId)
+      && String(candidate.facingIslandId || "") === islandId
+      ? candidate
+      : null;
+    const pair = partner ? [island, partner] : [island];
+    pair.confirmed = Boolean(partner);
+    used.add(islandId);
+    if (partner) used.add(candidateId);
+    pairs.push(pair);
+  }
+
+  return pairs;
+}
+
+function isStrategyCandidate(machine) {
+  return machine?.recommendationStatus === "actionable"
+    && machine?.seatDecisionStatus === "candidate"
+    && !String(machine?.nailAlert || "").includes("締め");
+}
+
+function strategyIslandDisplayCount(island) {
+  const start = Number(island?.start);
+  const end = Number(island?.end);
+  if (Number.isFinite(start) && start > 0 && Number.isFinite(end) && end >= start) {
+    return Math.min(200, end - start + 1);
+  }
+  return Array.isArray(island?.machines) ? island.machines.length : 0;
+}
+
+// ヘッダーとKPIが参照する「現在表示中の島」を1か所で定義する。
+// 店舗全体の集計と混同しないよう、対面設定済みなら2島、未設定なら1島だけを対象にする。
+export function buildStrategyViewScope({
+  islands = [],
+  activeIslandId = null,
+  actionable = false,
+} = {}) {
+  const pairs = pairStrategyIslands(islands);
+  const activePair = pairs.find((pair) => pair.some((island) => island.id === activeIslandId))
+    || pairs[0]
+    || [];
+  const machines = activePair.flatMap((island) => (
+    Array.isArray(island?.machines) ? island.machines : []
+  ));
+  const machineNames = [...new Set(activePair
+    .map((island) => island?.machineName || island?.machines?.[0]?.machineName || "")
+    .filter(Boolean))];
+  const lead = [...machines].sort(
+    (left, right) => Number(right?.score || 0) - Number(left?.score || 0),
+  )[0] || null;
+
+  return {
+    label: activePair.map((island) => island?.name).filter(Boolean).join("・") || "表示中の島",
+    machineName: machineNames.join("・"),
+    total: activePair.reduce((sum, island) => sum + strategyIslandDisplayCount(island), 0),
+    candidates: actionable ? machines.filter(isStrategyCandidate).length : 0,
+    leadId: lead?.id || null,
+  };
+}
+
 export function buildStrategyMap({
   playingNum = null,
   liveDecision = null,
@@ -657,31 +1023,71 @@ export function buildStrategyMap({
     defaultHours: 6,
     spinsPerHour: 210,
   });
-  const currentScans = latestScanGroup(scans, selectedStoreId, stores);
-  const freshness = getStrategyFreshness(currentScans, targetDate);
-  if (!currentScans.length) return emptyMap(playingNum, planHandoff, strategyPlan, freshness);
-  // 差玉リサーチは通常、実戦日の前日に行う。
-  // 当日解析に加えて1日前の解析だけを本日用として有効にし、2日以上前は参考表示へ戻す。
-  const actionable = freshness.status === "fresh" || freshness.status === "prepared";
-  const predictionDayLabel = freshness.status === "prepared" ? "本日" : "明日";
+  const requestedStore = (stores || [])
+    .find((store) => String(store?.id) === String(selectedStoreId)) || null;
+  const selectedStoreScans = strategyStoreScans(scans, selectedStoreId, stores);
+  const normalizedTargetDate = normalizedDate(targetDate);
+  // 過去日の戦略マップへ、その日より後に保存された解析を混ぜない。
+  // 対象日以前の解析が1件もない場合だけ、未来日であることを freshness に残す。
+  const currentScans = normalizedTargetDate
+    ? selectedStoreScans.filter((scan) => normalizedDate(scan?.date) <= normalizedTargetDate)
+    : selectedStoreScans;
+  const freshness = getStrategyFreshness(
+    currentScans.length ? currentScans : selectedStoreScans,
+    targetDate,
+  );
+  if (!currentScans.length) {
+    return {
+      ...emptyMap(playingNum, planHandoff, strategyPlan, freshness),
+      storeId: selectedStoreId,
+      storeName: requestedStore?.name || "",
+    };
+  }
 
-  const analysisStoreId = currentScans[0]?.storeId ?? selectedStoreId;
+  const latestScan = [...currentScans].sort(compareScanRecency)[0] || currentScans[0];
+  const scopedStoreIds = [...new Set(currentScans
+    .map((scan) => scan?.storeId)
+    .filter((storeId) => storeId != null)
+    .map(String))];
+  const matchingRegisteredStores = (stores || []).filter((store) => (
+    String(store?.name || "").trim() === String(latestScan?.storeName || "").trim()
+  ));
+  const inferredStoreId = scopedStoreIds.length === 1
+    ? scopedStoreIds[0]
+    : matchingRegisteredStores.length === 1 ? matchingRegisteredStores[0]?.id : null;
+  const analysisStoreId = latestScan?.storeId ?? selectedStoreId ?? inferredStoreId;
   const selectedStore = (stores || []).find((store) => String(store?.id) === String(analysisStoreId)) || null;
-  const analysisStoreName = currentScans[0]?.storeName || selectedStore?.name || "";
+  const analysisStoreName = latestScan?.storeName || selectedStore?.name || "";
   const hallIslands = getStoreIslands(hallMaps, analysisStoreId);
   // ポートフォリオ・翌日予測に他店舗の台が混ざらないよう、
-  // 解析対象は表示中の店舗（最新スキャンの店舗）の履歴に限定する。
-  const analysisStoreKey = String(currentScans[0]?.storeId ?? currentScans[0]?.storeName ?? "");
-  const storeScans = (scans || []).filter((scan) => {
-    if (String(scan?.storeId ?? scan?.storeName ?? "") === analysisStoreKey) return true;
-    return scan?.storeId == null
-      && Boolean(analysisStoreName)
-      && String(scan?.storeName || "").trim() === String(analysisStoreName).trim();
+  // 解析対象は表示中の店舗の履歴に限定する。
+  const associatedStoreScans = associateStrategyScansWithHallLayout(
+    currentScans,
+    hallIslands,
+    customMachines,
+  );
+  // 旧版の保存には storeId がなく店舗名だけの行がある。strategyStoreScans で
+  // 選択店舗と同名だと確認済みのスキャンだけ、現在の店舗IDへ揃えて同一台として扱う。
+  const storeScans = associatedStoreScans.map((scan) => (
+    scan?.storeId == null && analysisStoreId != null
+      ? {
+          ...scan,
+          storeId: analysisStoreId,
+          storeName: scan.storeName || analysisStoreName,
+        }
+      : scan
+  ));
+  const payoutCorrections = buildPayoutCorrectionProfiles({
+    scans: storeScans,
+    archives,
+    customMachines,
+    evidenceBeforeDate: freshness.sourceDate,
   });
   const analytics = buildPEvidenceAnalytics({
     scans: storeScans,
     customMachines,
     islands: hallIslands,
+    payoutCorrections,
     params: {
       spinsPerHour: strategyPlan.spinsPerHour,
       sessionSpins: strategyPlan.sessionSpins,
@@ -693,12 +1099,7 @@ export function buildStrategyMap({
       ballValueYen: strategyPlan.ballValueYen,
     },
   });
-  const analyticsByMachine = new Map((analytics.statusRows || analytics.latestRows).map((item) => [
-    `${item.store}___${item.machineName}___${item.num}`,
-    item,
-  ]));
-
-  const currentRows = currentScans.flatMap((scan) =>
+  const currentRows = storeScans.flatMap((scan) =>
     (scan.rows || []).map((row) => ({
       ...row,
       machineName: row.machineName || scan.machineName || "",
@@ -709,11 +1110,75 @@ export function buildStrategyMap({
       sourceScanDate: normalizedDate(scan.date),
     }))
   );
-  const uniqueRows = new Map();
+  const identityKey = (row) => {
+    const canonicalMachineName = findMachineSpec(row?.machineName, customMachines, machineDB)?.name
+      || row?.machineName
+      || "";
+    const store = String(row?.storeId ?? row?.store ?? row?.storeName ?? "").trim();
+    return [
+      store,
+      normalizeEvidenceMachineName(canonicalMachineName),
+      normalizeEvidenceMachineNumber(row?.num),
+    ].join("___");
+  };
+  const compareRowRecency = (left, right) => (
+    normalizedDate(right?.date || right?.sourceScanDate)
+      .localeCompare(normalizedDate(left?.date || left?.sourceScanDate))
+    || String(right?.createdAt || "").localeCompare(String(left?.createdAt || ""))
+  );
+  const latestStatusByIdentity = new Map();
+  for (const item of analytics.statusRows || analytics.latestRows || []) {
+    const key = identityKey(item);
+    const previous = latestStatusByIdentity.get(key);
+    if (!previous || compareRowRecency(item, previous) < 0) {
+      latestStatusByIdentity.set(key, item);
+    }
+  }
+  const latestValidByIdentity = new Map();
+  for (const item of analytics.historyRows || []) {
+    if (item?.valid !== true) continue;
+    const key = identityKey(item);
+    const previous = latestValidByIdentity.get(key);
+    if (!previous || compareRowRecency(item, previous) < 0) {
+      latestValidByIdentity.set(key, item);
+    }
+  }
+  const rowsByIdentity = new Map();
   for (const row of currentRows) {
-    const key = `${normalizeEvidenceMachineName(row.machineName)}:${normalizeEvidenceMachineNumber(row.num)}`;
-    const previous = uniqueRows.get(key);
-    if (!previous || String(row.createdAt || "") >= String(previous.createdAt || "")) uniqueRows.set(key, row);
+    const key = identityKey(row);
+    const rows = rowsByIdentity.get(key) || [];
+    rows.push(row);
+    rowsByIdentity.set(key, rows);
+  }
+  const uniqueRows = new Map();
+  for (const [key, rows] of rowsByIdentity) {
+    const ordered = [...rows].sort(compareRowRecency);
+    const latestRow = ordered[0];
+    const latestStatus = latestStatusByIdentity.get(key) || null;
+    const latestValid = latestValidByIdentity.get(key) || null;
+    if (latestStatus?.valid === false && latestValid) {
+      const validDate = normalizedDate(latestValid.date);
+      const validRow = ordered.find((row) => (
+        normalizedDate(row.date || row.sourceScanDate) === validDate
+        && String(row.createdAt || "") === String(latestValid.createdAt || "")
+      )) || ordered.find((row) => normalizedDate(row.date || row.sourceScanDate) === validDate);
+      if (validRow) {
+        uniqueRows.set(key, {
+          ...validRow,
+          strategyPevidence: latestValid,
+          strategyReferenceFallback: {
+            sourceDate: validDate,
+            latestSourceDate: normalizedDate(latestStatus.date || latestRow?.sourceScanDate),
+            reason: latestStatus.exclusionReason || "最新データは回転率を計算できません",
+          },
+        });
+        continue;
+      }
+    }
+    uniqueRows.set(key, {
+      ...latestRow,
+      strategyPevidence: latestStatus,
+    });
   }
 
   const islandMap = new Map();
@@ -721,6 +1186,25 @@ export function buildStrategyMap({
     const machineName = row.machineName;
     const machineSpec = findMachineSpec(machineName, customMachines, machineDB);
     if (!machineSpec) continue;
+    const rowFreshness = getStrategyFreshness(
+      [{ date: row.sourceScanDate, createdAt: row.createdAt }],
+      freshness.targetDate || targetDate,
+    );
+    // 差玉リサーチは通常、実戦日の前日に行う。
+    // 鮮度は店舗全体ではなく台ごとに判定し、古い台は回転率を参考表示しつつ候補から外す。
+    const referenceFallback = row.strategyReferenceFallback || null;
+    // 後から保存された「差玉だけ」の行は回転率の新情報を持たないため、
+    // 本日または前日の計算可能データまで判定待ちへ戻さない。
+    // 読取失敗・日付不整合・異常値は従来どおり安全側で判定を停止する。
+    const referenceFallbackUsedForDecision = canUseReferenceFallbackForDecision(
+      referenceFallback,
+      rowFreshness,
+    );
+    const rowActionable = (!referenceFallback || referenceFallbackUsedForDecision)
+      && (rowFreshness.status === "fresh" || rowFreshness.status === "prepared");
+    const predictionDayLabel = rowActionable
+      ? (rowFreshness.status === "prepared" ? "本日" : "明日")
+      : referenceFallback ? "過去参考" : "明日";
     const historyRows = collectDeltaRows(storeScans, {
       storeId: row.storeId,
       storeName: row.storeId == null ? row.storeName : "",
@@ -729,34 +1213,40 @@ export function buildStrategyMap({
     });
     const evidence = buildDeltaEvidence(historyRows, machineSpec);
     const rowStore = String(row.storeId ?? row.storeName ?? "").trim();
-    const pe = analyticsByMachine.get(`${rowStore}___${machineName}___${String(row.num).replace(/_旧.*/, "").trim()}`);
+    const pe = row.strategyPevidence
+      || latestStatusByIdentity.get(identityKey({
+        ...row,
+        store: rowStore,
+        machineName,
+      }));
     const equivalentBorder = pe?.valid
       ? Number(pe.equivalentBorder ?? pe.border)
       : Number(evidence.trueBorder);
     const baseMean = pe?.valid ? pe.predictedRotation : evidence.predictedRotation;
     const baseLow = pe?.valid ? pe.predictedLow : evidence.predictedLow;
     const baseHigh = pe?.valid ? pe.predictedHigh : evidence.predictedHigh;
-    const baseVariance = pe?.posteriorVariance
-      ?? (((Number(baseHigh) - Number(baseLow)) / (2 * 1.96)) ** 2 || 4);
+    const baseVariance = pe?.nextDayVariance ?? pe?.posteriorVariance
+      ?? (((Number(baseHigh) - Number(baseLow)) / (2 * NORMAL_95_Z)) ** 2 || 4);
+    const effectiveMachineSpec = pe?.machine || machineSpec;
     const identity = {
       storeId: row.storeId ?? analysisStoreId,
       storeName: row.storeName || analysisStoreName,
       machineName,
       num: row.num,
     };
-    const observationThroughDate = freshness.targetDate || freshness.sourceDate;
+    const observationThroughDate = rowFreshness.targetDate || rowFreshness.sourceDate;
     const newerArchives = (archives || [])
       .filter((archive) => {
         const archiveDate = normalizedDate(archive?.date);
         return Boolean(archiveDate)
-          && archiveDate > freshness.sourceDate
+          && archiveDate > rowFreshness.sourceDate
           && archiveDate <= observationThroughDate;
       })
       .map((archive) => practiceObservation(archive, identity, "archive"))
       .filter(Boolean);
     const liveDate = normalizedDate(liveSession?.date);
     const liveObservation = liveDate
-      && liveDate >= freshness.sourceDate
+      && liveDate >= rowFreshness.sourceDate
       && liveDate <= observationThroughDate
       ? practiceObservation(liveSession, identity, "live")
       : null;
@@ -777,12 +1267,18 @@ export function buildStrategyMap({
       high: baseHigh,
       variance: baseVariance,
       confidence: pe?.valid ? pe.confidence : evidence.confidence,
+      dataConfidence: pe?.valid ? pe.dataConfidence : evidence.confidence,
+      confidenceCeiling: pe?.valid ? pe.processReliability : null,
+      irreducibleVariance: pe?.valid
+        ? Math.max(0, Number(pe.processVariance) || 0)
+          + Math.max(0, Number(pe.transitionVariance) || 0)
+        : 0,
       inputBalls: baseInputBalls || 0,
     };
     // ライブ乖離の比較線は、今日の実測で自分自身が下がらないよう
     // 現在実戦を混ぜる前の予測として固定する。
-    const preLiveEstimate = fusePracticeEstimate(baseEstimate, newerArchives, machineSpec.muraCoef);
-    const estimate = fusePracticeEstimate(baseEstimate, practiceObservations, machineSpec.muraCoef);
+    const preLiveEstimate = fusePracticeEstimate(baseEstimate, newerArchives, effectiveMachineSpec.muraCoef);
+    const estimate = fusePracticeEstimate(baseEstimate, practiceObservations, effectiveMachineSpec.muraCoef);
     const dataCoverage = buildDataCoverage({
       analyticsHistoryRows: analytics.historyRows,
       pe,
@@ -806,11 +1302,12 @@ export function buildStrategyMap({
     const centerEconomics = calculateStrategyEconomics({ ...economicOptions, rotation: predictedRotation });
     const trueBorder = centerEconomics.effectiveBorder;
     const currentRowDate = normalizedDate(row.date || row.sourceScanDate);
-    const currentRowInvalid = !hasUsableStrategyRow(row)
+    const currentRowInvalid = Boolean(referenceFallback && !referenceFallbackUsedForDecision)
+      || !hasUsableStrategyRow(row)
       || !currentRowDate
       || currentRowDate !== row.sourceScanDate
       || Boolean(pe && !pe.valid);
-    const machineActionable = actionable && !currentRowInvalid;
+    const machineActionable = rowActionable && !currentRowInvalid;
     const borderDiff = currentRowInvalid ? null : round1(predictedRotation - trueBorder);
     const contextualScore = currentRowInvalid
       ? 0
@@ -879,8 +1376,10 @@ export function buildStrategyMap({
           cashLimit: strategyPlan.cashLimit,
         })
       : null;
-    const revenueRangeStatus = !actionable
-      ? "stale-scan"
+    const revenueRangeStatus = referenceFallback && !referenceFallbackUsedForDecision
+      ? "data-missing"
+      : !rowActionable
+        ? "stale-scan"
       : currentRowInvalid
         ? "data-missing"
       : !hasLowRotation || !hasHighRotation
@@ -905,14 +1404,81 @@ export function buildStrategyMap({
     const hasPlanEvidence = machineActionable && verdict !== "nodata" && evPerHour != null;
     const goalEligible = planHandoff ? Boolean(hasPlanEvidence && evPerHour >= minPlanEv) : machineActionable;
     const planEligible = Boolean(planTarget && goalEligible);
+    const decisionLowerK = Math.max(
+      0,
+      Number(
+        pe?.decisionLowerK
+          ?? analytics.backtest?.decisionLowerCalibration?.k
+          ?? analytics.params.lcbK,
+      ) || 0,
+    );
+    const decisionLowerRotation = currentRowInvalid
+      ? null
+      : decisionLowerBound(predictedRotation, estimate.variance, decisionLowerK);
+    const seatThreshold = currentRowInvalid ? null : trueBorder + 0.5;
+    const seatThresholdProbability = currentRowInvalid
+      ? null
+      : probabilityAboveThreshold(predictedRotation, estimate.variance, seatThreshold);
+    const hasSeatDecision = Number.isFinite(decisionLowerRotation)
+      && Number.isFinite(seatThreshold)
+      && Number.isFinite(seatThresholdProbability);
+    const statisticalSeatDecisionStatus = currentRowInvalid || !hasSeatDecision
+      ? "pending"
+      : decisionLowerRotation >= seatThreshold
+        ? "candidate"
+        : seatThresholdProbability >= 0.5 ? "trial" : "skip";
+    const nailAlert = currentRowInvalid ? "データ除外" : (pe?.nailAlert || "データ収集中");
+    const seatDecisionStatus = !machineActionable || statisticalSeatDecisionStatus === "pending"
+      ? "pending"
+      : String(nailAlert).includes("締め") ? "skip" : statisticalSeatDecisionStatus;
     const machine = {
       id: `m-${machineName}-${row.num}`,
       num: Number(row.num) || row.num,
       islandId,
       machineName,
-      rot: currentRowInvalid ? null : round1(predictedRotation),
+      storeId: identity.storeId,
+      storeName: identity.storeName,
+      rot: currentRowInvalid
+        ? (referenceFallback && Number.isFinite(Number(predictedRotation))
+            ? round1(predictedRotation)
+            : null)
+        : round1(predictedRotation),
+      predictedRotation: currentRowInvalid
+        ? (referenceFallback && Number.isFinite(Number(predictedRotation))
+            ? predictedRotation
+            : null)
+        : predictedRotation,
+      nextDayVariance: currentRowInvalid ? null : estimate.variance,
+      decisionLowerK,
+      decisionLowerRotation,
+      decisionLowerQuantile: pe?.decisionLowerQuantile
+        ?? analytics.backtest?.decisionLowerCalibration?.quantile
+        ?? analytics.params.decisionLowerQuantile,
+      decisionLowerTargetCoverage: pe?.decisionLowerTargetCoverage
+        ?? analytics.backtest?.decisionLowerCalibration?.targetCoverage
+        ?? analytics.params.decisionLowerTargetCoverage,
+      decisionCalibrationStatus: pe?.decisionCalibrationStatus
+        ?? analytics.backtest?.decisionLowerCalibration?.status
+        ?? "awaiting-samples",
+      decisionCalibrationSampleCount: pe?.decisionCalibrationSampleCount
+        ?? analytics.backtest?.decisionLowerCalibration?.sampleCount
+        ?? 0,
+      decisionCalibrationMinRequired: pe?.decisionCalibrationMinRequired
+        ?? analytics.backtest?.decisionLowerCalibration?.minRequired
+        ?? analytics.params.decisionCalibrationMinSamples,
+      seatThreshold,
+      seatThresholdProbability,
+      statisticalSeatDecisionStatus,
+      seatDecisionStatus,
+      // lcb* は旧保存データ・既存表示との互換名。
+      lcbK: decisionLowerK,
+      lcbRotation: decisionLowerRotation,
+      selectionMargin: currentRowInvalid
+        ? null
+        : decisionLowerRotation - seatThreshold,
       confidence: currentRowInvalid ? 0 : confidencePct,
       border: round1(trueBorder),
+      effectiveBorder: trueBorder,
       equivalentBorder: round1(equivalentBorder),
       borderDiff,
       goodMachineScore: round1(contextualScore),
@@ -921,7 +1487,7 @@ export function buildStrategyMap({
       goalEligible,
       goalThresholdActive: Boolean(planHandoff),
       verdict,
-      isStar: machineActionable && verdict === "strong" && contextualScore >= 50,
+      isStar: machineActionable && seatDecisionStatus === "candidate",
       isPlaying,
       liveDecision: isPlaying ? liveDecision : null,
       strategyDivergence,
@@ -931,7 +1497,7 @@ export function buildStrategyMap({
         high: currentRowInvalid ? null : round1(preLiveEstimate.high),
         confidence: currentRowInvalid ? 0 : preLiveEstimate.confidence,
         unit: "per250Balls",
-        sourceDate: freshness.sourceDate,
+        sourceDate: rowFreshness.sourceDate,
       },
       activityHistoryKey: `${rowStore}___${islandName}`,
       history: historySummary.points.length > 1
@@ -940,6 +1506,7 @@ export function buildStrategyMap({
             historySummary.points[0] ?? round1(evidence.predictedRotation),
             historySummary.points[0] ?? round1(evidence.predictedRotation),
           ],
+      historyEntries: historySummary.entries,
       historyDayCount: historySummary.dayCount,
       dataCoverage,
       activityStatus: currentRowInvalid ? "invalid" : (pe?.activityStatus || (pe?.valid ? "active" : "invalid")),
@@ -954,16 +1521,28 @@ export function buildStrategyMap({
         inputBalls: currentRowInvalid ? 0 : estimate.inputBalls,
         regimeStart: pe?.regimeStart || "",
       },
+      processNoiseSd: currentRowInvalid ? null : (pe?.processNoiseSd ?? null),
+      dataConfidence: currentRowInvalid ? 0 : (pe?.dataConfidence ?? confidence),
+      biasRotationAdjustment: currentRowInvalid ? 0 : (pe?.biasRotationAdjustment ?? 0),
+      payoutCorrection: pe?.payoutCorrection || null,
       evidenceSources: currentRowInvalid ? [] : estimate.sources,
+      freshness: rowFreshness,
+      referenceFallback: referenceFallback
+        ? { ...referenceFallback, usedForDecision: referenceFallbackUsedForDecision }
+        : null,
       recommendationStatus: machineActionable ? "actionable" : "reference",
       calculationPendingReasons: machineActionable
         ? []
-        : [currentRowInvalid ? (pe?.exclusionReason || "最新データを計算から除外しました") : "解析日が本日または前日ではありません"],
+        : [referenceFallback
+            ? `最新${referenceFallback.latestSourceDate || "日"}データは${referenceFallback.reason}のため、${referenceFallback.sourceDate || "過去"}を参考表示`
+            : currentRowInvalid
+            ? (pe?.exclusionReason || "最新データを計算から除外しました")
+            : `${rowFreshness.sourceDate || "日付不明"}の解析は参考表示です`],
       predictionDayLabel,
       ema: currentRowInvalid ? 0 : round1(pe?.ema || 0),
       cusumUp: currentRowInvalid ? 0 : round1(pe?.cusumUp || 0),
       cusumDown: currentRowInvalid ? 0 : round1(pe?.cusumDown || 0),
-      nailAlert: currentRowInvalid ? "データ除外" : (pe?.nailAlert || "データ収集中"),
+      nailAlert,
       regimeStart: currentRowInvalid ? "" : (pe?.regimeStart || ""),
       tomorrowTight: machineActionable
         && pe?.valid
@@ -997,8 +1576,10 @@ export function buildStrategyMap({
       winRate: scenarioWinRate == null ? null : Math.round(scenarioWinRate * 100),
       profitChanceLow: scenarioChanceBand?.low ?? null,
       profitChanceHigh: scenarioChanceBand?.high ?? null,
-      profitChanceStatus: !actionable
-        ? "stale-scan"
+      profitChanceStatus: referenceFallback && !referenceFallbackUsedForDecision
+        ? "data-missing"
+        : !rowActionable
+          ? "stale-scan"
         : currentRowInvalid
           ? (pe?.profitChanceStatus || "data-missing")
           : profitChanceReady
@@ -1018,7 +1599,7 @@ export function buildStrategyMap({
       atLeastOneHitRate: machineActionable ? (pe?.atLeastOneHitRate ?? null) : null,
       initialAvgPayout: pe?.initialAvgPayout ?? null,
       rushAvgPayout: pe?.rushAvgPayout ?? null,
-      avgPayoutPerHit: pe?.avgPayoutPerHit ?? (Number(machineSpec.avgPayoutPerHit) > 0 ? Math.round(Number(machineSpec.avgPayoutPerHit)) : null),
+      avgPayoutPerHit: pe?.avgPayoutPerHit ?? (Number(effectiveMachineSpec.avgPayoutPerHit) > 0 ? Math.round(Number(effectiveMachineSpec.avgPayoutPerHit)) : null),
       rushEntryRate: pe?.rushEntryRate ?? null,
       rushContinueRate: pe?.rushContinueRate ?? null,
       plannedSpins: pe?.plannedSpins ?? strategyPlan.sessionSpins,
@@ -1075,11 +1656,8 @@ export function buildStrategyMap({
   const islands = applyHallLayout(analyzedIslands, hallIslands);
   const all = islands.flatMap((island) => island.machines);
   if (!all.length) return emptyMap(playingNum, planHandoff, strategyPlan, freshness);
-  const candidatePool = all.filter((machine) =>
-    machine.recommendationStatus === "actionable"
-    && machine.verdict === "strong"
-    && !String(machine.nailAlert || "").includes("締め")
-  );
+  const actionable = all.some((machine) => machine.recommendationStatus === "actionable");
+  const candidatePool = all.filter(isStrategyCandidate);
   const candidates = actionable
     ? (planHandoff
         ? [...candidatePool].sort(compareStrategyPriority)
@@ -1109,16 +1687,23 @@ export function buildStrategyMap({
   const islandAvgRot = (id) => {
     const list = all.filter((machine) =>
       machine.islandId === id
-      && machine.recommendationStatus === "actionable"
-      && machine.verdict !== "nodata"
       && machine.rot > 0
-      && Number(machine.rotationEstimate?.inputBalls || 0) > 0
+      && (
+        machine.referenceFallback
+        || (
+          machine.recommendationStatus === "actionable"
+          && machine.verdict !== "nodata"
+          && Number(machine.rotationEstimate?.inputBalls || 0) > 0
+        )
+      )
     );
     return list.length ? round1(list.reduce((sum, machine) => sum + machine.rot, 0) / list.length) : 0;
   };
 
   return {
     source: "delta",
+    storeId: analysisStoreId,
+    storeName: analysisStoreName,
     machineName: machineNames.length === 1 ? machineNames[0] : `${machineNames.length}機種`,
     total: all.length,
     border: lead?.border || 0,
@@ -1135,6 +1720,7 @@ export function buildStrategyMap({
     leadId: lead?.id || null,
     islandAvgRot,
     analytics,
+    payoutCorrections,
     portfolio,
     aiProfile: analytics.aiProfile,
     nextMap: analytics.nextMap,

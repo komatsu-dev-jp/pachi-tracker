@@ -1,3 +1,5 @@
+import { getEhimeStoreRateResearch } from "./ehimeStoreRates.js";
+
 // 愛媛県のパチンコ店マスタ（内蔵リスト）
 //
 // ※ このリストはアプリ内蔵の初期店舗データです。
@@ -59,6 +61,7 @@ export const EHIME_STORES = raw.map((r) => ({
   name: r.name,
   city: r.city,
   address: `愛媛県${r.city}`,
+  ...getEhimeStoreRateResearch(r.name),
 }));
 
 export default EHIME_STORES;

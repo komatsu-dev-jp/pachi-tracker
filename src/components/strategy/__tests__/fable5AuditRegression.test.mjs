@@ -144,7 +144,7 @@ test("score判定は信頼度20%・score10/50の境界で全画面共通にな�
   assert.equal(classifyEvidenceScore(50, 100), "strong");
 });
 
-test("締め兆候がある台はscoreが高くても共通portfolioから除外する", () => {
+test("明示した締め確率ゲートと現在の締めアラートはportfolioの安全弁になる", () => {
   const base = {
     machineName: auditMachine.name,
     hourly: 2000,
@@ -163,12 +163,13 @@ test("締め兆候がある台はscoreが高くても共通portfolioから除外
     plannedHours: 6,
     spinsPerHour: 210,
     rentBalls: 250,
+    maxTightProbability: 0.6,
   });
 
   assert.deepEqual(
     result.plan.map((item) => String(item.number)),
     ["103"],
-    "釘アラートだけでなく締め確率60%以上も配分から外す",
+    "数値予測へ織り込んだ後でも、明示した安全ゲートは利用できる",
   );
   assert.equal(result.totalHours, 6);
 });
@@ -284,7 +285,46 @@ test("nodata台は島平均と島の分析済み台数から除外する", () =>
   assert.equal(island?.analyzedMachines, 1);
 });
 
-test("最新日の読取失敗で前日の予測・稼働状態を復活させない", () => {
+test("最新保存が通常回転数なしでも前日の計算可能値で本日の色判定を続ける", () => {
+  const previous = scanOf([activeRow("101", "2026-07-09")], {
+    id: "previous-calculable",
+    date: "2026-07-09",
+    createdAt: "2026-07-09T12:00:00.000Z",
+  });
+  const deltaOnly = scanOf([{
+    date: "2026-07-10",
+    num: "101",
+    machineName: auditMachine.name,
+    island: "A島",
+    val: -4000,
+    status: "ok",
+  }], {
+    id: "current-delta-only",
+    date: "2026-07-10",
+    createdAt: "2026-07-10T12:00:00.000Z",
+  });
+  const map = buildStrategyMap({
+    scans: [previous, deltaOnly],
+    customMachines: [auditMachine],
+    selectedStoreId: "audit-store",
+    targetDate: "2026-07-10",
+  });
+  const machine = map.all[0];
+
+  assert.equal(machine.referenceFallback?.reason, "通常回転数なし");
+  assert.equal(machine.referenceFallback?.sourceDate, "2026-07-09");
+  assert.equal(machine.referenceFallback?.latestSourceDate, "2026-07-10");
+  assert.equal(machine.freshness.status, "prepared");
+  assert.equal(machine.recommendationStatus, "actionable");
+  assert.notEqual(machine.verdict, "nodata");
+  assert.ok(Number.isFinite(machine.borderDiff), "ヒートマップの赤・黄・緑を決められる");
+  assert.ok(machine.confidence > 0);
+  assert.deepEqual(machine.calculationPendingReasons, []);
+  assert.equal(machine.referenceFallback?.usedForDecision, true);
+  assert.equal(map.actionable, true);
+});
+
+test("最新日の読取失敗時は前日値を参考表示しても候補・稼働状態を復活させない", () => {
   const previous = scanOf([activeRow("101", "2026-07-09")], {
     id: "previous-valid",
     date: "2026-07-09",
@@ -310,7 +350,9 @@ test("最新日の読取失敗で前日の予測・稼働状態を復活させ�
 
   assert.equal(machine.verdict, "nodata");
   assert.equal(machine.recommendationStatus, "reference");
-  assert.equal(machine.rot, null);
+  assert.ok(machine.rot > 0, "計算可能だった前日値は過去参考として数値を残す");
+  assert.equal(machine.referenceFallback?.sourceDate, "2026-07-09");
+  assert.equal(machine.referenceFallback?.latestSourceDate, "2026-07-10");
   assert.equal(machine.confidence, 0);
   assert.equal(machine.activityStatus, "invalid");
   assert.equal(machine.profitChanceStatus, "data-missing");
@@ -320,7 +362,7 @@ test("最新日の読取失敗で前日の予測・稼働状態を復活させ�
   assert.equal(island.activitySignal, "読取除外あり");
 });
 
-test("行の日付が不正・スキャン日と不一致でも前日予測を復活させない", () => {
+test("行の日付が不正・スキャン日と不一致でも前日値を候補へ復活させない", () => {
   const previous = scanOf([activeRow("101", "2026-07-09")], {
     id: "date-defense-previous",
     date: "2026-07-09",
@@ -342,7 +384,9 @@ test("行の日付が不正・スキャン日と不一致でも前日予測を�
   assert.equal(map.freshness.status, "fresh");
   assert.equal(machine.verdict, "nodata");
   assert.equal(machine.recommendationStatus, "reference");
-  assert.equal(machine.rot, null);
+  assert.ok(machine.rot > 0, "日付不正行の代わりに前日の計算可能値を参考表示する");
+  assert.equal(machine.referenceFallback?.sourceDate, "2026-07-09");
+  assert.equal(machine.referenceFallback?.latestSourceDate, "2026-07-10");
   assert.equal(machine.confidence, 0);
   assert.equal(machine.activityStatus, "invalid");
   assert.equal(machine.profitChanceStatus, "data-missing");

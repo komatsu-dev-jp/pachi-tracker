@@ -16,8 +16,21 @@ import {
 } from "../delta/deltaEvidence.js";
 import { calculateStrategyEconomics } from "../../economics.js";
 import { evidenceDayNumber, normalizeEvidenceDate } from "../../evidenceDate.js";
-import { buildPEvidenceBacktest } from "./pevidenceBacktest.js";
+import {
+  buildBacktestPairs,
+  buildPEvidenceBacktest,
+  estimateProcessNoise,
+} from "./pevidenceBacktest.js";
 import { priorBallsForEvidenceDate } from "./pevidenceCalibration.js";
+import {
+  DECISION_LOWER_DEFAULT_Z,
+  DECISION_LOWER_QUANTILE,
+  DECISION_LOWER_TARGET_COVERAGE,
+  decisionLowerBound,
+  normalCdf as forecastNormalCdf,
+  predictionInterval95,
+  probabilityAboveThreshold,
+} from "./rotationForecast.js";
 
 export const PE_PARAMS = Object.freeze({
   emaAlpha: 2 / 8,
@@ -33,8 +46,26 @@ export const PE_PARAMS = Object.freeze({
   spinsPerHour: 210,
   sessionSpins: 1260,
   riskReferenceSpins: 2200,
-  priorHalfLifeBalls: 7000,
   defaultPriorBalls: 50000,
+  priorStrengthRatio: 0.25,
+  partialPoolPriorBalls: 50000,
+  partialPoolMaxAdjustment: 4,
+  defaultProcessNoiseSd: 1.75,
+  minProcessSamples: 12,
+  processShrinkageSamples: 20,
+  minProcessNoiseSd: 1.5,
+  maxProcessNoiseSd: 5,
+  lcbK: DECISION_LOWER_DEFAULT_Z,
+  decisionLowerQuantile: DECISION_LOWER_QUANTILE,
+  decisionLowerTargetCoverage: DECISION_LOWER_TARGET_COVERAGE,
+  decisionCalibrationMinSamples: 100,
+  decisionCalibrationWindow: 300,
+  decisionCalibrationMinK: 0.25,
+  decisionCalibrationMaxK: 2.5,
+  selectionBiasMinSamples: 20,
+  selectionBiasValidationWarmup: 10,
+  selectionBiasPriorSamples: 20,
+  selectionBiasMax: 3,
   graphStepBalls: 500,
   rentBalls: 250,
   exRate: 250,
@@ -57,24 +88,7 @@ function round(value, digits = 2) {
   return Math.round(num(value) * p) / p;
 }
 
-export function normalCdf(x) {
-  if (x < -10) return 0;
-  if (x > 10) return 1;
-  const a1 = 0.254829592;
-  const a2 = -0.284496736;
-  const a3 = 1.421413741;
-  const a4 = -1.453152027;
-  const a5 = 1.061405429;
-  const p = 0.3275911;
-  const sign = x < 0 ? -1 : 1;
-  // normal CDF = 0.5 * (1 + erf(x / sqrt(2))).
-  // The previous implementation passed x directly to the erf approximation,
-  // which overstated positive probabilities (for example, z=1 became 92.1%).
-  const ax = Math.abs(x) / Math.SQRT2;
-  const t = 1 / (1 + p * ax);
-  const erf = sign * (1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-ax * ax));
-  return 0.5 * (1 + erf);
-}
+export const normalCdf = forecastNormalCdf;
 
 function atLeastOneHitProbability(spins, denominator) {
   const n = Math.max(0, num(spins));
@@ -298,17 +312,191 @@ function islandKey(row) {
   return `${row.store}___${row.island || `${row.machineName}島`}`;
 }
 
-function createProcessedRows(rawRows, customMachines, params) {
+function correctionForRow(row, machine, payoutCorrections = []) {
+  const rowStore = String(row?.store || "").trim();
+  const identities = new Set([
+    row?.machineName,
+    machine?.name,
+    machine?.modelName,
+    ...(Array.isArray(machine?.aliases) ? machine.aliases : []),
+  ].map(normalizedMachineIdentity).filter(Boolean));
+  return (Array.isArray(payoutCorrections) ? payoutCorrections : []).find((profile) => (
+    profile?.eligible === true
+    && String(profile?.store || "").trim() === rowStore
+    && identities.has(normalizedMachineIdentity(profile?.machineName))
+    && (!profile?.effectiveFrom || dayNumber(row?.date) >= dayNumber(profile.effectiveFrom))
+    && num(profile?.correctedAvgPayout) > 0
+  )) || null;
+}
+
+function addResidualStat(map, key, row) {
+  if (!key || !row?.estimate?.valid) return;
+  const inputBalls = Math.max(0, num(row.estimate.estimatedInputBalls));
+  if (!(inputBalls > 0)) return;
+  const residual = num(row.estimate.dailyRate) - num(row.border);
+  const current = map.get(key) || { weightedResidual: 0, inputBalls: 0, count: 0 };
+  current.weightedResidual += residual * inputBalls;
+  current.inputBalls += inputBalls;
+  current.count += 1;
+  map.set(key, current);
+}
+
+function residualSource(stat, params, weight, type) {
+  if (!stat || !(stat.inputBalls > 0) || !(stat.count > 0)) return null;
+  const reliability = stat.inputBalls / (
+    stat.inputBalls + Math.max(2500, num(params.partialPoolPriorBalls, 50000))
+  );
+  return {
+    type,
+    count: stat.count,
+    inputBalls: stat.inputBalls,
+    residual: stat.weightedResidual / stat.inputBalls,
+    reliability,
+    weight,
+  };
+}
+
+function peerResidualStat(map, key, row) {
+  const stat = map.get(key);
+  if (!stat || !row?.estimate?.valid) return null;
+  const ownBalls = Math.max(0, num(row.estimate.estimatedInputBalls));
+  const peerBalls = stat.inputBalls - ownBalls;
+  const peerCount = stat.count - 1;
+  if (!(peerBalls > 0) || !(peerCount > 0)) return null;
+  const ownResidual = num(row.estimate.dailyRate) - num(row.border);
+  return {
+    weightedResidual: stat.weightedResidual - ownResidual * ownBalls,
+    inputBalls: peerBalls,
+    count: peerCount,
+  };
+}
+
+/**
+ * Builds a store/machine/island/weekday prior without future leakage.
+ * Historical buckets are updated only after a whole date is evaluated, and
+ * same-day peer buckets explicitly remove the target machine itself.
+ */
+function attachPartialPoolPriors(rows, params) {
+  const ordered = [...rows].sort((left, right) => (
+    dayNumber(left.date) - dayNumber(right.date)
+    || historyKey(left).localeCompare(historyKey(right))
+  ));
+  const sameDayMachine = new Map();
+  const sameDayIsland = new Map();
+  for (const row of ordered) {
+    addResidualStat(sameDayMachine, `${row.date}___${profileKey(row)}`, row);
+    addResidualStat(sameDayIsland, `${row.date}___${islandKey(row)}`, row);
+  }
+
+  const historical = {
+    store: new Map(),
+    machine: new Map(),
+    island: new Map(),
+    weekday: new Map(),
+  };
+  const weights = {
+    store: 0.1,
+    machine: 0.25,
+    island: 0.2,
+    weekday: 0.1,
+    sameDayMachine: 0.15,
+    sameDayIsland: 0.2,
+  };
+  const output = [];
+  let index = 0;
+  while (index < ordered.length) {
+    const date = ordered[index].date;
+    const batch = [];
+    while (index < ordered.length && ordered[index].date === date) {
+      batch.push(ordered[index]);
+      index += 1;
+    }
+
+    for (const row of batch) {
+      if (!row.estimate.valid) {
+        output.push({
+          ...row,
+          priorMean: row.border,
+          priorAdjustment: 0,
+          priorSources: [],
+        });
+        continue;
+      }
+      const sources = [
+        residualSource(historical.store.get(row.store), params, weights.store, "store-history"),
+        residualSource(historical.machine.get(profileKey(row)), params, weights.machine, "machine-history"),
+        residualSource(historical.island.get(islandKey(row)), params, weights.island, "island-history"),
+        residualSource(
+          historical.weekday.get(`${row.store}___${dayOfWeek(row.date)}`),
+          params,
+          weights.weekday,
+          "weekday-history",
+        ),
+        residualSource(
+          peerResidualStat(sameDayMachine, `${row.date}___${profileKey(row)}`, row),
+          params,
+          weights.sameDayMachine,
+          "same-day-machine-peers",
+        ),
+        residualSource(
+          peerResidualStat(sameDayIsland, `${row.date}___${islandKey(row)}`, row),
+          params,
+          weights.sameDayIsland,
+          "same-day-island-peers",
+        ),
+      ].filter(Boolean);
+      const rawAdjustment = sources.reduce(
+        (sum, source) => sum + source.weight * source.reliability * source.residual,
+        0,
+      );
+      const maxAdjustment = Math.max(0, num(params.partialPoolMaxAdjustment, 4));
+      const priorAdjustment = clamp(rawAdjustment, -maxAdjustment, maxAdjustment);
+      output.push({
+        ...row,
+        priorMean: Math.max(0, row.border + priorAdjustment),
+        priorAdjustment,
+        priorSources: sources,
+      });
+    }
+
+    for (const row of batch) {
+      addResidualStat(historical.store, row.store, row);
+      addResidualStat(historical.machine, profileKey(row), row);
+      addResidualStat(historical.island, islandKey(row), row);
+      addResidualStat(historical.weekday, `${row.store}___${dayOfWeek(row.date)}`, row);
+    }
+  }
+  return output;
+}
+
+function createProcessedRows(rawRows, customMachines, params, payoutCorrections = []) {
   const grouped = new Map();
+  const prepared = [];
   for (const raw of rawRows) {
     const resolvedMachine = findMachineSpec(raw.machineName, customMachines, machineDB);
     if (!resolvedMachine) continue;
-    const datedPriorBalls = priorBallsForEvidenceDate(resolvedMachine, raw.date);
-    const machine = datedPriorBalls > 0
-      ? { ...resolvedMachine, muraCoef: datedPriorBalls }
+    const payoutCorrection = correctionForRow(raw, resolvedMachine, payoutCorrections);
+    const payoutAdjustedMachine = payoutCorrection
+      ? {
+          ...resolvedMachine,
+          avgPayoutPerHit: payoutCorrection.correctedAvgPayout,
+          payoutCorrection,
+        }
       : resolvedMachine;
+    const datedPriorBalls = priorBallsForEvidenceDate(payoutAdjustedMachine, raw.date);
+    const machine = datedPriorBalls > 0
+      ? { ...payoutAdjustedMachine, muraCoef: datedPriorBalls }
+      : payoutAdjustedMachine;
     const estimate = estimateDaily(raw, machine, params);
-    const row = { ...raw, machine, estimate, border: machineBorder(machine) };
+    prepared.push({
+      ...raw,
+      machine,
+      estimate,
+      border: machineBorder(machine),
+      payoutCorrection: payoutCorrection || null,
+    });
+  }
+  for (const row of attachPartialPoolPriors(prepared, params)) {
     const key = historyKey(row);
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key).push(row);
@@ -339,6 +527,7 @@ function createProcessedRows(rawRows, customMachines, params) {
           activityStatus: e.activityStatus || "invalid",
           exclusionReason: e.reason || "計算データ不足",
           ema: ema ?? row.border,
+          priorEma: ema ?? row.border,
           cusumUp,
           cusumDown,
         });
@@ -395,9 +584,17 @@ function createProcessedRows(rawRows, customMachines, params) {
       // 推定に実際に使っている玉数（新レジーム分）だけで計算する。
       const confidenceBalls = usesRegimeRate ? regimeInputBalls : cumulativeInputBalls;
       const confidenceSamples = confidenceBalls / 250;
-      const priorBalls = Math.max(2500, num(row.machine?.muraCoef, params.defaultPriorBalls) * Math.pow(0.5, confidenceBalls / params.priorHalfLifeBalls));
+      // The prior no longer fades toward zero merely because more balls were
+      // observed. More data can reduce measurement error, but it cannot erase
+      // the possibility that the nail state changes overnight.
+      const priorBalls = Math.max(
+        2500,
+        num(row.machine?.muraCoef, params.defaultPriorBalls)
+          * clamp(num(params.priorStrengthRatio, 0.25), 0.05, 1),
+      );
       const confidence = confidenceSamples / (confidenceSamples + priorBalls / 250);
-      const predictedRotation = activeRate * confidence + row.border * (1 - confidence);
+      const priorMean = num(row.priorMean, row.border);
+      const predictedRotation = activeRate * confidence + priorMean * (1 - confidence);
       const activeSpins = usesRegimeRate ? regimeSpins : cumulativeSpins;
       const activeInputBalls = usesRegimeRate ? regimeInputBalls : cumulativeInputBalls;
       const activeInputVariance = usesRegimeRate ? regimeInputVariance : cumulativeInputVariance;
@@ -407,8 +604,9 @@ function createProcessedRows(rawRows, customMachines, params) {
       // 合成なので、区間幅も conf²·SE² + (1-conf)²·priorVariance のベイズ事後分散から取る。
       // 従来の SE×conf は信頼度ゼロ付近で区間幅0（＝データなしで断定）に潰れていた。
       const posteriorSd = Math.sqrt((confidence * standardError) ** 2 + ((1 - confidence) ** 2) * DEFAULT_PRIOR_VARIANCE);
-      const predictedLow = Math.max(0, predictedRotation - 1.96 * posteriorSd);
-      const predictedHigh = predictedRotation + 1.96 * posteriorSd;
+      const posteriorInterval = predictionInterval95(predictedRotation, posteriorSd ** 2);
+      const predictedLow = posteriorInterval.low;
+      const predictedHigh = posteriorInterval.high;
 
       output.push({
         ...row,
@@ -419,6 +617,7 @@ function createProcessedRows(rawRows, customMachines, params) {
         cumulativeSpins,
         cumulativeInputBalls,
         ema,
+        priorEma,
         cusumUp,
         cusumDown,
         cusumThreshold: threshold,
@@ -430,6 +629,8 @@ function createProcessedRows(rawRows, customMachines, params) {
         regimeInputVariance,
         regimeRate,
         confidence,
+        dataConfidence: confidence,
+        priorBalls,
         predictedRotation,
         predictedLow,
         predictedHigh,
@@ -439,6 +640,43 @@ function createProcessedRows(rawRows, customMachines, params) {
     }
   }
   return output.sort((a, b) => dayNumber(a.date) - dayNumber(b.date));
+}
+
+function applyProcessNoise(rows, processNoise, params) {
+  return rows.map((row) => {
+    if (!row.valid) return row;
+    const key = profileKey(row);
+    const profile = processNoise?.byProfile?.[key] || processNoise?.global || null;
+    const processVariance = Math.max(
+      0,
+      num(profile?.variance, num(params.defaultProcessNoiseSd, 1.75) ** 2),
+    );
+    const posteriorVariance = Math.max(0, num(row.posteriorVariance));
+    const nextDayVariance = posteriorVariance + processVariance;
+    const predictiveInterval = predictionInterval95(row.predictedRotation, nextDayVariance);
+    const dataConfidence = clamp(num(row.dataConfidence ?? row.confidence), 0, 1);
+    // DEFAULT_PRIOR_VARIANCE is four (SD=2 rotations/k). Comparing the
+    // irreducible overnight variance with that scale gives an interpretable
+    // forecast-reliability cap while retaining the raw data confidence.
+    const processReliability = DEFAULT_PRIOR_VARIANCE / (
+      DEFAULT_PRIOR_VARIANCE + processVariance
+    );
+    const forecastConfidence = clamp(dataConfidence * processReliability, 0, 0.99);
+    return {
+      ...row,
+      dataConfidence,
+      confidence: forecastConfidence,
+      forecastConfidence,
+      processReliability,
+      processVariance,
+      processNoiseSd: Math.sqrt(processVariance),
+      processNoiseSource: profile?.source || "default",
+      processNoiseSamples: Math.max(0, num(profile?.n)),
+      nextDayVariance,
+      predictedLow: predictiveInterval.low,
+      predictedHigh: predictiveInterval.high,
+    };
+  });
 }
 
 function buildStoreProfiles(rows) {
@@ -474,7 +712,149 @@ function buildStoreProfiles(rows) {
 }
 
 function betaRate(successes, total, fallback) {
-  return total > 0 ? (successes + 1) / (total + 2) : fallback;
+  return total > 0 ? (successes + fallback * 8) / (total + 8) : fallback;
+}
+
+function emptyTransitionSummary() {
+  return {
+    AA: 0,
+    AB: 0,
+    BA: 0,
+    BB: 0,
+    goodTight: 0,
+    goodTotal: 0,
+    badTight: 0,
+    badTotal: 0,
+    openShockTight: 0,
+    openShockTotal: 0,
+    eventTight: 0,
+    eventTotal: 0,
+    streakTight: 0,
+    streakTotal: 0,
+    tightResidualSum: 0,
+    tightResidualSq: 0,
+    tightResidualCount: 0,
+    holdResidualSum: 0,
+    holdResidualSq: 0,
+    holdResidualCount: 0,
+    weekdays: Array.from({ length: 7 }, () => ({ tight: 0, total: 0 })),
+  };
+}
+
+function addTransition(summary, prev, current, streak) {
+  const prevState = prev.ema >= prev.border + 0.5 ? "A" : "B";
+  const state = current.ema >= current.border + 0.5 ? "A" : "B";
+  summary[prevState + state] += 1;
+  const tight = num(current.dailyRate) <= num(prev.ema) - 1;
+  if (prevState === "A") {
+    summary.goodTotal += 1;
+    if (tight) summary.goodTight += 1;
+  } else {
+    summary.badTotal += 1;
+    if (tight) summary.badTight += 1;
+  }
+  const openShock = prev.changePoint === "open"
+    || num(prev.dailyRate) - num(prev.priorEma, prev.ema) >= 2;
+  if (openShock) {
+    summary.openShockTotal += 1;
+    if (tight) summary.openShockTight += 1;
+  }
+  if (prev.event) {
+    summary.eventTotal += 1;
+    if (tight) summary.eventTight += 1;
+  }
+  if (streak >= 3) {
+    summary.streakTotal += 1;
+    if (tight) summary.streakTight += 1;
+  }
+  const weekday = summary.weekdays[dayOfWeek(current.date)];
+  weekday.total += 1;
+  if (tight) weekday.tight += 1;
+  const residual = num(current.dailyRate) - num(current.border);
+  if (tight) {
+    summary.tightResidualSum += residual;
+    summary.tightResidualSq += residual ** 2;
+    summary.tightResidualCount += 1;
+  } else {
+    summary.holdResidualSum += residual;
+    summary.holdResidualSq += residual ** 2;
+    summary.holdResidualCount += 1;
+  }
+  return { prevState, state, tight, openShock };
+}
+
+function pooledMean(localSum, localCount, globalMean, strength = 8) {
+  return (localSum + globalMean * strength) / (localCount + strength);
+}
+
+function transitionProfile(key, summary, globalSummary, params) {
+  const [store, machineName] = key.split("___");
+  const globalGood = betaRate(globalSummary.goodTight, globalSummary.goodTotal, 0.2);
+  const globalBad = betaRate(globalSummary.badTight, globalSummary.badTotal, 0.5);
+  const globalOpen = betaRate(
+    globalSummary.openShockTight,
+    globalSummary.openShockTotal,
+    (globalGood + globalBad) / 2,
+  );
+  const globalEvent = betaRate(
+    globalSummary.eventTight,
+    globalSummary.eventTotal,
+    (globalGood + globalBad) / 2,
+  );
+  const globalTightResidual = globalSummary.tightResidualCount
+    ? globalSummary.tightResidualSum / globalSummary.tightResidualCount
+    : -1;
+  const globalHoldResidual = globalSummary.holdResidualCount
+    ? globalSummary.holdResidualSum / globalSummary.holdResidualCount
+    : 0;
+  const totalA = summary.AA + summary.AB;
+  const totalB = summary.BA + summary.BB;
+  return {
+    key,
+    store,
+    machineName,
+    counts: summary,
+    goodToGood: betaRate(summary.AA, totalA, 0.8),
+    goodToTight: betaRate(summary.goodTight, summary.goodTotal, globalGood),
+    badToGood: betaRate(summary.BA, totalB, 0.5),
+    badToBad: betaRate(summary.badTight, summary.badTotal, globalBad),
+    openShockNextTight: betaRate(
+      summary.openShockTight,
+      summary.openShockTotal,
+      globalOpen,
+    ),
+    eventNextTight: betaRate(summary.eventTight, summary.eventTotal, globalEvent),
+    streak3NextTight: betaRate(
+      summary.streakTight,
+      summary.streakTotal,
+      (globalGood + globalBad) / 2,
+    ),
+    weekdays: summary.weekdays.map((day, weekday) => {
+      const globalDay = globalSummary.weekdays[weekday];
+      const fallback = betaRate(
+        globalDay.tight,
+        globalDay.total,
+        (globalGood + globalBad) / 2,
+      );
+      return {
+        ...day,
+        rate: betaRate(day.tight, day.total, fallback),
+        reliability: day.total / (day.total + 8),
+      };
+    }),
+    tightResidual: pooledMean(
+      summary.tightResidualSum,
+      summary.tightResidualCount,
+      globalTightResidual,
+    ),
+    holdResidual: pooledMean(
+      summary.holdResidualSum,
+      summary.holdResidualCount,
+      globalHoldResidual,
+    ),
+    enoughGood: summary.goodTotal >= params.markovMinTransitions,
+    enoughBad: summary.badTotal >= params.markovMinTransitions,
+  };
 }
 
 function buildMarkov(rows, params) {
@@ -485,10 +865,11 @@ function buildMarkov(rows, params) {
     histories.get(key).push(row);
   }
   const summaries = new Map();
+  const globalSummary = emptyTransitionSummary();
   for (const history of histories.values()) {
     history.sort((a, b) => dayNumber(a.date) - dayNumber(b.date));
     const pKey = profileKey(history[0]);
-    if (!summaries.has(pKey)) summaries.set(pKey, { AA: 0, AB: 0, BA: 0, BB: 0, eventTight: 0, eventTotal: 0, streakTight: 0, streakTotal: 0 });
+    if (!summaries.has(pKey)) summaries.set(pKey, emptyTransitionSummary());
     const summary = summaries.get(pKey);
     let streak = 0;
     for (let i = 1; i < history.length; i++) {
@@ -499,40 +880,21 @@ function buildMarkov(rows, params) {
         continue;
       }
       const prevState = prev.ema >= prev.border + 0.5 ? "A" : "B";
-      const state = current.ema >= current.border + 0.5 ? "A" : "B";
-      summary[prevState + state] += 1;
-      if (prev.event) {
-        summary.eventTotal += 1;
-        if (prevState === "A" && state === "B") summary.eventTight += 1;
-      }
       streak = prevState === "A" ? streak + 1 : 0;
-      if (streak >= 3) {
-        summary.streakTotal += 1;
-        if (state === "B") summary.streakTight += 1;
-      }
+      addTransition(summary, prev, current, streak);
+      addTransition(globalSummary, prev, current, streak);
     }
   }
 
-  const profiles = [...summaries.entries()].map(([key, s]) => {
-    const [store, machineName] = key.split("___");
-    const totalA = s.AA + s.AB;
-    const totalB = s.BA + s.BB;
-    return {
-      key,
-      store,
-      machineName,
-      counts: s,
-      goodToGood: betaRate(s.AA, totalA, 0.8),
-      goodToTight: betaRate(s.AB, totalA, 0.2),
-      badToGood: betaRate(s.BA, totalB, 0.5),
-      badToBad: betaRate(s.BB, totalB, 0.5),
-      eventNextTight: betaRate(s.eventTight, s.eventTotal, 0.2),
-      streak3NextTight: betaRate(s.streakTight, s.streakTotal, 0.2),
-      enoughGood: totalA >= params.markovMinTransitions,
-      enoughBad: totalB >= params.markovMinTransitions,
-    };
-  });
-  return { profiles, byKey: new Map(profiles.map((item) => [item.key, item])) };
+  const profiles = [...summaries.entries()].map(([key, summary]) => (
+    transitionProfile(key, summary, globalSummary, params)
+  ));
+  const global = transitionProfile("全店舗___全機種", globalSummary, globalSummary, params);
+  return {
+    profiles,
+    global,
+    byKey: new Map(profiles.map((item) => [item.key, item])),
+  };
 }
 
 function latestByHistory(rows) {
@@ -585,7 +947,11 @@ function buildOppositePairs(islands = []) {
   const handled = new Set();
   for (const left of islands || []) {
     const right = byId.get(String(left?.facingIslandId || ""));
-    if (!right || right === left) continue;
+    if (
+      !right
+      || right === left
+      || String(right?.facingIslandId || "") !== String(left?.id || "")
+    ) continue;
     const relationKey = [String(left.id), String(right.id)].sort().join("___");
     if (handled.has(relationKey)) continue;
     handled.add(relationKey);
@@ -829,8 +1195,40 @@ export function buildIslandActivityHistory(rows = []) {
     ));
 }
 
-function applyDecision(latest, profiles, markov, spatial, opposite, params) {
-  const profileMap = new Map(profiles.map((item) => [item.key, item]));
+function applyDecision(
+  latest,
+  profiles,
+  markov,
+  spatial,
+  opposite,
+  params,
+  biasCorrection = null,
+  decisionCalibration = null,
+) {
+  void profiles;
+  const activeDecisionK = Math.max(
+    0,
+    num(decisionCalibration?.k, params.lcbK),
+  );
+  const biasEligible = new Set();
+  const biasGroups = new Map();
+  for (const row of latest.filter((item) => item.valid)) {
+    const key = `${row.store}___${row.date}`;
+    if (!biasGroups.has(key)) biasGroups.set(key, []);
+    biasGroups.get(key).push(row);
+  }
+  for (const group of biasGroups.values()) {
+    group.sort((left, right) => {
+      const leftMargin = num(left.predictedRotation)
+        - activeDecisionK * Math.sqrt(Math.max(0, num(left.nextDayVariance)))
+        - num(left.border);
+      const rightMargin = num(right.predictedRotation)
+        - activeDecisionK * Math.sqrt(Math.max(0, num(right.nextDayVariance)))
+        - num(right.border);
+      return rightMargin - leftMargin || historyKey(left).localeCompare(historyKey(right));
+    });
+    group.slice(0, 5).forEach((row) => biasEligible.add(historyKey(row)));
+  }
   return latest.map((row) => {
     if (!row.valid) {
       return {
@@ -844,34 +1242,74 @@ function applyDecision(latest, profiles, markov, spatial, opposite, params) {
           minRequired: params.markovMinTransitions,
         },
         nailAlert: row.inactive ? "未稼働" : "データ除外",
+        decisionLowerK: activeDecisionK,
+        decisionLowerRotation: null,
+        decisionLowerTargetCoverage: num(
+          decisionCalibration?.targetCoverage,
+          params.decisionLowerTargetCoverage,
+        ),
+        decisionCalibrationStatus: decisionCalibration?.status || "awaiting-samples",
+        decisionCalibrationSampleCount: num(decisionCalibration?.sampleCount),
+        decisionCalibrationMinRequired: num(
+          decisionCalibration?.minRequired,
+          params.decisionCalibrationMinSamples,
+        ),
+        seatThreshold: null,
+        seatThresholdProbability: null,
+        seatDecisionStatus: "pending",
         score: 0,
         verdict: "nodata",
       };
     }
-    const profile = profileMap.get(profileKey(row));
     // tightProbability は「翌日に締められる確率」なので、曜日プロファイルも
     // 今日ではなく翌日の曜日（締めが起きる日）で参照する。
     const tomorrowDow = (dayOfWeek(row.date) + 1) % 7;
-    const dowProfile = profile?.days?.[tomorrowDow];
-    const markovProfile = markov.byKey.get(profileKey(row));
+    const markovProfile = markov.byKey.get(profileKey(row)) || markov.global;
+    const dowProfile = markovProfile?.weekdays?.[tomorrowDow];
     const stateGood = row.ema >= row.border + 0.5;
-    const totalA = markovProfile ? markovProfile.counts.AA + markovProfile.counts.AB : 0;
-    const totalB = markovProfile ? markovProfile.counts.BA + markovProfile.counts.BB : 0;
-    const transitionTotal = stateGood ? totalA : totalB;
+    const transitionTotal = stateGood
+      ? num(markovProfile?.counts?.goodTotal)
+      : num(markovProfile?.counts?.badTotal);
     const transitionTight = stateGood
-      ? num(markovProfile?.counts?.AB)
-      : num(markovProfile?.counts?.BB);
+      ? num(markovProfile?.counts?.goodTight)
+      : num(markovProfile?.counts?.badTight);
     const usesObservedTransition = transitionTotal >= params.markovMinTransitions;
     const baseProbability = stateGood
-      ? (usesObservedTransition ? markovProfile.goodToTight : 0.2)
-      : (usesObservedTransition ? markovProfile.badToBad : 0.5);
+      ? num(markovProfile?.goodToTight, 0.2)
+      : num(markovProfile?.badToBad, 0.5);
     let tightProbability = baseProbability;
-    const eventApplied = Boolean(row.event && markovProfile?.counts.eventTotal >= 3);
-    if (eventApplied) tightProbability = Math.max(tightProbability, markovProfile.eventNextTight * 0.8);
-    // 「現在が日曜」だけが翌日=月曜。元GASの土曜補正は適用しない。
-    if (dayOfWeek(row.date) === 0) tightProbability = Math.min(1, tightProbability * 1.2);
-    const weekdayApplied = Boolean(dowProfile?.enough);
-    if (weekdayApplied) tightProbability = clamp(tightProbability * 0.75 + dowProfile.rate * 0.25, 0, 1);
+    const blendCondition = (current, conditionalRate, total) => {
+      const reliability = Math.max(0, num(total)) / (Math.max(0, num(total)) + 8);
+      return clamp(current * (1 - reliability) + num(conditionalRate, current) * reliability, 0, 1);
+    };
+    const openShock = row.changePoint === "open"
+      || num(row.dailyRate) - num(row.priorEma, row.ema) >= 2;
+    const openShockTotal = num(markovProfile?.counts?.openShockTotal);
+    const openShockApplied = openShock && openShockTotal > 0;
+    if (openShockApplied) {
+      tightProbability = blendCondition(
+        tightProbability,
+        markovProfile.openShockNextTight,
+        openShockTotal,
+      );
+    }
+    const eventTotal = num(markovProfile?.counts?.eventTotal);
+    const eventApplied = Boolean(row.event && eventTotal > 0);
+    if (eventApplied) {
+      tightProbability = blendCondition(
+        tightProbability,
+        markovProfile.eventNextTight,
+        eventTotal,
+      );
+    }
+    const weekdayApplied = num(dowProfile?.total) > 0;
+    if (weekdayApplied) {
+      tightProbability = blendCondition(
+        tightProbability,
+        dowProfile.rate,
+        dowProfile.total,
+      );
+    }
     const tightEvidence = {
       status: usesObservedTransition ? "observed" : "prior",
       currentState: stateGood ? "good" : "bad",
@@ -885,11 +1323,58 @@ function applyDecision(latest, profiles, markov, spatial, opposite, params) {
         total: num(dowProfile?.total),
         applied: weekdayApplied,
       },
+      openShock: {
+        detected: openShock,
+        successes: num(markovProfile?.counts?.openShockTight),
+        total: openShockTotal,
+        applied: openShockApplied,
+      },
       event: {
         successes: num(markovProfile?.counts?.eventTight),
-        total: num(markovProfile?.counts?.eventTotal),
+        total: eventTotal,
         applied: eventApplied,
       },
+    };
+
+    // Forecast the next day as a mixture of "held" and "tightened" states.
+    // The between-state term p(1-p)(mu_hold-mu_tight)^2 is retained in the
+    // interval so the mean adjustment never creates false precision.
+    const heldRotation = num(row.predictedRotation);
+    const historicalTightRotation = Math.max(
+      0,
+      row.border + num(markovProfile?.tightResidual, -1),
+    );
+    const tightenedRotation = Math.min(heldRotation, historicalTightRotation);
+    const transitionMean = (
+      (1 - tightProbability) * heldRotation
+      + tightProbability * tightenedRotation
+    );
+    const transitionVariance = tightProbability * (1 - tightProbability)
+      * ((heldRotation - tightenedRotation) ** 2);
+    const biasRotationAdjustment = biasCorrection?.appliesAutomatically === true
+      && biasEligible.has(historyKey(row))
+      ? num(biasCorrection.appliedRotationAdjustment)
+      : 0;
+    const adjustedRotation = Math.max(0, transitionMean + biasRotationAdjustment);
+    const nextDayVariance = Math.max(0, num(row.nextDayVariance ?? row.posteriorVariance))
+      + transitionVariance;
+    const transitionReliability = DEFAULT_PRIOR_VARIANCE / (
+      DEFAULT_PRIOR_VARIANCE + transitionVariance
+    );
+    // The displayed confidence represents data + overnight process
+    // reliability. Transition uncertainty is already carried by
+    // nextDayVariance and therefore affects the LCB/range, not confidence a
+    // second time.
+    const forecastConfidence = clamp(num(row.confidence), 0, 0.99);
+    const forecastInterval = predictionInterval95(adjustedRotation, nextDayVariance);
+    const forecastRow = {
+      ...row,
+      confidence: forecastConfidence,
+      forecastConfidence,
+      predictedRotation: adjustedRotation,
+      predictedLow: forecastInterval.low,
+      predictedHigh: forecastInterval.high,
+      nextDayVariance,
     };
 
     const spatialInfo = spatial.get(historyKey(row)) || { code: "none", label: "隣接情報なし" };
@@ -914,35 +1399,142 @@ function applyDecision(latest, profiles, markov, spatial, opposite, params) {
     else if (row.cusumDown >= row.cusumThreshold * 0.6) nailAlert = "締め傾向";
     else if (row.cusumUp >= row.cusumThreshold * 0.6) nailAlert = "開け傾向";
 
-    const finance = economics(row, params);
-    const borderDifference = row.predictedRotation - finance.effectiveBorder;
-    const baseScore = borderDifference * row.confidence * 100;
-    // 空間・対面・曜日・マルコフは同じ現象を重ねて見るため、合計補正を±15点に制限する。
+    const finance = economics(forecastRow, params);
+    const borderDifference = forecastRow.predictedRotation - finance.effectiveBorder;
+    const baseScore = borderDifference * forecastRow.confidence * 100;
+    // Tight/event effects already changed the forecast mean above. Keeping
+    // them out of this point adjustment prevents a double or triple penalty.
     let contextAdjustment = 0;
     if (openSpatial || openOpposite) contextAdjustment += 6;
     if (tightSpatial || tightOpposite) contextAdjustment -= 6;
-    if (tightProbability >= 0.6 && borderDifference > 0) contextAdjustment -= 8;
-    if (row.event && borderDifference > 0) contextAdjustment += 3;
     contextAdjustment = clamp(contextAdjustment, -15, 15);
     const score = Math.max(0, baseScore + contextAdjustment);
-    const verdict = classifyEvidenceScore(score, row.confidence);
+    const verdict = classifyEvidenceScore(score, forecastRow.confidence);
+    const decisionLowerK = activeDecisionK;
+    const decisionLowerRotation = decisionLowerBound(
+      forecastRow.predictedRotation,
+      nextDayVariance,
+      decisionLowerK,
+    );
+    const seatThreshold = finance.effectiveBorder + 0.5;
+    const seatThresholdProbability = probabilityAboveThreshold(
+      forecastRow.predictedRotation,
+      nextDayVariance,
+      seatThreshold,
+    );
+    const statisticalSeatDecisionStatus = decisionLowerRotation >= seatThreshold
+      ? "candidate"
+      : seatThresholdProbability >= 0.5 ? "trial" : "skip";
+    const seatDecisionStatus = nailAlert.includes("締め")
+      ? "skip"
+      : statisticalSeatDecisionStatus;
+    const selectionMargin = decisionLowerRotation - seatThreshold;
     return {
-      ...row,
+      ...forecastRow,
       spatial: spatialInfo,
       opposite: oppositeInfo,
       tightProbability,
       tightEvidence,
+      heldRotation,
+      tightenedRotation,
+      tightMeanAdjustment: transitionMean - heldRotation,
+      transitionVariance,
+      transitionReliability,
+      biasRotationAdjustment,
+      biasCorrectionStatus: biasCorrection?.status || "awaiting-samples",
       weekdayTightRate: dowProfile?.rate || 0,
       weekdaySampleCount: dowProfile?.total || 0,
       nailAlert,
       borderDifference,
+      decisionLowerK,
+      decisionLowerRotation,
+      decisionLowerQuantile: num(
+        decisionCalibration?.quantile,
+        params.decisionLowerQuantile,
+      ),
+      decisionLowerTargetCoverage: num(
+        decisionCalibration?.targetCoverage,
+        params.decisionLowerTargetCoverage,
+      ),
+      decisionCalibrationStatus: decisionCalibration?.status || "awaiting-samples",
+      decisionCalibrationSampleCount: num(decisionCalibration?.sampleCount),
+      decisionCalibrationMinRequired: num(
+        decisionCalibration?.minRequired,
+        params.decisionCalibrationMinSamples,
+      ),
+      decisionCalibrationRemainingSamples: num(
+        decisionCalibration?.remainingSamples,
+        params.decisionCalibrationMinSamples,
+      ),
+      decisionCalibrationMethod: decisionCalibration?.method || "normal-q20-provisional-v1",
+      seatThreshold,
+      seatThresholdProbability,
+      statisticalSeatDecisionStatus,
+      seatDecisionStatus,
+      // lcb* は保存済み表示との互換名。意味は上記の判断用下限。
+      lcbK: decisionLowerK,
+      lcbRotation: decisionLowerRotation,
+      selectionMargin,
       contextAdjustment,
       score,
       verdict,
       ...finance,
-      action: nailAlert.includes("締め") ? "見送り・撤退を優先" : verdict === "strong" ? "最優先候補" : verdict === "watch" ? "実測を見て判断" : "見送り",
+      action: nailAlert.includes("締め")
+        ? "見送り・撤退を優先"
+        : seatDecisionStatus === "candidate"
+          ? "安全側で候補"
+          : seatDecisionStatus === "trial" ? "試し打ちで確認" : "見送り",
     };
   });
+}
+
+function buildRollingDecisionRows(baseRows, islands, params) {
+  const dates = [...new Set(baseRows.map((row) => row.date).filter(Boolean))]
+    .sort((left, right) => dayNumber(left) - dayNumber(right));
+  const basePairs = buildBacktestPairs(baseRows);
+  const decisions = [];
+  let finalProcessNoise = estimateProcessNoise([], params);
+
+  for (const date of dates) {
+    const currentDay = dayNumber(date);
+    const knownRows = baseRows.filter((row) => dayNumber(row.date) <= currentDay);
+    const currentBaseRows = baseRows.filter((row) => row.date === date);
+    const knownProcessPairs = basePairs.filter(
+      (pair) => dayNumber(pair.actualDate) <= currentDay,
+    );
+    const processNoise = estimateProcessNoise(knownProcessPairs, params);
+    finalProcessNoise = processNoise;
+    const predictiveRows = applyProcessNoise(currentBaseRows, processNoise, params);
+
+    // Appending today's base rows exposes today's actual dailyRate to the
+    // previous day's forecast pair, while today's own forecast is not yet part
+    // of the bias history. This is the rolling-origin boundary.
+    const priorBacktest = buildPEvidenceBacktest(
+      [...decisions, ...currentBaseRows],
+      params,
+    );
+    const profiles = buildStoreProfiles(knownRows);
+    const markov = buildMarkov(knownRows, params);
+    const spatial = buildSpatial(predictiveRows, params);
+    const opposite = buildOpposite(predictiveRows, islands);
+    decisions.push(...applyDecision(
+      predictiveRows,
+      profiles,
+      markov,
+      spatial,
+      opposite,
+      params,
+      priorBacktest.biasCorrection,
+      priorBacktest.decisionLowerCalibration,
+    ));
+  }
+
+  return {
+    rows: decisions,
+    processNoise: finalProcessNoise,
+    backtest: buildPEvidenceBacktest(decisions, params),
+    method: "rolling-origin-day-by-day-v1",
+  };
 }
 
 function tightProbabilityOf(row) {
@@ -957,10 +1549,27 @@ function tightProbabilityOf(row) {
 
 export function priorityScoreOf(row) {
   const baseScore = num(row?.score ?? row?.goodMachineScore);
-  const tightProbability = tightProbabilityOf(row);
-  const nailTight = String(row?.nailAlert || "").includes("締め");
-  const tightPenalty = nailTight ? 100 : tightProbability == null ? 12 : tightProbability * 20;
-  return baseScore - tightPenalty;
+  const predictedRotation = Number(
+    row?.predictedRotation
+    ?? row?.rot
+    ?? row?.rotationEstimate?.mean,
+  );
+  const variance = Number(
+    row?.nextDayVariance
+    ?? row?.rotationEstimate?.variance
+    ?? row?.posteriorVariance,
+  );
+  const border = Number(row?.effectiveBorder ?? row?.border);
+  const lcbK = Math.max(0, num(row?.decisionLowerK ?? row?.lcbK, DECISION_LOWER_DEFAULT_Z));
+  if (
+    Number.isFinite(predictedRotation)
+    && Number.isFinite(variance)
+    && variance >= 0
+    && Number.isFinite(border)
+  ) {
+    return predictedRotation - lcbK * Math.sqrt(variance) - border;
+  }
+  return baseScore;
 }
 
 export function rankStrategyCandidates(rows = []) {
@@ -976,7 +1585,10 @@ export function rankStrategyCandidates(rows = []) {
 export function buildPortfolioPlan(rows = [], options = {}) {
   const plannedHours = Math.max(0, num(options.plannedHours ?? options.portfolioHours, 6));
   const maxCandidates = Math.max(1, Math.round(num(options.maxCandidates, 10)));
-  const maxTightProbability = clamp(num(options.maxTightProbability, 0.6), 0, 1);
+  const hasExplicitTightGate = Number.isFinite(Number(options.maxTightProbability));
+  const maxTightProbability = hasExplicitTightGate
+    ? clamp(Number(options.maxTightProbability), 0, 1)
+    : 1;
   const candidates = rankStrategyCandidates(rows.filter((row) => {
     const hourly = num(row?.hourly ?? row?.evPerHour);
     const hourlyRisk = num(row?.hourlyRisk);
@@ -988,9 +1600,13 @@ export function buildPortfolioPlan(rows = [], options = {}) {
       && hourly > 0
       && hourlyRisk > 0
       && num(row?.sharpe) > 0
-      && (row?.verdict === "strong" || row?.verdict === "watch")
+      && (
+        row?.seatDecisionStatus
+          ? row.seatDecisionStatus === "candidate"
+          : row?.verdict === "strong" || row?.verdict === "watch"
+      )
       && !String(row?.nailAlert || "").includes("締め")
-      && (tightProbability == null || tightProbability < maxTightProbability);
+      && (!hasExplicitTightGate || tightProbability == null || tightProbability < maxTightProbability);
   })).slice(0, maxCandidates);
   if (!(plannedHours > 0) || !candidates.length) {
     return { plan: [], totalHours: 0, expectedProfit: 0, projectedCash: 0 };
@@ -1052,6 +1668,7 @@ export function buildPortfolioPlan(rows = [], options = {}) {
       rank: 0,
       number: row?.num ?? row?.number,
       machineName: row?.machineName || "",
+      store: row?.store ?? row?.storeId ?? row?.storeName ?? "",
       predictedRotation: num(row?.predictedRotation ?? row?.rot),
       hourly,
       hours,
@@ -1088,18 +1705,29 @@ function buildNextMap(rows) {
   });
 }
 
-export function buildPEvidenceAnalytics({ scans = [], customMachines = [], islands = [], params: overrides = {} } = {}) {
+export function buildPEvidenceAnalytics({
+  scans = [],
+  customMachines = [],
+  islands = [],
+  payoutCorrections = [],
+  params: overrides = {},
+} = {}) {
   const params = { ...PE_PARAMS, ...overrides };
   const statusSourceRows = latestRows(scans, { includeInvalid: true });
   const rawRows = statusSourceRows.filter((row) => hasUsableDeltaValue(row) && !row.dateInvalid);
-  const processed = createProcessedRows(statusSourceRows, customMachines, params);
-  const backtest = buildPEvidenceBacktest(processed);
+  const baseProcessed = createProcessedRows(
+    statusSourceRows,
+    customMachines,
+    params,
+    payoutCorrections,
+  );
+  const rolling = buildRollingDecisionRows(baseProcessed, islands, params);
+  const processNoise = rolling.processNoise;
+  const processed = applyProcessNoise(baseProcessed, processNoise, params);
+  const backtest = rolling.backtest;
   const storeProfiles = buildStoreProfiles(processed);
   const markov = buildMarkov(processed, params);
-  const latest = latestByHistory(processed);
-  const spatial = buildSpatial(latest, params);
-  const opposite = buildOpposite(latest, islands);
-  const decisionRows = applyDecision(latest, storeProfiles, markov, spatial, opposite, params);
+  const decisionRows = latestByHistory(rolling.rows);
   const aiProfile = buildAIProfile(processed);
   // 「今日の配分」「明日の地図」は最新スキャン日のデータがある台だけを対象にし、
   // 数日前が最終データの台の古い予測を今日の推奨として出さない。
@@ -1128,6 +1756,9 @@ export function buildPEvidenceAnalytics({ scans = [], customMachines = [], islan
     currentRows,
     storeProfiles,
     markovProfiles: markov.profiles,
+    processNoise,
+    backtestMethod: rolling.method,
+    payoutCorrections,
     aiProfile,
     backtest,
     islandStats,

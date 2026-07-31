@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { localDateStr } from "../../constants";
-import { deriveSpecForMachine, getYutimeSelectionMachines } from "../../machineDB";
+import { deriveSpecForMachine, findEffectiveMachineByName, getYutimeSelectionMachines } from "../../machineDB";
 import { MACHINE_SORT_OPTIONS, filterMachines, sortMachines } from "../../machineSort";
 import {
   PACHINKO_RATE_PRESETS,
@@ -251,13 +251,7 @@ export default function YutimeCalculatorSheet({
 }) {
   const machines = useMemo(() => getYutimeSelectionMachines(S?.customMachines), [S?.customMachines]);
   const initialMachine = useMemo(
-    () => machines.find((machine) => machine.name === initialMachineName)
-      || machines.find((machine) => (
-        initialMachineName
-        && [machine.name, machine.modelName, ...(machine.aliases || [])]
-          .some((value) => String(value || "").normalize("NFKC").toLowerCase().includes(initialMachineName.normalize("NFKC").toLowerCase()))
-      ))
-      || null,
+    () => findEffectiveMachineByName(initialMachineName, [], machines),
     [initialMachineName, machines],
   );
   const machineInitialSession = createYutimeSessionFromMachine(initialMachine, { assumedStart1K: initialMachine?.border1K || S?.border });
@@ -435,6 +429,24 @@ export default function YutimeCalculatorSheet({
     const selectedSpec1R = selectedMachine ? (machineSpec?.spec1R ?? 0) : undefined;
     const selectedSpecAvgRounds = selectedMachine ? (machineSpec?.specAvgRounds ?? 0) : undefined;
     const selectedSpecSapo = selectedMachine ? (machineSpec?.specSapo ?? 0) : undefined;
+
+    // 実戦中に同じ台の設定画面として開かれた場合でも、機種・店舗・レートの
+    // 差し替えは通常保存に混ぜず、共通の台移動/終了フローへ案内する。
+    const contextChanges = [];
+    if (normalizedMachineName !== String(S?.machineName || "").trim()) contextChanges.push("機種");
+    if (
+      storeRateContext.storeId != null
+      && S?.selectedStoreId != null
+      && String(storeRateContext.storeId) !== String(S.selectedStoreId)
+    ) contextChanges.push("店舗");
+    if (Number(rentBalls) > 0 && Number(rentBalls) !== Number(S?.rentBalls)) contextChanges.push("貸玉");
+    if (Number(exRate) > 0 && Number(exRate) !== Number(S?.exRate)) contextChanges.push("交換率");
+    if (
+      S?.sessionStarted
+      && startAction !== "move"
+      && contextChanges.length > 0
+      && S?.requestSessionContextChange?.(contextChanges)
+    ) return;
 
     // 回転記録がある別機種からの開始は、旧台を保存して正式な台移動として扱う。
     if (startAction === "move" && typeof S?.handleMoveTable === "function") {

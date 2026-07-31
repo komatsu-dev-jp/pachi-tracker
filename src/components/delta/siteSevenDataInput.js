@@ -428,6 +428,10 @@ const SITE_SEVEN_SOURCE_PRIORITY = Object.freeze({ pdf: 3, csv: 3, image: 1 });
 function sameImportedValues(left, right) {
   return String(left?.normalSpins ?? "") === String(right?.normalSpins ?? "")
     && String(left?.totalStarts ?? "") === String(right?.totalStarts ?? "")
+    && (left?.cumulativeStarts == null || right?.cumulativeStarts == null
+      || String(left.cumulativeStarts) === String(right.cumulativeStarts))
+    && (left?.firstHitCount == null || right?.firstHitCount == null
+      || String(left.firstHitCount) === String(right.firstHitCount))
     && (left?.maxPayout == null || right?.maxPayout == null
       || String(left.maxPayout) === String(right.maxPayout));
 }
@@ -472,6 +476,8 @@ export function mergeSiteSevenParsedResults(resultEntries, { expectedNumbers = [
         num: parsedNum !== null && parsedNum > 0,
         normalSpins: parseSiteSevenEditableInteger(rawRow?.normalSpins) !== null,
         totalStarts: parseSiteSevenEditableInteger(rawRow?.totalStarts) !== null,
+        cumulativeStarts: parseSiteSevenEditableInteger(rawRow?.cumulativeStarts) !== null,
+        firstHitCount: parseSiteSevenEditableInteger(rawRow?.firstHitCount) !== null,
         maxPayout: parseSiteSevenEditableInteger(rawRow?.maxPayout) !== null,
       };
       const explicitlyRejectedField = Object.keys(parsedFieldValues)

@@ -13,6 +13,8 @@ import {
   validateReviewedNumberAssignment,
   isResolvedDeltaRow,
   isDeltaValueWithinConstraint,
+  isDeltaReviewEditable,
+  shouldCommitDeltaReviewValue,
   updateDeltaReview,
   validateDeltaRows,
   islandToNumbers,
@@ -54,6 +56,17 @@ test("parseTaiData: 差玉つき8列を台番号ごとに認識", () => {
   assert.strictEqual(rows[1].val, 8200);
   assert.strictEqual(rows[0].normalSpins, 1239);
   assert.strictEqual(rows[0].totalStarts, 12);
+});
+
+test("parseTaiData: 差玉・初当り回数つき9列を認識", () => {
+  const text = "2026/07/27\t写真再現店\tリコリス島\teリコリス・リコイル\t663\t-1,500\t850\t3\t16";
+  const { rows, skipped } = parseTaiDataText(text);
+  assert.strictEqual(skipped.length, 0);
+  assert.strictEqual(rows.length, 1);
+  assert.strictEqual(rows[0].val, -1500);
+  assert.strictEqual(rows[0].normalSpins, 850);
+  assert.strictEqual(rows[0].firstHitCount, 3);
+  assert.strictEqual(rows[0].totalStarts, 16);
 });
 
 test("parseTaiData: 連続空白区切りで7列になる行を再試行で拾う", () => {
@@ -247,10 +260,18 @@ test("mergeTaiData: 台番号一致で回転数等をマージ", () => {
     { num: "818", val: 24500, rank: getRank(24500).rank },
     { num: "824", val: -12000, rank: getRank(-12000).rank },
   ];
-  const tai = [{ num: "818", island: "島A", machineName: "機種A", normalSpins: 1239, totalStarts: 12 }];
+  const tai = [{
+    num: "818",
+    island: "島A",
+    machineName: "機種A",
+    normalSpins: 1239,
+    firstHitCount: 5,
+    totalStarts: 12,
+  }];
   const { rows: merged, matched } = mergeTaiData(rows, tai);
   assert.strictEqual(matched, 1);
   assert.strictEqual(merged[0].normalSpins, 1239);
+  assert.strictEqual(merged[0].firstHitCount, 5);
   assert.strictEqual(merged[0].machineName, "機種A");
   assert.strictEqual(merged[1].normalSpins, undefined);
 });
@@ -554,6 +575,31 @@ test("validateDeltaRows: 修正して確認した行は次の保存判定で対�
   assert.strictEqual(after.savableRows[1].val, 3000);
 });
 
+test("未読取行へ0を手入力しても変更として扱い、確認後は保存対象へ戻る", () => {
+  const failed = { num: "568", val: null, rank: null, status: "failed" };
+  assert.strictEqual(isDeltaReviewEditable(failed), true);
+  assert.strictEqual(shouldCommitDeltaReviewValue(failed.val, 0), true);
+  assert.strictEqual(shouldCommitDeltaReviewValue(0, 0), false);
+
+  const candidate = updateDeltaReview(failed, { value: 0 });
+  assert.strictEqual(candidate.val, 0);
+  assert.strictEqual(candidate.status, "review");
+  assert.strictEqual(candidate.valueSource, "manual-review-candidate");
+  assert.strictEqual(candidate.reviewConfirmed, false);
+
+  const confirmed = updateDeltaReview(candidate, {
+    value: 0,
+    confirmed: true,
+    reviewedAt: "2026-07-28T00:00:00.000Z",
+  });
+  assert.strictEqual(confirmed.valueSource, "manual-review");
+  assert.strictEqual(confirmed.reviewConfirmed, true);
+  assert.deepStrictEqual(
+    validateDeltaRows([confirmed]).savableRows.map((row) => row.num),
+    ["568"],
+  );
+});
+
 test("validateDeltaRows: 読み取れた行が1台もなければ保存不可", () => {
   const result = validateDeltaRows([
     { num: "568", val: null, status: "failed" },
@@ -617,6 +663,7 @@ test("validateDeltaRows: 一点値を捏造せずbounded範囲のまま保存可
   assert.deepEqual(result.boundedIndices, [1]);
   assert.equal(result.unresolvedCount, 0);
   assert.equal(isResolvedDeltaRow(bounded), false, "範囲値を正確な差玉として扱わない");
+  assert.equal(isDeltaReviewEditable(bounded), true);
 });
 
 test("validateDeltaRows: 見かけだけのbounded範囲は保存可能にしない", () => {

@@ -1,5 +1,20 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, {
+  lazy,
+  Suspense,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import { useLS, calcPreciseEV } from "./logic";
+import {
+  PERSISTENCE_EXCLUSIVE_END_EVENT,
+  PERSISTENCE_EXCLUSIVE_START_EVENT,
+  PERSISTENCE_UPDATED_EVENT,
+  getPersistenceEpochSync,
+  updateKeyAtomically,
+} from "./persistence";
 import {
   applyEconomicEV,
   heldBallCostPerK,
@@ -7,17 +22,9 @@ import {
 } from "./economics";
 import { useUndoStack } from "./history";
 import { C, font, tsNow, localDateStr } from "./constants";
-import { searchMachines } from "./machineDB";
 import { RotTab, SettingsTab } from "./components/Tabs";
 import ModeTabBar from "./components/ModeTabBar";
-import HomeDashboard from "./components/home/HomeDashboard";
 import { buildRiskSnapshot, findExactMachine } from "./components/home/homePlanningModel";
-import AnalysisDashboard from "./components/analysis/AnalysisDashboard";
-import ScoutDashboard from "./components/scout/ScoutDashboard";
-import StrategyMapDashboard from "./components/strategy/StrategyMapDashboard";
-import StoreDetail from "./pages/StoreDetail";
-import DeltaAnalyzer from "./components/delta/DeltaAnalyzer";
-import DeltaMapView from "./components/delta/DeltaMapView";
 import { getStoreIslands } from "./components/select/hallMapSelectors";
 import {
   addXpWithLevelUp,
@@ -31,6 +38,8 @@ import {
 } from "./components/hunter/hunterRank";
 import LevelUpToast from "./components/hunter/LevelUpToast";
 import NotificationPanel from "./components/NotificationPanel";
+import ConfirmSheet from "./components/ConfirmSheet";
+import SessionContextGuardSheet from "./components/SessionContextGuardSheet";
 import {
   computeBadgeMetrics,
   evaluateBadgeUnlocks,
@@ -38,14 +47,15 @@ import {
 } from "./components/hunter/badges";
 import { evDecision } from "./components/decision/evDecision";
 import { assessLiveRotation, LIVE_CHECKPOINTS_K } from "./components/decision/liveRotationDecision";
+import { decisionLabel } from "./components/decision/decisionVocabulary";
 import { runEvidence } from "./evidence";
-import { machineDB } from "./machineDB";
 import {
   buildDeltaEvidence,
   collectDeltaRows,
   findMachineSpec,
 } from "./components/delta/deltaEvidence";
-import { pruneScans } from "./components/delta/deltaSelectors";
+import { appendScanWithoutLoss } from "./components/delta/deltaSelectors";
+import { processPendingPushImports } from "./pushImportProcessor";
 import {
   addNotification as appendNotification,
   makeNotification,
@@ -64,6 +74,7 @@ import { takeSnapshot, takeSnapshotImmediate, getLatest as getLatestSnapshot } f
 import { setupGlobalHaptics } from "./haptics";
 import EHIME_STORES from "./data/ehimeStores";
 import {
+  mergeBuiltinStoreResearch,
   mergeBuiltinStores,
   normalizeAutoLockMinutes,
   shouldAutoLock,
@@ -79,6 +90,21 @@ import {
   getActiveYutimeRun,
   sumYutimeSupportCash,
 } from "./components/yutime/yutimeFlow";
+import { attachDataQualitySnapshot } from "./sessionDataQuality";
+import { getBackupReminder } from "./backupReminder";
+import { isHashedPin, migrateLegacyPin, verifyPin } from "./pinSecurity";
+import {
+  mergeSessionContextRequest,
+  shouldBlockSessionContextChange,
+} from "./sessionContextGuard";
+
+const HomeDashboard = lazy(() => import("./components/home/HomeDashboard"));
+const AnalysisDashboard = lazy(() => import("./components/analysis/AnalysisDashboard"));
+const ScoutDashboard = lazy(() => import("./components/scout/ScoutDashboard"));
+const StrategyMapDashboard = lazy(() => import("./components/strategy/StrategyMapDashboard"));
+const StoreDetail = lazy(() => import("./pages/StoreDetail"));
+const DeltaAnalyzer = lazy(() => import("./components/delta/DeltaAnalyzer"));
+const DeltaMapView = lazy(() => import("./components/delta/DeltaMapView"));
 
 // 旧タブ名 → 新モード名 のマッピング
 // Tabs.jsx 内から S.setTab("rot" | "calendar" | "settings") が呼ばれるため、
@@ -88,16 +114,22 @@ const LEGACY_TAB_TO_MODE = {
   calendar: "analysis",
   settings: "settings",
 };
+const EMPTY_MACHINES = Object.freeze([]);
 
-// verdict ID を日本語ラベルに変換（通知本文用）
-const VERDICT_LABELS = {
-  continue_strong: "続行（強）",
-  continue: "続行",
-  hold: "様子見",
-  stop: "ヤメ",
-};
+function ModeLoading() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style={{ padding: 28, color: "var(--text-sub)", textAlign: "center" }}
+    >
+      画面を読み込んでいます…
+    </div>
+  );
+}
+
 function verdictLabel(v) {
-  return VERDICT_LABELS[v] || String(v || "");
+  return decisionLabel(v);
 }
 function verdictBodyText(decision) {
   if (!decision) return "";
@@ -126,15 +158,41 @@ export default function App() {
   // 現在のモード: "home" | "scout" | "select" | "record" | "analysis" | "settings"
   // 新規ユーザーはホーム画面から始まる。既存ユーザーは保存済みの値を維持。
   const [currentMode, setCurrentMode] = useLS("pt_currentMode", "home");
+  const [confirmSheet, setConfirmSheet] = useState(null);
+  const confirmResolverRef = useRef(null);
+  const requestConfirmation = useCallback((options = {}) => new Promise((resolve) => {
+    if (confirmResolverRef.current) confirmResolverRef.current(false);
+    confirmResolverRef.current = resolve;
+    setConfirmSheet({
+      title: options.title || "確認",
+      message: options.message || "",
+      confirmLabel: options.confirmLabel || "続ける",
+      cancelLabel: options.cancelLabel || "キャンセル",
+      tone: options.tone || "primary",
+    });
+  }), []);
+  const finishConfirmation = useCallback((result) => {
+    const resolve = confirmResolverRef.current;
+    confirmResolverRef.current = null;
+    setConfirmSheet(null);
+    resolve?.(Boolean(result));
+  }, []);
 
   // 店舗詳細画面（storeDetail モード）で表示対象の店舗ID。
   // react-router 等は導入せず、既存の currentMode 方式に合わせて state で管理する。
   // TODO: 店舗一覧・店舗検索からの遷移導線は次ステップで実装（現状は見た目優先プロトタイプ）。
   const [storeDetailId, setStoreDetailId] = useState(null);
+  // 店舗詳細から戦略マップ・差玉解析へ移るときの閲覧対象。
+  // 実戦中の selectedStoreId（計算前提）は上書きせず、分析画面だけを切り替える。
+  const [analysisStoreId, setAnalysisStoreId] = useState(null);
+  const [settingsIntent, setSettingsIntent] = useState(null);
 
   // ホームの「翌日プランを戦略で確認」から移動した時だけ使う、一度限りの引き継ぎ情報。
   // localStorage には保存せず、通常の「台選び」タブでは現在選択中の店舗をそのまま使う。
   const [strategyPlanContext, setStrategyPlanContext] = useState(null);
+  // 台選びで確定した情報を、新規稼働の確認画面へ一度だけ渡す。
+  // 「稼働開始」を押すまではセッション本体を書き換えない。
+  const [recordStartDraft, setRecordStartDraft] = useState(null);
 
   // 分析モード内の表示範囲
   // "month" | "year" | "all" | "analyzer"
@@ -156,18 +214,6 @@ export default function App() {
     gameType: "all",
   });
 
-  // 後方互換: Tabs.jsx 内の S.setTab("rot" | "calendar" | "settings") を新モードへ変換
-  // 旧 "calendar" タブはカレンダー一覧（既存 UI）を期待しているので、
-  // 分析モードのカレンダー サブタブを選択した状態で遷移させる
-  const setTab = useCallback((legacy) => {
-    if (legacy === "calendar") {
-      setCurrentMode("analysis");
-      setAnalysisTab("calendar");
-      return;
-    }
-    setCurrentMode(LEGACY_TAB_TO_MODE[legacy] ?? legacy);
-  }, [setCurrentMode, setAnalysisTab]);
-
   // Theme management
   const [theme, setTheme] = useLS("pt_theme", "dark");
 
@@ -185,6 +231,20 @@ export default function App() {
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState(false);
   const hiddenAtRef = useRef(null);
+
+  // 旧版で平文保存されていた4桁PINは、起動時にPBKDF2ハッシュへ一度だけ移行する。
+  useEffect(() => {
+    if (!appPin || isHashedPin(appPin)) return undefined;
+    let cancelled = false;
+    migrateLegacyPin(appPin)
+      .then((migrated) => {
+        if (!cancelled && migrated && migrated !== appPin) setAppPin(migrated);
+      })
+      .catch((error) => console.error("[security] PIN migration failed:", error));
+    return () => { cancelled = true; };
+    // useLS の setter はレンダーごとに新しい関数になるため、PIN値だけを監視する。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appPin]);
 
   useEffect(() => {
     const onVisibilityChange = () => {
@@ -327,7 +387,7 @@ export default function App() {
   // 下部タブから「記録」モードへ遷移した際は、必ず実戦サブタブを最初に表示する。
   // sessionSubTab が "history" のまま残っていると、初当たり入力モーダルが
   // 自動で開く挙動になっていたため（Tabs.jsx の auto-open useEffect 参照）。
-  const handleModeChange = useCallback((nextMode) => {
+  const handleModeChange = useCallback(async (nextMode) => {
     // 実戦中に大当たりチェーンが記録途中（completed:false）のまま
     // 記録画面から離れようとした場合のみ確認を挟む（誤タップ離脱防止）
     if (
@@ -336,14 +396,27 @@ export default function App() {
       sessionStarted &&
       (jpLog || []).some((c) => c && c.completed === false)
     ) {
-      const ok = window.confirm("大当たり記録が入力途中です。\n記録画面から移動しますか？");
-      if (!ok) return;
+      const ok = await requestConfirmation({
+        title: "入力途中の記録があります",
+        message: "大当たり記録がまだ完了していません。このまま記録画面から移動しますか？",
+        confirmLabel: "このまま移動",
+      });
+      if (!ok) return false;
     }
     if (nextMode === "record") {
       setSessionSubTab("rot");
     }
+    // 店舗詳細から開いた分析対象を、通常のナビ移動へ持ち越さない。
+    setAnalysisStoreId(null);
     setCurrentMode(nextMode);
-  }, [currentMode, sessionStarted, jpLog, setCurrentMode]);
+    return true;
+  }, [currentMode, sessionStarted, jpLog, setCurrentMode, requestConfirmation]);
+
+  // 各画面内の旧 S.setTab 呼び出しも、下部ナビと同じ離脱確認を通す。
+  const setTab = useCallback(async (legacy) => {
+    const changed = await handleModeChange(LEGACY_TAB_TO_MODE[legacy] ?? legacy);
+    if (changed && legacy === "calendar") setAnalysisTab("calendar");
+  }, [handleModeChange, setAnalysisTab]);
 
   // Session info
   const [storeName, setStoreName] = useLS("pt_storeName", "");
@@ -351,7 +424,34 @@ export default function App() {
   const [machineName, setMachineName] = useLS("pt_machineName", "");
   const [investYen, setInvestYen] = useLS("pt_investYen", 0);
   const [recoveryYen, setRecoveryYen] = useLS("pt_recoveryYen", 0);
+  const [sessionContextRequest, setSessionContextRequest] = useState(null);
+  const [sessionFlowRequest, setSessionFlowRequest] = useState(null);
 
+  const blockSessionContextChange = (labels) => {
+    if (!shouldBlockSessionContextChange(sessionStarted)) return false;
+    setSessionContextRequest((previous) => mergeSessionContextRequest(previous, labels));
+    return true;
+  };
+  const guardContextSetter = (label, setter) => (value) => {
+    if (blockSessionContextChange(label)) return;
+    setter(value);
+  };
+
+  // UIへ渡す設定変更はすべて同じガードを通す。台移動・実戦終了の内部処理は
+  // App内の元setterを直接使うため、正規フローだけが実戦中の前提を更新できる。
+  const guardedSetRentBalls = guardContextSetter("貸玉", setRentBalls);
+  const guardedSetExRate = guardContextSetter("交換率", setExRate);
+  const guardedSetBallVal = guardContextSetter("交換率", setBallVal);
+  const guardedSetInvestPace = guardContextSetter("投資記録単位", setInvestPace);
+  const guardedSetSelectedStoreId = guardContextSetter("店舗", setSelectedStoreId);
+  const guardedSetStoreName = guardContextSetter("店舗", setStoreName);
+  const guardedSetMachineName = guardContextSetter("機種", setMachineName);
+  const guardedSetMachineNum = guardContextSetter("台番号", setMachineNum);
+  const guardedSetSynthDenom = guardContextSetter("機種スペック", setSynthDenom);
+  const guardedSetSpec1R = guardContextSetter("機種スペック", setSpec1R);
+  const guardedSetSpecAvgRounds = guardContextSetter("機種スペック", setSpecAvgRounds);
+  const guardedSetSpecSapo = guardContextSetter("機種スペック", setSpecSapo);
+  const guardedSetBorder = guardContextSetter("ボーダー", setBorder);
   // Registered stores
   const [stores, setStores] = useLS("pt_stores", []);
   // 内蔵店舗リスト（愛媛・松山/伊予エリア）の初回自動登録フラグ。
@@ -359,6 +459,8 @@ export default function App() {
   const [storesSeeded, setStoresSeeded] = useLS("pt_storesSeeded", false);
   // 店舗リスト V2 移行フラグ: P-WORLD正式データへの全置き換えを一度だけ実行する。
   const [storesMigratedV2, setStoresMigratedV2] = useLS("pt_storesMigratedV2", false);
+  // 店舗レート調査 V1: みんパチの貸玉・交換率・確認日・参照元を既存店舗へ付与する。
+  const [storesRateResearchV1, setStoresRateResearchV1] = useLS("pt_storesRateResearchV1", false);
 
   // 台選び：店舗ごとのホールマップ（島配置）編集データ
   // スキーマ: { [storeId]: Island[] } / Island = { id, name, start, end, machineName }
@@ -369,17 +471,95 @@ export default function App() {
   // スキーマ: Scan[] / Scan = { id, storeId, storeName, date("YYYY-MM-DD"), machineName, rows, createdAt }
   //   rows[] = { num, val, px, rank, island?, machineName?, normalSpins?, totalStarts? }
   // 台選び専用の独立データ。rotRows（回転数記録）とは無関係に保つ。
-  const [deltaScans, setDeltaScans] = useLS("pt_deltaScans", []);
+  const [deltaScans, setDeltaScansState] = useLS("pt_deltaScans", []);
+  const deltaScansRef = useRef(deltaScans);
+  const deltaScanSaveQueueRef = useRef(Promise.resolve());
+  useEffect(() => {
+    deltaScansRef.current = Array.isArray(deltaScans) ? deltaScans : [];
+  }, [deltaScans]);
+  const mutateDeltaScans = useCallback((mutator, { signal, expectedEpoch } = {}) => {
+    // 呼出し時点の世代を固定し、復元待ちのキューが新しいDBへ古い値を書かないようにする。
+    const capturedEpoch = expectedEpoch || getPersistenceEpochSync();
+    const task = deltaScanSaveQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        let mutationResult;
+        const nextScans = await updateKeyAtomically(
+          "pt_deltaScans",
+          (current) => {
+            const list = Array.isArray(current) ? current : [];
+            mutationResult = mutator(list);
+            const next = mutationResult?.scans ?? mutationResult;
+            if (!Array.isArray(next)) {
+              throw new Error("差玉解析データの更新結果が不正です");
+            }
+            return next;
+          },
+          { signal, expectedEpoch: capturedEpoch },
+        );
+        deltaScansRef.current = nextScans;
+        // updateKeyAtomicallyが同じ配列をmemCacheへ反映済みなので、
+        // useLS側では重複書込みにならず画面だけが更新される。
+        setDeltaScansState(nextScans);
+        return mutationResult;
+      });
+    deltaScanSaveQueueRef.current = task.catch(() => undefined);
+    return task;
+  }, [setDeltaScansState]);
+  const setDeltaScans = useCallback((valueOrUpdater) => mutateDeltaScans((current) => (
+    typeof valueOrUpdater === "function"
+      ? valueOrUpdater(current)
+      : valueOrUpdater
+  )), [mutateDeltaScans]);
 
   // 差玉解析：AI読み取り用のAnthropic APIキー（任意設定・この端末のみに保存）
   const [aiApiKey, setAiApiKey] = useLS("pt_aiApiKey", "");
 
   // Custom machines
   const [customMachines, setCustomMachines] = useLS("pt_customMachines", []);
+  // 5,000行超の機種マスタは、機種を扱う画面を開いた時だけ読み込む。
+  // これによりホーム起動用のメイン処理から大容量データを分離する。
+  const [machineModule, setMachineModule] = useState(null);
+  useEffect(() => {
+    const needsMachineCatalog = Boolean(String(machineName || "").trim())
+      || ["record", "settings", "delta", "deltaMap", "select", "strategy"].includes(currentMode);
+    if (!needsMachineCatalog || machineModule) return undefined;
+    let active = true;
+    import("./machineDB")
+      .then((module) => {
+        if (active) setMachineModule(module);
+      })
+      .catch((error) => {
+        console.error("[machineDB] lazy load failed:", error);
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentMode, machineName, machineModule]);
+  const builtInMachines = machineModule?.machineDB || EMPTY_MACHINES;
+  const searchAvailableMachines = useCallback((query, custom = customMachines) => {
+    if (typeof machineModule?.searchMachines === "function") {
+      return machineModule.searchMachines(query, custom);
+    }
+    const needle = String(query || "").trim().toLowerCase();
+    return (Array.isArray(custom) ? custom : []).filter((machine) => (
+      !needle
+      || String(machine?.name || "").toLowerCase().includes(needle)
+      || String(machine?.maker || "").toLowerCase().includes(needle)
+    ));
+  }, [machineModule, customMachines]);
 
   // Archives
   const [archives, setArchives] = useLS("pt_archives", []);
+  const [lastBackupAt, setLastBackupAt] = useLS("pt_lastBackupAt", "");
   const [decisionSnapshots, setDecisionSnapshots] = useState([]);
+  const backupReminder = useMemo(() => getBackupReminder(lastBackupAt, {
+    hasUserData: Boolean(
+      sessionStarted
+      || (Array.isArray(archives) && archives.length > 0)
+      || (Array.isArray(rotRows) && rotRows.some((row) => row?.type === "data")),
+    ),
+  }), [lastBackupAt, sessionStarted, archives, rotRows]);
 
   // 月間期待値目標（ホーム画面の目標カード用 / 円）
   // 既存ユーザーは保存値、未設定は 100,000 円をデフォルトとして表示する。
@@ -505,27 +685,69 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storesMigratedV2]);
 
+  // 店舗レート調査 V1: ユーザーが編集した設定・貯玉・会員カードは保持し、
+  // 内蔵34店舗の調査メタデータだけを一度付与する。
+  useEffect(() => {
+    if (storesRateResearchV1) return;
+    setStoresRateResearchV1(true);
+    setStores((prev) => mergeBuiltinStoreResearch(prev, EHIME_STORES));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storesRateResearchV1]);
+
   const pushJP = (j) => setJpLog((p) => [...p, j]);
   const pushLog = (e) => setSesLog((p) => [...p, e]);
 
   // ── 高精度期待値エンジン ──
   // 遊タイム中の当たりは独立実績として残し、通常期待値・通常初当たり統計へ混ぜない。
-  const normalJpLogForEV = (jpLog || []).filter((chain) => chain?.origin !== "yutime");
-  const normalTotalTrayBalls = normalJpLogForEV.reduce((sum, chain) => sum + Math.max(0, Number(chain?.trayBalls) || 0), 0);
-  const baseCalculatedEv = calcPreciseEV({
+  const normalJpLogForEV = useMemo(
+    () => (jpLog || []).filter((chain) => chain?.origin !== "yutime"),
+    [jpLog],
+  );
+  const normalTotalTrayBalls = useMemo(
+    () => normalJpLogForEV.reduce((sum, chain) => sum + Math.max(0, Number(chain?.trayBalls) || 0), 0),
+    [normalJpLogForEV],
+  );
+  const baseCalculatedEv = useMemo(() => calcPreciseEV({
     rotRows, startRot, jpLog: normalJpLogForEV,
     rentBalls, exRate, synthDenom, rotPerHour,
     totalTrayBalls: normalTotalTrayBalls, border,
     spec1R, specAvgRounds, specSapo,
     chodamaSettings: { includeChodamaInBalance },
-  });
-  const calculatedEv = applyEconomicEV(baseCalculatedEv, {
-    rotRows, jpLog: normalJpLogForEV, totalTrayBalls: normalTotalTrayBalls, rentBalls, exRate, rotPerHour,
-  });
+  }), [
+    rotRows,
+    startRot,
+    normalJpLogForEV,
+    rentBalls,
+    exRate,
+    synthDenom,
+    rotPerHour,
+    normalTotalTrayBalls,
+    border,
+    spec1R,
+    specAvgRounds,
+    specSapo,
+    includeChodamaInBalance,
+  ]);
+  const calculatedEv = useMemo(() => applyEconomicEV(baseCalculatedEv, {
+    rotRows,
+    jpLog: normalJpLogForEV,
+    totalTrayBalls: normalTotalTrayBalls,
+    rentBalls,
+    exRate,
+    rotPerHour,
+  }), [
+    baseCalculatedEv,
+    rotRows,
+    normalJpLogForEV,
+    normalTotalTrayBalls,
+    rentBalls,
+    exRate,
+    rotPerHour,
+  ]);
   // 機種マスタ照合と差玉履歴の集計は全件走査になるため、依存値が変わったときだけ再計算する
   const evidenceMachine = useMemo(
-    () => findMachineSpec(machineName, customMachines, machineDB),
-    [machineName, customMachines],
+    () => findMachineSpec(machineName, customMachines, builtInMachines),
+    [machineName, customMachines, builtInMachines],
   );
   const savedDeltaEvidence = useMemo(() => (evidenceMachine
     ? buildDeltaEvidence(collectDeltaRows(deltaScans, {
@@ -873,7 +1095,11 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionStarted]);
 
-  const resetAll = (extraChodamaToStore = 0, { persistStoreBalance = true } = {}) => {
+  const resetAll = (extraChodamaToStore = 0, {
+    persistStoreBalance = true,
+    selectedStoreIdOverride,
+    currentChodamaOverride,
+  } = {}) => {
     // セッション終了直前の atomic スナップショット（reset 前に確保）
     try { takeSnapshotImmediate("session:end", getUndoSnapshot()); } catch { /* ignore */ }
     // セッション終了前に選択中の店舗の貯玉残高を自動更新
@@ -881,8 +1107,8 @@ export default function App() {
     // 設定画面からのセッション初期化では店舗資産を変更しない。
     setStores((prev) => updateStoresForSessionReset(prev, {
       persistStoreBalance,
-      selectedStoreId,
-      currentChodama,
+      selectedStoreId: selectedStoreIdOverride !== undefined ? selectedStoreIdOverride : selectedStoreId,
+      currentChodama: currentChodamaOverride !== undefined ? currentChodamaOverride : currentChodama,
       extraChodama: extraChodamaToStore,
     }));
     setSessionStartDate("");
@@ -931,11 +1157,16 @@ export default function App() {
       Object.entries(ev).filter(([, v]) => typeof v === "number" || typeof v === "string")
     ) : {};
     const exactMachineName = String(machineName || "").trim();
-    const matchedMachines = exactMachineName ? searchMachines(exactMachineName, customMachines) : [];
+    const matchedMachines = exactMachineName ? searchAvailableMachines(exactMachineName, customMachines) : [];
     const matchedMachine = findExactMachine(matchedMachines, exactMachineName);
-    const riskBallValueYen = exRate > 0 ? 1000 / exRate : (Number(ballVal) > 0 ? Number(ballVal) : 4);
+    const settlementStore = (stores || []).find((store) => store && typeof store === "object"
+      && settlement?.storeId != null && String(store.id) === String(settlement.storeId));
+    const archiveRentBalls = Number(settlementStore?.rentBalls) > 0 ? Number(settlementStore.rentBalls) : rentBalls;
+    const archiveExRate = Number(settlementStore?.exRate) > 0 ? Number(settlementStore.exRate) : exRate;
+    const archiveBallVal = archiveExRate > 0 ? 1000 / archiveExRate : ballVal;
+    const riskBallValueYen = archiveExRate > 0 ? 1000 / archiveExRate : (Number(archiveBallVal) > 0 ? Number(archiveBallVal) : 4);
     const riskSnapshot = buildRiskSnapshot({ machine: matchedMachine, ballValueYen: riskBallValueYen, capturedAt: now.toISOString() });
-    const archive = {
+    const archiveBase = {
       id: now.getTime(),
       // 回転数・大当たりを記録する既存フローはパチンコ専用。
       // スロットは収支カレンダーの手動記録から独立して追加する。
@@ -945,23 +1176,27 @@ export default function App() {
       rotRows: JSON.parse(JSON.stringify(rotRows)),
       jpLog: JSON.parse(JSON.stringify(jpLog)),
       sesLog: JSON.parse(JSON.stringify(sesLog)),
-      settings: { rentBalls, exRate, synthDenom, rotPerHour, border, ballVal },
+      settings: { rentBalls: archiveRentBalls, exRate: archiveExRate, synthDenom, rotPerHour, border, ballVal: archiveBallVal },
       stats: safeStats,
       riskSnapshot,
       totalTrayBalls: totalTrayBalls || 0,
       startRot: startRot || 0,
-      storeName: String(storeName || ""),
-      storeId: selectedStoreId || null,
+      storeName: String(settlement?.storeName ?? storeName ?? ""),
+      storeId: settlement?.storeId ?? selectedStoreId ?? null,
       machineNum: String(machineNum || ""),
       investYen: settlement ? (Number(settlement.investYen) || 0) : (Number(investYen) || 0),
       recoveryYen: settlement ? (Number(settlement.recoveryYen) || 0) : (Number(recoveryYen) || 0),
       // 台移動で持ち込んだ持ち玉の円換算（投資額に含まれる内数。アーカイブ編集の自動初期値で使用）
       carriedInYen: settlement ? (Number(settlement.carriedInYen) || 0) : 0,
       machineName: String(machineName || `1/${synthDenom}`),
+      finalMochiBalls: settlement?.finalMochiBalls != null
+        ? Math.max(0, Math.round(Number(settlement.finalMochiBalls) || 0))
+        : Math.max(0, Math.round(Number(currentMochiBalls) || 0)),
+      settlementMethod: settlement?.method || "",
       initialChodama: initialChodama || 0,
       finalChodama: currentChodama || 0,
       chodamaNetBalls: (currentChodama || 0) - (initialChodama || 0),
-      chodamaYen: Math.round((ev?.chodamaKCount || 0) * heldBallCostPerK(rentBalls, exRate)),
+      chodamaYen: Math.round((ev?.chodamaKCount || 0) * heldBallCostPerK(archiveRentBalls, archiveExRate)),
       isMoveArchive: isMove,
       // 着席判断時点の遊タイム計算を独立保存し、集計時に通常期待値へ加算する。
       yutimeDecision: yutimeDecision ? JSON.parse(JSON.stringify(yutimeDecision)) : null,
@@ -971,7 +1206,19 @@ export default function App() {
       sessionTargetEndAt: sessionTargetEndAt || "",
       sessionClosingTime: sessionClosingTime || "",
       sessionPlannedStart1K: Number(sessionPlannedStart1K) || 0,
+      ...((yutimeDecision || (yutimeRuns || []).length > 0) ? {
+        yutimeContext: {
+          storeId: settlement?.storeId ?? selectedStoreId ?? null,
+          storeName: String(settlement?.storeName ?? storeName ?? ""),
+          initialMochiBalls: Math.max(0, Math.round(Number(initialMochiBalls) || 0)),
+          finalMochiBalls: settlement?.finalMochiBalls != null
+            ? Math.max(0, Math.round(Number(settlement.finalMochiBalls) || 0))
+            : Math.max(0, Math.round(Number(currentMochiBalls) || 0)),
+          recordedAt: now.toISOString(),
+        },
+      } : {}),
     };
+    const archive = attachDataQualitySnapshot(archiveBase, { archives, stores, at: now.toISOString() });
     setArchives((prev) => [...prev, archive]);
     // ハンターランク: 実戦アーカイブ確定で XP 加算（Phase 6：レベルアップ検出付き）
     grantXp(XP_SESSION_COMPLETE, "セッション完了");
@@ -1078,15 +1325,25 @@ export default function App() {
 
   // 実戦終了：精算シートを開く。投資額・回収額を自動算出して初期表示する。
   // 投資額 = ev.rawInvest（実践記録の現金投資累計）、回収額 = 残り持ち玉 × 玉単価。
-  const openEndSession = () => {
+  const openEndSession = async () => {
     // 大当たり記録が途中（completed:false）のまま実戦終了すると出玉が統計から漏れるため確認を挟む。
     // 未完了チェーンが無い通常時は確認なしで従来どおり精算シートを開く（タップ数増えず）。
     if ((jpLog || []).some((c) => c && c.completed === false)) {
-      const ok = window.confirm("大当たり記録が入力途中です。\nこのまま実戦を終了しますか？");
+      const ok = await requestConfirmation({
+        title: "入力途中の大当たり記録があります",
+        message: "未完了の内容は出玉統計へ反映されない可能性があります。このまま実戦終了へ進みますか？",
+        confirmLabel: "終了画面へ進む",
+        tone: "danger",
+      });
       if (!ok) return;
     }
     if (activeYutimeRun) {
-      const ok = window.confirm("遊タイム中の記録が未完了です。先に『当たった』または『スルー・終了』を記録してください。\n\nこのまま実戦を終了しますか？");
+      const ok = await requestConfirmation({
+        title: "遊タイム記録が未完了です",
+        message: "先に「当たった」または「スルー・終了」を記録することを推奨します。このまま実戦終了へ進みますか？",
+        confirmLabel: "終了画面へ進む",
+        tone: "danger",
+      });
       if (!ok) return;
     }
     const heldMochi = Math.round(currentMochiBalls || 0);
@@ -1122,7 +1379,7 @@ export default function App() {
         const name = String(machineName || "").trim();
         if (!name) return false;
         if (!(Number(synthDenom) > 0) || !(Number(spec1R) > 0)) return false;
-        const names = new Set(searchMachines("", customMachines).map((m) => m.name));
+        const names = new Set(searchAvailableMachines("", customMachines).map((m) => m.name));
         return !names.has(name);
       })(),
     });
@@ -1131,10 +1388,24 @@ export default function App() {
   // 精算シートの確定：method="cash"（現金精算）|"chodama"（貯玉化）。
   // invest/recovery は編集後の確定値（円）。貯玉化でも持ち玉の現金換算額を回収額として
   // 記録する（その日の収支は現金精算と同じ＝貯玉価値も収支に反映。後日の貯玉消費コストと相殺）。
-  const confirmEndSession = ({ method, invest, recovery, registerMachine }) => {
+  const confirmEndSession = ({
+    method,
+    invest,
+    recovery,
+    registerMachine,
+    storeId,
+    storeName: confirmedStoreName,
+    heldMochi,
+  }) => {
     const investVal = Math.max(0, Math.round(Number(invest) || 0));
     const recoveryVal = Math.max(0, Math.round(Number(recovery) || 0));
     const sheet = endSheet || {};
+    const targetStoreId = storeId ?? sheet.storeId ?? null;
+    const targetStore = (stores || []).find((store) => (
+      store && typeof store === "object" && String(store.id) === String(targetStoreId)
+    ));
+    const targetStoreName = String(confirmedStoreName ?? targetStore?.name ?? sheet.storeName ?? "");
+    const finalMochiBalls = Math.max(0, Math.round(Number(heldMochi ?? sheet.heldMochi) || 0));
     // 未登録機種を次回用にカスタム機種へ登録（resetAll で機種情報がクリアされる前に実行）。
     // 形式は Tabs の saveMachine / emptyMachine と同一。同名が既にあれば重複登録しない。
     if (registerMachine && sheet.isUnregistered) {
@@ -1169,13 +1440,24 @@ export default function App() {
       }
     }
     let extraChodama = 0;
-    if (method === "chodama" && sheet.storeId && sheet.heldMochi > 0) {
+    if (method === "chodama" && targetStoreId && finalMochiBalls > 0) {
       // 持ち玉を店舗の貯玉残高へ加算（資産として保存）
-      extraChodama = sheet.heldMochi;
-      logMochiToChodama(sheet.storeId, sheet.heldMochi, currentChodama || 0);
+      extraChodama = finalMochiBalls;
+      logMochiToChodama(targetStoreId, finalMochiBalls, currentChodama || 0);
     }
-    archiveCurrentSession(false, { investYen: investVal, recoveryYen: recoveryVal, carriedInYen });
-    resetAll(extraChodama);
+    archiveCurrentSession(false, {
+      investYen: investVal,
+      recoveryYen: recoveryVal,
+      carriedInYen,
+      storeId: targetStoreId,
+      storeName: targetStoreName,
+      finalMochiBalls,
+      method,
+    });
+    resetAll(extraChodama, {
+      selectedStoreIdOverride: targetStoreId,
+      currentChodamaOverride: currentChodama,
+    });
     setEndSheet(null);
     setCurrentMode("record");
   };
@@ -1188,21 +1470,111 @@ export default function App() {
   // 選択中の店舗 → 無ければ登録済みの先頭店舗。島配置は pt_hallMaps から導出。
   const deltaActiveStore = (() => {
     const list = Array.isArray(stores) ? stores : [];
-    const sel = list.find((st) => st && typeof st === "object" && st.id === selectedStoreId);
+    const targetStoreId = analysisStoreId ?? selectedStoreId;
+    const sel = list.find((st) => st && typeof st === "object" && st.id === targetStoreId);
     if (sel) return sel;
     return list.find((st) => st && typeof st === "object") || null;
   })();
   const deltaIslands = getStoreIslands(hallMaps, deltaActiveStore?.id ?? null);
-  // 差玉解析スキャンの保存（pt_deltaScans へ追加。同一 id は置換）。
-  // 保存のたびに保持ポリシー（90日/300件）で古いスキャンを剪定し、localStorageの肥大化を防ぐ。
-  const handleSaveDeltaScan = (scan) => {
-    if (typeof setDeltaScans !== "function") return;
-    setDeltaScans((prev) => {
-      const list = Array.isArray(prev) ? prev : [];
-      const without = list.filter((s) => s && s.id !== scan.id);
-      return pruneScans([...without, scan]);
-    });
-  };
+  // 差玉解析スキャンは追記専用。同一資料・同一 id は既存データを変更せず拒否する。
+  // IndexedDBへの書込み完了を待ってから、保存成功を呼び出し元へ返す。
+  const handleSaveDeltaScan = (scan, { signal, expectedEpoch } = {}) => (
+    mutateDeltaScans(
+      (current) => appendScanWithoutLoss(current, scan),
+      { signal, expectedEpoch },
+    )
+  );
+  const pushImportSaveRef = useRef(handleSaveDeltaScan);
+  pushImportSaveRef.current = handleSaveDeltaScan;
+
+  // Push受信箱は、アプリ起動時・復帰時にだけ既存の追記専用保存経路へ通す。
+  // 解析が曖昧、店舗や機種が未登録、既存IDと内容が衝突する場合は保存せず保留する。
+  useEffect(() => {
+    let disposed = false;
+    let exclusivePaused = false;
+    let retryTimer = null;
+    let processController = new AbortController();
+    const processNow = () => {
+      if (disposed || exclusivePaused) return;
+      if (processController.signal.aborted) {
+        processController = new AbortController();
+      }
+      const signal = processController.signal;
+      processPendingPushImports({
+        saveScan: (scan, options = {}) => pushImportSaveRef.current(scan, {
+          signal: options.signal || signal,
+          expectedEpoch: options.expectedEpoch,
+        }),
+        stores,
+        customMachines,
+        hallMaps,
+        signal,
+      }).then((summary) => {
+        if (disposed || signal.aborted || typeof window === "undefined") return;
+        window.dispatchEvent(new CustomEvent("pachi:push-import-summary", {
+          detail: summary,
+        }));
+      }).catch((error) => {
+        if (error?.name === "AbortError") return;
+        console.error("[push-import] failed:", error);
+      });
+    };
+    const processWhenVisible = () => {
+      if (!document.hidden) processNow();
+    };
+    const processServiceWorkerMessage = (event) => {
+      if (event?.data?.type === "PUSH_INBOX_UPDATED") processNow();
+    };
+    const pauseForExclusiveOperation = () => {
+      exclusivePaused = true;
+      processController.abort();
+    };
+    const resumeAfterExclusiveOperation = (event) => {
+      if (disposed) return;
+      const operation = event?.detail?.operation;
+      if (operation === "restore" || operation === "clear-all") {
+        // 復元・全削除後は、全タブの古いReact状態や未書込みキャッシュを
+        // 再利用しない。DBを読み直すため各タブを再読み込みする。
+        window.setTimeout(() => window.location.reload(), 0);
+        return;
+      }
+      exclusivePaused = false;
+      processController = new AbortController();
+      processNow();
+    };
+    const syncUpdatedDeltaScans = (event) => {
+      if (event?.detail?.key !== "pt_deltaScans") return;
+      const next = event.detail.value;
+      if (!Array.isArray(next)) return;
+      deltaScansRef.current = next;
+      setDeltaScansState(next);
+    };
+
+    processNow();
+    // 初回店舗シードが同じ起動時に走る場合の再確認。元データはpendingのままなので安全。
+    retryTimer = window.setTimeout(processNow, 750);
+    window.addEventListener("focus", processNow);
+    window.addEventListener("pageshow", processNow);
+    window.addEventListener("pachi:process-push-inbox", processNow);
+    window.addEventListener(PERSISTENCE_EXCLUSIVE_START_EVENT, pauseForExclusiveOperation);
+    window.addEventListener(PERSISTENCE_EXCLUSIVE_END_EVENT, resumeAfterExclusiveOperation);
+    window.addEventListener(PERSISTENCE_UPDATED_EVENT, syncUpdatedDeltaScans);
+    document.addEventListener("visibilitychange", processWhenVisible);
+    navigator.serviceWorker?.addEventListener("message", processServiceWorkerMessage);
+    return () => {
+      disposed = true;
+      processController.abort();
+      if (retryTimer != null) window.clearTimeout(retryTimer);
+      window.removeEventListener("focus", processNow);
+      window.removeEventListener("pageshow", processNow);
+      window.removeEventListener("pachi:process-push-inbox", processNow);
+      window.removeEventListener(PERSISTENCE_EXCLUSIVE_START_EVENT, pauseForExclusiveOperation);
+      window.removeEventListener(PERSISTENCE_EXCLUSIVE_END_EVENT, resumeAfterExclusiveOperation);
+      window.removeEventListener(PERSISTENCE_UPDATED_EVENT, syncUpdatedDeltaScans);
+      document.removeEventListener("visibilitychange", processWhenVisible);
+      navigator.serviceWorker?.removeEventListener("message", processServiceWorkerMessage);
+    };
+  }, [stores, customMachines, hallMaps, setDeltaScansState]);
 
   // 過去記録は元データを壊さず、参照時に現行の経済価値へ再計算する。
   // 新規アーカイブは calculationVersion=2 のため、そのまま返る。
@@ -1214,11 +1586,43 @@ export default function App() {
     currentYutimeRuns: yutimeRuns,
   }), [economicArchives, ev?.rawInvest, yutimeRuns]);
 
+  const startRecordFromSelection = useCallback((selection) => {
+    if (sessionStarted) {
+      // 稼働中は既存記録を上書きせず、現在の記録画面へ戻すだけにする。
+      setSessionSubTab("rot");
+      setCurrentMode("record");
+      return;
+    }
+    const selectedStore = (Array.isArray(stores) ? stores : []).find((store) => (
+      store && typeof store === "object" && String(store.id) === String(selection?.storeId)
+    ));
+    setRecordStartDraft({
+      id: `strategy-${Date.now()}`,
+      source: "strategy-map",
+      storeId: selection?.storeId ?? selectedStore?.id ?? null,
+      storeName: String(selection?.storeName || selectedStore?.name || ""),
+      machineName: String(selection?.machineName || ""),
+      machineNum: String(selection?.machineNum ?? selection?.num ?? ""),
+      rentBalls: Number(selectedStore?.rentBalls) || Number(rentBalls) || 250,
+      exRate: Number(selectedStore?.exRate) || Number(exRate) || 250,
+      closingTime: String(selectedStore?.closingTime || ""),
+      plannedStart1K: Number(selection?.plannedStart1K ?? selection?.rot) || 0,
+    });
+    setSessionSubTab("rot");
+    setCurrentMode("record");
+  }, [sessionStarted, stores, rentBalls, exRate, setCurrentMode]);
+
   const S = {
-    rentBalls, setRentBalls, exRate, setExRate, synthDenom, setSynthDenom,
-    rotPerHour, setRotPerHour, border, setBorder, ballVal, setBallVal,
-    investPace, setInvestPace,
-    spec1R, setSpec1R, specAvgRounds, setSpecAvgRounds, specSapo, setSpecSapo,
+    rentBalls, setRentBalls: guardedSetRentBalls,
+    exRate, setExRate: guardedSetExRate,
+    synthDenom, setSynthDenom: guardedSetSynthDenom,
+    rotPerHour, setRotPerHour,
+    border, setBorder: guardedSetBorder,
+    ballVal, setBallVal: guardedSetBallVal,
+    investPace, setInvestPace: guardedSetInvestPace,
+    spec1R, setSpec1R: guardedSetSpec1R,
+    specAvgRounds, setSpecAvgRounds: guardedSetSpecAvgRounds,
+    specSapo, setSpecSapo: guardedSetSpecSapo,
     ceilingRot, setCeilingRot, yutimePayout, setYutimePayout,
     yutimeSession, setYutimeSession,
     activeYutimeSession,
@@ -1231,7 +1635,9 @@ export default function App() {
     pushLog, startRot, setStartRot, setTab,
     totalTrayBalls, setTotalTrayBalls,
     playMode, setPlayMode,
-    storeName, setStoreName, machineNum, setMachineNum, machineName, setMachineName,
+    storeName, setStoreName: guardedSetStoreName,
+    machineNum, setMachineNum: guardedSetMachineNum,
+    machineName, setMachineName: guardedSetMachineName,
     investYen, setInvestYen, recoveryYen, setRecoveryYen,
     stores, setStores,
     hallMaps, setHallMaps,
@@ -1243,6 +1649,8 @@ export default function App() {
     monthlyPlayPlans, setMonthlyPlayPlans,
     dailyResearchPlans, setDailyResearchPlans,
     strategyPlanContext, setStrategyPlanContext,
+    recordStartDraft, setRecordStartDraft,
+    startRecordFromSelection,
     planningNotificationPrefs, setPlanningNotificationPrefs,
     ev, handleMoveTable, handleEndSession,
     theme, setTheme,
@@ -1264,7 +1672,8 @@ export default function App() {
     startGameCount, setStartGameCount,
     initialMochiBalls, setInitialMochiBalls,
     initialChodama, setInitialChodama,
-    selectedStoreId, setSelectedStoreId,
+    selectedStoreId, setSelectedStoreId: guardedSetSelectedStoreId,
+    analysisStoreId,
     sessionStartDate, setSessionStartDate,
     sessionStartedAt, setSessionStartedAt,
     sessionTargetEndAt, setSessionTargetEndAt,
@@ -1289,6 +1698,20 @@ export default function App() {
     pushNotification,
     dailyCashSpent,
     openNotificationPanel: () => setNotificationPanelOpen(true),
+    backupReminder,
+    lastBackupAt,
+    setLastBackupAt,
+    openBackupSettings: () => {
+      setNotificationPanelOpen(false);
+      setSettingsIntent({ section: "backup", requestId: Date.now() });
+      setCurrentMode("settings");
+    },
+    settingsIntent,
+    clearSettingsIntent: () => setSettingsIntent(null),
+    requestConfirmation,
+    requestSessionContextChange: blockSessionContextChange,
+    sessionFlowRequest,
+    clearSessionFlowRequest: () => setSessionFlowRequest(null),
     openStoreDetail: (id) => {
       const fallbackId = selectedStoreId ?? stores.find((store) => store && typeof store === "object")?.id ?? null;
       setStoreDetailId(id ?? fallbackId);
@@ -1308,14 +1731,16 @@ export default function App() {
       if (next.length > 4) return;
       setPinInput(next);
       if (next.length === 4) {
-        if (next === appPin) {
-          setIsLocked(false);
-          setPinInput("");
-          setPinError(false);
-        } else {
-          setPinError(true);
-          setTimeout(() => { setPinInput(""); setPinError(false); }, 700);
-        }
+        verifyPin(next, appPin).then((matches) => {
+          if (matches) {
+            setIsLocked(false);
+            setPinInput("");
+            setPinError(false);
+          } else {
+            setPinError(true);
+            setTimeout(() => { setPinInput(""); setPinError(false); }, 700);
+          }
+        });
       }
     };
 
@@ -1377,12 +1802,18 @@ export default function App() {
           paddingBottom: "calc(76px + env(safe-area-inset-bottom))",
         }}
       >
+        <Suspense fallback={<ModeLoading />}>
         {currentMode === "home" && <HomeDashboard S={S} />}
         {currentMode === "scout" && <ScoutDashboard S={S} />}
         {/* 台選びタブ＝戦略マップ画面（保護対象・無改変）。
             旧 select の strategy 値で永続化された状態も同じ画面へフォールバックさせる。 */}
         {(currentMode === "select" || currentMode === "strategy") && (
-          <StrategyMapDashboard S={S} onBack={() => setCurrentMode("home")} />
+          <StrategyMapDashboard
+            S={S}
+            onBack={() => setCurrentMode("home")}
+            onStartRecord={startRecordFromSelection}
+            onSelectStore={setAnalysisStoreId}
+          />
         )}
         {/* 差玉解析（独立タブにせず、ホームの「解析する」から起動） */}
         {currentMode === "delta" && (
@@ -1401,6 +1832,7 @@ export default function App() {
             aiApiKey={typeof aiApiKey === "string" ? aiApiKey : ""}
             onChangeAiApiKey={setAiApiKey}
             customMachines={Array.isArray(customMachines) ? customMachines : []}
+            requestConfirmation={requestConfirmation}
           />
         )}
         {currentMode === "deltaMap" && (
@@ -1442,12 +1874,23 @@ export default function App() {
             storeId={storeDetailId}
             S={S}
             onOpenSettings={() => {
-              if (storeDetailId != null) setSelectedStoreId(storeDetailId);
+              const changesActiveStore = sessionStarted
+                && storeDetailId != null
+                && String(storeDetailId) !== String(selectedStoreId);
+              if (changesActiveStore) {
+                blockSessionContextChange("店舗");
+                return;
+              }
+              if (!sessionStarted && storeDetailId != null) setSelectedStoreId(storeDetailId);
               setStoreDetailId(null);
               setCurrentMode("settings");
             }}
             onStartRecord={() => {
               const store = (Array.isArray(stores) ? stores : []).find((item) => item?.id === storeDetailId);
+              if (sessionStarted) {
+                blockSessionContextChange(["店舗", "貸玉", "交換率"]);
+                return;
+              }
               if (store) {
                 setSelectedStoreId(store.id);
                 setStoreName(store.name || "");
@@ -1461,12 +1904,23 @@ export default function App() {
               setStoreDetailId(null);
               handleModeChange("record");
             }}
+            onOpenStrategy={() => {
+              setAnalysisStoreId(storeDetailId);
+              setStoreDetailId(null);
+              setCurrentMode("select");
+            }}
+            onOpenDelta={() => {
+              setAnalysisStoreId(storeDetailId);
+              setStoreDetailId(null);
+              setCurrentMode("delta");
+            }}
             onBack={() => {
               setStoreDetailId(null);
               setCurrentMode("home");
             }}
           />
         )}
+        </Suspense>
       </main>
 
       {/* Mode Navigation (5 タブ) */}
@@ -1483,10 +1937,38 @@ export default function App() {
       <NotificationPanel
         open={notificationPanelOpen}
         notifications={notificationLog}
+        backupReminder={backupReminder}
+        onOpenBackup={() => {
+          setNotificationPanelOpen(false);
+          setSettingsIntent({ section: "backup", requestId: Date.now() });
+          setCurrentMode("settings");
+        }}
         onClose={() => setNotificationPanelOpen(false)}
         onMarkAllAsRead={() => setNotificationLog((prev) => markAllNotifAsRead(prev))}
         onMarkAsRead={(id) => setNotificationLog((prev) => markNotifAsRead(prev, id))}
         onClear={() => setNotificationLog(clearNotifAll())}
+      />
+
+      <ConfirmSheet
+        open={Boolean(confirmSheet)}
+        {...confirmSheet}
+        onConfirm={() => finishConfirmation(true)}
+        onCancel={() => finishConfirmation(false)}
+      />
+
+      <SessionContextGuardSheet
+        request={sessionContextRequest}
+        onMove={() => {
+          setSessionContextRequest(null);
+          setSessionSubTab("rot");
+          setSessionFlowRequest({ type: "move", requestId: Date.now() });
+          setCurrentMode("record");
+        }}
+        onEnd={() => {
+          setSessionContextRequest(null);
+          openEndSession();
+        }}
+        onCancel={() => setSessionContextRequest(null)}
       />
 
       {recoveryCandidate && (
@@ -1516,6 +1998,7 @@ export default function App() {
       {endSheet && (
         <EndSessionSheet
           sheet={endSheet}
+          stores={stores}
           onConfirm={confirmEndSession}
           onCancel={() => setEndSheet(null)}
         />
@@ -1525,17 +2008,27 @@ export default function App() {
 }
 
 // 実戦終了の精算シート：投資額・回収額（持ち玉の現金換算）を自動表示し、編集して確定する。
-function EndSessionSheet({ sheet, onConfirm, onCancel }) {
-  const hasStore = !!sheet.storeId;
+function EndSessionSheet({ sheet, stores = [], onConfirm, onCancel }) {
+  const [selectedStoreId, setSelectedStoreId] = useState(sheet.storeId ?? "");
+  const selectedStore = (Array.isArray(stores) ? stores : []).find((store) => (
+    store && typeof store === "object" && String(store.id) === String(selectedStoreId)
+  ));
+  const hasStore = selectedStoreId !== "" && selectedStoreId != null;
   const [method, setMethod] = useState("cash"); // "cash" 現金精算 | "chodama" 貯玉化
   const [invest, setInvest] = useState(String(sheet.invest || 0));
+  const [heldMochi, setHeldMochi] = useState(String(sheet.heldMochi || 0));
   const [recovery, setRecovery] = useState(String(sheet.cashYen || 0));
   // 未登録機種を次回用に登録するか（未登録機種のときのみ表示・既定オン）
   const [registerMachine, setRegisterMachine] = useState(true);
+  const heldMochiNum = Math.max(0, Math.round(Number(heldMochi) || 0));
+  const ballYen = Number(selectedStore?.exRate) > 0
+    ? 1000 / Number(selectedStore.exRate)
+    : Math.max(0, Number(sheet.ballYen) || 0);
+  const cashYen = Math.max(0, Math.round(heldMochiNum * ballYen));
   const investNum = Math.max(0, Math.round(Number(invest) || 0));
   // 貯玉化は持ち玉の現金換算額（cashYen）を回収額として扱う＝収支は現金精算と同じ
   const recoveryNum = method === "chodama"
-    ? Math.max(0, Math.round(Number(sheet.cashYen) || 0))
+    ? cashYen
     : Math.max(0, Math.round(Number(recovery) || 0));
   // 打ち始めに消費した貯玉（円）。投資と同じくコストとして収支へ反映（保存は archiveCurrentSession 側で別途記録）。
   const chodamaYen = Math.max(0, Math.round(Number(sheet.chodamaYen) || 0));
@@ -1570,8 +2063,55 @@ function EndSessionSheet({ sheet, onConfirm, onCancel }) {
       }}>
         <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>実戦終了・精算</div>
         <div style={{ fontSize: 12, color: C.sub, lineHeight: 1.6, marginBottom: 16 }}>
-          残った持ち玉 <b style={{ color: C.text }}>{fmt(sheet.heldMochi)}玉</b>
-          （現金換算 約¥{fmt(sheet.cashYen)}）。精算方法を選んで保存します。
+          店舗と残った持ち玉を確認し、精算方法を選んで保存します。
+        </div>
+
+        {/* 終了後でも遊タイム狙いの店舗・持ち玉を修正できる。保存値はアーカイブ編集で再表示する。 */}
+        <div style={{ display: "grid", gridTemplateColumns: "1.25fr .75fr", gap: 8, marginBottom: 12 }}>
+          <label style={{ display: "block" }}>
+            <span style={{ display: "block", fontSize: 11, color: C.sub, marginBottom: 5 }}>実践した店舗</span>
+            <select
+              aria-label="実践した店舗"
+              value={selectedStoreId == null ? "" : String(selectedStoreId)}
+              onChange={(event) => {
+                const nextStoreId = event.target.value;
+                const nextStore = (Array.isArray(stores) ? stores : []).find((store) => (
+                  store && typeof store === "object" && String(store.id) === String(nextStoreId)
+                ));
+                const nextBallYen = Number(nextStore?.exRate) > 0
+                  ? 1000 / Number(nextStore.exRate)
+                  : Math.max(0, Number(sheet.ballYen) || 0);
+                setSelectedStoreId(nextStoreId);
+                setRecovery(String(Math.round(heldMochiNum * nextBallYen)));
+                if (!nextStoreId && method === "chodama") setMethod("cash");
+              }}
+              style={{ ...inputStyle, textAlign: "left", fontSize: 14 }}
+            >
+              <option value="">店舗未設定</option>
+              {(Array.isArray(stores) ? stores : []).filter((store) => store && typeof store === "object").map((store) => (
+                <option key={store.id} value={String(store.id)}>{store.name || "名称未設定"}</option>
+              ))}
+            </select>
+          </label>
+          <label style={{ display: "block" }}>
+            <span style={{ display: "block", fontSize: 11, color: C.sub, marginBottom: 5 }}>終了時の持ち玉</span>
+            <input
+              aria-label="終了時の持ち玉"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={heldMochi}
+              onChange={(event) => {
+                const nextHeldMochi = event.target.value.replace(/[^0-9]/g, "");
+                setHeldMochi(nextHeldMochi);
+                setRecovery(String(Math.round((Number(nextHeldMochi) || 0) * ballYen)));
+              }}
+              style={inputStyle}
+            />
+          </label>
+        </div>
+        <div style={{ marginBottom: 14, fontSize: 10, color: C.sub }}>
+          {selectedStore?.name || sheet.storeName || "店舗未設定"} ・ {fmt(heldMochiNum)}玉 ・ 現金換算 約¥{fmt(cashYen)}
         </div>
 
         {/* 精算方法の選択（貯玉化は店舗選択時のみ） */}
@@ -1625,13 +2165,15 @@ function EndSessionSheet({ sheet, onConfirm, onCancel }) {
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 11, color: C.sub, marginBottom: 5 }}>回収額（円・持ち玉の現金化）</div>
             <input type="text" inputMode="numeric" pattern="[0-9]*" value={recovery}
-              onChange={(e) => setRecovery(e.target.value.replace(/[^0-9]/g, ""))} style={inputStyle} />
+              onChange={(e) => {
+                setRecovery(e.target.value.replace(/[^0-9]/g, ""));
+              }} style={inputStyle} />
           </div>
         ) : (
           <div style={{ marginBottom: 12, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px" }}>
             <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貯玉として保存</div>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>「{sheet.storeName}」へ +{fmt(sheet.heldMochi)}玉</div>
-            <div style={{ fontSize: 11, color: C.sub, marginTop: 4 }}>貯玉価値 約¥{fmt(sheet.cashYen)} を回収額として収支に計上</div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>「{selectedStore?.name || sheet.storeName}」へ +{fmt(heldMochiNum)}玉</div>
+            <div style={{ fontSize: 11, color: C.sub, marginTop: 4 }}>貯玉価値 約¥{fmt(cashYen)} を回収額として収支に計上</div>
           </div>
         )}
 
@@ -1674,7 +2216,15 @@ function EndSessionSheet({ sheet, onConfirm, onCancel }) {
           </button>
         )}
 
-        <button onClick={() => onConfirm({ method, invest: investNum, recovery: recoveryNum, registerMachine: sheet.isUnregistered && registerMachine })}
+        <button onClick={() => onConfirm({
+          method,
+          invest: investNum,
+          recovery: recoveryNum,
+          registerMachine: sheet.isUnregistered && registerMachine,
+          storeId: selectedStore?.id ?? null,
+          storeName: selectedStore?.name || sheet.storeName || "",
+          heldMochi: heldMochiNum,
+        })}
           style={{ width: "100%", height: 60, borderRadius: 12, fontSize: 15, fontWeight: 700, fontFamily: font, border: "none", background: C.blue, color: "#fff", cursor: "pointer" }}>
           実戦終了して保存
         </button>

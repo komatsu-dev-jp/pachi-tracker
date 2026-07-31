@@ -9,6 +9,7 @@ import {
   compareMachineNumberSet,
   readPanelMachineNumber,
 } from "../machineNumberOcr.js";
+import { retainDetectedGraphSlotsAfterOcr } from "../deltaWorkflowState.js";
 
 const FIXTURE_DIR = path.resolve("src/components/delta/__tests__/fixtures/p-analysis-2026-02-13");
 const FIXTURES = [
@@ -104,6 +105,22 @@ test("入力台番号集合との照合は件数・不足・余分を個別に�
   const rejected = compareMachineNumberSet({ accepted: false, candidates: ["757"] }, [757]);
   assert.equal(rejected.matched, false);
   assert.ok(rejected.reasonCodes.includes("ocr-page-rejected"));
+});
+
+test("2桁の台番号集合を受け入れつつ1桁・4桁は拒否する", () => {
+  const page = { accepted: true, candidates: ["17", "18", "19"] };
+  const matched = compareMachineNumberSet(page, [17, 18, 19]);
+  assert.equal(matched.matched, true);
+  assert.equal(matched.orderMatches, true);
+  assert.deepEqual(matched.reasonCodes, []);
+
+  const invalid = compareMachineNumberSet(
+    { accepted: true, candidates: ["7", "1000"] },
+    [7, 1000],
+  );
+  assert.equal(invalid.matched, false);
+  assert.deepEqual(invalid.invalidExpectedIndices, [0, 1]);
+  assert.ok(invalid.reasonCodes.includes("invalid-expected-number"));
 });
 
 test("複数ページは全ページ合格・全体一意の時だけ番号順に確定する", () => {
@@ -328,4 +345,14 @@ test("判読限界まで縮小された画像は誤保存せずページ拒否�
   assert.equal(page.accepted, false);
   assert.equal(page.numbers.length, 0);
   assert.ok(page.slots.every((slot) => slot.machineNumber === null));
+
+  const combined = combineMachineNumberPages([page], { allowPartialPages: true });
+  assert.equal(combined.slots.length, 0, "OCR不合格ページは自動確定対象から外れること");
+  const resolved = retainDetectedGraphSlotsAfterOcr([page], combined);
+  assert.equal(resolved.manualFallback, true);
+  assert.equal(resolved.slots.length, analysis.results.length);
+  assert.deepEqual(
+    resolved.slots.map((slot) => [slot.val, slot.bbox.x, slot.bbox.y]),
+    analysis.results.map((slot) => [slot.val, slot.bbox.x, slot.bbox.y]),
+  );
 });

@@ -48,9 +48,9 @@ export function normalizeMachineNumber(value) {
 }
 
 // AI出力TSVをパースする。
-// 新形式の列順: 日付 / 店舗名 / 島名 / 機種名 / 台番号 / 差玉 / 通常回転数 / 総当り回数（8列）。
-// 旧形式（差玉なしの7列）も、端末内ピクセル解析の差玉を残すため後方互換で受け付ける。
-// タブ区切りを優先し、7/8列にならない行は連続空白区切りで再試行する。
+// 新形式の列順: 日付 / 店舗名 / 島名 / 機種名 / 台番号 / 差玉 / 通常回転数 / 初当り回数 / 総当り回数（9列）。
+// 旧形式（初当りなしの8列・差玉なしの7列）も後方互換で受け付ける。
+// タブ区切りを優先し、7〜9列にならない行は連続空白区切りで再試行する。
 // それでも列数が合わない行・台番号や数値が数値化できない行はスキップして理由を集める。
 export function parseTaiDataText(text) {
   const rows = [];
@@ -61,32 +61,40 @@ export function parseTaiDataText(text) {
     const line = rawLine.replace(/\s+$/, "");
     if (!line.trim()) continue; // 空行は静かに無視
 
-    // タブ区切り優先 → 7/8列でなければ連続空白で再試行
+    // タブ区切り優先 → 7〜9列でなければ連続空白で再試行
     let cols = line.split("\t").map((c) => c.trim());
-    if (cols.length !== 7 && cols.length !== 8) {
+    if (![7, 8, 9].includes(cols.length)) {
       const bySpace = line.trim().split(/\s+/);
-      if (bySpace.length === 7 || bySpace.length === 8) cols = bySpace;
+      if ([7, 8, 9].includes(bySpace.length)) cols = bySpace;
     }
 
-    if (cols.length !== 7 && cols.length !== 8) {
+    if (![7, 8, 9].includes(cols.length)) {
       skipped.push({ line: line.trim(), reason: "列数不足" });
       continue;
     }
 
-    const hasDelta = cols.length === 8;
+    const hasDelta = cols.length >= 8;
+    const hasFirstHitCount = cols.length === 9;
     const [date, store, island, machineName, numRaw] = cols;
     const deltaRaw = hasDelta ? cols[5] : null;
     const spinsRaw = cols[hasDelta ? 6 : 5];
-    const startsRaw = cols[hasDelta ? 7 : 6];
+    const firstHitsRaw = hasFirstHitCount ? cols[7] : null;
+    const startsRaw = cols[hasFirstHitCount ? 8 : (hasDelta ? 7 : 6)];
     const num = parseNumberToken(numRaw);
     if (num === null) {
       skipped.push({ line: line.trim(), reason: "台番号が数値化できない" });
       continue;
     }
     const normalSpins = parseIntLoose(spinsRaw);
+    const firstHitCount = hasFirstHitCount ? parseIntLoose(firstHitsRaw) : null;
     const totalStarts = parseIntLoose(startsRaw);
     const val = hasDelta ? parseIntLoose(deltaRaw) : null;
-    if (normalSpins === null || totalStarts === null || (hasDelta && val === null)) {
+    if (
+      normalSpins === null
+      || totalStarts === null
+      || (hasFirstHitCount && firstHitCount === null)
+      || (hasDelta && val === null)
+    ) {
       skipped.push({ line: line.trim(), reason: "数値が数値化できない" });
       continue;
     }
@@ -101,6 +109,7 @@ export function parseTaiDataText(text) {
       totalStarts,
     };
     if (hasDelta) parsedRow.val = val;
+    if (hasFirstHitCount) parsedRow.firstHitCount = firstHitCount;
     rows.push(parsedRow);
   }
 
@@ -129,7 +138,8 @@ export function buildOcrPrompt({ dateText = "", storeName = "" } = {}) {
 5.	台番号
 6.	差玉（差玉データの「○○番台 差玉」の数値。プラスは正数、マイナスは負数）
 7.	通常回転数（大当たり情報の「通常中スタート」の数値を抽出）
-8.	総当り回数（大当たり情報の「大当り回数」の数値を抽出）
+8.	初当り回数（大当たり情報の「初当り回数」の数値を抽出）
+9.	総当り回数（大当たり情報の「大当り回数」の数値を抽出）
 【重要ルール】
 ・列タイトル（見出し）は出力しない
 ・数値は半角数字で出力する
@@ -140,8 +150,8 @@ export function buildOcrPrompt({ dateText = "", storeName = "" } = {}) {
 ・「確率」「最大持玉」などの不要な列は出力しない
 ・説明文、補足文、前置きは一切書かない
 【出力例（形式のみ）】
-2026/02/13	スーパーキスケPAO	P北斗の拳強敵SSPA島	P北斗の拳強敵SSPA	267	-4500	1239	12
-2026/02/13	スーパーキスケPAO	P北斗の拳強敵SSPA島	P北斗の拳強敵SSPA	268	8200	204	2
+2026/02/13	スーパーキスケPAO	P北斗の拳強敵SSPA島	P北斗の拳強敵SSPA	267	-4500	1239	4	12
+2026/02/13	スーパーキスケPAO	P北斗の拳強敵SSPA島	P北斗の拳強敵SSPA	268	8200	204	1	2
 では、添付資料を台番号で照合し、すべてこの形式で出力してください。
 【固定情報】
 日付：${dateText}
@@ -152,6 +162,21 @@ function finiteDelta(value) {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+// 入力欄の現在値が null のときも、手入力した 0 を変更として扱う。
+export function shouldCommitDeltaReviewValue(currentValue, nextValue) {
+  const next = finiteDelta(nextValue);
+  if (next === null) return false;
+  const current = finiteDelta(currentValue);
+  return current === null || current !== next;
+}
+
+// 読み取り失敗行にも、利用者が元画像を見て差玉を手入力できる入口を出す。
+export function isDeltaReviewEditable(row) {
+  return row?.status === "review"
+    || row?.status === "failed"
+    || isBoundedDeltaRow(row);
 }
 
 // 取り込み値はユーザー確認後に使うが、桁欠落・列ずれを確定値にしないため
@@ -695,10 +720,37 @@ function compactDeltaRowForStorage(row) {
 }
 
 // 保存用スキャンレコードを生成する。
-// スキーマ: { id, storeId, storeName, date("YYYY-MM-DD"), machineName, rows, createdAt }
-export function makeScan({ id, storeId = null, storeName = "", date, machineName = "", rows = [] } = {}) {
+// スキーマ: { id, storeId, storeName, date("YYYY-MM-DD"), event, machineName, rows,
+//   createdAt, sourceFingerprint?, analysisEngineVersion? }
+export function makeScan({
+  id,
+  storeId = null,
+  storeName = "",
+  date,
+  event = "",
+  machineName = "",
+  rows = [],
+  sourceFingerprint = null,
+  analysisEngineVersion = "",
+} = {}) {
   const now = new Date();
   const createdAt = now.toISOString();
+  const fingerprint = sourceFingerprint && typeof sourceFingerprint === "object"
+    ? {
+      algorithm: sourceFingerprint.algorithm === "SHA-256" ? "SHA-256" : "",
+      hash: String(sourceFingerprint.hash || "").toLowerCase(),
+      fileCount: Number(sourceFingerprint.fileCount) || 0,
+      fileHashes: Array.isArray(sourceFingerprint.fileHashes)
+        ? sourceFingerprint.fileHashes.map((value) => String(value).toLowerCase())
+        : [],
+    }
+    : null;
+  const validFingerprint = fingerprint
+    && fingerprint.algorithm === "SHA-256"
+    && /^[a-f0-9]{64}$/u.test(fingerprint.hash)
+    && fingerprint.fileCount > 0
+    && fingerprint.fileHashes.length === fingerprint.fileCount
+    && fingerprint.fileHashes.every((value) => /^[a-f0-9]{64}$/u.test(value));
   // 既定日はローカル日付にする（toISOString は UTC のため 0:00〜9:00 JST に前日となる）
   const day = typeof date === "string" && date ? date : toLocalDay(now);
   return {
@@ -706,14 +758,40 @@ export function makeScan({ id, storeId = null, storeName = "", date, machineName
     storeId: storeId ?? null,
     storeName: storeName || "",
     date: day,
+    event: String(event || "").trim(),
     machineName: machineName || "",
     rows: Array.isArray(rows) ? rows.map(compactDeltaRowForStorage) : [],
     createdAt,
+    ...(validFingerprint ? { sourceFingerprint: fingerprint } : {}),
+    ...(analysisEngineVersion ? { analysisEngineVersion: String(analysisEngineVersion) } : {}),
   };
 }
 
-// スキャンの保持ポリシー。localStorage（実質5MB）の肥大化を防ぐため、
-// 保存時に古いスキャンを剪定する。90日 or 300件を超えた分は古い順に削除。
+export function appendScanWithoutLoss(list, scan) {
+  // 壊れた旧要素が混ざっていても、通常保存が既存配列を勝手に掃除しないようそのまま保持する。
+  const scans = Array.isArray(list) ? [...list] : [];
+  if (!scan || typeof scan !== "object" || scan.id == null || String(scan.id) === "") {
+    return { status: "invalid", scans, existing: null };
+  }
+
+  const sameId = scans.find((current) => String(current?.id) === String(scan.id));
+  if (sameId) {
+    return { status: "id-conflict", scans, existing: sameId };
+  }
+
+  const fingerprint = String(scan?.sourceFingerprint?.hash || "").toLowerCase();
+  if (/^[a-f0-9]{64}$/u.test(fingerprint)) {
+    const duplicate = scans.find((current) => (
+      String(current?.sourceFingerprint?.hash || "").toLowerCase() === fingerprint
+    ));
+    if (duplicate) return { status: "duplicate", scans, existing: duplicate };
+  }
+
+  return { status: "saved", scans: [...scans, scan], existing: null };
+}
+
+// 旧保存データとの互換・明示的な手動整理用に残す。通常保存では呼び出さない。
+// 自動適用すると古い記録が消えるため、appendScanWithoutLossとは組み合わせない。
 export const SCAN_RETENTION = Object.freeze({ maxAgeDays: 90, maxCount: 300 });
 
 // スキャン一覧を保持ポリシーで剪定した新しい配列を返す（元配列は変更しない）。

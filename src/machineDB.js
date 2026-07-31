@@ -13,7 +13,7 @@ const rawMachineDB = [
   // ── ミドルスペック ──
   {
     name: "P大海物語5 MTE2",
-    aliases: ["P大海物語5", "大海物語5"],
+    aliases: ["P大海物語5", "大海物語5", "P大海物語5MTE2"],
     maker: "三洋",
     type: "ハイミドル",
     prob: "1/319.6",
@@ -23,15 +23,20 @@ const rawMachineDB = [
     specSapo: 0,
     roundDist: "10R:100%（確変ループ）",
     rushDist: "10R:100%",
+    border1K: 16.7,
     border: { "4.00": 16.7, "3.57": 17.6, "3.33": 18.4, "3.03": 19.3 },
     prize: 3,
     unitCost: 11.4,
-    avgPayoutPerHit: 1350,
+    avgPayoutPerHit: 1400,
+    payoutStdDevPerHit: 0,
+    payoutStdDevPerHitLabel: "特図1・特図2とも10R・実出玉1,400発固定",
+    payoutStdDevPerHitMethod: "allocation-exact-v1",
     stdDev: 13000,
+    muraCoef: 50000,
     hesoAvgPayout: 1500,
     rushAvgPayout: 1500,
     rushEntryRate: 60,
-    rushContinueRate: 75,
+    rushContinueRate: 60,
     hesoDist: [{ payout: 1500, rate: 60 }, { payout: 1500, rate: 40 }],
     allocationVerified: true,
     hesoModes: [
@@ -53,8 +58,12 @@ const rawMachineDB = [
       },
     ],
     allocationNote: "出玉は払い出し。ヘソ・電チューともに10R・1500発で、確変60%／通常40%です。",
-    sourceUrls: ["https://www.p-world.co.jp/machine/database/9768", "https://1geki.jp/pachinko/p_oumi5/11/"],
-    dataUpdatedAt: "2026-07-13",
+    sourceUrls: [
+      "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20221205_1.pdf",
+      "https://www.reflex.okinawa/pdf/2022/12.5.pdf",
+      "https://p.hisshobon.jp/vpage/2486/39",
+    ],
+    dataUpdatedAt: "2026-07-27",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
@@ -549,6 +558,7 @@ const rawMachineDB = [
   // ── スマパチ / 新規追加機種 ──
   {
     name: "e東京喰種W",
+    aliases: ["e東京喰種", "東京喰種"],
     maker: "ビスティ",
     type: "スマパチ",
     prob: "1/399.9",
@@ -557,11 +567,19 @@ const rawMachineDB = [
     spec1R: 140,
     specAvgTotalRounds: 21.4,
     specSapo: 0,
-    roundDist: "10R(ST130):50% / 10R(通常):49% / 2R(通常):1%",
+    roundDist: "10R(RUSH):25% / 10R(通常):24.5% / 2R(RUSH):0.5% / 2R(通常):50%",
     rushDist: "10R×2:97% / 10R×4:3%",
     border: { "4.00": 16.68, "3.57": 17.6, "3.33": 18.2, "3.03": 19.1 },
     prize: 1,
     avgPayoutPerHit: 2998,
+    deltaCounterModel: {
+      type: "counted-awards-with-reduced-payout",
+      standardPayout: 1500,
+      reducedPayout: 300,
+      reducedPayoutShareOfInitialHits: 0.505,
+      reducedPayoutProbability: 399.9,
+      minPlausibleRotation: 10,
+    },
     stdDev: 12000,
     stdDevLabel: "P-EVIDENCE推定（分岐型）",
     stdDevMethod: "p-evidence-branching-v2",
@@ -569,18 +587,26 @@ const rawMachineDB = [
     muraCoef: 80000,
     spatialSens: 1,
     regimeSens: 1,
-    hesoAvgPayout: 1488,
+    hesoAvgPayout: 894,
     rushAvgPayout: 7500,
-    rushEntryRate: 51,
+    rushEntryRate: 25.5,
     rushContinueRate: 75,
     allocationVerified: true,
     hesoModes: [
       {
-        name: "特図1・ヘソ",
+        name: "特図1・図柄揃い／RUSH昇格当り（約1/399.9）",
+        note: "通常へ戻る喰種チャージ約1/399.9を除いた、公開されている条件付き振分です。",
         rows: [
           { rounds: 10, payout: 1500, rate: 50, label: "HYPER喰種RUSHへ" },
           { rounds: 2, payout: 300, rate: 1, label: "HYPER喰種RUSHへ" },
           { rounds: 10, payout: 1500, rate: 49, label: "通常へ" },
+        ],
+      },
+      {
+        name: "喰種チャージ当選時（約1/399.9）",
+        note: "2R・300個を獲得して通常へ戻るチャージです。上の約1%のRUSH昇格当りとは分けています。",
+        rows: [
+          { rounds: 2, payout: 300, rate: 100, label: "通常へ" },
         ],
       },
     ],
@@ -599,9 +625,9 @@ const rawMachineDB = [
       label: "喰種BONUS追加上乗せ",
       sourceUrl: "https://p.hisshobon.jp/machine/4508/1/108719",
     }],
-    allocationNote: "出玉は払い出し。初当りのRUSH突入率は10Rの約50%と2Rの約1%を合わせた約51%。右打ち中は3000発が基本で、約3%が6000発です。",
-    sourceUrls: ["https://p-town.dmm.com/machines/4824", "https://p.hisshobon.jp/machine/4508/1/108719"],
-    dataUpdatedAt: "2026-07-14",
+    allocationNote: "出玉は払い出し。図柄揃い／RUSH昇格当り約1/399.9と、通常へ戻る喰種チャージ約1/399.9の合算は約1/199.9です。公開表のRUSH突入約51%は前者に対する条件付き比率で、合算初当り基準では約25.5%です。右打ち中は3000発が基本で、約3%が6000発です。",
+    sourceUrls: ["https://www.sankyo-fever.jp/collection/980/", "https://www.police.pref.hyogo.lg.jp/news/katashiki/data/2025/20250128.pdf", "https://p-town.dmm.com/machines/4824", "https://p.hisshobon.jp/machine/4508/1/108719", "https://pshort.jp/pachi/e_tokyo_ghoul_w/"],
+    dataUpdatedAt: "2026-07-27",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   {
@@ -1117,13 +1143,27 @@ const rawMachineDB = [
     border1K: 16.7,
     prize: 1,
     unitCost: 14.0,
-    avgPayoutPerHit: 1200,
+    // ホールの大当り回数は、右打ち中の5R・750個が1回ずつ積み上がる。
+    // 3000個・6000個を1回として扱う平均ではなく、カウンター1回の基準値を置く。
+    avgPayoutPerHit: 750,
+    deltaCounterModel: {
+      type: "counted-awards-with-reduced-payout",
+      standardPayout: 750,
+      // 初当り平均: 1500×0.1% + 600×74.9% + 310×25.0% = 528.4個。
+      reducedPayout: 528.4,
+      reducedPayoutStdDev: 129.3,
+      reducedPayoutShareOfInitialHits: 1,
+      reducedPayoutProbability: 259.7,
+      firstHitEstimateSource: "first-hit-initial-award-mix",
+      fallbackEstimateSource: "normal-spins-initial-award-mix",
+      minPlausibleRotation: 10,
+    },
     stdDev: 13000,
     initialProb: 0.5,
     muraCoef: 80000,
     spatialSens: 1,
     regimeSens: 1,
-    hesoAvgPayout: 1000,
+    hesoAvgPayout: 528.4,
     rushAvgPayout: 2500,
     rushEntryRate: 50,
     rushContinueRate: 75,
@@ -1172,8 +1212,8 @@ const rawMachineDB = [
       sourceUrl: "https://www.newgin.co.jp/pub/machine/elycorisrecoil/spec.html",
     }],
     allocationNote: "出玉は払い出し。モードA・モードB・アルティメットドライブを混ぜず、実際の状態別に表示しています。",
-    sourceUrls: ["https://www.newgin.co.jp/pub/machine/elycorisrecoil/spec.html", "https://p.hisshobon.jp/machine/4723/1/114574"],
-    dataUpdatedAt: "2026-07-14",
+    sourceUrls: ["https://www.newgin.co.jp/pub/machine/elycorisrecoil/spec.html", "https://nana-press.com/kaiseki/machine/1129/36090/", "https://daiichi.net/pdf/newgin/w239.pdf", "https://papimo.jp/h/00031571/hit/view/69/20260727", "https://p.hisshobon.jp/machine/4723/1/114574"],
+    dataUpdatedAt: "2026-07-28",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
   // ── 海シリーズ（最新追加：P機 / e機 / PA甘デジ／CSV準拠フォーマットへ更新） ──
@@ -1746,41 +1786,6 @@ const rawMachineDB = [
     ] }],
     allocationNote: "出玉は払い出し。特図は共通ですが、ハピネスチャンス中は全大当り後の電サポが120回となり、同モードがループします。",
     sourceUrls: ["https://p.hisshobon.jp/machine/4095/1/94691", "https://1geki.jp/pachinko/pa_oumi5_agns/29/", "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20230414_3.pdf"],
-    dataUpdatedAt: "2026-07-14",
-    displayToReal: null, // 液晶→実測の補正率（null = 未測定）
-  },
-  {
-    name: "P大海物語5",
-    maker: "三洋",
-    type: "ミドル",
-    prob: "1/319.6",
-    synthProb: 319.6,
-    border1K: 16.7,
-    prize: 1,
-    unitCost: 13.0,
-    avgPayoutPerHit: 1400,
-    stdDev: 18000,
-    stdDevLabel: "P-EVIDENCE推定（確変60%ループ＋時短100回型）",
-    stdDevMethod: "p-evidence-branching-v2",
-    initialProb: 0.5,
-    muraCoef: 80000,
-    spatialSens: 1,
-    regimeSens: 1,
-    hesoAvgPayout: 1500,
-    rushAvgPayout: 1500,
-    rushEntryRate: 60,
-    rushContinueRate: 60,
-    allocationVerified: true,
-    hesoModes: [{ name: "通常時・確変中（特図共通）", rows: [
-      { rounds: 10, payout: 1500, rate: 60, label: "確変・次回まで" },
-      { rounds: 10, payout: 1500, rate: 40, label: "通常・時短100回" },
-    ] }],
-    rushModes: [{ name: "確変・時短中（特図共通）", rows: [
-      { rounds: 10, payout: 1500, rate: 60, label: "確変継続・次回まで" },
-      { rounds: 10, payout: 1500, rate: 40, label: "通常・時短100回" },
-    ] }],
-    allocationNote: "出玉は払い出し。入賞口を問わず全大当りが10R・1500発で、60%が確変、40%が通常です。",
-    sourceUrls: ["https://p.hisshobon.jp/vpage/2486/39", "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20221205_1.pdf", "https://www.sanyobussan.co.jp/products/pachinko/p_daium5/"],
     dataUpdatedAt: "2026-07-14",
     displayToReal: null, // 液晶→実測の補正率（null = 未測定）
   },
@@ -4780,7 +4785,7 @@ const rawMachineDB = [
   },
   {
     name: "e 東京喰種 超デカ超一撃ver.",
-    aliases: ["e東京喰種超デカ超一撃ver.", "e東京喰種"],
+    aliases: ["e東京喰種超デカ超一撃ver."],
     maker: "ビスティ",
     type: "スマパチ",
     prob: "1/349.9",
@@ -4976,6 +4981,7 @@ const rawMachineDB = [
 // 「型式確認済み」と「大当り振り分け確認済み」は別の状態として扱う。
 // そのため、ここに型式を登録しても allocationVerified は変更しない。
 export const machineModelRegistry = Object.freeze(Object.fromEntries([
+  ["P大海物語5 MTE2", "P大海物語5MTE2", "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20221205_1.pdf"],
   ["ルパン三世 消されたルパン", "P消されたルパンH1AZ1", "https://1geki.jp/pachinko/p_erased_lupin2022/"],
   ["仮面ライダー轟音", "Pぱちんこ仮面ライダー轟音M6", "https://p-town.dmm.com/machines/3689"],
   ["海物語IN沖縄5", "Pスーパー海物語IN沖縄5LTV", "https://1geki.jp/pachinko/p_spumioki5/"],
@@ -4984,7 +4990,7 @@ export const machineModelRegistry = Object.freeze(Object.fromEntries([
   ["大海物語5 甘デジ", "PA大海物語5ARBC", "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20230602.pdf"],
   ["ガンダムSEED", "Pフィーバー機動戦士ガンダムSEED S", "https://www.sankyo-fever.jp/products/machine_list/pfs/spec/"],
   ["Re:ゼロから始める異世界生活", "P Re:ゼロから始める異世界生活M06", "https://p-town.dmm.com/machines/3796"],
-  ["e東京喰種W", "e東京喰種W", "https://p-town.dmm.com/machines/4824"],
+  ["e東京喰種W", "e東京喰種W", "https://www.police.pref.hyogo.lg.jp/news/katashiki/data/2025/20250128.pdf"],
   ["e新世紀エヴァンゲリオン ～はじまりの記憶～", "e新世紀エヴァンゲリオン17 はじまりの記憶R", "https://www.pref.okayama.jp/uploaded/life/1015492_9802765_misc.pdf"],
   ["PAフィーバーからくりサーカス2YF", "PAフィーバーからくりサーカス2YF", "https://www.pref.okayama.jp/uploaded/life/1015492_9802765_misc.pdf"],
   ["P大海物語5スペシャル", "P大海物語5スペシャルALTA", "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20240906.pdf"],
@@ -5005,7 +5011,6 @@ export const machineModelRegistry = Object.freeze(Object.fromEntries([
   ["P大海物語5ブラック", "P大海物語5HCL", "https://1geki.jp/pachinko/p_daiumi5_black/"],
   ["e新海物語349", "e新海物語349ELTH", "https://www.p-world.co.jp/machine/database/10378"],
   ["PA大海物語5 Withアグネス・ラム", "PA大海物語5ARBC", "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20230602.pdf"],
-  ["P大海物語5", "P大海物語5MTE2", "https://www.sanyobussan.co.jp/products/pachinko/p_daium5/"],
   ["PAスーパー海物語IN沖縄5 夜桜超旋風99ver.", "PAスーパー海物語IN沖縄5YBA", "https://www.sanyobussan.co.jp/products/pachinko/pa_oki5_yozakura/"],
   ["PA新海物語", "PA新海物語ARBB", "https://www.sanyobussan.co.jp/information/pdf/sanyo_press_release_20220603.pdf"],
   ["Pスーパー海物語IN沖縄5 夜桜超旋風", "Pスーパー海物語IN沖縄5YTC", "https://www.sanyobussan.co.jp/products/pachinko/p_oki5_yozakura/"],
@@ -5069,7 +5074,7 @@ export const machineModelRegistry = Object.freeze(Object.fromEntries([
 
 // 遊タイム監査レジストリ。
 // 搭載機だけでなく非搭載・対象外も明示し、新機種を根拠なく「非搭載」と自動判定しない。
-// 現在の98機種はすべて型式または機種別ページで2026-07-17に再確認済み。
+// 重複除外後の97機種はすべて型式または機種別ページで2026-07-17に再確認済み。
 const equippedYutimeRegistry = Object.freeze({
   "仮面ライダー轟音": Object.freeze({
     triggerLowSpins: 950,
@@ -5162,7 +5167,6 @@ const yutimeNotEquippedNames = new Set([
   "PAスーパー海物語IN地中海2",
   "P大海物語5ブラック",
   "e新海物語349",
-  "P大海物語5",
   "PAスーパー海物語IN沖縄5 夜桜超旋風99ver.",
   "Pスーパー海物語IN沖縄5 夜桜超旋風",
   "PAスーパー海物語IN沖縄5 with アイマリン",
@@ -5276,7 +5280,7 @@ export const machineYutimeRegistry = Object.freeze(Object.fromEntries(rawMachine
 })));
 
 // 遊タイム画面専用の参照機種。
-// 98機種のP-EVIDENCE本体へ不完全な振分・標準偏差を混ぜず、確認できた発動条件だけを選択可能にする。
+// 97機種のP-EVIDENCE本体へ不完全な振分・標準偏差を混ぜず、確認できた発動条件だけを選択可能にする。
 // `expectedNetBalls` は「遊タイム突入後の平均獲得玉」を示す根拠がない限り null のままにする。
 export const legacyYutimeReferenceMachines = Object.freeze([
   {
@@ -5498,26 +5502,89 @@ export function isMasterMachineNewer(master, custom) {
   return !!masterDate && (!customDate || masterDate > customDate);
 }
 
-// 旧版アプリで保存された同名カスタムが、新しい標準スペックを隠さないようにする。
+function machineIdentityKey(value) {
+  return String(value ?? "").normalize("NFKC").trim().toLowerCase();
+}
+
+function buildMachineIdentityIndex(machines) {
+  const exactNames = new Map();
+  const aliasCandidates = new Map();
+  machines.forEach((machine) => {
+    const nameKey = machineIdentityKey(machine?.name);
+    if (nameKey) exactNames.set(nameKey, machine);
+    (Array.isArray(machine?.aliases) ? machine.aliases : []).forEach((alias) => {
+      const aliasKey = machineIdentityKey(alias);
+      if (!aliasKey) return;
+      const candidates = aliasCandidates.get(aliasKey) || new Set();
+      candidates.add(machine);
+      aliasCandidates.set(aliasKey, candidates);
+    });
+  });
+  return {
+    resolve(value) {
+      const key = machineIdentityKey(value);
+      if (!key) return null;
+      const exact = exactNames.get(key);
+      if (exact) return exact;
+      const candidates = aliasCandidates.get(key);
+      return candidates?.size === 1 ? [...candidates][0] : null;
+    },
+  };
+}
+
+// 旧版アプリで保存された同名・旧名カスタムが、新しい標準スペックを隠さないようにする。
 // 標準データの更新日が新しい場合は標準を採用し、同日以降に編集した値だけ上書きとして残す。
 export function getEffectiveMachineList(customMachines = [], builtInMachines = machineDB) {
   const customList = Array.isArray(customMachines) ? customMachines : [];
   const builtIns = Array.isArray(builtInMachines) ? builtInMachines : [];
-  const builtInByName = new Map(builtIns.map((machine) => [machine.name, machine]));
-  const effectiveCustom = customList.map((custom) => {
-    const master = builtInByName.get(custom?.name);
-    if (!master) return { ...custom, isCustom: true, isOverride: false };
-    if (isMasterMachineNewer(master, custom)) return master;
-    return { ...master, ...custom, isCustom: true, isOverride: true };
+  const identityIndex = buildMachineIdentityIndex(builtIns);
+  const effectiveCustom = [];
+  const effectiveIndexByMaster = new Map();
+  const resolvedMasterNames = new Set();
+
+  customList.forEach((custom) => {
+    const master = identityIndex.resolve(custom?.name);
+    if (!master) {
+      effectiveCustom.push({ ...custom, isCustom: true, isOverride: false });
+      return;
+    }
+
+    resolvedMasterNames.add(master.name);
+    const effective = isMasterMachineNewer(master, custom)
+      ? master
+      : {
+          ...master,
+          ...custom,
+          name: master.name,
+          aliases: [...new Set([...(master.aliases || []), custom?.name].filter(Boolean))],
+          isCustom: true,
+          isOverride: true,
+        };
+    const existingIndex = effectiveIndexByMaster.get(master.name);
+    if (existingIndex == null) {
+      effectiveIndexByMaster.set(master.name, effectiveCustom.length);
+      effectiveCustom.push(effective);
+      return;
+    }
+
+    const existing = effectiveCustom[existingIndex];
+    if (isMasterMachineNewer(existing, effective)) return;
+    effectiveCustom[existingIndex] = effective;
   });
-  const customNames = new Set(customList.map((machine) => machine?.name));
+
   return [
     ...effectiveCustom,
-    ...builtIns.filter((machine) => !customNames.has(machine.name)),
+    ...builtIns.filter((machine) => !resolvedMasterNames.has(machine.name)),
   ];
 }
 
-// 遊タイム機種選択では、P-EVIDENCE本体98機種と発動条件だけ確認済みの参照機種をまとめる。
+export function findEffectiveMachineByName(name, customMachines = [], builtInMachines = machineDB) {
+  return buildMachineIdentityIndex(
+    getEffectiveMachineList(customMachines, builtInMachines),
+  ).resolve(name);
+}
+
+// 遊タイム機種選択では、P-EVIDENCE本体と発動条件だけ確認済みの参照機種をまとめる。
 // 同名・同型式が後から本体へ登録された場合は、本体側を優先して二重表示しない。
 export function getYutimeSelectionMachines(customMachines = []) {
   const effectiveMachines = getEffectiveMachineList(customMachines);

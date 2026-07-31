@@ -140,138 +140,151 @@
 }
 
 /* ================================================================
-   分析ページ（金融端末風 / Bloomberg × TradingView）デザイントークン
+   分析ページ（iOS ネイティブ風 / グループ化リスト）デザイントークン
    .analytics-terminal をルートに付与してスコープ限定。
    既存の C トークン（--bg / --surface / --green ...）を上書きすることで、
    AnalysisDashboard 配下のコンポーネントが自動的にこの配色を使う。
    ダークが基準デザイン。ライトテーマは下の [data-theme="light"] 上書きで対応。
+
+   配色は iOS のシステムカラー準拠：
+     背景 = systemGroupedBackground / カード = secondarySystemGroupedBackground
+     アクセント = systemBlue / プラス = systemGreen / マイナス = systemRed
+   トークン名は既存のまま（--at-cyan など）で値だけ iOS 系へ差し替えているため、
+   分析ページ配下（AnalyzerView / AnalyticsCharts / 編集シート）も自動追従する。
 ================================================================ */
 .analytics-terminal {
-  --bg: #050A14;
-  --surface: #0C1324;
-  --surface-hi: #111B33;
-  --surface-alt: #080F1E;
-  --border: rgba(120, 160, 220, 0.12);
-  --border-hi: rgba(120, 160, 220, 0.24);
-  --blue: #18D7FF;
-  --teal: #18D7FF;
-  --green: #18E07A;
-  --red: #FF5A68;
-  --yellow: #FFC83D;
-  --orange: #FF9F45;
-  --purple: #9D8BFF;
-  --text: #EAF1FB;
-  --sub: #6E7E99;
-  --sub-hi: #A7B6D0;
-  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 10px 34px rgba(0, 0, 0, 0.45);
-  --accent-grad: #18D7FF;
+  --bg: #000000;
+  --surface: #1C1C1E;
+  --surface-hi: #2C2C2E;
+  --surface-alt: #000000;
+  --border: rgba(84, 84, 88, 0.45);
+  --border-hi: rgba(84, 84, 88, 0.65);
+  --blue: #0A84FF;
+  --teal: #0A84FF;
+  --green: #30D158;
+  --red: #FF453A;
+  --yellow: #FFD60A;
+  --orange: #FF9F0A;
+  --purple: #BF5AF2;
+  --text: #FFFFFF;
+  --sub: rgba(235, 235, 245, 0.6);
+  --sub-hi: rgba(235, 235, 245, 0.78);
+  --card-shadow: none;
+  --accent-grad: #0A84FF;
   /* 分析ページ専用の付加トークン */
-  --at-accent: #18D7FF;
-  --at-plus: #18E07A;
-  --at-minus: #FF5A68;
-  --at-glow: 0 0 0 1px rgba(24, 215, 255, 0.18), 0 8px 30px rgba(24, 215, 255, 0.06);
-  /* ---- AnalysisDashboard 直書き色のトークン化（ダーク値 = 従来のハードコード値） ---- */
-  --at-page: #050B18;
-  --at-strong: #ffffff;
-  --at-mut: #8090aa;
-  --at-mut2: #8794a9;
-  --at-mut3: #9aa6bb;
-  --at-subtle: #aab6ca;
-  --at-subtle-hi: #c0cad9;
-  --at-faint: #5c6b84;
-  --at-faint2: #75839a;
-  --at-cyan: #16C8FF;
-  --at-pos: #25D366;
-  --at-pos-hi: #3fe0a0;
-  --at-neg: #ff637a;
-  --at-sun: #ff7a8a;
-  --at-sat: #6ea8ff;
-  --at-gold: #FFC83D;
-  --at-amber: #f08a45;
-  --at-iconblue: #5e9df7;
-  --at-panel: #071326;
-  --at-panel2: #0a1528;
-  --at-panel-hi: #13233e;
-  --at-menu: #0b1424;
-  --at-chipbg: #081224;
-  --at-ln-soft: rgba(255, 255, 255, 0.06);
-  --at-ln: rgba(255, 255, 255, 0.08);
-  --at-ln-md: rgba(255, 255, 255, 0.10);
-  --at-ln-hi: rgba(255, 255, 255, 0.12);
-  --at-cellbg: rgba(255, 255, 255, 0.015);
-  --at-rowbg: rgba(255, 255, 255, 0.04);
-  --at-hoverbg: rgba(255, 255, 255, 0.05);
-  --at-heat-p: rgba(18, 58, 43, 0.4);
-  --at-heat-p-bd: rgba(31, 122, 82, 0.3);
-  --at-heat-m: rgba(58, 22, 32, 0.35);
-  --at-heat-m-bd: rgba(138, 36, 56, 0.3);
-  --at-card-grad: linear-gradient(145deg, rgba(12, 25, 47, .98), rgba(5, 13, 27, .98));
-  --at-card-shadow2: 0 16px 45px rgba(0, 0, 0, .34);
-  --at-menu-shadow: 0 18px 50px rgba(0, 0, 0, .6);
+  --at-accent: #0A84FF;
+  --at-plus: #30D158;
+  --at-minus: #FF453A;
+  --at-glow: 0 0 0 1px rgba(10, 132, 255, 0.35);
+  /* ---- AnalysisDashboard 直書き色のトークン化（ダーク = iOS ダーク） ---- */
+  --at-page: #000000;
+  --at-strong: #FFFFFF;
+  --at-mut: rgba(235, 235, 245, 0.6);
+  --at-mut2: rgba(235, 235, 245, 0.6);
+  --at-mut3: rgba(235, 235, 245, 0.5);
+  --at-subtle: rgba(235, 235, 245, 0.7);
+  --at-subtle-hi: rgba(235, 235, 245, 0.82);
+  --at-faint: rgba(235, 235, 245, 0.3);
+  --at-faint2: rgba(235, 235, 245, 0.4);
+  --at-cyan: #0A84FF;
+  --at-pos: #30D158;
+  --at-pos-hi: #30D158;
+  --at-neg: #FF453A;
+  --at-sun: #FF6961;
+  --at-sat: #6BAAFF;
+  --at-gold: #FFD60A;
+  --at-on-gold: #3d2f00;
+  --at-amber: #FF9F0A;
+  --at-iconblue: #0A84FF;
+  --at-panel: #1C1C1E;
+  --at-panel2: #2C2C2E;
+  --at-panel-hi: #3A3A3C;
+  --at-menu: #1C1C1E;
+  --at-chipbg: #2C2C2E;
+  --at-ln-soft: rgba(84, 84, 88, 0.36);
+  --at-ln: rgba(84, 84, 88, 0.5);
+  --at-ln-md: rgba(84, 84, 88, 0.6);
+  --at-ln-hi: rgba(84, 84, 88, 0.72);
+  --at-cellbg: rgba(118, 118, 128, 0.12);
+  --at-rowbg: rgba(118, 118, 128, 0.18);
+  --at-hoverbg: rgba(118, 118, 128, 0.24);
+  /* カレンダーのヒート塗り。2 段階（通常 / 大きい金額）で損益の強さを表す */
+  --at-heat-p: rgba(48, 209, 88, 0.16);
+  --at-heat-p2: rgba(48, 209, 88, 0.3);
+  --at-heat-p-bd: rgba(48, 209, 88, 0.34);
+  --at-heat-m: rgba(255, 69, 58, 0.16);
+  --at-heat-m2: rgba(255, 69, 58, 0.3);
+  --at-heat-m-bd: rgba(255, 69, 58, 0.34);
+  --at-card-grad: linear-gradient(180deg, #1C1C1E, #1C1C1E);
+  --at-card-shadow2: none;
+  --at-menu-shadow: 0 -8px 40px rgba(0, 0, 0, 0.6);
   background: var(--bg);
 }
 
 /* 分析ページ ライトテーマ（レイアウト不変・配色のみ翻訳） */
 [data-theme="light"] .analytics-terminal {
-  --bg: #f2f5f9;
-  --surface: #ffffff;
-  --surface-hi: #f4f6fa;
-  --surface-alt: #eef1f6;
-  --border: rgba(16, 24, 40, 0.10);
-  --border-hi: rgba(16, 24, 40, 0.20);
-  --blue: #0b7fb8;
-  --teal: #0b7fb8;
-  --green: #0f9d51;
-  --red: #dc2626;
-  --yellow: #b8860b;
-  --orange: #c05621;
-  --purple: #7c3aed;
-  --text: #101828;
-  --sub: #667085;
-  --sub-hi: #384252;
-  --card-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 6px 20px rgba(16, 24, 40, 0.08);
-  --accent-grad: #0b7fb8;
-  --at-accent: #0b7fb8;
-  --at-plus: #0f9d51;
-  --at-minus: #dc2626;
-  --at-glow: 0 0 0 1px rgba(11, 127, 184, 0.20), 0 8px 30px rgba(11, 127, 184, 0.08);
-  --at-page: #f2f5f9;
-  --at-strong: #101828;
-  --at-mut: #5b6472;
-  --at-mut2: #5b6472;
-  --at-mut3: #667085;
-  --at-subtle: #4a5568;
-  --at-subtle-hi: #3d4757;
-  --at-faint: #98a1b3;
-  --at-faint2: #7b8494;
-  --at-cyan: #0b7fb8;
-  --at-pos: #0f9d51;
-  --at-pos-hi: #0f9d51;
-  --at-neg: #d92d47;
-  --at-sun: #d9455a;
-  --at-sat: #2f6fed;
-  --at-gold: #b8860b;
-  --at-amber: #c05621;
-  --at-iconblue: #2f6fed;
-  --at-panel: #ffffff;
-  --at-panel2: #e9eef5;
-  --at-panel-hi: #dbe4f0;
-  --at-menu: #ffffff;
-  --at-chipbg: #ffffff;
-  --at-ln-soft: rgba(16, 24, 40, 0.07);
-  --at-ln: rgba(16, 24, 40, 0.10);
-  --at-ln-md: rgba(16, 24, 40, 0.14);
-  --at-ln-hi: rgba(16, 24, 40, 0.18);
-  --at-cellbg: rgba(16, 24, 40, 0.02);
-  --at-rowbg: rgba(16, 24, 40, 0.04);
-  --at-hoverbg: rgba(16, 24, 40, 0.05);
-  --at-heat-p: #d5f2e0;
-  --at-heat-p-bd: #8ed4ab;
-  --at-heat-m: #fbe0e4;
-  --at-heat-m-bd: #eda4b0;
-  --at-card-grad: linear-gradient(145deg, #ffffff, #fbfcfe);
-  --at-card-shadow2: 0 8px 24px rgba(16, 24, 40, 0.08);
-  --at-menu-shadow: 0 18px 50px rgba(16, 24, 40, 0.18);
+  --bg: #F2F2F7;
+  --surface: #FFFFFF;
+  --surface-hi: #F2F2F7;
+  --surface-alt: #E5E5EA;
+  --border: rgba(60, 60, 67, 0.22);
+  --border-hi: rgba(60, 60, 67, 0.34);
+  --blue: #007AFF;
+  --teal: #007AFF;
+  --green: #34C759;
+  --red: #FF3B30;
+  --yellow: #B25000;
+  --orange: #C93400;
+  --purple: #AF52DE;
+  --text: #000000;
+  --sub: rgba(60, 60, 67, 0.6);
+  --sub-hi: rgba(60, 60, 67, 0.78);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --accent-grad: #007AFF;
+  --at-accent: #007AFF;
+  --at-plus: #248A3D;
+  --at-minus: #D70015;
+  --at-glow: 0 0 0 1px rgba(0, 122, 255, 0.35);
+  --at-page: #F2F2F7;
+  --at-strong: #000000;
+  --at-mut: rgba(60, 60, 67, 0.6);
+  --at-mut2: rgba(60, 60, 67, 0.6);
+  --at-mut3: rgba(60, 60, 67, 0.5);
+  --at-subtle: rgba(60, 60, 67, 0.7);
+  --at-subtle-hi: rgba(60, 60, 67, 0.82);
+  --at-faint: rgba(60, 60, 67, 0.32);
+  --at-faint2: rgba(60, 60, 67, 0.42);
+  --at-cyan: #007AFF;
+  --at-pos: #248A3D;
+  --at-pos-hi: #248A3D;
+  --at-neg: #D70015;
+  --at-sun: #D70015;
+  --at-sat: #0059C7;
+  --at-gold: #B25000;
+  --at-on-gold: #ffffff;
+  --at-amber: #C93400;
+  --at-iconblue: #007AFF;
+  --at-panel: #FFFFFF;
+  --at-panel2: #F2F2F7;
+  --at-panel-hi: #E5E5EA;
+  --at-menu: #FFFFFF;
+  --at-chipbg: #F2F2F7;
+  --at-ln-soft: rgba(60, 60, 67, 0.16);
+  --at-ln: rgba(60, 60, 67, 0.2);
+  --at-ln-md: rgba(60, 60, 67, 0.26);
+  --at-ln-hi: rgba(60, 60, 67, 0.32);
+  --at-cellbg: rgba(118, 118, 128, 0.08);
+  --at-rowbg: rgba(118, 118, 128, 0.12);
+  --at-hoverbg: rgba(118, 118, 128, 0.16);
+  --at-heat-p: rgba(52, 199, 89, 0.16);
+  --at-heat-p2: rgba(52, 199, 89, 0.32);
+  --at-heat-p-bd: rgba(36, 138, 61, 0.38);
+  --at-heat-m: rgba(255, 59, 48, 0.14);
+  --at-heat-m2: rgba(255, 59, 48, 0.28);
+  --at-heat-m-bd: rgba(215, 0, 21, 0.34);
+  --at-card-grad: linear-gradient(180deg, #FFFFFF, #FFFFFF);
+  --at-card-shadow2: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --at-menu-shadow: 0 -8px 40px rgba(0, 0, 0, 0.18);
 }
 
 /* Recharts はチャート内の色を SVG 属性/インライン style で持つため、

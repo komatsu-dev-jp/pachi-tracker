@@ -169,10 +169,77 @@ export function islandLayoutRows(island, maxCells = Infinity) {
   });
 }
 
-// 店舗1件分の島配列を正規化する。
-export function normalizeIslands(islands) {
+function normalizeIslandRecords(islands) {
   if (!Array.isArray(islands)) return [];
   return islands.filter(Boolean).map((isl, i) => normalizeIsland(isl, i));
+}
+
+// 対面関係は、別IDの2島が互いを参照している場合だけ成立する。
+// 片側だけの旧データ・削除済みID・自己参照は、戦略判定へ混ぜない。
+export function isConfirmedFacingPair(left, right) {
+  const leftId = String(left?.id || "");
+  const rightId = String(right?.id || "");
+  return Boolean(
+    leftId
+    && rightId
+    && leftId !== rightId
+    && String(left?.facingIslandId || "") === rightId
+    && String(right?.facingIslandId || "") === leftId
+  );
+}
+
+// 店舗1件分の島配列を正規化する。
+// 対面IDは相互参照が成立する組だけを残し、不整合な旧データは未設定として扱う。
+export function normalizeIslands(islands) {
+  const normalized = normalizeIslandRecords(islands);
+  const byId = new Map(normalized.map((island) => [String(island.id), island]));
+  return normalized.map((island) => {
+    if (!island.facingIslandId) return island;
+    const partner = byId.get(String(island.facingIslandId));
+    return isConfirmedFacingPair(island, partner)
+      ? island
+      : { ...island, facingIslandId: null };
+  });
+}
+
+// 編集中の島自身だけを候補から除く。機種名が同じ別島も実店舗の配置として選択できる。
+export function getFacingIslandCandidates(islands, currentIslandId) {
+  const currentId = String(currentIslandId || "");
+  return normalizeIslandRecords(islands).filter(
+    (island) => String(island.id) !== currentId
+  );
+}
+
+// 対面関係を双方へ同時保存する。
+// 編集元・選択先が以前持っていた対面関係も解除し、1島が複数の相手を持たないようにする。
+export function setFacingIsland(islands, islandId, facingIslandId, facingReversed = true) {
+  const list = normalizeIslands(islands);
+  const sourceId = String(islandId || "");
+  if (!sourceId || !list.some((island) => String(island.id) === sourceId)) return list;
+
+  const requestedId = String(facingIslandId || "");
+  const targetId = requestedId
+    && requestedId !== sourceId
+    && list.some((island) => String(island.id) === requestedId)
+    ? requestedId
+    : "";
+  const affectedIds = new Set([sourceId, targetId].filter(Boolean));
+  const reversed = facingReversed !== false;
+
+  const next = list.map((island) => {
+    const id = String(island.id);
+    if (id === sourceId) {
+      return { ...island, facingIslandId: targetId || null, facingReversed: reversed };
+    }
+    if (targetId && id === targetId) {
+      return { ...island, facingIslandId: sourceId, facingReversed: reversed };
+    }
+    if (affectedIds.has(String(island.facingIslandId || ""))) {
+      return { ...island, facingIslandId: null };
+    }
+    return island;
+  });
+  return normalizeIslands(next);
 }
 
 // マップ全体（{ [storeId]: Island[] }）から特定店舗の島配列を取り出す。

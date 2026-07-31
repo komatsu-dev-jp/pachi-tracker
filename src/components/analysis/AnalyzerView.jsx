@@ -45,10 +45,11 @@ function SubTabBar({ tab, setTab }) {
     { id: "store", label: "店舗分析" },
     { id: "machine", label: "機種分析" },
   ];
+  // iOS のセグメンテッドコントロール（溝の上に選択中のつまみが乗る形）
   return (
     <div style={{
-      display: "flex", gap: 4, background: C.surfaceHi, borderRadius: 12, padding: 3,
-      border: `1px solid ${C.border}`, marginBottom: 12,
+      display: "flex", gap: 4, background: "var(--at-rowbg)", borderRadius: 10, padding: 4,
+      marginBottom: 12,
     }}>
       {tabs.map((t) => {
         const active = tab === t.id;
@@ -57,13 +58,15 @@ function SubTabBar({ tab, setTab }) {
             key={t.id}
             className="b"
             onClick={() => setTab(t.id)}
+            aria-pressed={active}
             style={{
               flex: 1, minHeight: 40,
-              background: active ? `color-mix(in srgb, ${ACCENT} 16%, var(--surface))` : "transparent",
-              border: active ? `1px solid color-mix(in srgb, ${ACCENT} 40%, transparent)` : "1px solid transparent",
-              borderRadius: 9,
-              color: active ? ACCENT : C.sub,
-              fontSize: 12, fontWeight: active ? 800 : 600, fontFamily: font, cursor: "pointer",
+              background: active ? "var(--at-panel)" : "transparent",
+              border: "none",
+              borderRadius: 8,
+              boxShadow: active ? "0 1px 3px rgba(0,0,0,.25)" : "none",
+              color: active ? C.text : C.sub,
+              fontSize: 14, fontWeight: 600, fontFamily: font, cursor: "pointer",
             }}
           >
             {t.label}
@@ -464,14 +467,16 @@ function FeaturedMachineCard({ row, totalSpins, radarValues, onSelect }) {
       onClick={() => onSelect?.(row.machineName)}
       style={{
         display: "block", width: "100%", textAlign: "left", cursor: onSelect ? "pointer" : "default",
-        background: `linear-gradient(170deg, color-mix(in srgb, ${C.yellow} 14%, transparent), color-mix(in srgb, ${C.yellow} 2%, transparent))`,
-        border: `1px solid color-mix(in srgb, ${C.yellow} 35%, transparent)`,
+        // 1位カードも他の iOS グループ化カードと同じ面にし、金色は枠と順位バッジだけで示す
+        background: C.surface,
+        border: "none",
+        outline: `1.5px solid ${C.yellow}`, outlineOffset: -1.5,
         borderRadius: 16, overflow: "hidden", marginBottom: 12, boxShadow: "var(--card-shadow)", padding: 16,
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ width: 26, height: 26, borderRadius: "50%", background: C.yellow, color: "#1d1503", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900, fontFamily: mono, flexShrink: 0 }}>1</span>
-        <span style={{ minWidth: 0, flex: 1, fontSize: 15, fontWeight: 900, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: font }}>{row.machineName}</span>
+        <span style={{ width: 26, height: 26, borderRadius: "50%", background: C.yellow, color: "var(--at-on-gold)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, fontFamily: font, flexShrink: 0 }}>1</span>
+        <span style={{ minWidth: 0, flex: 1, fontSize: 16, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: font }}>{row.machineName}</span>
       </div>
       <div style={{ marginTop: 12, display: "flex", gap: 14, alignItems: "center" }}>
         <MachineRadar values={radarValues} />
@@ -601,7 +606,7 @@ function MachineSection({ archives, extraFilters, onSelectMachine, isDemo }) {
   return (
     <>
       {/* 並べ替え */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 4, marginBottom: 12, background: "var(--at-rowbg)", borderRadius: 10, padding: 4 }}>
         {MACHINE_SORTS.map((s) => {
           const active = sortKey === s.id;
           return (
@@ -609,13 +614,15 @@ function MachineSection({ archives, extraFilters, onSelectMachine, isDemo }) {
               key={s.id}
               className="b"
               onClick={() => setSortKey(s.id)}
+              aria-pressed={active}
               style={{
-                flex: "1 1 0", minWidth: 0, minHeight: 40,
-                background: active ? `color-mix(in srgb, ${ACCENT} 18%, var(--surface))` : C.surfaceHi,
-                border: `1px solid ${active ? ACCENT : C.border}`,
-                borderRadius: 10,
-                color: active ? ACCENT : C.sub,
-                fontSize: 11, fontWeight: active ? 800 : 600, fontFamily: font, cursor: "pointer",
+                flex: "1 1 0", minWidth: 0, minHeight: 36,
+                background: active ? "var(--at-panel)" : "transparent",
+                border: "none",
+                borderRadius: 8,
+                boxShadow: active ? "0 1px 3px rgba(0,0,0,.25)" : "none",
+                color: active ? C.text : C.sub,
+                fontSize: 13, fontWeight: 600, fontFamily: font, cursor: "pointer",
               }}
             >
               {s.label}

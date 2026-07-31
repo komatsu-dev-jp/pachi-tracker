@@ -3,6 +3,8 @@ import {
   applyStrategyPlanEntryContext,
   buildStrategyMap,
   buildStrategyPlanContext,
+  buildStrategyViewScope,
+  pairStrategyIslands,
   resolveStrategyPlanHandoff,
 } from "./strategyMapData";
 import { localDateStr } from "../../constants";
@@ -22,6 +24,16 @@ import {
   buildIslandActivityCalendar,
   listIslandActivityMonths,
 } from "../evidence/islandActivityCalendar.js";
+import {
+  DECISION_TERMS,
+  decisionLabel,
+  decisionMeta,
+} from "../decision/decisionVocabulary.js";
+import {
+  deleteDeltaScans,
+  findDeltaScanDateTargets,
+  updateDeltaScanDate,
+} from "../delta/deltaScanDate.js";
 
 // 戦略マップ画面（見た目優先プロトタイプ）
 //
@@ -52,10 +64,10 @@ const MONO = "var(--font-mono)";
 const EMPTY_LIST = [];
 
 const VERDICT = {
-  strong: { color: P.green, label: "本命", reco: "着席推奨" },
-  watch: { color: P.yellow, label: "様子見", reco: "様子見" },
-  weak: { color: P.red, label: "回収", reco: "見送り" },
-  nodata: { color: P.gray, label: "不足", reco: "データ不足" },
+  strong: { color: P.green, label: decisionLabel("strong"), reco: decisionMeta("strong").candidateAction },
+  watch: { color: P.yellow, label: decisionLabel("watch"), reco: decisionMeta("watch").candidateAction },
+  weak: { color: P.red, label: decisionLabel("weak"), reco: decisionMeta("weak").candidateAction },
+  nodata: { color: P.gray, label: decisionLabel("nodata"), reco: decisionMeta("nodata").candidateAction },
 };
 
 const TABS = [
@@ -93,6 +105,13 @@ function tightEvidenceText(evidence) {
   const extras = [];
   if (evidence.weekday?.total > 0) {
     extras.push(`同曜日 ${fmt(evidence.weekday.successes)}/${fmt(evidence.weekday.total)}件${evidence.weekday.applied ? "を反映" : ""}`);
+  }
+  if (evidence.openShock?.detected) {
+    extras.push(
+      evidence.openShock.total > 0
+        ? `急に開いた翌日 ${fmt(evidence.openShock.successes)}/${fmt(evidence.openShock.total)}件${evidence.openShock.applied ? "を反映" : ""}`
+        : "急に開いた状態（条件別実績を収集中）",
+    );
   }
   if (evidence.event?.total > 0) {
     extras.push(`イベント翌日 ${fmt(evidence.event.successes)}/${fmt(evidence.event.total)}件${evidence.event.applied ? "を反映" : ""}`);
@@ -197,7 +216,17 @@ function BackIcon() {
   );
 }
 
-function Header({ data, onBack, onHelp }) {
+function Header({
+  data,
+  selected,
+  viewScope,
+  storeName,
+  storePickerOpen,
+  onBack,
+  onHelp,
+  onOpenStorePicker,
+}) {
+  const displayedFreshness = selected?.freshness || data.freshness;
   return (
     <div
       style={{
@@ -234,10 +263,10 @@ function Header({ data, onBack, onHelp }) {
             戦略マップ
           </div>
           <div style={{ fontSize: 11, color: P.subHi, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {data.machineName}
+            {selected?.machineName || viewScope.machineName || "機種未設定"}
           </div>
-          <div style={{ fontSize: 10, color: P.sub, marginTop: 1 }}>
-            島全体 {data.total}台
+          <div style={{ fontSize: 10, color: P.sub, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {selected ? `選択台 ${selected.num}番` : "台未選択"} ・ {viewScope.label} {viewScope.total}台
           </div>
         </div>
 
@@ -256,14 +285,30 @@ function Header({ data, onBack, onHelp }) {
           </button>
           <div style={{ textAlign: "right", minWidth: 56 }}>
             <div style={{ fontSize: 10, color: P.sub }}>
-              {data.freshness?.sourceDate ? `解析 ${data.freshness.sourceDate}` : "解析日なし"}
+              {displayedFreshness?.sourceDate ? `解析 ${displayedFreshness.sourceDate}` : "解析日なし"}
             </div>
-            <div style={{ fontSize: 13, fontWeight: 900, color: P.cyan, marginTop: 3, fontFamily: MONO }}>
-              候補 {data.kpi.candidates}台
+            <div style={{ fontSize: 11, fontWeight: 900, color: P.cyan, marginTop: 3, fontFamily: MONO, whiteSpace: "nowrap" }}>
+              表示中の候補 {viewScope.candidates}台
             </div>
           </div>
         </div>
       </div>
+      <button
+        type="button"
+        className="strategy-store-trigger"
+        onClick={onOpenStorePicker}
+        aria-haspopup="dialog"
+        aria-expanded={storePickerOpen}
+        aria-label={`表示店舗を選択。現在は${storeName}`}
+      >
+        <span className="strategy-store-trigger-icon" aria-hidden="true">⌖</span>
+        <span className="strategy-store-trigger-copy">
+          <small>表示店舗</small>
+          <strong>{storeName}</strong>
+        </span>
+        <span className="strategy-store-trigger-action">切り替え</span>
+        <span className="strategy-store-trigger-chevron" aria-hidden="true">⌄</span>
+      </button>
     </div>
   );
 }
@@ -301,7 +346,7 @@ function PlanHandoffBanner({ plan, match, storeName, hasData }) {
         {storeName && <span style={{ marginLeft: "auto", color: P.subHi, fontSize: 10 }}>{storeName}</span>}
       </div>
       <div style={{ marginTop: 6, display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
-        {plan.primary && <strong style={{ color: P.text, fontSize: 14 }}>本命 {plan.primary.name}</strong>}
+        {plan.primary && <strong style={{ color: P.text, fontSize: 14 }}>第一候補 {plan.primary.name}</strong>}
         {backupNames.length > 0 && <span style={{ color: P.subHi, fontSize: 11 }}>予備 {backupNames.join("・")}</span>}
       </div>
       {(plan.requiredSessionEv != null || plan.requiredUnitPrice != null) && (
@@ -311,7 +356,7 @@ function PlanHandoffBanner({ plan, match, storeName, hasData }) {
         </div>
       )}
       <div style={{ marginTop: 6, color: P.sub, fontSize: 10, lineHeight: 1.5 }}>
-        {matchText}。{needsReview ? "ホームの月間プランで本命・予備を選び直してください。" : "判定が弱ければ予備、すべて弱ければ見送ります。"}
+        {matchText}。{needsReview ? "ホームの月間プランで第一候補・予備を選び直してください。" : "判定が弱ければ予備、すべて弱ければ見送ります。"}
       </div>
     </section>
   );
@@ -323,8 +368,10 @@ const HELP_GROUPS = [
     terms: [
       { name: "予測回転率", simple: "1,000円で、だいたい何回まわりそうかの予想です。", read: "ボーダーより大きいほど有利です。ただし、差玉から計算した予想なので必ず同じ回数になるわけではありません。" },
       { name: "ボーダー", simple: "長く遊んだときに、プラスとマイナスの境目になる回転率です。", read: "予測回転率がボーダーを上回る台を探します。例：ボーダー18、予測20なら、1,000円で約2回多く回る予想です。" },
-      { name: "信頼度・確信度", simple: "予想を、どれくらい信用してよいかの目安です。", read: "データが少ないと低く、投入玉や日数が増えると高くなります。高くても未来を保証する数字ではありません。" },
-      { name: "良台スコア", simple: "回転率の良さと、データの確かさを1つにまとめた点数です。", read: "高いほど候補ですが、釘変化や解析翌日の締め確率が危険な場合は点数を下げます。" },
+      { name: `翌日${DECISION_TERMS.confidence}`, simple: "明日も予想どおりになりそうかの目安です。", read: "データ量だけでなく、一晩で釘が変わる日次変動も差し引きます。玉数を増やしても100%には近づきません。" },
+      { name: "判断用下限（80%目標）", simple: "予測が下振れした場合を見込んだ、着席判断用の回転率です。", read: "同じ予測を100回したとき、実際の回転率がこの下限以上になる回数を約80回に合わせます。翌日実績が100件未満は統計の標準値を使い、100件から過去実績で校正します。" },
+      { name: "座る基準超え確率", simple: "翌日の回転率が、実質ボーダー＋0.5回を超える見込みです。", read: "平均予測と翌日の予測幅から計算します。50%だけでは候補にせず、判断用下限まで基準を超えた台を候補にします。" },
+      { name: "良台スコア", simple: "回転率の良さと、データの確かさを1つにまとめた点数です。", read: "表示の強さを表す補助指標です。実際の候補判定と順位は、判断用下限と座る基準の差を優先します。" },
       { name: "収支プラス見込み", simple: "予定時間の終了時に、収支が0円を超える確率の概算幅です。", read: "本日の予定時間、予測回転率の上下幅、交換率、検証済みの機種ブレから正規近似で計算します。勝利を保証せず、短時間や荒い機種ほど誤差が大きくなります。" },
       { name: "勝てる確率（旧称）", simple: "現在の『収支プラス見込み』と同じ項目です。", read: "別の確率ではありません。画面と説明の呼び方を『収支プラス見込み』へ統一しています。" },
       { name: "初当たり1回以上", simple: "予定回転数の中で、初当たりを1回以上引く理論上の確率です。", read: "大当たり確率と予定回転数だけで計算します。初当たりを引いても最終収支がプラスとは限らないため、収支プラス見込みとは別の数字です。" },
@@ -415,6 +462,153 @@ function HelpSheet({ onClose }) {
   );
 }
 
+function buildStrategyStoreOptions(stores, scans) {
+  const registered = (Array.isArray(stores) ? stores : [])
+    .filter((store) => store && typeof store === "object" && store.id != null)
+    .map((store) => ({
+      id: store.id,
+      name: String(store.name || "名称未設定の店舗").trim() || "名称未設定の店舗",
+      city: String(store.city || "").trim(),
+      address: String(store.address || "").trim(),
+      legacyNames: Array.isArray(store.legacyNames)
+        ? store.legacyNames.map((name) => String(name || "").trim()).filter(Boolean)
+        : [],
+      registered: true,
+    }));
+  const knownIds = new Set(registered.map((store) => String(store.id)));
+  const scanOnlyById = new Map();
+
+  for (const scan of Array.isArray(scans) ? scans : []) {
+    if (scan?.storeId == null || knownIds.has(String(scan.storeId))) continue;
+    const key = String(scan.storeId);
+    if (!scanOnlyById.has(key)) {
+      scanOnlyById.set(key, {
+        id: scan.storeId,
+        name: String(scan.storeName || "解析データの店舗").trim() || "解析データの店舗",
+        city: "",
+        address: "",
+        legacyNames: [],
+        registered: false,
+      });
+    }
+  }
+
+  const sourceScans = Array.isArray(scans) ? scans : [];
+  return [...registered, ...scanOnlyById.values()].map((store) => {
+    const names = new Set([store.name, ...store.legacyNames].filter(Boolean));
+    const matchingScans = sourceScans.filter((scan) => (
+      String(scan?.storeId ?? "") === String(store.id)
+      || (scan?.storeId == null && names.has(String(scan?.storeName || "").trim()))
+    ));
+    const latestDate = matchingScans
+      .map((scan) => String(scan?.date || ""))
+      .filter(Boolean)
+      .sort()
+      .at(-1) || "";
+    return {
+      ...store,
+      latestDate,
+    };
+  });
+}
+
+function StorePickerSheet({ stores, selectedStoreId, onSelect, onClose }) {
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLocaleLowerCase("ja-JP");
+  const visibleStores = useMemo(() => {
+    if (!normalizedQuery) return stores;
+    return stores.filter((store) =>
+      [store.name, store.city, store.address]
+        .join(" ")
+        .toLocaleLowerCase("ja-JP")
+        .includes(normalizedQuery)
+    );
+  }, [normalizedQuery, stores]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="strategy-store-picker-title"
+      className="strategy-store-picker-backdrop"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="strategy-store-picker-sheet">
+        <div className="strategy-store-picker-head">
+          <div>
+            <div id="strategy-store-picker-title">店舗を選択</div>
+            <p>この戦略マップに表示する店舗を切り替えます</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="店舗選択を閉じる">×</button>
+        </div>
+
+        <div className="strategy-store-picker-search">
+          <span aria-hidden="true">⌕</span>
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="店舗名・市区町村で検索"
+            aria-label="店舗を検索"
+          />
+        </div>
+
+        <div className="strategy-store-picker-note">
+          表示だけを切り替えます。実戦中の店舗や貸玉設定は変更しません。
+        </div>
+
+        <div className="strategy-store-picker-list">
+          {visibleStores.map((store) => {
+            const active = String(store.id) === String(selectedStoreId);
+            return (
+              <button
+                type="button"
+                key={String(store.id)}
+                className={`strategy-store-option ${active ? "is-active" : ""}`}
+                onClick={() => onSelect(store.id)}
+                aria-pressed={active}
+              >
+                <span className="strategy-store-option-mark" aria-hidden="true">
+                  {active ? "✓" : "⌖"}
+                </span>
+                <span className="strategy-store-option-copy">
+                  <strong>{store.name}</strong>
+                  <small>
+                    {[store.city, store.address].filter(Boolean).join("・")
+                      || (store.registered ? "登録済み店舗" : "解析データから検出")}
+                  </small>
+                </span>
+                <span className={`strategy-store-option-data ${store.latestDate ? "has-data" : ""}`}>
+                  {store.latestDate ? (
+                    <>
+                      <b>解析あり</b>
+                      <small>{store.latestDate}</small>
+                    </>
+                  ) : (
+                    <>
+                      <b>未解析</b>
+                      <small>差玉データなし</small>
+                    </>
+                  )}
+                </span>
+              </button>
+            );
+          })}
+          {visibleStores.length === 0 && (
+            <div className="strategy-store-picker-empty">
+              {stores.length === 0
+                ? "登録済みの店舗がありません。設定画面で店舗を登録すると選べます。"
+                : "検索に一致する店舗がありません。"}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ============================ タブ ============================
 function Tabs({ active, onChange }) {
   return (
@@ -462,7 +656,7 @@ function Tabs({ active, onChange }) {
 }
 
 // ============================ A 選択台の今日の見込み ============================
-function SelectedOutcomeSection({ machine, islandAvgRot, plan }) {
+function SelectedOutcomeSection({ machine, islandAvgRot, plan, onStartRecord, sessionStarted }) {
   if (!machine) return null;
   const v = VERDICT[machine.verdict];
   return (
@@ -487,6 +681,32 @@ function SelectedOutcomeSection({ machine, islandAvgRot, plan }) {
           </div>
         )}
         <SelectedDetailCard machine={machine} islandAvgRot={islandAvgRot} plan={plan} />
+        <button
+          type="button"
+          onClick={() => onStartRecord?.(machine)}
+          style={{
+            width: "100%",
+            minHeight: 54,
+            marginTop: 10,
+            borderRadius: 16,
+            border: "none",
+            background: sessionStarted
+              ? "color-mix(in srgb, var(--sm-cyan) 16%, var(--sm-card))"
+              : "linear-gradient(135deg,var(--sm-cyan),#38bdf8)",
+            color: sessionStarted ? P.cyan : "#03131f",
+            fontSize: 14,
+            fontWeight: 900,
+            cursor: "pointer",
+            boxShadow: sessionStarted ? "none" : "0 10px 26px color-mix(in srgb, var(--sm-cyan) 26%, transparent)",
+          }}
+        >
+          {sessionStarted ? "記録中の台へ戻る" : `台${machine.num}で実践を開始`}
+        </button>
+        {!sessionStarted && (
+          <div style={{ marginTop: 6, textAlign: "center", color: P.sub, fontSize: 9 }}>
+            店舗・機種・台番号を記録開始へ引き継ぎます
+          </div>
+        )}
       </div>
     </Section>
   );
@@ -505,7 +725,7 @@ function FreshnessBanner({ freshness, sourceSummary }) {
         <strong style={{ display: "block", color: P.cyan, marginBottom: 3 }}>
           前日リサーチ：{freshness.sourceDate}の解析を本日用に表示
         </strong>
-        本命・着席目安・収支見込みを確認できます。実戦前は店内状況と試し打ちの回転率も確認してください。
+        有力・着席目安・収支見込みを確認できます。実戦前は店内状況と試し打ちの回転率も確認してください。
         {sourceSummary?.length > 0 && <span style={{ display: "block", marginTop: 3 }}>使用データ：{sourceSummary.join("＋")}</span>}
       </div>
     );
@@ -521,51 +741,75 @@ function FreshnessBanner({ freshness, sourceSummary }) {
       <strong style={{ display: "block", color: P.yellow, marginBottom: 3 }}>
         {future ? "解析日を確認してください" : `過去参考：${freshness.label}`}
       </strong>
-      本命・着席推奨・今日の収支・翌日予測は停止しています。前日または本日の差玉解析を保存すると再開します。
+      有力・着席推奨・今日の収支・翌日予測は停止しています。前日または本日の差玉解析を保存すると再開します。
       {sourceSummary?.length > 0 && <span style={{ display: "block", marginTop: 3 }}>使用データ：{sourceSummary.join("＋")}</span>}
     </div>
   );
 }
 
 // ============================ KPIサマリー ============================
-function Kpi({ kpi }) {
+function Kpi({ selected, viewScope }) {
   const items = [
-    { label: "推定期待値", value: signed(kpi.evPerHour), unit: "円/h", color: kpi.evPerHour >= 0 ? P.green : P.red },
-    { label: "予測回転率", value: fmt(kpi.rot, 1), unit: "/k", color: P.cyan },
-    { label: "確信度", value: fmt(kpi.confidence), unit: "%", color: P.yellow },
-    { label: "候補台数", value: fmt(kpi.candidates), unit: "台", color: P.green },
+    {
+      scope: "選択台",
+      label: "推定期待値",
+      value: signed(selected?.evPerHour),
+      unit: "円/h",
+      color: selected?.evPerHour == null ? P.sub : Number(selected.evPerHour) >= 0 ? P.green : P.red,
+    },
+    { scope: "選択台", label: "予測回転率", value: fmt(selected?.rot, 1), unit: "/k", color: P.cyan },
+    { scope: "選択台", label: `翌日${DECISION_TERMS.confidence}`, value: fmt(selected?.confidence), unit: "%", color: P.yellow },
+    { scope: "表示中の島", label: "候補台数", value: fmt(viewScope.candidates), unit: "台", color: P.green },
   ];
   return (
-    <div className="strategy-kpi-grid">
-      {items.map((it) => (
-        <div
-          key={it.label}
-          style={{
-            background: P.card,
-            border: `1px solid ${P.line}`,
-            borderRadius: 16,
-            padding: "11px 8px 12px",
-            minWidth: 0,
-          }}
-        >
-          <div style={{ fontSize: 9, color: P.sub, fontWeight: 700, whiteSpace: "nowrap" }}>{it.label}</div>
+    <div>
+      <div className="strategy-kpi-context">
+        <span>
+          <strong>選択台の予測</strong>
+          {selected ? `${selected.machineName}・${selected.num}番台` : "台未選択"}
+        </span>
+        <span>
+          <strong>表示範囲の集計</strong>
+          {viewScope.label}・設置{viewScope.total}台
+        </span>
+      </div>
+      <div className="strategy-kpi-grid">
+        {items.map((it) => (
           <div
+            key={`${it.scope}-${it.label}`}
             style={{
-              fontSize: 16,
-              fontWeight: 900,
-              color: it.color,
-              fontFamily: MONO,
-              fontVariantNumeric: "tabular-nums",
-              letterSpacing: -0.8,
-              marginTop: 7,
-              whiteSpace: "nowrap",
+              background: P.card,
+              border: `1px solid ${P.line}`,
+              borderRadius: 16,
+              padding: "9px 8px 12px",
+              minWidth: 0,
             }}
           >
-            {it.value}
+            <div className="strategy-kpi-label">
+              <span>{it.scope}</span>
+              <b>{it.label}</b>
+            </div>
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 900,
+                color: it.color,
+                fontFamily: MONO,
+                fontVariantNumeric: "tabular-nums",
+                letterSpacing: -0.8,
+                marginTop: 7,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {it.value}
+            </div>
+            <div style={{ fontSize: 8, color: P.sub, fontWeight: 700, marginTop: 1 }}>{it.unit}</div>
           </div>
-          <div style={{ fontSize: 8, color: P.sub, fontWeight: 700, marginTop: 1 }}>{it.unit}</div>
-        </div>
-      ))}
+        ))}
+      </div>
+      <div className="strategy-kpi-note">
+        期待値・回転率・翌日{DECISION_TERMS.confidence}は選択台、候補台数は現在表示している島（設置{viewScope.total}台）の集計です。
+      </div>
     </div>
   );
 }
@@ -626,7 +870,7 @@ function HeatMachineCell({ number, machine, dim, selected, opposite, onSelect })
   const tone = heatTone(machine);
   const divergence = machine?.strategyDivergence?.status === "below-lower-bound";
   const label = machine
-    ? `${number}番台 予測回転率${machine.rot} 信頼度${machine.confidence}% ${tone.label}${divergence ? " 見切り検討" : ""}`
+    ? `${number}番台 予測回転率${machine.rot} 翌日信頼度${machine.confidence}% ${tone.label}${divergence ? " 見切り検討" : ""}`
     : `${number}番台 未計測`;
   return (
     <button
@@ -662,37 +906,12 @@ function HeatMachineCell({ number, machine, dim, selected, opposite, onSelect })
   );
 }
 
-function pairIslands(islands) {
-  const pairs = [];
-  const used = new Set();
-  const keyOf = (island) => String(island?.layoutId || island?.id || "");
-  for (const island of islands) {
-    const key = keyOf(island);
-    if (used.has(key)) continue;
-    const partner = island.facingIslandId
-      ? islands.find((candidate) => keyOf(candidate) === String(island.facingIslandId) && !used.has(keyOf(candidate)))
-      : null;
-    const pair = partner ? [island, partner] : [island];
-    pair.confirmed = Boolean(partner);
-    used.add(key);
-    if (partner) used.add(keyOf(partner));
-    pairs.push(pair);
-  }
-  // 旧データは表示だけ隣同士へまとめる。統計補正には使われない。
-  for (let index = 0; index + 1 < pairs.length; index++) {
-    if (pairs[index].confirmed || pairs[index + 1].confirmed) continue;
-    pairs[index].push(pairs[index + 1][0]);
-    pairs.splice(index + 1, 1);
-  }
-  return pairs;
-}
-
 function IslandOverview({ islands, activeIslandId, onChangeIsland }) {
-  const pairs = pairIslands(islands);
+  const pairs = pairStrategyIslands(islands);
   return (
     <div className="strategy-overview-wrap">
       <div className="strategy-overview-labels"><span>入口側</span><span>奥側</span></div>
-      <div className="strategy-island-overview" aria-label="対面島ペアの一覧">
+      <div className="strategy-island-overview" aria-label="島表示の一覧">
         {pairs.map((pair) => {
           const active = pair.some((island) => island.id === activeIslandId);
           const label = pair.map((island) => island.name).join("・");
@@ -703,7 +922,7 @@ function IslandOverview({ islands, activeIslandId, onChangeIsland }) {
               className={`strategy-overview-island${active ? " is-active" : ""}`}
               onClick={() => onChangeIsland(pair[0].id)}
               aria-pressed={active}
-              aria-label={`${label}の対面ペアを表示`}
+              aria-label={`${label}を${pair.length === 2 ? "対面" : "単独"}表示`}
             >
               <span>{label}</span>
               <small>{pair.length === 2 ? "対面表示" : "単独表示"}</small>
@@ -768,28 +987,41 @@ function OppositePairMap({ pair, filter, selectedId, selectedMachine, onSelect }
   const bottomCount = islandNumbers(bottom).length;
   const columns = Math.max(topCount, bottomCount, 1);
   const oppositeNumber = selectedMachine?.pevidence?.opposite?.oppositeNum;
+  const isPaired = Boolean(bottom && pair.confirmed);
   return (
     <div className="strategy-pair-map">
       <div className="strategy-pair-scroll">
         <div className="strategy-pair-canvas" style={{ "--pair-columns": columns, minWidth: columns * 58 - 4 }}>
           <PairIslandRow island={top} reverse={false} filter={filter} selectedId={selectedId} oppositeNumber={oppositeNumber} onSelect={onSelect} />
-          <div className="strategy-opposite-aisle"><span>対面通路</span><i>↕ 同じ縦位置が対面</i></div>
-          <PairIslandRow island={bottom} reverse filter={filter} selectedId={selectedId} oppositeNumber={oppositeNumber} onSelect={onSelect} />
+          {isPaired && (
+            <>
+              <div className="strategy-opposite-aisle"><span>対面通路</span><i>↕ 同じ縦位置が対面</i></div>
+              <PairIslandRow
+                island={bottom}
+                reverse={top.facingReversed !== false}
+                filter={filter}
+                selectedId={selectedId}
+                oppositeNumber={oppositeNumber}
+                onSelect={onSelect}
+              />
+            </>
+          )}
         </div>
       </div>
-      <div className="strategy-map-hint">← 横に動かすと2島が一緒に動きます →</div>
-      {!pair.confirmed && pair.length === 2 && <div className="strategy-layout-note">仮対面表示です。島マップ管理で対面を確認するまで予測補正には使いません</div>}
+      {isPaired
+        ? <div className="strategy-map-hint">← 横に動かすと2島が一緒に動きます →</div>
+        : <div className="strategy-layout-note">対面未設定のため、この島だけを単独表示しています</div>}
       {pair.some((island) => !island.registeredLayout) && <div className="strategy-layout-note">未登録の島は計測済み台から仮配置しています</div>}
     </div>
   );
 }
 
 function HallMap({ data, filter, selectedId, activeIslandId, onChangeIsland, onSelect }) {
-  const pairs = pairIslands(data.islands);
+  const pairs = pairStrategyIslands(data.islands);
   const activePair = pairs.find((pair) => pair.some((island) => island.id === activeIslandId)) || pairs[0] || [];
   const selectedMachine = data.all.find((machine) => machine.id === selectedId) || null;
   return (
-    <Section title="対面ヒートマップ" accent={P.cyan} sub="上下で向かい合う台を比較">
+    <Section title="対面ヒートマップ" accent={P.cyan} sub="設定済みの2島だけを比較・未設定は単独表示">
       <Legend />
       <div style={{ padding: "0 12px 4px" }}>
         <div
@@ -804,34 +1036,140 @@ function HallMap({ data, filter, selectedId, activeIslandId, onChangeIsland, onS
 }
 
 // ============================ 選択台詳細 ============================
-function Sparkline({ points, color }) {
-  const w = 132;
-  const h = 52;
-  const pad = 4;
-  const min = Math.min(...points);
-  const max = Math.max(...points);
+function formatHistoryDate(value, short = false) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ""));
+  if (!match) return value || "日付不明";
+  const [, year, month, day] = match;
+  return short
+    ? `${Number(month)}/${Number(day)}`
+    : `${Number(year)}年${Number(month)}月${Number(day)}日`;
+}
+
+function Sparkline({ entries, color }) {
+  const usableEntries = (Array.isArray(entries) ? entries : []).filter(
+    (entry) => entry?.date && isFiniteValue(entry?.rotation),
+  );
+  const [selectedDate, setSelectedDate] = useState(
+    () => usableEntries[usableEntries.length - 1]?.date || "",
+  );
+
+  if (!usableEntries.length) {
+    return (
+      <div className="strategy-history-empty">
+        日付ごとの回転数は、差玉データがたまると確認できます
+      </div>
+    );
+  }
+
+  const w = 320;
+  const h = 94;
+  const padX = 14;
+  const padTop = 10;
+  const padBottom = 20;
+  const values = usableEntries.map((entry) => Number(entry.rotation));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
   const span = max - min || 1;
-  const step = (w - pad * 2) / (points.length - 1);
-  const coords = points.map((p, i) => {
-    const x = pad + i * step;
-    const y = pad + (1 - (p - min) / span) * (h - pad * 2);
+  const step = usableEntries.length > 1
+    ? (w - padX * 2) / (usableEntries.length - 1)
+    : 0;
+  const coords = values.map((point, index) => {
+    const x = usableEntries.length > 1 ? padX + index * step : w / 2;
+    const y = padTop + (1 - (point - min) / span) * (h - padTop - padBottom);
     return [x, y];
   });
   const line = coords.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
-  const area = `${line} L${coords[coords.length - 1][0].toFixed(1)} ${h - pad} L${coords[0][0].toFixed(1)} ${h - pad} Z`;
-  const last = coords[coords.length - 1];
+  const area = usableEntries.length > 1
+    ? `${line} L${coords[coords.length - 1][0].toFixed(1)} ${h - padBottom} L${coords[0][0].toFixed(1)} ${h - padBottom} Z`
+    : "";
+  const storedSelectedIndex = usableEntries.findIndex((entry) => entry.date === selectedDate);
+  const safeSelectedIndex = storedSelectedIndex >= 0
+    ? storedSelectedIndex
+    : usableEntries.length - 1;
+  const selectedEntry = usableEntries[safeSelectedIndex];
+  const selectedPoint = coords[safeSelectedIndex];
+
   return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
-      <defs>
-        <linearGradient id="spark" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.32" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={area} fill="url(#spark)" />
-      <path d={line} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={last[0]} cy={last[1]} r="3" fill={color} />
-    </svg>
+    <div className="strategy-history-interactive">
+      <div className="strategy-history-readout" aria-live="polite">
+        <span>
+          <small>選択した日</small>
+          <time dateTime={selectedEntry.date}>{formatHistoryDate(selectedEntry.date)}</time>
+        </span>
+        <span>
+          <small>推定回転数</small>
+          <strong style={{ color }}>{fmt(selectedEntry.rotation, 1)}</strong>
+          <em>回/千円</em>
+        </span>
+      </div>
+      <div className="strategy-history-plot">
+        <svg
+          viewBox={`0 0 ${w} ${h}`}
+          role="group"
+          aria-label="日付ごとの推定回転数。グラフの点をタップすると数値を確認できます"
+        >
+          <defs>
+            <linearGradient id="strategy-history-spark" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity="0.32" />
+              <stop offset="100%" stopColor={color} stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          {area && <path d={area} fill="url(#strategy-history-spark)" />}
+          <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          <line
+            x1={selectedPoint[0]}
+            x2={selectedPoint[0]}
+            y1={padTop}
+            y2={h - padBottom}
+            stroke={color}
+            strokeOpacity=".55"
+            strokeDasharray="3 3"
+          />
+          {coords.map(([x, y], index) => {
+            const segmentStart = index === 0 ? 0 : (coords[index - 1][0] + x) / 2;
+            const segmentEnd = index === coords.length - 1 ? w : (x + coords[index + 1][0]) / 2;
+            const active = index === safeSelectedIndex;
+            const entry = usableEntries[index];
+            return (
+              <g
+                key={`${entry.date}-${index}`}
+                className="strategy-history-point-button"
+                role="button"
+                tabIndex="0"
+                aria-pressed={active}
+                aria-label={`${formatHistoryDate(entry.date)}、推定回転数${fmt(entry.rotation, 1)}回/千円`}
+                onClick={() => setSelectedDate(entry.date)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelectedDate(entry.date);
+                  }
+                }}
+              >
+                <rect
+                  className="strategy-history-hit-target"
+                  x={segmentStart}
+                  y="0"
+                  width={segmentEnd - segmentStart}
+                  height={h - padBottom + 2}
+                  fill="transparent"
+                />
+                <circle cx={x} cy={y} r={active ? 7 : 4} fill={active ? P.bg : color} stroke={color} strokeWidth={active ? 3 : 2} />
+              </g>
+            );
+          })}
+          <text x={padX} y={h - 4} fill={P.sub} fontSize="9" textAnchor="start">
+            {formatHistoryDate(usableEntries[0].date, true)}
+          </text>
+          {usableEntries.length > 1 && (
+            <text x={w - padX} y={h - 4} fill={P.sub} fontSize="9" textAnchor="end">
+              {formatHistoryDate(usableEntries[usableEntries.length - 1].date, true)}
+            </text>
+          )}
+        </svg>
+      </div>
+      <div className="strategy-history-tap-hint">グラフの点をタップして日付を切り替え</div>
+    </div>
   );
 }
 
@@ -950,12 +1288,20 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
   if (!machine) return null;
   const v = VERDICT[machine.verdict];
   const diff = Math.round((machine.rot - islandAvgRot(machine.islandId)) * 10) / 10;
-  const seatThreshold = Math.ceil((Number(machine.border || 0) + 0.5) * 10) / 10;
+  const seatThreshold = Math.ceil(
+    Number(machine.seatThreshold ?? (Number(machine.border || 0) + 0.5)) * 10,
+  ) / 10;
+  const decisionTargetPct = Math.round(Number(machine.decisionLowerTargetCoverage || 0.8) * 100);
   const recommendation = plan?.isSkip
     ? "本日見送り"
     : machine.recommendationStatus === "reference" ? "過去参考"
-    : machine.profitChanceStatus === "ready" ? v.reco : "要確認";
-  const recommendationColor = plan?.isSkip || machine.recommendationStatus === "reference" || machine.profitChanceStatus !== "ready" ? P.yellow : v.color;
+      : machine.seatDecisionStatus === "candidate" ? "安全側で候補"
+        : machine.seatDecisionStatus === "trial" ? "試し打ちで確認"
+          : machine.seatDecisionStatus === "skip" ? "見送り寄り" : "算定待ち";
+  const recommendationColor = plan?.isSkip || machine.recommendationStatus === "reference"
+    ? P.yellow
+    : machine.seatDecisionStatus === "candidate" ? P.green
+      : machine.seatDecisionStatus === "skip" ? P.red : P.yellow;
   return (
     <div className="strategy-selected-detail-card" style={{ background: P.card, border: `1px solid color-mix(in srgb, ${v.color} 30%, ${P.line})`, borderRadius: RADIUS, padding: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
@@ -989,11 +1335,36 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
             <div className="strategy-a-decision is-skip">
               <div><span>本日の判断</span><b>前日または本日の解析がないため、着席判断を停止しています</b></div>
             </div>
+          ) : machine.seatDecisionStatus === "skip" ? (
+            <div className="strategy-a-decision is-skip">
+              <div><span>本日の判断</span><b>{machine.nailAlert.includes("締め") ? "締め傾向を検知したため見送り寄り" : `判断用下限が座る基準 ${fmt(seatThreshold, 1)}/k 未満`}</b></div>
+            </div>
           ) : (
             <div className="strategy-a-decision">
-              <div><span>座る目安</span><b>試し打ちで1,000円あたり{fmt(seatThreshold, 1)}回以上</b></div>
+              <div><span>本日の判断</span><b>{machine.seatDecisionStatus === "candidate" ? "判断用下限でも基準超え" : "試し打ちで基準超えを確認"}</b></div>
               <i aria-hidden="true">→</i>
-              <div><span>見送る目安</span><b>基準未満・締め傾向・データ不足</b></div>
+              <div><span>座る目安</span><b>1,000円あたり{fmt(seatThreshold, 1)}回以上</b></div>
+            </div>
+          )}
+
+          {machine.referenceFallback?.usedForDecision && (
+            <div
+              role="status"
+              style={{
+                marginBottom: 10,
+                padding: "9px 11px",
+                borderRadius: 12,
+                background: "color-mix(in srgb, var(--sm-yellow) 10%, var(--sm-card))",
+                border: "1px solid color-mix(in srgb, var(--sm-yellow) 42%, var(--sm-line))",
+                color: P.subHi,
+                fontSize: 9,
+                fontWeight: 700,
+                lineHeight: 1.65,
+              }}
+            >
+              {machine.referenceFallback.latestSourceDate || "最新日"}の保存は
+              {machine.referenceFallback.reason || "計算データ不足"}のため判定へ混ぜず、
+              {machine.referenceFallback.sourceDate || "直近"}の計算可能データで色と本日の判断を表示しています。
             </div>
           )}
 
@@ -1023,7 +1394,7 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
           <div className="strategy-detail-main">
             <div className="strategy-detail-primary">
               <DetailMetric label="推定回転率" value={fmt(machine.rot, 1)} unit="/k" color={v.color} />
-              <DetailMetric label="確信度" value={fmt(machine.confidence)} unit="%" color={P.yellow} />
+              <DetailMetric label={`翌日${DECISION_TERMS.confidence}`} value={fmt(machine.confidence)} unit="%" color={P.yellow} />
               <DetailMetric label="島平均との差" value={signed(diff, 1)} unit="/k" color={diff >= 0 ? P.green : P.red} />
               <DetailMetric label="等価ボーダー" value={fmt(machine.equivalentBorder, 1)} unit="/k" color={P.subHi} />
               <DetailMetric label="実質ボーダー" value={fmt(machine.border, 1)} unit="/k" color={P.cyan} />
@@ -1032,13 +1403,20 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
               <div style={{ fontSize: 9, color: P.sub, fontWeight: 700, marginBottom: 4 }}>
                 過去推定回転率 ・ {machine.historyDayCount > 0 ? `有効${fmt(machine.historyDayCount)}日` : "データ待ち"}
               </div>
-              <div style={{ background: P.bg, border: `1px solid ${P.line}`, borderRadius: 12, padding: "6px 0" }}>
-                <Sparkline points={machine.history} color={v.color} />
+              <div className="strategy-history-chart-shell">
+                <Sparkline key={machine.id} entries={machine.historyEntries} color={v.color} />
               </div>
             </div>
           </div>
 
           <div className="strategy-detail-secondary">
+            <DetailMetric label={`判断用下限（${decisionTargetPct}%目標）`} value={fmt(machine.decisionLowerRotation ?? machine.lcbRotation, 1)} unit="/k" color={machine.selectionMargin >= 0 ? P.green : P.red} />
+            <DetailMetric
+              label="座る基準超え"
+              value={isFiniteValue(machine.seatThresholdProbability) ? fmt(machine.seatThresholdProbability * 100) : "算定待ち"}
+              unit={isFiniteValue(machine.seatThresholdProbability) ? "%" : ""}
+              color={machine.seatThresholdProbability >= 0.5 ? P.green : P.red}
+            />
             <DetailMetric label="良台スコア" value={fmt(machine.goodMachineScore, 1)} unit="点" color={v.color} />
             <DetailMetric label="EMA（最近重視）" value={fmt(machine.ema, 1)} unit="/k" color={P.cyan} />
             <DetailMetric
@@ -1053,7 +1431,21 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
           <div style={{ marginTop: 7, fontSize: 9, color: P.sub }}>
             予測データ：{(machine.evidenceSources || []).map((source) => source === "delta" ? "差玉" : source === "archive" ? "完了実戦" : "現在実戦").join("＋") || "機種基準"}
             {machine.rotationEstimate?.inputBalls > 0 ? ` ／ 推定投入 ${fmt(machine.rotationEstimate.inputBalls)}玉` : ""}
+            {machine.processNoiseSd != null ? ` ／ 日次変動 ±${fmt(machine.processNoiseSd, 2)}/k（1σ）` : ""}
+            {` ／ 下限校正 ${fmt(machine.decisionCalibrationSampleCount || 0)}/${fmt(machine.decisionCalibrationMinRequired || 100)}件`}
+            {machine.decisionCalibrationStatus === "calibrated" ? "（実績校正済み）" : "（暫定値）"}
           </div>
+          {(machine.biasRotationAdjustment || machine.payoutCorrection) && (
+            <div style={{ marginTop: 4, fontSize: 9, color: P.subHi, lineHeight: 1.5 }}>
+              {machine.biasRotationAdjustment
+                ? `推奨上位の過去偏りを ${signed(machine.biasRotationAdjustment, 2)}/k 補正`
+                : ""}
+              {machine.biasRotationAdjustment && machine.payoutCorrection ? " ／ " : ""}
+              {machine.payoutCorrection
+                ? `実戦実測${fmt(machine.payoutCorrection.n)}件で平均出玉を店舗補正`
+                : ""}
+            </div>
+          )}
           <div style={{ marginTop: 5, fontSize: 9, color: P.subHi, lineHeight: 1.55 }}>
             締め確率の根拠：{tightEvidenceText(machine.tightEvidence)}
           </div>
@@ -1152,11 +1544,12 @@ function BacktestTrendPanel({ pairs, selected }) {
         <div style={{ padding: "14px 0 4px", color: P.sub, fontSize: 9 }}>連続日の予測と実績が揃うと、週ごとの変化を表示します。</div>
       ) : (
         <>
-          <div style={{ marginTop: 9, display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
+          <div style={{ marginTop: 9, display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6 }}>
             {[
               { label: "MAE", values: trend.map((week) => week.mae), value: `${fmt(latest.mae, 2)}/k`, color: P.cyan, zero: true },
               { label: "偏り", values: trend.map((week) => week.bias), value: `${signed(latest.bias, 2)}/k`, color: P.yellow, zero: true },
-              { label: "カバレッジ", values: trend.map((week) => week.coverage95 * 100), value: `${fmt(latest.coverage95 * 100)}%`, color: P.green, zero: false },
+              { label: "95%範囲内", values: trend.map((week) => week.coverage95 * 100), value: `${fmt(latest.coverage95 * 100)}%`, color: P.green, zero: false },
+              { label: "判断下限以上", values: trend.map((week) => week.decisionLowerCoverage * 100), value: `${fmt(latest.decisionLowerCoverage * 100)}%`, color: P.cyan, zero: false },
             ].map((metric) => (
               <div key={metric.label} style={{ minWidth: 0, padding: 7, borderRadius: 10, background: P.card, border: `1px solid ${P.line}` }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 3, fontSize: 8 }}>
@@ -1171,6 +1564,11 @@ function BacktestTrendPanel({ pairs, selected }) {
             <span>{trend[0].weekStart.slice(5)}週</span>
             <span>最新週 {fmt(latest.n)}件</span>
             <span>{latest.weekStart.slice(5)}週</span>
+          </div>
+          <div style={{ marginTop: 5, color: P.subHi, fontSize: 8, lineHeight: 1.5 }}>
+            下限誤差 {fmt(latest.decisionLowerPinballLoss, 3)} ／
+            誤着席 {latest.falseSitRate == null ? "—" : `${fmt(latest.falseSitRate * 100)}%`} ／
+            見逃し {latest.falseSkipRate == null ? "—" : `${fmt(latest.falseSkipRate * 100)}%`}
           </div>
           {calibrations.length > 0 && (
             <div style={{ marginTop: 7, color: P.cyan, fontSize: 8, lineHeight: 1.5 }}>
@@ -1191,18 +1589,32 @@ const ACTIVITY_TONES = {
   "no-data": { color: P.lineHi, label: "データなし" },
 };
 
-function IslandActivityHistoryPanel({ history, selected }) {
+function IslandActivityHistoryPanel({
+  history,
+  selected,
+  scans = EMPTY_LIST,
+  onChangeScanDate,
+  onDeleteScans,
+  requestConfirmation,
+}) {
   const islandHistory = useMemo(() => (Array.isArray(history) ? history : [])
     .filter((entry) => entry.key === selected?.activityHistoryKey), [history, selected?.activityHistoryKey]);
   const months = useMemo(() => listIslandActivityMonths(islandHistory), [islandHistory]);
   const [requestedMonth, setRequestedMonth] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
+  const [editingDate, setEditingDate] = useState(false);
+  const [draftDate, setDraftDate] = useState("");
+  const [dateError, setDateError] = useState("");
+  const [dateNotice, setDateNotice] = useState("");
   const month = months.includes(requestedMonth)
     ? requestedMonth
     : months.at(-1) || "";
   const selectMonth = (nextMonth) => {
     setRequestedMonth(nextMonth);
     setSelectedDate("");
+    setEditingDate(false);
+    setDateError("");
+    setDateNotice("");
   };
   const calendar = useMemo(
     () => buildIslandActivityCalendar(islandHistory, { month }),
@@ -1212,8 +1624,110 @@ function IslandActivityHistoryPanel({ history, selected }) {
   const selectedEntry = islandHistory.find((entry) => entry.date === selectedDate)
     || [...islandHistory].reverse().find((entry) => entry.date.startsWith(`${calendar.month}-`))
     || null;
+  const targetScans = useMemo(() => {
+    if (!selectedEntry) return [];
+    return findDeltaScanDateTargets(scans, {
+      date: selectedEntry.date,
+      storeKey: selectedEntry.store,
+      island: selectedEntry.island,
+    }).filter((scan) => scan?.id !== null && scan?.id !== undefined);
+  }, [scans, selectedEntry]);
+  const beginDateEdit = () => {
+    if (!selectedEntry || !targetScans.length || !onChangeScanDate) return;
+    setDraftDate(selectedEntry.date);
+    setDateError("");
+    setDateNotice("");
+    setEditingDate(true);
+  };
+  const submitDateEdit = async () => {
+    if (!selectedEntry || !targetScans.length || !onChangeScanDate) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(draftDate)) {
+      setDateError("正しい日付を選んでください。");
+      return;
+    }
+    if (draftDate === selectedEntry.date) {
+      setDateError("変更前と同じ日付です。");
+      return;
+    }
+    const mergesWithExistingDay = islandHistory.some((entry) => entry.date === draftDate);
+    const mergeWarning = mergesWithExistingDay
+      ? "\n変更先にはすでにデータがあります。同じ日のデータとしてまとめて表示されます。"
+      : "";
+    const message = `${selectedEntry.date} を ${draftDate} に変更します。\n`
+      + `対象の差玉解析 ${targetScans.length}件の日付を変更します。${mergeWarning}`;
+    if (typeof requestConfirmation !== "function") {
+      setDateError("確認画面を開けませんでした。画面を開き直してもう一度お試しください。");
+      return;
+    }
+    const confirmed = await requestConfirmation({
+      title: "差玉解析日を変更しますか？",
+      message,
+      confirmLabel: "日付を変更",
+    });
+    if (!confirmed) return;
+
+    const result = await onChangeScanDate({
+      scanIds: targetScans.map((scan) => scan.id),
+      fromDate: selectedEntry.date,
+      toDate: draftDate,
+    });
+    if (!result?.ok) {
+      setDateError(result?.reason === "same-date"
+        ? "変更前と同じ日付です。"
+        : "日付を変更できませんでした。もう一度お試しください。");
+      return;
+    }
+
+    setRequestedMonth(draftDate.slice(0, 7));
+    setSelectedDate(draftDate);
+    setEditingDate(false);
+    setDateError("");
+    setDateNotice(`${result.fromDate} から ${result.toDate} へ変更しました。`);
+  };
+  const submitDelete = async () => {
+    if (!selectedEntry || !targetScans.length || !onDeleteScans) return;
+    if (typeof requestConfirmation !== "function") {
+      setDateError("確認画面を開けませんでした。画面を開き直してもう一度お試しください。");
+      return;
+    }
+    const rowCount = targetScans.reduce(
+      (sum, scan) => sum + (Array.isArray(scan?.rows) ? scan.rows.length : 0),
+      0,
+    );
+    const confirmed = await requestConfirmation({
+      title: "この日の差玉解析を削除しますか？",
+      message: `${selectedEntry.date} の対象データ ${targetScans.length}件（${rowCount}台分）を削除します。\n`
+        + "別の日付のデータを誤って登録した場合に使う操作です。削除後は元に戻せません。",
+      confirmLabel: "データを削除",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+
+    const result = await onDeleteScans({
+      scanIds: targetScans.map((scan) => scan.id),
+      fromDate: selectedEntry.date,
+    });
+    if (!result?.ok) {
+      setDateError("データを削除できませんでした。画面を開き直してもう一度お試しください。");
+      return;
+    }
+
+    setSelectedDate("");
+    setEditingDate(false);
+    setDateError("");
+    setDateNotice(`${result.fromDate} の差玉解析 ${result.deletedCount}件（${result.deletedRowCount}台分）を削除しました。`);
+  };
   if (!islandHistory.length) {
-    return <div style={{ marginTop: 7, color: P.sub, fontSize: 8 }}>島活動の履歴はまだありません。</div>;
+    return (
+      <>
+        {dateNotice && (
+          <div role="status" style={{ marginTop: 7, color: P.green, fontSize: 8, fontWeight: 800 }}>
+            {dateNotice}
+          </div>
+        )}
+        <div style={{ marginTop: 7, color: P.sub, fontSize: 8 }}>島活動の履歴はまだありません。</div>
+      </>
+    );
   }
   return (
     <div style={{ marginTop: 8, padding: 11, borderRadius: 14, background: P.bg, border: `1px solid ${P.line}` }}>
@@ -1239,7 +1753,13 @@ function IslandActivityHistoryPanel({ history, selected }) {
               key={cell.date}
               type="button"
               disabled={!cell.entry}
-              onClick={() => cell.entry && setSelectedDate(cell.date)}
+              onClick={() => {
+                if (!cell.entry) return;
+                setSelectedDate(cell.date);
+                setEditingDate(false);
+                setDateError("");
+                setDateNotice("");
+              }}
               aria-label={`${cell.date} ${tone.label}`}
               style={{
                 minWidth: 0,
@@ -1261,10 +1781,139 @@ function IslandActivityHistoryPanel({ history, selected }) {
       </div>
       {selectedEntry && (
         <div style={{ marginTop: 8, padding: 8, borderRadius: 10, background: P.card, border: `1px solid ${P.line}`, color: P.subHi, fontSize: 8, lineHeight: 1.55 }}>
-          <strong style={{ color: ACTIVITY_TONES[selectedEntry.signalCode]?.color || P.text }}>{selectedEntry.date}・{selectedEntry.activitySignal}</strong>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <strong style={{ flex: 1, color: ACTIVITY_TONES[selectedEntry.signalCode]?.color || P.text }}>{selectedEntry.date}・{selectedEntry.activitySignal}</strong>
+            {targetScans.length > 0 && (
+              <div style={{ display: "flex", flexShrink: 0, gap: 5 }}>
+                {onChangeScanDate && (
+                  <button
+                    type="button"
+                    onClick={beginDateEdit}
+                    aria-label={`${selectedEntry.date}の日付を修正`}
+                    style={{
+                      minHeight: 34,
+                      padding: "0 9px",
+                      borderRadius: 9,
+                      border: `1px solid ${P.cyan}`,
+                      background: "color-mix(in srgb, var(--sm-cyan) 11%, var(--sm-card))",
+                      color: P.cyan,
+                      fontSize: 8,
+                      fontWeight: 900,
+                    }}
+                  >
+                    日付を修正
+                  </button>
+                )}
+                {onDeleteScans && (
+                  <button
+                    type="button"
+                    onClick={submitDelete}
+                    aria-label={`${selectedEntry.date}の差玉解析を削除`}
+                    style={{
+                      minHeight: 34,
+                      padding: "0 9px",
+                      borderRadius: 9,
+                      border: `1px solid color-mix(in srgb, ${P.red} 70%, ${P.line})`,
+                      background: "color-mix(in srgb, var(--sm-red) 9%, var(--sm-card))",
+                      color: P.red,
+                      fontSize: 8,
+                      fontWeight: 900,
+                    }}
+                  >
+                    データを削除
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
           <span style={{ display: "block", marginTop: 3 }}>
             読取{fmt(selectedEntry.scannedMachines)}台 ／ 稼働{fmt(selectedEntry.activeMachines)}台 ／ 未稼働{fmt(selectedEntry.inactiveMachines)}台（{fmt(selectedEntry.inactiveRate * 100)}%） ／ 除外{fmt(selectedEntry.invalidMachines)}台
           </span>
+          {editingDate && (
+            <div
+              role="group"
+              aria-label="差玉解析日を修正"
+              style={{
+                marginTop: 8,
+                padding: 9,
+                borderRadius: 10,
+                border: `1px solid ${P.line}`,
+                background: P.bg,
+              }}
+            >
+              <label style={{ display: "block", color: P.text, fontSize: 9, fontWeight: 800 }}>
+                正しい解析日
+                <input
+                  type="date"
+                  value={draftDate}
+                  onChange={(event) => {
+                    setDraftDate(event.target.value);
+                    setDateError("");
+                  }}
+                  aria-invalid={Boolean(dateError)}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    minHeight: 40,
+                    boxSizing: "border-box",
+                    marginTop: 5,
+                    padding: "0 9px",
+                    borderRadius: 9,
+                    border: `1px solid ${dateError ? P.red : P.lineHi}`,
+                    background: P.card,
+                    color: P.text,
+                    colorScheme: "dark",
+                    fontFamily: MONO,
+                    fontSize: 11,
+                  }}
+                />
+              </label>
+              <div style={{ marginTop: 5, color: P.sub, fontSize: 8 }}>
+                この日に保存した対象データ{targetScans.length}件をまとめて変更します。
+              </div>
+              {dateError && <div role="alert" style={{ marginTop: 5, color: P.red, fontSize: 8 }}>{dateError}</div>}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingDate(false);
+                    setDateError("");
+                  }}
+                  style={{
+                    minHeight: 38,
+                    borderRadius: 9,
+                    border: `1px solid ${P.line}`,
+                    background: P.card,
+                    color: P.subHi,
+                    fontSize: 9,
+                    fontWeight: 800,
+                  }}
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="button"
+                  onClick={submitDateEdit}
+                  style={{
+                    minHeight: 38,
+                    borderRadius: 9,
+                    border: `1px solid ${P.cyan}`,
+                    background: P.cyan,
+                    color: P.bg,
+                    fontSize: 9,
+                    fontWeight: 900,
+                  }}
+                >
+                  変更を保存
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {dateNotice && (
+        <div role="status" style={{ marginTop: 7, color: P.green, fontSize: 8, fontWeight: 800 }}>
+          {dateNotice}
         </div>
       )}
       <div style={{ marginTop: 7, display: "flex", flexWrap: "wrap", gap: "4px 9px" }}>
@@ -1278,12 +1927,22 @@ function IslandActivityHistoryPanel({ history, selected }) {
   );
 }
 
-function LearningSummary({ data, selected, onApproveCalibration, calibrationNotice }) {
+function LearningSummary({
+  data,
+  selected,
+  scans,
+  onChangeScanDate,
+  onDeleteScans,
+  requestConfirmation,
+  onApproveCalibration,
+  calibrationNotice,
+}) {
   if (!data.analytics || !selected) return null;
   const overall = data.aiProfile?.overall || {};
   const island = data.islandStats?.find((item) => item.key === selected.activityHistoryKey)
     || data.islandStats?.find((item) => item.island === data.islands.find((x) => x.id === selected.islandId)?.name);
   const backtest = data.analytics?.backtest || null;
+  const decisionLowerCalibration = backtest?.decisionLowerCalibration || null;
   const selectedBacktest = backtest?.byKeyList?.find((item) =>
     String(item.machineName) === String(selected.machineName)
     && String(item.num) === String(selected.num)
@@ -1291,6 +1950,15 @@ function LearningSummary({ data, selected, onApproveCalibration, calibrationNoti
   const calibration = backtest?.calibrationCandidates?.find((item) =>
     String(item.machineName) === String(selected.machineName)
   ) || null;
+  const selectionBacktest = backtest?.selection || null;
+  const biasCorrection = selectionBacktest?.biasCorrection || null;
+  const processProfile = data.analytics?.processNoise?.byProfile?.[
+    `${String(selected.storeId ?? selected.storeName ?? "").trim()}___${selected.machineName}`
+  ] || data.analytics?.processNoise?.global || null;
+  const payoutCorrection = (data.payoutCorrections || []).find((item) => (
+    String(item.store) === String(selected.storeId ?? selected.storeName ?? "")
+    && String(item.machineName) === String(selected.machineName)
+  )) || null;
   const profileCounts = (data.aiProfile?.profiles || []).reduce((acc, profile) => {
     acc[profile.type] = (acc[profile.type] || 0) + 1;
     return acc;
@@ -1334,6 +2002,10 @@ function LearningSummary({ data, selected, onApproveCalibration, calibrationNoti
             key={selected.activityHistoryKey}
             history={data.islandActivityHistory}
             selected={selected}
+            scans={scans}
+            onChangeScanDate={onChangeScanDate}
+            onDeleteScans={onDeleteScans}
+            requestConfirmation={requestConfirmation}
           />
         </div>
         <div style={{ padding: 12, borderRadius: 16, background: P.card, border: `1px solid ${P.line}`, gridColumn: "1 / -1" }}>
@@ -1346,7 +2018,8 @@ function LearningSummary({ data, selected, onApproveCalibration, calibrationNoti
               </div>
               {backtest?.overall?.n > 0 && (
                 <div style={{ marginTop: 3, fontSize: 8, color: P.sub }}>
-                  {fmt(backtest.overall.n)}件・偏り {signed(backtest.overall.bias, 2)}/k・予測範囲内 {fmt(backtest.overall.coverage95 * 100)}%
+                  {fmt(backtest.overall.n)}件・偏り {signed(backtest.overall.bias, 2)}/k・95%範囲内 {fmt(backtest.overall.coverage95 * 100)}%
+                  ・判断下限以上 {fmt(backtest.overall.decisionLowerCoverage * 100)}%
                 </div>
               )}
             </div>
@@ -1357,13 +2030,48 @@ function LearningSummary({ data, selected, onApproveCalibration, calibrationNoti
               </div>
               {selectedBacktest?.n > 0 && (
                 <div style={{ marginTop: 3, fontSize: 8, color: P.sub }}>
-                  {fmt(selectedBacktest.n)}件・偏り {signed(selectedBacktest.bias, 2)}/k・予測範囲内 {fmt(selectedBacktest.coverage95 * 100)}%
+                  {fmt(selectedBacktest.n)}件・偏り {signed(selectedBacktest.bias, 2)}/k・95%範囲内 {fmt(selectedBacktest.coverage95 * 100)}%
+                  ・判断下限以上 {fmt(selectedBacktest.decisionLowerCoverage * 100)}%
                 </div>
               )}
             </div>
           </div>
           <div style={{ marginTop: 7, fontSize: 8, color: P.sub, lineHeight: 1.5 }}>
-            平均ズレは、前日に予測した回転率と翌日の実績が平均で何回/Kずれたかです。偏りがプラスなら高めの予測です。
+            平均ズレは、前日に予測した回転率と翌日の実績が平均で何回/Kずれたかです。判断下限以上は80%が目標で、偏りがプラスなら高めの予測です。
+          </div>
+          <div style={{ marginTop: 7, padding: 9, borderRadius: 11, background: P.bg, border: `1px solid ${P.line}`, fontSize: 8, color: P.subHi, lineHeight: 1.6 }}>
+            <strong style={{ display: "block", color: P.text, fontSize: 9 }}>精度向上の学習状況</strong>
+            <span style={{ display: "block", marginTop: 3 }}>
+              日次変動：{processProfile
+                ? `±${fmt(processProfile.sd, 2)}/k（${fmt(processProfile.n)}件・${processProfile.source === "default" ? "安全側の初期値" : "実績学習"}）`
+                : "初期値で計算"}
+            </span>
+            <span style={{ display: "block" }}>
+              判断用下限：{decisionLowerCalibration
+                ? decisionLowerCalibration.status === "calibrated"
+                  ? `${fmt(decisionLowerCalibration.sampleCount)}件で実績校正済み（実測 ${fmt(decisionLowerCalibration.observedCoverage * 100)}%）`
+                  : `${fmt(decisionLowerCalibration.sampleCount)}/${fmt(decisionLowerCalibration.minRequired)}件・暫定値（あと${fmt(decisionLowerCalibration.remainingSamples)}件）`
+                : "暫定値で計算"}
+            </span>
+            <span style={{ display: "block" }}>
+              推奨上位5台：{selectionBacktest?.recommendedTop5?.n > 0
+                ? `${fmt(selectionBacktest.recommendedTop5.n)}件・平均ズレ ${fmt(selectionBacktest.recommendedTop5.mae, 2)}/k`
+                : "答え合わせ待ち"}
+              {biasCorrection
+                ? ` ／ 偏り補正 ${biasCorrection.status === "active"
+                    ? `${signed(biasCorrection.appliedRotationAdjustment, 2)}/kを自動反映`
+                    : biasCorrection.status === "shadow-validation"
+                      ? "過去データで効果確認中"
+                      : `あと${fmt(Math.max(0, biasCorrection.minRequired - biasCorrection.sampleCount))}件`}`
+                : ""}
+            </span>
+            <span style={{ display: "block" }}>
+              店舗別の平均出玉：{payoutCorrection
+                ? payoutCorrection.eligible
+                  ? `${fmt(payoutCorrection.n)}件から×${fmt(payoutCorrection.appliedFactor, 3)}を反映`
+                  : `${fmt(payoutCorrection.n)}件／${fmt(payoutCorrection.minRequired)}件（学習中）`
+                : "同日ペアを収集中"}
+            </span>
           </div>
           {calibration && (
             <div style={{ marginTop: 7, padding: 9, borderRadius: 11, background: P.bg, border: `1px solid ${calibration.eligible ? P.cyan : P.line}`, fontSize: 8, color: calibration.eligible ? P.cyan : P.subHi, lineHeight: 1.55 }}>
@@ -1460,36 +2168,23 @@ function Section({ title, sub, accent, children }) {
 }
 
 // ============================ 本体 ============================
-export default function StrategyMapDashboard({ S, onBack }) {
+export default function StrategyMapDashboard({ S, onBack, onStartRecord, onSelectStore }) {
   const rootRef = useRef(null);
   const [entryPlanContext] = useState(() => S?.strategyPlanContext || null);
   const clearStrategyPlanContext = S?.setStrategyPlanContext;
-  const playingNum = S?.sessionStarted ? S?.machineNum : null;
   const isDemo = import.meta.env.DEV && new URLSearchParams(window.location.search).get("pevidenceDemo") === "1";
   const savedStores = Array.isArray(S?.stores) ? S.stores : EMPTY_LIST;
-  const selectedStoreId = S?.selectedStoreId;
+  const activeSessionStoreId = S?.selectedStoreId;
   const exchangeRateRaw = S?.exRate;
   const ballValueRaw = S?.ballVal;
   const savedDailyResearchPlans = S?.dailyResearchPlans;
   const savedMonthlyPlayPlans = S?.monthlyPlayPlans;
   const rotationsPerHour = S?.rotPerHour;
   const savedHallMaps = S?.hallMaps;
-  const liveDecision = S?.ev?.liveDecision || null;
   const savedArchives = Array.isArray(S?.archives) ? S.archives : EMPTY_LIST;
   const savedScans = Array.isArray(S?.deltaScans) ? S.deltaScans : EMPTY_LIST;
   const savedCustomMachines = Array.isArray(S?.customMachines) ? S.customMachines : EMPTY_LIST;
   const sessionStarted = Boolean(S?.sessionStarted);
-  const liveSession = useMemo(() => sessionStarted ? {
-    storeId: selectedStoreId,
-    storeName: S?.storeName || "",
-    machineName: S?.machineName || "",
-    machineNum: S?.machineNum,
-    date: S?.sessionStartDate || localDateStr(new Date()),
-    ev: S?.ev || {},
-    playMode: S?.playMode || "cash",
-    settings: { rentBalls: S?.rentBalls, exRate: S?.exRate },
-    cashSpentToday: S?.dailyCashSpent,
-  } : null, [sessionStarted, selectedStoreId, S?.storeName, S?.machineName, S?.machineNum, S?.sessionStartDate, S?.ev, S?.playMode, S?.rentBalls, S?.exRate, S?.dailyCashSpent]);
   const deltaScans = useMemo(() => isDemo ? P_EVIDENCE_DEMO_SCANS : savedScans, [isDemo, savedScans]);
   const customMachines = useMemo(
     () => isDemo ? [P_EVIDENCE_DEMO_MACHINE, ...savedCustomMachines] : savedCustomMachines,
@@ -1514,7 +2209,21 @@ export default function StrategyMapDashboard({ S, onBack }) {
   ), [isDemo, entryPlanContext, savedMonthlyPlayPlans, savedDailyResearchPlans, availableStoreIds]);
   const strategyStoreId = isDemo
     ? "pe-demo-store"
-    : planHandoff?.defaultStoreId ?? selectedStoreId;
+    : S?.analysisStoreId ?? planHandoff?.defaultStoreId ?? activeSessionStoreId;
+  const sessionMatchesStrategyStore = String(activeSessionStoreId ?? "") === String(strategyStoreId ?? "");
+  const playingNum = sessionStarted && sessionMatchesStrategyStore ? S?.machineNum : null;
+  const liveDecision = sessionMatchesStrategyStore ? S?.ev?.liveDecision || null : null;
+  const liveSession = useMemo(() => sessionStarted && sessionMatchesStrategyStore ? {
+    storeId: activeSessionStoreId,
+    storeName: S?.storeName || "",
+    machineName: S?.machineName || "",
+    machineNum: S?.machineNum,
+    date: S?.sessionStartDate || localDateStr(new Date()),
+    ev: S?.ev || {},
+    playMode: S?.playMode || "cash",
+    settings: { rentBalls: S?.rentBalls, exRate: S?.exRate },
+    cashSpentToday: S?.dailyCashSpent,
+  } : null, [sessionStarted, sessionMatchesStrategyStore, activeSessionStoreId, S?.storeName, S?.machineName, S?.machineNum, S?.sessionStartDate, S?.ev, S?.playMode, S?.rentBalls, S?.exRate, S?.dailyCashSpent]);
   const strategyPlan = useMemo(() => {
     const date = entryPlanContext?.date || localDateStr(new Date());
     const selectedStore = savedStores.find((store) => String(store?.id) === String(strategyStoreId)) || null;
@@ -1574,6 +2283,15 @@ export default function StrategyMapDashboard({ S, onBack }) {
     archives: isDemo ? EMPTY_LIST : savedArchives,
     liveSession: isDemo ? null : liveSession,
   }), [playingNum, liveDecision, deltaScans, customMachines, isDemo, savedHallMaps, strategyStoreId, planHandoff, strategyPlan, targetDate, savedStores, savedArchives, liveSession]);
+  const storeOptions = useMemo(
+    () => buildStrategyStoreOptions(savedStores, deltaScans),
+    [savedStores, deltaScans],
+  );
+  const displayedStoreId = data.storeId ?? strategyStoreId;
+  const displayedStore = storeOptions.find((store) => String(store.id) === String(displayedStoreId)) || null;
+  const displayedStoreName = isDemo
+    ? "P-EVIDENCE デモ店舗"
+    : data.storeName || displayedStore?.name || "店舗を選択";
   const plannedStore = savedStores.find((item) => (
     item && typeof item === "object" && planHandoff?.defaultStoreId != null
       && String(item.id) === String(planHandoff.defaultStoreId)
@@ -1586,6 +2304,7 @@ export default function StrategyMapDashboard({ S, onBack }) {
   );
   const [helpOpen, setHelpOpen] = useState(false);
   const [yutimeOpen, setYutimeOpen] = useState(false);
+  const [storePickerOpen, setStorePickerOpen] = useState(false);
   const [calibrationNotice, setCalibrationNotice] = useState(null);
   const calibrationApprovalRef = useRef("");
 
@@ -1601,10 +2320,28 @@ export default function StrategyMapDashboard({ S, onBack }) {
     rootRef.current?.closest("main")?.scrollTo({ top: 0, left: 0 });
   }, []);
 
-  const selected = data.all.find((m) => m.id === selectedId) || null;
+  const effectiveSelectedId = data.all.some((machine) => machine.id === selectedId)
+    ? selectedId
+    : data.leadId || null;
+  const selected = data.all.find((machine) => machine.id === effectiveSelectedId) || null;
+  const handleStartSelected = (machine) => {
+    const start = onStartRecord || S?.startRecordFromSelection;
+    start?.({
+      storeId: machine?.storeId ?? strategyStoreId ?? null,
+      storeName: machine?.storeName || savedStores.find((store) => String(store?.id) === String(strategyStoreId))?.name || "",
+      machineName: machine?.machineName || "",
+      machineNum: machine?.num ?? "",
+      plannedStart1K: machine?.rot,
+    });
+  };
   const effectiveActiveIslandId = data.islands.some((island) => island.id === activeIslandId)
     ? activeIslandId
     : data.islands[0]?.id || null;
+  const viewScope = buildStrategyViewScope({
+    islands: data.islands,
+    activeIslandId: effectiveActiveIslandId,
+    actionable: data.actionable,
+  });
 
   const selectMachine = (machineId) => {
     setSelectedId(machineId);
@@ -1614,11 +2351,12 @@ export default function StrategyMapDashboard({ S, onBack }) {
 
   const changeIsland = (islandId) => {
     setActiveIslandId(islandId);
-    const index = data.islands.findIndex((item) => item.id === islandId);
-    const pairStart = index < 0 ? 0 : Math.floor(index / 2) * 2;
-    const machines = data.islands.slice(pairStart, pairStart + 2).flatMap((island) => island.machines);
-    const lead = [...machines].sort((a, b) => b.score - a.score)[0] || null;
-    setSelectedId(lead?.id || null);
+    const nextScope = buildStrategyViewScope({
+      islands: data.islands,
+      activeIslandId: islandId,
+      actionable: data.actionable,
+    });
+    setSelectedId(nextScope.leadId);
   };
 
   const approveCalibration = (candidate) => {
@@ -1653,16 +2391,62 @@ export default function StrategyMapDashboard({ S, onBack }) {
     });
   };
 
+  const changeScanDate = async ({ scanIds, fromDate, toDate }) => {
+    if (isDemo || typeof S?.setDeltaScans !== "function") {
+      return { ok: false, reason: "unavailable", scans: savedScans, updatedCount: 0 };
+    }
+    let result;
+    await S.setDeltaScans((current) => {
+      result = updateDeltaScanDate(current, {
+        scanIds,
+        fromDate,
+        toDate,
+      });
+      return result.ok ? result.scans : current;
+    });
+    return result;
+  };
+
+  const removeScans = async ({ scanIds, fromDate }) => {
+    if (isDemo || typeof S?.setDeltaScans !== "function") {
+      return {
+        ok: false,
+        reason: "unavailable",
+        scans: savedScans,
+        deletedCount: 0,
+        deletedRowCount: 0,
+      };
+    }
+    let result;
+    await S.setDeltaScans((current) => {
+      result = deleteDeltaScans(current, {
+        scanIds,
+        fromDate,
+      });
+      return result.ok ? result.scans : current;
+    });
+    return result;
+  };
+
   return (
     <div ref={rootRef} className="strategy-map" style={{ flex: 1, background: P.bg, color: P.text, fontFamily: FONT, paddingBottom: "calc(24px + env(safe-area-inset-bottom))" }}>
-      <Header data={data} onBack={onBack} onHelp={() => setHelpOpen(true)} />
+      <Header
+        data={data}
+        selected={selected}
+        viewScope={viewScope}
+        storeName={displayedStoreName}
+        storePickerOpen={storePickerOpen}
+        onBack={onBack}
+        onHelp={() => setHelpOpen(true)}
+        onOpenStorePicker={() => setStorePickerOpen(true)}
+      />
       <PlanHandoffBanner
         plan={planHandoff}
         match={data.planMatch}
         storeName={plannedStoreName}
         hasData={data.total > 0}
       />
-      <FreshnessBanner freshness={data.freshness} sourceSummary={data.sourceSummary} />
+      <FreshnessBanner freshness={selected?.freshness || data.freshness} sourceSummary={data.sourceSummary} />
       <div style={{ padding: "4px 14px 0" }}>
         <button
           type="button"
@@ -1681,14 +2465,18 @@ export default function StrategyMapDashboard({ S, onBack }) {
       </div>
       {data.total === 0 && (
         <div style={{ margin: "18px 14px 0", padding: "20px 16px", borderRadius: 18, background: P.card, border: `1px solid ${P.line}`, textAlign: "center" }}>
-          <div style={{ fontSize: 15, fontWeight: 900, color: P.text }}>差玉データがありません</div>
+          <div style={{ fontSize: 15, fontWeight: 900, color: P.text }}>
+            {displayedStoreName === "店舗を選択"
+              ? "差玉データがありません"
+              : `${displayedStoreName}の差玉データがありません`}
+          </div>
           <div style={{ marginTop: 7, fontSize: 12, lineHeight: 1.7, color: P.subHi }}>
             ホームの「差玉解析」で、差玉・通常回転数・大当り回数を保存すると予測を表示します
           </div>
         </div>
       )}
       <div style={{ marginTop: 16 }}>
-        <Kpi kpi={data.kpi} />
+        <Kpi selected={selected} viewScope={viewScope} />
       </div>
       <div style={{ marginTop: 14 }}>
         <Tabs active={filter} onChange={setFilter} />
@@ -1696,20 +2484,41 @@ export default function StrategyMapDashboard({ S, onBack }) {
       <HallMap
         data={data}
         filter={filter}
-        selectedId={selectedId}
+        selectedId={effectiveSelectedId}
         activeIslandId={effectiveActiveIslandId}
         onChangeIsland={changeIsland}
         onSelect={selectMachine}
       />
-      <SelectedOutcomeSection machine={selected} islandAvgRot={data.islandAvgRot} plan={data.plan} />
+      <SelectedOutcomeSection
+        machine={selected}
+        islandAvgRot={data.islandAvgRot}
+        plan={data.plan}
+        onStartRecord={handleStartSelected}
+        sessionStarted={sessionStarted}
+      />
       <LearningSummary
         data={data}
         selected={selected}
+        scans={deltaScans}
+        onChangeScanDate={isDemo ? null : changeScanDate}
+        onDeleteScans={isDemo ? null : removeScans}
+        requestConfirmation={S?.requestConfirmation}
         onApproveCalibration={isDemo ? null : approveCalibration}
         calibrationNotice={calibrationNotice}
       />
       <PortfolioPlan portfolio={data.portfolio} plan={data.plan} />
       {helpOpen && <HelpSheet onClose={() => setHelpOpen(false)} />}
+      {storePickerOpen && (
+        <StorePickerSheet
+          stores={storeOptions}
+          selectedStoreId={displayedStoreId}
+          onSelect={(storeId) => {
+            onSelectStore?.(storeId);
+            setStorePickerOpen(false);
+          }}
+          onClose={() => setStorePickerOpen(false)}
+        />
+      )}
       {yutimeOpen && (
         <YutimeCalculatorSheet
           S={S}

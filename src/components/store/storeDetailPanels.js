@@ -1,3 +1,5 @@
+import { DECISION_TERMS } from "../decision/decisionVocabulary.js";
+
 export const DETAIL_KEYS = Object.freeze({
   COVERAGE: "coverage",
   RELIABILITY: "reliability",
@@ -129,7 +131,7 @@ export function buildStoreDetailPanels(data) {
 
   return {
     [DETAIL_KEYS.COVERAGE]: withAction({
-      title: "記録充足度",
+      title: DECISION_TERMS.coverage,
       subtitle: "4項目の達成率を同じ比重で平均しています。",
       hero: { label: "総合充足度", value: `${data.analysisScore || 0}%` },
       sections: [{
@@ -146,7 +148,7 @@ export function buildStoreDetailPanels(data) {
       }],
     }),
     [DETAIL_KEYS.RELIABILITY]: withAction({
-      title: "データ信頼度",
+      title: DECISION_TERMS.confidence,
       subtitle: "店舗別の有効記録件数で段階を判定します。",
       hero: { label: "現在の判定", value: data.dataReliability || "未記録" },
       sections: [{
@@ -159,7 +161,7 @@ export function buildStoreDetailPanels(data) {
         ],
       }, {
         title: "現在の記録",
-        note: `この店舗の有効記録は${data.dataSufficiency?.validRecords || 0}件です。曜日・時間帯・機種の広がりは「記録充足度」で確認できます。`,
+        note: `この店舗の有効記録は${data.dataSufficiency?.validRecords || 0}件です。曜日・時間帯・機種の広がりは「${DECISION_TERMS.coverage}」で確認できます。`,
       }],
     }),
     [DETAIL_KEYS.FRESHNESS]: withAction({

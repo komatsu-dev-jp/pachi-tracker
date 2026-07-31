@@ -111,6 +111,12 @@ for (const row of result.latestRows) {
   // 信頼区間（3エンジン統一の事後分散式）: 予測を挟み、事前分散由来の
   // 下限幅 2×1.96×(1-conf)×2回/K を下回らない（従来は信頼度ゼロ付近で幅0に潰れていた）
   assert.ok(row.predictedLow <= row.predictedRotation && row.predictedRotation <= row.predictedHigh);
+  assert.ok(row.decisionLowerRotation >= row.predictedLow);
+  assert.ok(row.decisionLowerRotation <= row.predictedRotation);
+  assert.equal(row.decisionLowerTargetCoverage, 0.8);
+  assert.equal(row.decisionCalibrationStatus, "awaiting-samples");
+  assert.ok(row.seatThresholdProbability >= 0 && row.seatThresholdProbability <= 1);
+  assert.ok(["candidate", "trial", "skip"].includes(row.seatDecisionStatus));
   assert.ok(
     row.predictedHigh - row.predictedLow >= 2 * 1.96 * (1 - row.confidence) * 2 - 1e-9,
     "予測レンジは事前分散ぶんの幅を下回らない",
@@ -205,11 +211,87 @@ assert.equal(staleResult.latestRows.length, 2, "古い台も一覧データに�
 assert.ok(!staleResult.nextMap.some((item) => item.number === "103"), "最新日にデータがない台は翌日予測へ出さない");
 assert.ok(!staleResult.portfolio.plan.some((item) => item.number === "103"), "最新日にデータがない台は時間配分へ出さない");
 
-// ポートフォリオに nodata / weak 判定の台を入れない
+// ポートフォリオには判断用下限まで座る基準を超えた台だけを入れる。
 for (const item of result.portfolio.plan) {
-  const row = result.latestRows.find((r) => r.num === item.number && r.machineName === item.machineName);
-  assert.ok(row && (row.verdict === "strong" || row.verdict === "watch"));
+  const row = result.latestRows.find((r) =>
+    r.num === item.number
+    && r.machineName === item.machineName
+    && r.store === item.store
+  );
+  assert.equal(row?.seatDecisionStatus, "candidate");
 }
+
+// ユーザー報告と同じ「大海5・有効4日・推定投入47,000玉」を再現する回帰テスト。
+// 固定10Rの実出玉誤差へ2,200回転収支の標準偏差を混ぜず、判断用下限が
+// 根拠なく10回/K未満へ落ちないことを固定する。
+const oumi5 = {
+  name: "P大海物語5 MTE2",
+  dataUpdatedAt: "2026-07-27",
+  modelName: "P大海物語5MTE2",
+  modelVerified: true,
+  border1K: 16.7,
+  synthProb: 319.6,
+  spec1R: 140,
+  avgPayoutPerHit: 1400,
+  payoutStdDevPerHit: 0,
+  payoutStdDevPerHitMethod: "allocation-exact-v1",
+  hesoAvgPayout: 1500,
+  rushAvgPayout: 1500,
+  rushEntryRate: 60,
+  rushContinueRate: 60,
+  allocationVerified: true,
+  hesoModes: [{
+    name: "特図1・ヘソ",
+    rows: [
+      { rounds: 10, payout: 1500, rate: 60 },
+      { rounds: 10, payout: 1500, rate: 40 },
+    ],
+  }],
+  stdDev: 13000,
+  stdDevMethod: "p-evidence-branching-v2",
+  muraCoef: 50000,
+};
+const oumiSpins = [808, 808, 809, 809];
+const oumiHits = [12, 12, 12, 13];
+const oumiScans = oumiSpins.map((normalSpins, index) => {
+  const date = `2026-07-${String(index + 1).padStart(2, "0")}`;
+  return {
+    id: `oumi-${index}`,
+    storeId: "store-oumi",
+    storeName: "再現店",
+    date,
+    createdAt: `${date}T20:00:00.000Z`,
+    rows: [{
+      date,
+      island: "大海島",
+      machineName: oumi5.name,
+      num: "515",
+      normalSpins,
+      totalStarts: oumiHits[index],
+      val: oumiHits[index] * 1400 - 11750,
+    }],
+  };
+});
+const oumiResult = buildPEvidenceAnalytics({
+  scans: oumiScans,
+  customMachines: [oumi5],
+});
+const oumiCurrent = oumiResult.currentRows[0];
+assert.equal(Math.round(oumiCurrent.cumulativeInputBalls), 47000);
+assert.ok(oumiCurrent.decisionLowerRotation > 10, "4日・47,000玉で判断用下限が不自然に10回/Kを割らない");
+assert.ok(oumiCurrent.decisionLowerRotation < oumiCurrent.predictedRotation);
+assert.equal(oumiCurrent.decisionCalibrationStatus, "awaiting-samples");
+assert.equal(oumiCurrent.decisionCalibrationSampleCount, 3);
+
+const oumiHighSessionRisk = buildPEvidenceAnalytics({
+  scans: oumiScans,
+  customMachines: [{ ...oumi5, stdDev: 25000 }],
+});
+assert.equal(
+  oumiHighSessionRisk.currentRows[0].decisionLowerRotation,
+  oumiCurrent.decisionLowerRotation,
+  "収支の標準偏差を変えても回転率の判断用下限は変わらない",
+);
 
 // 当りゼロの日は差玉（＝投入玉の実測）から回転率を直接推定する
 const zeroHit = pevidenceInternals.estimateDaily(
@@ -252,5 +334,14 @@ const pairs = pevidenceInternals.buildOppositePairs([
 ]);
 assert.equal(pairs.get("101"), "203", "向かい合う島は鏡向きに対応する");
 assert.equal(pairs.get("103"), "201");
+const oneSidedOpposite = pevidenceInternals.buildOppositePairs([
+  { id: "a", start: 101, end: 103, facingIslandId: "b", facingReversed: true },
+  { id: "b", start: 201, end: 203 },
+]);
+assert.equal(oneSidedOpposite.size, 0, "片側参照だけの島は対面変化判定へ使わない");
+const orphanOpposite = pevidenceInternals.buildOppositePairs([
+  { id: "a", start: 101, end: 103, facingIslandId: "deleted", facingReversed: true },
+]);
+assert.equal(orphanOpposite.size, 0, "削除済みIDを対面変化判定へ使わない");
 
 console.log("pevidenceAnalytics.test.mjs: all tests passed");

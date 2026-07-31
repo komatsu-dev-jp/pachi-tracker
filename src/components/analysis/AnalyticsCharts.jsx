@@ -114,17 +114,17 @@ export function CumulativeChart({ data, width = 340, height = 196 }) {
 export function MetricCell({ label, value, unit, color, mono: useMono = true }) {
   return (
     <div style={{
-      background: C.surfaceHi, border: `1px solid ${C.border}`, borderRadius: 12, padding: "11px 12px",
+      background: "var(--at-rowbg)", borderRadius: 12, padding: "11px 12px",
     }}>
-      <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, marginBottom: 6, letterSpacing: 0.3 }}>{label}</div>
+      <div style={{ fontSize: 12, color: C.sub, fontWeight: 600, marginBottom: 6 }}>{label}</div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
         <span style={{
-          fontSize: 18, fontWeight: 900, color: color || C.text,
+          fontSize: 19, fontWeight: 700, color: color || C.text,
           fontFamily: useMono ? mono : font, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.4px", lineHeight: 1,
         }}>
           {value}
         </span>
-        {unit && <span style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>{unit}</span>}
+        {unit && <span style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>{unit}</span>}
       </div>
     </div>
   );

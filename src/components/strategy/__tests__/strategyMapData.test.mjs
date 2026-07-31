@@ -3,6 +3,9 @@ import {
   applyStrategyPlanEntryContext,
   buildStrategyMap,
   buildStrategyPlanContext,
+  buildStrategyViewScope,
+  pairStrategyIslands,
+  revenueLowerBoundPendingReason,
   resolveStrategyPlanHandoff,
 } from "../strategyMapData.js";
 import {
@@ -34,7 +37,7 @@ const scans = [
   },
   {
     id: "d2", storeId: "s1", storeName: "検証店", date: "2026-07-02", createdAt: "2026-07-02T12:00:00Z",
-    rows: [{ num: "101", machineName: "検証機", island: "1島", normalSpins: 900, totalStarts: 12, val: 1000 }],
+    rows: [{ num: "101", machineName: "検証機", island: "1島", normalSpins: 900, totalStarts: 12, val: 3300 }],
   },
 ];
 
@@ -51,6 +54,8 @@ const plan = buildStrategyPlanContext({
 });
 const map = buildStrategyMap({ scans, customMachines: [machine], playingNum: 101, liveDecision, plan });
 assert.equal(map.source, "delta");
+assert.equal(map.storeId, "s1");
+assert.equal(map.storeName, "検証店");
 assert.equal(map.total, 1);
 assert.equal(map.all[0].num, 101);
 assert.equal(map.all[0].isPlaying, true);
@@ -58,8 +63,28 @@ assert.equal(map.all[0].liveDecision, liveDecision);
 assert.equal(map.all[0].evidence.observationCount, 2);
 assert.ok(map.all[0].rot > 0);
 assert.ok(map.all[0].confidence >= 0 && map.all[0].confidence <= 100);
+assert.ok(map.all[0].decisionLowerRotation <= map.all[0].predictedRotation);
+assert.equal(map.all[0].seatThreshold, map.all[0].effectiveBorder + 0.5);
+assert.ok(map.all[0].seatThresholdProbability >= 0 && map.all[0].seatThresholdProbability <= 1);
+assert.ok(["candidate", "trial", "skip"].includes(map.all[0].seatDecisionStatus));
+assert.equal(map.all[0].decisionLowerTargetCoverage, 0.8);
+assert.equal(map.all[0].decisionCalibrationStatus, "awaiting-samples");
+assert.equal(
+  map.candidates.length,
+  map.all.filter((item) => item.seatDecisionStatus === "candidate").length,
+  "候補数は良台スコアではなく判断用下限で決める",
+);
 assert.equal(map.all[0].history.length, 2);
 assert.equal(map.all[0].historyDayCount, 2);
+assert.deepEqual(
+  map.all[0].historyEntries.map((entry) => entry.date),
+  ["2026-07-01", "2026-07-02"],
+  "グラフで日付ごとの回転数を選べるよう、日付も保持する",
+);
+assert.deepEqual(
+  map.all[0].historyEntries.map((entry) => entry.rotation),
+  map.all[0].history,
+);
 assert.deepEqual(map.all[0].dataCoverage, {
   effectiveDays: 2,
   fromDate: "2026-07-01",
@@ -96,6 +121,15 @@ assert.ok(map.all[0].rotationEstimate.low <= map.all[0].rot && map.all[0].rot <=
 assert.ok(map.all[0].dailyLow <= map.all[0].daily && map.all[0].daily <= map.all[0].dailyHigh);
 assert.ok(map.all[0].profitChanceLow <= map.all[0].winRate && map.all[0].winRate <= map.all[0].profitChanceHigh);
 
+const emptySelectedStore = buildStrategyMap({
+  scans,
+  selectedStoreId: "s2",
+  stores: [{ id: "s2", name: "未解析店" }],
+});
+assert.equal(emptySelectedStore.total, 0);
+assert.equal(emptySelectedStore.storeId, "s2");
+assert.equal(emptySelectedStore.storeName, "未解析店");
+
 const demoDate = P_EVIDENCE_DEMO_SCANS.at(-1).date;
 const demoPlan = buildStrategyPlanContext({ date: demoDate, spinsPerHour: 250, defaultHours: 3 });
 const lowerPendingMap = buildStrategyMap({
@@ -105,11 +139,23 @@ const lowerPendingMap = buildStrategyMap({
   plan: demoPlan,
   targetDate: demoDate,
 });
-const lowerPendingMachine = lowerPendingMap.all.find((item) => item.revenueRangeStatus === "lower-bound-missing");
-assert.ok(lowerPendingMachine, "予測下限が0回/Kまで広がる台を検出する");
-assert.equal(lowerPendingMachine.hourlyLow, null, "下振れ金額を0円と誤表示しない");
-assert.equal(lowerPendingMachine.dailyLow, null, "予定収支の下振れも算定待ちにする");
-assert.ok(lowerPendingMachine.dataCoverage.effectiveDays > 0);
+assert.ok(
+  lowerPendingMap.all.every((item) => item.revenueRangeStatus === "ready"),
+  "収支標準偏差を回転率誤差へ混ぜず、十分なデモ履歴の予測下限を不自然に0へ落とさない",
+);
+assert.ok(lowerPendingMap.all.every((item) => Number.isFinite(item.hourlyLow)));
+assert.equal(
+  revenueLowerBoundPendingReason({
+    lowRotation: 0,
+    predictedRotation: 18,
+    border: 17,
+    variance: 4,
+    confidence: 0.5,
+    rawDailyLow: -10000,
+  }),
+  "non-positive",
+  "本当に下限が0以下なら金額を算定待ちにする防御は残す",
+);
 
 const allocationMap = buildStrategyMap({
   scans,
@@ -118,6 +164,9 @@ const allocationMap = buildStrategyMap({
 });
 assert.ok(allocationMap.portfolio.plan.length > 0);
 assert.equal(allocationMap.portfolio.totalHours, allocationMap.plan.plannedHours, "優先配分の丸め後も予定時間の合計を保つ");
+assert.ok(allocationMap.candidates.length > 0);
+assert.ok(allocationMap.candidates.every((item) => item.seatDecisionStatus === "candidate"));
+assert.ok(allocationMap.candidates.every((item) => item.isStar), "★も判断用下限を満たす候補だけに付ける");
 
 const preparedMap = buildStrategyMap({ scans, customMachines: [machine], plan, targetDate: "2026-07-03" });
 assert.equal(preparedMap.freshness.status, "prepared");
@@ -169,6 +218,16 @@ assert.ok(liveMap.all[0].rot > map.all[0].rot, "現在実戦を同じ台の予�
 assert.deepEqual(liveMap.all[0].evidenceSources, ["delta", "live"]);
 assert.equal(liveMap.all[0].dataCoverage.effectiveDays, 2, "同じ日の現在実戦は日数を二重計上しない");
 assert.ok(liveMap.all[0].dataCoverage.inputBalls > map.all[0].dataCoverage.inputBalls);
+assert.ok(
+  liveMap.all[0].confidence
+    <= Math.round(liveMap.all[0].pevidence.processReliability * 100),
+  "実戦実測を足しても、一晩の日次変動による翌日信頼度の上限を超えない",
+);
+assert.ok(
+  liveMap.all[0].rotationEstimate.variance
+    >= liveMap.all[0].pevidence.processVariance + liveMap.all[0].pevidence.transitionVariance,
+  "実戦実測を足しても、日次変動と締め遷移の分散を消さない",
+);
 
 const archiveMap = buildStrategyMap({
   scans,
@@ -225,6 +284,430 @@ assert.ok(
   selectedOlderStoreMap.analytics.latestRows.every((row) => row.store === "s2"),
   "選択店舗以外の新しいスキャンへ切り替わらない"
 );
+
+// 別機種に新しい解析があっても、東京喰種の直近保存を未計測へ戻さない。
+const ghoulRows26 = Array.from({ length: 56 }, (_, index) => ({
+  num: String(758 + index),
+  machineName: "e東京喰種",
+  island: "東京喰種",
+  normalSpins: 800,
+  totalStarts: 10,
+  val: 2000,
+  status: "ok",
+}));
+const mixedDateScans = [
+  {
+    id: "other-machine-28",
+    storeId: "s1",
+    storeName: "検証店",
+    date: "2026-07-28",
+    createdAt: "2026-07-28T00:30:00Z",
+    rows: [{
+      num: "479",
+      machineName: "検証機",
+      island: "大海物語",
+      normalSpins: 800,
+      totalStarts: 10,
+      val: 2000,
+      status: "ok",
+    }],
+  },
+  {
+    id: "tokyo-ghoul-26",
+    storeId: "s1",
+    storeName: "検証店",
+    date: "2026-07-26",
+    createdAt: "2026-07-28T00:40:00Z",
+    rows: ghoulRows26,
+  },
+];
+const mixedDateHallMaps = {
+  s1: [
+    { id: "sea", name: "大海物語", machineName: "検証機", start: 479, end: 484 },
+    { id: "tokyo-ghoul", name: "東京喰種", machineName: "e東京喰種", start: 758, end: 813 },
+  ],
+};
+const mixedDateMap = buildStrategyMap({
+  scans: mixedDateScans,
+  customMachines: [machine],
+  hallMaps: mixedDateHallMaps,
+  selectedStoreId: "s1",
+  targetDate: "2026-07-28",
+  stores: [{ id: "s1", name: "検証店" }],
+});
+const mixedDateGhoul = mixedDateMap.islands.find((island) => island.name === "東京喰種");
+assert.equal(mixedDateMap.freshness.sourceDate, "2026-07-28", "店舗全体の最新解析日は維持する");
+assert.equal(mixedDateGhoul.machines.length, 56, "東京喰種の26日分56台も表示対象へ残す");
+assert.ok(mixedDateGhoul.machines.every((item) => item.rot > 0), "26日分も未計測ではなく予測回転率を表示する");
+assert.ok(mixedDateGhoul.machines.every((item) => item.freshness.sourceDate === "2026-07-26"));
+assert.ok(mixedDateGhoul.machines.every((item) => item.freshness.status === "stale"));
+assert.ok(
+  mixedDateGhoul.machines.every((item) => item.recommendationStatus === "reference"),
+  "2日前のデータは表示しても候補判定には使わない",
+);
+
+// 同じ機種を一部だけ再解析した場合も、未再解析50台の過去保存を消さない。
+const partialRefreshMap = buildStrategyMap({
+  scans: [
+    ...mixedDateScans,
+    {
+      id: "tokyo-ghoul-partial-28",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-28",
+      createdAt: "2026-07-28T00:50:00Z",
+      rows: ghoulRows26.slice(0, 6).map((row) => ({ ...row, val: 2500 })),
+    },
+  ],
+  customMachines: [machine],
+  hallMaps: mixedDateHallMaps,
+  selectedStoreId: "s1",
+  targetDate: "2026-07-28",
+  stores: [{ id: "s1", name: "検証店" }],
+});
+const partialRefreshGhoul = partialRefreshMap.islands.find((island) => island.name === "東京喰種").machines;
+assert.equal(partialRefreshGhoul.length, 56);
+assert.equal(
+  partialRefreshGhoul.filter((item) => item.freshness.sourceDate === "2026-07-28").length,
+  6,
+  "再解析した6台だけ28日分へ更新する",
+);
+assert.equal(
+  partialRefreshGhoul.filter((item) => item.freshness.sourceDate === "2026-07-26").length,
+  50,
+  "未再解析50台は26日分の回転率を保持する",
+);
+assert.ok(partialRefreshGhoul.every((item) => item.rot > 0));
+
+// 画像再現: 前日の東京喰種56台は計算可能だが、当日に差玉だけの保存が追加された状態。
+// 当日の不完全行は履歴へ残しつつ、前日の正常値によるヒートマップ色と判断を消さない。
+const preparedGhoulFallbackMap = buildStrategyMap({
+  scans: [
+    {
+      id: "tokyo-ghoul-complete-27",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-27",
+      createdAt: "2026-07-27T12:00:00Z",
+      rows: ghoulRows26,
+    },
+    {
+      id: "tokyo-ghoul-delta-only-28",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-28",
+      createdAt: "2026-07-28T01:30:00Z",
+      rows: ghoulRows26.map(({ num, machineName, island }) => ({
+        num,
+        machineName,
+        island,
+        val: -4000,
+        status: "ok",
+      })),
+    },
+  ],
+  hallMaps: mixedDateHallMaps,
+  selectedStoreId: "s1",
+  targetDate: "2026-07-28",
+  stores: [{ id: "s1", name: "検証店" }],
+});
+const preparedGhoulFallback = preparedGhoulFallbackMap.islands.find(
+  (island) => island.name === "東京喰種",
+).machines;
+assert.equal(preparedGhoulFallback.length, 56);
+assert.ok(preparedGhoulFallback.every((item) => item.freshness.sourceDate === "2026-07-27"));
+assert.ok(preparedGhoulFallback.every((item) => item.recommendationStatus === "actionable"));
+assert.ok(preparedGhoulFallback.every((item) => Number.isFinite(item.borderDiff)));
+assert.ok(preparedGhoulFallback.every((item) => item.confidence > 0));
+assert.ok(preparedGhoulFallback.every((item) => item.referenceFallback?.usedForDecision === true));
+assert.ok(preparedGhoulFallback.every((item) => item.calculationPendingReasons.length === 0));
+assert.equal(preparedGhoulFallbackMap.actionable, true);
+assert.equal(
+  preparedGhoulFallbackMap.islandActivityHistory.find(
+    (entry) => entry.date === "2026-07-28" && entry.island === "東京喰種",
+  )?.invalidMachines,
+  56,
+  "当日の不完全保存は履歴上の除外56台として残す",
+);
+
+// 新しい差玉だけの保存があっても、26日の最新「計算可能」データを参考表示する。
+// 最新の不完全行を今日の候補として復活させず、過去値の数値だけを残す。
+const ghoulRows70 = Array.from({ length: 70 }, (_, index) => ({
+  num: String(758 + index),
+  machineName: "e東京喰種",
+  island: "東京喰種",
+  normalSpins: 800,
+  totalStarts: 10,
+  val: 2000,
+  status: "ok",
+}));
+const incompleteRefreshMap = buildStrategyMap({
+  scans: [
+    {
+      id: "tokyo-ghoul-complete-26",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-26",
+      createdAt: "2026-07-26T12:00:00Z",
+      rows: ghoulRows70,
+    },
+    {
+      id: "tokyo-ghoul-incomplete-28",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-28",
+      createdAt: "2026-07-28T01:30:00Z",
+      rows: ghoulRows70.map(({ num, machineName, island }) => ({
+        num,
+        machineName,
+        island,
+        val: -4000,
+        status: "ok",
+      })),
+    },
+  ],
+  customMachines: [machine],
+  hallMaps: {
+    s1: [
+      { id: "tokyo-ghoul", name: "東京喰種", machineName: "e東京喰種", start: 758, end: 827 },
+    ],
+  },
+  selectedStoreId: "s1",
+  targetDate: "2026-07-28",
+  stores: [{ id: "s1", name: "検証店" }],
+});
+const incompleteRefreshGhoul = incompleteRefreshMap.islands.find(
+  (island) => island.name === "東京喰種",
+).machines;
+assert.equal(incompleteRefreshGhoul.length, 70);
+assert.ok(
+  incompleteRefreshGhoul.every((item) => Number.isFinite(item.rot) && item.rot > 0),
+  "不完全な28日分に隠されていた26日分70台の回転率を数値表示する",
+);
+assert.ok(incompleteRefreshGhoul.every((item) => item.freshness.sourceDate === "2026-07-26"));
+assert.ok(incompleteRefreshGhoul.every((item) => item.referenceFallback?.latestSourceDate === "2026-07-28"));
+assert.ok(incompleteRefreshGhoul.every((item) => item.recommendationStatus === "reference"));
+assert.ok(incompleteRefreshGhoul.every((item) => item.calculationPendingReasons[0].includes("通常回転数なし")));
+assert.equal(incompleteRefreshMap.candidates.length, 0, "過去参考値を28日の候補へ昇格させない");
+assert.ok(incompleteRefreshMap.islandAvgRot("東京喰種") > 0, "過去参考同士の島平均との差を0基準にしない");
+
+// 旧版の店舗IDなし行と、現在の店舗ID付き行も同じ70台の履歴として結合する。
+const legacyStoreIdentityMap = buildStrategyMap({
+  scans: [
+    {
+      id: "tokyo-ghoul-legacy-store-name-only-26",
+      storeName: "検証店",
+      date: "2026-07-26",
+      createdAt: "2026-07-26T12:00:00Z",
+      rows: ghoulRows70,
+    },
+    {
+      id: "tokyo-ghoul-current-store-id-28",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-28",
+      createdAt: "2026-07-28T01:30:00Z",
+      rows: ghoulRows70.map(({ num, machineName, island }) => ({
+        num,
+        machineName,
+        island,
+        val: -4000,
+        status: "ok",
+      })),
+    },
+  ],
+  customMachines: [machine],
+  hallMaps: {
+    s1: [
+      { id: "tokyo-ghoul", name: "東京喰種", machineName: "e東京喰種", start: 758, end: 827 },
+    ],
+  },
+  selectedStoreId: "s1",
+  targetDate: "2026-07-28",
+  stores: [{ id: "s1", name: "検証店" }],
+});
+const legacyStoreIdentityGhoul = legacyStoreIdentityMap.islands.find(
+  (island) => island.name === "東京喰種",
+).machines;
+assert.equal(legacyStoreIdentityGhoul.length, 70, "店舗IDの有無で同じ70台を二重表示しない");
+assert.ok(legacyStoreIdentityGhoul.every((item) => Number.isFinite(item.rot) && item.rot > 0));
+assert.ok(legacyStoreIdentityGhoul.every((item) => item.referenceFallback?.sourceDate === "2026-07-26"));
+assert.equal(legacyStoreIdentityMap.candidates.length, 0);
+
+// 店舗選択が未設定で、古い正常行だけに店舗IDがある逆向きの混在も統合する。
+const inferredStoreIdentityMap = buildStrategyMap({
+  scans: [
+    {
+      id: "tokyo-ghoul-store-id-only-26",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-26",
+      createdAt: "2026-07-26T12:00:00Z",
+      rows: ghoulRows70,
+    },
+    {
+      id: "tokyo-ghoul-latest-name-only-28",
+      storeName: "検証店",
+      date: "2026-07-28",
+      createdAt: "2026-07-28T01:30:00Z",
+      rows: ghoulRows70.map(({ num, machineName, island }) => ({
+        num,
+        machineName,
+        island,
+        val: -4000,
+        status: "ok",
+      })),
+    },
+  ],
+  customMachines: [machine],
+  hallMaps: {
+    s1: [
+      { id: "tokyo-ghoul", name: "東京喰種", machineName: "e東京喰種", start: 758, end: 827 },
+    ],
+  },
+  selectedStoreId: null,
+  targetDate: "2026-07-28",
+  stores: [{ id: "s1", name: "検証店" }],
+});
+const inferredStoreIdentityGhoul = inferredStoreIdentityMap.islands.find(
+  (island) => island.name === "東京喰種",
+).machines;
+assert.equal(inferredStoreIdentityGhoul.length, 70, "店舗未選択でも同じ70台を二重表示しない");
+assert.ok(inferredStoreIdentityGhoul.every((item) => Number.isFinite(item.rot) && item.rot > 0));
+assert.ok(inferredStoreIdentityGhoul.every((item) => item.referenceFallback?.sourceDate === "2026-07-26"));
+assert.equal(inferredStoreIdentityMap.candidates.length, 0);
+
+// 対象日より未来の解析は、過去参考の数値にも予測にも混ぜない。
+const futureOnlyMap = buildStrategyMap({
+  scans: [
+    {
+      id: "tokyo-ghoul-future-valid-29",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-29",
+      createdAt: "2026-07-29T12:00:00Z",
+      rows: ghoulRows70,
+    },
+    {
+      id: "tokyo-ghoul-future-invalid-30",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-30",
+      createdAt: "2026-07-30T12:00:00Z",
+      rows: ghoulRows70.map(({ num, machineName, island }) => ({
+        num,
+        machineName,
+        island,
+        val: -4000,
+        status: "ok",
+      })),
+    },
+  ],
+  customMachines: [machine],
+  hallMaps: {
+    s1: [
+      { id: "tokyo-ghoul", name: "東京喰種", machineName: "e東京喰種", start: 758, end: 827 },
+    ],
+  },
+  selectedStoreId: "s1",
+  targetDate: "2026-07-28",
+  stores: [{ id: "s1", name: "検証店" }],
+});
+assert.equal(futureOnlyMap.total, 0, "対象日より未来の回転率を表示しない");
+assert.equal(futureOnlyMap.freshness.status, "future");
+assert.equal(futureOnlyMap.freshness.sourceDate, "2026-07-30");
+
+// 更新前のアプリで機種名なし保存になっていても、台番号が1島だけに一致すれば復旧する。
+const missingMachineNameRows = Array.from({ length: 70 }, (_, index) => ({
+  num: String(758 + index),
+  machineName: "",
+  island: "",
+  normalSpins: 800,
+  totalStarts: 10,
+  val: 2000,
+  status: "ok",
+}));
+const missingMachineNameMap = buildStrategyMap({
+  scans: [
+    {
+      id: "other-machine-28-for-missing-name",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-28",
+      createdAt: "2026-07-28T01:00:00Z",
+      rows: [{
+        num: "479",
+        machineName: "検証機",
+        island: "大海物語",
+        normalSpins: 800,
+        totalStarts: 10,
+        val: 2000,
+        status: "ok",
+      }],
+    },
+    {
+      id: "tokyo-ghoul-26-missing-name",
+      storeId: "s1",
+      storeName: "検証店",
+      date: "2026-07-26",
+      createdAt: "2026-07-28T00:50:00Z",
+      rows: missingMachineNameRows,
+    },
+  ],
+  customMachines: [machine],
+  hallMaps: {
+    s1: [
+      { id: "sea", name: "大海物語", machineName: "検証機", start: 479, end: 484 },
+      { id: "tokyo-ghoul", name: "東京喰種", machineName: "e東京喰種", start: 758, end: 827 },
+    ],
+  },
+  selectedStoreId: "s1",
+  targetDate: "2026-07-28",
+  stores: [{ id: "s1", name: "検証店" }],
+});
+const recoveredMissingNameGhoul = missingMachineNameMap.islands.find(
+  (island) => island.name === "東京喰種",
+).machines;
+assert.equal(recoveredMissingNameGhoul.length, 70, "機種名なしの東京喰種70台を表示対象へ復旧する");
+assert.ok(
+  recoveredMissingNameGhoul.every((item) => item.rot > 0),
+  "復旧した全70台へ予測回転率を表示する",
+);
+assert.ok(recoveredMissingNameGhoul.every((item) => item.machineName === "e東京喰種"));
+assert.ok(recoveredMissingNameGhoul.every((item) => item.freshness.sourceDate === "2026-07-26"));
+
+// 同じ台番号を含む島が複数ある場合は、機種名なし行を推測で関連付けない。
+const overlappingLayoutMap = buildStrategyMap({
+  scans: [{
+    id: "ambiguous-missing-name",
+    storeId: "s1",
+    storeName: "検証店",
+    date: "2026-07-28",
+    createdAt: "2026-07-28T01:10:00Z",
+    rows: [{
+      num: "101",
+      machineName: "",
+      normalSpins: 800,
+      totalStarts: 10,
+      val: 2000,
+      status: "ok",
+    }],
+  }],
+  customMachines: [
+    machine,
+    { ...machine, name: "別の検証機", modelName: "P別の検証機TEST" },
+  ],
+  hallMaps: {
+    s1: [
+      { id: "overlap-a", name: "重複A", machineName: "検証機", start: 101, end: 101 },
+      { id: "overlap-b", name: "重複B", machineName: "別の検証機", start: 101, end: 101 },
+    ],
+  },
+  selectedStoreId: "s1",
+  targetDate: "2026-07-28",
+  stores: [{ id: "s1", name: "検証店" }],
+});
+assert.equal(overlappingLayoutMap.total, 0, "複数島に重なる機種名なし行は推測で復旧しない");
 
 const primaryKey = "s1::候補機::P候補機";
 const backupKey = "s1::検証機::P検証機";
@@ -492,5 +975,175 @@ assert.equal(mappedLayout.islands[1].name, "1島");
 assert.equal(mappedLayout.islands[1].machines[0].num, 101);
 assert.equal(mappedLayout.islands[1].registeredLayout, true);
 assert.equal(mappedLayout.islands[0].facingIslandId, "layout-a");
+
+const unconfiguredPairs = pairStrategyIslands([
+  { id: "unconfigured-a", name: "未設定A" },
+  { id: "unconfigured-b", name: "未設定B" },
+]);
+assert.deepEqual(
+  unconfiguredPairs.map((pair) => pair.map((island) => island.id)),
+  [["unconfigured-a"], ["unconfigured-b"]],
+  "対面未設定の島を表示順だけで仮ペアにしない",
+);
+
+const oneSidedPairs = pairStrategyIslands([
+  { id: "one-a", name: "片側A", facingIslandId: "one-b" },
+  { id: "one-b", name: "片側B" },
+]);
+assert.deepEqual(
+  oneSidedPairs.map((pair) => pair.map((island) => island.id)),
+  [["one-a"], ["one-b"]],
+  "片側参照だけの旧データを対面表示しない",
+);
+
+const confirmedPairs = pairStrategyIslands([
+  { layoutId: "same-a", id: "data-a", name: "同一機種A", machineName: "同一機種", facingIslandId: "same-b" },
+  { layoutId: "same-b", id: "data-b", name: "同一機種B", machineName: "同一機種", facingIslandId: "same-a" },
+]);
+assert.deepEqual(
+  confirmedPairs.map((pair) => pair.map((island) => island.layoutId)),
+  [["same-a", "same-b"]],
+  "相互参照が保存された同一機種の別島は対面表示する",
+);
+assert.equal(confirmedPairs[0].confirmed, true);
+
+const scopedIslands = [
+  {
+    layoutId: "scope-a",
+    id: "scope-data-a",
+    name: "A島",
+    machineName: "機種A",
+    start: 101,
+    end: 103,
+    facingIslandId: "scope-b",
+    machines: [
+      {
+        id: "a-101",
+        machineName: "機種A",
+        score: 30,
+        recommendationStatus: "actionable",
+        seatDecisionStatus: "candidate",
+        nailAlert: "",
+      },
+    ],
+  },
+  {
+    layoutId: "scope-b",
+    id: "scope-data-b",
+    name: "B島",
+    machineName: "機種B",
+    start: 201,
+    end: 202,
+    facingIslandId: "scope-a",
+    machines: [
+      {
+        id: "b-201",
+        machineName: "機種B",
+        score: 80,
+        recommendationStatus: "actionable",
+        seatDecisionStatus: "candidate",
+        nailAlert: "締め傾向",
+      },
+    ],
+  },
+  {
+    id: "scope-single",
+    name: "C島",
+    machineName: "機種C",
+    machines: [
+      {
+        id: "c-301",
+        machineName: "機種C",
+        score: 50,
+        recommendationStatus: "actionable",
+        seatDecisionStatus: "candidate",
+        nailAlert: "",
+      },
+    ],
+  },
+];
+const pairedScope = buildStrategyViewScope({
+  islands: scopedIslands,
+  activeIslandId: "scope-data-b",
+  actionable: true,
+});
+assert.deepEqual(
+  pairedScope,
+  {
+    label: "A島・B島",
+    machineName: "機種A・機種B",
+    total: 5,
+    candidates: 1,
+    leadId: "b-201",
+  },
+  "表示中の対面2島だけを集計し、締め傾向の台を候補へ含めない",
+);
+
+const singleScope = buildStrategyViewScope({
+  islands: scopedIslands,
+  activeIslandId: "scope-single",
+  actionable: true,
+});
+assert.deepEqual(
+  singleScope,
+  {
+    label: "C島",
+    machineName: "機種C",
+    total: 1,
+    candidates: 1,
+    leadId: "c-301",
+  },
+  "下の島選択を変えると、ヘッダーとカードが参照する機種・台数・候補も切り替わる",
+);
+
+assert.equal(
+  buildStrategyViewScope({
+    islands: scopedIslands,
+    activeIslandId: "scope-single",
+    actionable: false,
+  }).candidates,
+  0,
+  "古い解析日は表示中の島でも候補0台として安全停止する",
+);
+
+// 利用者画像の再現: 5Rごとに増える大当り回数へ旧平均1200玉を掛けると、
+// リコリス663〜668番台が9〜12回/Kへ沈む。750玉単位＋初当り平均で復元する。
+const lycorisRows = [
+  { num: "663", normalSpins: 850, totalStarts: 16, firstHitCount: 3, val: -1500 },
+  { num: "664", normalSpins: 900, totalStarts: 17, firstHitCount: 4, val: -1800 },
+  { num: "665", normalSpins: 800, totalStarts: 14, firstHitCount: 3, val: -1000 },
+  { num: "666", normalSpins: 950, totalStarts: 18, firstHitCount: 4, val: -2500 },
+  { num: "667", normalSpins: 700, totalStarts: 12, firstHitCount: 3, val: -700 },
+  { num: "668", normalSpins: 1000, totalStarts: 20, firstHitCount: 4, val: -3000 },
+].map((row) => ({
+  ...row,
+  machineName: "eリコリス・リコイル",
+  island: "リコリスリコイル",
+  status: "ok",
+}));
+const lycorisScan = {
+  id: "lycoris-counter-regression",
+  storeId: "photo-store",
+  storeName: "写真再現店",
+  date: "2026-07-27",
+  createdAt: "2026-07-27T12:00:00.000Z",
+  machineName: "eリコリス・リコイル",
+  rows: lycorisRows,
+};
+const lycorisMap = buildStrategyMap({
+  scans: [lycorisScan],
+  selectedStoreId: "photo-store",
+  targetDate: "2026-07-28",
+});
+const fixedLycorisMachines = lycorisMap.all;
+assert.equal(fixedLycorisMachines.length, 6);
+assert.deepEqual(fixedLycorisMachines.map((item) => item.num), [663, 664, 665, 666, 667, 668]);
+assert.ok(
+  fixedLycorisMachines.every((item) => item.rot >= 14.5 && item.rot <= 20),
+  "5R分割当りと初当り小出玉を補正し、9〜12回/K帯から現実的な範囲へ戻す",
+);
+const lycoris663 = fixedLycorisMachines.find((item) => item.num === 663);
+assert.ok(Math.abs(lycoris663.rotationEstimate.inputBalls - 12835.2) < 1e-9);
+assert.equal(lycoris663.initialAvgPayout, 528);
 
 console.log("strategyMapData.test.mjs: all tests passed");
