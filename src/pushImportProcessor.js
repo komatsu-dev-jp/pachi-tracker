@@ -3,6 +3,7 @@ import {
   isStrictAutoImportCandidate,
   listPendingPushBatches,
   markPushBatchStatus,
+  resolveReviewNoticesForFingerprint,
   validateAndDecodePushEnvelope,
 } from "./pushInbox.js";
 import {
@@ -253,6 +254,25 @@ async function safeMark(batchId, status, details, signal, expectedEpoch) {
   }
 }
 
+async function safeResolveReviewNotices(
+  sourceFingerprint,
+  details,
+  signal,
+  expectedEpoch,
+) {
+  try {
+    return await resolveReviewNoticesForFingerprint(
+      sourceFingerprint,
+      details,
+      { signal, expectedEpoch },
+    );
+  } catch (error) {
+    if (error?.name === "AbortError" || signal?.aborted) throw error;
+    console.error("[push-import] review resolution failed:", error);
+    return 0;
+  }
+}
+
 async function runPendingPushImports({
   saveScan,
   stores,
@@ -273,6 +293,7 @@ async function runPendingPushImports({
     found: 0,
     imported: 0,
     duplicate: 0,
+    review: 0,
     waiting: 0,
     rejected: 0,
     errors: 0,
@@ -302,6 +323,19 @@ async function runPendingPushImports({
     try {
       const decoded = await validateAndDecodePushEnvelope(record?.envelope);
       throwIfAborted();
+      if (decoded.valid && decoded.kind === "review" && decoded.reviewNotice) {
+        summary.review += 1;
+        await safeMark(batchId, "review", {
+          jobId: decoded.reviewNotice.jobId,
+          date: decoded.reviewNotice.date,
+          storeName: decoded.reviewNotice.storeName,
+          machineName: decoded.reviewNotice.machineName,
+          pendingMachineCount: decoded.reviewNotice.pendingMachines.length,
+          sourceFingerprint: decoded.reviewNotice.sourceFingerprint.hash,
+          reasonCodes: decoded.reviewNotice.blockingReasons,
+        }, signal, expectedEpoch);
+        continue;
+      }
       if (!decoded.valid || !decoded.scan) {
         summary.rejected += 1;
         await safeMark(batchId, "rejected", {
@@ -355,6 +389,12 @@ async function runPendingPushImports({
           rowCount: evaluation.scan.rows.length,
           sourceFingerprint: fingerprintOf(evaluation.scan),
         }, signal, expectedEpoch);
+        await safeResolveReviewNotices(
+          fingerprintOf(evaluation.scan),
+          { resolvedByBatchId: batchId, resolvedAs: "imported" },
+          signal,
+          expectedEpoch,
+        );
         continue;
       }
 
@@ -367,6 +407,12 @@ async function runPendingPushImports({
           existingScanId: saved?.existing?.id ?? null,
           sourceFingerprint: fingerprintOf(evaluation.scan),
         }, signal, expectedEpoch);
+        await safeResolveReviewNotices(
+          fingerprintOf(evaluation.scan),
+          { resolvedByBatchId: batchId, resolvedAs: "duplicate" },
+          signal,
+          expectedEpoch,
+        );
         continue;
       }
 

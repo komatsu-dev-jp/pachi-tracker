@@ -176,7 +176,7 @@ export default function PushSyncSettings({ requestConfirmation }) {
           {[
             ["自動登録", summary.imported],
             ["既存と重複", summary.duplicate],
-            ["保留", summary.pending],
+            ["保留", summary.pending + summary.review],
             ["安全のため拒否", summary.rejected + summary.error],
           ].map(([label, value]) => (
             <div

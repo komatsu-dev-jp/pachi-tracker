@@ -208,3 +208,26 @@ test("Push保存後と通知クリック時は起動中アプリへ知らせ、�
   assert.equal(worker.counts.navigate, 0, "入力途中の画面を再読み込みしてはいけない");
   assert.equal(worker.messages.at(-1).reason, "notification-click");
 });
+
+test("review notice shows a confirmation-required notification", async () => {
+  const worker = await loadPushWorker();
+  const envelope = makeEnvelope("batch-review-notice", "d");
+  envelope.payload = {
+    schema: "pachi-tracker.review-notice",
+    notice: {
+      pendingMachines: [{ machineNumber: "102" }, { machineNumber: "20" }],
+    },
+  };
+  let pushTask;
+  worker.listeners.get("push")({
+    data: { text: () => JSON.stringify(envelope) },
+    waitUntil(task) {
+      pushTask = task;
+    },
+  });
+  await pushTask;
+
+  assert.equal(worker.notifications.length, 1);
+  assert.match(worker.notifications[0].options.body, /2台/u);
+  assert.match(worker.notifications[0].options.body, /保留/u);
+});

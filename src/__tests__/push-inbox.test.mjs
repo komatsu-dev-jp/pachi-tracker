@@ -7,6 +7,7 @@ import {
   AUTO_HEADER_CONTEXT_SOURCE,
   canonicalJson,
   decodeDeltaImportPayload,
+  decodeReviewNoticePayload,
   hasTrustedHeaderContextEvidence,
   isStrictAutoImportCandidate,
   parsePairingRequestText,
@@ -35,6 +36,31 @@ function makeContextEvidence(overrides = {}) {
     profileVotes: 2,
     headerFileCount: 1,
     ...overrides,
+  };
+}
+
+function makeReviewPayload() {
+  return {
+    schema: "pachi-tracker.review-notice",
+    version: 1,
+    source: "site-seven-windows",
+    notice: {
+      jobId: "job-20260730-review-1",
+      date: "2026-07-30",
+      storeName: "テスト店",
+      machineName: "Pテスト",
+      analyzedAt: "2026-07-30T02:55:00.000Z",
+      sourceFingerprint: {
+        algorithm: "SHA-256",
+        hash: "c".repeat(64),
+        fileCount: 4,
+      },
+      pendingMachines: [{
+        machineNumber: "102",
+        reasons: ["bounded-delta"],
+      }],
+      blockingReasons: ["review-required"],
+    },
   };
 }
 
@@ -370,4 +396,39 @@ test("Service Workerは通知を必ず表示し、受信箱へaddし、既存解
   assert.match(source, /batch-id-conflict/u);
   assert.match(source, /PUSH_INBOX_UPDATED/u);
   assert.doesNotMatch(source, /client\.navigate/u);
+});
+
+test("review notice decodes without image or unapproved delta values", async () => {
+  const payload = makeReviewPayload();
+  const decoded = decodeReviewNoticePayload(payload, {
+    createdAt: "2026-07-30T03:00:00.000Z",
+    now: FIXED_NOW,
+  });
+  assert.equal(decoded.valid, true, decoded.errors.join("\n"));
+  assert.equal(decoded.notice.pendingMachines[0].machineNumber, "102");
+  assert.equal("val" in decoded.notice.pendingMachines[0], false);
+
+  const envelope = {
+    schema: "pachi-tracker.push-batch",
+    version: 1,
+    batchId: "review-batch-1",
+    createdAt: "2026-07-30T03:00:00.000Z",
+    digest: await sha256Digest(payload),
+    payload,
+  };
+  const result = await validateAndDecodePushEnvelope(envelope, { now: FIXED_NOW });
+  assert.equal(result.valid, true, result.errors.join("\n"));
+  assert.equal(result.kind, "review");
+  assert.equal(result.scan, null);
+  assert.equal(result.reviewNotice.sourceFingerprint.hash, "c".repeat(64));
+});
+
+test("review notice rejects extra fields and unsafe reason text", () => {
+  const payload = makeReviewPayload();
+  payload.notice.pendingMachines[0].val = -2500;
+  payload.notice.blockingReasons = ["unsafe\nreason"];
+  const decoded = decodeReviewNoticePayload(payload, { now: FIXED_NOW });
+  assert.equal(decoded.valid, false);
+  assert.match(decoded.errors.join("\n"), /unsupported fields val/u);
+  assert.match(decoded.errors.join("\n"), /invalid reason code/u);
 });
