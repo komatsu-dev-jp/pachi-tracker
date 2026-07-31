@@ -3,6 +3,7 @@
 const PUSH_INBOX_DB_NAME = "pachi_tracker_db";
 const PUSH_INBOX_STORE_NAME = "pushInbox";
 const PUSH_ENVELOPE_SCHEMA = "pachi-tracker.push-batch";
+const REVIEW_NOTICE_SCHEMA = "pachi-tracker.review-notice";
 const PUSH_SCHEMA_VERSION = 1;
 const BATCH_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/i;
@@ -101,7 +102,7 @@ async function postPushInboxUpdated(batchId, reason = "stored") {
   }
 }
 
-async function showPushResultNotification(result, batchId = "") {
+async function showPushResultNotification(result, batchId = "", envelope = null) {
   const messages = {
     stored: "解析データを受信しました。アプリを開くと安全確認後に自動登録します。",
     duplicate: "同じ解析データを再受信しました。既存データは変更していません。",
@@ -109,9 +110,16 @@ async function showPushResultNotification(result, batchId = "") {
     invalid: "受信データを確認できませんでした。Windows側から再送してください。",
     failed: "受信データを保存できませんでした。Windows側から再送してください。",
   };
+  const isReviewNotice = envelope?.payload?.schema === REVIEW_NOTICE_SCHEMA;
+  const pendingMachineCount = Array.isArray(envelope?.payload?.notice?.pendingMachines)
+    ? envelope.payload.notice.pendingMachines.length
+    : 0;
+  const body = result === "stored" && isReviewNotice
+    ? `Windows解析で${pendingMachineCount}台の確認が必要です。アプリの「保留」を確認してください。`
+    : (messages[result] || messages.failed);
   const url = new URL("./?pushInbox=1", self.registration.scope).href;
   await self.registration.showNotification("パチトラッカー", {
-    body: messages[result] || messages.failed,
+    body,
     icon: new URL("icon-192.png", self.registration.scope).href,
     badge: new URL("favicon-32.png", self.registration.scope).href,
     tag: batchId ? `pachi-push-${batchId}` : `pachi-push-error-${Date.now()}`,
@@ -140,7 +148,7 @@ self.addEventListener("push", (event) => {
       if (result === "stored") {
         await postPushInboxUpdated(envelope.batchId, "stored");
       }
-      await showPushResultNotification(result, envelope.batchId);
+      await showPushResultNotification(result, envelope.batchId, envelope);
     } catch {
       await showPushResultNotification("failed", envelope.batchId);
     }

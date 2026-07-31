@@ -9,6 +9,7 @@ export const PUSH_INBOX_DB_NAME = "pachi_tracker_db";
 export const PUSH_INBOX_STORE_NAME = "pushInbox";
 export const PUSH_ENVELOPE_SCHEMA = "pachi-tracker.push-batch";
 export const DELTA_IMPORT_SCHEMA = "pachi-tracker.delta-import";
+export const REVIEW_NOTICE_SCHEMA = "pachi-tracker.review-notice";
 export const PAIR_REQUEST_SCHEMA = "pachi-tracker.pair-request";
 export const PAIR_RESPONSE_SCHEMA = "pachi-tracker.pair-response";
 export const PUSH_SCHEMA_VERSION = 1;
@@ -41,6 +42,19 @@ const ENVELOPE_KEYS = new Set([
   "payload",
 ]);
 const PAYLOAD_KEYS = new Set(["schema", "version", "source", "compactRows", "scan"]);
+const REVIEW_PAYLOAD_KEYS = new Set(["schema", "version", "source", "notice"]);
+const REVIEW_NOTICE_KEYS = new Set([
+  "jobId",
+  "date",
+  "storeName",
+  "machineName",
+  "analyzedAt",
+  "sourceFingerprint",
+  "pendingMachines",
+  "blockingReasons",
+]);
+const REVIEW_FINGERPRINT_KEYS = new Set(["algorithm", "hash", "fileCount"]);
+const REVIEW_MACHINE_KEYS = new Set(["machineNumber", "reasons"]);
 const SCAN_KEYS = new Set([
   "id",
   "storeId",
@@ -88,6 +102,8 @@ const PAIR_REQUEST_KEYS = new Set([
 
 const HEX_64 = /^[a-f0-9]{64}$/iu;
 const BATCH_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+const REVIEW_JOB_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u;
+const REVIEW_REASON = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u;
 const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/u;
 const MAX_ROWS = 500;
 const MAX_STRING = 240;
@@ -103,6 +119,8 @@ const ESTIMATE_SOURCES = new Set([
 const BIDI_CONTROL_PATTERN = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
 const PUSH_BATCH_STATUSES = new Set([
   "pending",
+  "review",
+  "resolved",
   "imported",
   "duplicate",
   "rejected",
@@ -622,6 +640,148 @@ export function decodeDeltaImportPayload(payload, { createdAt, now = Date.now() 
   return { valid: true, errors: [], scan };
 }
 
+export function decodeReviewNoticePayload(payload, { createdAt, now = Date.now() } = {}) {
+  const errors = [];
+  if (!isPlainObject(payload)) {
+    return { valid: false, errors: ["payload: object required"], notice: null };
+  }
+  const extraPayloadKeys = unexpectedKeys(payload, REVIEW_PAYLOAD_KEYS);
+  if (extraPayloadKeys.length) {
+    errors.push(`payload: unsupported fields ${extraPayloadKeys.join(", ")}`);
+  }
+  if (payload.schema !== REVIEW_NOTICE_SCHEMA) {
+    errors.push(`payload.schema: ${REVIEW_NOTICE_SCHEMA} required`);
+  }
+  if (payload.version !== PUSH_SCHEMA_VERSION) {
+    errors.push("payload.version: 1 required");
+  }
+  if (payload.source !== "site-seven-windows") {
+    errors.push("payload.source: site-seven-windows required");
+  }
+
+  const sourceNotice = payload.notice;
+  if (!isPlainObject(sourceNotice)) {
+    errors.push("payload.notice: object required");
+    return { valid: false, errors, notice: null };
+  }
+  const extraNoticeKeys = unexpectedKeys(sourceNotice, REVIEW_NOTICE_KEYS);
+  if (extraNoticeKeys.length) {
+    errors.push(`payload.notice: unsupported fields ${extraNoticeKeys.join(", ")}`);
+  }
+  if (!REVIEW_JOB_ID.test(String(sourceNotice.jobId || ""))) {
+    errors.push("payload.notice.jobId: valid job ID required");
+  }
+  if (!isCalendarDate(sourceNotice.date)) {
+    errors.push("payload.notice.date: valid YYYY-MM-DD required");
+  }
+  for (const field of ["storeName", "machineName"]) {
+    if (!isSizedString(sourceNotice[field]) || hasUnsafeText(sourceNotice[field])) {
+      errors.push(`payload.notice.${field}: safe text required`);
+    }
+  }
+  if (!isIsoTimestamp(sourceNotice.analyzedAt)) {
+    errors.push("payload.notice.analyzedAt: ISO timestamp required");
+  } else {
+    if (isTooFarInFuture(sourceNotice.analyzedAt, now)) {
+      errors.push("payload.notice.analyzedAt: future timestamp is not allowed");
+    }
+    if (isCalendarDate(sourceNotice.date)
+      && sourceNotice.date > toJapanCalendarDate(sourceNotice.analyzedAt)) {
+      errors.push("payload.notice.date: cannot be after the Japan analysis date");
+    }
+  }
+  if (createdAt !== undefined && !isIsoTimestamp(createdAt)) {
+    errors.push("createdAt: ISO timestamp required");
+  } else if (createdAt !== undefined && isTooFarInFuture(createdAt, now)) {
+    errors.push("createdAt: future timestamp is not allowed");
+  }
+
+  const sourceFingerprint = sourceNotice.sourceFingerprint;
+  if (!isPlainObject(sourceFingerprint)) {
+    errors.push("payload.notice.sourceFingerprint: object required");
+  } else {
+    const extraFingerprintKeys = unexpectedKeys(sourceFingerprint, REVIEW_FINGERPRINT_KEYS);
+    if (extraFingerprintKeys.length) {
+      errors.push(`payload.notice.sourceFingerprint: unsupported fields ${extraFingerprintKeys.join(", ")}`);
+    }
+    if (sourceFingerprint.algorithm !== "SHA-256") {
+      errors.push("payload.notice.sourceFingerprint.algorithm: SHA-256 required");
+    }
+    if (!HEX_64.test(String(sourceFingerprint.hash || ""))) {
+      errors.push("payload.notice.sourceFingerprint.hash: 64 hexadecimal characters required");
+    }
+    if (!integerInRange(sourceFingerprint.fileCount, 1, 64)) {
+      errors.push("payload.notice.sourceFingerprint.fileCount: integer from 1 to 64 required");
+    }
+  }
+
+  const blockingReasons = sourceNotice.blockingReasons;
+  if (!Array.isArray(blockingReasons) || blockingReasons.length < 1 || blockingReasons.length > 500) {
+    errors.push("payload.notice.blockingReasons: 1 to 500 safe reason codes required");
+  } else if (blockingReasons.some((reason) => !REVIEW_REASON.test(String(reason || "")))) {
+    errors.push("payload.notice.blockingReasons: invalid reason code");
+  }
+
+  const pendingMachines = sourceNotice.pendingMachines;
+  const normalizedMachines = [];
+  if (!Array.isArray(pendingMachines) || pendingMachines.length > 500) {
+    errors.push("payload.notice.pendingMachines: 0 to 500 machines required");
+  } else {
+    const seen = new Set();
+    pendingMachines.forEach((entry, index) => {
+      const path = `payload.notice.pendingMachines[${index}]`;
+      if (!isPlainObject(entry)) {
+        errors.push(`${path}: object required`);
+        return;
+      }
+      const extraMachineKeys = unexpectedKeys(entry, REVIEW_MACHINE_KEYS);
+      if (extraMachineKeys.length) {
+        errors.push(`${path}: unsupported fields ${extraMachineKeys.join(", ")}`);
+      }
+      const machineNumber = normalizeMachineNumber(entry.machineNumber);
+      if (!machineNumber) {
+        errors.push(`${path}.machineNumber: valid machine number required`);
+      } else if (seen.has(machineNumber)) {
+        errors.push(`${path}.machineNumber: duplicate machine number`);
+      } else {
+        seen.add(machineNumber);
+      }
+      if (!Array.isArray(entry.reasons)
+        || entry.reasons.length < 1
+        || entry.reasons.length > 50
+        || entry.reasons.some((reason) => !REVIEW_REASON.test(String(reason || "")))) {
+        errors.push(`${path}.reasons: 1 to 50 safe reason codes required`);
+      }
+      if (machineNumber && Array.isArray(entry.reasons)) {
+        normalizedMachines.push({
+          machineNumber,
+          reasons: entry.reasons.map(String),
+        });
+      }
+    });
+  }
+
+  if (errors.length) return { valid: false, errors, notice: null };
+  return {
+    valid: true,
+    errors: [],
+    notice: {
+      jobId: String(sourceNotice.jobId),
+      date: sourceNotice.date,
+      storeName: sourceNotice.storeName.trim(),
+      machineName: sourceNotice.machineName.trim(),
+      analyzedAt: sourceNotice.analyzedAt,
+      sourceFingerprint: {
+        algorithm: "SHA-256",
+        hash: sourceFingerprint.hash.toLowerCase(),
+        fileCount: sourceFingerprint.fileCount,
+      },
+      pendingMachines: normalizedMachines,
+      blockingReasons: blockingReasons.map(String),
+    },
+  };
+}
+
 export function validatePushEnvelopeShape(envelope, { now = Date.now() } = {}) {
   const errors = [];
   if (!isPlainObject(envelope)) {
@@ -653,12 +813,25 @@ export async function verifyAndDecodePushEnvelope(
   const shape = validatePushEnvelopeShape(envelope, { now });
   if (!shape.valid) return { valid: false, errors: shape.errors, envelope: null, scan: null };
 
-  const decoded = decodeDeltaImportPayload(envelope.payload, {
-    createdAt: envelope.createdAt,
-    now,
-  });
+  const isReviewNotice = envelope.payload.schema === REVIEW_NOTICE_SCHEMA;
+  const decoded = isReviewNotice
+    ? decodeReviewNoticePayload(envelope.payload, {
+      createdAt: envelope.createdAt,
+      now,
+    })
+    : decodeDeltaImportPayload(envelope.payload, {
+      createdAt: envelope.createdAt,
+      now,
+    });
   if (!decoded.valid) {
-    return { valid: false, errors: decoded.errors, envelope: null, scan: null };
+    return {
+      valid: false,
+      errors: decoded.errors,
+      envelope: null,
+      kind: null,
+      scan: null,
+      reviewNotice: null,
+    };
   }
 
   let calculatedDigest;
@@ -675,7 +848,9 @@ export async function verifyAndDecodePushEnvelope(
     valid: true,
     errors: [],
     envelope,
-    scan: decoded.scan,
+    kind: isReviewNotice ? "review" : "delta",
+    scan: decoded.scan || null,
+    reviewNotice: decoded.notice || null,
     calculatedDigest,
   };
 }
@@ -693,7 +868,9 @@ export async function validateAndDecodePushEnvelope(
     valid: result.valid,
     errors: result.errors,
     batchId: safeBatchId,
+    kind: result.kind || null,
     scan: result.scan,
+    reviewNotice: result.reviewNotice || null,
   };
 }
 
@@ -814,11 +991,34 @@ export async function markPushBatchStatus(
   }, { signal });
 }
 
+export async function resolveReviewNoticesForFingerprint(
+  sourceFingerprint,
+  details = {},
+  options = {},
+) {
+  const fingerprint = String(sourceFingerprint || "").toLowerCase();
+  if (!HEX_64.test(fingerprint)) return 0;
+  const records = await listPushInboxWithStatuses();
+  const matches = records.filter((record) => (
+    record.status === "review"
+    && String(record.statusDetails?.sourceFingerprint || "").toLowerCase() === fingerprint
+  ));
+  for (const record of matches) {
+    await markPushBatchStatus(record.batchId, "resolved", {
+      ...details,
+      sourceFingerprint: fingerprint,
+    }, options);
+  }
+  return matches.length;
+}
+
 export async function getPushInboxSummary() {
   const records = await listPushInboxWithStatuses();
   const summary = {
     total: records.length,
     pending: 0,
+    review: 0,
+    resolved: 0,
     imported: 0,
     duplicate: 0,
     rejected: 0,
