@@ -1,7 +1,7 @@
 import {
   hasTrustedHeaderContextEvidence,
   isStrictAutoImportCandidate,
-  listPendingPushBatches,
+  listProcessablePushBatches,
   markPushBatchStatus,
   resolveReviewNoticesForFingerprint,
   validateAndDecodePushEnvelope,
@@ -41,6 +41,73 @@ function conciseErrors(errors) {
 
 function fingerprintOf(scan) {
   return String(scan?.sourceFingerprint?.hash || "").toLowerCase();
+}
+
+export function classifyNonDeltaPushRecord(record, decoded) {
+  const recovery = record?.processingContext;
+  const recoveryVersion = recovery?.legacyReviewRecoveryVersion;
+  const recoveryDetails = recoveryVersion
+    ? { legacyReviewRecoveryVersion: recoveryVersion }
+    : {};
+
+  if (decoded?.valid && decoded.kind === "review" && decoded.reviewNotice) {
+    const sourceFingerprint = decoded.reviewNotice.sourceFingerprint.hash;
+    const alreadyFinalized = (
+      recoveryVersion
+      && recovery?.sourceFingerprint === sourceFingerprint
+      && recovery?.finalizedByBatchId
+    );
+    if (alreadyFinalized) {
+      return {
+        summaryKey: "resolved",
+        status: "resolved",
+        details: {
+          ...recoveryDetails,
+          reasonCodes: ["superseded-by-final-import"],
+          sourceFingerprint,
+          resolvedByBatchId: recovery.finalizedByBatchId,
+        },
+      };
+    }
+    return {
+      summaryKey: "review",
+      status: "review",
+      details: {
+        ...recoveryDetails,
+        jobId: decoded.reviewNotice.jobId,
+        date: decoded.reviewNotice.date,
+        storeName: decoded.reviewNotice.storeName,
+        machineName: decoded.reviewNotice.machineName,
+        pendingMachineCount: decoded.reviewNotice.pendingMachines.length,
+        sourceFingerprint,
+        reasonCodes: decoded.reviewNotice.blockingReasons,
+      },
+    };
+  }
+
+  if (decoded?.kind === "unsupported") {
+    return {
+      summaryKey: "waiting",
+      status: "pending",
+      details: {
+        reasonCodes: ["unsupported-payload-schema"],
+        payloadSchema: decoded.unsupportedPayloadSchema,
+      },
+    };
+  }
+
+  if (!decoded?.valid || !decoded.scan) {
+    return {
+      summaryKey: "rejected",
+      status: "rejected",
+      details: {
+        ...recoveryDetails,
+        reasonCodes: ["invalid-envelope"],
+        errors: conciseErrors(decoded?.errors),
+      },
+    };
+  }
+  return null;
 }
 
 export function resolveRegisteredPushStore(
@@ -294,11 +361,12 @@ async function runPendingPushImports({
     imported: 0,
     duplicate: 0,
     review: 0,
+    resolved: 0,
     waiting: 0,
     rejected: 0,
     errors: 0,
   };
-  const records = await listPendingPushBatches({ limit });
+  const records = await listProcessablePushBatches({ limit });
   throwIfAborted();
   summary.found = records.length;
   if (!records.length) return summary;
@@ -323,25 +391,16 @@ async function runPendingPushImports({
     try {
       const decoded = await validateAndDecodePushEnvelope(record?.envelope);
       throwIfAborted();
-      if (decoded.valid && decoded.kind === "review" && decoded.reviewNotice) {
-        summary.review += 1;
-        await safeMark(batchId, "review", {
-          jobId: decoded.reviewNotice.jobId,
-          date: decoded.reviewNotice.date,
-          storeName: decoded.reviewNotice.storeName,
-          machineName: decoded.reviewNotice.machineName,
-          pendingMachineCount: decoded.reviewNotice.pendingMachines.length,
-          sourceFingerprint: decoded.reviewNotice.sourceFingerprint.hash,
-          reasonCodes: decoded.reviewNotice.blockingReasons,
-        }, signal, expectedEpoch);
-        continue;
-      }
-      if (!decoded.valid || !decoded.scan) {
-        summary.rejected += 1;
-        await safeMark(batchId, "rejected", {
-          reasonCodes: ["invalid-envelope"],
-          errors: conciseErrors(decoded.errors),
-        }, signal, expectedEpoch);
+      const nonDelta = classifyNonDeltaPushRecord(record, decoded);
+      if (nonDelta) {
+        summary[nonDelta.summaryKey] += 1;
+        await safeMark(
+          batchId,
+          nonDelta.status,
+          nonDelta.details,
+          signal,
+          expectedEpoch,
+        );
         continue;
       }
 

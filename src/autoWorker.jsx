@@ -14,6 +14,16 @@ const BOUNDED_DELTA_APPROVAL_SCHEMA =
   "site7-push-bridge.bounded-delta-approval";
 const BOUNDED_DELTA_APPROVAL_METHOD =
   "explicit-user-confirmation";
+const BOUNDED_DELTA_STANDING_POLICY_METHOD =
+  "standing-user-overflow-policy";
+const BOUNDED_DELTA_APPROVAL_METHODS = new Set([
+  BOUNDED_DELTA_APPROVAL_METHOD,
+  BOUNDED_DELTA_STANDING_POLICY_METHOD,
+]);
+const REVIEW_DELTA_APPROVAL_SCHEMA =
+  "site7-push-bridge.review-delta-approval";
+const REVIEW_DELTA_APPROVAL_METHOD =
+  "explicit-user-confirmation";
 const BOUNDED_DELTA_APPROVAL_KEYS = new Set([
   "schema",
   "version",
@@ -23,6 +33,20 @@ const BOUNDED_DELTA_APPROVAL_KEYS = new Set([
   "value",
   "approvedAt",
   "approvalMethod",
+]);
+const REVIEW_DELTA_APPROVAL_KEYS = new Set([
+  "schema",
+  "version",
+  "jobId",
+  "aggregateFingerprint",
+  "machineNumber",
+  "value",
+  "approvedAt",
+  "approvalMethod",
+]);
+const USER_APPROVABLE_REVIEW_REASONS = new Set([
+  "short-series",
+  "faint-series",
 ]);
 
 export const AUTO_WORKER_POLICY = Object.freeze({
@@ -147,7 +171,7 @@ function normalizeBoundedDeltaApprovals(
   if (
     !Array.isArray(rawApprovals)
     || rawApprovals.length < 1
-    || rawApprovals.length > 16
+    || rawApprovals.length > 64
     || !SHA256_HEX.test(String(aggregateFingerprint || ""))
   ) {
     throw new Error("bounded delta approvals are invalid");
@@ -174,7 +198,7 @@ function normalizeBoundedDeltaApprovals(
       || typeof approval.approvedAt !== "string"
       || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u.test(approval.approvedAt)
       || !Number.isFinite(Date.parse(approval.approvedAt))
-      || approval.approvalMethod !== BOUNDED_DELTA_APPROVAL_METHOD
+      || !BOUNDED_DELTA_APPROVAL_METHODS.has(approval.approvalMethod)
     ) {
       throw new Error("bounded delta approval does not match the job");
     }
@@ -187,7 +211,60 @@ function normalizeBoundedDeltaApprovals(
       machineNumber: approval.machineNumber,
       value: approval.value,
       approvedAt: approval.approvedAt,
-      approvalMethod: BOUNDED_DELTA_APPROVAL_METHOD,
+      approvalMethod: approval.approvalMethod,
+    };
+  });
+}
+
+function normalizeReviewDeltaApprovals(
+  rawApprovals,
+  { jobId, aggregateFingerprint } = {},
+) {
+  if (rawApprovals === undefined) return [];
+  if (
+    !Array.isArray(rawApprovals)
+    || rawApprovals.length < 1
+    || rawApprovals.length > 64
+    || !SHA256_HEX.test(String(aggregateFingerprint || ""))
+  ) {
+    throw new Error("review delta approvals are invalid");
+  }
+  const seen = new Set();
+  return rawApprovals.map((approval) => {
+    if (
+      !approval
+      || typeof approval !== "object"
+      || Array.isArray(approval)
+      || Object.keys(approval).some((key) => !REVIEW_DELTA_APPROVAL_KEYS.has(key))
+      || approval.schema !== REVIEW_DELTA_APPROVAL_SCHEMA
+      || approval.version !== 1
+      || approval.jobId !== jobId
+      || approval.aggregateFingerprint !== aggregateFingerprint
+      || !Number.isSafeInteger(approval.machineNumber)
+      || approval.machineNumber < 1
+      || approval.machineNumber > 999_999
+      || seen.has(approval.machineNumber)
+      || !Number.isSafeInteger(approval.value)
+      || approval.value < -10_000_000
+      || approval.value > 10_000_000
+      || approval.value % 500 !== 0
+      || typeof approval.approvedAt !== "string"
+      || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u.test(approval.approvedAt)
+      || !Number.isFinite(Date.parse(approval.approvedAt))
+      || approval.approvalMethod !== REVIEW_DELTA_APPROVAL_METHOD
+    ) {
+      throw new Error("review delta approval does not match the job");
+    }
+    seen.add(approval.machineNumber);
+    return {
+      schema: REVIEW_DELTA_APPROVAL_SCHEMA,
+      version: 1,
+      jobId,
+      aggregateFingerprint,
+      machineNumber: approval.machineNumber,
+      value: approval.value,
+      approvedAt: approval.approvedAt,
+      approvalMethod: REVIEW_DELTA_APPROVAL_METHOD,
     };
   });
 }
@@ -525,6 +602,10 @@ export function normalizeJobManifest(rawManifest, originLike) {
       manifest.boundedDeltaApprovals,
       { jobId, aggregateFingerprint },
     ),
+    reviewDeltaApprovals: normalizeReviewDeltaApprovals(
+      manifest.reviewDeltaApprovals,
+      { jobId, aggregateFingerprint },
+    ),
     resultUrl,
   };
 }
@@ -612,14 +693,45 @@ function boundedApprovalEligibility(row, approval) {
   const observation = row?.boundaryObservation
     ?? row?.rawGraphCandidate?.boundaryObservation;
   const boundaryValue = finiteInteger(observation?.value);
+  const boundaryKind = row?.deltaRange?.kind;
+  const isTop = boundaryKind === "censored-top";
+  const isBottom = boundaryKind === "censored-bottom";
+  const boundary = isTop ? "top" : isBottom ? "bottom" : null;
+  const endpointReason = isTop
+    ? "endpoint-clipped-top"
+    : isBottom
+      ? "endpoint-clipped-bottom"
+      : null;
   const observedCandidate = finiteInteger(
     row?.deltaRange?.observedCandidate
       ?? row?.rawGraphCandidate?.val,
   );
-  const roundedTop = observedCandidate === null
+  const roundedObservedCandidate = observedCandidate === null
     ? null
     : Math.round(observedCandidate / 500) * 500;
+  const visibleBoundary = finiteInteger(
+    isTop
+      ? row?.visibleValueRange?.upper
+      : isBottom
+        ? row?.visibleValueRange?.lower
+        : null,
+  );
+  const approvedDisplayBoundary = (
+    visibleBoundary !== null
+    && boundaryValue !== null
+    && visibleBoundary % 500 === 0
+    && (
+      (isTop && visibleBoundary >= boundaryValue && visibleBoundary - boundaryValue <= 500)
+      || (isBottom && visibleBoundary <= boundaryValue && boundaryValue - visibleBoundary <= 500)
+    )
+  )
+    ? visibleBoundary
+    : null;
   const reasonCodes = Array.isArray(row?.reasonCodes) ? row.reasonCodes : [];
+  const directionMatches = (
+    (isTop && approval.value >= boundaryValue)
+    || (isBottom && approval.value <= boundaryValue)
+  );
   const eligible = (
     machineNumber === approval.machineNumber
     && row?.machineNumberVerified === true
@@ -627,27 +739,34 @@ function boundedApprovalEligibility(row, approval) {
     && row?.status === "bounded"
     && row?.valueSource === "bounded-range"
     && row?.val === null
-    && row?.deltaRange?.kind === "censored-top"
-    && row?.deltaRange?.boundary === "top"
+    && (isTop || isBottom)
+    && row?.deltaRange?.boundary === boundary
     && row?.deltaRange?.exact === false
-    && observation?.kind === "censored-top"
-    && observation?.boundary === "top"
+    && observation?.kind === boundaryKind
+    && observation?.boundary === boundary
     && observation?.exact === false
-    && reasonCodes.includes("endpoint-clipped-top")
+    && reasonCodes.includes(endpointReason)
     && reasonCodes.includes("clipped-series")
     && row?.calibration?.source === "panel"
     && Number(row?.calibration?.quality) >= 0.7
     && Number(row?.rawGraphCandidate?.confidence) >= 0.7
     && boundaryValue !== null
     && observedCandidate !== null
-    && approval.value >= boundaryValue
-    && approval.value === roundedTop
+    && directionMatches
+    && (
+      approval.value === roundedObservedCandidate
+      || approval.value === approvedDisplayBoundary
+    )
   );
   return {
     eligible,
+    boundary,
+    boundaryKind,
     boundaryValue,
     observedCandidate,
-    roundedTop,
+    roundedObservedCandidate,
+    approvedDisplayBoundary,
+    endpointReason,
     reasonCodes,
   };
 }
@@ -689,11 +808,11 @@ export function applyApprovedBoundedDeltas(
       machineNumber,
       value: approval.value,
       approvedAt: approval.approvedAt,
-      approvalMethod: BOUNDED_DELTA_APPROVAL_METHOD,
-      boundaryKind: "censored-top",
+      approvalMethod: approval.approvalMethod,
+      boundaryKind: evidence.boundaryKind,
       boundaryValue: evidence.boundaryValue,
       observedCandidate: evidence.observedCandidate,
-      reasonCodes: ["endpoint-clipped-top", "clipped-series"],
+      reasonCodes: [evidence.endpointReason, "clipped-series"],
     };
     applied.push(audit);
     return {
@@ -707,6 +826,98 @@ export function applyApprovedBoundedDeltas(
       reviewConfirmed: true,
       reviewedAt: approval.approvedAt,
       boundedDeltaApprovalAudit: audit,
+    };
+  });
+  const presentMachines = new Set(
+    list.map((row) => finiteInteger(row?.num)).filter((value) => value !== null),
+  );
+  for (const approval of byMachine.values()) {
+    if (!presentMachines.has(approval.machineNumber)) {
+      rejected.push({
+        machineNumber: approval.machineNumber,
+        value: approval.value,
+        reason: "approved-machine-missing",
+      });
+    }
+  }
+  return { rows: transformed, applied, rejected };
+}
+
+function reviewApprovalEligibility(row, approval) {
+  const reasonCodes = Array.isArray(row?.reasonCodes) ? row.reasonCodes : [];
+  const machineNumber = finiteInteger(row?.num);
+  const rowValue = finiteInteger(row?.val);
+  const originalValue = finiteInteger(
+    row?.shortSeriesValidation?.originalValue ?? row?.val,
+  );
+  return (
+    row?.status === "review"
+    && row?.reviewConfirmed !== true
+    && machineNumber === approval.machineNumber
+    && rowValue === approval.value
+    && originalValue === approval.value
+    && row?.machineNumberVerified === true
+    && row?.jointMatch?.accepted === true
+    && finiteInteger(row?.jointMatch?.resolvedNum) === approval.machineNumber
+    && Number(row?.confidence) >= 0.8
+    && row?.calibration?.source === "panel"
+    && Number(row?.calibration?.quality) >= 0.95
+    && row?.boundaryObservation == null
+    && row?.valueConstraint == null
+    && row?.shortSeriesValidation?.accepted === false
+    && reasonCodes.includes("short-series")
+    && reasonCodes.every((reason) => USER_APPROVABLE_REVIEW_REASONS.has(reason))
+  );
+}
+
+export function applyApprovedReviewDeltas(
+  rows,
+  {
+    jobId,
+    aggregateFingerprint,
+    approvals = [],
+  } = {},
+) {
+  const list = Array.isArray(rows) ? rows : [];
+  const applied = [];
+  const rejected = [];
+  const byMachine = new Map(
+    (Array.isArray(approvals) ? approvals : [])
+      .map((approval) => [approval.machineNumber, approval]),
+  );
+  const transformed = list.map((row) => {
+    const machineNumber = finiteInteger(row?.num);
+    const approval = byMachine.get(machineNumber);
+    if (!approval) return row;
+    if (!reviewApprovalEligibility(row, approval)) {
+      rejected.push({
+        machineNumber,
+        value: approval.value,
+        reason: "review-evidence-mismatch",
+      });
+      return row;
+    }
+    const audit = {
+      schema: REVIEW_DELTA_APPROVAL_SCHEMA,
+      version: 1,
+      jobId,
+      aggregateFingerprint,
+      machineNumber,
+      value: approval.value,
+      approvedAt: approval.approvedAt,
+      approvalMethod: REVIEW_DELTA_APPROVAL_METHOD,
+      originalStatus: "review",
+      reasonCodes: [...row.reasonCodes],
+    };
+    applied.push(audit);
+    return {
+      ...row,
+      val: approval.value,
+      status: "review",
+      reviewConfirmed: true,
+      reviewedAt: approval.approvedAt,
+      valueSource: "explicit-review-user-approval",
+      reviewDeltaApprovalAudit: audit,
     };
   });
   const presentMachines = new Set(
@@ -776,7 +987,12 @@ export async function buildAutoWorkerCandidate(
     approvals: approvalContext.boundedDeltaApprovals,
     getRank: deltaEngine.getRank,
   });
-  const candidateRows = approvalResult.rows;
+  const reviewApprovalResult = applyApprovedReviewDeltas(approvalResult.rows, {
+    jobId: approvalContext.jobId,
+    aggregateFingerprint: approvalContext.aggregateFingerprint,
+    approvals: approvalContext.reviewDeltaApprovals,
+  });
+  const candidateRows = reviewApprovalResult.rows;
   const validation = selectors.validateDeltaRows(candidateRows);
   let machineValidation = null;
   if (Array.isArray(context?.customMachines)) {
@@ -826,6 +1042,7 @@ export async function buildAutoWorkerCandidate(
     slots.some((slot, index) => (
       (slot?.status !== "ok" || !Number.isFinite(Number(slot?.val)))
       && !candidateRows[index]?.boundedDeltaApprovalAudit
+      && !candidateRows[index]?.reviewDeltaApprovalAudit
     )),
     "graph-slot-not-ok",
   );
@@ -835,6 +1052,13 @@ export async function buildAutoWorkerCandidate(
       || approvalResult.applied.length
         !== (approvalContext.boundedDeltaApprovals?.length || 0),
     "bounded-approval-not-applicable",
+  );
+  addBlockingReason(
+    blockingReasons,
+    reviewApprovalResult.rejected.length !== 0
+      || reviewApprovalResult.applied.length
+        !== (approvalContext.reviewDeltaApprovals?.length || 0),
+    "review-approval-not-applicable",
   );
   addBlockingReason(blockingReasons, numberOcr?.accepted !== true, "machine-number-ocr-not-accepted");
   addBlockingReason(blockingReasons, numbers.length !== slots.length, "machine-number-count-mismatch");
@@ -877,6 +1101,8 @@ export async function buildAutoWorkerCandidate(
     machineValidation,
     appliedBoundedDeltaApprovals: approvalResult.applied,
     rejectedBoundedDeltaApprovals: approvalResult.rejected,
+    appliedReviewDeltaApprovals: reviewApprovalResult.applied,
+    rejectedReviewDeltaApprovals: reviewApprovalResult.rejected,
     preparedSiteSeven: {
       rowCount: preparedRows.rows.length,
       invalidCount: preparedRows.invalidCount,
@@ -909,6 +1135,7 @@ export async function buildCompletedPayload(job, analysis) {
     jobId: job.jobId,
     aggregateFingerprint: job.aggregateFingerprint,
     boundedDeltaApprovals: job.boundedDeltaApprovals,
+    reviewDeltaApprovals: job.reviewDeltaApprovals,
   });
   return {
     protocolVersion: AUTO_WORKER_PROTOCOL_VERSION,
@@ -928,6 +1155,7 @@ export async function buildCompletedPayload(job, analysis) {
     strictReady: candidate.strictReady,
     blockingReasons: candidate.blockingReasons,
     appliedBoundedDeltaApprovals: candidate.appliedBoundedDeltaApprovals,
+    appliedReviewDeltaApprovals: candidate.appliedReviewDeltaApprovals,
     diagnostics: {
       validation: candidate.validation,
       machineValidation: candidate.machineValidation,

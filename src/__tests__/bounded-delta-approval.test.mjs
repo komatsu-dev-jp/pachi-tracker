@@ -35,6 +35,15 @@ const approval = {
   approvedAt: "2026-07-30T01:00:00.000Z",
   approvalMethod: "explicit-user-confirmation",
 };
+const standingTopApproval = {
+  ...approval,
+  approvalMethod: "standing-user-overflow-policy",
+};
+const standingBottomApproval = {
+  ...standingTopApproval,
+  machineNumber: 97,
+  value: -30_000,
+};
 
 function boundedRow(overrides = {}) {
   return {
@@ -142,6 +151,60 @@ function boundedAnalysis() {
   };
 }
 
+function displayEdgeTopRow(overrides = {}) {
+  return boundedRow({
+    visibleValueRange: { lower: -30_000, upper: 30_000 },
+    deltaRange: {
+      ...boundedRow().deltaRange,
+      observedCandidate: 29_000,
+    },
+    rawGraphCandidate: {
+      ...boundedRow().rawGraphCandidate,
+      val: 29_000,
+    },
+    ...overrides,
+  });
+}
+
+function boundedBottomRow(overrides = {}) {
+  return {
+    ...boundedRow(),
+    num: "97",
+    machineNumber: "97",
+    jointMatch: { accepted: true, resolvedNum: "97", matchedBy: "num" },
+    reasonCodes: ["endpoint-clipped-bottom", "clipped-series"],
+    visibleValueRange: { lower: -30_000, upper: 30_000 },
+    boundaryObservation: {
+      kind: "censored-bottom",
+      boundary: "bottom",
+      exact: false,
+      value: -29_500,
+    },
+    deltaRange: {
+      kind: "censored-bottom",
+      boundary: "bottom",
+      exact: false,
+      boundaryValue: -29_500,
+      observedCandidate: -29_000,
+      source: "graph-boundary",
+      lower: null,
+      upper: null,
+    },
+    rawGraphCandidate: {
+      val: -29_000,
+      confidence: 0.967,
+      status: "review",
+      boundaryObservation: {
+        kind: "censored-bottom",
+        boundary: "bottom",
+        exact: false,
+        value: -29_500,
+      },
+    },
+    ...overrides,
+  };
+}
+
 test("job-bound approval only converts matching censored-top evidence", () => {
   const result = worker.applyApprovedBoundedDeltas([boundedRow()], {
     jobId,
@@ -186,6 +249,48 @@ test("job-bound approval only converts matching censored-top evidence", () => {
   }
 });
 
+test("standing policy accepts only matching +/-30000 display edges", () => {
+  const top = worker.applyApprovedBoundedDeltas([displayEdgeTopRow()], {
+    jobId,
+    aggregateFingerprint,
+    approvals: [standingTopApproval],
+    getRank: () => ({ rank: "SS" }),
+  });
+  assert.equal(top.rejected.length, 0);
+  assert.equal(top.rows[0].val, 30_000);
+  assert.equal(
+    top.rows[0].boundedDeltaApprovalAudit.approvalMethod,
+    "standing-user-overflow-policy",
+  );
+  assert.equal(top.rows[0].boundedDeltaApprovalAudit.boundaryKind, "censored-top");
+
+  const bottom = worker.applyApprovedBoundedDeltas([boundedBottomRow()], {
+    jobId,
+    aggregateFingerprint,
+    approvals: [standingBottomApproval],
+    getRank: () => ({ rank: "D" }),
+  });
+  assert.equal(bottom.rejected.length, 0);
+  assert.equal(bottom.rows[0].val, -30_000);
+  assert.equal(bottom.rows[0].boundedDeltaApprovalAudit.boundaryKind, "censored-bottom");
+  assert.deepEqual(
+    bottom.rows[0].boundedDeltaApprovalAudit.reasonCodes,
+    ["endpoint-clipped-bottom", "clipped-series"],
+  );
+
+  const wrongScale = worker.applyApprovedBoundedDeltas([
+    displayEdgeTopRow({
+      visibleValueRange: { lower: -20_000, upper: 20_000 },
+    }),
+  ], {
+    jobId,
+    aggregateFingerprint,
+    approvals: [standingTopApproval],
+  });
+  assert.equal(wrongScale.applied.length, 0);
+  assert.equal(wrongScale.rejected.length, 1);
+});
+
 test("worker becomes strict-ready only when the sole bounded row uses the exact approval", async () => {
   const candidate = await worker.buildAutoWorkerCandidate(
     boundedAnalysis(),
@@ -228,6 +333,11 @@ test("manifest rejects approvals for another job/fingerprint or conflicting shap
     "http://127.0.0.1:43123",
   );
   assert.deepEqual(normalized.boundedDeltaApprovals, [approval]);
+  const standing = worker.normalizeJobManifest({
+    ...manifest,
+    boundedDeltaApprovals: [standingTopApproval],
+  }, "http://127.0.0.1:43123");
+  assert.deepEqual(standing.boundedDeltaApprovals, [standingTopApproval]);
   assert.throws(
     () => worker.normalizeJobManifest({
       ...manifest,
@@ -265,6 +375,7 @@ test("compact estimate audit is decoded onto rows and retained on the scan", () 
       rows: [
         [30, -3500, 100, 700, null, 10, 1, 100, 10, 1],
         [96, 30_000, 100, 700, null, 10, 1, 100, 10, 1],
+        [97, -30_000, 100, 700, null, 10, 1, 100, 10, 1],
       ],
       estimatedRows: [
         [30, -3500, "short-3of4", null, null, null],
@@ -274,6 +385,14 @@ test("compact estimate audit is decoded onto rows and retained on the scan", () 
           "user-censored-top",
           approval.approvedAt,
           29_500,
+          jobId,
+        ],
+        [
+          97,
+          -30_000,
+          "user-censored-bottom",
+          approval.approvedAt,
+          -29_500,
           jobId,
         ],
       ],
@@ -298,6 +417,16 @@ test("compact estimate audit is decoded onto rows and retained on the scan", () 
     boundaryValue: 29_500,
     jobId,
   });
+  assert.equal(
+    decoded.scan.rows[2].valueSource,
+    "paired-windows-user-approved-estimate",
+  );
+  assert.deepEqual(decoded.scan.rows[2].estimateAudit, {
+    source: "user-censored-bottom",
+    approvedAt: approval.approvedAt,
+    boundaryValue: -29_500,
+    jobId,
+  });
   assert.deepEqual(decoded.scan.estimatedRows, payload.scan.estimatedRows);
 
   const legacy = structuredClone(payload);
@@ -316,6 +445,7 @@ test("compact estimate audit is decoded onto rows and retained on the scan", () 
     (value) => { value.scan.estimatedRows[1][1] = 30_500; },
     (value) => { value.scan.estimatedRows[1][4] = 30_500; },
     (value) => { value.scan.estimatedRows[1][5] = "job-other"; },
+    (value) => { value.scan.estimatedRows[2][4] = -30_500; },
   ];
   for (const mutate of invalidMutations) {
     const invalid = structuredClone(payload);
