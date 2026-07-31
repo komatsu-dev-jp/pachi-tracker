@@ -76,6 +76,15 @@ assert.equal(
 );
 assert.equal(map.all[0].history.length, 2);
 assert.equal(map.all[0].historyDayCount, 2);
+assert.deepEqual(
+  map.all[0].historyEntries.map((entry) => entry.date),
+  ["2026-07-01", "2026-07-02"],
+  "グラフで日付ごとの回転数を選べるよう、日付も保持する",
+);
+assert.deepEqual(
+  map.all[0].historyEntries.map((entry) => entry.rotation),
+  map.all[0].history,
+);
 assert.deepEqual(map.all[0].dataCoverage, {
   effectiveDays: 2,
   fromDate: "2026-07-01",

@@ -1036,34 +1036,140 @@ function HallMap({ data, filter, selectedId, activeIslandId, onChangeIsland, onS
 }
 
 // ============================ 選択台詳細 ============================
-function Sparkline({ points, color }) {
-  const w = 132;
-  const h = 52;
-  const pad = 4;
-  const min = Math.min(...points);
-  const max = Math.max(...points);
+function formatHistoryDate(value, short = false) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ""));
+  if (!match) return value || "日付不明";
+  const [, year, month, day] = match;
+  return short
+    ? `${Number(month)}/${Number(day)}`
+    : `${Number(year)}年${Number(month)}月${Number(day)}日`;
+}
+
+function Sparkline({ entries, color }) {
+  const usableEntries = (Array.isArray(entries) ? entries : []).filter(
+    (entry) => entry?.date && isFiniteValue(entry?.rotation),
+  );
+  const [selectedDate, setSelectedDate] = useState(
+    () => usableEntries[usableEntries.length - 1]?.date || "",
+  );
+
+  if (!usableEntries.length) {
+    return (
+      <div className="strategy-history-empty">
+        日付ごとの回転数は、差玉データがたまると確認できます
+      </div>
+    );
+  }
+
+  const w = 320;
+  const h = 94;
+  const padX = 14;
+  const padTop = 10;
+  const padBottom = 20;
+  const values = usableEntries.map((entry) => Number(entry.rotation));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
   const span = max - min || 1;
-  const step = (w - pad * 2) / (points.length - 1);
-  const coords = points.map((p, i) => {
-    const x = pad + i * step;
-    const y = pad + (1 - (p - min) / span) * (h - pad * 2);
+  const step = usableEntries.length > 1
+    ? (w - padX * 2) / (usableEntries.length - 1)
+    : 0;
+  const coords = values.map((point, index) => {
+    const x = usableEntries.length > 1 ? padX + index * step : w / 2;
+    const y = padTop + (1 - (point - min) / span) * (h - padTop - padBottom);
     return [x, y];
   });
   const line = coords.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
-  const area = `${line} L${coords[coords.length - 1][0].toFixed(1)} ${h - pad} L${coords[0][0].toFixed(1)} ${h - pad} Z`;
-  const last = coords[coords.length - 1];
+  const area = usableEntries.length > 1
+    ? `${line} L${coords[coords.length - 1][0].toFixed(1)} ${h - padBottom} L${coords[0][0].toFixed(1)} ${h - padBottom} Z`
+    : "";
+  const storedSelectedIndex = usableEntries.findIndex((entry) => entry.date === selectedDate);
+  const safeSelectedIndex = storedSelectedIndex >= 0
+    ? storedSelectedIndex
+    : usableEntries.length - 1;
+  const selectedEntry = usableEntries[safeSelectedIndex];
+  const selectedPoint = coords[safeSelectedIndex];
+
   return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
-      <defs>
-        <linearGradient id="spark" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.32" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={area} fill="url(#spark)" />
-      <path d={line} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={last[0]} cy={last[1]} r="3" fill={color} />
-    </svg>
+    <div className="strategy-history-interactive">
+      <div className="strategy-history-readout" aria-live="polite">
+        <span>
+          <small>選択した日</small>
+          <time dateTime={selectedEntry.date}>{formatHistoryDate(selectedEntry.date)}</time>
+        </span>
+        <span>
+          <small>推定回転数</small>
+          <strong style={{ color }}>{fmt(selectedEntry.rotation, 1)}</strong>
+          <em>回/千円</em>
+        </span>
+      </div>
+      <div className="strategy-history-plot">
+        <svg
+          viewBox={`0 0 ${w} ${h}`}
+          role="group"
+          aria-label="日付ごとの推定回転数。グラフの点をタップすると数値を確認できます"
+        >
+          <defs>
+            <linearGradient id="strategy-history-spark" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity="0.32" />
+              <stop offset="100%" stopColor={color} stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          {area && <path d={area} fill="url(#strategy-history-spark)" />}
+          <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          <line
+            x1={selectedPoint[0]}
+            x2={selectedPoint[0]}
+            y1={padTop}
+            y2={h - padBottom}
+            stroke={color}
+            strokeOpacity=".55"
+            strokeDasharray="3 3"
+          />
+          {coords.map(([x, y], index) => {
+            const segmentStart = index === 0 ? 0 : (coords[index - 1][0] + x) / 2;
+            const segmentEnd = index === coords.length - 1 ? w : (x + coords[index + 1][0]) / 2;
+            const active = index === safeSelectedIndex;
+            const entry = usableEntries[index];
+            return (
+              <g
+                key={`${entry.date}-${index}`}
+                className="strategy-history-point-button"
+                role="button"
+                tabIndex="0"
+                aria-pressed={active}
+                aria-label={`${formatHistoryDate(entry.date)}、推定回転数${fmt(entry.rotation, 1)}回/千円`}
+                onClick={() => setSelectedDate(entry.date)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelectedDate(entry.date);
+                  }
+                }}
+              >
+                <rect
+                  className="strategy-history-hit-target"
+                  x={segmentStart}
+                  y="0"
+                  width={segmentEnd - segmentStart}
+                  height={h - padBottom + 2}
+                  fill="transparent"
+                />
+                <circle cx={x} cy={y} r={active ? 7 : 4} fill={active ? P.bg : color} stroke={color} strokeWidth={active ? 3 : 2} />
+              </g>
+            );
+          })}
+          <text x={padX} y={h - 4} fill={P.sub} fontSize="9" textAnchor="start">
+            {formatHistoryDate(usableEntries[0].date, true)}
+          </text>
+          {usableEntries.length > 1 && (
+            <text x={w - padX} y={h - 4} fill={P.sub} fontSize="9" textAnchor="end">
+              {formatHistoryDate(usableEntries[usableEntries.length - 1].date, true)}
+            </text>
+          )}
+        </svg>
+      </div>
+      <div className="strategy-history-tap-hint">グラフの点をタップして日付を切り替え</div>
+    </div>
   );
 }
 
@@ -1297,8 +1403,8 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
               <div style={{ fontSize: 9, color: P.sub, fontWeight: 700, marginBottom: 4 }}>
                 過去推定回転率 ・ {machine.historyDayCount > 0 ? `有効${fmt(machine.historyDayCount)}日` : "データ待ち"}
               </div>
-              <div style={{ background: P.bg, border: `1px solid ${P.line}`, borderRadius: 12, padding: "6px 0" }}>
-                <Sparkline points={machine.history} color={v.color} />
+              <div className="strategy-history-chart-shell">
+                <Sparkline key={machine.id} entries={machine.historyEntries} color={v.color} />
               </div>
             </div>
           </div>
