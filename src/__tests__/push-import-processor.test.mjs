@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   AUTO_IMPORT_MIN_CONFIDENCE,
+  classifyNonDeltaPushRecord,
   evaluateDecodedPushScan,
   resolveRegisteredPushStore,
 } from "../pushImportProcessor.js";
@@ -340,4 +341,71 @@ test("店舗の島配置範囲外なら推測登録せず保留する", () => {
     { status: result.status, code: result.code },
     { status: "waiting", code: "store-layout-review" },
   );
+});
+
+test("legacy review recovery resolves finalized data and marks invalid retries once", () => {
+  const notice = {
+    jobId: "job-review-1",
+    date: "2026-07-30",
+    storeName: "Test Store",
+    machineName: "Test Machine",
+    pendingMachines: [{ machineNumber: "20", reasons: ["bounded-delta"] }],
+    blockingReasons: ["bounded-delta"],
+    sourceFingerprint: {
+      algorithm: "SHA-256",
+      hash: "c".repeat(64),
+      fileCount: 4,
+    },
+  };
+  const recoveryRecord = {
+    processingContext: {
+      legacyReviewRecoveryVersion: 1,
+      sourceFingerprint: "c".repeat(64),
+      finalizedByBatchId: "final-delta-1",
+    },
+  };
+  const resolved = classifyNonDeltaPushRecord(recoveryRecord, {
+    valid: true,
+    kind: "review",
+    reviewNotice: notice,
+  });
+  assert.equal(resolved.status, "resolved");
+  assert.equal(resolved.details.resolvedByBatchId, "final-delta-1");
+  assert.equal(resolved.details.legacyReviewRecoveryVersion, 1);
+
+  const pendingReview = classifyNonDeltaPushRecord({
+    processingContext: {
+      ...recoveryRecord.processingContext,
+      finalizedByBatchId: null,
+    },
+  }, {
+    valid: true,
+    kind: "review",
+    reviewNotice: notice,
+  });
+  assert.equal(pendingReview.status, "review");
+  assert.equal(pendingReview.details.pendingMachineCount, 1);
+
+  const invalid = classifyNonDeltaPushRecord(recoveryRecord, {
+    valid: false,
+    kind: null,
+    errors: ["invalid review"],
+  });
+  assert.equal(invalid.status, "rejected");
+  assert.equal(invalid.details.legacyReviewRecoveryVersion, 1);
+});
+
+test("future payload schema stays pending without a retry loop", () => {
+  const deferred = classifyNonDeltaPushRecord({}, {
+    valid: false,
+    kind: "unsupported",
+    unsupportedPayloadSchema: "pachi-tracker.future-import",
+    errors: ["unsupported"],
+  });
+  assert.equal(deferred.status, "pending");
+  assert.equal(deferred.summaryKey, "waiting");
+  assert.deepEqual(deferred.details, {
+    reasonCodes: ["unsupported-payload-schema"],
+    payloadSchema: "pachi-tracker.future-import",
+  });
 });

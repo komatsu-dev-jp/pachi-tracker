@@ -9,9 +9,11 @@ import {
   decodeDeltaImportPayload,
   decodeReviewNoticePayload,
   hasTrustedHeaderContextEvidence,
+  isLegacyRejectedReviewNotice,
   isStrictAutoImportCandidate,
   parsePairingRequestText,
   sha256Digest,
+  selectProcessablePushRecords,
   subscribeFromPairingRequest,
   validateAndDecodePushEnvelope,
   validatePushEnvelopeShape,
@@ -431,4 +433,104 @@ test("review notice rejects extra fields and unsafe reason text", () => {
   assert.equal(decoded.valid, false);
   assert.match(decoded.errors.join("\n"), /unsupported fields val/u);
   assert.match(decoded.errors.join("\n"), /invalid reason code/u);
+});
+
+test("legacy rejected review notices are selected once and linked to final imports", () => {
+  const reviewEnvelope = {
+    schema: "pachi-tracker.push-batch",
+    version: 1,
+    batchId: "legacy-review-1",
+    createdAt: "2026-07-30T03:00:00.000Z",
+    digest: `sha256:${"d".repeat(64)}`,
+    payload: makeReviewPayload(),
+  };
+  const legacy = {
+    batchId: reviewEnvelope.batchId,
+    status: "rejected",
+    envelope: reviewEnvelope,
+    statusDetails: {
+      reasonCodes: ["invalid-envelope"],
+      errors: ["payload.schema: pachi-tracker.delta-import required"],
+    },
+  };
+  assert.equal(isLegacyRejectedReviewNotice(legacy), true);
+
+  const finalized = {
+    batchId: "final-delta-1",
+    status: "imported",
+    envelope: { payload: { schema: "pachi-tracker.delta-import" } },
+    statusDetails: {
+      sourceFingerprint: "c".repeat(64),
+    },
+  };
+  const deferred = {
+    batchId: "future-1",
+    status: "pending",
+    envelope: { payload: { schema: "pachi-tracker.future-import" } },
+    statusDetails: {
+      reasonCodes: ["unsupported-payload-schema"],
+    },
+  };
+  const selected = selectProcessablePushRecords([deferred, finalized, legacy]);
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0].batchId, legacy.batchId);
+  assert.equal(selected[0].processingContext.legacyReviewRecoveryVersion, 1);
+  assert.equal(selected[0].processingContext.finalizedByBatchId, finalized.batchId);
+
+  const pendingFinal = {
+    batchId: "pending-final-delta",
+    status: "pending",
+    envelope: { payload: { schema: "pachi-tracker.delta-import" } },
+    statusDetails: {},
+  };
+  const sameRun = selectProcessablePushRecords([pendingFinal, legacy]);
+  assert.deepEqual(
+    sameRun.map((record) => record.batchId),
+    [legacy.batchId, pendingFinal.batchId],
+  );
+
+  const checked = structuredClone(legacy);
+  checked.statusDetails.legacyReviewRecoveryVersion = 1;
+  assert.equal(isLegacyRejectedReviewNotice(checked), false);
+  const unrelated = structuredClone(legacy);
+  unrelated.statusDetails.errors = ["different validation error"];
+  assert.equal(isLegacyRejectedReviewNotice(unrelated), false);
+
+  const futureSupported = selectProcessablePushRecords([deferred], {
+    supportedPayloadSchemas: new Set(["pachi-tracker.future-import"]),
+  });
+  assert.equal(futureSupported.length, 1);
+});
+
+test("unknown payload schemas are deferred only after their digest is verified", async () => {
+  const payload = {
+    schema: "pachi-tracker.future-import",
+    version: 1,
+    source: "site-seven-windows",
+    data: { value: 1 },
+  };
+  const envelope = {
+    schema: "pachi-tracker.push-batch",
+    version: 1,
+    batchId: "future-envelope-1",
+    createdAt: "2026-07-30T03:00:00.000Z",
+    digest: await sha256Digest(payload),
+    payload,
+  };
+  const deferred = await validateAndDecodePushEnvelope(envelope, {
+    now: FIXED_NOW,
+  });
+  assert.equal(deferred.valid, false);
+  assert.equal(deferred.kind, "unsupported");
+  assert.equal(
+    deferred.unsupportedPayloadSchema,
+    "pachi-tracker.future-import",
+  );
+
+  envelope.payload.data.value = 2;
+  const tampered = await validateAndDecodePushEnvelope(envelope, {
+    now: FIXED_NOW,
+  });
+  assert.equal(tampered.valid, false);
+  assert.equal(tampered.kind, null);
 });

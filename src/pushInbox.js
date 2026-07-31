@@ -13,6 +13,7 @@ export const REVIEW_NOTICE_SCHEMA = "pachi-tracker.review-notice";
 export const PAIR_REQUEST_SCHEMA = "pachi-tracker.pair-request";
 export const PAIR_RESPONSE_SCHEMA = "pachi-tracker.pair-response";
 export const PUSH_SCHEMA_VERSION = 1;
+export const LEGACY_REVIEW_RECOVERY_VERSION = 1;
 export const AUTO_HEADER_CONTEXT_ENGINE_VERSION =
   "windows-local-v1-auto-worker-header-v1";
 export const AUTO_HEADER_CONTEXT_SOURCE = "windows-ocr-site7-header-consensus";
@@ -115,6 +116,11 @@ const ESTIMATE_SOURCES = new Set([
   "short-3of4",
   "short-near-zero",
   "user-censored-top",
+  "user-censored-bottom",
+]);
+const SUPPORTED_PAYLOAD_SCHEMAS = new Set([
+  DELTA_IMPORT_SCHEMA,
+  REVIEW_NOTICE_SCHEMA,
 ]);
 const BIDI_CONTROL_PATTERN = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
 const PUSH_BATCH_STATUSES = new Set([
@@ -405,15 +411,18 @@ function validateEstimatedRows(value, rows, fingerprint, errors) {
       return;
     }
     seen.add(machineNumber);
-    if (source === "user-censored-top") {
+    if (source === "user-censored-top" || source === "user-censored-bottom") {
       const approvedAt = entry[3];
       const boundaryValue = entry[4];
       const jobId = entry[5];
+      const boundaryDirectionMatches = source === "user-censored-top"
+        ? estimatedValue >= boundaryValue
+        : estimatedValue <= boundaryValue;
       if (
         !isIsoTimestamp(approvedAt)
         || !integerInRange(boundaryValue, -MAX_ABS_DELTA, MAX_ABS_DELTA)
         || estimatedValue % 500 !== 0
-        || estimatedValue < boundaryValue
+        || !boundaryDirectionMatches
         || jobId !== `job-${fingerprint?.hash?.slice(0, 32)}`
       ) {
         errors.push(`${entryPath}: 承認日時・上限境界・元画像識別値が一致しません`);
@@ -612,12 +621,12 @@ export function decodeDeltaImportPayload(payload, { createdAt, now = Date.now() 
         ...(estimate
           ? {
             estimated: true,
-            valueSource: estimate[2] === "user-censored-top"
+            valueSource: estimate[2].startsWith("user-censored-")
               ? "paired-windows-user-approved-estimate"
               : "paired-windows-estimate",
             estimateAudit: {
               source: estimate[2],
-              ...(estimate[2] === "user-censored-top"
+              ...(estimate[2].startsWith("user-censored-")
                 ? {
                   approvedAt: estimate[3],
                   boundaryValue: estimate[4],
@@ -814,6 +823,37 @@ export async function verifyAndDecodePushEnvelope(
   if (!shape.valid) return { valid: false, errors: shape.errors, envelope: null, scan: null };
 
   const isReviewNotice = envelope.payload.schema === REVIEW_NOTICE_SCHEMA;
+  const isDeltaImport = envelope.payload.schema === DELTA_IMPORT_SCHEMA;
+
+  let calculatedDigest;
+  try {
+    calculatedDigest = await sha256Digest(envelope.payload, cryptoApi);
+  } catch {
+    return { valid: false, errors: ["SHA-256検証を実行できませんでした"], envelope: null, scan: null };
+  }
+  if (!equalDigest(envelope.digest, calculatedDigest)) {
+    return { valid: false, errors: ["内容が送信後に変化しているため取り込みません"], envelope: null, scan: null };
+  }
+
+  if (!isReviewNotice && !isDeltaImport) {
+    const payloadSchema = envelope.payload.schema;
+    return {
+      valid: false,
+      errors: ["payload.schema is not supported by this app version"],
+      envelope: null,
+      kind: "unsupported",
+      unsupportedPayloadSchema: isSizedString(payloadSchema, {
+        allowEmpty: false,
+        max: MAX_STRING,
+      }) && !hasUnsafeText(payloadSchema)
+        ? payloadSchema
+        : null,
+      scan: null,
+      reviewNotice: null,
+      calculatedDigest,
+    };
+  }
+
   const decoded = isReviewNotice
     ? decodeReviewNoticePayload(envelope.payload, {
       createdAt: envelope.createdAt,
@@ -832,16 +872,6 @@ export async function verifyAndDecodePushEnvelope(
       scan: null,
       reviewNotice: null,
     };
-  }
-
-  let calculatedDigest;
-  try {
-    calculatedDigest = await sha256Digest(envelope.payload, cryptoApi);
-  } catch {
-    return { valid: false, errors: ["SHA-256検証を実行できませんでした"], envelope: null, scan: null };
-  }
-  if (!equalDigest(envelope.digest, calculatedDigest)) {
-    return { valid: false, errors: ["内容が送信後に変化しているため取り込みません"], envelope: null, scan: null };
   }
 
   return {
@@ -871,6 +901,7 @@ export async function validateAndDecodePushEnvelope(
     kind: result.kind || null,
     scan: result.scan,
     reviewNotice: result.reviewNotice || null,
+    unsupportedPayloadSchema: result.unsupportedPayloadSchema || null,
   };
 }
 
@@ -950,6 +981,89 @@ export async function listPendingPushBatches({ limit = 500 } = {}) {
   const safeLimit = integerInRange(limit, 1, 500) ? limit : 500;
   const records = await listPushInboxWithStatuses();
   return records.filter((record) => record.status === "pending").slice(0, safeLimit);
+}
+
+function recordReasonCodes(record) {
+  return Array.isArray(record?.statusDetails?.reasonCodes)
+    ? record.statusDetails.reasonCodes.map((reason) => String(reason))
+    : [];
+}
+
+function recordPayloadSchema(record) {
+  const schema = record?.envelope?.payload?.schema;
+  return typeof schema === "string" ? schema : "";
+}
+
+function rawReviewFingerprint(record) {
+  const hash = record?.envelope?.payload?.notice?.sourceFingerprint?.hash;
+  return HEX_64.test(String(hash || "")) ? String(hash).toLowerCase() : null;
+}
+
+export function isLegacyRejectedReviewNotice(record) {
+  const errors = Array.isArray(record?.statusDetails?.errors)
+    ? record.statusDetails.errors.map((error) => String(error))
+    : [];
+  return (
+    record?.status === "rejected"
+    && recordPayloadSchema(record) === REVIEW_NOTICE_SCHEMA
+    && recordReasonCodes(record).includes("invalid-envelope")
+    && errors.some((error) => error.includes(DELTA_IMPORT_SCHEMA))
+    && record?.statusDetails?.legacyReviewRecoveryVersion
+      !== LEGACY_REVIEW_RECOVERY_VERSION
+  );
+}
+
+export function selectProcessablePushRecords(
+  records,
+  {
+    limit = 500,
+    supportedPayloadSchemas = SUPPORTED_PAYLOAD_SCHEMAS,
+  } = {},
+) {
+  const safeLimit = integerInRange(limit, 1, 500) ? limit : 500;
+  const sourceRecords = Array.isArray(records) ? records : [];
+  const supported = supportedPayloadSchemas instanceof Set
+    ? supportedPayloadSchemas
+    : new Set(supportedPayloadSchemas || []);
+  const finalizedByFingerprint = new Map();
+  sourceRecords.forEach((record) => {
+    if (!["imported", "duplicate"].includes(record?.status)) return;
+    const fingerprint = String(record?.statusDetails?.sourceFingerprint || "").toLowerCase();
+    if (!HEX_64.test(fingerprint)) return;
+    finalizedByFingerprint.set(fingerprint, String(record.batchId || ""));
+  });
+
+  const recoveryRecords = [];
+  const pendingRecords = [];
+  for (const record of sourceRecords) {
+    if (record?.status === "pending") {
+      const deferredForUpdate = recordReasonCodes(record)
+        .includes("unsupported-payload-schema");
+      if (deferredForUpdate && !supported.has(recordPayloadSchema(record))) continue;
+      pendingRecords.push(record);
+      continue;
+    }
+    if (!isLegacyRejectedReviewNotice(record)) continue;
+    const fingerprint = rawReviewFingerprint(record);
+    recoveryRecords.push({
+      ...record,
+      processingContext: {
+        legacyReviewRecoveryVersion: LEGACY_REVIEW_RECOVERY_VERSION,
+        finalizedByBatchId: fingerprint
+          ? finalizedByFingerprint.get(fingerprint) || null
+          : null,
+        sourceFingerprint: fingerprint,
+      },
+    });
+  }
+  // Recover old review notices first. If a final delta is pending in the same
+  // run, it then resolves the recovered review through the normal import path.
+  return [...recoveryRecords, ...pendingRecords].slice(0, safeLimit);
+}
+
+export async function listProcessablePushBatches({ limit = 500 } = {}) {
+  const records = await listPushInboxWithStatuses();
+  return selectProcessablePushRecords(records, { limit });
 }
 
 export async function markPushBatchStatus(
