@@ -56,6 +56,7 @@ import {
 } from "./components/delta/deltaEvidence";
 import { appendScanWithoutLoss } from "./components/delta/deltaSelectors";
 import { processPendingPushImports } from "./pushImportProcessor";
+import { repairTrustedObservedStoreAliases } from "./pushContextAliases";
 import {
   addNotification as appendNotification,
   makeNotification,
@@ -693,6 +694,32 @@ export default function App() {
     setStores((prev) => mergeBuiltinStoreResearch(prev, EHIME_STORES));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storesRateResearchV1]);
+
+  // 信頼済みのWindows見出しOCRで発生した既知の店舗名誤読だけを、
+  // 登録済みの正しい店舗へ付け替える。手入力や未知の表記には触れない。
+  useEffect(() => {
+    const preview = repairTrustedObservedStoreAliases(deltaScans, stores);
+    if (preview.repairedCount === 0) return undefined;
+
+    let active = true;
+    const correctedAt = new Date().toISOString();
+    mutateDeltaScans((current) => repairTrustedObservedStoreAliases(
+      current,
+      stores,
+      { correctedAt },
+    ))
+      .then((result) => {
+        if (active && result?.repairedCount > 0) {
+          console.info(`[push-import] 店舗名の既知OCR誤読を${result.repairedCount}件補正しました`);
+        }
+      })
+      .catch((error) => {
+        if (active) console.error("[push-import] 店舗名補正に失敗しました:", error);
+      });
+    return () => {
+      active = false;
+    };
+  }, [deltaScans, mutateDeltaScans, stores]);
 
   const pushJP = (j) => setJpLog((p) => [...p, j]);
   const pushLog = (e) => setSesLog((p) => [...p, e]);

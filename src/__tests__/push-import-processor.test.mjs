@@ -239,6 +239,45 @@ test("known store and machine labels are canonicalized to master names", () => {
   assert.equal(result.scan.rows[0].machineName, "P正式機種 1/319");
 });
 
+test("trusted Tokyo Ghoul import repairs the known Kisuke PAO OCR alias", () => {
+  const kisukeStores = [{ id: "kisuke-pao", name: "スーパーキスケPAO" }];
+  const ghoulMachines = [{
+    name: "e東京喰種W",
+    aliases: ["e東京喰種", "東京喰種"],
+  }];
+  const scan = makeScan({
+    storeId: null,
+    storeName: "スーバーキスケPA0",
+    machineName: "e東京喰種",
+    analysisEngineVersion: AUTO_HEADER_CONTEXT_ENGINE_VERSION,
+    contextEvidence,
+    rows: [{ ...makeScan().rows[0], machineName: "e東京喰種" }],
+  });
+
+  const result = evaluateDecodedPushScan(scan, {
+    stores: kisukeStores,
+    builtInMachines: ghoulMachines,
+  });
+  assert.equal(result.status, "ready");
+  assert.equal(result.scan.storeId, "kisuke-pao");
+  assert.equal(result.scan.storeName, "スーパーキスケPAO");
+  assert.equal(result.scan.machineName, "e東京喰種W");
+  assert.equal(result.scan.rows[0].machineName, "e東京喰種W");
+
+  const untrusted = evaluateDecodedPushScan({
+    ...scan,
+    analysisEngineVersion: "windows-local-v1",
+    contextEvidence: undefined,
+  }, {
+    stores: kisukeStores,
+    builtInMachines: ghoulMachines,
+  });
+  assert.deepEqual(
+    { status: untrusted.status, code: untrusted.code },
+    { status: "waiting", code: "store-not-registered" },
+  );
+});
+
 test("trusted context never bypasses store ID conflicts or configured layout review", () => {
   const unknownId = evaluateDecodedPushScan(makeScan({
     storeId: "not-registered-id",

@@ -22,6 +22,7 @@ import {
   getPersistenceEpochSync,
   getSync,
 } from "./persistence.js";
+import { canonicalizeTrustedObservedStoreName } from "./pushContextAliases.js";
 
 // 差玉解析エンジンが status="ok" にする下限と同じ値。
 // これより低い行や review / bounded（画面外へ見切れた値）は自動登録しない。
@@ -119,7 +120,12 @@ export function resolveRegisteredPushStore(
   const list = (Array.isArray(stores) ? stores : [])
     .filter((store) => store && typeof store === "object");
   const sourceId = scan?.storeId;
-  const sourceName = String(scan?.storeName || "").trim();
+  const observedSourceName = String(scan?.storeName || "").trim();
+  const sourceName = String(
+    allowObservedLabel
+      ? canonicalizeTrustedObservedStoreName(observedSourceName)
+      : observedSourceName,
+  ).trim();
 
   if (sourceId !== null && sourceId !== undefined && String(sourceId).trim()) {
     const store = list.find((candidate) => String(candidate.id) === String(sourceId));
@@ -192,6 +198,9 @@ export function evaluateDecodedPushScan(
   }
 
   const allowObservedLabels = hasTrustedHeaderContextEvidence(scan);
+  const trustedObservedStoreName = allowObservedLabels
+    ? canonicalizeTrustedObservedStoreName(scan.storeName)
+    : scan.storeName;
   const storeResult = resolveRegisteredPushStore(scan, stores, {
     allowObservedLabel: allowObservedLabels,
   });
@@ -301,7 +310,7 @@ export function evaluateDecodedPushScan(
     scan: {
       ...scan,
       storeId: canonicalStore?.id ?? null,
-      storeName: String(canonicalStore?.name || scan.storeName || "").trim(),
+      storeName: String(canonicalStore?.name || trustedObservedStoreName || "").trim(),
       machineName: String(canonicalScanMachine?.name || scan.machineName || "").trim(),
       rows: canonicalRows.map((row) => ({
         ...row,
