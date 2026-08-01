@@ -8,6 +8,7 @@ import {
   canonicalJson,
   decodeDeltaImportPayload,
   decodeReviewNoticePayload,
+  findSupersededReviewResolutions,
   hasTrustedHeaderContextEvidence,
   isLegacyRejectedReviewNotice,
   isStrictAutoImportCandidate,
@@ -21,6 +22,15 @@ import {
 } from "../pushInbox.js";
 
 const FIXED_NOW = Date.parse("2026-07-30T04:00:00.000Z");
+
+async function sourceSetHash(fileHashes) {
+  const bytes = new TextEncoder().encode([...new Set(fileHashes)].sort().join("\n"));
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(
+    new Uint8Array(digest),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
 
 function makeFingerprint() {
   return {
@@ -500,6 +510,164 @@ test("legacy rejected review notices are selected once and linked to final impor
     supportedPayloadSchemas: new Set(["pachi-tracker.future-import"]),
   });
   assert.equal(futureSupported.length, 1);
+});
+
+test("four exact and twelve split review notices all resolve from verified final sources", async () => {
+  const date = "2026-07-30";
+  const childCounts = [4, 4, 1, 2, 1];
+  const exactGroups = new Set([0, 2, 3, 4]);
+  const records = [];
+  const expectedBatchIds = [];
+  let fileIndex = 1;
+
+  for (let groupIndex = 0; groupIndex < childCounts.length; groupIndex += 1) {
+    const fileHashes = Array.from({ length: 4 }, () => {
+      const hash = fileIndex.toString(16).padStart(64, "0");
+      fileIndex += 1;
+      return hash;
+    });
+    const finalHash = await sourceSetHash(fileHashes);
+    const finalBatchId = `final-delta-${groupIndex}`;
+    records.push({
+      batchId: finalBatchId,
+      status: "imported",
+      envelope: {
+        payload: {
+          schema: "pachi-tracker.delta-import",
+          scan: {
+            date,
+            sourceFingerprint: {
+              algorithm: "SHA-256",
+              hash: finalHash,
+              fileCount: fileHashes.length,
+              fileHashes,
+            },
+          },
+        },
+      },
+      statusDetails: { sourceFingerprint: finalHash },
+    });
+
+    const addReview = (batchId, hash, fileCount) => {
+      expectedBatchIds.push(batchId);
+      records.push({
+        batchId,
+        status: "review",
+        envelope: {
+          payload: {
+            schema: "pachi-tracker.review-notice",
+            notice: {
+              date,
+              sourceFingerprint: {
+                algorithm: "SHA-256",
+                hash,
+                fileCount,
+              },
+            },
+          },
+        },
+        statusDetails: { sourceFingerprint: hash },
+      });
+    };
+
+    if (exactGroups.has(groupIndex)) {
+      addReview(`review-exact-${groupIndex}`, finalHash, fileHashes.length);
+    }
+    for (let childIndex = 0; childIndex < childCounts[groupIndex]; childIndex += 1) {
+      addReview(
+        `review-child-${groupIndex}-${childIndex}`,
+        await sourceSetHash([fileHashes[childIndex]]),
+        1,
+      );
+    }
+  }
+
+  const resolutions = await findSupersededReviewResolutions(records);
+  assert.equal(expectedBatchIds.length, 16);
+  assert.equal(resolutions.length, 16);
+  assert.deepEqual(
+    new Set(resolutions.map((resolution) => resolution.batchId)),
+    new Set(expectedBatchIds),
+  );
+  assert.equal(
+    resolutions.filter((resolution) => resolution.resolutionMatch === "exact-source-set").length,
+    4,
+  );
+  assert.equal(
+    resolutions.filter(
+      (resolution) => resolution.resolutionMatch === "source-file-superset",
+    ).length,
+    12,
+  );
+  assert.ok(resolutions.every((resolution) => resolution.resolvedAs === "imported"));
+});
+
+test("review reconciliation ignores unverified status links and different dates", async () => {
+  const fileHash = "1".repeat(64);
+  const finalHash = await sourceSetHash([fileHash]);
+  const reviewHash = finalHash;
+  const finalRecord = {
+    batchId: "final-safe-1",
+    status: "imported",
+    envelope: {
+      payload: {
+        schema: "pachi-tracker.delta-import",
+        scan: {
+          date: "2026-07-30",
+          sourceFingerprint: {
+            algorithm: "SHA-256",
+            hash: finalHash,
+            fileCount: 1,
+            fileHashes: [fileHash],
+          },
+        },
+      },
+    },
+    statusDetails: { sourceFingerprint: finalHash },
+  };
+  const reviewRecord = {
+    batchId: "review-safe-1",
+    status: "review",
+    envelope: {
+      payload: {
+        schema: "pachi-tracker.review-notice",
+        notice: {
+          date: "2026-07-30",
+          sourceFingerprint: {
+            algorithm: "SHA-256",
+            hash: reviewHash,
+            fileCount: 1,
+          },
+        },
+      },
+    },
+    statusDetails: { sourceFingerprint: reviewHash },
+  };
+
+  assert.equal(
+    (await findSupersededReviewResolutions([finalRecord, reviewRecord])).length,
+    1,
+  );
+  assert.equal(
+    (await findSupersededReviewResolutions([
+      { ...finalRecord, statusDetails: { sourceFingerprint: "2".repeat(64) } },
+      reviewRecord,
+    ])).length,
+    0,
+  );
+  assert.equal(
+    (await findSupersededReviewResolutions([
+      finalRecord,
+      { ...reviewRecord, statusDetails: { sourceFingerprint: "3".repeat(64) } },
+    ])).length,
+    0,
+  );
+  const differentDate = structuredClone(reviewRecord);
+  differentDate.envelope.payload.notice.date = "2026-07-29";
+  assert.equal(
+    (await findSupersededReviewResolutions([finalRecord, differentDate])).length,
+    0,
+  );
 });
 
 test("unknown payload schemas are deferred only after their digest is verified", async () => {
