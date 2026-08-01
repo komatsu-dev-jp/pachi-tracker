@@ -1,0 +1,10 @@
+# PachiTracker のサブエージェント共通設定。
+# 親スレッドで明示されたモデル設定は変更しない。
+plan_mode_reasoning_effort = "medium"
+
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 3
+default_subagent_model = "gpt-5.6-terra"
+default_subagent_reasoning_effort = "medium"
+interrupt_message = true
