@@ -4,6 +4,7 @@ import {
   listProcessablePushBatches,
   markPushBatchStatus,
   resolveReviewNoticesForFingerprint,
+  resolveSupersededReviewNotices,
   validateAndDecodePushEnvelope,
 } from "./pushInbox.js";
 import {
@@ -21,6 +22,7 @@ import {
   getPersistenceEpochSync,
   getSync,
 } from "./persistence.js";
+import { canonicalizeTrustedObservedStoreName } from "./pushContextAliases.js";
 
 // 差玉解析エンジンが status="ok" にする下限と同じ値。
 // これより低い行や review / bounded（画面外へ見切れた値）は自動登録しない。
@@ -118,7 +120,12 @@ export function resolveRegisteredPushStore(
   const list = (Array.isArray(stores) ? stores : [])
     .filter((store) => store && typeof store === "object");
   const sourceId = scan?.storeId;
-  const sourceName = String(scan?.storeName || "").trim();
+  const observedSourceName = String(scan?.storeName || "").trim();
+  const sourceName = String(
+    allowObservedLabel
+      ? canonicalizeTrustedObservedStoreName(observedSourceName)
+      : observedSourceName,
+  ).trim();
 
   if (sourceId !== null && sourceId !== undefined && String(sourceId).trim()) {
     const store = list.find((candidate) => String(candidate.id) === String(sourceId));
@@ -191,6 +198,9 @@ export function evaluateDecodedPushScan(
   }
 
   const allowObservedLabels = hasTrustedHeaderContextEvidence(scan);
+  const trustedObservedStoreName = allowObservedLabels
+    ? canonicalizeTrustedObservedStoreName(scan.storeName)
+    : scan.storeName;
   const storeResult = resolveRegisteredPushStore(scan, stores, {
     allowObservedLabel: allowObservedLabels,
   });
@@ -300,7 +310,7 @@ export function evaluateDecodedPushScan(
     scan: {
       ...scan,
       storeId: canonicalStore?.id ?? null,
-      storeName: String(canonicalStore?.name || scan.storeName || "").trim(),
+      storeName: String(canonicalStore?.name || trustedObservedStoreName || "").trim(),
       machineName: String(canonicalScanMachine?.name || scan.machineName || "").trim(),
       rows: canonicalRows.map((row) => ({
         ...row,
@@ -340,6 +350,19 @@ async function safeResolveReviewNotices(
   }
 }
 
+async function safeResolveSupersededReviewNotices(signal, expectedEpoch) {
+  try {
+    return await resolveSupersededReviewNotices(
+      {},
+      { signal, expectedEpoch },
+    );
+  } catch (error) {
+    if (error?.name === "AbortError" || signal?.aborted) throw error;
+    console.error("[push-import] superseded review resolution failed:", error);
+    return 0;
+  }
+}
+
 async function runPendingPushImports({
   saveScan,
   stores,
@@ -366,6 +389,8 @@ async function runPendingPushImports({
     rejected: 0,
     errors: 0,
   };
+  summary.resolved += await safeResolveSupersededReviewNotices(signal, expectedEpoch);
+  throwIfAborted();
   const records = await listProcessablePushBatches({ limit });
   throwIfAborted();
   summary.found = records.length;
@@ -448,7 +473,7 @@ async function runPendingPushImports({
           rowCount: evaluation.scan.rows.length,
           sourceFingerprint: fingerprintOf(evaluation.scan),
         }, signal, expectedEpoch);
-        await safeResolveReviewNotices(
+        summary.resolved += await safeResolveReviewNotices(
           fingerprintOf(evaluation.scan),
           { resolvedByBatchId: batchId, resolvedAs: "imported" },
           signal,
@@ -466,7 +491,7 @@ async function runPendingPushImports({
           existingScanId: saved?.existing?.id ?? null,
           sourceFingerprint: fingerprintOf(evaluation.scan),
         }, signal, expectedEpoch);
-        await safeResolveReviewNotices(
+        summary.resolved += await safeResolveReviewNotices(
           fingerprintOf(evaluation.scan),
           { resolvedByBatchId: batchId, resolvedAs: "duplicate" },
           signal,
@@ -500,6 +525,8 @@ async function runPendingPushImports({
       }, signal, expectedEpoch);
     }
   }
+  summary.resolved += await safeResolveSupersededReviewNotices(signal, expectedEpoch);
+  throwIfAborted();
   return summary;
 }
 
