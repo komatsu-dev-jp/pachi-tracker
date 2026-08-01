@@ -495,6 +495,16 @@ export async function sha256Digest(value, cryptoApi = globalThis.crypto) {
   return `sha256:${hex}`;
 }
 
+async function sha256Text(value, cryptoApi = globalThis.crypto) {
+  if (!cryptoApi?.subtle) throw new Error("SHA-256を利用できない環境です");
+  const bytes = new TextEncoder().encode(String(value));
+  const digest = await cryptoApi.subtle.digest("SHA-256", bytes);
+  return Array.from(
+    new Uint8Array(digest),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
 function equalDigest(left, right) {
   const a = String(left || "").toLowerCase();
   const b = String(right || "").toLowerCase();
@@ -999,6 +1009,127 @@ function rawReviewFingerprint(record) {
   return HEX_64.test(String(hash || "")) ? String(hash).toLowerCase() : null;
 }
 
+function finalizedSourceEvidence(record) {
+  if (!["imported", "duplicate"].includes(record?.status)) return null;
+  if (recordPayloadSchema(record) !== DELTA_IMPORT_SCHEMA) return null;
+  const scan = record?.envelope?.payload?.scan;
+  const fingerprint = scan?.sourceFingerprint;
+  const hash = String(fingerprint?.hash || "").toLowerCase();
+  const statusHash = String(record?.statusDetails?.sourceFingerprint || "").toLowerCase();
+  const fileHashes = Array.isArray(fingerprint?.fileHashes)
+    ? fingerprint.fileHashes.map((value) => String(value).toLowerCase())
+    : [];
+  if (
+    !HEX_64.test(hash)
+    || statusHash !== hash
+    || fingerprint?.algorithm !== "SHA-256"
+    || !integerInRange(fingerprint?.fileCount, 1, 100)
+    || fileHashes.length !== fingerprint.fileCount
+    || new Set(fileHashes).size !== fileHashes.length
+    || fileHashes.some((value) => !HEX_64.test(value))
+    || !isCalendarDate(scan?.date)
+    || !BATCH_ID.test(String(record?.batchId || ""))
+  ) {
+    return null;
+  }
+  return {
+    batchId: String(record.batchId),
+    date: scan.date,
+    fileHashes: [...fileHashes].sort(),
+    hash,
+    status: record.status,
+  };
+}
+
+function reviewSourceEvidence(record) {
+  if (record?.status !== "review") return null;
+  if (recordPayloadSchema(record) !== REVIEW_NOTICE_SCHEMA) return null;
+  const notice = record?.envelope?.payload?.notice;
+  const fingerprint = notice?.sourceFingerprint;
+  const hash = String(fingerprint?.hash || "").toLowerCase();
+  const statusHash = String(record?.statusDetails?.sourceFingerprint || "").toLowerCase();
+  if (
+    !HEX_64.test(hash)
+    || statusHash !== hash
+    || fingerprint?.algorithm !== "SHA-256"
+    || !integerInRange(fingerprint?.fileCount, 1, 64)
+    || !isCalendarDate(notice?.date)
+    || !BATCH_ID.test(String(record?.batchId || ""))
+  ) {
+    return null;
+  }
+  return {
+    batchId: String(record.batchId),
+    date: notice.date,
+    fileCount: fingerprint.fileCount,
+    hash,
+  };
+}
+
+function resolutionKey(date, hash) {
+  return `${date}:${hash}`;
+}
+
+// Review notices intentionally contain no images or measured values. Older
+// context splits could therefore leave one-file notices after the same source
+// image had already become part of a verified final import. Rebuild only the
+// SHA-256 source-set identifiers needed to prove that relationship.
+export async function findSupersededReviewResolutions(
+  records,
+  { cryptoApi = globalThis.crypto } = {},
+) {
+  const sourceRecords = Array.isArray(records) ? records : [];
+  const reviews = sourceRecords.map(reviewSourceEvidence).filter(Boolean);
+  if (!reviews.length) return [];
+
+  const reviewDates = new Set(reviews.map((review) => review.date));
+  const finalized = sourceRecords
+    .map(finalizedSourceEvidence)
+    .filter((evidence) => evidence && reviewDates.has(evidence.date));
+  if (!finalized.length) return [];
+
+  const exactMatches = new Map();
+  const singletonMatches = new Map();
+  for (const evidence of finalized) {
+    let aggregateHash;
+    try {
+      aggregateHash = await sha256Text(evidence.fileHashes.join("\n"), cryptoApi);
+    } catch {
+      continue;
+    }
+    // Do not use file coverage from an internally inconsistent final payload.
+    if (aggregateHash !== evidence.hash) continue;
+    const exactKey = resolutionKey(evidence.date, evidence.hash);
+    if (!exactMatches.has(exactKey)) exactMatches.set(exactKey, evidence);
+
+    for (const fileHash of evidence.fileHashes) {
+      const singletonHash = await sha256Text(fileHash, cryptoApi);
+      const singletonKey = resolutionKey(evidence.date, singletonHash);
+      if (!singletonMatches.has(singletonKey)) {
+        singletonMatches.set(singletonKey, evidence);
+      }
+    }
+  }
+
+  const resolutions = [];
+  for (const review of reviews) {
+    const key = resolutionKey(review.date, review.hash);
+    const exact = exactMatches.get(key);
+    const superset = review.fileCount === 1 ? singletonMatches.get(key) : null;
+    const match = exact || superset;
+    if (!match) continue;
+    resolutions.push({
+      batchId: review.batchId,
+      sourceFingerprint: review.hash,
+      resolvedByBatchId: match.batchId,
+      resolvedAs: match.status,
+      resolutionMatch: exact ? "exact-source-set" : "source-file-superset",
+      supersedingSourceFingerprint: match.hash,
+    });
+  }
+  return resolutions;
+}
+
 export function isLegacyRejectedReviewNotice(record) {
   const errors = Array.isArray(record?.statusDetails?.errors)
     ? record.statusDetails.errors.map((error) => String(error))
@@ -1124,6 +1255,26 @@ export async function resolveReviewNoticesForFingerprint(
     }, options);
   }
   return matches.length;
+}
+
+export async function resolveSupersededReviewNotices(
+  details = {},
+  options = {},
+) {
+  const records = await listPushInboxWithStatuses();
+  const resolutions = await findSupersededReviewResolutions(records, options);
+  for (const resolution of resolutions) {
+    await markPushBatchStatus(resolution.batchId, "resolved", {
+      ...details,
+      reasonCodes: ["superseded-by-final-import"],
+      sourceFingerprint: resolution.sourceFingerprint,
+      resolvedByBatchId: resolution.resolvedByBatchId,
+      resolvedAs: resolution.resolvedAs,
+      resolutionMatch: resolution.resolutionMatch,
+      supersedingSourceFingerprint: resolution.supersedingSourceFingerprint,
+    }, options);
+  }
+  return resolutions.length;
 }
 
 export async function getPushInboxSummary() {

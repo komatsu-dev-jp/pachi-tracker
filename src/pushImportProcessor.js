@@ -4,6 +4,7 @@ import {
   listProcessablePushBatches,
   markPushBatchStatus,
   resolveReviewNoticesForFingerprint,
+  resolveSupersededReviewNotices,
   validateAndDecodePushEnvelope,
 } from "./pushInbox.js";
 import {
@@ -340,6 +341,19 @@ async function safeResolveReviewNotices(
   }
 }
 
+async function safeResolveSupersededReviewNotices(signal, expectedEpoch) {
+  try {
+    return await resolveSupersededReviewNotices(
+      {},
+      { signal, expectedEpoch },
+    );
+  } catch (error) {
+    if (error?.name === "AbortError" || signal?.aborted) throw error;
+    console.error("[push-import] superseded review resolution failed:", error);
+    return 0;
+  }
+}
+
 async function runPendingPushImports({
   saveScan,
   stores,
@@ -366,6 +380,8 @@ async function runPendingPushImports({
     rejected: 0,
     errors: 0,
   };
+  summary.resolved += await safeResolveSupersededReviewNotices(signal, expectedEpoch);
+  throwIfAborted();
   const records = await listProcessablePushBatches({ limit });
   throwIfAborted();
   summary.found = records.length;
@@ -448,7 +464,7 @@ async function runPendingPushImports({
           rowCount: evaluation.scan.rows.length,
           sourceFingerprint: fingerprintOf(evaluation.scan),
         }, signal, expectedEpoch);
-        await safeResolveReviewNotices(
+        summary.resolved += await safeResolveReviewNotices(
           fingerprintOf(evaluation.scan),
           { resolvedByBatchId: batchId, resolvedAs: "imported" },
           signal,
@@ -466,7 +482,7 @@ async function runPendingPushImports({
           existingScanId: saved?.existing?.id ?? null,
           sourceFingerprint: fingerprintOf(evaluation.scan),
         }, signal, expectedEpoch);
-        await safeResolveReviewNotices(
+        summary.resolved += await safeResolveReviewNotices(
           fingerprintOf(evaluation.scan),
           { resolvedByBatchId: batchId, resolvedAs: "duplicate" },
           signal,
@@ -500,6 +516,8 @@ async function runPendingPushImports({
       }, signal, expectedEpoch);
     }
   }
+  summary.resolved += await safeResolveSupersededReviewNotices(signal, expectedEpoch);
+  throwIfAborted();
   return summary;
 }
 
