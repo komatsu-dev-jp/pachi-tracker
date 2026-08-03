@@ -29,12 +29,16 @@ import { createOneTimeStartGuard, createSameDayResumeStart, matchSameDayResumeCa
 import { normalizeChodamaBalls, resolveRecordStartChodama, resolveRecordStartSpecSapo, setupInitialChodamaFromDraft } from "../../recordStartFlow";
 import { getHitWizardPresentation } from "./hitWizardPresentation";
 import SameDayResumePrompt, { CashCorrectionPrompt } from "./SameDayResumePrompt";
+import RotationModeEditor from "./RotationModeEditor";
+import { correctRotationMode, createRotationModeFingerprint, isEditableRotationModeRow, resolveNextPlayMode } from "../../rotationModeCorrection";
 
 
 export function RotTab({ rows, setRows, S, ev, border }) {
     const [input, setInput] = useState("");
     const [inputError, setInputError] = useState("");
     const [showInputSheet, setShowInputSheet] = useState(false);
+    const [rotationCorrection, setRotationCorrection] = useState(null);
+    const [rotationCorrectionError, setRotationCorrectionError] = useState("");
     // 旧UIの "jackpot" mode は撤去済み。bottom sheet は常に通常回転入力（count モード）として使用
     const [showMoveModal, setShowMoveModal] = useState(false);
     const [moveMochiBalls, setMoveMochiBalls] = useState("");
@@ -1029,7 +1033,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             : effMode === "mochi" ? (S.currentMochiBalls || 0)
             : 0;
         if ((effMode === "chodama" || effMode === "mochi") && startBalance <= 0) {
-            effMode = "cash";
+            effMode = resolveNextPlayMode({ playMode: effMode, currentMochiBalls: S.currentMochiBalls, currentChodama: S.currentChodama });
         }
 
         let newInvest = prevInvest;
@@ -1053,7 +1057,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         if (effMode !== S.playMode) {
             S.setPlayMode(effMode);
         } else if (effMode !== "cash" && startBalance - ballsConsumed <= 0) {
-            S.setPlayMode("cash");
+            S.setPlayMode(resolveNextPlayMode({ playMode: effMode, currentMochiBalls: effMode === "mochi" ? 0 : S.currentMochiBalls, currentChodama: effMode === "chodama" ? 0 : S.currentChodama }));
         }
 
         // 平均回転数計算 - セッション全体の累積平均（データページの1Kスタートと整合）
@@ -2189,6 +2193,23 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     };
     const hasDataRow = rows.some(r => r.type === "data");
     const lastDataRow = hasDataRow ? [...rows].reverse().find(r => r.type === "data") : null;
+    const saveRotationCorrection = (mode) => {
+        const result = correctRotationMode({ rows, fingerprint: rotationCorrection?.fingerprint, mode, rentBalls: Number(S.rentBalls) });
+        if (!result.ok) { setRotationCorrectionError(result.reason); return; }
+        const nextMochi = Number(S.currentMochiBalls) + result.balanceDelta.mochi;
+        const nextChodama = Number(S.currentChodama) + result.balanceDelta.chodama;
+        const finalData = [...result.rows].reverse().find((row) => row.type === "data");
+        const finalInvest = finalData?.invest;
+        if (!Number.isFinite(nextMochi) || !Number.isFinite(nextChodama) || nextMochi < 0 || nextChodama < 0 || !Number.isFinite(finalInvest) || finalInvest < 0) { setRotationCorrectionError("残玉または投資額の証拠が不足しています。"); return; }
+        S.pushSnapshot();
+        setRows(result.rows);
+        S.setCurrentMochiBalls(nextMochi);
+        S.setCurrentChodama(nextChodama);
+        S.setInvestYen?.(finalInvest);
+        S.setPlayMode(resolveNextPlayMode({ playMode: S.playMode, currentMochiBalls: nextMochi, currentChodama: nextChodama }));
+        setRotationCorrection(null);
+        setRotationCorrectionError("");
+    };
 
     // セッション開始後：データ表示とコントロール
     return (
@@ -2437,6 +2458,10 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             anchorId="record-recent-events"
                         />
 
+                        {hasDataRow && <div style={{ display: "grid", gap: 6 }}>
+                            {rows.map((row, index) => isEditableRotationModeRow(row) && <button key={`mode-correction-${index}`} type="button" className="b" onClick={() => { setRotationCorrection({ row, fingerprint: createRotationModeFingerprint(row, index) }); setRotationCorrectionError(""); }} style={{ minHeight: 44, borderRadius: 10, border: `1px solid ${C.border}`, background: C.surfaceHi, color: C.text, textAlign: "left", padding: "0 12px" }}>遊技方法を修正（+{row.thisRot}回転・{row.mode === "mochi" ? "持ち玉" : row.mode === "chodama" ? "貯玉" : "現金"}）</button>)}
+                        </div>}
+
                         {hasDataRow && (
                             <button
                                 className="b"
@@ -2461,6 +2486,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         )}
 
                     </div>
+                    <RotationModeEditor key={rotationCorrection?.fingerprint?.index ?? "closed"} row={rotationCorrection?.row} open={Boolean(rotationCorrection)} error={rotationCorrectionError} onClose={() => { setRotationCorrection(null); setRotationCorrectionError(""); }} onSave={saveRotationCorrection} />
 
                     <div className="record-cta-bar">
                         <button

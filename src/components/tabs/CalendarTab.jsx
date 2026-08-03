@@ -7,6 +7,17 @@ import { formatPachinkoRateLabel } from "../../rateSettings";
 import DataQualityFeedbackCard from "../quality/DataQualityFeedbackCard";
 import { recordArchiveCorrections } from "../../sessionDataQuality";
 import { TMONO, twSc, SectionLabel, MultiLineChart, WageRankCard } from "./TabsShared";
+import RotationModeEditor from "./RotationModeEditor";
+import { applyArchiveRotationCorrection, correctRotationMode, createArchiveCorrectionFingerprint, createRotationModeFingerprint, isEditableRotationModeRow, matchesArchiveCorrectionFingerprint } from "../../rotationModeCorrection";
+import { applyEconomicEV, deriveUsageFromRows } from "../../economics";
+
+const ECONOMIC_DERIVED_KEYS = new Set([
+    "cashKCount", "mochiKCount", "chodamaKCount", "totalKCount", "cashRatio", "mochiRatio", "chodamaRatio", "nonCashRatio", "heldBallCostPerK",
+    "cashCostYen", "mochiCostYen", "chodamaCostYen", "trayCorrection", "trayBallsYen", "economicTrayCreditYen", "correctedInvestYen", "economicCostYen",
+    "economicKCount", "economicStart1K", "economicEV1K", "economicBDiff", "economicEvPerRot", "economicWorkAmount", "economicWage", "effectiveStart1K",
+    "effectiveEV1K", "effectiveBDiff", "effectiveEvPerRot", "effectiveWorkAmount", "effectiveWage", "calculationVersion", "economicStatus", "legacyCorrectedInvestYen",
+    "legacyEffectiveStart1K", "legacyEffectiveEV1K", "legacyEffectiveWorkAmount",
+]);
 
 export function CalendarTab({ S, onReset, initialDate = null, focusMode = false, initialArchiveId = null, onDone = null, onOpenMachine = null }) {
     // initialDate（"YYYY-MM-DD" 任意）で初期選択日と表示月を指定できる。
@@ -68,6 +79,31 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
     const [addSlotRB, setAddSlotRB] = useState("");
     const [addSlotAT, setAddSlotAT] = useState("");
     const [showAddStoreDD, setShowAddStoreDD] = useState(false);
+    const [rotationCorrection, setRotationCorrection] = useState(null);
+    const [rotationCorrectionError, setRotationCorrectionError] = useState("");
+
+    const saveArchiveRotationCorrection = (mode) => {
+        const selected = archives.find((archive) => archive.id === selectedArchiveId);
+        if (!matchesArchiveCorrectionFingerprint(selected, rotationCorrection?.archiveFingerprint)) { setRotationCorrectionError("アーカイブが変更されています。もう一度開き直してください。"); return; }
+        const rentBalls = Number(selected?.settings?.rentBalls);
+        const correction = correctRotationMode({ rows: selected?.rotRows, fingerprint: rotationCorrection?.fingerprint, mode, rentBalls });
+        if (!correction.ok) { setRotationCorrectionError(correction.reason); return; }
+        const applied = applyArchiveRotationCorrection(selected, correction);
+        if (!applied.ok) { setRotationCorrectionError(applied.reason); return; }
+        const totalK = (usage) => usage.cashKCount + usage.mochiKCount + usage.chodamaKCount;
+        const oldK = totalK(deriveUsageFromRows(selected.rotRows, rentBalls));
+        const newK = totalK(deriveUsageFromRows(applied.archive.rotRows, rentBalls));
+        if (!Number.isFinite(oldK) || !Number.isFinite(newK) || Math.abs(oldK - newK) > 1e-9) { setRotationCorrectionError("総消費量が一致しないため変更できません。"); return; }
+        const settings = selected.settings || {};
+        const baseStats = Object.fromEntries(Object.entries(selected.stats || {}).filter(([key]) => !ECONOMIC_DERIVED_KEYS.has(key)));
+        const nextStats = applyEconomicEV(baseStats, { rotRows: applied.archive.rotRows, jpLog: selected.jpLog || [], totalTrayBalls: Number(selected.totalTrayBalls) || 0, rentBalls, exRate: Number(settings.exRate), rotPerHour: Number(settings.rotPerHour) });
+        if (!Number.isFinite(nextStats.chodamaCostYen) || nextStats.chodamaCostYen < 0) { setRotationCorrectionError("貯玉コストを再計算できません。"); return; }
+        const nextArchive = { ...applied.archive, chodamaYen: Math.round(nextStats.chodamaCostYen), stats: { ...nextStats, rawInvest: applied.archive.stats.rawInvest } };
+        S.setArchives((previous) => previous.map((archive) => archive.id === selectedArchiveId ? nextArchive : archive));
+        setEditInvest(String(nextArchive.investYen));
+        setRotationCorrection(null);
+        setRotationCorrectionError("");
+    };
 
     // 日付を切り替えたら追加フォームを閉じる（入力途中の値は日付間で持ち越さない）
     useEffect(() => {
@@ -737,7 +773,8 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
     }, [focusMode, byDate, initialDate, selectedArchiveId]);
 
     // ── 回転数データ / 大当たり履歴（ArchiveDetail と focusMode 編集シートの共通表示。JSXは移設のみ） ──
-    const renderRotHistory = (a) => (a.rotRows && a.rotRows.length > 0) ? (
+    const renderRotHistory = (a) => (a.gameType !== "slot" && a.rotRows && a.rotRows.length > 0) ? (
+        <>
         <Card style={{ overflow: "hidden", marginBottom: 8 }}>
             <SecLabel label={`回転数データ (${a.rotRows.filter(r => r.type === "data").length}K)`} />
             <div style={{ display: "grid", gridTemplateColumns: "36px 1fr 1fr 1fr 48px 48px", background: "rgba(249,115,22,0.12)", padding: "5px 4px" }}>
@@ -759,10 +796,13 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                         <div style={{ textAlign: "center", fontSize: 11, color: C.text, fontFamily: mono }}>{row.avgRot || "—"}</div>
                         <div style={{ textAlign: "center", fontSize: 10, color: C.sub, fontFamily: mono }}>{row.mode === "mochi" ? "—" : (row.invest ? f(row.invest) : "—")}</div>
                         <div style={{ textAlign: "center", fontSize: 10, color: row.mode === "chodama" ? C.purple : C.orange, fontFamily: mono }}>{f(row.mode === "chodama" ? (row.chodamaBalls || 0) : (row.mochiBalls || 0))}</div>
+                        {isEditableRotationModeRow(row) && <button type="button" className="b" aria-label={`遊技方法を修正 ${i + 1}`} onClick={() => { setRotationCorrection({ row, fingerprint: createRotationModeFingerprint(row, i), archiveFingerprint: createArchiveCorrectionFingerprint(a) }); setRotationCorrectionError(""); }} style={{ gridColumn: "1 / -1", minHeight: 44, marginTop: 4, border: `1px solid ${C.border}`, borderRadius: 8, background: C.surfaceHi, color: C.text }}>遊技方法を修正</button>}
                     </div>
                 );
             })}
         </Card>
+        <RotationModeEditor key={rotationCorrection?.fingerprint?.index ?? "closed"} row={rotationCorrection?.row} open={Boolean(rotationCorrection)} error={rotationCorrectionError} onClose={() => { setRotationCorrection(null); setRotationCorrectionError(""); }} onSave={saveArchiveRotationCorrection} />
+        </>
     ) : null;
     const renderJpHistory = (a) => (a.jpLog && a.jpLog.length > 0) ? (
         <Card style={{ overflow: "hidden", marginBottom: 8 }}>
