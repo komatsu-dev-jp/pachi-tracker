@@ -19,7 +19,7 @@ const ECONOMIC_DERIVED_KEYS = new Set([
     "legacyEffectiveStart1K", "legacyEffectiveEV1K", "legacyEffectiveWorkAmount",
 ]);
 
-export function CalendarTab({ S, onReset, initialDate = null, focusMode = false, initialArchiveId = null, onDone = null, onOpenMachine = null }) {
+export function CalendarTab({ S, onReset, initialDate = null, focusMode = false, initialArchiveId = null, onDone = null }) {
     // initialDate（"YYYY-MM-DD" 任意）で初期選択日と表示月を指定できる。
     // 分析タブの月別「記録を編集」導線から該当日を開くために使用。省略時は従来通り未選択・当月表示。
     // focusMode: 分析からの編集導線専用。カレンダー・KPI等の重複表示を出さず、
@@ -57,8 +57,6 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
     // Swipe delete state
     const [swipedId, setSwipedId] = useState(null);
     const swipeRef = useRef({ startX: 0, id: null });
-    // focusMode: この日の記録カード（機種情報）タップで回転数データへ自動スクロールするための参照先
-    const rotHistoryRef = useRef(null);
     // ランキング・履歴の「すべて見る」展開状態
     const [showAllMachines, setShowAllMachines] = useState(false);
     const [showAllStores, setShowAllStores] = useState(false);
@@ -845,8 +843,6 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
         const numProps = { type: "tel", inputMode: "numeric", pattern: "[0-9]*" };
         // 遊技時間は小数（例 3.5 時間）を許容するため decimal 入力にする
         const decProps = { type: "text", inputMode: "decimal" };
-        const yenFmt = (v) => `${v > 0 ? "+" : ""}${Math.round(v).toLocaleString("ja-JP")}`;
-        const plCls = (v) => v >= 0 ? "text-[var(--at-pos)]" : "text-[var(--at-neg)]";
         const canAdd = (Number(addInvest) || 0) > 0 || (Number(addRecovery) || 0) > 0;
         const selHasChodamaStore = sel != null && (S.stores || []).some(st => typeof st === "object" && (st.id === sel.storeId || st.name === sel.storeName));
         const sst = sel?.stats || {};
@@ -910,66 +906,6 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
             <div className="mx-auto w-full max-w-[430px] px-5 pt-3">
                 {sel && !addFormOpen ? (
                     <div className="space-y-3">
-                        {/* この日の記録カード（複数ある日はリスト。タップで編集対象を切替） */}
-                        {dateArchives.map(ar => {
-                            const isSlot = ar.gameType === "slot";
-                            const inv = Number(ar.investYen) || 0;
-                            const rec = Number(ar.recoveryYen) || 0;
-                            const cy = Number(ar.chodamaYen) || 0;
-                            const hasActual = inv > 0 || rec > 0 || cy > 0;
-                            const pl = (rec - inv) - cy;
-                            const evBreakdown = getEvBreakdown(ar);
-                            const ev = evBreakdown.total;
-                            const denom = ar.settings?.synthDenom;
-                            const name = ar.machineName && ar.machineName !== `1/${denom}` ? ar.machineName : (ar.machineName || (isSlot ? "機種未入力" : `1/${denom || "—"}`));
-                            // 分析（MACHINE REPORT）へ飛べる実機種名のみを対象にする（合成分母フォールバックや未入力は除外）。
-                            const realMachine = ar.machineName && ar.machineName !== `1/${denom}` ? ar.machineName : "";
-                            const canAnalyze = !!(!isSlot && onOpenMachine && realMachine);
-                            const active = ar.id === sel.id;
-                            return (
-                                <div key={ar.id}
-                                    className={`${cardCls} flex min-h-[56px] w-full items-stretch overflow-hidden ${active ? "border-[var(--at-cyan)] shadow-[0_0_0_1px_var(--at-cyan)]" : ""}`}>
-                                    {/* 主動作: タップで編集対象を選択し、下部の回転数データまで自動スクロール */}
-                                    <button type="button" onClick={() => {
-                                        setSelectedArchiveId(ar.id);
-                                        setDelConfirm(null);
-                                        requestAnimationFrame(() => {
-                                            rotHistoryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-                                        });
-                                    }}
-                                        className="flex min-w-0 flex-1 items-center gap-3 p-3.5 text-left transition active:opacity-60">
-                                        <div className="min-w-0 flex-1">
-                                            <div className="truncate text-[14px] font-black text-[var(--at-strong)]">{name}</div>
-                                            <div className="mt-0.5 truncate text-[10.5px] font-bold text-[var(--at-mut)]">
-                                                {[isSlot ? "パチスロ" : "パチンコ", ar.storeName, ar.machineNum ? `${ar.machineNum}番台` : "", !isSlot && ev !== 0 ? `期待値 ${yenFmt(ev)}円` : ""].filter(Boolean).join(" / ") || "詳細未入力"}
-                                            </div>
-                                            {evBreakdown.yutime !== 0 && (
-                                                <div className="mt-1 text-[9.5px] font-bold text-[var(--at-mut)]">
-                                                    通常 {yenFmt(evBreakdown.normal)}円 ＋ 遊タイム {yenFmt(evBreakdown.yutime)}円
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className={`shrink-0 font-mono text-[16px] font-black tabular-nums ${hasActual ? plCls(pl) : "text-[var(--at-faint)]"}`}>
-                                            {hasActual ? `${yenFmt(pl)}円` : "—"}
-                                        </div>
-                                    </button>
-                                    {/* この機種の分析（MACHINE REPORT）へ直行。分析画面までの動線を短縮する導線 */}
-                                    {canAnalyze && (
-                                        <button type="button" onClick={() => onOpenMachine(realMachine)} aria-label="この機種の分析を見る"
-                                            className="flex w-12 shrink-0 flex-col items-center justify-center gap-0.5 border-l border-[var(--at-ln-md)] text-[var(--at-cyan)] transition active:opacity-60">
-                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><rect x="7" y="11" width="3" height="6" /><rect x="13" y="7" width="3" height="10" /></svg>
-                                            <span className="text-[8px] font-black leading-none">分析</span>
-                                        </button>
-                                    )}
-                                </div>
-                            );
-                        })}
-
-                        <button type="button" onClick={() => setAddFormOpen(true)}
-                            className={`${cardCls} flex h-12 w-full items-center justify-center gap-2 border-dashed text-[13px] font-black text-[var(--at-cyan)]`}>
-                            <span className="text-[18px] leading-none">＋</span>別の遊技記録を追加
-                        </button>
-
                         {/* 編集フォーム（項目は既存の記録エディタと同一） */}
                         <div className={`${cardCls} p-4`}>
                             <div className="flex items-center gap-2 text-[12px] font-black text-[var(--at-subtle-hi)]">
@@ -1061,9 +997,9 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                             </div>
                         ) : null}
 
-                        {/* 回転数データ・大当たり履歴（既存表示を残置）。上部の記録カードタップの自動スクロール先 */}
+                        {/* 回転数データ・大当たり履歴 */}
                         {editGameType !== "slot" && (
-                            <div ref={rotHistoryRef}>
+                            <div>
                                 {renderRotHistory(sel)}
                                 {renderJpHistory(sel)}
                             </div>
