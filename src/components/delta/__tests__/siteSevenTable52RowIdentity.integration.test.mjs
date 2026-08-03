@@ -5,7 +5,10 @@ import assert from "node:assert/strict";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 
 import { parseSiteSevenCsvText } from "../siteSevenDataInput.js";
-import { parseSiteSevenTableImageData } from "../siteSevenImageOcr.js";
+import {
+  inspectSiteSevenTableStructure,
+  parseSiteSevenTableImageData,
+} from "../siteSevenImageOcr.js";
 
 const imageFixturePath = fileURLToPath(
   new URL("./fixtures/site-seven-table-52.png", import.meta.url),
@@ -72,4 +75,29 @@ test("提供画像52台: 台番号と同じ行の数値をCSV正解値と一致�
     assert.equal(actual.maxPayoutAccepted, true, `${expected.num}番台の最高出玉`);
     assert.equal(actual.totalStartsAccepted, true, `${expected.num}番台の大当り回数`);
   });
+});
+
+test("52台表の前後に全幅の画面区切り線があっても表の縦罫線を見失わない", async () => {
+  const source = await loadImage(imageFixturePath);
+  const canvas = createCanvas(804, 5_046);
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.imageSmoothingEnabled = false;
+  context.drawImage(source, 10, 704, 784, 2_890);
+  context.strokeStyle = "rgb(210, 210, 210)";
+  context.lineWidth = 2;
+  for (const y of [156, 526, 4_007, 4_106, 4_207, 4_308, 4_408, 4_694]) {
+    context.beginPath();
+    context.moveTo(0, y);
+    context.lineTo(canvas.width, y);
+    context.stroke();
+  }
+
+  const inspected = inspectSiteSevenTableStructure(
+    context.getImageData(0, 0, canvas.width, canvas.height),
+  );
+  assert.equal(inspected.rows.length, 52);
+  assert.ok(inspected.geometry.tableTop >= 700);
+  assert.ok(inspected.geometry.tableBottom < 4_000);
 });

@@ -183,8 +183,10 @@ export function isDeltaReviewEditable(row) {
 // 日次の1台差玉として明らかに異常な値と小数は拒否する。
 export const MAX_IMPORTED_DELTA_ABS = 500000;
 // 折れ線が白い0線へ完全に重なった場合だけ、表データとの共同照合で
-// 0玉の「要確認」候補を作る。自動確定はせず、目視確認を必須にする。
+// 0玉候補を作る。10回転以下で当り・出玉とも0、台番号・別画像の表・
+// 最大出玉OCRまで一致する非常に狭い条件だけ自動確定する。
 export const LOW_ACTIVITY_ZERO_MAX_SPINS = 150;
+export const LOW_ACTIVITY_ZERO_AUTO_MAX_SPINS = 10;
 
 function safeImportedDelta(value) {
   const parsed = finiteDelta(value);
@@ -206,6 +208,86 @@ function canSuggestLowActivityZero(row, tableRow) {
     && normalSpins <= LOW_ACTIVITY_ZERO_MAX_SPINS
     && Number.isInteger(totalStarts)
     && totalStarts === 0;
+}
+
+function canResolveLowActivityZero(row, tableRow) {
+  const normalSpins = Number(tableRow?.normalSpins);
+  const cumulativeStarts = Number(tableRow?.cumulativeStarts);
+  const totalStarts = Number(tableRow?.totalStarts);
+  const firstHitCount = Number(tableRow?.firstHitCount);
+  const maxPayout = Number(tableRow?.maxPayout);
+  const reasons = Array.isArray(row?.reasonCodes) ? row.reasonCodes : [];
+  const graphCandidates = (Array.isArray(row?.graphMaxPayout?.candidates)
+    ? row.graphMaxPayout.candidates
+    : [])
+    .map((candidate) => ({
+      value: Number(candidate?.value),
+      score: Number(candidate?.score),
+    }))
+    .filter((candidate) => Number.isInteger(candidate.value) && Number.isFinite(candidate.score))
+    .sort((left, right) => left.score - right.score);
+  const bestGraphCandidate = graphCandidates[0] || null;
+  const runnerUpGraphCandidate = graphCandidates.find(
+    (candidate) => candidate.value !== bestGraphCandidate?.value,
+  ) || null;
+  const graphCandidateGap = bestGraphCandidate && runnerUpGraphCandidate
+    ? runnerUpGraphCandidate.score - bestGraphCandidate.score
+    : null;
+  const machineNumber = normalizeMachineNumber(row?.num);
+  const graphMachineNumber = normalizeMachineNumber(
+    row?.machineNumberOcr?.candidate ?? row?.machineNumberCandidate ?? row?.machineNumber,
+  );
+  const resolvedMachineNumber = normalizeMachineNumber(
+    row?.jointMatch?.resolvedNum ?? row?.jointMatch?.num,
+  );
+  const graphSource = String(row?.source?.imageName || "").trim().toLowerCase();
+  const tableSource = String(tableRow?.sourceFile || "").trim().toLowerCase();
+  const requiredFields = [
+    "num",
+    "cumulativeStarts",
+    "normalSpins",
+    "firstHitCount",
+    "maxPayout",
+    "totalStarts",
+  ];
+
+  return canSuggestLowActivityZero(row, tableRow)
+    && reasons.length === 1
+    && reasons[0] === "missing-series"
+    && Number(row?.calibration?.quality) >= 0.95
+    && row?.boundaryObservation == null
+    && row?.valueConstraint == null
+    && row?.machineNumberVerified === true
+    && row?.machineNumberOcr?.accepted === true
+    && Number(row?.machineNumberOcr?.ensemble?.votes) >= 5
+    && machineNumber !== null
+    && graphMachineNumber === machineNumber
+    && resolvedMachineNumber === machineNumber
+    && row?.jointMatch?.accepted === true
+    && row?.jointMatch?.matchedBy === "num"
+    && tableRow?.jointMatchAccepted === true
+    && tableRow?.matchedBy === "num"
+    && tableRow?.reviewRequired !== true
+    && tableRow?.globalReviewRequired !== true
+    && requiredFields.every((field) => tableRow?.fieldAccepted?.[field] === true)
+    && Number.isInteger(normalSpins)
+    && normalSpins > 0
+    && normalSpins <= LOW_ACTIVITY_ZERO_AUTO_MAX_SPINS
+    && Number.isInteger(cumulativeStarts)
+    && cumulativeStarts === normalSpins
+    && totalStarts === 0
+    && firstHitCount === 0
+    && maxPayout === 0
+    && (tableRow?.maxPayoutAccepted === true
+      || tableRow?.fieldAccepted?.maxPayout === true)
+    && Number(row?.graphMaxPayout?.value) === 0
+    && bestGraphCandidate?.value === 0
+    && bestGraphCandidate.score <= 0.16
+    && Number.isFinite(graphCandidateGap)
+    && graphCandidateGap >= 0.1
+    && graphSource.length > 0
+    && tableSource.length > 0
+    && graphSource !== tableSource;
 }
 
 // 解析スロット配列に台番号配列を割り当てる。
@@ -349,12 +431,15 @@ export function mergeTaiData(rows, taiRows) {
     // missing/review は元画像を撮り直すまでその状態を維持する。
     const hasImportedDelta = false;
     const suggestLowActivityZero = canSuggestLowActivityZero(row, t);
+    const resolveLowActivityZero = canResolveLowActivityZero(row, t);
     if (t.val != null && importedDelta === null) invalidDeltaNumbers.add(normalizeMachineNumber(row?.num));
     if (!hasTrustedDelta && importedDelta !== null) unverifiedDeltaNumbers.add(normalizeMachineNumber(row?.num));
     if (hasTrustedDelta && importedDelta !== null && importedDelta !== existingDelta) {
       conflictNumbers.add(normalizeMachineNumber(row?.num));
     }
-    const mergedVal = hasImportedDelta ? importedDelta : suggestLowActivityZero ? 0 : row.val;
+    const mergedVal = hasImportedDelta
+      ? importedDelta
+      : (resolveLowActivityZero || suggestLowActivityZero) ? 0 : row.val;
     const importedIsland = String(t.island ?? "").trim();
     const importedMachineName = String(t.machineName ?? "").trim();
     const existingMachineName = String(row.machineName ?? "").trim();
@@ -409,18 +494,38 @@ export function mergeTaiData(rows, taiRows) {
       machineName: selectedMachineName,
       machineNameSource: selectedMachineNameSource || undefined,
       val: mergedVal,
-      rank: hasImportedDelta || suggestLowActivityZero ? getRank(mergedVal).rank : row.rank,
-      status: hasImportedDelta ? "ok" : suggestLowActivityZero ? "review" : row.status,
+      rank: hasImportedDelta || resolveLowActivityZero || suggestLowActivityZero
+        ? getRank(mergedVal).rank
+        : row.rank,
+      status: hasImportedDelta
+        ? "ok"
+        : resolveLowActivityZero ? "ok" : suggestLowActivityZero ? "review" : row.status,
       valueSource: hasImportedDelta
         ? "import"
-        : suggestLowActivityZero ? "low-activity-evidence" : row.valueSource,
-      confidence: hasImportedDelta ? 1 : suggestLowActivityZero ? 0.25 : row.confidence,
+        : resolveLowActivityZero
+          ? "low-activity-zero-auto"
+          : suggestLowActivityZero ? "low-activity-evidence" : row.valueSource,
+      confidence: hasImportedDelta
+        ? 1
+        : resolveLowActivityZero ? 0.98 : suggestLowActivityZero ? 0.25 : row.confidence,
       reasonCodes: hasImportedDelta
         ? []
+        : resolveLowActivityZero
+          ? []
         : suggestLowActivityZero
           ? ["zero-length-series", "table-low-activity", "low-confidence"]
           : row.reasonCodes,
-      reviewConfirmed: suggestLowActivityZero ? false : row.reviewConfirmed,
+      reviewConfirmed: resolveLowActivityZero || suggestLowActivityZero
+        ? false
+        : row.reviewConfirmed,
+      lowActivityZeroValidation: resolveLowActivityZero
+        ? {
+          accepted: true,
+          validationSource:
+            "missing-series+exact-machine-and-table+zero-activity+zero-max-payout",
+          maximumSpins: LOW_ACTIVITY_ZERO_AUTO_MAX_SPINS,
+        }
+        : row.lowActivityZeroValidation,
       normalSpins: t.normalSpins ?? row.normalSpins ?? null,
       totalStarts: t.totalStarts ?? row.totalStarts ?? null,
       cumulativeStarts: t.cumulativeStarts ?? row.cumulativeStarts ?? null,

@@ -1043,6 +1043,7 @@ export async function buildAutoWorkerCandidate(
       (slot?.status !== "ok" || !Number.isFinite(Number(slot?.val)))
       && !candidateRows[index]?.boundedDeltaApprovalAudit
       && !candidateRows[index]?.reviewDeltaApprovalAudit
+      && candidateRows[index]?.lowActivityZeroValidation?.accepted !== true
     )),
     "graph-slot-not-ok",
   );
