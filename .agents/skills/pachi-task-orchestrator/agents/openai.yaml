@@ -1,0 +1,7 @@
+interface:
+  display_name: "PachiTracker タスク統括"
+  short_description: "Sol設計から実装・独立検証・最終レビューまで安全に統括"
+  default_prompt: "Use $pachi-task-orchestrator to plan and deliver this PachiTracker task through the appropriate agents."
+
+policy:
+  allow_implicit_invocation: true
