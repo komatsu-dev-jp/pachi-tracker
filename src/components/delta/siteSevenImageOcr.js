@@ -133,10 +133,23 @@ function median(values) {
 function detectVerticalLines(image, horizontalLines) {
   const usefulLines = horizontalLines.filter((line) => line.score >= image.width * 0.6);
   if (usefulLines.length < 3) throw new Error("写真から表の横罫線を確認できませんでした");
-  const tableLeft = Math.round(median(usefulLines.map((line) => line.runStart)));
-  const tableRight = Math.round(median(usefulLines.map((line) => line.runEnd - 1)));
-  const tableTop = usefulLines[0].start;
-  const tableBottom = usefulLines.at(-1).end;
+  const dominantRunStart = median(usefulLines.map((line) => line.runStart));
+  const dominantRunEnd = median(usefulLines.map((line) => line.runEnd));
+  const runTolerance = Math.max(4, Math.round(image.width * 0.01));
+  const matchingWidthLines = usefulLines.filter((line) => (
+    Math.abs(line.runStart - dominantRunStart) <= runTolerance
+    && Math.abs(line.runEnd - dominantRunEnd) <= runTolerance
+  ));
+  // フルページ画像には、表より上の見出しや下のショートカット欄にも
+  // 画面全幅の横線がある。実際の表は同じ左右端の横罫線が多数連続するため、
+  // その支配的な横幅だけで縦罫線の有効範囲を決める。
+  const tableLines = matchingWidthLines.length >= 3
+    ? matchingWidthLines
+    : usefulLines;
+  const tableLeft = Math.round(median(tableLines.map((line) => line.runStart)));
+  const tableRight = Math.round(median(tableLines.map((line) => line.runEnd - 1)));
+  const tableTop = tableLines[0].start;
+  const tableBottom = tableLines.at(-1).end;
   const tableHeight = Math.max(1, tableBottom - tableTop + 1);
   const candidates = [];
   for (let x = Math.max(0, tableLeft - 3); x <= Math.min(image.width - 1, tableRight + 3); x += 1) {
@@ -603,6 +616,25 @@ function groupsForExactCount(cell, expectedCount) {
   return groups;
 }
 
+export function isLeadingSiteSevenColumnHeaderRecognition(firstRow, nextRow) {
+  const firstCandidate = String(firstRow?.machineNumberCandidate || "");
+  const nextCandidate = String(nextRow?.machineNumberCandidate || "");
+  const firstRecognition = firstRow?.machineNumberRecognition;
+  const nextRecognition = nextRow?.machineNumberRecognition;
+  const firstVariants = Array.isArray(firstRecognition?.variants)
+    ? firstRecognition.variants
+    : [];
+  return (
+    firstRow?.machineNumberAccepted !== true
+    && /^\d{5,6}$/u.test(firstCandidate)
+    && Number(firstRecognition?.confidence) <= 0.05
+    && firstVariants.length === 3
+    && new Set(firstVariants).size > 1
+    && /^\d{1,4}$/u.test(nextCandidate)
+    && Number(nextRecognition?.confidence) >= 0.5
+  );
+}
+
 function recognizeMachineMapping(image, rows, expectedNumbers, verticalLines, {
   allowRawMachineNumbers = false,
   digitPrototypes = null,
@@ -612,7 +644,7 @@ function recognizeMachineMapping(image, rows, expectedNumbers, verticalLines, {
   const expectedSet = new Set(expected);
   const hasExpectedNumbers = expectedSet.size > 0;
   const prototypes = digitPrototypes || embeddedMachineDigitPrototypes();
-  const rawMapped = rows.map((row) => {
+  let rawMapped = rows.map((row) => {
     const recognition = recognizeCellEnsemble(
       image,
       rowCellBounds(verticalLines, row, 1),
@@ -644,6 +676,11 @@ function recognizeMachineMapping(image, rows, expectedNumbers, verticalLines, {
               : "",
     };
   });
+  // フルページ画像では列見出しの「台番」を青い数字列として誤候補化することがある。
+  // 低信頼かつ閾値不一致の長い先頭候補で、直後に強い通常台番号がある場合だけ除外する。
+  if (isLeadingSiteSevenColumnHeaderRecognition(rawMapped[0], rawMapped[1])) {
+    rawMapped = rawMapped.slice(1);
+  }
 
   const alignment = hasExpectedNumbers
     ? alignSiteSevenTableRows(rawMapped, expected)
@@ -708,8 +745,8 @@ function recognizeMachineMapping(image, rows, expectedNumbers, verticalLines, {
     mapped[index].machineNumberAccepted = false;
     mapped[index].machineNumberReviewReason = "台番号の並び順が前後の行と一致しません";
   }
-  const consecutiveLines = rows.every((row, index) => (
-    index === 0 || row.lineIndex === rows[index - 1].lineIndex + 1
+  const consecutiveLines = mapped.every((row, index) => (
+    index === 0 || row.lineIndex === mapped[index - 1].lineIndex + 1
   ));
   const degradedReasons = [
     ...(!consecutiveLines ? ["table-row-gap"] : []),
@@ -1014,21 +1051,34 @@ export function debugRecognizeSiteSevenCell(image, {
   columnIndex = 3,
   digitSamples = null,
 } = {}) {
-  const inspected = inspectSiteSevenTableImage(image, { expectedNumbers, allowRawMachineNumbers });
+  const scaleInfo = normalizeTableScale(image);
+  const normalizedImage = scaleInfo.image;
+  const nativeLarge = scaleInfo.profile === "native-large";
+  const inspected = inspectSiteSevenTableImage(normalizedImage, {
+    expectedNumbers,
+    allowRawMachineNumbers,
+    profile: scaleInfo.profile,
+  });
   const row = inspected.mapping.mapped[rowIndex];
   if (!row) throw new Error("指定された確認行がありません");
   const prototypes = columnIndex === 1
-    ? embeddedMachineDigitPrototypes()
-    : columnIndex === 5
-      ? digitSamples
-        ? prototypesFromSerializedSamples(digitSamples)
-        : embeddedMaxPayoutDigitPrototypes()
-      : prototypesFromSerializedSamples(digitSamples || EMBEDDED_DIGIT_SAMPLES);
+    ? nativeLarge
+      ? embeddedNativeMachineDigitPrototypes()
+      : embeddedMachineDigitPrototypes()
+    : digitSamples
+      ? prototypesFromSerializedSamples(digitSamples)
+      : nativeLarge
+        ? embeddedNativeDigitPrototypes()
+        : columnIndex === 5
+          ? embeddedMaxPayoutDigitPrototypes()
+          : [2, 4].includes(columnIndex)
+            ? embeddedAuxDigitPrototypes()
+            : embeddedDigitPrototypes();
   return recognizeCellEnsemble(
-    image,
+    normalizedImage,
     rowCellBounds(inspected.geometry.lines, row, columnIndex),
     prototypes,
-    columnIndex === 5 ? { widthPenaltyWeight: 0 } : {},
+    nativeLarge || columnIndex === 5 ? { widthPenaltyWeight: 0 } : {},
   );
 }
 
@@ -1085,6 +1135,45 @@ function embeddedMaxPayoutDigitPrototypes() {
     SITE_SEVEN_MAX_PAYOUT_DIGIT_SAMPLES,
   );
   return embeddedMaxPayoutPrototypesCache;
+}
+
+export function isStrongNativeSiteSevenRecognition(
+  recognition,
+  { profile = "", strictRecognition = false } = {},
+) {
+  const value = String(recognition?.value || "");
+  const variants = Array.isArray(recognition?.variants)
+    ? recognition.variants
+    : [];
+  const glyphs = Array.isArray(recognition?.glyphs)
+    ? recognition.glyphs
+    : [];
+  const candidates = Array.isArray(recognition?.candidates)
+    ? recognition.candidates
+    : [];
+  const first = candidates[0];
+  const second = candidates[1];
+  const candidateMargin = second
+    ? Number(second.score) - Number(first?.score)
+    : 1;
+  return (
+    profile === "native-large"
+    && strictRecognition !== true
+    && /^\d+$/u.test(value)
+    && variants.length === 3
+    && variants.every((variant) => variant === value)
+    && recognition?.unanimous === true
+    && (recognition?.baseReasons?.length || 0) === 0
+    && Number(recognition?.confidence) >= 0.8
+    && glyphs.length === value.length
+    && glyphs.every((glyph) => (
+      Number(glyph?.distance) <= 0.1
+      && Number(glyph?.margin) >= 0.05
+    ))
+    && first?.value === value
+    && Number(first?.distance) <= 0.04
+    && candidateMargin >= 0.04
+  );
 }
 
 export function parseSiteSevenTableImageData(image, {
@@ -1194,6 +1283,12 @@ export function parseSiteSevenTableImageData(image, {
   const recognitionReviewReason = (label, recognition) => {
     if (!recognition.value) return `${label}を読み取れませんでした`;
     if (!recognition.unanimous) return `${label}の読み取り結果が条件によって一致しません`;
+    if (isStrongNativeSiteSevenRecognition(recognition, {
+      profile: scaleInfo.profile,
+      strictRecognition,
+    })) {
+      return "";
+    }
     const hasDistantGlyph = recognition.glyphs?.some((glyph) => glyph.distance > 0.02);
     if (recognition.baseReasons.length > 0 || recognition.confidence < 0.5 || hasDistantGlyph) {
       return `${label}を十分な精度で読めませんでした`;

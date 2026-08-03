@@ -463,6 +463,76 @@ test("mergeTaiData: 校正済みの未読取線は低稼働・当り0と一致�
   assert.strictEqual(isResolvedDeltaRow(confirmed), true);
 });
 
+test("mergeTaiData: exact blank graph and independently trusted zero-activity table resolve to 0", () => {
+  const source = [{
+    num: "805",
+    machineNumber: "805",
+    machineNumberVerified: true,
+    machineNumberOcr: {
+      accepted: true,
+      candidate: "805",
+      ensemble: { votes: 6 },
+    },
+    jointMatch: {
+      accepted: true,
+      matchedBy: "num",
+      resolvedNum: "805",
+    },
+    val: null,
+    rank: null,
+    status: "failed",
+    reasonCodes: ["missing-series"],
+    calibration: { source: "panel", quality: 0.961 },
+    boundaryObservation: null,
+    valueConstraint: null,
+    source: { imageName: "graph.jpg" },
+    graphMaxPayout: {
+      accepted: false,
+      value: 0,
+      candidates: [
+        { value: 0, score: 0.124 },
+        { value: 9, score: 0.286 },
+      ],
+    },
+  }];
+  const imported = [{
+    num: "805",
+    normalSpins: 5,
+    cumulativeStarts: 5,
+    firstHitCount: 0,
+    totalStarts: 0,
+    maxPayout: 0,
+    maxPayoutAccepted: true,
+    jointMatchAccepted: true,
+    matchedBy: "num",
+    reviewRequired: false,
+    globalReviewRequired: false,
+    sourceFile: "table.jpg",
+    fieldAccepted: {
+      num: true,
+      normalSpins: true,
+      cumulativeStarts: true,
+      firstHitCount: true,
+      totalStarts: true,
+      maxPayout: true,
+    },
+  }];
+
+  const { rows } = mergeTaiData(source, imported);
+  assert.equal(rows[0].val, 0);
+  assert.equal(rows[0].status, "ok");
+  assert.equal(rows[0].valueSource, "low-activity-zero-auto");
+  assert.deepEqual(rows[0].reasonCodes, []);
+  assert.equal(rows[0].lowActivityZeroValidation.accepted, true);
+  assert.equal(isResolvedDeltaRow(rows[0]), true);
+
+  imported[0].normalSpins = 11;
+  imported[0].cumulativeStarts = 11;
+  const outsideAutoBand = mergeTaiData(source, imported).rows[0];
+  assert.equal(outsideAutoBand.status, "review");
+  assert.equal(outsideAutoBand.valueSource, "low-activity-evidence");
+});
+
 test("mergeTaiData: 重複行と明らかな異常差玉を確定値にしない", () => {
   const source = [
     { num: "818", val: null, rank: null, status: "failed" },

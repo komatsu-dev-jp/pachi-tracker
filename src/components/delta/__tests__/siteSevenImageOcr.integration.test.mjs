@@ -6,6 +6,8 @@ import { createCanvas, loadImage } from "@napi-rs/canvas";
 import {
   findSiteSevenMachineNumberOrderConflicts,
   inspectSiteSevenTableStructure,
+  isLeadingSiteSevenColumnHeaderRecognition,
+  isStrongNativeSiteSevenRecognition,
   parseSiteSevenTableImageData,
 } from "../siteSevenImageOcr.js";
 import { mergeSiteSevenParsedResults } from "../siteSevenDataInput.js";
@@ -113,6 +115,94 @@ test("台番号の順序が逆転したら前後の両方を不一致として�
     findSiteSevenMachineNumberOrderConflicts([479, "", 481], [479, 480, 481]),
     []
   );
+});
+
+test("列見出しの低信頼な長い誤候補だけを先頭台番号から除外する", () => {
+  const header = {
+    machineNumberAccepted: false,
+    machineNumberCandidate: "161141",
+    machineNumberRecognition: {
+      confidence: 0,
+      variants: ["161141", "111141", "161111"],
+    },
+  };
+  const firstMachine = {
+    machineNumberAccepted: false,
+    machineNumberCandidate: "758",
+    machineNumberRecognition: {
+      confidence: 1,
+      variants: ["758", "758", "753"],
+    },
+  };
+  assert.equal(
+    isLeadingSiteSevenColumnHeaderRecognition(header, firstMachine),
+    true,
+  );
+  assert.equal(
+    isLeadingSiteSevenColumnHeaderRecognition({
+      ...header,
+      machineNumberCandidate: "12345",
+      machineNumberRecognition: { confidence: 0.9, variants: ["12345", "12345", "12345"] },
+    }, {
+      ...firstMachine,
+      machineNumberCandidate: "12346",
+    }),
+    false,
+  );
+});
+
+test("native full-pageの全閾値一致・十分な候補差だけを強い数字証拠として扱う", () => {
+  const recognition = {
+    value: "2441",
+    confidence: 0.828,
+    unanimous: true,
+    baseReasons: [],
+    variants: ["2441", "2441", "2441"],
+    glyphs: [
+      { distance: 0, margin: 0.16 },
+      { distance: 0, margin: 0.21 },
+      { distance: 0.091, margin: 0.09 },
+      { distance: 0, margin: 0.15 },
+    ],
+    candidates: [
+      { value: "2441", distance: 0.012, score: 0.016 },
+      { value: "24471", distance: 0.069, score: 0.075 },
+    ],
+  };
+  assert.equal(isStrongNativeSiteSevenRecognition(recognition, {
+    profile: "native-large",
+  }), true);
+  assert.equal(isStrongNativeSiteSevenRecognition({
+    ...recognition,
+    value: "978",
+    confidence: 1,
+    variants: ["978", "978", "978"],
+    glyphs: [
+      { distance: 0.006, margin: 0.089 },
+      { distance: 0.091, margin: 0.093 },
+      { distance: 0, margin: 0.071 },
+    ],
+    candidates: [
+      { value: "978", distance: 0.0324, score: 0.0354 },
+      { value: "1178", distance: 0.0883, score: 0.0923 },
+    ],
+  }, { profile: "native-large" }), true);
+  assert.equal(isStrongNativeSiteSevenRecognition({
+    ...recognition,
+    variants: ["2441", "2441", "24471"],
+    unanimous: false,
+  }, { profile: "native-large" }), false);
+  assert.equal(isStrongNativeSiteSevenRecognition({
+    ...recognition,
+    candidates: [
+      recognition.candidates[0],
+      { value: "24471", distance: 0.02, score: 0.04 },
+    ],
+  }, { profile: "native-large" }), false);
+  assert.equal(isStrongNativeSiteSevenRecognition(recognition, {
+    profile: "native-large",
+    strictRecognition: true,
+  }), false);
 });
 
 test("実画像52台: 台番号・通常回転・大当たり回数を全件一致させる", async () => {

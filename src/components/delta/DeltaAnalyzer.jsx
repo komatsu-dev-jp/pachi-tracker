@@ -18,6 +18,7 @@ import { attachGraphPanelMetadata } from "./graphPanelMetadataOcr";
 import { applySafeShortSeriesValidation } from "./graphShortSeriesValidator";
 import { matchSiteSevenGraphPanels } from "./siteSevenJointMatcher";
 import { resolveMatchedSiteSevenRows } from "./siteSevenJointResolution";
+import { reconcileSiteSevenRowsWithGraphSequence } from "./siteSevenGraphTableReconciliation";
 import {
   parseTaiDataText,
   buildOcrPrompt,
@@ -350,13 +351,63 @@ export async function analyzeImages(images, onProgress, {
     combineMachineNumberPages(numberPages, { allowPartialPages: true }),
   );
   const excludedPageSet = new Set(combinedNumbers.failedPageIndices || []);
+  let effectiveSiteSevenResults = siteSevenResults;
+  let effectiveSiteSevenReports = siteSevenReports;
+  let graphTableSequenceResolution = null;
+  if (tableExpectation.numbers.length === 0
+    && siteSevenResults.length === 1
+    && siteSevenResults[0]?.kind === "image") {
+    graphTableSequenceResolution = reconcileSiteSevenRowsWithGraphSequence(
+      siteSevenResults[0]?.result?.rows || [],
+      combinedNumbers,
+    );
+    if (graphTableSequenceResolution.applied) {
+      const resolvedRows = graphTableSequenceResolution.rows;
+      const remainingReviewLines = new Set(resolvedRows
+        .filter((row) => row?.reviewRequired === true && row?.reviewConfirmed !== true)
+        .map((row) => Number(row?.sourceLine))
+        .filter(Number.isInteger));
+      const reconciledResult = {
+        ...siteSevenResults[0].result,
+        rows: resolvedRows,
+        skipped: (siteSevenResults[0]?.result?.skipped || []).filter((entry) => (
+          remainingReviewLines.has(Number(entry?.lineNumber))
+        )),
+        machineNumberAccuracy: 1,
+        machineNumberMode: "independent-graph-sequence",
+        machineNumberAlignment: graphTableSequenceResolution.alignment,
+        graphTableSequenceResolution: {
+          source: graphTableSequenceResolution.reasonCode,
+          resolvedCount: graphTableSequenceResolution.resolvedCount,
+          acceptedAnchors: graphTableSequenceResolution.acceptedAnchors,
+          observedMatchCount: graphTableSequenceResolution.observedMatchCount,
+        },
+      };
+      effectiveSiteSevenResults = [{ ...siteSevenResults[0], result: reconciledResult }];
+      effectiveSiteSevenReports = siteSevenReports.map((report) => {
+        if (report?.kind !== "image") return report;
+        const remainingReviewCount = resolvedRows.filter((row) => (
+          row?.reviewRequired === true && row?.reviewConfirmed !== true
+        )).length;
+        return {
+          ...report,
+          reviewCount: remainingReviewCount,
+          fieldReviewCount: remainingReviewCount,
+          machineNumberMode: "independent-graph-sequence",
+          expectedNumberSource: "independent-graph-sequence",
+          machineNumberAccuracy: 1,
+          graphSequenceResolvedCount: graphTableSequenceResolution.resolvedCount,
+        };
+      });
+    }
+  }
   const mergeExpectedNumbers = expectCompleteTable
     ? tableExpectation.numbers
     : combinedNumbers.accepted
       ? combinedNumbers.numbers
       : [];
-  const siteSeven = siteSevenResults.length
-    ? mergeSiteSevenParsedResults(siteSevenResults, { expectedNumbers: mergeExpectedNumbers })
+  const siteSeven = effectiveSiteSevenResults.length
+    ? mergeSiteSevenParsedResults(effectiveSiteSevenResults, { expectedNumbers: mergeExpectedNumbers })
     : { rows: [], recognizedCount: 0, reviewCount: 0, duplicateCount: 0, missingNumbers: [] };
   // 別資料で値が完全一致した同じ台は1件へ畳む。値の競合・元資料内の重複は
   // reviewRequiredのまま残し、matcher側では固定点として使わない。
@@ -384,7 +435,7 @@ export async function analyzeImages(images, onProgress, {
     && jointMatch.summary?.unmatchedGraphCount === 0
     && jointMatch.summary?.unmatchedRowCount === 0
     && (jointMatch.reviewReasons?.length || 0) === 0
-    && canAutoAcceptSiteSevenReports(siteSevenReports)
+    && canAutoAcceptSiteSevenReports(effectiveSiteSevenReports)
     && jointNumbers.every(Boolean)
     && new Set(jointNumbers).size === jointNumbers.length;
   const jointlyResolvedSlots = combinedNumbers.slots.map((slot, graphIndex) => {
@@ -455,21 +506,29 @@ export async function analyzeImages(images, onProgress, {
     jointMatch,
     siteSevenRows: resolvedSiteSevenRows,
     siteSevenSummary: {
-      fileCount: siteSevenResults.length,
+      fileCount: effectiveSiteSevenResults.length,
       rowCount: siteSeven.recognizedCount || 0,
       reviewCount: resolvedSiteSevenRows.filter((row) => row.reviewRequired && !row.reviewConfirmed).length,
       skippedCount: resolvedSiteSevenRows.filter((row) => row.reviewRequired && !row.reviewConfirmed).length,
       duplicateCount: siteSeven.duplicateCount || 0,
       missingCount: siteSeven.missingNumbers?.length || 0,
-      pdfCount: siteSevenResults.filter((entry) => entry.kind === "pdf").length,
-      csvCount: siteSevenResults.filter((entry) => entry.kind === "csv").length,
-      imageCount: siteSevenResults.filter((entry) => entry.kind === "image").length,
-      degradedImageCount: siteSevenReports.filter((report) => report.degradedImage).length,
-      failedFileCount: siteSevenReports.filter((report) => report.error).length,
-      unsafeFileCount: siteSevenReports.filter((report) => (
+      pdfCount: effectiveSiteSevenResults.filter((entry) => entry.kind === "pdf").length,
+      csvCount: effectiveSiteSevenResults.filter((entry) => entry.kind === "csv").length,
+      imageCount: effectiveSiteSevenResults.filter((entry) => entry.kind === "image").length,
+      degradedImageCount: effectiveSiteSevenReports.filter((report) => report.degradedImage).length,
+      failedFileCount: effectiveSiteSevenReports.filter((report) => report.error).length,
+      unsafeFileCount: effectiveSiteSevenReports.filter((report) => (
         !report.error && report.autoAcceptable === false
       )).length,
-      reports: siteSevenReports,
+      reports: effectiveSiteSevenReports,
+      graphTableSequenceResolution: graphTableSequenceResolution?.applied
+        ? {
+          source: graphTableSequenceResolution.reasonCode,
+          resolvedCount: graphTableSequenceResolution.resolvedCount,
+          acceptedAnchors: graphTableSequenceResolution.acceptedAnchors,
+          observedMatchCount: graphTableSequenceResolution.observedMatchCount,
+        }
+        : null,
     },
   };
 }
