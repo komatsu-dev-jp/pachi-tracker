@@ -19,7 +19,7 @@ const ECONOMIC_DERIVED_KEYS = new Set([
     "legacyEffectiveStart1K", "legacyEffectiveEV1K", "legacyEffectiveWorkAmount",
 ]);
 
-export function CalendarTab({ S, onReset, initialDate = null, focusMode = false, initialArchiveId = null, onDone = null, onOpenMachine = null }) {
+export function CalendarTab({ S, onReset, initialDate = null, focusMode = false, initialArchiveId = null, onDone = null }) {
     // initialDate（"YYYY-MM-DD" 任意）で初期選択日と表示月を指定できる。
     // 分析タブの月別「記録を編集」導線から該当日を開くために使用。省略時は従来通り未選択・当月表示。
     // focusMode: 分析からの編集導線専用。カレンダー・KPI等の重複表示を出さず、
@@ -54,11 +54,10 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
     const [editSlotRB, setEditSlotRB] = useState("");
     const [editSlotAT, setEditSlotAT] = useState("");
     const [showEditStoreDD, setShowEditStoreDD] = useState(false);
+    const [focusEditFormOpen, setFocusEditFormOpen] = useState(false);
     // Swipe delete state
     const [swipedId, setSwipedId] = useState(null);
     const swipeRef = useRef({ startX: 0, id: null });
-    // focusMode: この日の記録カード（機種情報）タップで回転数データへ自動スクロールするための参照先
-    const rotHistoryRef = useRef(null);
     // ランキング・履歴の「すべて見る」展開状態
     const [showAllMachines, setShowAllMachines] = useState(false);
     const [showAllStores, setShowAllStores] = useState(false);
@@ -110,6 +109,11 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
         setAddFormOpen(false);
         setShowAddStoreDD(false);
     }, [selectedDate]);
+
+    useEffect(() => {
+        setFocusEditFormOpen(false);
+        setShowEditStoreDD(false);
+    }, [selectedArchiveId]);
 
     const archives = useMemo(() => S.archives || [], [S.archives]);
 
@@ -777,7 +781,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
         <>
         <Card style={{ overflow: "hidden", marginBottom: 8 }}>
             <SecLabel label={`回転数データ (${a.rotRows.filter(r => r.type === "data").length}K)`} />
-            <div style={{ display: "grid", gridTemplateColumns: "36px 1fr 1fr 1fr 48px 48px", background: "rgba(249,115,22,0.12)", padding: "5px 4px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "44px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 48px 48px", background: "rgba(249,115,22,0.12)", padding: "5px 4px", alignItems: "center" }}>
                 {["種別", "総回転", "今回", "平均", "投資", "持ち玉"].map(h => (
                     <div key={h} style={{ textAlign: "center", fontSize: 9, fontWeight: 700, color: C.sub }}>{h}</div>
                 ))}
@@ -786,17 +790,24 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                 const isMochi = row.mode === "mochi";
                 const badgeCol = isMochi ? C.orange : row.mode === "chodama" ? C.purple : C.blue;
                 const badge = isMochi ? "持" : row.mode === "chodama" ? "貯" : "現";
+                const modeLabel = isMochi ? "持ち玉" : row.mode === "chodama" ? "貯玉" : "現金";
+                const isEditable = isEditableRotationModeRow(row);
                 return (
-                    <div key={i} style={{ display: "grid", gridTemplateColumns: "36px 1fr 1fr 1fr 48px 48px", padding: "5px 4px", borderBottom: `1px solid ${C.border}` }}>
-                        <div style={{ textAlign: "center" }}>
-                            <span style={{ fontSize: 8, fontWeight: 700, color: badgeCol, background: badgeCol + "20", borderRadius: 4, padding: "1px 4px" }}>{badge}</span>
-                        </div>
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: "44px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 48px 48px", minHeight: 44, padding: "5px 4px", borderBottom: `1px solid ${C.border}`, alignItems: "center" }}>
+                        {isEditable ? (
+                            <button type="button" className="b" aria-label={`遊技方法を修正（${i + 1}行目、現在は${modeLabel}）`} onClick={() => { setRotationCorrection({ row, fingerprint: createRotationModeFingerprint(row, i), archiveFingerprint: createArchiveCorrectionFingerprint(a) }); setRotationCorrectionError(""); }} style={{ width: 44, minHeight: 44, border: "none", borderRadius: 8, background: badgeCol + "20", color: badgeCol, fontSize: 11, fontWeight: 800 }}>
+                                {badge}<span aria-hidden="true" style={{ fontSize: 10, marginLeft: 2 }}>✎</span>
+                            </button>
+                        ) : (
+                            <div style={{ textAlign: "center" }}>
+                                <span style={{ fontSize: 8, fontWeight: 700, color: badgeCol, background: badgeCol + "20", borderRadius: 4, padding: "1px 4px" }}>{badge}</span>
+                            </div>
+                        )}
                         <div style={{ textAlign: "center", fontSize: 11, color: C.subHi, fontFamily: mono }}>{f(row.cumRot)}</div>
                         <div style={{ textAlign: "center", fontSize: 11, color: C.text, fontFamily: mono }}>{row.type === "start" ? "START" : row.thisRot}</div>
                         <div style={{ textAlign: "center", fontSize: 11, color: C.text, fontFamily: mono }}>{row.avgRot || "—"}</div>
                         <div style={{ textAlign: "center", fontSize: 10, color: C.sub, fontFamily: mono }}>{row.mode === "mochi" ? "—" : (row.invest ? f(row.invest) : "—")}</div>
                         <div style={{ textAlign: "center", fontSize: 10, color: row.mode === "chodama" ? C.purple : C.orange, fontFamily: mono }}>{f(row.mode === "chodama" ? (row.chodamaBalls || 0) : (row.mochiBalls || 0))}</div>
-                        {isEditableRotationModeRow(row) && <button type="button" className="b" aria-label={`遊技方法を修正 ${i + 1}`} onClick={() => { setRotationCorrection({ row, fingerprint: createRotationModeFingerprint(row, i), archiveFingerprint: createArchiveCorrectionFingerprint(a) }); setRotationCorrectionError(""); }} style={{ gridColumn: "1 / -1", minHeight: 44, marginTop: 4, border: `1px solid ${C.border}`, borderRadius: 8, background: C.surfaceHi, color: C.text }}>遊技方法を修正</button>}
                     </div>
                 );
             })}
@@ -845,11 +856,15 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
         const numProps = { type: "tel", inputMode: "numeric", pattern: "[0-9]*" };
         // 遊技時間は小数（例 3.5 時間）を許容するため decimal 入力にする
         const decProps = { type: "text", inputMode: "decimal" };
-        const yenFmt = (v) => `${v > 0 ? "+" : ""}${Math.round(v).toLocaleString("ja-JP")}`;
-        const plCls = (v) => v >= 0 ? "text-[var(--at-pos)]" : "text-[var(--at-neg)]";
         const canAdd = (Number(addInvest) || 0) > 0 || (Number(addRecovery) || 0) > 0;
         const selHasChodamaStore = sel != null && (S.stores || []).some(st => typeof st === "object" && (st.id === sel.storeId || st.name === sel.storeName));
         const sst = sel?.stats || {};
+        const editSummary = [
+            editGameType === "slot" ? "パチスロ" : "パチンコ",
+            editStore || "店舗未入力",
+            editMachineName || "機種名未入力",
+            editMachineNum ? `${editMachineNum}番台` : "台番号未入力",
+        ].join("・");
         const storeDD = (open, setOpen, setValue) => (open && storeList.length > 0) ? (
             <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-[150px] overflow-y-auto rounded-[10px] border border-[var(--at-ln-hi)] bg-[var(--at-panel)] shadow-[var(--at-menu-shadow)]">
                 {storeList.map((stItem, i) => {
@@ -910,72 +925,23 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
             <div className="mx-auto w-full max-w-[430px] px-5 pt-3">
                 {sel && !addFormOpen ? (
                     <div className="space-y-3">
-                        {/* この日の記録カード（複数ある日はリスト。タップで編集対象を切替） */}
-                        {dateArchives.map(ar => {
-                            const isSlot = ar.gameType === "slot";
-                            const inv = Number(ar.investYen) || 0;
-                            const rec = Number(ar.recoveryYen) || 0;
-                            const cy = Number(ar.chodamaYen) || 0;
-                            const hasActual = inv > 0 || rec > 0 || cy > 0;
-                            const pl = (rec - inv) - cy;
-                            const evBreakdown = getEvBreakdown(ar);
-                            const ev = evBreakdown.total;
-                            const denom = ar.settings?.synthDenom;
-                            const name = ar.machineName && ar.machineName !== `1/${denom}` ? ar.machineName : (ar.machineName || (isSlot ? "機種未入力" : `1/${denom || "—"}`));
-                            // 分析（MACHINE REPORT）へ飛べる実機種名のみを対象にする（合成分母フォールバックや未入力は除外）。
-                            const realMachine = ar.machineName && ar.machineName !== `1/${denom}` ? ar.machineName : "";
-                            const canAnalyze = !!(!isSlot && onOpenMachine && realMachine);
-                            const active = ar.id === sel.id;
-                            return (
-                                <div key={ar.id}
-                                    className={`${cardCls} flex min-h-[56px] w-full items-stretch overflow-hidden ${active ? "border-[var(--at-cyan)] shadow-[0_0_0_1px_var(--at-cyan)]" : ""}`}>
-                                    {/* 主動作: タップで編集対象を選択し、下部の回転数データまで自動スクロール */}
-                                    <button type="button" onClick={() => {
-                                        setSelectedArchiveId(ar.id);
-                                        setDelConfirm(null);
-                                        requestAnimationFrame(() => {
-                                            rotHistoryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-                                        });
-                                    }}
-                                        className="flex min-w-0 flex-1 items-center gap-3 p-3.5 text-left transition active:opacity-60">
-                                        <div className="min-w-0 flex-1">
-                                            <div className="truncate text-[14px] font-black text-[var(--at-strong)]">{name}</div>
-                                            <div className="mt-0.5 truncate text-[10.5px] font-bold text-[var(--at-mut)]">
-                                                {[isSlot ? "パチスロ" : "パチンコ", ar.storeName, ar.machineNum ? `${ar.machineNum}番台` : "", !isSlot && ev !== 0 ? `期待値 ${yenFmt(ev)}円` : ""].filter(Boolean).join(" / ") || "詳細未入力"}
-                                            </div>
-                                            {evBreakdown.yutime !== 0 && (
-                                                <div className="mt-1 text-[9.5px] font-bold text-[var(--at-mut)]">
-                                                    通常 {yenFmt(evBreakdown.normal)}円 ＋ 遊タイム {yenFmt(evBreakdown.yutime)}円
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className={`shrink-0 font-mono text-[16px] font-black tabular-nums ${hasActual ? plCls(pl) : "text-[var(--at-faint)]"}`}>
-                                            {hasActual ? `${yenFmt(pl)}円` : "—"}
-                                        </div>
-                                    </button>
-                                    {/* この機種の分析（MACHINE REPORT）へ直行。分析画面までの動線を短縮する導線 */}
-                                    {canAnalyze && (
-                                        <button type="button" onClick={() => onOpenMachine(realMachine)} aria-label="この機種の分析を見る"
-                                            className="flex w-12 shrink-0 flex-col items-center justify-center gap-0.5 border-l border-[var(--at-ln-md)] text-[var(--at-cyan)] transition active:opacity-60">
-                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><rect x="7" y="11" width="3" height="6" /><rect x="13" y="7" width="3" height="10" /></svg>
-                                            <span className="text-[8px] font-black leading-none">分析</span>
-                                        </button>
-                                    )}
-                                </div>
-                            );
-                        })}
-
-                        <button type="button" onClick={() => setAddFormOpen(true)}
-                            className={`${cardCls} flex h-12 w-full items-center justify-center gap-2 border-dashed text-[13px] font-black text-[var(--at-cyan)]`}>
-                            <span className="text-[18px] leading-none">＋</span>別の遊技記録を追加
-                        </button>
-
                         {/* 編集フォーム（項目は既存の記録エディタと同一） */}
-                        <div className={`${cardCls} p-4`}>
-                            <div className="flex items-center gap-2 text-[12px] font-black text-[var(--at-subtle-hi)]">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--at-cyan)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
-                                記録の編集
+                        <div className={`${cardCls} overflow-hidden`}>
+                            <div className="flex">
+                                <button type="button"
+                                    onClick={() => { setFocusEditFormOpen(open => !open); if (focusEditFormOpen) setShowEditStoreDD(false); }}
+                                    aria-expanded={focusEditFormOpen}
+                                    aria-controls={`focus-edit-fields-${sel.id}`}
+                                    aria-label={focusEditFormOpen ? "記録の編集を閉じる" : "記録の編集を開く"}
+                                    className="flex min-h-11 min-w-0 flex-1 items-center gap-2 px-4 py-2 text-left text-[12px] font-black text-[var(--at-subtle-hi)]">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--at-cyan)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                                    記録の編集
+                                    <span aria-hidden="true" className="ml-auto text-[16px] text-[var(--at-cyan)]">{focusEditFormOpen ? "⌃" : "⌄"}</span>
+                                </button>
+                                <button type="button" aria-label="別の遊技記録を追加" onClick={() => { setAddFormOpen(true); setFocusEditFormOpen(false); setShowEditStoreDD(false); setDelConfirm(null); }} className="min-h-11 shrink-0 border-l border-[var(--at-ln)] px-3 text-[12px] font-black text-[var(--at-cyan)]">＋ 別記録</button>
                             </div>
+                            {!focusEditFormOpen && <div className="min-w-0 border-t border-[var(--at-ln)] px-4 py-2.5 text-[11px] font-bold text-[var(--at-mut)]"><div className="truncate">{editSummary}</div></div>}
+                            <div id={`focus-edit-fields-${sel.id}`} hidden={!focusEditFormOpen} className="px-4 pb-4">
                             <div className="mt-3 grid grid-cols-2 gap-2.5">
                                 {gameTypeSelector(editGameType, setEditGameType, !sel.isManual)}
                                 <div className="col-span-2">
@@ -1036,6 +1002,7 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                             {editGameType !== "slot" && <div className="mt-2 text-[9px] text-[var(--at-mut)]">
                                 貯玉残高は{selHasChodamaStore ? `「${sel.storeName || ""}」の現在残高に同期されます` : "店舗の現在残高として登録されます（未登録の店舗は自動で追加）"}
                             </div>}
+                            </div>
                         </div>
 
                         <DataQualityFeedbackCard
@@ -1061,9 +1028,9 @@ export function CalendarTab({ S, onReset, initialDate = null, focusMode = false,
                             </div>
                         ) : null}
 
-                        {/* 回転数データ・大当たり履歴（既存表示を残置）。上部の記録カードタップの自動スクロール先 */}
+                        {/* 回転数データ・大当たり履歴 */}
                         {editGameType !== "slot" && (
-                            <div ref={rotHistoryRef}>
+                            <div>
                                 {renderRotHistory(sel)}
                                 {renderJpHistory(sel)}
                             </div>
