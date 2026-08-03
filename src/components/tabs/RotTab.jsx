@@ -31,6 +31,8 @@ import { getHitWizardPresentation } from "./hitWizardPresentation";
 import SameDayResumePrompt, { CashCorrectionPrompt } from "./SameDayResumePrompt";
 import RotationModeEditor from "./RotationModeEditor";
 import { correctRotationMode, createRotationModeFingerprint, isEditableRotationModeRow, resolveNextPlayMode } from "../../rotationModeCorrection";
+import { createMoveTableActionGuard } from "./moveTableActionGuard";
+import { createMoveTableDestination } from "./moveTableDestination";
 
 
 export function RotTab({ rows, setRows, S, ev, border }) {
@@ -42,6 +44,11 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     // 旧UIの "jackpot" mode は撤去済み。bottom sheet は常に通常回転入力（count モード）として使用
     const [showMoveModal, setShowMoveModal] = useState(false);
     const [moveMochiBalls, setMoveMochiBalls] = useState("");
+    const [moveEntryProcessing, setMoveEntryProcessing] = useState(false);
+    const [moveSubmitState, setMoveSubmitState] = useState("idle");
+    const [moveSubmitError, setMoveSubmitError] = useState("");
+    const moveEntryGuardRef = useRef(createMoveTableActionGuard());
+    const moveSubmitGuardRef = useRef(createMoveTableActionGuard());
     // 台移動モーダル：移動先の機種情報の入力state（機種名は稼働開始と同じ機種選択画面で選ぶ）
     const [moveMachineName, setMoveMachineName] = useState("");
     const [moveMachineNum, setMoveMachineNum] = useState("");
@@ -61,23 +68,64 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         }
     };
     const openMoveFlow = async () => {
-        if ((S.jpLog || []).some((chain) => chain && chain.completed === false)) {
-            const confirmed = await S.requestConfirmation?.({
-                title: "入力途中の大当たり記録があります",
-                message: "未完了の内容は出玉統計へ反映されない可能性があります。このまま台移動へ進みますか？",
-                confirmLabel: "台移動へ進む",
-            });
-            if (!confirmed) return;
+        if (!moveEntryGuardRef.current.claim()) return;
+        setMoveEntryProcessing(true);
+        try {
+            if ((S.jpLog || []).some((chain) => chain && chain.completed === false)) {
+                const confirmed = await S.requestConfirmation?.({
+                    title: "入力途中の大当たり記録があります",
+                    message: "未完了の内容は出玉統計へ反映されない可能性があります。このまま台移動へ進みますか？",
+                    confirmLabel: "台移動へ進む",
+                });
+                if (!confirmed) return;
+            }
+            setShowEventMenu(false);
+            setMoveMochiBalls(String(S.currentMochiBalls || 0));
+            setMoveMachineName("");
+            setMoveMachineNum("");
+            setMoveStartRot("");
+            setMoveYutimeTarget(null);
+            setShowMoveYutimeCalculator(false);
+            movePickedMachineRef.current = null;
+            moveSubmitGuardRef.current = createMoveTableActionGuard();
+            setMoveSubmitState("idle");
+            setMoveSubmitError("");
+            setShowMoveModal(true);
+        } finally {
+            setMoveEntryProcessing(false);
+            moveEntryGuardRef.current.release();
         }
-        setShowEventMenu(false);
-        setMoveMochiBalls(String(S.currentMochiBalls || 0));
-        setMoveMachineName("");
-        setMoveMachineNum("");
-        setMoveStartRot("");
+    };
+    const closeMoveModal = () => {
+        setShowMoveModal(false);
         setMoveYutimeTarget(null);
-        setShowMoveYutimeCalculator(false);
-        movePickedMachineRef.current = null;
-        setShowMoveModal(true);
+    };
+    const handleMoveConfirm = async () => {
+        if (!moveSubmitGuardRef.current.claim()) return;
+        setMoveSubmitState("processing");
+        setMoveSubmitError("");
+        let moveTableDestination;
+        try {
+            moveTableDestination = createMoveTableDestination({
+                moveMochiBalls, moveMachineName, moveMachineNum, moveStartRot, moveYutimeTarget,
+                picked: movePickedMachineRef.current, S,
+                calculateYutimeEV, deriveNormalExpectedNetBalls, isYutimeTargetingSession,
+            });
+        } catch {
+            moveSubmitGuardRef.current.release();
+            setMoveSubmitState("idle");
+            setMoveSubmitError("移動内容を作成できませんでした。入力を確認して、もう一度お試しください。");
+            return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        try {
+            S.handleMoveTable(moveTableDestination.mochi, moveTableDestination.dest);
+        } catch {
+            setMoveSubmitState("needsAttention");
+            setMoveSubmitError("台移動の保存で問題が発生しました。内容を確認してから、閉じるボタンで終了してください。");
+            return;
+        }
+        closeMoveModal();
     };
     useEffect(() => {
         if (S.sessionFlowRequest?.type !== "move") return;
@@ -2670,6 +2718,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     className="b event-menu__item"
                                     type="button"
                                     onClick={openMoveFlow}
+                                    disabled={moveEntryProcessing}
                                 >
                                     <span className="event-menu__item-icon" style={{ "--em-color": C.blue }}>
                                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -2678,8 +2727,8 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                         </svg>
                                     </span>
                                     <span>
-                                        <span className="event-menu__item-title" style={{ fontFamily: font }}>台移動を記録</span>
-                                        <span className="event-menu__item-sub" style={{ fontFamily: font }}>別の台へ移動したことを記録</span>
+                                        <span className="event-menu__item-title" style={{ fontFamily: font }}>{moveEntryProcessing ? "確認中…" : "台移動を記録"}</span>
+                                        <span className="event-menu__item-sub" style={{ fontFamily: font }}>{moveEntryProcessing ? "入力途中の記録を確認しています" : "別の台へ移動したことを記録"}</span>
                                     </span>
                                     <span className="event-menu__item-chev">›</span>
                                 </button>
@@ -4842,68 +4891,10 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             </div>
                         )}
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                            <Btn label="キャンセル" onClick={() => setShowMoveModal(false)} />
-                            <Btn label="移動する" onClick={() => {
-                                const mochi = Math.max(0, Math.round(Number(moveMochiBalls) || 0));
-                                const picked = movePickedMachineRef.current;
-                                const yutimeLowSpins = moveYutimeTarget?.currentLowSpins
-                                    ?? Math.max(0, Math.round(Number(moveStartRot) || 0));
-                                const dest = {
-                                    machineName: (moveMachineName || "").trim(),
-                                    machineNum: (moveMachineNum || "").trim(),
-                                    startRot: Math.max(0, Math.round(Number(moveStartRot) || 0)),
-                                    ...(picked || {}),
-                                    rentBalls: moveYutimeTarget?.rentBalls ?? picked?.rentBalls,
-                                    exRate: moveYutimeTarget?.exRate ?? picked?.exRate,
-                                    investPace: moveYutimeTarget?.investPace ?? picked?.investPace,
-                                    yutimeSession: moveYutimeTarget?.session || picked?.yutimeSession || null,
-                                    yutimeLowSpins,
-                                };
-                                if (moveYutimeTarget?.decision) {
-                                    dest.yutimeDecision = {
-                                        ...moveYutimeTarget.decision,
-                                        machineName: dest.machineName,
-                                        currentLowSpins: yutimeLowSpins,
-                                        spec: dest.yutimeSession,
-                                    };
-                                }
-                                if (isYutimeTargetingSession(dest.yutimeSession)) {
-                                    const moveResult = calculateYutimeEV({
-                                        probabilityDenom: dest.synthDenom || S.synthDenom,
-                                        triggerLowSpins: dest.yutimeSession.triggerLowSpins,
-                                        currentLowSpins: dest.yutimeLowSpins,
-                                        start1K: dest.yutimeSession.assumedStart1K || S.border,
-                                        normalExpectedNetBalls: deriveNormalExpectedNetBalls({
-                                            spec1R: dest.spec1R || S.spec1R,
-                                            specAvgRounds: dest.specAvgRounds || S.specAvgRounds,
-                                            specSapo: dest.specSapo ?? S.specSapo,
-                                        }),
-                                        yutimeExpectedNetBalls: dest.yutimeSession.expectedNetBalls,
-                                        rentBalls: dest.rentBalls || dest.yutimeSession?.rentBalls || S.rentBalls,
-                                        exRate: dest.exRate || dest.yutimeSession?.exRate || S.exRate,
-                                        playMode: S.currentMochiBalls > 0 ? "mochi" : S.currentChodama > 0 ? "chodama" : "cash",
-                                    });
-                                    dest.yutimeDecision = dest.yutimeDecision || {
-                                        version: 2,
-                                        createdAt: new Date().toISOString(),
-                                        machineName: dest.machineName,
-                                        currentLowSpins: dest.yutimeLowSpins,
-                                        assumedStart1K: dest.yutimeSession.assumedStart1K || S.border,
-                                        rateSource: "assumed",
-                                        playMode: S.currentMochiBalls > 0 ? "mochi" : S.currentChodama > 0 ? "chodama" : "cash",
-                                        rentBalls: dest.rentBalls || dest.yutimeSession?.rentBalls || S.rentBalls,
-                                        exRate: dest.exRate || dest.yutimeSession?.exRate || S.exRate,
-                                        pachinkoRateLabel: dest.yutimeSession?.pachinkoRateLabel || "",
-                                        pachinkoRateSource: dest.yutimeSession?.pachinkoRateSource || "app",
-                                        spec: dest.yutimeSession,
-                                        result: moveResult,
-                                    };
-                                }
-                                setShowMoveModal(false);
-                                setMoveYutimeTarget(null);
-                                S.handleMoveTable(mochi, dest);
-                            }} bg={C.purple} fg="#fff" bd="none" />
+                            <Btn label={moveSubmitState === "needsAttention" ? "閉じる" : "キャンセル"} onClick={closeMoveModal} disabled={moveSubmitState === "processing"} />
+                            <Btn label={moveSubmitState === "processing" ? "移動中…" : moveSubmitState === "needsAttention" ? "確認が必要です" : "移動する"} onClick={handleMoveConfirm} disabled={moveSubmitState !== "idle"} bg={C.purple} fg="#fff" bd="none" />
                         </div>
+                        {moveSubmitError && <div role="alert" style={{ color: C.red, fontSize: 11, lineHeight: 1.5, marginTop: 10 }}>{moveSubmitError}</div>}
                     </Card>
                 </div>
             )}
