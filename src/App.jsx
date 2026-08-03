@@ -22,6 +22,13 @@ import {
 } from "./economics";
 import { useUndoStack } from "./history";
 import { C, font, tsNow, localDateStr } from "./constants";
+import {
+  canCreateSameDayResumeCandidate,
+  isSameDayResumeExpired,
+  normalizeSameDayResumeCandidate,
+  resolveSameDayResumeSettlement,
+} from "./sameDayResume";
+import { createRecordStartDraft } from "./recordStartFlow";
 import { RotTab, SettingsTab } from "./components/Tabs";
 import ModeTabBar from "./components/ModeTabBar";
 import { buildRiskSnapshot, findExactMachine } from "./components/home/homePlanningModel";
@@ -364,6 +371,7 @@ export default function App() {
 
   // セッション開始時の初期値
   const [sessionStarted, setSessionStarted] = useLS("pt_sessionStarted", false);
+  const [sameDayResumeCandidate, setSameDayResumeCandidate] = useLS("pt_sameDayResumeCandidate", null);
   const [startGameCount, setStartGameCount] = useLS("pt_startGameCount", 0);
   const [initialMochiBalls, setInitialMochiBalls] = useLS("pt_initialMochiBalls", 0);
   const [initialChodama, setInitialChodama] = useLS("pt_initialChodama", 0);
@@ -1022,6 +1030,14 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 同日再開候補は新しい独立キーだけで管理する。壊れた値と翌日の値は開始前に安全に捨てる。
+  useEffect(() => {
+    const normalized = normalizeSameDayResumeCandidate(sameDayResumeCandidate);
+    if (!normalized || isSameDayResumeExpired(normalized, localDateStr())) setSameDayResumeCandidate(null);
+    // setter の参照変更は無視し、保存値の検証だけを一度行う。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const { pushSnapshot: pushUndoSnapshot, undo, redo, canUndo, canRedo } = useUndoStack(
     getUndoSnapshot,
     applyUndoSnapshot
@@ -1432,7 +1448,24 @@ export default function App() {
       store && typeof store === "object" && String(store.id) === String(targetStoreId)
     ));
     const targetStoreName = String(confirmedStoreName ?? targetStore?.name ?? sheet.storeName ?? "");
+    const sameDayStoreName = String(targetStore?.name ?? "");
     const finalMochiBalls = Math.max(0, Math.round(Number(heldMochi ?? sheet.heldMochi) || 0));
+    const sameDaySettlement = resolveSameDayResumeSettlement({
+      method,
+      candidateInput: {
+        candidateId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        businessDate: localDateStr(),
+        createdAt: new Date().toISOString(),
+        storeId: targetStoreId,
+        storeName: sameDayStoreName,
+        machineName: String(sheet.machineName || "").trim(),
+        machineNum: String(machineNum || "").trim(),
+        balls: finalMochiBalls,
+        carriedValueYen: recoveryVal,
+      },
+    });
+    if (!sameDaySettlement.canProceed) return false;
+    setSameDayResumeCandidate(sameDaySettlement.candidate);
     // 未登録機種を次回用にカスタム機種へ登録（resetAll で機種情報がクリアされる前に実行）。
     // 形式は Tabs の saveMachine / emptyMachine と同一。同名が既にあれば重複登録しない。
     if (registerMachine && sheet.isUnregistered) {
@@ -1487,6 +1520,7 @@ export default function App() {
     });
     setEndSheet(null);
     setCurrentMode("record");
+    return true;
   };
 
   // 後方互換：従来の handleEndSession 名でも精算シートを開く
@@ -1620,21 +1654,13 @@ export default function App() {
       setCurrentMode("record");
       return;
     }
-    const selectedStore = (Array.isArray(stores) ? stores : []).find((store) => (
-      store && typeof store === "object" && String(store.id) === String(selection?.storeId)
-    ));
-    setRecordStartDraft({
+    setRecordStartDraft(createRecordStartDraft({
       id: `strategy-${Date.now()}`,
-      source: "strategy-map",
-      storeId: selection?.storeId ?? selectedStore?.id ?? null,
-      storeName: String(selection?.storeName || selectedStore?.name || ""),
-      machineName: String(selection?.machineName || ""),
-      machineNum: String(selection?.machineNum ?? selection?.num ?? ""),
-      rentBalls: Number(selectedStore?.rentBalls) || Number(rentBalls) || 250,
-      exRate: Number(selectedStore?.exRate) || Number(exRate) || 250,
-      closingTime: String(selectedStore?.closingTime || ""),
-      plannedStart1K: Number(selection?.plannedStart1K ?? selection?.rot) || 0,
-    });
+      selection,
+      stores,
+      rentBalls,
+      exRate,
+    }));
     setSessionSubTab("rot");
     setCurrentMode("record");
   }, [sessionStarted, stores, rentBalls, exRate, setCurrentMode]);
@@ -1710,6 +1736,7 @@ export default function App() {
     currentMochiBalls, setCurrentMochiBalls,
     currentChodama, setCurrentChodama,
     carriedInYen, setCarriedInYen,
+    sameDayResumeCandidate, setSameDayResumeCandidate,
     // スタート入力プロンプト
     showStartPrompt, setShowStartPrompt,
     // セッション内サブタブ
@@ -2048,13 +2075,19 @@ function EndSessionSheet({ sheet, stores = [], onConfirm, onCancel }) {
   // 未登録機種を次回用に登録するか（未登録機種のときのみ表示・既定オン）
   const [registerMachine, setRegisterMachine] = useState(true);
   const heldMochiNum = Math.max(0, Math.round(Number(heldMochi) || 0));
+  const canHoldForSameDay = canCreateSameDayResumeCandidate({
+    storeId: selectedStore?.id,
+    storeName: selectedStore?.name,
+    machineName: sheet.machineName,
+    balls: heldMochiNum,
+  });
   const ballYen = Number(selectedStore?.exRate) > 0
     ? 1000 / Number(selectedStore.exRate)
     : Math.max(0, Number(sheet.ballYen) || 0);
   const cashYen = Math.max(0, Math.round(heldMochiNum * ballYen));
   const investNum = Math.max(0, Math.round(Number(invest) || 0));
   // 貯玉化は持ち玉の現金換算額（cashYen）を回収額として扱う＝収支は現金精算と同じ
-  const recoveryNum = method === "chodama"
+  const recoveryNum = method === "chodama" || method === "same_day_hold"
     ? cashYen
     : Math.max(0, Math.round(Number(recovery) || 0));
   // 打ち始めに消費した貯玉（円）。投資と同じくコストとして収支へ反映（保存は archiveCurrentSession 側で別途記録）。
@@ -2111,6 +2144,12 @@ function EndSessionSheet({ sheet, stores = [], onConfirm, onCancel }) {
                 setSelectedStoreId(nextStoreId);
                 setRecovery(String(Math.round(heldMochiNum * nextBallYen)));
                 if (!nextStoreId && method === "chodama") setMethod("cash");
+                if (method === "same_day_hold" && !canCreateSameDayResumeCandidate({
+                  storeId: nextStore?.id,
+                  storeName: nextStore?.name,
+                  machineName: sheet.machineName,
+                  balls: heldMochiNum,
+                })) setMethod("cash");
               }}
               style={{ ...inputStyle, textAlign: "left", fontSize: 14 }}
             >
@@ -2148,6 +2187,8 @@ function EndSessionSheet({ sheet, stores = [], onConfirm, onCancel }) {
             <button onClick={() => setMethod("chodama")} style={tab(method === "chodama")}>貯玉として保存</button>
           )}
         </div>
+        <button type="button" disabled={!canHoldForSameDay} onClick={() => setMethod("same_day_hold")} style={{ ...tab(method === "same_day_hold"), width: "100%", marginTop: -8, marginBottom: 16, opacity: canHoldForSameDay ? 1 : .45 }}>持ち玉を残す（同日・同じ台で再開）</button>
+        {!canHoldForSameDay && <div style={{ marginTop: -10, marginBottom: 16, fontSize: 11, color: C.sub }}>持ち玉1玉以上、名前のある店舗、機種名がそろうと選べます。</div>}
 
         {/* 打ち始めの残高（開始時の持ち玉・貯玉）。何から打ち始めたかを明示する */}
         {(sheet.startMochi > 0 || sheet.startChodama > 0) && (
@@ -2196,6 +2237,12 @@ function EndSessionSheet({ sheet, stores = [], onConfirm, onCancel }) {
                 setRecovery(e.target.value.replace(/[^0-9]/g, ""));
               }} style={inputStyle} />
           </div>
+        ) : method === "same_day_hold" ? (
+          <div style={{ marginBottom: 12, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px" }}>
+            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>同日・同じ台で再開する持ち玉</div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>{fmt(heldMochiNum)}玉を残します（店舗の貯玉残高には加算しません）</div>
+            <div style={{ fontSize: 11, color: C.sub, marginTop: 4 }}>持ち玉価値 約¥{fmt(cashYen)} は今回の回収額に計上します</div>
+          </div>
         ) : (
           <div style={{ marginBottom: 12, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px" }}>
             <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貯玉として保存</div>
@@ -2243,7 +2290,7 @@ function EndSessionSheet({ sheet, stores = [], onConfirm, onCancel }) {
           </button>
         )}
 
-        <button onClick={() => onConfirm({
+        <button disabled={method === "same_day_hold" && !canHoldForSameDay} onClick={() => onConfirm({
           method,
           invest: investNum,
           recovery: recoveryNum,
@@ -2252,7 +2299,7 @@ function EndSessionSheet({ sheet, stores = [], onConfirm, onCancel }) {
           storeName: selectedStore?.name || sheet.storeName || "",
           heldMochi: heldMochiNum,
         })}
-          style={{ width: "100%", height: 60, borderRadius: 12, fontSize: 15, fontWeight: 700, fontFamily: font, border: "none", background: C.blue, color: "#fff", cursor: "pointer" }}>
+          style={{ width: "100%", height: 60, borderRadius: 12, fontSize: 15, fontWeight: 700, fontFamily: font, border: "none", background: C.blue, color: "#fff", cursor: "pointer", opacity: method === "same_day_hold" && !canHoldForSameDay ? .45 : 1 }}>
           実戦終了して保存
         </button>
         <button onClick={onCancel}
