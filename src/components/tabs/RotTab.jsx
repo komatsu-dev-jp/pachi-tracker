@@ -25,6 +25,10 @@ import { LineChart, InfoIcon, PencilIcon, LightbulbIcon, CoinIcon, SwapIcon, Sto
 import MachinePickerSheet from "./MachinePickerSheet";
 import SessionScheduleEditor from "./SessionScheduleEditor";
 import CashLimitGuide, { useLiveCashLimitGuide } from "./CashLimitGuide";
+import { createOneTimeStartGuard, createSameDayResumeStart, matchSameDayResumeCandidate } from "../../sameDayResume";
+import { normalizeChodamaBalls, resolveRecordStartChodama, resolveRecordStartSpecSapo, setupInitialChodamaFromDraft } from "../../recordStartFlow";
+import { getHitWizardPresentation } from "./hitWizardPresentation";
+import SameDayResumePrompt, { CashCorrectionPrompt } from "./SameDayResumePrompt";
 
 
 export function RotTab({ rows, setRows, S, ev, border }) {
@@ -83,6 +87,9 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     // テンキーの直近入力履歴（表示専用・店内での再入力ヒント）
     const [inputHistory, setInputHistory] = useState([]);
     const [showSetupModal, setShowSetupModal] = useState(false);
+    const [sameDayResumeMode] = useState("cash");
+    const startSessionLockRef = useRef(createOneTimeStartGuard());
+    useEffect(() => { if (showSetupModal) startSessionLockRef.current = createOneTimeStartGuard(); }, [showSetupModal]);
     const [showStoreDD, setShowStoreDD] = useState(false);
     const [machineQuery, setMachineQuery] = useState("");
     const [showMachinePicker, setShowMachinePicker] = useState(false);
@@ -722,7 +729,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     const [setupMachineNum, setSetupMachineNum] = useState("");
     const [setupMachineName, setSetupMachineName] = useState("");
     const [setupStartRot, setSetupStartRot] = useState("");
-    const [setupInitialBalls, setSetupInitialBalls] = useState("");
+    const [setupInitialBalls, setSetupInitialBalls] = useState(null);
     // 未登録機種用の任意スペック入力（合成確率 / ボーダー1k・4円等価）。
     // 入力時のみ deriveSpecForMachine で spec を逆算して適用する（未入力なら既定スペックのまま記録可能）。
     const [setupSynthDenom, setSetupSynthDenom] = useState("");
@@ -748,7 +755,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         setSetupMachineNum(String(draft.machineNum || ""));
         setSetupMachineName(String(draft.machineName || ""));
         setSetupStartRot(String(draft.startRot || ""));
-        setSetupInitialBalls(String(draft.initialChodama || ""));
+        setSetupInitialBalls(setupInitialChodamaFromDraft(draft));
         setSetupClosingTime(String(draft.closingTime || ""));
         setSetupPlannedStart1K(Number(draft.plannedStart1K) > 0 ? String(draft.plannedStart1K) : "");
         setSetupEndTime(timeValueFromDate(defaultEnd));
@@ -758,6 +765,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             selectedStoreId: S.selectedStoreId,
             rentBalls: S.rentBalls,
             exRate: S.exRate,
+            investPace: S.investPace,
             ballVal: S.ballVal,
             synthDenom: S.synthDenom,
             spec1R: S.spec1R,
@@ -773,8 +781,22 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             S.setBallVal(1000 / Number(draft.exRate));
         }
 
-        const machine = findEffectiveMachineByName(draft.machineName, S.customMachines);
-        if (machine) {
+        if (Number(draft.investPace) > 0) S.setInvestPace(Number(draft.investPace));
+        if (Number(draft.synthDenom) > 0) S.setSynthDenom(Number(draft.synthDenom));
+        if (Number(draft.spec1R) > 0) S.setSpec1R(Number(draft.spec1R));
+        if (Number(draft.specAvgRounds) > 0) S.setSpecAvgRounds(Number(draft.specAvgRounds));
+        const draftMachine = findEffectiveMachineByName(draft.machineName, S.customMachines);
+        const draftMachineSpec = draftMachine ? deriveSpecForMachine(draftMachine) : null;
+        S.setSpecSapo(resolveRecordStartSpecSapo({ draft, machineSpecSapo: draftMachineSpec?.specSapo }));
+        if (draft.yutimeSession) {
+            S.setYutimeSession(draft.yutimeSession);
+            S.setYutimeDecision(null);
+            setSetupYutimeLowSpins(String(draft.yutimeLowSpins || ""));
+            setSetupYutimeStart1K(Number(draft.yutimeStart1K) > 0 ? String(draft.yutimeStart1K) : "");
+        }
+
+        const machine = draftMachine;
+        if (machine && !draft.yutimeSession) {
             const spec = deriveSpecForMachine(machine);
             const yutime = createYutimeSessionFromMachine(machine, {
                 assumedStart1K: machine.border1K || S.border,
@@ -799,6 +821,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         S.setSelectedStoreId(previous.selectedStoreId);
         S.setRentBalls(previous.rentBalls);
         S.setExRate(previous.exRate);
+        S.setInvestPace(previous.investPace);
         S.setBallVal(previous.ballVal);
         S.setSynthDenom(previous.synthDenom);
         S.setSpec1R(previous.spec1R);
@@ -813,7 +836,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         setSetupMachineNum("");
         setSetupMachineName("");
         setSetupStartRot("");
-        setSetupInitialBalls("");
+        setSetupInitialBalls(null);
         setSetupSynthDenom("");
         setSetupBorder1k("");
         setSetupYutimeLowSpins("");
@@ -1116,7 +1139,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     };
 
     // 新規稼働開始
-    const handleStartSession = () => {
+    const handleStartSession = (modeOverride = null) => {
         if (S.requestSessionContextChange?.(["店舗", "機種", "貸玉", "交換率"])) return;
         const now = new Date();
         const schedule = validateSessionSchedule({
@@ -1142,15 +1165,23 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             setSetupError("開始前の想定1Kスタートを入力し、機種スペックと回転設定を確認してください。");
             return;
         }
+        if (!startSessionLockRef.current.claim()) return;
         const val = Number(setupStartRot) || 0;
-        const yutimeLowSpins = setupYutimeLowSpins === ""
-            ? val
-            : Math.max(0, Math.round(Number(setupYutimeLowSpins) || 0));
+        const yutimeLowSpins = setupYutimeLowSpins === "" ? val : Math.max(0, Math.round(Number(setupYutimeLowSpins) || 0));
+        const sameDayMatch = matchSameDayResumeCandidate(S.sameDayResumeCandidate, {
+            businessDate: localDateStr(), storeId: S.selectedStoreId, machineName: setupMachineName, machineNum: setupMachineNum,
+        });
+        const existingChodamaBalls = resolveRecordStartChodama(S.stores, S.selectedStoreId, setupInitialBalls);
+        const sameDayStart = sameDayMatch.matched
+            ? createSameDayResumeStart({ candidate: sameDayMatch.candidate, mode: modeOverride || sameDayResumeMode, startRot: val, yutimeLowSpins, existingChodamaBalls })
+            : null;
+        S.setSameDayResumeCandidate(null);
 
         // 店舗・機種設定を適用
         if (setupStore) S.setStoreName(setupStore);
         if (setupMachineNum) S.setMachineNum(setupMachineNum);
         if (setupMachineName) S.setMachineName(setupMachineName);
+        if (!findEffectiveMachineByName(setupMachineName, S.customMachines)) S.setSpecSapo(0);
         // 未登録機種で任意スペックを入力した場合のみ、合成確率＋ボーダーから記録用スペックを逆算して適用。
         // （DB機種を選んだ場合はボトムシート選択時に適用済みのためここはスキップ）
         {
@@ -1167,13 +1198,16 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             }
         }
         // 新規稼働開始時は貯玉を設定（未入力なら0でリセット）
-        const initialChodama = Number(setupInitialBalls) || 0;
-        const startPlayMode = initialChodama > 0 ? "chodama" : "cash";
-        S.setCurrentChodama(initialChodama);
-        S.setInitialChodama(initialChodama);
+        const initialChodama = sameDayStart?.initialChodama ?? existingChodamaBalls;
+        const startPlayMode = sameDayStart?.playMode || (initialChodama > 0 ? "chodama" : "cash");
+        S.setCurrentChodama(sameDayStart?.currentChodama ?? initialChodama);
+        S.setInitialChodama(sameDayStart?.initialChodama ?? initialChodama);
+        S.setInitialMochiBalls(sameDayStart?.initialMochiBalls ?? 0);
+        S.setCurrentMochiBalls(sameDayStart?.currentMochiBalls ?? 0);
+        S.setCarriedInYen(sameDayStart?.carriedInYen ?? 0);
         S.setPlayMode(startPlayMode);
         // 持ち玉は0にリセット（移動時に設定する）
-        S.setCurrentMochiBalls(0);
+        if (!sameDayStart) S.setCurrentMochiBalls(0);
 
         // 着席時点の遊タイム判断を固定保存する。以後の実測更新とは別物として扱う。
         if (isYutimeTargetingSession(S.yutimeSession)) {
@@ -1222,7 +1256,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         S.setSessionTargetEndAt(targetDeadline.toISOString());
         S.setSessionClosingTime(setupClosingTime);
         S.setSessionPlannedStart1K(Number(setupPlannedStart1K));
-        setRows((r) => [...r, {
+        setRows((r) => [...r, sameDayStart?.startRow || {
             type: "start",
             cumRot: val,
             ...(isYutimeTargetingSession(S.yutimeSession) ? { yutimeLowSpins } : {}),
@@ -1239,7 +1273,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         setSetupMachineNum("");
         setSetupMachineName("");
         setSetupStartRot("");
-        setSetupInitialBalls("");
+        setSetupInitialBalls(null);
         setSetupSynthDenom("");
         setSetupBorder1k("");
         setSetupYutimeLowSpins("");
@@ -1767,7 +1801,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     </button>
                 </div>
 
-                {/* セットアップモーダル - プレミアムデザイン */}
                 {showSetupModal && (
                     <div style={{ position: "fixed", inset: 0, background: "rgba(17,24,39,0.5)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
                         <div className="card-premium" style={{ width: "100%", maxWidth: 360, maxHeight: "85vh", overflowY: "auto" }}>
@@ -1802,6 +1835,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                             onChange={e => {
                                                 setSetupStore(e.target.value);
                                                 S.setSelectedStoreId(null);
+                                                setSetupInitialBalls(null);
                                                 setSetupClosingTime("");
                                                 setSetupError("");
                                             }}
@@ -1835,9 +1869,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                                                 // 複数交換率対応: 玉単価も exRate から同期
                                                                 S.setBallVal(1000 / st.exRate);
                                                             }
-                                                            if (st.chodama) S.setCurrentChodama(st.chodama);
-                                                            // 貯玉入力欄を店舗の残高で自動セット
-                                                            if (st.chodama) setSetupInitialBalls(String(st.chodama));
+                                                            setSetupInitialBalls(String(normalizeChodamaBalls(st.chodama)));
                                                             S.setSelectedStoreId(st.id);
                                                             setSetupClosingTime(st.closingTime || "");
                                                         }
@@ -1855,7 +1887,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     )}
                                 </div>
 
-                                {/* 貸玉レート。低貸しでは一般的な200玉区切りも同時に設定する。 */}
                                 <div style={{ marginBottom: 16 }}>
                                     <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>貸玉レート</div>
                                     <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
@@ -1886,7 +1917,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     </div>
                                 </div>
 
-                                {/* 機種選択 */}
                                 <div style={{ marginBottom: 12 }}>
                                     <div style={{ fontSize: 10, color: C.sub, marginBottom: 4, fontWeight: 600 }}>機種</div>
                                     <button
@@ -1954,7 +1984,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     )}
                                 </div>
 
-                                {/* 台番号・開始回転数 */}
                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
                                     <div>
                                         <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>台番号</div>
@@ -1980,7 +2009,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     </div>
                                 </div>
 
-                                {/* 計算画面で遊タイム狙いを選んだ実戦だけ表示する。 */}
                                 {isYutimeTargetingSession(S.yutimeSession) && (
                                     <div style={{ marginBottom: 16, padding: 12, borderRadius: 12, background: "rgba(47,111,237,.08)", border: `1px solid ${C.blue}55` }}>
                                         <div style={{ fontSize: 12, fontWeight: 800, color: C.blue, marginBottom: 8 }}>遊タイム（任意）</div>
@@ -2020,7 +2048,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     </div>
                                 )}
 
-                                {/* 稼働計画。時刻だけでは金額を出せないため、開始前の想定回転率も同時に確認する。 */}
                                 <div style={{ marginBottom: 18, padding: 12, borderRadius: 12, background: "var(--surface-hi)", border: `1px solid ${C.borderHi}` }}>
                                     <div style={{ fontSize: 12, color: C.text, marginBottom: 10, fontWeight: 800 }}>稼働計画</div>
                                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
@@ -2081,29 +2108,28 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     )}
                                 </div>
 
-                                {/* 貯玉 */}
                                 <div style={{ marginBottom: 24 }}>
                                     <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>貯玉（任意）</div>
                                     <input
                                         type="tel"
                                         inputMode="numeric"
-                                        value={setupInitialBalls}
+                                        value={setupInitialBalls ?? ""}
                                         onChange={e => setSetupInitialBalls(e.target.value)}
                                         placeholder="0"
                                         style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "14px", fontSize: 18, color: C.text, fontFamily: mono, outline: "none", textAlign: "center" }}
                                     />
                                 </div>
 
+                                <SameDayResumePrompt resume={matchSameDayResumeCandidate(S.sameDayResumeCandidate, { businessDate: localDateStr(), storeId: S.selectedStoreId, machineName: setupMachineName, machineNum: setupMachineNum })} mode={sameDayResumeMode} onChange={handleStartSession} C={C} f={f} />
                                 {setupError && !setupTargetAfterClosing && <div role="alert" style={{ color: C.red, fontSize: 11, lineHeight: 1.5, marginBottom: 10 }}>{setupError}</div>}
 
-                                {/* ボタン - プレミアムデザイン */}
                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                                     <button className="b" onClick={cancelSetupModal} style={{
                                         background: "var(--surface-hi)", border: `1px solid ${C.borderHi}`, borderRadius: 14, color: C.text, fontSize: 15, fontWeight: 700, padding: "16px 0", fontFamily: font
                                     }}>キャンセル</button>
-                                    <button className="b btn-premium btn-secondary" onClick={handleStartSession}>
+                                    {!matchSameDayResumeCandidate(S.sameDayResumeCandidate, { businessDate: localDateStr(), storeId: S.selectedStoreId, machineName: setupMachineName, machineNum: setupMachineNum }).matched && <button className="b btn-premium btn-secondary" onClick={handleStartSession}>
                                         稼働開始
-                                    </button>
+                                    </button>}
                                 </div>
                             </div>
                         </div>
@@ -2170,7 +2196,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             ref={swipeAreaRef}
             style={{ display: "flex", flexDirection: "column", height: "100%" }}
         >
-            {/* セッションヘッダー：スワイプ可能なタブ */}
             <div
                 style={{
                     flexShrink: 0,
@@ -2178,7 +2203,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     background: "var(--header-bg)"
                 }}
             >
-                {/* 機種・店舗情報 */}
                 <div style={{ padding: "10px 12px 8px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                     <button className="b" onClick={() => setSummaryCollapsed(!summaryCollapsed)} style={{
                         flex: 1, background: "transparent", border: "none", padding: 0, display: "flex", alignItems: "center", gap: 8, minWidth: 0
@@ -2197,7 +2221,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         </div>
                         <span style={{ fontSize: 9, color: C.sub, flexShrink: 0 }}>{summaryCollapsed ? "▼" : "▲"}</span>
                     </button>
-                    {/* 通知ベル：通知パネル（Phase 6）を開く。未読件数を右上にバッジ表示 */}
                     <button
                         className="b"
                         type="button"
@@ -2251,7 +2274,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             );
                         })()}
                     </button>
-                    {/* 歯車：設定モードへのショートカット */}
                     <button
                         className="b"
                         type="button"
@@ -2282,7 +2304,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     </button>
                 </div>
 
-                {/* サマリーカード群（折りたたみ） — 実績スナップショット */}
                 {!summaryCollapsed && (
                     <div className="summary-card" style={{ padding: 6, margin: "0 12px 6px", borderRadius: 8 }}>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
@@ -2306,7 +2327,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     </div>
                 )}
 
-                {/* スワイプ可能タブバー */}
                 <div
                     style={{
                         display: "flex",
@@ -2359,7 +2379,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                 </div>
             </div>
 
-            {/* 記録タブ — モックアップ2準拠：ダーク × ネオンブルー × 戦略OS風UI */}
             {S.sessionSubTab === "rot" && (() => {
                 const ballsLabel = S.playMode === "chodama" ? "貯玉" : "持ち玉";
                 const ballsVal = S.playMode === "chodama" ? (S.currentChodama || 0) : (S.currentMochiBalls || 0);
@@ -2380,13 +2399,11 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         paddingBottom: "calc(20px + env(safe-area-inset-bottom))",
                         display: "flex", flexDirection: "column", gap: 12,
                     }}>
-                        {/* 1. 3K・5K・10K・20K固定地点で判断する見切りナビ */}
                         {!showYutimeDecision && <LiveDecisionNavigator decision={ev.liveDecision} />}
                         {!showYutimeDecision && (
                             <CashLimitGuide guide={liveCashLimitGuide} preAlert={liveCashPreAlert} />
                         )}
 
-                        {/* 1.5. 遊タイム狙い目分析（天井未設定機種では非表示） */}
                         <YutimeEvCard
                             result={S.yutimeLive}
                             spec={{ ...S.activeYutimeSession, investPace: S.investPace }}
@@ -2408,21 +2425,18 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             />
                         )}
 
-                        {/* 2. 指標カード（3 + 4） */}
                         <KeyMetrics
                             ev={ev}
                             currentMochiBalls={S.currentMochiBalls || 0}
                             currentChodama={S.currentChodama || 0}
                         />
 
-                        {/* 3. 直近の行動ログ（タイムライン） */}
                         <RecentEventList
                             jpLog={jpLog}
                             sesLog={sesLog}
                             anchorId="record-recent-events"
                         />
 
-                        {/* 3.5 直前の入力を削除（誤入力取消ボタン） */}
                         {hasDataRow && (
                             <button
                                 className="b"
@@ -2448,7 +2462,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
 
                     </div>
 
-                    {/* 下部固定 CTA + FAB */}
                     <div className="record-cta-bar">
                         <button
                             className={`b record-cta-input${yutimeEventMode === "active" ? " record-cta-input--yutime" : ""}`}
@@ -2494,7 +2507,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         </button>
                     </div>
 
-                    {/* イベントメニュー（FABから開くボトムシート） */}
                     {showEventMenu && (
                         <div
                             className="event-menu__backdrop"
@@ -2749,7 +2761,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         </div>
                     )}
 
-                    {/* テンキーモーダル（モックアップ2準拠） */}
                     {showInputSheet && (
                         <div
                             className="input-sheet__backdrop"
@@ -2773,7 +2784,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     >×</button>
                                 </div>
 
-                                {/* 上部ステータスチップ：持ち玉 / 現在回転数 / 前回入力 */}
                                 <div className="numpad-modal__chips" style={{ fontFamily: font }}>
                                     <div className="numpad-modal__chip">
                                         <span className="numpad-modal__chip-label">{ballsLabel}</span>
@@ -2804,7 +2814,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     </div>
                                 )}
 
-                                {/* 入力値ディスプレイ */}
                                 <div className="numpad-modal__display">
                                     <div>
                                         <span
@@ -2833,7 +2842,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     <div className="error-msg" style={{ fontSize: 11, marginBottom: 10, fontFamily: font }}>{inputError}</div>
                                 )}
 
-                                {/* テンキー 7-9 / 4-6 / 1-3 / 0 + 削除 */}
                                 <div className="numpad-modal__keys">
                                     {["7", "8", "9", "4", "5", "6", "1", "2", "3"].map((d) => (
                                         <button
@@ -2846,7 +2854,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                             {d}
                                         </button>
                                     ))}
-                                    {/* 0は1列目、空白、削除 */}
                                     <button
                                         className="b numpad-modal__key numpad-modal__key--zero"
                                         type="button"
@@ -2878,7 +2885,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     </button>
                                 </div>
 
-                                {/* 決定ボタン */}
                                 <button
                                     className="b numpad-modal__submit"
                                     type="button"
@@ -2888,7 +2894,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     この回転数を追加
                                 </button>
 
-                                {/* 入力履歴チップ */}
                                 {inputHistory.length > 0 && (
                                     <div className="numpad-modal__history">
                                         <div className="numpad-modal__history-label" style={{ fontFamily: font }}>入力履歴</div>
@@ -2906,12 +2911,10 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                 );
             })()}
 
-            {/* 大当たりタブ - HistoryTabから完全移植 */}
             {S.sessionSubTab === "history" && (
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                     <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
                         <div>
-                                {/* HUDストリップ（持玉 / 評価 / 1Rあたり）+ RUSH継続中バナー + スタッツグリッド */}
                                 {(() => {
                                     const heroEvNet = ev && Number.isFinite(ev.totalNetGain) ? ev.totalNetGain : 0;
                                     // 1Rあたり実測平均 = 実測純増(最終持ち玉 − 開始上皿玉) ÷ 総R数。
@@ -3002,7 +3005,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     );
                                 })()}
 
-                                {/* アクションボタン（当たりを追加 / 単発完了 / RUSH終了）*/}
                                 {isChainActive && (
                                     <div style={{ marginBottom: 14 }}>
                                         <button className="b" onClick={openChainWizard} style={{
@@ -3051,7 +3053,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     </div>
                                 )}
 
-                                {/* 大当たり履歴ヘッダー + 履歴をすべて見る */}
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 2, marginBottom: 10 }}>
                                     <span style={{ fontSize: 13, fontWeight: 800, color: C.text, fontFamily: font }}>
                                         大当たり履歴 <span style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>(最新20件)</span>
@@ -3066,7 +3067,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     </button>
                                 </div>
 
-                                {/* 大当たりタイムライン（最新20件・横並びチップ／折り返し対応で横スクロールなし）*/}
                                 {(() => {
                                     const allHits = jpLog.flatMap(ch => (ch.hits || []).map(h => ({
                                         rounds: h.rounds || 0, time: h.time, mult: h.mult || 1, rawRounds: h.rawRounds,
@@ -3103,7 +3103,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     );
                                 })()}
 
-                                {/* サマリー（総R数 / 平均R数 / 大当たり / 初当たり）*/}
                                 <div style={{ margin: "0 0 16px", background: `linear-gradient(135deg, var(--surface), var(--surface-alt))`, border: `1px solid color-mix(in srgb, ${C.teal} 32%, ${C.border})`, borderRadius: 18, overflow: "hidden", boxShadow: `0 0 22px color-mix(in srgb, ${C.teal} 14%, transparent)` }}>
                                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
                                         {[
@@ -3121,7 +3120,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     </div>
                                 </div>
 
-                                {/* 詳細履歴（「履歴をすべて見る」で展開）— 既存のチェーン詳細・編集・削除を温存 */}
                                 {showAllHistory && (<>
                                 {/* History — Chain Cards */}
                                 {jpLog.length === 0 ? (
@@ -3294,7 +3292,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                         );
                                     })
                                 )}
-                                {/* 今回の入力まとめ（未確定）— 将来連携予定: 入力中のチェーン値を集約表示 */}
                                 {jpLog.length > 0 && (() => {
                                     const summaryChain = lastChain || jpLog[jpLog.length - 1];
                                     if (!summaryChain) return null;
@@ -3339,7 +3336,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                         </details>
                                     );
                                 })()}
-                                {/* 最新履歴を削除（ゴミ箱アイコン付き） */}
                                 <button
                                     type="button"
                                     className="b"
@@ -3379,7 +3375,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         </div>
                     </div>
 
-                    {/* 削除確認モーダル */}
                     {deleteConfirmOpen && (
                         <div style={{ position: "fixed", inset: 0, background: "rgba(17,24,39,0.45)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
                             <Card style={{ width: "100%", maxWidth: 320, padding: 20 }}>
@@ -3395,7 +3390,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         </div>
                     )}
 
-                    {/* 大当たり履歴 編集モーダル（古いデータの修正用） */}
                     {editChainOpen && (
                         <div style={{ position: "fixed", inset: 0, background: "rgba(17,24,39,0.45)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
                             <Card style={{ width: "100%", maxWidth: 380, maxHeight: "90vh", padding: 16, display: "flex", flexDirection: "column" }}>
@@ -3461,7 +3455,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                             </div>
                                         </div>
                                     ))}
-                                    {/* チェーン終了データ（時短回数・最終出玉）*/}
                                     <div style={{ padding: "10px 0", borderTop: `1px solid ${C.border}`, marginTop: 4 }}>
                                         <div style={{ fontSize: 11, fontWeight: 700, color: C.orange, marginBottom: 6 }}>連チャン終了データ</div>
                                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -3490,7 +3483,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                             最終出玉を入力すると実測持ち玉として集計・持ち玉に反映されます。0なら液晶出玉ベースで計算します。
                                         </div>
                                     </div>
-                                    {/* 通常時の玉消費（回転率）修正 — 貯玉/持ち玉区間のみ表示 */}
                                     {(editChainMeta.segMode === "chodama" || editChainMeta.segMode === "mochi") && (
                                         <div style={{ padding: "10px 0", borderTop: `1px solid ${C.border}`, marginTop: 4 }}>
                                             <div style={{ fontSize: 11, fontWeight: 700, color: C.purple, marginBottom: 6 }}>
@@ -5023,14 +5015,11 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                 );
             })()}
 
-            {/* ================================================================
-                画面 A — 初当たり入力（仕様書 docs/input-flow-design.md §3.1 準拠）
-                旧 8ステップ hitWizard を 1 画面 5 項目 + 次状態選択 に刷新
-            ================================================================ */}
             {hitWizardOpen && ReactDOM.createPortal(
                 (() => {
                     const D = hitWizardData;
                     const isYutimeOrigin = Boolean(D.yutimeRunId);
+                    const hitWizardPresentation = getHitWizardPresentation({ playMode: S.playMode, isYutimeOrigin });
                     const focus = hitInputFocus || (isYutimeOrigin ? "rotCount" : "pushAmount");
                     const setFocus = (k) => setHitInputFocus(k);
                     const updField = (key, val) => setHitWizardData(d => ({ ...d, [key]: val }));
@@ -5044,27 +5033,22 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     const multN = Math.max(1, numOr0("mult") || 1);
                     const roundLabel = rndN > 0 ? (multN > 1 ? `${rndN}R×${multN}` : `${rndN}R`) : "";
 
-                    // 液晶出玉(dispN)は簡易フローでは入力しないため必須から除外
                     const requiredOk = rotN > 0 && (isYutimeOrigin || trayN > 0) && rndN > 0;
 
-                    // ヘッダーのチェーン状態
                     const chainLen = lastChain && !lastChain.completed ? (lastChain.hits || []).length : 0;
 
-                    // 上部ステータス：算出可能な値のみ表示、不明値は「—」
                     const evNet = ev && Number.isFinite(ev.totalNetGain) ? ev.totalNetGain : 0;
                     const startG1K = ev && Number.isFinite(ev.start1K) ? ev.start1K : 0;
                     const avg1R = ev && Number.isFinite(ev.avg1R) ? ev.avg1R : 0;
                     const currentRateLabel = formatPachinkoRateLabel(S.rentBalls || 250);
 
-                    // ステップ定義（簡易入力フロー 画面A、入力順: プッシュ補正→当たった回転数→開始前の玉数→R→結果）
-                    // 液晶出玉・実測出玉の毎回入力は廃止。出玉は「開始前の玉数」と「最終玉数（ラッシュ終了時）」の差分で算出する。
                     const STEPS = [
                         { id: "pushAmount",   num: 1, label: "プッシュ補正額",  sub: `（任意・${currentRateLabel}パチの投資補正）`, short: "補正", color: C.yellow, icon: "coin", summaryUnit: "円" },
                         { id: "rotCount",     num: 2, label: "当たった回転数",  sub: "（はまり・ゲーム数）",      short: "回転数",   color: C.blue,   icon: "rotate", summaryUnit: "回転" },
                         { id: "trayBalls",    num: 3, label: "開始前の玉数",    sub: "（当たり直前の持ち玉・上皿）", short: "開始玉",   color: C.yellow, icon: "coin",   summaryUnit: "玉",  required: true },
                         { id: "rounds",       num: 4, label: "ラウンド数",      sub: "（当たったラウンド 10R・5Rなど）", short: "R数",  color: C.purple, icon: "r",      summaryUnit: "R" },
                         { id: "result",       num: 5, label: "結果を選択",      sub: "（連チャン継続 or 単発終了）", short: "結果",  color: C.orange, icon: "flag",   summaryUnit: "" },
-                    ].filter((step) => !isYutimeOrigin || step.id !== "pushAmount").map((step, index) => (
+                    ].filter((step) => hitWizardPresentation.showPushStep || step.id !== "pushAmount").map((step, index) => (
                         isYutimeOrigin && step.id === "rotCount"
                             ? { ...step, num: index + 1, label: "遊タイム消化回転数", sub: "遊タイム突入から当たるまでの回転数" }
                             : { ...step, num: index + 1 }
@@ -5090,10 +5074,8 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         const val = stepDisplayValue(id);
                         return val !== "" && val !== "--";
                     };
-                    // 入力済みチップ：すでに通過したステップで値が入っているもの
                     const filledChips = STEPS.slice(0, stepIdx).filter(s => s.id !== "result" && isFilled(s.id));
 
-                    // テンキー対象外: rounds（プリセット）、pushAmount（カテゴリ）、result（アクション）
                     const keypadField = (curStep.id === "rounds" || curStep.id === "pushAmount" || curStep.id === "result") ? null : curStep.id;
 
                     const keypadAppend = (n) => {
@@ -5122,7 +5104,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         setHitInputFocus("pushAmount");
                     };
 
-                    // 先頭ステップ（プッシュ補正額）で「キャンセル」: 入力済みデータがあれば確認してから閉じる
                     const hasHitInput = (D.pushAmount || 0) > 0 || D.rotCount !== "" || D.trayBalls !== "" || rndN > 0;
                     const onCancel = async () => {
                         if (hasHitInput) {
@@ -5137,7 +5118,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         onClose();
                     };
 
-                    // 「戻る」: 1つ前のステップへ。入力済み hitWizardData は保持したまま戻る
                     const onBack = () => {
                         if (stepIdx > 0) setFocus(STEPS[stepIdx - 1].id);
                     };
@@ -5162,7 +5142,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         handleWizardComplete("確変");
                     };
 
-                    // 単発終了：時短回数/最終持ち玉モーダルを開く
                     const onSingleEndStart = () => {
                         if (!requiredOk) {
                             const missing = [];
@@ -5204,7 +5183,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     // 「結果」ステップに進むためのバリデーション（必須項目チェック）
                     const canEnterResult = requiredOk;
 
-                    // 入力済みサマリー（折りたたみ用）
                     const summaryRows = [
                         { label: "プッシュ補正額", value: (D.pushAmount || 0) > 0 ? `+${(D.pushAmount).toLocaleString()}` : "0", unit: "円" },
                         { label: "当たった回転数", value: rotN > 0 ? f(rotN) : "--",   unit: "回転" },
@@ -5212,7 +5190,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         { label: "ラウンド数",     value: roundLabel || "--", unit: multN > 1 ? `（合計${rndN * multN}R）` : "" },
                     ];
 
-                    // 貸玉レートごとの通常記録単位に合わせ、半分 / 1回分を候補にする。
                     const pushCorrectionAmounts = getPushCorrectionAmounts(S.rentBalls, S.investPace);
                     const pushPresets = [
                         { label: "なし", onClick: () => updField("pushAmount", 0), active: !D.pushAmount },
@@ -5224,7 +5201,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         { label: "クリア", onClick: () => updField("pushAmount", 0),     active: false },
                     ];
 
-                    // ラウンド数のプリセット（状態別の詳細振分を含む）
                     const roundPresets = machineRounds.slice(0, 6).map(({ rounds: r, mult: m }) => ({
                         label: m > 1 ? `${r}R×${m}` : `${r}R`,
                         active: rndN === r && multN === m,
@@ -5232,7 +5208,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     }));
                     const roundLoop = getMachineRoundLoop(selectedMachine, "heso", rndN);
 
-                    // 現在ステップの表示テキスト（中央の大きな値）
                     const bigValueText = (() => {
                         switch (curStep.id) {
                             case "pushAmount":   return (D.pushAmount || 0) > 0 ? `+${(D.pushAmount).toLocaleString()}` : "0";
@@ -5257,7 +5232,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             zIndex: 9999, display: "flex", flexDirection: "column",
                             height: "100dvh", width: "100vw", background: C.bg
                         }}>
-                            {/* ヘッダー（固定）: × 閉じる / タイトル / 履歴 */}
                             <div style={{
                                 padding: "8px 12px",
                                 paddingTop: "max(8px, env(safe-area-inset-top))",
@@ -5343,7 +5317,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     </div>
                                 </div>
 
-                                {/* 入力ステップインジケーター */}
                                 <div>
                                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "2px 2px" }}>
                                         <span style={{ fontSize: 11, color: C.sub, fontWeight: 700, fontFamily: font }}>入力ステップ</span>
@@ -5421,6 +5394,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                                 ))}
                                             </div>
                                         )}
+                                        {curStep.id === "rotCount" && hitWizardPresentation.showPushCorrectionInRotation && <CashCorrectionPrompt presets={pushPresets} C={C} />}
                                         {curStep.id === "rounds" && (
                                             <>
                                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 6 }}>
@@ -5772,11 +5746,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                 document.body
             )}
 
-            {/* ================================================================
-                画面 B — 連チャン追加入力（仕様書 docs/input-flow-design.md §3.1 準拠）
-                旧 chainWizard Step 0-7 を 1 画面 4 項目 + 次状態選択 に刷新。
-                Step 8 (画面 C = 最終実測持ち玉入力) は polished されたサブビューとして残す。
-            ================================================================ */}
             {chainWizardOpen && ReactDOM.createPortal(
                 (() => {
                     const D = chainWizardData;

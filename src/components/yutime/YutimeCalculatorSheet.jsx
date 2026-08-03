@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { localDateStr } from "../../constants";
 import { deriveSpecForMachine, findEffectiveMachineByName, getYutimeSelectionMachines } from "../../machineDB";
 import { MACHINE_SORT_OPTIONS, filterMachines, sortMachines } from "../../machineSort";
@@ -13,6 +13,7 @@ import {
   deriveNormalExpectedNetBalls,
   resolveYutimeStartAction,
 } from "./yutimeCalculator";
+import { createYutimeRecordStartSelection, resolveYutimeStartChodama, shouldDiscardSameDayResumeForYutimeAction } from "../../recordStartFlow";
 
 const fieldStyle = {
   width: "100%",
@@ -242,6 +243,9 @@ function Result({ result, mode, rateLabel }) {
 export default function YutimeCalculatorSheet({
   S,
   initialMachineName = "",
+  initialMachineNum = "",
+  initialStoreId = null,
+  initialStoreName = "",
   initialSession: suppliedInitialSession = null,
   initialCurrentLowSpins = 0,
   initialStart1K = null,
@@ -258,10 +262,10 @@ export default function YutimeCalculatorSheet({
   const initialSession = suppliedInitialSession || machineInitialSession;
   const storeRateContext = useMemo(() => resolvePachinkoRateContext({
     stores: S?.stores,
-    selectedStoreId: S?.selectedStoreId,
+    selectedStoreId: initialStoreId ?? S?.selectedStoreId,
     rentBalls: S?.rentBalls,
     exRate: S?.exRate,
-  }), [S?.exRate, S?.rentBalls, S?.selectedStoreId, S?.stores]);
+  }), [initialStoreId, S?.exRate, S?.rentBalls, S?.selectedStoreId, S?.stores]);
   const savedRentBalls = Number(initialSession?.rentBalls);
   const savedExRate = Number(initialSession?.exRate);
   const initialRateContext = savedRentBalls > 0 ? {
@@ -270,6 +274,7 @@ export default function YutimeCalculatorSheet({
     source: initialSession?.pachinkoRateSource || "manual",
   } : storeRateContext;
   const [machineName, setMachineName] = useState(initialMachine?.name || initialMachineName || "");
+  const [machineNum, setMachineNum] = useState(String(initialMachineNum || ""));
   const [selectedMachine, setSelectedMachine] = useState(initialMachine);
   const initialLowSpins = Math.max(0, Number(initialCurrentLowSpins) || 0);
   const [currentLowSpins, setCurrentLowSpins] = useState(initialLowSpins > 0 ? String(initialLowSpins) : "");
@@ -286,9 +291,11 @@ export default function YutimeCalculatorSheet({
   const [budgetYen, setBudgetYen] = useState("");
   const [helpOpen, setHelpOpen] = useState(true);
   const [machinePickerOpen, setMachinePickerOpen] = useState(false);
+  const submitRef = useRef(false);
 
   const applyMachine = (machine) => {
     setMachineName(machine.name);
+    setMachineNum("");
     setSelectedMachine(machine);
     const session = createYutimeSessionFromMachine(machine, { assumedStart1K: machine.border1K || S?.border });
     setTriggerLowSpins(session ? String(session.triggerLowSpins) : "");
@@ -302,6 +309,7 @@ export default function YutimeCalculatorSheet({
 
   const applyUnregisteredMachine = (name) => {
     setMachineName(name);
+    setMachineNum("");
     setSelectedMachine(null);
     setTriggerLowSpins("");
     setDurationSpins("");
@@ -314,7 +322,7 @@ export default function YutimeCalculatorSheet({
   const machineSpec = selectedMachine ? deriveSpecForMachine(selectedMachine) : {
     spec1R: S?.spec1R,
     specAvgRounds: S?.specAvgRounds,
-    specSapo: S?.specSapo,
+    specSapo: undefined,
   };
   const rateLabel = formatPachinkoRateLabel(rentBalls);
   const selectedRatePreset = PACHINKO_RATE_PRESETS.find((preset) => preset.rentBalls === Number(rentBalls)) || null;
@@ -407,6 +415,10 @@ export default function YutimeCalculatorSheet({
       pachinkoRateLabel: rateLabel,
       pachinkoRateSource,
       investPace: selectedRatePreset?.recommendedInvestPace,
+      storeId: initialStoreId ?? storeRateContext.storeId,
+      storeName: initialStoreName || storeRateContext.storeName,
+      machineNum,
+      synthDenom: selectedMachine ? Number(selectedMachine.synthProb) || 0 : Number(S?.synthDenom) || 0,
     };
 
     // 台移動から開いた場合は、現在の台を変更せず移動先の一時設定として返す。
@@ -423,6 +435,20 @@ export default function YutimeCalculatorSheet({
       rotRows: S?.rotRows,
       jpLog: S?.jpLog,
     });
+    if (submitRef.current) return;
+    if (startAction === "start") {
+      if (typeof S?.startRecordFromSelection !== "function") return;
+      submitRef.current = true;
+      S.startRecordFromSelection(createYutimeRecordStartSelection({
+        ...confirmation,
+        yutimeSession: session,
+        spec1R: machineSpec?.spec1R,
+        specAvgRounds: machineSpec?.specAvgRounds,
+        specSapo: machineSpec?.specSapo,
+      }));
+      onClose();
+      return;
+    }
     const selectedSynthDenom = selectedMachine
       ? (Number(selectedMachine.synthProb) > 0 ? Number(selectedMachine.synthProb) : 0)
       : undefined;
@@ -467,6 +493,7 @@ export default function YutimeCalculatorSheet({
       S?.setSessionSubTab?.("rot");
       onClose();
       S?.setTab?.("rot");
+      if (shouldDiscardSameDayResumeForYutimeAction(startAction)) S?.setSameDayResumeCandidate?.(null);
       return;
     }
 
@@ -489,12 +516,18 @@ export default function YutimeCalculatorSheet({
     // これが無いと記録ページが「未開始」のままになり、遊タイムカードも表示されない。
     if (startAction === "start" || startAction === "replace") {
       const currentMochiBalls = Math.max(0, Number(S?.currentMochiBalls) || 0);
-      const currentChodama = Math.max(0, Number(S?.currentChodama) || 0);
+      const currentChodama = resolveYutimeStartChodama({
+        startAction,
+        stores: S?.stores,
+        storeId: S?.selectedStoreId,
+        currentChodama: S?.currentChodama,
+      });
       S?.setStartRot?.(normalizedCurrentLowSpins);
       S?.setStartGameCount?.(normalizedCurrentLowSpins);
       S?.setPlayMode?.(playMode);
       S?.setInitialMochiBalls?.(currentMochiBalls);
       S?.setInitialChodama?.(currentChodama);
+      S?.setCurrentChodama?.(currentChodama);
       S?.setJpLog?.([]);
       S?.setSesLog?.([{
         type: "スタート",
@@ -516,6 +549,7 @@ export default function YutimeCalculatorSheet({
       S?.setSessionPlannedStart1K?.(assumedStart1K);
       S?.setSessionStarted?.(true);
     }
+    if (shouldDiscardSameDayResumeForYutimeAction(startAction)) S?.setSameDayResumeCandidate?.(null);
 
     // 保存後は回転入力の記録ページへ直接移動する。
     // 記録内で詳細データなどを開いていた場合に備え、サブタブも「記録」へ戻す。

@@ -227,6 +227,7 @@ export default function MachinePickerSheet({
                                     S.setYutimeDecision(null);
                                     setSetupYutimeLowSpins("");
                                     setSetupYutimeStart1K("");
+                                    S.setSpecSapo(0);
                                     // 未登録機種はスペック入力を促すため任意セクションを開いておく
                                     setShowSetupSpec(true);
                                 }

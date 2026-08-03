@@ -16,6 +16,7 @@ import {
   P_EVIDENCE_DEMO_SCANS,
 } from "../evidence/pevidenceDemoData.js";
 import YutimeCalculatorSheet from "../yutime/YutimeCalculatorSheet.jsx";
+import { createStrategyMapYutimeInitialContext } from "../../recordStartFlow.js";
 import {
   buildWeeklyBacktestTrend,
 } from "../evidence/pevidenceBacktest.js";
@@ -2523,6 +2524,11 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord, onSelec
         <YutimeCalculatorSheet
           S={S}
           initialMachineName={selected?.machineName || ""}
+          {...createStrategyMapYutimeInitialContext({
+            storeId: displayedStoreId,
+            storeName: displayedStoreName,
+            machineNum: selected?.num,
+          })}
           onClose={() => setYutimeOpen(false)}
         />
       )}
