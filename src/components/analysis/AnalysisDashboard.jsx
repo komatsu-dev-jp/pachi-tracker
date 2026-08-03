@@ -1955,8 +1955,7 @@ export default function AnalysisDashboard({
         {/* スクロールを画面内に閉じ込める（親mainの高さ依存を避け、下部ナビと重ならない）。
             overflow-x-hidden 必須: overflow-y のみ指定だと横方向が auto になり、幅超過要素があると画面全体が左へパンしたまま固定される */}
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
-          <CalendarTab S={S} onReset={onReset} initialDate={sheetDay} focusMode initialArchiveId={recordsDay.archiveId} onDone={() => setRecordsDay(null)}
-            onOpenMachine={(name) => { if (name) { setRecordsDay(null); setMachineDetailName(name); } }} />
+          <CalendarTab S={S} onReset={onReset} initialDate={sheetDay} focusMode initialArchiveId={recordsDay.archiveId} onDone={() => setRecordsDay(null)} />
         </div>
       </div>
     );
