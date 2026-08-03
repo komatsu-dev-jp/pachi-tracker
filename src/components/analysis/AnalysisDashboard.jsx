@@ -49,7 +49,7 @@ import {
 import { CalendarTab } from "../Tabs";
 import AnalyzerView from "./AnalyzerView";
 import { storeAnalysis } from "./analyticsViewSelectors";
-import { getSpinRate } from "./analyzerSelectors";
+import { getActualWageDisplay, buildMachineSessions } from "./analysisViewHelpers";
 
 // 表示の切替（月別/年別/通算/分析+）はヘッダーの期間ラベルをタップして開く
 // プルダウンメニュー（VIEW_MENU）でまとめて選ぶ。
@@ -518,8 +518,8 @@ function DaySessionCard({ archive, onOpen }) {
   const ev = evBreakdown.total;
   const hasEv = ev !== 0;
   // 稼働時間: 実践記録は netRot/rotPerHour、手動記録は遊技時間（playMinutes）を使用
+  const actualHourly = getActualWageDisplay(archive, actual);
   const hours = archiveWorkMinutes(archive) / 60;
-  const wage = hours > 0 ? Math.round(actual / hours) : 0;
   const denom = archive.settings?.synthDenom;
   const machineName = archive.machineName && archive.machineName !== `1/${denom}`
     ? archive.machineName
@@ -578,6 +578,7 @@ function DaySessionCard({ archive, onOpen }) {
           </div>
         ))}
       </div>
+      {!actualHourly.visible && <div className="mt-2 text-[11px] font-medium text-[var(--at-mut)]">30分未満は変動が大きいため非表示</div>}
       {evBreakdown.yutime !== 0 && (
         <div className="mt-2 border-t border-[var(--at-ln-soft)] pt-2 text-right text-[11.5px] font-medium text-[var(--at-mut)]">
           通常期待値 {signed(Math.round(evBreakdown.normal))}円 ＋ 遊タイム期待値 {signed(Math.round(evBreakdown.yutime))}円
@@ -587,7 +588,7 @@ function DaySessionCard({ archive, onOpen }) {
       <div className="mt-2.5 flex items-center gap-4 border-t border-[var(--at-ln-soft)] pt-2 text-[12px] font-medium text-[var(--at-mut)]">
         <span>時間 <span className="text-[14px] font-bold tabular-nums text-[var(--at-strong)]">{hours > 0 ? hours.toFixed(1) : "0.0"}</span>h</span>
         <span className="border-l border-[var(--at-ln-soft)] pl-4">
-          時給 <span className={`text-[14px] font-bold tabular-nums ${wage !== 0 ? moneyClass(wage) : "text-[var(--at-strong)]"}`}>{wage !== 0 ? signed(wage) : "0"}</span>円/h
+          実績時給 <span className={`text-[14px] font-bold tabular-nums ${actualHourly.visible ? moneyClass(actualHourly.value) : "text-[var(--at-strong)]"}`}>{actualHourly.visible ? signed(actualHourly.value) : "—"}</span>{actualHourly.visible ? "円/h" : ""}
         </span>
       </div>
     </button>
@@ -784,7 +785,7 @@ const RANK_BADGE = [
   "bg-[var(--at-rowbg)] text-[var(--at-subtle-hi)]",
   "bg-[var(--at-amber)]/20 text-[var(--at-amber)]",
 ];
-function MachinePodium({ rows }) {
+function MachinePodium({ rows, onSelect }) {
   const top3 = rows.slice(0, 3);
   if (top3.length === 0) {
     return <section className={`${card} p-5 text-center text-[13px] text-[var(--at-mut)]`}>対象期間の記録がありません</section>;
@@ -796,9 +797,11 @@ function MachinePodium({ rows }) {
         if (!m) return <div key={idx} />;
         const isFirst = idx === 0;
         return (
-          <div
+          <button
             key={m.machineName}
-            className={`${card} min-w-0 px-2 text-center ${isFirst ? "py-4 outline outline-[1.5px] -outline-offset-[1.5px] outline-[var(--at-gold)]" : "py-3.5"}`}
+            type="button"
+            onClick={() => onSelect?.(m.machineName)}
+            className={`${card} min-h-[44px] min-w-0 px-2 text-center active:bg-[var(--at-hoverbg)] ${isFirst ? "py-4 outline outline-[1.5px] -outline-offset-[1.5px] outline-[var(--at-gold)]" : "py-3.5"}`}
           >
             <div className={`mx-auto flex items-center justify-center rounded-full font-bold tabular-nums ${isFirst ? "h-8 w-8 text-[15px]" : "h-7 w-7 text-[13px]"} ${RANK_BADGE[idx]}`}>
               {idx + 1}
@@ -812,7 +815,7 @@ function MachinePodium({ rows }) {
             <div className="mt-0.5 truncate text-[10.5px] font-semibold text-[var(--at-mut)]">
               勝率{m.winRate || 0}%・{m.spin ? Number(m.spin).toFixed(1) : "—"}回/k
             </div>
-          </div>
+          </button>
         );
       })}
     </section>
@@ -1460,26 +1463,6 @@ function StoreDetailScreen({ storeName, archives, isDemo, onBack }) {
 
 // 機種詳細（#4a）: 1機種の複数実戦履歴を推移グラフ＋明細表で表示。
 // archives は呼び出し側で既に対象スコープ（現在のフィルタ）まで絞り込み済みのものを渡す想定。
-function buildMachineSessions(archives, machineName) {
-  return archives
-    .filter((a) => (a?.machineName || "") === machineName)
-    .map((a) => ({
-      key: a.id ?? `${a.date}-${a.time}`,
-      sortKey: `${a.date || ""}_${a.id ?? 0}`,
-      date: a.date,
-      store: a.storeName || "未設定",
-      pl: getActualPL(a),
-      ev: getEvAmount(a),
-      invest: Number(a.investYen) || 0,
-      recovery: Number(a.recoveryYen) || 0,
-      spin: getSpinRate(a),
-      hours: archiveWorkMinutes(a) / 60,
-      netRot: Number(a?.stats?.netRot) || 0,
-      machineNum: a.machineNum != null ? String(a.machineNum) : "",
-    }))
-    .sort((a, b) => a.sortKey.localeCompare(b.sortKey));
-}
-
 function MachineDetailScreen({ machineName, archives, isDemo, onBack }) {
   const demoMachine = isDemo ? DEMO_MACHINES.find((m) => m.machineName === machineName) : null;
   // 実戦履歴の並び替え: recent=新しい順 / spin=回転率が高い順 / machineNum=台番号順（同一台番号内は回転率が高い順）。
@@ -2030,7 +2013,7 @@ export default function AnalysisDashboard({
           />
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain pb-12">
             {filterOpen && <FilterPanel stores={storeOptions} machines={machineOptions} filters={filters} setFilters={setFilters} onClose={() => setFilterOpen(false)} />}
-            <MachinePodium rows={machines} />
+            <MachinePodium rows={machines} onSelect={setMachineDetailName} />
             <BalanceBars rows={machines} />
             <StorePanel rows={stores} onSelect={setStoreDetailName} onSeeAll={() => setStoreListOpen(true)} totalCount={storeCount} />
             <AnalyzerView archives={archives} extraFilters={filters} onSelectMachine={setMachineDetailName} />
