@@ -118,11 +118,16 @@ function SectionTitle({ icon: Icon, children, aside }) {
 }
 
 function MonthlySummaryCard({ overview, projection, plan, goalBackcast, onEdit, onDetail }) {
+  const [chartOpen, setChartOpen] = useState(false);
   const progressWidth = Math.min(100, Math.max(0, overview.progress));
   const gap = projection.actualExpectedGap;
   const actualIncomplete = projection.actualRecordCount < projection.recordCount;
-  const gapLabel = gap == null ? "差は実収支入力後" : gap >= 0 ? "入力済み記録は余剰" : "入力済み記録は欠損";
-  const gapTone = gap == null ? "" : gap >= 0 ? "is-positive" : "is-negative";
+  const gapTone = gap == null ? "" : gap > 0 ? "is-positive" : gap < 0 ? "is-negative" : "";
+  const accessibleGapLabel = gap == null
+    ? "\u5b9f\u53ce\u652f\u3068\u671f\u5f85\u5024\u3092\u6bd4\u8f03\u3067\u304d\u307e\u305b\u3093"
+    : gap === 0
+      ? "\u671f\u5f85\u5024\u3068\u540c\u3058\u7d50\u679c\u3067\u3059"
+      : `\u671f\u5f85\u5024\u3088\u308a ${Math.abs(gap).toLocaleString("ja-JP")}\u5186 ${gap < 0 ? "\u5c11\u306a\u3044" : "\u591a\u3044"}\u7d50\u679c\u3067\u3059`;
   const style = PLAY_STYLES[plan?.researchPackageId || plan?.baseStyle] || null;
   const primaryKey = plan?.researchTargets?.primaryMachineKey;
   const primaryCandidate = Array.isArray(plan?.candidateSnapshot?.candidates)
@@ -165,8 +170,8 @@ function MonthlySummaryCard({ overview, projection, plan, goalBackcast, onEdit, 
         </div>
       </div>
 
-      <div className={`home-gap-banner ${gapTone}`}>
-        <span>{gapLabel}</span>
+      <div className={`home-gap-banner ${gapTone}`} aria-label={accessibleGapLabel}>
+        <span>{accessibleGapLabel}</span>
         <strong>{gap == null ? "—" : yen(Math.abs(gap))}</strong>
         <em>{gap == null ? "投資・回収を記録すると表示" : actualIncomplete ? "未入力記録は差の計算から除外" : gap >= 0 ? "結果が期待値を上回っています" : "短期のブレとして切り分けます"}</em>
       </div>
@@ -181,13 +186,14 @@ function MonthlySummaryCard({ overview, projection, plan, goalBackcast, onEdit, 
 
       <GoalBackcastPanel backcast={goalBackcast} compact />
 
-      <div className="home-chart-heading">
+      <button type="button" className="home-chart-heading home-chart-toggle" onClick={() => setChartOpen((value) => !value)} aria-expanded={chartOpen} aria-controls="home-monthly-chart">
         <span>今月の推移と月末見込み</span>
         <div className="home-chart-legend home-chart-legend--v3">
           <i className="is-actual" />実収支 <i className="is-ev" />期待値 <i className="is-range" />80%目安
         </div>
-      </div>
-      <div className="home-goal-chart home-goal-chart--v3" aria-label="実収支、期待値、月末見込み幅のグラフ">
+        <em>{chartOpen ? "閉じる" : "表示"}</em>
+      </button>
+      {chartOpen && <div id="home-monthly-chart" className="home-goal-chart home-goal-chart--v3" aria-label="実収支、期待値、月末見込み幅のグラフ">
         <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={148} initialDimension={{ width: 340, height: 154 }}>
           <ComposedChart data={chartData} margin={{ top: 8, right: 3, bottom: 0, left: 0 }}>
             <CartesianGrid stroke="var(--border)" vertical={false} />
@@ -206,7 +212,7 @@ function MonthlySummaryCard({ overview, projection, plan, goalBackcast, onEdit, 
             <Line type="linear" dataKey="targetPace" name="目標ペース" stroke="var(--home-yellow)" strokeWidth={1.1} strokeDasharray="2 5" dot={false} />
           </ComposedChart>
         </ResponsiveContainer>
-      </div>
+      </div>}
 
       <div className="home-forecast-card">
         <div>
@@ -383,6 +389,9 @@ function PlanCandidateRow({ candidate, role, needsReview, pinnedSelection = fals
 function PlanEditor({ current, monthKey, target, currentExpected, archives, dailyPlans, now, prefs, machines, stores, selectedStoreId, onClose, onSave, onOpenStores }) {
   const dialogRef = useRef(null);
   const onCloseRef = useRef(onClose);
+  const dragStartRef = useRef(null);
+  const didDragRef = useRef(false);
+  const [sheetSize, setSheetSize] = useState("medium");
   const [targetValue, setTargetValue] = useState(() => String(Math.max(0, Math.floor(Number(current?.expectedTarget ?? target) || 0))));
   const [styleId, setStyleId] = useState(current?.researchPackageId || current?.baseStyle || "balanced");
   const [standardHours, setStandardHours] = useState(String(current?.standardHours ?? 6));
@@ -468,6 +477,21 @@ function PlanEditor({ current, monthKey, target, currentExpected, archives, dail
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
+
+  const handleDragStart = (event) => {
+    dragStartRef.current = { pointerId: event.pointerId, y: event.clientY };
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Pointer capture is optional. */ }
+  };
+  const handleDragEnd = (event) => {
+    const start = dragStartRef.current;
+    dragStartRef.current = null;
+    if (!start || start.pointerId !== event.pointerId) return;
+    const distance = event.clientY - start.y;
+    didDragRef.current = Math.abs(distance) >= 12;
+    if (distance <= -56) setSheetSize("large");
+    else if (distance >= 96 && sheetSize === "medium") onCloseRef.current?.();
+    else if (distance >= 40) setSheetSize("medium");
+  };
 
   const addDate = () => {
     if (!newDate || !newDate.startsWith(monthKey)) return;
@@ -565,7 +589,10 @@ function PlanEditor({ current, monthKey, target, currentExpected, archives, dail
 
   return (
     <div className="home-sheet-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section ref={dialogRef} tabIndex="-1" className="home-target-sheet home-plan-sheet" role="dialog" aria-modal="true" aria-labelledby="home-plan-title" aria-describedby="home-plan-description">
+      <section ref={dialogRef} tabIndex="-1" className={`home-target-sheet home-plan-sheet is-${sheetSize}`} role="dialog" aria-modal="true" aria-labelledby="home-plan-title" aria-describedby="home-plan-description" onMouseDown={(event) => event.stopPropagation()}>
+        <button type="button" className="home-plan-grabber" aria-label="\u30b7\u30fc\u30c8\u306e\u30b5\u30a4\u30ba\u3092\u5207\u308a\u66ff\u3048" onPointerDown={handleDragStart} onPointerUp={handleDragEnd} onClick={() => { if (didDragRef.current) { didDragRef.current = false; return; } setSheetSize((value) => value === "medium" ? "large" : "medium"); }}>
+          <span aria-hidden="true" />
+        </button>
         <div className="home-target-sheet__heading">
           <div>
             <h2 id="home-plan-title">今月の稼働プラン</h2>
@@ -759,6 +786,7 @@ function monthDayLabel(dateString) {
 }
 
 function DailyResearchCard({ date, plan, basePlan, goalBackcast, machines, storeId, storeName, onSelect, onSelectCandidate, onOpenStrategy, onOpenStores }) {
+  const [showAllCandidates, setShowAllCandidates] = useState(false);
   const baseStyle = basePlan?.researchPackageId || basePlan?.baseStyle || "balanced";
   const selectedStyleId = plan?.style || baseStyle;
   const selectedStyle = PLAY_STYLES[selectedStyleId] || PLAY_STYLES.balanced;
@@ -781,6 +809,7 @@ function DailyResearchCard({ date, plan, basePlan, goalBackcast, machines, store
       ...generated.filter((candidate) => !selectedKeys.includes(candidate.key)),
     ].slice(0, 5);
   }, [basePlan, machines, plan, researchTargets, selectedStyleId, storeId]);
+  const visibleCandidates = showAllCandidates ? candidates : candidates.slice(0, 2);
 
   return (
     <section className="home-card home-research-card" id="home-daily-research">
@@ -835,7 +864,7 @@ function DailyResearchCard({ date, plan, basePlan, goalBackcast, machines, store
           )}
 
           <div className="home-plan-candidate-list">
-            {candidates.map((candidate) => {
+            {visibleCandidates.map((candidate) => {
               const role = getResearchTargetRole(researchTargets, candidate.key);
               const backupDisabled = role !== "backup"
                 && normalizeResearchTargets(researchTargets).backupMachineKeys.length >= MAX_RESEARCH_BACKUPS;
@@ -851,6 +880,7 @@ function DailyResearchCard({ date, plan, basePlan, goalBackcast, machines, store
               );
             })}
           </div>
+          {candidates.length > 2 && <button type="button" className="home-show-all-candidates" onClick={() => setShowAllCandidates((value) => !value)}>{showAllCandidates ? "\u5019\u88dc\u3092\u305f\u305f\u3080" : `\u3059\u3079\u3066\u306e\u5019\u88dc\u3092\u898b\u308b\uff08\u6b8b\u308a${candidates.length - 2}\u4ef6\uff09`}</button>}
 
           <div className="home-research-rules">
             <span><CheckCircle2 size={13} />予測の更新日を確認し、2日以上前なら見送り</span>
@@ -1345,7 +1375,8 @@ export default function HomeDashboard({ S }) {
             <Bell size={22} />{unread && <i />}
           </button>
         </div>
-        <h1>{greeting[0]}</h1>
+        <p className="home-header__greeting">{greeting[0]}</p>
+        <h1>{now.toLocaleDateString("ja-JP", { month: "long", day: "numeric", weekday: "short" })}</h1>
         <p>{greeting[1]}</p>
       </header>
 

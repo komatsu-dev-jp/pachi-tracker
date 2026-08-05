@@ -48,7 +48,7 @@ export default defineConfig({
         // 生成される Service Worker に、iPhone の Web Push 受信処理だけを追加する。
         // push-sw.js は解析済みデータを専用受信箱へ追記するだけで、既存記録は変更しない。
         importScripts: ['push-sw.js'],
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg}'],
         // サイトセブンPDF解析は利用者がPDFを選んだ時だけ必要なため、
         // 初回インストールのプリキャッシュ（先に一括保存する容量）から外す。
         // 一度使った端末では下の実行時キャッシュに保存し、次回から再利用する。
@@ -56,6 +56,7 @@ export default defineConfig({
           '**/siteSevenPdfReader-*.js',
           '**/siteSevenImageOcr-*.js',
           '**/siteSevenImageOcrWorker-*.js',
+          '**/ocr/**',
         ],
         runtimeCaching: [
           {
@@ -70,6 +71,15 @@ export default defineConfig({
               cacheableResponse: {
                 statuses: [0, 200],
               },
+            },
+          },
+          {
+            urlPattern: /\/ocr\/tesseract-v7-data-v2\//,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'tesseract-v7-data-v2',
+              expiration: { maxEntries: 8, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [0, 200] },
             },
           },
         ],
