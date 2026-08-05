@@ -1298,9 +1298,12 @@ export default function App() {
   const handleMoveTable = (mochiOverride, dest = {}) => {
     const carriedMochi = mochiOverride !== undefined ? Math.max(0, Math.round(mochiOverride)) : (currentMochiBalls || 0);
     const carriedChodama = currentChodama || 0;
-    // ballYen: 選択中の店舗の換金率を優先（グローバルstateのズレを回避）
+    // ballYen: この台で実際に使ったレート（exRate/ballVal）を優先。
+    //   店舗の登録値は店舗の代表レート1本のみで、1円・0.5円などレート違いで
+    //   遊技した場合に店舗値で上書きすると常に代表レートの換算になってしまう。
+    //   店舗値は exRate/ballVal がどちらも未設定の時だけ使うフォールバックにする。
     const store = (stores || []).find(st => typeof st === "object" && st.id === selectedStoreId);
-    const ballYen = store?.exRate > 0 ? 1000 / store.exRate : (exRate > 0 ? 1000 / exRate : (Number(ballVal) > 0 ? Number(ballVal) : 4));
+    const ballYen = exRate > 0 ? 1000 / exRate : (Number(ballVal) > 0 ? Number(ballVal) : (store?.exRate > 0 ? 1000 / store.exRate : 4));
     const carriedOutYen = Math.round(carriedMochi * ballYen); // この台の回収（持ち出し玉の価値）
     const machineInvest = Math.round(Number(carriedInYen) || 0)
       + Math.round(ev?.rawInvest || 0)
@@ -1392,8 +1395,9 @@ export default function App() {
     }
     const heldMochi = Math.round(currentMochiBalls || 0);
     const store = (stores || []).find(st => typeof st === "object" && st.id === selectedStoreId);
-    // 店舗の換金率を優先（グローバルstateのズレを回避）
-    const ballYen = store?.exRate > 0 ? 1000 / store.exRate : (exRate > 0 ? 1000 / exRate : (Number(ballVal) > 0 ? Number(ballVal) : 4));
+    // この台で実際に使ったレート（exRate/ballVal）を優先。店舗値は代表レート1本のみのため、
+    // 1円・0.5円などレート違いで遊技した場合の上書きを避ける（店舗値は未設定時のフォールバック）。
+    const ballYen = exRate > 0 ? 1000 / exRate : (Number(ballVal) > 0 ? Number(ballVal) : (store?.exRate > 0 ? 1000 / store.exRate : 4));
     // 打ち始めに消費した貯玉（再プレイ分）。円換算は archiveCurrentSession と同一式で算出し保存値と一致させる。
     const chodamaBalls = Math.round((ev?.chodamaKCount || 0) * (rentBalls || 250));
     const chodamaYen = Math.round((ev?.chodamaKCount || 0) * heldBallCostPerK(rentBalls, exRate));
@@ -2092,9 +2096,12 @@ function EndSessionSheet({ sheet, stores = [], onConfirm, onCancel }) {
     machineName: sheet.machineName,
     balls: heldMochiNum,
   });
-  const ballYen = Number(selectedStore?.exRate) > 0
-    ? 1000 / Number(selectedStore.exRate)
-    : Math.max(0, Number(sheet.ballYen) || 0);
+  // この実戦で実際に使ったレートは sheet.ballYen（exRate/ballVal 由来）が正しい。
+  // 店舗値（代表レート1本のみ）は、精算シート内で店舗を変更した場合のみ参照する。
+  const storeUnchanged = String(selectedStoreId ?? "") === String(sheet.storeId ?? "");
+  const ballYen = storeUnchanged
+    ? (Math.max(0, Number(sheet.ballYen) || 0) || (Number(selectedStore?.exRate) > 0 ? 1000 / Number(selectedStore.exRate) : 0))
+    : (Number(selectedStore?.exRate) > 0 ? 1000 / Number(selectedStore.exRate) : Math.max(0, Number(sheet.ballYen) || 0));
   const cashYen = Math.max(0, Math.round(heldMochiNum * ballYen));
   const investNum = Math.max(0, Math.round(Number(invest) || 0));
   // 貯玉化は持ち玉の現金換算額（cashYen）を回収額として扱う＝収支は現金精算と同じ
