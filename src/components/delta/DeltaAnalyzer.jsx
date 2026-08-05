@@ -88,6 +88,8 @@ import {
   makeDeltaCompletionSummary,
 } from "./deltaCompletion";
 import { createSourceFingerprint } from "./sourceFingerprint";
+import { confirmDisplayField, parseDisplayOcrText, setDisplayFieldValue, validateDisplayRows } from "./displayOcr";
+import { createDisplayOcrSession } from "./displayOcrRuntime";
 import {
   buildDeltaAnalysisConfirmation,
   DELTA_EVENT_OPTIONS,
@@ -579,7 +581,8 @@ function BottomCta({ label, onClick, disabled, testId }) {
   return (
     <div style={{
       flexShrink: 0,
-      padding: "10px 14px calc(12px + env(safe-area-inset-bottom))",
+      // The app tab bar remains reachable on narrow phones while this analyzer is open.
+      padding: "10px 14px calc(76px + env(safe-area-inset-bottom))",
       background: `linear-gradient(180deg, transparent, ${C.bg} 30%)`,
     }}>
       <button
@@ -4060,6 +4063,66 @@ function StepBadge({ n }) {
 }
 
 // ════════════ ルート ════════════
+function DisplayOcrEntry({ scans, store, analysisDate, onMergeScanRows, requestConfirmation }) {
+  const [open, setOpen] = useState(false);
+  const [targetScanId, setTargetScanId] = useState("");
+  const [ocrBatch, setOcrBatch] = useState({ generation: 0, files: [], rows: [] });
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const sessionRef = useRef(null);
+  if (!sessionRef.current) sessionRef.current = createDisplayOcrSession();
+  const rows = ocrBatch.rows;
+  const files = ocrBatch.files;
+  const target = scans.find((scan) => String(scan?.id) === targetScanId) || null;
+  const reviewed = validateDisplayRows(rows, { target });
+  const good = reviewed.filter((row) => row.status === "confirmed");
+  const hasPending = rows.length > 0 && reviewed.some((row) => row.status !== "confirmed");
+  useEffect(() => () => sessionRef.current?.cancel(), []);
+  useEffect(() => { const warn = (event) => { if (hasPending) { event.preventDefault(); event.returnValue = "未保存または未確認のOCR結果があります"; } }; window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn); }, [hasPending]);
+  const read = (selected) => {
+    const nextFiles = Array.isArray(selected) ? selected : [];
+    if (!nextFiles.length) {
+      sessionRef.current.cancel(); setOcrBatch((batch) => ({ ...batch, files: [], rows: [] })); setBusy(false); setProgress(null); return;
+    }
+    void sessionRef.current.run(nextFiles, {
+      onStart: ({ generation, files: currentFiles }) => { setOcrBatch({ generation, files: currentFiles, rows: [] }); setBusy(true); setProgress({ completed: 0, total: currentFiles.length }); setNotice(""); },
+      onProgress: (value, meta) => { setProgress({ completed: Number(value?.completed) || 0, total: Number(value?.total) || meta.files.length }); },
+      onSuccess: (nextRows, { generation, files: currentFiles }) => { setOcrBatch({ generation, files: currentFiles, rows: nextRows }); setNotice("OCR結果は未確定です。全項目を確認してください。"); },
+      onError: (_error, { generation, files: currentFiles }) => { setOcrBatch({ generation, files: currentFiles, rows: [parseDisplayOcrText("")] }); setNotice("OCRを開始できませんでした。手入力で続けられます。"); },
+      onSettled: () => setBusy(false),
+    }).catch(() => {});
+  };
+  const edit = (index, key, value) => setOcrBatch((batch) => ({ ...batch, rows: batch.rows.map((row, rowIndex) => rowIndex === index ? setDisplayFieldValue(row, key, value) : row) }));
+  const confirmField = (index, key) => setOcrBatch((batch) => ({ ...batch, rows: batch.rows.map((row, rowIndex) => rowIndex === index ? confirmDisplayField(row, key) : row) }));
+  const save = async () => {
+    if (saving) return;
+    const snapshot = { batch: ocrBatch, targetScanId, target, date: analysisDate, storeName: store?.name || "" };
+    setSaving(true);
+    try {
+      const sourceFingerprint = await createSourceFingerprint(snapshot.batch.files);
+      const result = await onMergeScanRows?.({ targetScanId: snapshot.targetScanId, sourceFingerprint, rows: snapshot.batch.rows, context: { date: snapshot.target?.date || snapshot.date, storeName: snapshot.target?.storeName || snapshot.storeName, machineName: snapshot.target?.machineName || "" } });
+      if (result?.status === "appended" || result?.status === "noop") {
+        const saved = new Set((result.rowResults || []).filter((item) => item.status === "appended" || item.status === "noop").map((item) => item.entry));
+        setOcrBatch((batch) => batch.generation === snapshot.batch.generation ? { ...batch, rows: batch.rows.filter((row) => !saved.has(row)) } : batch);
+        setNotice("正常行を保存しました。競合行はこの画面に保留されています。");
+      } else setNotice("保存できませんでした。行は未保存のままです。");
+    } catch { setNotice("保存に失敗しました。行は未保存のままです。"); }
+    finally { setSaving(false); }
+  };
+  const handleClose = async () => {
+    if (rows.length > 0) {
+      const confirmed = await requestConfirmation?.({ title: "OCR結果を閉じますか？", message: "未保存または未確認の結果は破棄されます。", confirmLabel: "破棄して閉じる", tone: "danger" });
+      if (confirmed !== true) { setNotice(requestConfirmation ? "閉じる操作を取り消しました。" : "未保存の結果があるため閉じられません。"); return; }
+    }
+    sessionRef.current.cancel(); setOcrBatch((batch) => ({ generation: batch.generation + 1, files: [], rows: [] })); setBusy(false); setProgress(null); setOpen(false);
+  };
+  if (!open) return <button type="button" onClick={() => setOpen(true)} style={{ minHeight: 44, margin: "8px 14px" }}>店内データ表示器の写真</button>;
+  const controlStyle = { minHeight: TAP, boxSizing: "border-box", maxWidth: "100%" };
+  return <section style={{ margin: "8px 14px", padding: 12, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}><strong>店内データ表示器の写真</strong><p>画像は端末内だけで解析します。保留行は再読み込みで消えます。</p><input style={controlStyle} type="file" accept="image/*" capture="environment" multiple disabled={saving} onChange={(event) => read(Array.from(event.target.files || []))} /><select style={controlStyle} disabled={saving} value={targetScanId} onChange={(event) => setTargetScanId(event.target.value)}><option value="">追記先を選択</option>{scans.filter((scan) => String(scan?.storeId ?? "") === String(store?.id ?? "")).map((scan) => <option key={scan.id} value={scan.id}>{scan.date} {scan.machineName}</option>)}</select>{target && <p>追記先: {target.date} / {target.storeName} / {target.machineName}</p>}{busy && <p role="status" aria-live="polite">端末内で解析中: {progress?.completed || 0}/{progress?.total || files.length}枚</p>}{rows.map((row, index) => <div key={index}>{[["machineNumber", "台番号"], ["rotations", "回転数"], ["jackpots", "大当り回数"], ["payout", "差玉"], ["businessDate", "営業日"], ["storeName", "店舗名"], ["machineName", "機種名"]].map(([key, label]) => <label key={key} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 6, alignItems: "center", maxWidth: "100%" }}><span style={{ gridColumn: "1 / -1" }}>{label}</span><input style={{ ...controlStyle, minWidth: 0, width: "100%" }} disabled={saving} value={row[key]?.rawText ?? ""} onChange={(event) => edit(index, key, event.target.value)} /><button type="button" style={controlStyle} disabled={saving} onClick={() => confirmField(index, key)}>確認</button><small style={{ gridColumn: "1 / -1" }}>{row[key]?.status || "unknown"} / {row[key]?.confidence ?? 0}</small></label>)}</div>)}<button type="button" style={controlStyle} disabled={busy || saving || !targetScanId || !good.length} onClick={save}>正常行を保存 ({good.length})</button><button type="button" style={controlStyle} disabled={saving} onClick={handleClose}>閉じる</button>{notice && <p>{notice}</p>}</section>;
+}
+
 export default function DeltaAnalyzer({
   store,
   stores = [],
@@ -4067,6 +4130,8 @@ export default function DeltaAnalyzer({
   onChangeStore,
   onClose,
   onSaveScan,
+  onMergeScanRows,
+  scans = [],
   aiApiKey,
   onChangeAiApiKey,
   customMachines,
@@ -4416,7 +4481,7 @@ export default function DeltaAnalyzer({
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 110, background: C.bg, display: "flex", flexDirection: "column", color: C.text, fontFamily: font }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 90, background: C.bg, display: "flex", flexDirection: "column", color: C.text, fontFamily: font }}>
       {toast && (
         <div style={{
           position: "absolute", top: "calc(env(safe-area-inset-top, 0px) + 60px)", left: "50%", transform: "translateX(-50%)",
@@ -4429,6 +4494,7 @@ export default function DeltaAnalyzer({
         </div>
       )}
 
+      {step === "upload" && <DisplayOcrEntry scans={scans} store={store} analysisDate={analysisDate} onMergeScanRows={onMergeScanRows} requestConfirmation={requestConfirmation} />}
       {step === "upload" && (
         <UploadStep
           store={store}

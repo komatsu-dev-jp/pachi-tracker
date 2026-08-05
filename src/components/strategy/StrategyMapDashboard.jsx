@@ -208,22 +208,12 @@ function payoutSummary(machine) {
 }
 
 // ============================ ヘッダー ============================
-function BackIcon() {
-  // SVG 属性は var() を解決できないため、継承される CSS の stroke プロパティで指定する
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" style={{ stroke: P.text }} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M15 18l-6-6 6-6" />
-    </svg>
-  );
-}
-
 function Header({
   data,
   selected,
   viewScope,
   storeName,
   storePickerOpen,
-  onBack,
   onHelp,
   onOpenStorePicker,
 }) {
@@ -239,29 +229,9 @@ function Header({
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button
-          className="b"
-          onClick={onBack}
-          aria-label="戻る"
-          style={{
-            width: 44,
-            height: 44,
-            flexShrink: 0,
-            borderRadius: 14,
-            background: P.card,
-            border: `1px solid ${P.line}`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-          }}
-        >
-          <BackIcon />
-        </button>
-
-        <div style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 18, fontWeight: 900, color: P.text, fontFamily: FONT, letterSpacing: 0.3 }}>
-            戦略マップ
+            台選び
           </div>
           <div style={{ fontSize: 11, color: P.subHi, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {selected?.machineName || viewScope.machineName || "機種未設定"}
@@ -615,6 +585,8 @@ function Tabs({ active, onChange }) {
   return (
     <div style={{ padding: "0 14px" }}>
       <div
+        role="tablist"
+        aria-label="台の表示条件"
         style={{
           display: "flex",
           gap: 4,
@@ -631,6 +603,8 @@ function Tabs({ active, onChange }) {
             <button
               key={t.id}
               className="b"
+              role="tab"
+              aria-selected={on}
               onClick={() => onChange(t.id)}
               aria-current={on ? "true" : undefined}
               style={{
@@ -657,10 +631,13 @@ function Tabs({ active, onChange }) {
 }
 
 // ============================ A 選択台の今日の見込み ============================
-function SelectedOutcomeSection({ machine, islandAvgRot, plan, onStartRecord, sessionStarted }) {
+function SelectedOutcomeSection({ machine, islandAvgRot, plan, onStartRecord, sessionStarted, detailTab, onDetailTab, onClose }) {
   if (!machine) return null;
   const v = VERDICT[machine.verdict];
   return (
+    <section className="strategy-selected-sheet" aria-label="選択台の詳細">
+      <div className="strategy-selected-sheet__head"><strong>台{machine.num}の詳細</strong><button type="button" aria-label="詳細を閉じる" onClick={onClose}>×</button></div>
+      <div className="strategy-selected-tabs" role="tablist" aria-label="選択台の詳細タブ">{[["outlook", "見込み"], ["metrics", "指標"], ["changes", "変化"]].map(([id, label]) => <button type="button" key={id} id={`strategy-tab-${id}`} role="tab" aria-selected={detailTab === id} aria-controls={`strategy-detail-${id}`} onClick={() => onDetailTab(id)}>{label}</button>)}</div>
     <Section title="選択台の今日の見込み" accent={v.color} sub="選んだ1台を詳しく確認">
       <div className="strategy-a-shell">
         {plan && (
@@ -681,7 +658,8 @@ function SelectedOutcomeSection({ machine, islandAvgRot, plan, onStartRecord, se
             </em>
           </div>
         )}
-        <SelectedDetailCard machine={machine} islandAvgRot={islandAvgRot} plan={plan} />
+        {detailTab === "outlook" && <>
+        <SelectedDetailCard machine={machine} islandAvgRot={islandAvgRot} plan={plan} view="outlook" />
         <button
           type="button"
           onClick={() => onStartRecord?.(machine)}
@@ -707,9 +685,12 @@ function SelectedOutcomeSection({ machine, islandAvgRot, plan, onStartRecord, se
           <div style={{ marginTop: 6, textAlign: "center", color: P.sub, fontSize: 9 }}>
             店舗・機種・台番号を記録開始へ引き継ぎます
           </div>
-        )}
+        )}</>}
+        {detailTab === "metrics" && <SelectedDetailCard machine={machine} islandAvgRot={islandAvgRot} plan={plan} view="metrics" />}
+        {detailTab === "changes" && <SelectedDetailCard machine={machine} islandAvgRot={islandAvgRot} plan={plan} view="changes" />}
       </div>
     </Section>
+    </section>
   );
 }
 
@@ -1285,7 +1266,7 @@ function OutcomeOverview({ machine, plan }) {
   );
 }
 
-function SelectedDetailCard({ machine, islandAvgRot, plan }) {
+function SelectedDetailCard({ machine, islandAvgRot, plan, view = "metrics" }) {
   if (!machine) return null;
   const v = VERDICT[machine.verdict];
   const diff = Math.round((machine.rot - islandAvgRot(machine.islandId)) * 10) / 10;
@@ -1304,7 +1285,7 @@ function SelectedDetailCard({ machine, islandAvgRot, plan }) {
     : machine.seatDecisionStatus === "candidate" ? P.green
       : machine.seatDecisionStatus === "skip" ? P.red : P.yellow;
   return (
-    <div className="strategy-selected-detail-card" style={{ background: P.card, border: `1px solid color-mix(in srgb, ${v.color} 30%, ${P.line})`, borderRadius: RADIUS, padding: 14 }}>
+    <div id={`strategy-detail-${view}`} role="tabpanel" aria-label={view === "outlook" ? "見込み" : view === "metrics" ? "指標" : "変化"} className={`strategy-selected-detail-card is-${view}`} style={{ background: P.card, border: `1px solid color-mix(in srgb, ${v.color} 30%, ${P.line})`, borderRadius: RADIUS, padding: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
               <span style={{ fontSize: 22, fontWeight: 900, color: P.text, fontFamily: MONO }}>台{machine.num}</span>
@@ -2169,7 +2150,7 @@ function Section({ title, sub, accent, children }) {
 }
 
 // ============================ 本体 ============================
-export default function StrategyMapDashboard({ S, onBack, onStartRecord, onSelectStore }) {
+export default function StrategyMapDashboard({ S, onStartRecord, onSelectStore }) {
   const rootRef = useRef(null);
   const [entryPlanContext] = useState(() => S?.strategyPlanContext || null);
   const clearStrategyPlanContext = S?.setStrategyPlanContext;
@@ -2300,6 +2281,8 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord, onSelec
   const plannedStoreName = plannedStore?.name || "";
   const [filter, setFilter] = useState("all");
   const [selectedId, setSelectedId] = useState(data.leadId);
+  const [detailSheetOpen, setDetailSheetOpen] = useState(Boolean(data.leadId));
+  const [detailTab, setDetailTab] = useState("outlook");
   const [activeIslandId, setActiveIslandId] = useState(() =>
     data.all.find((machine) => machine.id === data.leadId)?.islandId || data.islands[0]?.id || null
   );
@@ -2346,6 +2329,7 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord, onSelec
 
   const selectMachine = (machineId) => {
     setSelectedId(machineId);
+    setDetailSheetOpen(true);
     const machine = data.all.find((item) => item.id === machineId);
     if (machine?.islandId) setActiveIslandId(machine.islandId);
   };
@@ -2437,7 +2421,6 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord, onSelec
         viewScope={viewScope}
         storeName={displayedStoreName}
         storePickerOpen={storePickerOpen}
-        onBack={onBack}
         onHelp={() => setHelpOpen(true)}
         onOpenStorePicker={() => setStorePickerOpen(true)}
       />
@@ -2490,13 +2473,16 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord, onSelec
         onChangeIsland={changeIsland}
         onSelect={selectMachine}
       />
-      <SelectedOutcomeSection
+      {detailSheetOpen && <SelectedOutcomeSection
         machine={selected}
         islandAvgRot={data.islandAvgRot}
         plan={data.plan}
         onStartRecord={handleStartSelected}
         sessionStarted={sessionStarted}
-      />
+        detailTab={detailTab}
+        onDetailTab={setDetailTab}
+        onClose={() => setDetailSheetOpen(false)}
+      />}
       <LearningSummary
         data={data}
         selected={selected}

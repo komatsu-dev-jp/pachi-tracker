@@ -62,6 +62,7 @@ import {
   findMachineSpec,
 } from "./components/delta/deltaEvidence";
 import { appendScanWithoutLoss } from "./components/delta/deltaSelectors";
+import { mergeDisplayScanRows } from "./components/delta/displayOcr";
 import { processPendingPushImports } from "./pushImportProcessor";
 import { repairTrustedObservedStoreAliases } from "./pushContextAliases";
 import {
@@ -1545,6 +1546,14 @@ export default function App() {
       { signal, expectedEpoch },
     )
   );
+  // 表示器OCRの追記は、既存のスキャン保存と同じ永続化mutation内で一括更新する。
+  // 既存スキャンにappendHistoryがなくても読み取り互換を保つ。
+  const handleMergeScanRows = (request, { signal, expectedEpoch } = {}) => (
+    mutateDeltaScans(
+      (current) => mergeDisplayScanRows(current, request),
+      { signal, expectedEpoch },
+    )
+  );
   const pushImportSaveRef = useRef(handleSaveDeltaScan);
   pushImportSaveRef.current = handleSaveDeltaScan;
 
@@ -1883,6 +1892,8 @@ export default function App() {
             }}
             onClose={() => setCurrentMode("home")}
             onSaveScan={handleSaveDeltaScan}
+            onMergeScanRows={handleMergeScanRows}
+            scans={Array.isArray(deltaScans) ? deltaScans : []}
             aiApiKey={typeof aiApiKey === "string" ? aiApiKey : ""}
             onChangeAiApiKey={setAiApiKey}
             customMachines={Array.isArray(customMachines) ? customMachines : []}

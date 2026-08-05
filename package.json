@@ -19,13 +19,16 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.1",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@tesseract.js-data/jpn": "^1.0.0",
     "dexie": "^4.4.2",
     "lucide-react": "^1.21.0",
     "pdfjs-dist": "^6.1.200",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "recharts": "^3.8.1",
-    "tailwindcss": "^4.3.1"
+    "tailwindcss": "^4.3.1",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
