@@ -666,7 +666,13 @@ function SelectedOutcomeSection({ machine, islandAvgRot, plan, onStartRecord, se
   const v = VERDICT[machine.verdict];
   return (
     <section className="strategy-selected-sheet" aria-label="選択台の詳細">
-      <div className="strategy-selected-sheet__head"><strong>台{machine.num}の詳細</strong><button type="button" aria-label="詳細を閉じる" onClick={onClose}>×</button></div>
+      <div className="strategy-selected-sheet__head">
+        <strong>台{machine.num}の詳細</strong>
+        <button type="button" aria-label="台選びに戻る" onClick={onClose}>
+          <span aria-hidden="true">←</span>
+          <span>台選びに戻る</span>
+        </button>
+      </div>
       <div className="strategy-selected-tabs" role="tablist" aria-label="選択台の詳細タブ">{[["outlook", "見込み"], ["metrics", "指標"], ["changes", "変化"]].map(([id, label]) => <button type="button" key={id} id={`strategy-tab-${id}`} role="tab" aria-selected={detailTab === id} aria-controls={`strategy-detail-${id}`} onClick={() => onDetailTab(id)}>{label}</button>)}</div>
     <Section title="選択台の今日の見込み" accent={v.color} sub="選んだ1台を詳しく確認">
       <div className="strategy-a-shell">
@@ -2311,7 +2317,7 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord, onSelec
   const plannedStoreName = plannedStore?.name || "";
   const [filter, setFilter] = useState("all");
   const [selectedId, setSelectedId] = useState(data.leadId);
-  const [detailSheetOpen, setDetailSheetOpen] = useState(Boolean(data.leadId));
+  const [detailSheetOpen, setDetailSheetOpen] = useState(false);
   const [detailTab, setDetailTab] = useState("outlook");
   const [activeIslandId, setActiveIslandId] = useState(() =>
     data.all.find((machine) => machine.id === data.leadId)?.islandId || data.islands[0]?.id || null
@@ -2372,6 +2378,14 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord, onSelec
       actionable: data.actionable,
     });
     setSelectedId(nextScope.leadId);
+  };
+
+  const handleStrategyBack = () => {
+    if (detailSheetOpen) {
+      setDetailSheetOpen(false);
+      return;
+    }
+    onBack?.();
   };
 
   const approveCalibration = (candidate) => {
@@ -2451,7 +2465,7 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord, onSelec
         viewScope={viewScope}
         storeName={displayedStoreName}
         storePickerOpen={storePickerOpen}
-        onBack={onBack}
+        onBack={handleStrategyBack}
         onHelp={() => setHelpOpen(true)}
         onOpenStorePicker={() => setStorePickerOpen(true)}
       />
