@@ -208,12 +208,22 @@ function payoutSummary(machine) {
 }
 
 // ============================ ヘッダー ============================
+function BackIcon() {
+  // SVG属性は var() を解決できないため、継承される CSS の stroke プロパティで指定する
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" style={{ stroke: P.text }} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
+  );
+}
+
 function Header({
   data,
   selected,
   viewScope,
   storeName,
   storePickerOpen,
+  onBack,
   onHelp,
   onOpenStorePicker,
 }) {
@@ -229,6 +239,26 @@ function Header({
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <button
+          type="button"
+          className="b"
+          onClick={onBack}
+          aria-label="戻る"
+          style={{
+            width: 44,
+            height: 44,
+            flexShrink: 0,
+            borderRadius: 14,
+            background: P.card,
+            border: `1px solid ${P.line}`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+          }}
+        >
+          <BackIcon />
+        </button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 18, fontWeight: 900, color: P.text, fontFamily: FONT, letterSpacing: 0.3 }}>
             台選び
@@ -2150,7 +2180,7 @@ function Section({ title, sub, accent, children }) {
 }
 
 // ============================ 本体 ============================
-export default function StrategyMapDashboard({ S, onStartRecord, onSelectStore }) {
+export default function StrategyMapDashboard({ S, onBack, onStartRecord, onSelectStore }) {
   const rootRef = useRef(null);
   const [entryPlanContext] = useState(() => S?.strategyPlanContext || null);
   const clearStrategyPlanContext = S?.setStrategyPlanContext;
@@ -2421,6 +2451,7 @@ export default function StrategyMapDashboard({ S, onStartRecord, onSelectStore }
         viewScope={viewScope}
         storeName={displayedStoreName}
         storePickerOpen={storePickerOpen}
+        onBack={onBack}
         onHelp={() => setHelpOpen(true)}
         onOpenStorePicker={() => setStorePickerOpen(true)}
       />
