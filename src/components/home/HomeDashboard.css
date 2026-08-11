@@ -504,3 +504,98 @@
 .home-target-edit, .home-detail-link, .home-arrow-button, .home-delta-analyze, .home-delta-map, .home-research-open { min-height: 44px; }
 .home-card, .home-target-sheet, .home-command-card, .home-goal-backcast { box-shadow: none; background-image: none; text-shadow: none; }
 .home-progress i, .home-brand__mark, .home-target-sheet__actions .is-save, .home-delta-analyze, .home-research-open { background-image: none; box-shadow: none; }
+
+/* iOS grouped-list surface: presentation only, data and interactions stay unchanged. */
+.home-dashboard {
+  padding: 12px 12px 24px;
+  background: var(--bg);
+}
+.home-header { padding: 4px 8px 12px; }
+.home-header__top { min-height: 44px; }
+.home-brand { gap: 9px; font-size: 17px; }
+.home-brand__mark { width: 30px; height: 30px; border-radius: 9px; }
+.home-bell { width: 44px; height: 44px; border-radius: 14px; }
+.home-header h1 { margin-top: 10px; font-size: clamp(30px, 8.5vw, 36px); }
+.home-card {
+  margin-bottom: 12px;
+  padding: 14px;
+  border-color: color-mix(in srgb, var(--border-hi) 78%, transparent);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+}
+.home-command-card { padding: 16px; border-radius: 22px; }
+.home-card-heading { min-height: 32px; }
+.home-card h2, .home-section-title h2 { font-size: 14px; letter-spacing: -.01em; }
+.home-money-metric { padding: 13px 12px; border-radius: 16px; }
+.home-money-metric.is-actual > strong { font-size: clamp(39px, 11vw, 46px); }
+.home-gap-banner { min-height: 44px; border-radius: 13px; }
+.home-forecast-card, .home-goal-backcast { border-radius: 16px; }
+.home-target-edit, .home-arrow-button, .home-delta-map, .home-detail-link { border-radius: 12px; }
+.home-sheet-backdrop { align-items: flex-end; padding: 0; background: color-mix(in srgb, #000 38%, transparent); }
+.home-target-sheet {
+  width: min(560px, 100%);
+  max-height: min(92dvh, 820px);
+  overflow-y: auto;
+  padding: 16px 16px 0;
+  border-width: 1px 0 0;
+  border-radius: 24px 24px 0 0;
+  overscroll-behavior: contain;
+}
+.home-plan-sheet.is-medium { max-height: min(70dvh, 620px); }
+.home-target-sheet__heading { position: sticky; top: -16px; z-index: 4; padding: 14px 0 10px; background: var(--surface); }
+.home-target-sheet__heading button { width: 44px; height: 44px; border-radius: 14px; }
+.home-plan-grabber { min-height: 28px; margin: -10px 0 0; }
+.home-plan-grabber span { width: 36px; background: var(--border-hi); }
+.home-target-sheet__actions { gap: 10px; margin-top: 16px; }
+.home-target-sheet__actions button { min-height: 50px; border-radius: 14px; }
+.home-plan-sheet .home-target-sheet__actions { bottom: 0; margin-inline: -16px; padding: 12px 16px calc(16px + env(safe-area-inset-bottom)); }
+.home-bell {
+  min-width: 44px;
+  min-height: 44px;
+  box-sizing: border-box;
+  flex: 0 0 44px;
+}
+.home-review-row {
+  min-height: 44px;
+  box-sizing: border-box;
+  padding-block: 6px;
+}
+.home-target-sheet__heading button {
+  min-width: 44px;
+  min-height: 44px;
+  box-sizing: border-box;
+  flex: 0 0 44px;
+}
+.home-plan-sheet .home-target-sheet__heading {
+  top: -16px;
+  margin: -16px 0 0;
+  padding: 14px 0 10px;
+}
+.home-plan-sheet :is(button, input, select, textarea) {
+  min-width: 44px;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+.home-plan-sheet .home-machine-search { height: 44px; }
+.home-plan-sheet .home-machine-search button {
+  width: 44px;
+  height: 44px;
+}
+.home-next-copy > strong,
+.home-next-copy > span {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+.home-next-copy > span { font-size: 10px; }
+@media (max-width: 390px) {
+  .home-dashboard { padding-inline: 10px; }
+  .home-card, .home-command-card { padding-inline: 12px; }
+  .home-target-sheet { padding-inline: 12px; }
+  .home-plan-sheet .home-target-sheet__actions { margin-inline: -12px; padding-inline: 12px; }
+  .home-next-card__body { grid-template-columns: 42px minmax(0, 1fr) auto; align-items: start; }
+  .home-next-copy > strong { font-size: 13px; }
+  .home-next-copy > span { font-size: 9px; }
+}
