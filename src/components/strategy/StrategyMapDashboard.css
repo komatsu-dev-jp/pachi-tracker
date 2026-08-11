@@ -1139,3 +1139,33 @@
 .strategy-selected-detail-card.is-outlook .strategy-detail-main, .strategy-selected-detail-card.is-outlook .strategy-detail-secondary { display: none; }
 .strategy-selected-detail-card.is-metrics .strategy-outcome-card, .strategy-selected-detail-card.is-metrics .strategy-revenue-card, .strategy-selected-detail-card.is-metrics .strategy-a-decision { display: none; }
 .strategy-selected-detail-card.is-changes .strategy-outcome-card, .strategy-selected-detail-card.is-changes .strategy-revenue-card, .strategy-selected-detail-card.is-changes .strategy-a-decision, .strategy-selected-detail-card.is-changes .strategy-detail-secondary { display: none; }
+
+/* iOS grouped cards. The map's deliberate horizontal scroll remains scoped above. */
+.strategy-map { padding-top: 0; }
+.strategy-map > div { box-sizing: border-box; }
+.strategy-store-trigger,
+.strategy-kpi-grid > *,
+.strategy-island-card,
+.strategy-selected-sheet,
+.strategy-outcome-card,
+.strategy-revenue-card {
+  border-radius: 18px;
+}
+.strategy-store-trigger { min-height: 52px; }
+.strategy-kpi-grid { gap: 10px; }
+.strategy-kpi-grid > * { min-height: 88px; }
+.strategy-selected-sheet {
+  margin: 12px;
+  max-height: 66dvh;
+  border-color: color-mix(in srgb, var(--sm-line-hi) 82%, transparent);
+  background: color-mix(in srgb, var(--sm-bg) 94%, transparent);
+}
+.strategy-selected-sheet__head { min-height: 60px; padding-inline: 14px; }
+.strategy-selected-tabs { gap: 6px; padding: 7px 10px; }
+.strategy-selected-tabs button { min-height: 44px; border-radius: 12px; }
+.strategy-heat-cell { min-height: 56px; border-radius: 12px; }
+.strategy-map-empty, .strategy-layout-note, .strategy-map-hint { border-radius: 14px; }
+@media (max-width: 390px) {
+  .strategy-selected-sheet { margin-inline: 10px; }
+  .strategy-kpi-grid { gap: 8px; }
+}

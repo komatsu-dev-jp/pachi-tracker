@@ -277,7 +277,7 @@ function Header({
             onClick={onHelp}
             aria-label="用語ヘルプを開く"
             style={{
-              width: 38, height: 38, borderRadius: 12,
+              width: 44, height: 44, borderRadius: 14,
               border: `1px solid ${P.lineHi}`, background: P.card,
               color: P.cyan, fontSize: 18, fontWeight: 900, cursor: "pointer",
             }}

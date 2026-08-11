@@ -544,7 +544,11 @@ export function TopBar({ title, onBack, right, backDisabled = false }) {
       display: "flex",
       alignItems: "center",
       gap: 8,
-      padding: "calc(env(safe-area-inset-top, 0px) + 8px) 12px 8px",
+      padding: "calc(env(safe-area-inset-top, 0px) + 10px) 14px 10px",
+      borderBottom: `1px solid ${C.border}`,
+      background: "color-mix(in srgb, var(--bg) 88%, transparent)",
+      backdropFilter: "saturate(160%) blur(18px)",
+      WebkitBackdropFilter: "saturate(160%) blur(18px)",
     }}>
       <button
         className="b"
@@ -552,8 +556,8 @@ export function TopBar({ title, onBack, right, backDisabled = false }) {
         disabled={backDisabled}
         aria-label="戻る"
         style={{
-          minWidth: TAP, minHeight: TAP, borderRadius: 12,
-          border: "none", background: "transparent",
+          minWidth: TAP, minHeight: TAP, borderRadius: 14,
+          border: `1px solid ${C.border}`, background: C.surface,
           color: C.text, fontSize: 22, fontWeight: 800,
           display: "flex", alignItems: "center", justifyContent: "center",
           opacity: backDisabled ? 0.4 : 1,
@@ -563,7 +567,7 @@ export function TopBar({ title, onBack, right, backDisabled = false }) {
         ←
       </button>
       <div style={{ flex: 1, minWidth: 0, fontFamily: font }}>
-        <div style={{ fontSize: 19, fontWeight: 800, color: C.text }}>{title}</div>
+        <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em", color: C.text }}>{title}</div>
         <div
           data-testid="analysis-engine-version"
           style={{ color: C.sub, fontSize: 9, fontFamily: mono, fontWeight: 700, marginTop: 1 }}
@@ -582,8 +586,11 @@ function BottomCta({ label, onClick, disabled, testId }) {
     <div style={{
       flexShrink: 0,
       // The app tab bar remains reachable on narrow phones while this analyzer is open.
-      padding: "10px 14px calc(76px + env(safe-area-inset-bottom))",
-      background: `linear-gradient(180deg, transparent, ${C.bg} 30%)`,
+      padding: "12px 14px calc(76px + env(safe-area-inset-bottom))",
+      borderTop: `1px solid ${C.border}`,
+      background: `color-mix(in srgb, ${C.bg} 90%, transparent)`,
+      backdropFilter: "saturate(160%) blur(18px)",
+      WebkitBackdropFilter: "saturate(160%) blur(18px)",
     }}>
       <button
         className="b"
@@ -593,7 +600,7 @@ function BottomCta({ label, onClick, disabled, testId }) {
         style={{
           width: "100%",
           minHeight: CTA,
-          borderRadius: 14,
+          borderRadius: 16,
           border: "none",
           background: disabled ? C.surfaceHi : C.blue,
           color: disabled ? C.sub : "#fff",
@@ -612,7 +619,7 @@ const scrollAreaStyle = {
   flex: 1,
   overflowY: "auto",
   overflowX: "hidden",
-  padding: "4px 14px 8px",
+  padding: "12px 14px 10px",
 };
 
 // ════════════ アップロード ════════════
@@ -803,7 +810,7 @@ function UploadStep({
       <div style={scrollAreaStyle}>
         {/* 選択中店舗。解析中は入力資料と店舗の対応がずれないよう変更不可にする。 */}
         <Card style={{ marginBottom: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px" }}>
             <span style={{ fontSize: 18, color: C.blue }}>◎</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>選択中の店舗</div>
@@ -814,9 +821,9 @@ function UploadStep({
                   disabled={interactionLocked || selectableStores.length < 2}
                   onChange={(event) => onChangeStore?.(event.target.value)}
                   style={{
-                    width: "100%", minHeight: 40, boxSizing: "border-box",
+                    width: "100%", height: 44, minHeight: 44, boxSizing: "border-box",
                     border: `1px solid ${selectableStores.length > 1 ? C.borderHi : "transparent"}`,
-                    borderRadius: 10, background: selectableStores.length > 1 ? C.surfaceHi : "transparent",
+                    borderRadius: 13, background: selectableStores.length > 1 ? C.surfaceHi : "transparent",
                     color: C.text, padding: selectableStores.length > 1 ? "0 36px 0 10px" : "0",
                     fontFamily: font, fontSize: 15, fontWeight: 800,
                     appearance: "none", WebkitAppearance: "none",
@@ -843,7 +850,7 @@ function UploadStep({
             </div>
           </div>
           <label style={{
-            display: "flex", alignItems: "center", gap: 12, padding: "10px 14px 12px",
+            display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
             borderTop: `1px solid ${C.border}`, color: C.subHi, fontSize: 12, fontWeight: 700,
           }}>
             <span style={{ flex: 1 }}>解析するデータの日付</span>
@@ -854,13 +861,13 @@ function UploadStep({
               disabled={interactionLocked}
               onChange={(event) => setAnalysisDate?.(event.target.value || todayStr())}
               style={{
-                minHeight: 38, borderRadius: 9, border: `1px solid ${C.borderHi}`,
+                width: 154, minWidth: 44, height: 44, minHeight: 44, boxSizing: "border-box", borderRadius: 12, border: `1px solid ${C.borderHi}`,
                 background: C.surfaceHi, color: C.text, padding: "0 9px", fontFamily: mono,
               }}
             />
           </label>
           <label style={{
-            display: "flex", alignItems: "center", gap: 12, padding: "10px 14px 12px",
+            display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
             borderTop: `1px solid ${C.border}`, color: C.subHi, fontSize: 12, fontWeight: 700,
           }}>
             <span style={{ flex: 1 }}>
@@ -875,7 +882,7 @@ function UploadStep({
               disabled={interactionLocked}
               onChange={(event) => setEventType?.(event.target.value)}
               style={{
-                minHeight: 38, maxWidth: 150, borderRadius: 9, border: `1px solid ${C.borderHi}`,
+                width: 150, minWidth: 44, height: 44, minHeight: 44, boxSizing: "border-box", borderRadius: 12, border: `1px solid ${C.borderHi}`,
                 background: C.surfaceHi, color: C.text, padding: "0 28px 0 9px", fontFamily: font,
               }}
             >
@@ -4481,7 +4488,7 @@ export default function DeltaAnalyzer({
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 90, background: C.bg, display: "flex", flexDirection: "column", color: C.text, fontFamily: font }}>
+      <div style={{ position: "fixed", inset: 0, zIndex: 90, background: C.bg, display: "flex", flexDirection: "column", color: C.text, fontFamily: font, overflow: "hidden" }}>
       {toast && (
         <div style={{
           position: "absolute", top: "calc(env(safe-area-inset-top, 0px) + 60px)", left: "50%", transform: "translateX(-50%)",

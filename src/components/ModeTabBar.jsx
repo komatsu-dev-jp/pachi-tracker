@@ -75,7 +75,7 @@ export default function ModeTabBar({ currentMode, onChange }) {
           minHeight: 44,
           background: "transparent",
           border: "none",
-          padding: "0 0 4px",
+        padding: "0 0 6px",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
@@ -88,7 +88,7 @@ export default function ModeTabBar({ currentMode, onChange }) {
         <Icon active={active} />
         <span
           style={{
-            fontSize: 9,
+            fontSize: 10,
             fontWeight: active ? 700 : 500,
             color: active ? C.blue : C.sub,
             fontFamily: font,
@@ -117,7 +117,7 @@ export default function ModeTabBar({ currentMode, onChange }) {
         display: "flex",
         alignItems: "stretch",
         height: "calc(76px + env(safe-area-inset-bottom))",
-        paddingTop: 4,
+        paddingTop: 6,
         paddingBottom: "calc(env(safe-area-inset-bottom) + 4px)",
         zIndex: 100,
       }}
@@ -134,12 +134,12 @@ export default function ModeTabBar({ currentMode, onChange }) {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "flex-end",
-          paddingBottom: 4,
+          paddingBottom: 6,
         }}
       >
         <span
           style={{
-            fontSize: 9,
+            fontSize: 10,
             fontWeight: recordActive ? 700 : 500,
             color: recordActive ? C.blue : C.sub,
             fontFamily: font,
@@ -164,15 +164,15 @@ export default function ModeTabBar({ currentMode, onChange }) {
         aria-current={recordActive ? "page" : undefined}
         style={{
           position: "absolute",
-          top: 4,
+          top: 5,
           left: "50%",
           transform: "translateX(-50%)",
-          width: 52,
-          height: 52,
+          width: 56,
+          height: 56,
           borderRadius: "50%",
           background: "linear-gradient(180deg, #38bdf8 0%, #00a6ff 100%)",
-          border: "3px solid color-mix(in srgb, var(--nav-bg) 92%, transparent)",
-          boxShadow: "0 6px 18px rgba(0,166,255,0.45), 0 0 0 1px rgba(0,166,255,0.35)",
+          border: "4px solid color-mix(in srgb, var(--nav-bg) 92%, transparent)",
+          boxShadow: "0 8px 20px rgba(0,166,255,0.35), 0 0 0 1px rgba(0,166,255,0.30)",
           color: "#fff",
           cursor: "pointer",
           display: "flex",
