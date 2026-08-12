@@ -359,10 +359,21 @@
 .home-plan-empty span { max-width: 290px; font-size: 10px; line-height: 1.5; }
 .home-plan-empty button { min-height: 44px; margin-top: 3px; padding: 0 14px; border: 0; border-radius: 10px; color: white; background: var(--home-blue); font-size: 11px; font-weight: 800; cursor: pointer; }
 .home-plan-empty--search { margin-top: 9px; }
-.home-date-add { display: grid; grid-template-columns: 1fr auto; gap: 7px; }
-.home-date-add--plan { margin-top: 10px; }
-.home-date-add input { min-width: 0; height: 43px; padding: 0 10px; border: 1px solid var(--border-hi); border-radius: 10px; outline: 0; color: var(--text); color-scheme: dark; background: var(--surface-hi); }
-.home-date-add button { display: flex; align-items: center; gap: 4px; padding: 0 12px; border: 0; border-radius: 10px; color: white; background: var(--home-blue); font-size: 10px; font-weight: 800; cursor: pointer; }
+.home-date-picker { margin-top: 10px; padding: 10px; border: 1px solid var(--border-hi); border-radius: 12px; background: var(--surface-alt); }
+.home-date-picker__heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
+.home-date-picker__heading > div { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.home-date-picker__heading span { color: var(--sub-hi); font-size: 10px; }
+.home-date-picker__heading strong { color: var(--text); font-size: 15px; }
+.home-date-picker__heading em { flex: 0 0 auto; color: var(--home-blue); font-size: 10px; font-style: normal; font-weight: 800; }
+.home-date-picker__hint { margin: 6px 0 0; color: var(--sub-hi); font-size: 9px; line-height: 1.45; }
+.home-date-picker__weekdays, .home-date-picker__grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.home-date-picker__weekdays { margin-top: 10px; }
+.home-date-picker__weekdays span { color: var(--sub-hi); font-size: 9px; font-weight: 800; text-align: center; }
+.home-date-picker__grid { margin-top: 4px; }
+.home-date-picker__empty { min-height: 44px; }
+.home-plan-sheet .home-date-picker__day { width: 100%; min-width: 0; min-height: 44px; padding: 0; border: 1px solid transparent; border-radius: 10px; color: var(--text); background: transparent; font-size: 14px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.home-plan-sheet .home-date-picker__day:hover { border-color: var(--border-hi); background: var(--surface-hi); }
+.home-plan-sheet .home-date-picker__day.is-selected { border-color: var(--home-blue); color: white; background: var(--home-blue); font-weight: 800; }
 .home-date-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .home-date-chips > small { color: var(--sub-hi); font-size: 9px; }
 .home-date-chips button { display: flex; align-items: center; gap: 5px; min-height: 29px; padding: 0 8px; border: 1px solid var(--border-hi); border-radius: 99px; color: var(--text); background: var(--surface-alt); font-size: 9px; cursor: pointer; }
@@ -602,7 +613,7 @@
 .home-plan-sheet .home-machine-search button { width: 44px; height: 44px; }
 .home-next-copy > strong, .home-next-copy > span { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.35; }
 .home-next-copy > span { font-size: 10px; }
-.home-plan-empty button, .home-date-add button { background: var(--home-action-fill); }
+.home-plan-empty button { background: var(--home-action-fill); }
 .home-latest-judgment, .home-review-row { min-height: 44px; box-sizing: border-box; }
 @media (max-width: 390px) {
   .home-dashboard { padding-inline: 10px; }
