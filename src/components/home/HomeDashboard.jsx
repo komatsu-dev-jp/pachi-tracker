@@ -11,7 +11,6 @@ import {
   Gauge,
   Pencil,
   Play,
-  Plus,
   ScanLine,
   Search,
   ShieldCheck,
@@ -338,6 +337,67 @@ function ResearchAllocation({ researchPackage, plannedDates, standardHours }) {
   );
 }
 
+function MonthDatePicker({ monthKey, value, onChange }) {
+  const [year, month] = String(monthKey || "").split("-").map(Number);
+  const firstWeekday = Number.isFinite(year) && Number.isFinite(month)
+    ? new Date(year, month - 1, 1).getDay()
+    : 0;
+  const daysInMonth = Number.isFinite(year) && Number.isFinite(month)
+    ? new Date(year, month, 0).getDate()
+    : 0;
+  const plannedDates = Array.isArray(value) ? value : [];
+  const selectedDates = new Set(plannedDates);
+  const selectedMonthDates = plannedDates.filter((date) => String(date).startsWith(`${monthKey}-`));
+  const calendarCells = Array.from({ length: firstWeekday + daysInMonth }, (_, index) => (
+    index < firstWeekday ? null : index - firstWeekday + 1
+  ));
+
+  const toggleDate = (day) => {
+    const date = `${monthKey}-${String(day).padStart(2, "0")}`;
+    onChange((previous) => {
+      const current = Array.isArray(previous) ? previous : [];
+      if (current.includes(date)) return current.filter((item) => item !== date);
+      return [...new Set([...current, date])].sort();
+    });
+  };
+
+  return (
+    <div className="home-date-picker">
+      <div className="home-date-picker__heading">
+        <div>
+          <span>稼働予定日</span>
+          <strong>{year}年{month}月</strong>
+        </div>
+        <em aria-live="polite">{selectedMonthDates.length}日選択中</em>
+      </div>
+      <p className="home-date-picker__hint">日付をタップして複数選択できます。選択中の日付をもう一度タップすると解除します。</p>
+      <div className="home-date-picker__weekdays" aria-hidden="true">
+        {["日", "月", "火", "水", "木", "金", "土"].map((weekday) => <span key={weekday}>{weekday}</span>)}
+      </div>
+      <div className="home-date-picker__grid" role="group" aria-label={`${year}年${month}月の稼働予定日`}>
+        {calendarCells.map((day, index) => day == null ? (
+          <span key={`empty-${index}`} className="home-date-picker__empty" aria-hidden="true" />
+        ) : (() => {
+          const date = `${monthKey}-${String(day).padStart(2, "0")}`;
+          const selected = selectedDates.has(date);
+          return (
+            <button
+              type="button"
+              key={date}
+              className={`home-date-picker__day ${selected ? "is-selected" : ""}`}
+              aria-label={`${month}月${day}日${selected ? "（選択中）" : ""}`}
+              aria-pressed={selected}
+              onClick={() => toggleDate(day)}
+            >
+              {day}
+            </button>
+          );
+        })())}
+      </div>
+    </div>
+  );
+}
+
 function GoalBackcastPanel({ backcast, compact = false }) {
   if (!backcast) return null;
   const nextLabel = backcast.isToday
@@ -448,7 +508,6 @@ function PlanEditor({ current, monthKey, target, currentExpected, archives, dail
   const [candidateMemory, setCandidateMemory] = useState(() => (
     Array.isArray(current?.candidateSnapshot?.candidates) ? current.candidateSnapshot.candidates : []
   ));
-  const [newDate, setNewDate] = useState("");
   const [candidateView, setCandidateView] = useState("recommended");
   const [candidateQuery, setCandidateQuery] = useState("");
   const [candidateRiskFilter, setCandidateRiskFilter] = useState("all");
@@ -533,12 +592,6 @@ function PlanEditor({ current, monthKey, target, currentExpected, archives, dail
     if (distance <= -56) setSheetSize("large");
     else if (distance >= 96 && sheetSize === "medium") onCloseRef.current?.();
     else if (distance >= 40) setSheetSize("medium");
-  };
-
-  const addDate = () => {
-    if (!newDate || !newDate.startsWith(monthKey)) return;
-    setPlannedDates((previous) => [...new Set([...previous, newDate])].sort());
-    setNewDate("");
   };
 
   const handlePackageChange = (nextStyleId) => {
@@ -668,10 +721,7 @@ function PlanEditor({ current, monthKey, target, currentExpected, archives, dail
               />
             </label>
           </div>
-          <div className="home-date-add home-date-add--plan">
-            <input type="date" value={newDate} min={`${monthKey}-01`} max={`${monthKey}-31`} onChange={(event) => setNewDate(event.target.value)} />
-            <button type="button" onClick={addDate}><Plus size={15} />稼働日を追加</button>
-          </div>
+          <MonthDatePicker monthKey={monthKey} value={plannedDates} onChange={setPlannedDates} />
           <div className="home-date-chips">
             {plannedDates.length === 0 && <small>これから稼働する日を入れると、1日あたりの必要期待値を計算できます。</small>}
             {plannedDates.map((date) => (
