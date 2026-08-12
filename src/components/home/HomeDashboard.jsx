@@ -6,7 +6,6 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronRight,
-  CircleDollarSign,
   Clock3,
   Compass,
   Gauge,
@@ -20,7 +19,6 @@ import {
   Store,
   Target,
   Trash2,
-  TrendingUp,
   Users,
   WalletCards,
   X,
@@ -118,7 +116,7 @@ function SectionTitle({ icon: Icon, children, aside }) {
 }
 
 function MonthlySummaryCard({ overview, projection, plan, goalBackcast, onEdit, onDetail }) {
-  const [chartOpen, setChartOpen] = useState(false);
+  const [chartOpen, setChartOpen] = useState(true);
   const progressWidth = Math.min(100, Math.max(0, overview.progress));
   const gap = projection.actualExpectedGap;
   const actualIncomplete = projection.actualRecordCount < projection.recordCount;
@@ -156,24 +154,35 @@ function MonthlySummaryCard({ overview, projection, plan, goalBackcast, onEdit, 
       </div>
 
       <div className="home-money-hero">
-        <div className="home-money-metric is-actual">
-          <span><CircleDollarSign size={14} />実収支</span>
-          <strong className={overview.hasActual ? (overview.actual >= 0 ? "is-positive" : "is-negative") : ""}>
-            {overview.hasActual ? yen(overview.actual, true) : "—"}
-          </strong>
-          <small>実際に増減した金額 {projection.actualRecordCount}/{projection.recordCount}件</small>
-        </div>
-        <div className="home-money-metric is-expected">
-          <span><TrendingUp size={14} />累計期待値</span>
+        <span>実収支</span>
+        <strong className={overview.hasActual ? (overview.actual >= 0 ? "is-positive" : "is-negative") : ""}>
+          {overview.hasActual ? yen(overview.actual, true) : "—"}
+        </strong>
+        <small>実際に増減した金額 ・ {projection.recordCount}件中 {projection.actualRecordCount}件を入力済み</small>
+      </div>
+
+      <div className="home-money-comparison" aria-label={accessibleGapLabel}>
+        <div>
+          <span>累計期待値（理論）</span>
           <strong className={overview.expected >= 0 ? "is-positive" : "is-negative"}>{yen(overview.expected, true)}</strong>
-          <small>理論上積み上げた金額</small>
+        </div>
+        <i aria-hidden="true">−</i>
+        <div className={gapTone}>
+          <span>期待値との差</span>
+          <strong>{gap == null ? "—" : yen(Math.abs(gap))}</strong>
         </div>
       </div>
 
-      <div className={`home-gap-banner ${gapTone}`} aria-label={accessibleGapLabel}>
-        <span>{accessibleGapLabel}</span>
-        <strong>{gap == null ? "—" : yen(Math.abs(gap))}</strong>
-        <em>{gap == null ? "投資・回収を記録すると表示" : actualIncomplete ? "未入力記録は差の計算から除外" : gap >= 0 ? "結果が期待値を上回っています" : "短期のブレとして切り分けます"}</em>
+      <div className={`home-gap-banner ${gapTone}`}>
+        {gap == null ? (
+          <><strong>実収支または期待値を入力すると比較できます。</strong><small>未入力の記録がある場合は、入力後に差を確認できます。</small></>
+        ) : gap === 0 ? (
+          <><strong>期待値と同じ結果です。</strong><small>{actualIncomplete ? "未入力の実収支は差の計算に含まれていません。" : "実収支と期待値が一致しています。"}</small></>
+        ) : gap < 0 ? (
+          <><strong>期待値より {yen(Math.abs(gap))} 少ない結果です。</strong><small>短期のブレの範囲で、打ち方が悪いという意味ではありません。</small></>
+        ) : (
+          <><strong>期待値より {yen(Math.abs(gap))} 多い結果です。</strong><small>良い結果ですが、将来の収支を保証するものではありません。</small></>
+        )}
       </div>
 
       <div className="home-target-progress-row">
@@ -184,7 +193,7 @@ function MonthlySummaryCard({ overview, projection, plan, goalBackcast, onEdit, 
         <i style={{ width: `${progressWidth}%` }} />
       </div>
 
-      <GoalBackcastPanel backcast={goalBackcast} compact />
+      <GoalBackcastPanel backcast={goalBackcast} />
 
       <button type="button" className="home-chart-heading home-chart-toggle" onClick={() => setChartOpen((value) => !value)} aria-expanded={chartOpen} aria-controls="home-monthly-chart">
         <span>今月の推移と月末見込み</span>
@@ -194,7 +203,7 @@ function MonthlySummaryCard({ overview, projection, plan, goalBackcast, onEdit, 
         <em>{chartOpen ? "閉じる" : "表示"}</em>
       </button>
       {chartOpen && <div id="home-monthly-chart" className="home-goal-chart home-goal-chart--v3" aria-label="実収支、期待値、月末見込み幅のグラフ">
-        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={148} initialDimension={{ width: 340, height: 154 }}>
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={134} initialDimension={{ width: 340, height: 134 }}>
           <ComposedChart data={chartData} margin={{ top: 8, right: 3, bottom: 0, left: 0 }}>
             <CartesianGrid stroke="var(--border)" vertical={false} />
             <XAxis dataKey="day" interval={6} tick={{ fill: "var(--sub-hi)", fontSize: 8 }} tickLine={false} axisLine={false} tickFormatter={(value) => `${value}日`} />
@@ -1240,12 +1249,9 @@ export default function HomeDashboard({ S }) {
     };
   }, [latest, todayStr]);
 
-  const greeting = useMemo(() => {
-    const hour = now.getHours();
-    if (hour < 11) return ["おはようございます！", "期待値を一つずつ積み上げましょう"];
-    if (hour < 18) return ["こんにちは！", "期待値を一つずつ積み上げましょう"];
-    return ["おつかれさまです！", "今日の記録を次の判断につなげましょう"];
-  }, [now]);
+  const dateLabel = now.toLocaleDateString("ja-JP", { month: "long", day: "numeric", weekday: "short" })
+    .replace("(", "（")
+    .replace(")", "）");
 
   const goAnalysis = () => S?.setTab?.("calendar");
   const goStore = () => {
@@ -1371,13 +1377,14 @@ export default function HomeDashboard({ S }) {
       <header className="home-header">
         <div className="home-header__top">
           <AppMark />
+        </div>
+        <div className="home-header__date-row">
+          <h1>{dateLabel}</h1>
           <button type="button" aria-label="通知を見る" className="home-bell" onClick={S?.openNotificationPanel}>
             <Bell size={22} />{unread && <i />}
           </button>
         </div>
-        <p className="home-header__greeting">{greeting[0]}</p>
-        <h1>{now.toLocaleDateString("ja-JP", { month: "long", day: "numeric", weekday: "short" })}</h1>
-        <p>{greeting[1]}</p>
+        <p className="home-header__status"><span title={selectedStore?.name || "店舗未選択"}>{selectedStore?.name || "店舗未選択"}</span><b>・</b><em>{S?.sessionStarted ? "実戦中" : "実戦前"}</em></p>
       </header>
 
       <MonthlySummaryCard overview={monthOverview} projection={monthProjection} plan={monthPlan} goalBackcast={monthGoalBackcast} onEdit={() => setPlanEditorOpen(true)} onDetail={goAnalysis} />
