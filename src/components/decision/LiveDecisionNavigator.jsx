@@ -14,6 +14,19 @@ const ACTION_CLASS = {
 
 const format1 = (value) => Number(value || 0).toFixed(1);
 
+// 判断カードの理由行アイコン。色だけに頼らず形でも状態が分かるようにする。
+function ReasonIcon({ tone }) {
+  const common = {
+    viewBox: "0 0 24 24", width: 16, height: 16, fill: "none",
+    stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round",
+    "aria-hidden": "true",
+  };
+  if (tone === "green") return <svg {...common}><path d="m5 12 4 4L19 6" /></svg>;
+  if (tone === "red") return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M12 7v6M12 16.5h.01" /></svg>;
+  if (tone === "orange" || tone === "yellow") return <svg {...common}><path d="M12 3.5 22 20H2Z" /><path d="M12 10v4M12 17h.01" /></svg>;
+  return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></svg>;
+}
+
 export function LiveDecisionNavigator({ decision }) {
   const [open, setOpen] = useState(false);
   if (!decision) return null;
@@ -22,15 +35,22 @@ export function LiveDecisionNavigator({ decision }) {
   return (
     <section className={`live-decision is-${tone}`} aria-label="実戦中の見切りナビ">
       <div className="live-decision-head">
-        <div>
-          <span className="live-decision-kicker">見切りナビ</span>
-          <h2>{decision.actionLabel}</h2>
+        <div className="live-decision-head-copy">
+          <span className="live-decision-kicker">現在の判断 ・ 見切りナビ</span>
+          <h2 className={String(decision.actionLabel || "").length >= 6 ? "is-long" : ""}>{decision.actionLabel}</h2>
+          <p className="live-decision-now">
+            <strong>{format1(decision.totalK)}K</strong>
+            <span>{liveDecisionCheckpointText(decision)}</span>
+          </p>
         </div>
-        <div className="live-decision-head-actions">
-          <span className="live-decision-prob">目標達成 {probability}%</span>
-          <button type="button" className="live-decision-toggle" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
-            {open ? "閉じる" : "根拠 ›"}
-          </button>
+        <div
+          className="live-decision-conf"
+          style={{ "--live-conf": `${probability}%` }}
+          role="img"
+          aria-label={`目標達成 ${probability}パーセント`}
+        >
+          <span>{probability}%</span>
+          <small>目標達成</small>
         </div>
       </div>
 
@@ -42,11 +62,13 @@ export function LiveDecisionNavigator({ decision }) {
         })}
       </div>
 
-      <div className="live-decision-now">
-        <strong>{format1(decision.totalK)}K</strong>
-        <span>{liveDecisionCheckpointText(decision)}</span>
+      <div className="live-decision-reason">
+        <ReasonIcon tone={tone} />
+        <p>{decision.reason}</p>
+        <button type="button" className="live-decision-toggle" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
+          {open ? "閉じる" : "根拠 ›"}
+        </button>
       </div>
-      <p className="live-decision-reason">{decision.reason}</p>
 
       <div className="live-decision-metrics">
         <div><span>実測</span><strong>{format1(decision.observedRotation)}</strong><small>回/K</small></div>
