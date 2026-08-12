@@ -13,6 +13,7 @@ import { evDecision } from "../decision/evDecision";
 import { confidenceAccuracyLabel } from "../decision/confidenceLabels";
 import { DECISION_TERMS } from "../decision/decisionVocabulary";
 import { LiveDecisionNavigator } from "../decision/LiveDecisionNavigator";
+import { DecisionSummaryCard } from "../decision/DecisionSummaryCard";
 import { getEvAmount, getYutimeEvAmount } from "../analysis/analysisSelectors";
 import { KeyMetrics } from "../decision/KeyMetrics";
 import { RecentEventList } from "../decision/RecentEventList";
@@ -2260,9 +2261,14 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     };
 
     // セッション開始後：データ表示とコントロール
+    // ヘッダーは docs/design-review/pachi-ios-redesign.html の
+    // app-bar / page-intro / machine-card 構成に合わせて再構成している（表示のみ・機能は据え置き）。
+    const recordDateLabel = new Date().toLocaleDateString("ja-JP", { month: "long", day: "numeric", weekday: "short" });
+    const headerCashInvest = Math.max(0, Number(ev.cashCostYen ?? ev.rawInvest) || 0);
     return (
         <div
             ref={swipeAreaRef}
+            className="rec-ios"
             style={{ display: "flex", flexDirection: "column", height: "100%" }}
         >
             <div
@@ -2272,26 +2278,13 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     background: "var(--header-bg)"
                 }}
             >
-                <div style={{ padding: "10px 12px 8px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                    <button className="b" onClick={() => setSummaryCollapsed(!summaryCollapsed)} style={{
-                        flex: 1, background: "transparent", border: "none", padding: 0, display: "flex", alignItems: "center", gap: 8, minWidth: 0
-                    }}>
-                        <div style={{ textAlign: "left", minWidth: 0, flex: 1 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                                <span style={{ fontSize: 14, fontWeight: 800, color: C.text, lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "60vw" }}>
-                                    {S.machineName || "機種未設定"}
-                                </span>
-                                {S.machineNum && (
-                                    <span style={{ fontSize: 12, fontWeight: 700, color: C.sub, fontFamily: mono }}>#{S.machineNum}</span>
-                                )}
-                                <span className="session-status-badge">実戦中</span>
-                            </div>
-                            <div style={{ fontSize: 10, color: C.sub, marginTop: 2, fontWeight: 500 }}>{S.storeName || "店舗未設定"}</div>
-                        </div>
-                        <span style={{ fontSize: 9, color: C.sub, flexShrink: 0 }}>{summaryCollapsed ? "▼" : "▲"}</span>
-                    </button>
+                <div className="rec-ios-appbar">
+                    <div className="rec-ios-appbar__title" style={{ fontFamily: font }}>
+                        <small>{recordDateLabel}</small>
+                        <strong>今日の実戦</strong>
+                    </div>
                     <button
-                        className="b"
+                        className="b rec-ios-round"
                         type="button"
                         aria-label="通知を開く"
                         onClick={() => {
@@ -2302,14 +2295,8 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                 if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
                             }
                         }}
-                        style={{
-                            position: "relative",
-                            background: "var(--surface-hi)", border: `1px solid ${C.border}`, borderRadius: 8,
-                            padding: "6px 8px", display: "flex", alignItems: "center", justifyContent: "center",
-                            minHeight: 32, minWidth: 32, flexShrink: 0,
-                        }}
                     >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.subHi} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                             <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
                             <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
                         </svg>
@@ -2321,60 +2308,65 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             if (unread <= 0) return null;
                             const label = unread > 99 ? "99+" : String(unread);
                             return (
-                                <span
-                                    aria-label={`未読 ${unread} 件`}
-                                    style={{
-                                        position: "absolute",
-                                        top: -4, right: -4,
-                                        background: C.orange,
-                                        color: "#fff",
-                                        fontSize: 9,
-                                        fontWeight: 800,
-                                        lineHeight: 1,
-                                        borderRadius: 999,
-                                        padding: unread < 10 ? "3px 5px" : "3px 6px",
-                                        minWidth: 14,
-                                        textAlign: "center",
-                                        boxShadow: `0 0 0 2px var(--surface-hi)`,
-                                    }}
-                                >
+                                <span className="rec-ios-round__badge" aria-label={`未読 ${unread} 件`}>
                                     {label}
                                 </span>
                             );
                         })()}
                     </button>
                     <button
-                        className="b"
+                        className="b rec-ios-round"
                         type="button"
                         aria-label="設定モードへ"
                         onClick={() => { if (S.setTab) S.setTab("settings"); }}
-                        style={{
-                            background: "var(--surface-hi)", border: `1px solid ${C.border}`, borderRadius: 8,
-                            padding: "6px 8px", display: "flex", alignItems: "center", justifyContent: "center",
-                            minHeight: 32, minWidth: 32, flexShrink: 0,
-                        }}
                     >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.subHi} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                             <circle cx="12" cy="12" r="3" />
                             <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
                         </svg>
                     </button>
-                    <button className="b" onClick={() => { setCustomInvestPace(String(investPace)); setCustomInvestPaceError(""); setShowInvestSettings(true); }} style={{
-                        background: "var(--surface-hi)", border: `1px solid ${C.border}`, borderRadius: 8,
-                        padding: "6px 10px", display: "flex", alignItems: "center", gap: 4, minHeight: 32, flexShrink: 0
-                    }} aria-label="投資ペース設定">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.subHi} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                </div>
+
+                <div className="rec-ios-intro" style={{ fontFamily: font }}>
+                    <div style={{ minWidth: 0 }}>
+                        <h2>{S.storeName || "店舗未設定"}</h2>
+                        <p>{S.machineNum ? `台番号 ${S.machineNum} ・ 稼働中` : "台番号未設定 ・ 稼働中"}</p>
+                    </div>
+                    <button
+                        className="b rec-ios-pill"
+                        type="button"
+                        onClick={() => { setCustomInvestPace(String(investPace)); setCustomInvestPaceError(""); setShowInvestSettings(true); }}
+                        aria-label="投資ペース設定"
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                             <rect x="2" y="6" width="20" height="13" rx="2" />
                             <path d="M2 10h20" />
                         </svg>
-                        <span style={{ fontSize: 10, color: C.subHi, fontWeight: 600, fontFamily: mono }}>
+                        <span style={{ fontFamily: mono }}>
                             {investPace >= 1000 ? `${investPace/1000}K` : `${investPace}円`}・{formatBallQuantity(ballsPerRecord)}玉
                         </span>
                     </button>
                 </div>
 
+                <button
+                    className="b rec-ios-machine"
+                    type="button"
+                    onClick={() => setSummaryCollapsed(!summaryCollapsed)}
+                    aria-expanded={!summaryCollapsed}
+                    aria-label={summaryCollapsed ? "実戦サマリーを開く" : "実戦サマリーを閉じる"}
+                    style={{ fontFamily: font }}
+                >
+                    <span className="rec-ios-machine__icon" aria-hidden="true">P</span>
+                    <span className="rec-ios-machine__copy">
+                        <strong>{S.machineName || "機種未設定"}</strong>
+                        <span>現金投資 ・ {headerCashInvest > 0 ? `${f(headerCashInvest)}円` : "—"} ・ {ev.netRot > 0 ? `${f(ev.netRot)}回転` : "—"}</span>
+                    </span>
+                    <span className="rec-ios-live">実戦中</span>
+                    <span className="rec-ios-machine__chev" aria-hidden="true">{summaryCollapsed ? "▼" : "▲"}</span>
+                </button>
+
                 {!summaryCollapsed && (
-                    <div className="summary-card" style={{ padding: 6, margin: "0 12px 6px", borderRadius: 8 }}>
+                    <div className="summary-card" style={{ padding: 6, margin: "0 16px 8px", borderRadius: 12 }}>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
                             <div className="stat-mini">
                                 <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginBottom: 2 }}>総回転</div>
@@ -2397,54 +2389,30 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                 )}
 
                 <div
+                    className="rec-ios-segmented-wrap"
                     style={{
-                        display: "flex",
-                        overflow: "hidden",
                         transform: `translateX(${headerSwipeOffset}px)`,
                         transition: headerIsAnimating ? "transform 0.15s cubic-bezier(0.25, 0.1, 0.25, 1)" : "none"
                     }}
                 >
-                    {sessionSubTabs.map((tabId) => {
-                        const isActive = S.sessionSubTab === tabId;
-                        const col = isActive ? C.blue : C.sub;
-                        const tabIcon = {
-                            data: (
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round"><path d="M4 20h16" /><rect x="6" y="11" width="3" height="9" rx="0.5" /><rect x="11" y="7" width="3" height="13" rx="0.5" /><rect x="16" y="13" width="3" height="7" rx="0.5" /></svg>
-                            ),
-                            rot: (
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M8 12.5l3 3 5-6" /></svg>
-                            ),
-                            history: (
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.9L12 17l-5.2 2.7 1-5.9-4.3-4.1 5.9-.9z" /></svg>
-                            ),
-                            settings: (
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>
-                            ),
-                        }[tabId];
-                        return (
-                            <button
-                                key={tabId}
-                                className="b"
-                                onClick={() => S.setSessionSubTab(tabId)}
-                                style={{
-                                    flex: 1,
-                                    background: "transparent",
-                                    border: "none",
-                                    borderBottom: isActive ? `3px solid ${C.blue}` : "3px solid transparent",
-                                    padding: "10px 4px 8px",
-                                    fontSize: 12,
-                                    fontWeight: isActive ? 700 : 500,
-                                    color: col,
-                                    fontFamily: font,
-                                    transition: "all 0.2s",
-                                    display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                                }}
-                            >
-                                {tabIcon}
-                                {sessionSubTabLabels[tabId]}
-                            </button>
-                        );
-                    })}
+                    <div className="rec-ios-segmented" role="tablist" aria-label="実戦画面の切り替え">
+                        {sessionSubTabs.map((tabId) => {
+                            const isActive = S.sessionSubTab === tabId;
+                            return (
+                                <button
+                                    key={tabId}
+                                    className="b"
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={isActive}
+                                    onClick={() => S.setSessionSubTab(tabId)}
+                                    style={{ fontFamily: font }}
+                                >
+                                    {sessionSubTabLabels[tabId]}
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
             </div>
 
@@ -2464,11 +2432,12 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     <>
                     <div style={{
                         flex: 1, overflowY: "auto", overscrollBehavior: "contain",
-                        padding: "10px 12px",
+                        padding: "12px 16px",
                         paddingBottom: "calc(20px + env(safe-area-inset-bottom))",
                         display: "flex", flexDirection: "column", gap: 12,
                     }}>
                         {!showYutimeDecision && <LiveDecisionNavigator decision={ev.liveDecision} />}
+                        <DecisionSummaryCard ev={ev} />
                         {!showYutimeDecision && (
                             <CashLimitGuide guide={liveCashLimitGuide} preAlert={liveCashPreAlert} />
                         )}

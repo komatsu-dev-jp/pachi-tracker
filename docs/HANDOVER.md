@@ -1723,3 +1723,43 @@ grep -n 'sessionSubTab === "data"' src/components/Tabs.jsx
 claude/<説明>-<rand4>   # Claude Code 担当
 codex/<説明>-<rand4>    # Codex 担当
 ```
+
+---
+
+## 追記：記録モード iOS リデザイン（2026-08-12、`claude/pachi-ios-redesign-e9g11f`）
+
+`docs/design-review/pachi-ios-redesign.html`（Claude Design から取り込んだレビュー用モック）を
+記録モードの稼働中画面に完全再現した。計算ロジックは一切変更していない。
+
+### 何をやったか
+
+- `src/index.css` 末尾に `.rec-ios` トークンブロックを追加（ダーク／ライト両対応）。
+  `--ri-*`（iOS システムカラー）に加えて汎用トークン（`--bg` / `--surface` / `--text` 等）も
+  スコープ内で上書きし、配下の既存部品を触らずに配色を追従させている。
+  → 方式は `.analytics-terminal`（分析ページ）と同じ。
+- `src/components/tabs/RotTab.jsx` の稼働中画面ルートに `className="rec-ios"` を付与し、
+  ヘッダーをモック構成（app-bar / page-intro / machine-card）に再構成。
+  サブタブ4種をセグメンテッドコントロール化。既存の機能・遷移はすべて据え置き。
+- `src/components/decision/LiveDecisionNavigator.jsx` / `.css` を判断カード
+  （`.verdict-card`）の見た目に刷新。目標達成率を円形インジケーターに変更。
+  旧CSSはダーク固定のハードコード色だったが、トークン化してライトテーマでも成立させた。
+- `src/components/decision/DecisionSummaryCard.jsx` を新規追加
+  （「判断に使う数字」4指標 ＋「判断の理由」リスト）。**表示専用**。
+- 仕様は `docs/record-ios-design.md` に集約。`CLAUDE.md` からも参照させている。
+
+### 保護対象の確認結果
+
+- `src/logic.js` 変更なし
+- `src/components/decision/evDecision.js` / `liveRotationDecision.js` 変更なし
+- `node src/__tests__/protected-fns.mjs` → `baseline.json` と完全一致
+- `node src/components/decision/__tests__/evDecision.test.mjs` → 6 passed / 0 failed
+- `npm run lint` / `npm run build` ともにエラー0
+- 実機相当（Chromium 393×852 / 320×852、ダーク・ライト）でコンソールエラー0・横スクロールなし
+
+### 保留・申し送り
+
+- 実測回転率が判断カードと「判断に使う数字」の2か所に出る（モックの情報階層をそのまま実装、
+  既存表示を削らない方針のため）。統合するならユーザー確認が必要。
+- サブタブのアイコンはセグメンテッド化に伴い外した（モックがテキストのみのため）。
+- `ModeTabBar`（フッター5タブ＋中央FAB）は全モード共通のため据え置き。
+  モックの4タブ構成に合わせる場合は「台選び」タブとFABの扱いを先に決めること。

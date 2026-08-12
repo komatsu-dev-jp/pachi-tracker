@@ -2476,3 +2476,436 @@ input, select, textarea {
   color: var(--sub-hi);
   font-variant-numeric: tabular-nums;
 }
+
+/* ================================================================
+   記録モード iOS リデザイン
+   出典モック: docs/design-review/pachi-ios-redesign.html
+   スコープ: `.rec-ios`（RotTab の稼働中画面ルート）配下のみ。
+   ここで汎用トークン（--bg / --surface / --text 等）も iOS 系の値に上書きし、
+   配下の既存コンポーネント（KeyMetrics / RecentEventList 等）の中身を
+   触らずに配色だけ追従させる。docs/analysis-ios-design.md と同じやり方。
+================================================================ */
+.rec-ios {
+  /* iOS システムカラー（ダーク） */
+  --ri-page: #000000;
+  --ri-panel: #1c1c1e;
+  --ri-panel-2: #2c2c2e;
+  --ri-panel-3: #3a3a3c;
+  --ri-ink: #ffffff;
+  --ri-mut: rgba(235, 235, 245, 0.62);
+  --ri-faint: rgba(235, 235, 245, 0.36);
+  --ri-line: rgba(84, 84, 88, 0.48);
+  --ri-blue: #0a84ff;
+  --ri-green: #30d158;
+  --ri-red: #ff453a;
+  --ri-yellow: #ffd60a;
+  --ri-orange: #ff9f0a;
+  --ri-teal: #64d2ff;
+  --ri-purple: #bf5af2;
+
+  /* 汎用トークンの上書き（配下の既存コンポーネント用） */
+  --bg: var(--ri-page);
+  --surface: var(--ri-panel);
+  --surface-hi: var(--ri-panel-2);
+  --surface-alt: var(--ri-panel-3);
+  --border: var(--ri-line);
+  --border-hi: rgba(84, 84, 88, 0.72);
+  --blue: var(--ri-blue);
+  --green: var(--ri-green);
+  --red: var(--ri-red);
+  --yellow: var(--ri-yellow);
+  --orange: var(--ri-orange);
+  --teal: var(--ri-teal);
+  --purple: var(--ri-purple);
+  --text: var(--ri-ink);
+  --sub: var(--ri-mut);
+  --sub-hi: rgba(235, 235, 245, 0.82);
+  --header-bg: rgba(0, 0, 0, 0.92);
+  --card-shadow: none;
+
+  background: var(--ri-page);
+  color: var(--ri-ink);
+}
+
+[data-theme="light"] .rec-ios {
+  --ri-page: #f2f2f7;
+  --ri-panel: #ffffff;
+  --ri-panel-2: #f2f2f7;
+  --ri-panel-3: #e5e5ea;
+  --ri-ink: #000000;
+  --ri-mut: rgba(60, 60, 67, 0.62);
+  --ri-faint: rgba(60, 60, 67, 0.36);
+  --ri-line: rgba(60, 60, 67, 0.2);
+  --ri-blue: #007aff;
+  --ri-green: #248a3d;
+  --ri-red: #d70015;
+  --ri-yellow: #b25000;
+  --ri-orange: #c93400;
+  --ri-teal: #0071a4;
+  --ri-purple: #8944ab;
+
+  --border-hi: rgba(60, 60, 67, 0.34);
+  --sub-hi: rgba(60, 60, 67, 0.82);
+  --header-bg: rgba(242, 242, 247, 0.94);
+  --card-shadow: 0 1px 2px rgba(60, 60, 67, 0.12);
+}
+
+/* --- アプリバー（モックの .app-bar / .round-button） --- */
+.rec-ios-appbar {
+  display: flex;
+  min-height: 62px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 6px 16px 10px;
+}
+
+.rec-ios-appbar__title {
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+}
+
+.rec-ios-appbar__title small {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--ri-mut);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.rec-ios-appbar__title strong {
+  display: block;
+  overflow: hidden;
+  color: var(--ri-ink);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rec-ios-round {
+  position: relative;
+  display: inline-grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ri-panel-2);
+  color: var(--ri-ink);
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+.rec-ios-round:active { transform: scale(0.96); }
+
+.rec-ios-round__badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 18px;
+  padding: 3px 5px;
+  border-radius: 999px;
+  background: var(--ri-red);
+  box-shadow: 0 0 0 2px var(--ri-page);
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+}
+
+/* --- ページ見出し（モックの .page-intro） --- */
+.rec-ios-intro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 0 16px;
+}
+
+.rec-ios-intro h2 {
+  overflow: hidden;
+  margin: 0;
+  color: var(--ri-ink);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rec-ios-intro p {
+  margin: 4px 0 0;
+  color: var(--ri-mut);
+  font-size: 12px;
+}
+
+.rec-ios-pill {
+  display: inline-flex;
+  min-height: 44px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--ri-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ri-mut);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* --- 機種カード（モックの .machine-card） --- */
+.rec-ios-machine {
+  display: flex;
+  width: calc(100% - 32px);
+  min-height: 64px;
+  align-items: center;
+  gap: 12px;
+  margin: 0 16px 12px;
+  padding: 12px;
+  border: 1px solid var(--ri-line);
+  border-radius: 16px;
+  background: var(--ri-panel);
+  text-align: left;
+}
+
+.rec-ios-machine:active { transform: scale(0.995); }
+
+.rec-ios-machine__icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  place-items: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ri-blue) 16%, transparent);
+  color: var(--ri-blue);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.rec-ios-machine__copy { min-width: 0; flex: 1; }
+
+.rec-ios-machine__copy strong {
+  display: block;
+  overflow: hidden;
+  color: var(--ri-ink);
+  font-size: 14px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rec-ios-machine__copy > span {
+  display: block;
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--ri-mut);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rec-ios-live {
+  display: inline-flex;
+  min-height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ri-green) 15%, transparent);
+  color: var(--ri-green);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.rec-ios-machine__chev { flex: 0 0 auto; color: var(--ri-faint); font-size: 9px; }
+
+/* --- サマリー（既存 .summary-card / .stat-mini を iOS 面に合わせる） --- */
+.rec-ios .summary-card {
+  border: 1px solid var(--ri-line);
+  border-radius: 14px;
+  background: var(--ri-panel);
+  box-shadow: none;
+}
+
+.rec-ios .stat-mini {
+  border: 0;
+  border-radius: 10px;
+  background: var(--ri-panel-2);
+}
+
+/* --- セグメンテッドコントロール（モックの .segmented） --- */
+.rec-ios-segmented-wrap { overflow: hidden; padding: 0 16px 12px; }
+
+.rec-ios-segmented {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border-radius: 11px;
+  background: var(--ri-panel-2);
+}
+
+.rec-ios-segmented button {
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ri-mut);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.rec-ios-segmented button[aria-selected="true"] {
+  background: var(--ri-panel);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.26);
+  color: var(--ri-ink);
+  font-weight: 700;
+}
+
+/* --- グループ見出し（モックの .group-label） --- */
+.rec-ios-decision { display: flex; flex-direction: column; gap: 0; flex-shrink: 0; }
+
+.rec-ios-group {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 2px 6px;
+  color: var(--ri-mut);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.rec-ios-group > span:last-child { color: var(--ri-blue); letter-spacing: 0; font-weight: 600; }
+
+/* --- 判断に使う数字（モックの .metric-grid） --- */
+.rec-ios-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--ri-line);
+  border-radius: 16px;
+  background: var(--ri-panel);
+}
+
+.rec-ios-metric { min-width: 0; min-height: 78px; padding: 13px 14px 11px; }
+.rec-ios-metric:nth-child(odd) { border-right: 1px solid var(--ri-line); }
+.rec-ios-metric:nth-child(n + 3) { border-top: 1px solid var(--ri-line); }
+.rec-ios-metric__label { color: var(--ri-mut); font-size: 11px; }
+
+.rec-ios-metric__value {
+  overflow: hidden;
+  margin-top: 5px;
+  color: var(--ri-ink);
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rec-ios-metric__value small { margin-left: 2px; color: var(--ri-mut); font-size: 10px; font-weight: 600; }
+.rec-ios-metric__value.is-positive { color: var(--ri-green); }
+.rec-ios-metric__value.is-negative { color: var(--ri-red); }
+.rec-ios-metric__value.is-accent { color: var(--ri-blue); }
+
+/* --- 判断の理由（モックの .reason-card） --- */
+.rec-ios-reasons {
+  overflow: hidden;
+  border: 1px solid var(--ri-line);
+  border-radius: 16px;
+  background: var(--ri-panel);
+}
+
+.rec-ios-reason {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+}
+
+.rec-ios-reason + .rec-ios-reason { border-top: 1px solid var(--ri-line); }
+
+.rec-ios-reason__icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ri-green) 14%, transparent);
+  color: var(--ri-green);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.rec-ios-reason__icon.is-info {
+  background: color-mix(in srgb, var(--ri-blue) 14%, transparent);
+  color: var(--ri-blue);
+}
+
+.rec-ios-reason__copy { min-width: 0; flex: 1; }
+.rec-ios-reason__copy strong { display: block; color: var(--ri-ink); font-size: 12px; font-weight: 700; }
+.rec-ios-reason__copy span { display: block; margin-top: 3px; color: var(--ri-mut); font-size: 11px; line-height: 1.4; }
+
+/* --- 下部CTA（モックの .primary-action） --- */
+.rec-ios .record-cta-bar {
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--ri-line);
+  background: linear-gradient(180deg, transparent, var(--ri-page) 40%, var(--ri-page));
+}
+
+.rec-ios .record-cta-input {
+  min-height: 56px;
+  grid-template-columns: 24px 1fr;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--ri-blue);
+  box-shadow: none;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.rec-ios .record-cta-input--yutime {
+  background: var(--ri-yellow);
+  color: #ffffff;
+}
+
+.rec-ios .record-cta-input__sub { font-weight: 600; opacity: 0.82; }
+
+.rec-ios .record-fab {
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--ri-line);
+  background: var(--ri-panel-2);
+  box-shadow: none;
+  color: var(--ri-blue);
+}
+
+@media (max-width: 360px) {
+  .rec-ios-appbar__title strong { font-size: 20px; }
+  .rec-ios-segmented button { font-size: 10px; }
+  .rec-ios-metric { padding: 12px 10px 10px; }
+  .rec-ios-metric__value { font-size: 17px; }
+}
+
+/* ライトテーマでは page と panel-2 が同色になり丸ボタンが沈むため、一段濃い面を使う */
+[data-theme="light"] .rec-ios-round { background: var(--ri-panel-3); }
