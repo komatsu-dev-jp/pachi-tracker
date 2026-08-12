@@ -231,9 +231,6 @@ function Header({
   return (
     <div
       style={{
-        position: "sticky",
-        top: 0,
-        zIndex: 20,
         background: "linear-gradient(180deg, var(--sm-bg) 78%, transparent)",
         padding: "12px 14px 10px",
       }}
