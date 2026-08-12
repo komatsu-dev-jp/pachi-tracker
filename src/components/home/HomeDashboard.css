@@ -96,6 +96,9 @@
 .home-target-input > span { display: block; margin-bottom: 6px; color: var(--sub-hi); font-size: 11px; }
 .home-target-input > div { display: flex; align-items: center; height: 52px; padding: 0 13px; border: 1px solid var(--border-hi); border-radius: 12px; background: var(--surface-hi); }
 .home-target-input input { min-width: 0; flex: 1; border: 0; outline: 0; color: var(--text); background: transparent; text-align: right; font-size: 23px; font-weight: 850; font-variant-numeric: tabular-nums; }
+.home-target-input select { min-width: 0; flex: 1; width: 100%; border: 0; outline: 0; color: var(--text); background: transparent; text-align: right; text-align-last: right; font-size: 23px; font-weight: 850; font-variant-numeric: tabular-nums; appearance: none; -webkit-appearance: none; }
+.home-wheel-input { min-width: 0; }
+.home-wheel-input__chevron { flex: 0 0 auto; margin-left: 7px; color: var(--sub-hi); font-size: 15px; line-height: 1; pointer-events: none; }
 .home-target-input em { margin-left: 7px; font-size: 13px; font-style: normal; font-weight: 700; }
 .home-target-presets { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
 .home-target-presets button { min-height: 42px; padding: 0; border: 1px solid var(--border); border-radius: 9px; color: var(--sub-hi); background: var(--surface-alt); font-size: 10px; font-weight: 750; cursor: pointer; }
@@ -291,7 +294,7 @@
 .home-plan-fields-grid > * { min-width: 0; }
 .home-plan-fields-grid .home-target-input { margin-top: 13px; }
 .home-plan-fields-grid .home-target-input > div { height: 44px; padding-inline: 9px; }
-.home-plan-fields-grid .home-target-input input { font-size: 16px; }
+.home-plan-fields-grid .home-target-input :is(input, select) { font-size: 16px; }
 .home-plan-secondary-fields { margin-top: 10px; }
 .home-allocation { margin-top: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-alt); }
 .home-allocation__bar { display: flex; width: 100%; height: 10px; overflow: hidden; border-radius: 99px; background: var(--surface-hi); }
@@ -504,6 +507,7 @@
 .home-target-edit, .home-detail-link, .home-arrow-button, .home-delta-analyze, .home-delta-map, .home-research-open { min-height: 44px; }
 .home-card, .home-target-sheet, .home-command-card, .home-goal-backcast { box-shadow: none; background-image: none; text-shadow: none; }
 .home-progress i, .home-brand__mark, .home-target-sheet__actions .is-save, .home-delta-analyze, .home-research-open { background-image: none; box-shadow: none; }
+.home-target-sheet__actions .is-save { background: var(--home-blue); color: #fff; }
 
 /* iOS grouped-list surface: presentation only, data and interactions stay unchanged. */
 .home-dashboard {

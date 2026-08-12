@@ -72,6 +72,39 @@ const compactYen = (value) => {
   return String(Math.round(n));
 };
 
+const steppedOptions = (min, max, step) => Array.from(
+  { length: Math.floor((max - min) / step) + 1 },
+  (_, index) => Number((min + index * step).toFixed(2)),
+);
+
+const MONTHLY_TARGET_OPTIONS = steppedOptions(0, 1_000_000, 1_000);
+const CASH_LIMIT_OPTIONS = steppedOptions(0, 300_000, 1_000);
+const STANDARD_HOURS_OPTIONS = steppedOptions(1, 16, 0.5);
+
+function WheelSelect({ value, onChange, options, unit, ariaLabel, formatValue = String }) {
+  const numericValue = Number(value);
+  const currentValue = Number.isFinite(numericValue) && value !== "" ? numericValue : options[0];
+  const allOptions = options.includes(currentValue)
+    ? options
+    : [...options, currentValue].sort((a, b) => a - b);
+
+  return (
+    <div className="home-wheel-input">
+      <select
+        value={String(currentValue)}
+        aria-label={ariaLabel}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {allOptions.map((option) => (
+          <option key={String(option)} value={String(option)}>{formatValue(option)}</option>
+        ))}
+      </select>
+      {unit && <em>{unit}</em>}
+      <span className="home-wheel-input__chevron" aria-hidden="true">⌄</span>
+    </div>
+  );
+}
+
 const unitPriceDiff = (value) => {
   const n = Number(value) || 0;
   return `${n >= 0 ? "+" : ""}${n.toFixed(2)}円/回`;
@@ -615,11 +648,24 @@ function PlanEditor({ current, monthKey, target, currentExpected, archives, dail
           <div className="home-plan-fields-grid">
             <label className="home-target-input">
               <span>月間の期待値目標</span>
-              <div><input type="number" min="0" inputMode="numeric" value={targetValue} onChange={(event) => setTargetValue(event.target.value.replace(/[^\d]/g, ""))} /><em>円</em></div>
+              <WheelSelect
+                value={targetValue}
+                onChange={setTargetValue}
+                options={MONTHLY_TARGET_OPTIONS}
+                unit="円"
+                ariaLabel="月間の期待値目標"
+                formatValue={(value) => value.toLocaleString("ja-JP")}
+              />
             </label>
             <label className="home-target-input">
               <span>1日の標準時間</span>
-              <div><input type="number" min="1" max="16" inputMode="decimal" value={standardHours} onChange={(event) => setStandardHours(event.target.value)} /><em>時間</em></div>
+              <WheelSelect
+                value={standardHours}
+                onChange={setStandardHours}
+                options={STANDARD_HOURS_OPTIONS}
+                unit="時間"
+                ariaLabel="1日の標準時間"
+              />
             </label>
           </div>
           <div className="home-date-add home-date-add--plan">
@@ -638,7 +684,14 @@ function PlanEditor({ current, monthKey, target, currentExpected, archives, dail
           <div className="home-plan-fields-grid home-plan-secondary-fields">
             <label className="home-target-input">
               <span>1日の現金上限</span>
-              <div><input type="number" min="0" inputMode="numeric" value={cashLimit} onChange={(event) => setCashLimit(event.target.value.replace(/[^\d]/g, ""))} /><em>円</em></div>
+              <WheelSelect
+                value={cashLimit}
+                onChange={setCashLimit}
+                options={CASH_LIMIT_OPTIONS}
+                unit="円"
+                ariaLabel="1日の現金上限"
+                formatValue={(value) => value.toLocaleString("ja-JP")}
+              />
             </label>
             <label className="home-target-input">
               <span>前日の確認時刻</span>

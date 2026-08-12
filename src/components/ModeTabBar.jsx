@@ -164,7 +164,7 @@ export default function ModeTabBar({ currentMode, onChange }) {
         aria-current={recordActive ? "page" : undefined}
         style={{
           position: "absolute",
-          top: 5,
+          top: -14,
           left: "50%",
           transform: "translateX(-50%)",
           width: 56,
