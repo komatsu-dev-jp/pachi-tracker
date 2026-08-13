@@ -2728,6 +2728,47 @@ input, select, textarea {
 
 .rec-ios-machine__chev { flex: 0 0 auto; color: var(--ri-faint); font-size: 9px; }
 
+/* --- スクロール時のヘッダー圧縮（iOS のラージタイトル相当） ---
+   データを読む間はヘッダーを畳んで表示領域を約110px広げる。
+   畳むのは装飾・静的情報（日付・画面名・店舗名）だけで、
+   実戦中に変わる値（機種カードの現金投資・回転数）とサブタブは残す。
+   通知ベル・設定は先頭までスクロールすれば戻る。 */
+.rec-ios-header .rec-ios-appbar,
+.rec-ios-header .rec-ios-intro {
+  transition: max-height 200ms ease, opacity 140ms ease, margin 200ms ease, padding 200ms ease;
+}
+
+.rec-ios-header.is-condensed .rec-ios-appbar,
+.rec-ios-header.is-condensed .rec-ios-intro {
+  overflow: hidden;
+  min-height: 0; /* min-height は max-height より優先されるため明示的に潰す */
+  max-height: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.rec-ios-header .rec-ios-machine {
+  transition: min-height 200ms ease, margin 200ms ease, padding 200ms ease;
+}
+
+/* 機種カードは残すが、圧縮中は行高を詰める */
+.rec-ios-header.is-condensed .rec-ios-machine {
+  min-height: 52px;
+  margin-top: 10px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rec-ios-header .rec-ios-appbar,
+  .rec-ios-header .rec-ios-intro,
+  .rec-ios-header .rec-ios-machine { transition: none; }
+}
+
 /* --- サマリー（既存 .summary-card / .stat-mini を iOS 面に合わせる） --- */
 .rec-ios .summary-card {
   border: 1px solid var(--ri-line);
