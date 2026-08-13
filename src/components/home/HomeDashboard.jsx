@@ -135,11 +135,12 @@ function ArrowButton({ children, onClick, className = "" }) {
   );
 }
 
+// モックの .group-label 相当。見出しはカードの外に置き、右側に補足／操作を並べる。
 function SectionTitle({ icon: Icon, children, aside }) {
   return (
     <div className="home-section-title-row">
       <div className="home-section-title">
-        {Icon && <Icon size={17} strokeWidth={2.2} />}
+        {Icon && <Icon size={13} strokeWidth={2.4} />}
         <h2>{children}</h2>
       </div>
       {aside}
@@ -174,17 +175,18 @@ function MonthlySummaryCard({ overview, projection, plan, goalBackcast, onEdit, 
   });
 
   return (
+    <>
+      <SectionTitle
+        icon={WalletCards}
+        aside={(
+          <button type="button" className="home-target-edit" onClick={onEdit} aria-label="月間プランを編集">
+            <Pencil size={12} /> 月間プラン
+          </button>
+        )}
+      >
+        今月の収支と期待値
+      </SectionTitle>
     <section className={`home-card home-command-card ${overview.achieved ? "is-achieved" : ""}`}>
-      <div className="home-card-heading">
-        <div className="home-card-heading__title">
-          <WalletCards size={18} />
-          <h2>今月の収支と期待値</h2>
-        </div>
-        <button type="button" className="home-target-edit" onClick={onEdit} aria-label="月間プランを編集">
-          <Pencil size={12} /> 月間プラン
-        </button>
-      </div>
-
       <div className="home-money-hero">
         <span>実収支</span>
         <strong className={overview.hasActual ? (overview.actual >= 0 ? "is-positive" : "is-negative") : ""}>
@@ -279,6 +281,7 @@ function MonthlySummaryCard({ overview, projection, plan, goalBackcast, onEdit, 
 
       <button type="button" className="home-detail-link" onClick={onDetail}>月別分析を見る <ChevronRight size={15} /></button>
     </section>
+    </>
   );
 }
 
@@ -877,18 +880,24 @@ const actionIcons = {
 function NextActionCard({ action, onOpen }) {
   const Icon = actionIcons[action.kind] || Clock3;
   return (
-    <section className="home-card home-next-card">
+    <>
       <SectionTitle icon={Clock3}>次にやること</SectionTitle>
-      <div className="home-next-card__body">
-        <div className="home-next-icon"><Icon size={27} /></div>
-        <div className="home-next-copy">
-          <strong>{action.title}</strong>
-          <span>{action.message}</span>
-          <em>{action.tag}</em>
+      <section className="home-card home-next-card">
+        <div className="home-next-card__body">
+          <div className="home-next-icon"><Icon size={22} /></div>
+          <div className="home-next-copy">
+            <strong>{action.title}</strong>
+            <span>{action.message}</span>
+            <em>{action.tag}</em>
+          </div>
         </div>
-        <ArrowButton onClick={onOpen}>{action.actionLabel}</ArrowButton>
-      </div>
-    </section>
+        {/* モックの .primary-action：50px・角丸14px・systemBlue の塗り */}
+        <button type="button" className="home-primary-action" onClick={onOpen}>
+          {action.actionLabel}
+          <ChevronRight size={17} strokeWidth={2.4} />
+        </button>
+      </section>
+    </>
   );
 }
 
@@ -1030,8 +1039,9 @@ function PlanningReminderPreview({ date, reminderTime, baseStyle, onOpen }) {
 
 function DeltaStatusCard({ status, onAnalyze, onViewMap }) {
   return (
-    <section className="home-card home-delta-card">
+    <>
       <SectionTitle icon={ScanLine} aside={<span className="home-section-aside">対象：{status.scopeLabel}</span>}>差玉解析</SectionTitle>
+    <section className="home-card home-delta-card">
       <div className="home-delta-stats">
         <div className="home-delta-stat"><span>最終解析</span><strong>{status.lastLabel}</strong></div>
         <div className="home-delta-stat"><span>解析済み台数</span><strong className="tone-yellow">{status.machineCount}<em>台</em></strong></div>
@@ -1045,13 +1055,15 @@ function DeltaStatusCard({ status, onAnalyze, onViewMap }) {
         {status.hasScans && <button type="button" className="home-delta-map" onClick={onViewMap}>解析マップを見る</button>}
       </div>
     </section>
+    </>
   );
 }
 
 function JudgmentCard({ continueCount, stopCount, latestText, onDetail }) {
   return (
-    <section className="home-card home-judgment-card">
+    <>
       <SectionTitle icon={BrainCircuit}>判断履歴</SectionTitle>
+    <section className="home-card home-judgment-card">
       <div className="home-judgment-grid">
         <JudgmentItem icon={Target} label="続行判断" count={continueCount} tone="teal" onClick={onDetail} />
         <JudgmentItem icon={Search} label="終了・比較判断" count={stopCount} tone="yellow" onClick={onDetail} />
@@ -1061,6 +1073,7 @@ function JudgmentCard({ continueCount, stopCount, latestText, onDetail }) {
         <ChevronRight size={18} />
       </button>
     </section>
+    </>
   );
 }
 
@@ -1079,11 +1092,14 @@ function JudgmentItem({ icon, label, count, tone, onClick }) {
 
 function StoreDataCard({ storeName, metrics, onOpen }) {
   return (
+    <>
+      <SectionTitle
+        icon={Users}
+        aside={<div className="home-active-state"><i />記録 <b>{metrics.sessions}件</b></div>}
+      >
+        店舗データ状況
+      </SectionTitle>
     <section className="home-card home-active-store">
-      <div className="home-active-store__top">
-        <SectionTitle icon={Users}>店舗データ状況</SectionTitle>
-        <div className="home-active-state"><i />記録 <b>{metrics.sessions}件</b></div>
-      </div>
       <div className="home-active-store__main">
         <StoreMark />
         <div className="home-active-store__content">
@@ -1102,21 +1118,26 @@ function StoreDataCard({ storeName, metrics, onOpen }) {
       </div>
       <div className="home-active-store__footer"><span>{metrics.statusText}</span><ArrowButton onClick={onOpen}>店舗を見る</ArrowButton></div>
     </section>
+    </>
   );
 }
 
 function RecentCard({ recent, onDetail }) {
   if (!recent) {
     return (
-      <section className="home-card home-recent-card">
+      <>
         <SectionTitle icon={Clock3}>直近の記録</SectionTitle>
-        <div className="home-empty-state">最初の実戦を記録すると、機種・回転率・期待値・実収支がここに表示されます。</div>
-      </section>
+        <section className="home-card home-recent-card">
+          <div className="home-empty-state">最初の実戦を記録すると、機種・回転率・期待値・実収支がここに表示されます。</div>
+        </section>
+      </>
     );
   }
   return (
-    <section className="home-card home-recent-card">
+    <>
       <SectionTitle icon={Clock3}>直近の記録</SectionTitle>
+    {/* モックの .machine-card：アイコン40px＋機種名＋補足＋右のバッジ */}
+    <section className="home-card home-recent-card">
       <button type="button" className="home-recent-row" onClick={onDetail}>
         <span className="home-machine-mark">P</span>
         <span className="home-recent-copy">
@@ -1130,6 +1151,7 @@ function RecentCard({ recent, onDetail }) {
         <ChevronRight className="home-recent-chevron" size={18} />
       </button>
     </section>
+    </>
   );
 }
 
@@ -1477,17 +1499,27 @@ export default function HomeDashboard({ S }) {
 
   return (
     <div className="home-dashboard">
+      {/* モックの .app-bar：ブランド（小）＋画面タイトル（22px）＋右に44pxの丸ボタン */}
       <header className="home-header">
-        <div className="home-header__top">
-          <AppMark />
-        </div>
-        <div className="home-header__date-row">
-          <h1>{dateLabel}</h1>
+        <div className="home-appbar">
+          <div className="home-appbar__title">
+            <AppMark />
+            <strong>{dateLabel}</strong>
+          </div>
           <button type="button" aria-label="通知を見る" className="home-bell" onClick={S?.openNotificationPanel}>
-            <Bell size={22} />{unread && <i />}
+            <Bell size={20} />{unread && <i />}
           </button>
         </div>
-        <p className="home-header__status"><span title={selectedStore?.name || "店舗未選択"}>{selectedStore?.name || "店舗未選択"}</span><b>・</b><em>{S?.sessionStarted ? "実戦中" : "実戦前"}</em></p>
+        {/* モックの .page-intro：店舗名＋補足／右に稼働状態バッジ（.live-pill） */}
+        <div className="home-intro">
+          <div>
+            <h2 title={selectedStore?.name || "店舗未選択"}>{selectedStore?.name || "店舗未選択"}</h2>
+            <p>今月 {monthOverview.monthRecords.length}件の記録</p>
+          </div>
+          <span className={`home-live-pill ${S?.sessionStarted ? "is-live" : ""}`}>
+            {S?.sessionStarted ? "実戦中" : "実戦前"}
+          </span>
+        </div>
       </header>
 
       <MonthlySummaryCard overview={monthOverview} projection={monthProjection} plan={monthPlan} goalBackcast={monthGoalBackcast} onEdit={() => setPlanEditorOpen(true)} onDetail={goAnalysis} />

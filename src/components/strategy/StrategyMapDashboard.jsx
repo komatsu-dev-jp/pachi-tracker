@@ -59,7 +59,8 @@ const P = {
   gray: "var(--sm-gray)",
   cyan: "var(--sm-cyan)",
 };
-const RADIUS = 24;
+// カードの角丸。モック（.machine-card / .metric-grid / .reason-card）に合わせて 16px。
+const RADIUS = 16;
 const FONT = "var(--font-main)";
 const MONO = "var(--font-mono)";
 const EMPTY_LIST = [];
@@ -229,68 +230,44 @@ function Header({
 }) {
   const displayedFreshness = selected?.freshness || data.freshness;
   return (
-    <div
-      style={{
-        background: "linear-gradient(180deg, var(--sm-bg) 78%, transparent)",
-        padding: "12px 14px 10px",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+    <div className="strategy-ios-header">
+      {/* モックの .app-bar：丸型44pxの戻る／小さい補足＋22pxのタイトル／丸型44pxのヘルプ */}
+      <div className="strategy-ios-appbar">
         <button
           type="button"
-          className="b"
+          className="strategy-ios-round"
           onClick={onBack}
           aria-label="戻る"
-          style={{
-            width: 44,
-            height: 44,
-            flexShrink: 0,
-            borderRadius: 14,
-            background: P.card,
-            border: `1px solid ${P.line}`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-          }}
         >
           <BackIcon />
         </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 18, fontWeight: 900, color: P.text, fontFamily: FONT, letterSpacing: 0.3 }}>
-            台選び
-          </div>
-          <div style={{ fontSize: 11, color: P.subHi, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {selected?.machineName || viewScope.machineName || "機種未設定"}
-          </div>
-          <div style={{ fontSize: 10, color: P.sub, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {selected ? `選択台 ${selected.num}番` : "台未選択"} ・ {viewScope.label} {viewScope.total}台
-          </div>
+        <div className="strategy-ios-appbar__title">
+          <small>
+            {displayedFreshness?.sourceDate ? `解析 ${displayedFreshness.sourceDate}` : "解析日なし"}
+          </small>
+          <strong>台選び</strong>
         </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
-          <button
-            className="b"
-            onClick={onHelp}
-            aria-label="用語ヘルプを開く"
-            style={{
-              width: 44, height: 44, borderRadius: 14,
-              border: `1px solid ${P.lineHi}`, background: P.card,
-              color: P.cyan, fontSize: 18, fontWeight: 900, cursor: "pointer",
-            }}
-          >
-            ?
-          </button>
-          <div style={{ textAlign: "right", minWidth: 56 }}>
-            <div style={{ fontSize: 10, color: P.sub }}>
-              {displayedFreshness?.sourceDate ? `解析 ${displayedFreshness.sourceDate}` : "解析日なし"}
-            </div>
-            <div style={{ fontSize: 11, fontWeight: 900, color: P.cyan, marginTop: 3, fontFamily: MONO, whiteSpace: "nowrap" }}>
-              表示中の候補 {viewScope.candidates}台
-            </div>
-          </div>
-        </div>
+        <button
+          type="button"
+          className="strategy-ios-round is-accent"
+          onClick={onHelp}
+          aria-label="用語ヘルプを開く"
+        >
+          ?
+        </button>
       </div>
+
+      {/* モックの .page-intro：主対象（機種名）＋補足（選択台・表示範囲）／右に候補数 */}
+      <div className="strategy-ios-intro">
+        <div>
+          <h2>{selected?.machineName || viewScope.machineName || "機種未設定"}</h2>
+          <p>
+            {selected ? `選択台 ${selected.num}番` : "台未選択"} ・ {viewScope.label} {viewScope.total}台
+          </p>
+        </div>
+        <span className="strategy-ios-pill">候補 {viewScope.candidates}台</span>
+      </div>
+
       <button
         type="button"
         className="strategy-store-trigger"
@@ -305,7 +282,7 @@ function Header({
           <strong>{storeName}</strong>
         </span>
         <span className="strategy-store-trigger-action">切り替え</span>
-        <span className="strategy-store-trigger-chevron" aria-hidden="true">⌄</span>
+        <span className="strategy-store-trigger-chevron" aria-hidden="true">›</span>
       </button>
     </div>
   );
@@ -332,11 +309,11 @@ function PlanHandoffBanner({ plan, match, storeName, hasData }) {
     <section
       aria-label="稼働プランの引き継ぎ"
       style={{
-        margin: "4px 14px 0",
+        margin: "4px 16px 0",
         padding: "12px 14px",
         borderRadius: 16,
         border: "1px solid color-mix(in srgb, var(--sm-cyan) 48%, var(--sm-line))",
-        background: "linear-gradient(135deg, color-mix(in srgb, var(--sm-cyan) 14%, var(--sm-card)), var(--sm-card))",
+        background: "var(--sm-card)",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -421,7 +398,7 @@ function HelpSheet({ onClose }) {
       style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,.72)", display: "flex", justifyContent: "center", alignItems: "flex-end" }}
     >
       <div style={{ width: "min(480px, 100%)", maxHeight: "92dvh", overflowY: "auto", background: P.bg, borderRadius: "24px 24px 0 0", border: `1px solid ${P.lineHi}`, boxShadow: "0 -18px 50px rgba(0,0,0,.45)" }}>
-        <div style={{ position: "sticky", top: 0, zIndex: 2, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "15px 16px", background: "rgba(5,10,20,.96)", borderBottom: `1px solid ${P.line}` }}>
+        <div style={{ position: "sticky", top: 0, zIndex: 2, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "15px 16px", background: P.bg, borderBottom: `1px solid ${P.line}` }}>
           <div>
             <div style={{ fontSize: 17, fontWeight: 900, color: P.text }}>ことばの意味</div>
             <div style={{ marginTop: 3, fontSize: 10, color: P.subHi }}>むずかしい言葉を、かんたんに説明します</div>
@@ -451,7 +428,7 @@ function HelpSheet({ onClose }) {
               </div>
             </div>
           ))}
-          <div style={{ marginTop: 18, padding: 12, borderRadius: 14, background: "rgba(234,179,8,.08)", border: "1px solid rgba(234,179,8,.2)", fontSize: 10, lineHeight: 1.7, color: P.subHi }}>
+          <div style={{ marginTop: 18, padding: 12, borderRadius: 14, background: "color-mix(in srgb, var(--sm-yellow) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--sm-yellow) 24%, var(--sm-line))", fontSize: 10, lineHeight: 1.7, color: P.subHi }}>
             大切：どの数字も「未来の約束」ではありません。データが少ないときは信頼度を確認し、実際の回り方と合わせて判断してください。
           </div>
         </div>
@@ -608,45 +585,21 @@ function StorePickerSheet({ stores, selectedStoreId, onSelect, onClose }) {
 }
 
 // ============================ タブ ============================
+// モックの .segmented：溝（panel-2）の上に選択中のつまみ（panel）が乗る iOS 標準形
 function Tabs({ active, onChange }) {
   return (
-    <div style={{ padding: "0 14px" }}>
-      <div
-        role="tablist"
-        aria-label="台の表示条件"
-        style={{
-          display: "flex",
-          gap: 4,
-          height: 56,
-          background: P.card,
-          border: `1px solid ${P.line}`,
-          borderRadius: 18,
-          padding: 5,
-        }}
-      >
+    <div className="strategy-ios-segmented-wrap">
+      <div className="strategy-ios-segmented" role="tablist" aria-label="台の表示条件">
         {TABS.map((t) => {
           const on = active === t.id;
           return (
             <button
               key={t.id}
-              className="b"
+              type="button"
               role="tab"
               aria-selected={on}
               onClick={() => onChange(t.id)}
               aria-current={on ? "true" : undefined}
-              style={{
-                flex: 1,
-                border: "none",
-                borderRadius: 14,
-                background: on ? "linear-gradient(180deg, var(--sm-cyan-hi) 0%, var(--sm-cyan) 100%)" : "transparent",
-                color: on ? "var(--sm-on-cyan)" : P.subHi,
-                fontSize: 13,
-                fontWeight: on ? 900 : 700,
-                fontFamily: FONT,
-                cursor: "pointer",
-                transition: "all 0.2s ease",
-                boxShadow: on ? "0 4px 14px color-mix(in srgb, var(--sm-cyan) 35%, transparent)" : "none",
-              }}
             >
               {t.label}
             </button>
@@ -693,31 +646,16 @@ function SelectedOutcomeSection({ machine, islandAvgRot, plan, onStartRecord, se
         )}
         {detailTab === "outlook" && <>
         <SelectedDetailCard machine={machine} islandAvgRot={islandAvgRot} plan={plan} view="outlook" />
+        {/* モックの .primary-action：50px 以上・角丸14px・systemBlue の塗り */}
         <button
           type="button"
+          className={`strategy-ios-primary-action ${sessionStarted ? "is-quiet" : ""}`}
           onClick={() => onStartRecord?.(machine)}
-          style={{
-            width: "100%",
-            minHeight: 54,
-            marginTop: 10,
-            borderRadius: 16,
-            border: "none",
-            background: sessionStarted
-              ? "color-mix(in srgb, var(--sm-cyan) 16%, var(--sm-card))"
-              : "linear-gradient(135deg,var(--sm-cyan),#38bdf8)",
-            color: sessionStarted ? P.cyan : "#03131f",
-            fontSize: 14,
-            fontWeight: 900,
-            cursor: "pointer",
-            boxShadow: sessionStarted ? "none" : "0 10px 26px color-mix(in srgb, var(--sm-cyan) 26%, transparent)",
-          }}
         >
           {sessionStarted ? "記録中の台へ戻る" : `台${machine.num}で実践を開始`}
         </button>
         {!sessionStarted && (
-          <div style={{ marginTop: 6, textAlign: "center", color: P.sub, fontSize: 9 }}>
-            店舗・機種・台番号を記録開始へ引き継ぎます
-          </div>
+          <p className="strategy-ios-action-note">店舗・機種・台番号を記録開始へ引き継ぎます</p>
         )}</>}
         {detailTab === "metrics" && <SelectedDetailCard machine={machine} islandAvgRot={islandAvgRot} plan={plan} view="metrics" />}
         {detailTab === "changes" && <SelectedDetailCard machine={machine} islandAvgRot={islandAvgRot} plan={plan} view="changes" />}
@@ -732,7 +670,7 @@ function FreshnessBanner({ freshness, sourceSummary }) {
   if (freshness.status === "prepared") {
     return (
       <div style={{
-        margin: "10px 14px 0", padding: "11px 12px", borderRadius: 14,
+        margin: "12px 16px 0", padding: "12px 14px", borderRadius: 16,
         border: "1px solid color-mix(in srgb, var(--sm-cyan) 42%, var(--sm-line))",
         background: "color-mix(in srgb, var(--sm-cyan) 8%, var(--sm-card))",
         color: P.subHi, fontSize: 11, lineHeight: 1.6,
@@ -748,7 +686,7 @@ function FreshnessBanner({ freshness, sourceSummary }) {
   const future = freshness.status === "future";
   return (
     <div style={{
-      margin: "10px 14px 0", padding: "11px 12px", borderRadius: 14,
+      margin: "12px 16px 0", padding: "12px 14px", borderRadius: 16,
       border: "1px solid color-mix(in srgb, var(--sm-yellow) 42%, var(--sm-line))",
       background: "color-mix(in srgb, var(--sm-yellow) 8%, var(--sm-card))",
       color: P.subHi, fontSize: 11, lineHeight: 1.6,
@@ -778,6 +716,11 @@ function Kpi({ selected, viewScope }) {
   ];
   return (
     <div>
+      {/* モックの .group-label：見出しはカードの外に置く */}
+      <div className="strategy-ios-group">
+        <span>判断に使う数字</span>
+        <span>{selected ? `${selected.num}番台` : "台未選択"}</span>
+      </div>
       <div className="strategy-kpi-context">
         <span>
           <strong>選択台の予測</strong>
@@ -788,37 +731,18 @@ function Kpi({ selected, viewScope }) {
           {viewScope.label}・設置{viewScope.total}台
         </span>
       </div>
-      <div className="strategy-kpi-grid">
+      {/* モックの .metric-grid：1枚のカードを区切り線で2×2に割る */}
+      <div className="strategy-ios-metrics">
         {items.map((it) => (
-          <div
-            key={`${it.scope}-${it.label}`}
-            style={{
-              background: P.card,
-              border: `1px solid ${P.line}`,
-              borderRadius: 16,
-              padding: "9px 8px 12px",
-              minWidth: 0,
-            }}
-          >
-            <div className="strategy-kpi-label">
+          <div className="strategy-ios-metric" key={`${it.scope}-${it.label}`}>
+            <div className="strategy-ios-metric__label">
               <span>{it.scope}</span>
               <b>{it.label}</b>
             </div>
-            <div
-              style={{
-                fontSize: 16,
-                fontWeight: 900,
-                color: it.color,
-                fontFamily: MONO,
-                fontVariantNumeric: "tabular-nums",
-                letterSpacing: -0.8,
-                marginTop: 7,
-                whiteSpace: "nowrap",
-              }}
-            >
+            <div className="strategy-ios-metric__value" style={{ color: it.color }}>
               {it.value}
+              <small>{it.unit}</small>
             </div>
-            <div style={{ fontSize: 8, color: P.sub, fontWeight: 700, marginTop: 1 }}>{it.unit}</div>
           </div>
         ))}
       </div>
@@ -842,7 +766,7 @@ function Legend() {
     <div style={{ display: "flex", gap: 10, flexWrap: "wrap", padding: "0 14px 10px" }}>
       {items.map(([label, color]) => (
         <span key={label} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10, color: P.subHi }}>
-          <span style={{ width: 9, height: 9, borderRadius: 3, background: color, boxShadow: `0 0 6px ${color}` }} />
+          <span style={{ width: 9, height: 9, borderRadius: 3, background: color }} />
           {label}
         </span>
       ))}
@@ -853,11 +777,11 @@ function Legend() {
 const MAX_MAP_CELLS = 200;
 
 function heatTone(machine) {
-  if (!machine) return { color: P.gray, bg: "rgba(100,116,139,.16)", label: "未計測" };
+  if (!machine) return { color: P.gray, bg: "var(--sm-card-hi)", label: "未計測" };
   if (machine.recommendationStatus === "reference") {
     return {
       color: P.gray,
-      bg: "rgba(100,116,139,.16)",
+      bg: "var(--sm-card-hi)",
       label: "過去参考",
     };
   }
@@ -898,9 +822,9 @@ function HeatMachineCell({ number, machine, dim, selected, opposite, onSelect })
         background: tone.bg,
         borderColor: selected ? P.cyan : `color-mix(in srgb, ${tone.color} 52%, transparent)`,
         boxShadow: selected
-          ? `0 0 0 2px ${P.cyan}, 0 0 14px rgba(6,182,212,.38)`
+          ? `0 0 0 2px ${P.cyan}`
           : opposite
-            ? "0 0 0 2px #a78bfa, 0 0 12px rgba(167,139,250,.35)"
+            ? "0 0 0 2px var(--sm-purple)"
             : (machine?.isStar ? `0 0 12px ${tone.color}66` : "none"),
         opacity: dim ? .28 : 1,
       }}
@@ -1322,7 +1246,7 @@ function SelectedDetailCard({ machine, islandAvgRot, plan, view = "metrics" }) {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
               <span style={{ fontSize: 22, fontWeight: 900, color: P.text, fontFamily: MONO }}>台{machine.num}</span>
-              {machine.isStar && <span style={{ color: P.yellow, fontSize: 15, textShadow: `0 0 8px ${P.yellow}` }}>★</span>}
+              {machine.isStar && <span style={{ color: P.yellow, fontSize: 15 }}>★</span>}
             </div>
             <span
               style={{
@@ -1390,8 +1314,8 @@ function SelectedDetailCard({ machine, islandAvgRot, plan, view = "metrics" }) {
                 marginBottom: 10,
                 padding: "10px 12px",
                 borderRadius: 13,
-                background: "rgba(194,65,12,.13)",
-                border: "1px solid rgba(249,115,22,.48)",
+                background: "color-mix(in srgb, var(--sm-yellow) 12%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--sm-yellow) 42%, var(--sm-line))",
                 color: P.yellow,
                 fontSize: 10,
                 fontWeight: 800,
@@ -2169,13 +2093,17 @@ function PortfolioPlan({ portfolio, plan }) {
 }
 
 // ============================ 共通セクション枠 ============================
+// モックの .group-label：見出しはカードの外・11px・muted、右に補足。
+// accent が渡された場合だけ、状態色を小さなドットで併記する（色だけに頼らない）。
 function Section({ title, sub, accent, children }) {
   return (
-    <div style={{ marginTop: 18 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "0 14px 8px" }}>
-        <span style={{ width: 4, height: 14, borderRadius: 2, background: accent, alignSelf: "center" }} />
-        <span style={{ fontSize: 13, fontWeight: 900, color: P.text, letterSpacing: 0.4 }}>{title}</span>
-        {sub && <span style={{ fontSize: 10, color: P.sub, marginLeft: "auto" }}>{sub}</span>}
+    <div style={{ marginTop: 6 }}>
+      <div className="strategy-ios-group">
+        <span>
+          {accent && <i className="strategy-ios-group__dot" style={{ background: accent }} />}
+          {title}
+        </span>
+        {sub && <span>{sub}</span>}
       </div>
       {children}
     </div>
@@ -2473,32 +2401,24 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord, onSelec
         hasData={data.total > 0}
       />
       <FreshnessBanner freshness={selected?.freshness || data.freshness} sourceSummary={data.sourceSummary} />
-      <div style={{ padding: "4px 14px 0" }}>
+      <div className="strategy-ios-action-wrap">
         <button
           type="button"
+          className="strategy-ios-secondary-action"
           onClick={() => setYutimeOpen(true)}
-          style={{
-            width: "100%", minHeight: 48, borderRadius: 14,
-            border: "1px solid color-mix(in srgb, var(--sm-cyan) 55%, transparent)",
-            background: "color-mix(in srgb, var(--sm-cyan) 12%, var(--sm-card))",
-            color: P.text, fontSize: 14, fontWeight: 900, cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-          }}
         >
-          <span aria-hidden="true" style={{ color: P.cyan }}>◎</span>
+          <span aria-hidden="true">◎</span>
           遊タイム計算
         </button>
       </div>
       {data.total === 0 && (
-        <div style={{ margin: "18px 14px 0", padding: "20px 16px", borderRadius: 18, background: P.card, border: `1px solid ${P.line}`, textAlign: "center" }}>
-          <div style={{ fontSize: 15, fontWeight: 900, color: P.text }}>
+        <div className="strategy-ios-empty">
+          <strong>
             {displayedStoreName === "店舗を選択"
               ? "差玉データがありません"
               : `${displayedStoreName}の差玉データがありません`}
-          </div>
-          <div style={{ marginTop: 7, fontSize: 12, lineHeight: 1.7, color: P.subHi }}>
-            ホームの「差玉解析」で、差玉・通常回転数・大当り回数を保存すると予測を表示します
-          </div>
+          </strong>
+          <span>ホームの「差玉解析」で、差玉・通常回転数・大当り回数を保存すると予測を表示します</span>
         </div>
       )}
       <div style={{ marginTop: 16 }}>

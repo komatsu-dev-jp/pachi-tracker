@@ -172,6 +172,14 @@ UI開発は、モチベーション維持と完成イメージ共有のための
 デザイントークン（`.rec-ios`）・共通パーツ・触ってよい範囲は
 `docs/record-ios-design.md` に集約してある。**着手前に必ず読むこと。**
 
+### ホーム画面・台選びを触るとき（必読）
+
+ホーム（フッター「ホーム」）と台選び（フッター「台選び」）も iOS ネイティブ風に統一済み。
+デザイントークン（`--ho-*` / `--sm-*`）・共通パーツ・触ってよい範囲は
+`docs/home-select-ios-design.md` に集約してある。**着手前に必ず読むこと。**
+トークン名から色を推測しないこと（`--home-cyan` / `--sm-cyan` の実体は systemBlue）。
+なお「台選び」タブが開くのは `SelectDashboard` ではなく `StrategyMapDashboard` である。
+
 ### CodexとClaude Codeの役割分担
 
 Codex：
