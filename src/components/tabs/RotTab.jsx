@@ -1663,6 +1663,32 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     const [headerSwipeOffset, setHeaderSwipeOffset] = useState(0);
     const [headerIsAnimating, setHeaderIsAnimating] = useState(false);
 
+    // ヘッダー圧縮（iOS のラージタイトル相当）。
+    // 各サブタブが独自のスクロール領域を持つため、ルートでキャプチャして拾う。
+    // スクロールすると日付・タイトル・店舗情報を畳み、データ表示領域を約110px広げる。
+    const [headerCondensed, setHeaderCondensed] = useState(false);
+    useEffect(() => {
+        const el = swipeAreaRef.current;
+        if (!el) return;
+        // 上下でしきい値を分ける（ヒステリシス）。境界でのちらつきを防ぐ。
+        const CONDENSE_AT = 28;
+        const EXPAND_AT = 6;
+        const onScroll = (e) => {
+            // サブタブ本体のスクロールだけを見る。
+            // モーダル内リストや候補ドロップダウンのスクロールでヘッダーを畳まない。
+            const target = e.target;
+            if (!target?.classList?.contains("rec-ios-scroll")) return;
+            const top = Number(target.scrollTop);
+            if (!Number.isFinite(top)) return;
+            setHeaderCondensed((prev) => (prev ? top > EXPAND_AT : top > CONDENSE_AT));
+        };
+        el.addEventListener("scroll", onScroll, true);
+        return () => el.removeEventListener("scroll", onScroll, true);
+    }, []);
+
+    // サブタブを切り替えると新しいスクロール領域は先頭に戻るため、圧縮も解除する。
+    useEffect(() => { setHeaderCondensed(false); }, [S.sessionSubTab]);
+
     // スワイプハンドラが参照する最新値を保持するref（古いクロージャ参照を防ぐ）。
     // 毎レンダー代入することで、リスナーを再登録せずに最新のS/sessionSubTabsを参照できる。
     const swipeDepsRef = useRef({ S, sessionSubTabs });
@@ -2272,6 +2298,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             style={{ display: "flex", flexDirection: "column", height: "100%" }}
         >
             <div
+                className={`rec-ios-header${headerCondensed ? " is-condensed" : ""}`}
                 style={{
                     flexShrink: 0,
                     borderBottom: `1px solid ${C.border}`,
@@ -2430,7 +2457,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
 
                 return (
                     <>
-                    <div style={{
+                    <div className="rec-ios-scroll" style={{
                         flex: 1, overflowY: "auto", overscrollBehavior: "contain",
                         padding: "12px 16px",
                         paddingBottom: "calc(20px + env(safe-area-inset-bottom))",
@@ -2957,7 +2984,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
 
             {S.sessionSubTab === "history" && (
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                    <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
+                    <div className="rec-ios-scroll" style={{ flex: 1, overflowY: "auto", padding: "12px 14px calc(80px + env(safe-area-inset-bottom))" }}>
                         <div>
                                 {(() => {
                                     const heroEvNet = ev && Number.isFinite(ev.totalNetGain) ? ev.totalNetGain : 0;
@@ -3847,7 +3874,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
 
                 return (
                     <>
-                    <div style={{
+                    <div className="rec-ios-scroll" style={{
                         flex: 1, overflowY: "auto",
                         padding: "10px 12px",
                         // ModeTabBar とセーフエリア分だけ確保する（画面を覆う固定カードは置かない）。
@@ -4337,7 +4364,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
 
             {/* 機種設定タブ */}
             {S.sessionSubTab === "settings" && (
-                <div style={{ flex: 1, overflowY: "auto", padding: "12px", paddingBottom: "calc(80px + env(safe-area-inset-bottom))" }}>
+                <div className="rec-ios-scroll" style={{ flex: 1, overflowY: "auto", padding: "12px", paddingBottom: "calc(80px + env(safe-area-inset-bottom))" }}>
                     {/* 機種情報カード */}
                     <Card>
                         <SectionHeader label="機種情報" />
