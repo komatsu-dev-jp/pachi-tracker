@@ -1146,4 +1146,9 @@ const lycoris663 = fixedLycorisMachines.find((item) => item.num === 663);
 assert.ok(Math.abs(lycoris663.rotationEstimate.inputBalls - 12835.2) < 1e-9);
 assert.equal(lycoris663.initialAvgPayout, 528);
 
+const rentBallsWarningPlan = buildStrategyPlanContext({ rentBalls: 250, rentBallsWarning: true });
+assert.equal(rentBallsWarningPlan.rentBalls, 250);
+assert.equal(rentBallsWarningPlan.rentBallsWarning, true);
+assert.equal(buildStrategyPlanContext({ rentBalls: 1000 }).rentBallsWarning, false);
+
 console.log("strategyMapData.test.mjs: all tests passed");

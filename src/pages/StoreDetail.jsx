@@ -135,7 +135,6 @@ export default function StoreDetail({
           <HeaderMetric label={DECISION_TERMS.confidence} value={data.dataReliability} onClick={() => openDetail(DETAIL_KEYS.RELIABILITY)} />
           <HeaderMetric label="最終更新" value={data.lastUpdatedLabel} onClick={() => openDetail(DETAIL_KEYS.FRESHNESS)} />
         </div>
-
         {/* セグメントタブ */}
         <nav aria-label="店舗詳細の表示切替" className="mt-3 mb-1 flex gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-hi)] p-1.5 shadow-[var(--card-shadow)]">
           {TABS.map((tab) => {
@@ -164,6 +163,10 @@ export default function StoreDetail({
 
       {/* ページ全体で1つのスクロール領域にし、ヘッダーを自然に画面外へ送れるようにする。 */}
       <div>
+        {data.rentBallsWarning && <div role="alert" className="box-border min-w-0 rounded-xl border border-[var(--yellow)] bg-[var(--surface)] px-3 py-2 text-[11px] leading-5 text-[var(--text)]">
+          <div>保存値が範囲外のため4円貸し（25玉/100円）で仮表示中です。設定画面で訂正してください。</div>
+          <button type="button" onClick={onOpenSettings} className="mt-2 min-h-11 w-full rounded-lg bg-[var(--blue)] px-3 text-[13px] font-bold text-white active:opacity-80">設定トップで訂正</button>
+        </div>}
         {activeTab === "overview" && <StoreOverviewTab data={data} onNavigateTab={selectTab} onOpenDetail={openDetail} />}
         {activeTab === "analysis" && (
           <StoreAnalysisTab

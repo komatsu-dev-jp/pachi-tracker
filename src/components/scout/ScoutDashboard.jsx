@@ -7,6 +7,7 @@ import { buildStrategyMap, buildStrategyPlanContext } from "../strategy/strategy
 import { localDateStr } from "../../constants";
 import { estimateStrategyNonCashRatio } from "../../economics";
 import { decisionLabel } from "../decision/decisionVocabulary";
+import { resolveRentBalls } from "../../rentBalls";
 
 // 本日予測タブ: 保存済み差玉から P-EVIDENCE 解析（buildStrategyMap）で計算した
 // 最新スキャン店舗の狙い台と翌日予測を表示する。仮データ・通信は使わない。
@@ -28,7 +29,8 @@ function ForecastTab({ S }) {
   const archives = Array.isArray(S?.archives) ? S.archives : EMPTY_LIST;
   const strategyPlan = useMemo(() => {
     const selectedStore = stores.find((store) => String(store?.id) === String(selectedStoreId)) || null;
-    const rentBalls = Number(selectedStore?.rentBalls ?? S?.rentBalls);
+    const rentBallsResolution = resolveRentBalls(selectedStore ? selectedStore.rentBalls : S?.rentBalls);
+    const rentBalls = rentBallsResolution.value;
     const exRate = Number(selectedStore?.exRate ?? S?.exRate);
     const fallbackBallValue = Number(S?.ballVal);
     const nonCashEstimate = estimateStrategyNonCashRatio(archives, {
@@ -44,6 +46,7 @@ function ForecastTab({ S }) {
       defaultCashLimit: 0,
       ballValueYen: exRate > 0 ? 1000 / exRate : (fallbackBallValue > 0 ? fallbackBallValue : 4),
       rentBalls,
+      rentBallsWarning: rentBallsResolution.isAbnormal,
       exRate,
       nonCashRatio: nonCashEstimate.nonCashRatio,
       nonCashRatioSource: nonCashEstimate.source,
@@ -96,6 +99,9 @@ function ForecastTab({ S }) {
         <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>
           {data.machineName} ／ 全{data.total}台 ・ 候補{data.kpi.candidates}台（保存済み差玉から計算）
         </div>
+        {strategyPlan.rentBallsWarning && <div role="alert" style={{ marginTop: 7, padding: "7px 9px", borderRadius: 8, color: C.yellow, border: `1px solid ${C.yellow}`, fontSize: 10, lineHeight: 1.5 }}>
+          貸玉保存値が範囲外のため250玉/千円（25玉/100円）で仮計算しています。店舗設定で訂正してください。
+        </div>}
         {isReference && (
           <div style={{ marginTop: 7, padding: "7px 9px", borderRadius: 8, color: C.yellow, border: `1px solid ${C.yellow}` }}>
             {data.freshness?.status === "stale"

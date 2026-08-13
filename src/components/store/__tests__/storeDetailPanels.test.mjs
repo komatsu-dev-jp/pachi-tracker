@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { resolveStoreDetail } from "../storeDetailSelectors.js";
 import { buildStoreDetailPanels, DETAIL_KEYS } from "../storeDetailPanels.js";
 
@@ -62,4 +63,34 @@ test("実データがある詳細にはサンプルを混ぜない", () => {
   assert.equal(panels[DETAIL_KEYS.STORE_BALLS].demo, false);
   assert.equal(panels[DETAIL_KEYS.RECORDS].sections[0].rows[0].label, "実機種");
   assert.doesNotMatch(JSON.stringify(panels[DETAIL_KEYS.RECORDS]), /サンプル/);
+});
+
+test("範囲外の貸玉詳細は4円・25玉と警告根拠を表示する", () => {
+  const data = resolveStoreDetail([{ ...store, rentBalls: 39 }], store.id);
+  const panel = buildStoreDetailPanels(data)[DETAIL_KEYS.RENTAL_RATE];
+  assert.equal(panel.hero.value, "4円パチンコ");
+  assert.deepEqual(panel.sections[0].rows[0], { label: "状態", value: "範囲外の保存値を4円貸しで仮表示中" });
+  assert.equal(panel.sections[0].rows[1].value, "25玉");
+});
+
+test("正常な貸玉詳細には仮表示の状態行を出さない", () => {
+  const data = resolveStoreDetail([{ ...store, rentBalls: 1000 }], store.id);
+  const panel = buildStoreDetailPanels(data)[DETAIL_KEYS.RENTAL_RATE];
+
+  assert.notEqual(panel.sections[0].rows[0].label, "状態");
+});
+
+test("店舗詳細は範囲外貸玉の共通警告を表示する", async () => {
+  const source = await readFile(new URL("../../../pages/StoreDetail.jsx", import.meta.url), "utf8");
+
+  assert.match(source, /data\.rentBallsWarning/);
+  assert.match(source, /role="alert"/);
+  assert.match(source, /保存値が範囲外のため4円貸し（25玉\/100円）で仮表示中です/);
+  assert.match(source, /onClick=\{onOpenSettings\}/);
+  assert.match(source, /min-h-11/);
+  assert.match(source, /設定トップで訂正/);
+  assert.ok(
+    source.indexOf("data.rentBallsWarning") > source.indexOf("</nav>")
+      && source.indexOf("data.rentBallsWarning") < source.indexOf('activeTab === "overview"')
+  );
 });

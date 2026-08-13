@@ -13,6 +13,7 @@ import {
   deriveNormalExpectedNetBalls,
   resolveYutimeStartAction,
 } from "./yutimeCalculator";
+import { resolveRentBalls } from "../../rentBalls";
 import { createYutimeRecordStartSelection, resolveYutimeStartChodama, shouldDiscardSameDayResumeForYutimeAction } from "../../recordStartFlow";
 
 const fieldStyle = {
@@ -266,9 +267,10 @@ export default function YutimeCalculatorSheet({
     rentBalls: S?.rentBalls,
     exRate: S?.exRate,
   }), [initialStoreId, S?.exRate, S?.rentBalls, S?.selectedStoreId, S?.stores]);
-  const savedRentBalls = Number(initialSession?.rentBalls);
+  const savedRentBallsResolution = resolveRentBalls(initialSession?.rentBalls);
+  const savedRentBalls = savedRentBallsResolution.value;
   const savedExRate = Number(initialSession?.exRate);
-  const initialRateContext = savedRentBalls > 0 ? {
+  const initialRateContext = initialSession?.rentBalls != null ? {
     rentBalls: savedRentBalls,
     exRate: savedExRate > 0 ? savedExRate : savedRentBalls,
     source: initialSession?.pachinkoRateSource || "manual",
@@ -286,6 +288,7 @@ export default function YutimeCalculatorSheet({
   const [source, setSource] = useState(initialSession?.source || "manual");
   const [playMode, setPlayMode] = useState(S?.playMode || "cash");
   const [rentBalls, setRentBalls] = useState(initialRateContext.rentBalls);
+  const [rentBallsWarning, setRentBallsWarning] = useState(Boolean(initialSession?.rentBalls != null && savedRentBallsResolution.isAbnormal) || Boolean(initialSession?.rentBalls == null && (resolveRentBalls(storeRateContext.rentBalls).isAbnormal || S?.rentBallsWarning)));
   const [exRate, setExRate] = useState(initialRateContext.exRate);
   const [pachinkoRateSource, setPachinkoRateSource] = useState(initialRateContext.source);
   const [budgetYen, setBudgetYen] = useState("");
@@ -329,12 +332,14 @@ export default function YutimeCalculatorSheet({
   const applyRatePreset = (preset) => {
     if (Number(rentBalls) === preset.rentBalls) return;
     setRentBalls(preset.rentBalls);
+    setRentBallsWarning(false);
     // 店舗を選ばずにレートを変更した場合は、まず等価交換を初期値にする。
     setExRate(preset.rentBalls);
     setPachinkoRateSource("manual");
   };
   const restoreStoreRate = () => {
     setRentBalls(storeRateContext.rentBalls);
+    setRentBallsWarning(resolveRentBalls(storeRateContext.rentBalls).isAbnormal);
     setExRate(storeRateContext.exRate);
     setPachinkoRateSource(storeRateContext.source);
   };
@@ -664,6 +669,9 @@ export default function YutimeCalculatorSheet({
                 );
               })}
             </div>
+            {rentBallsWarning && <div role="alert" style={{ marginTop: 7, color: "var(--sm-yellow)", fontSize: 10, lineHeight: 1.5 }}>
+              貸玉保存値が範囲外のため250玉/千円（25玉/100円）で仮計算しています。店舗設定で訂正してください。
+            </div>}
             <div style={{ marginTop: 8, padding: "9px 10px", borderRadius: 10, border: "1px solid var(--sm-line)", background: "var(--sm-card)", color: "var(--sm-sub-hi)", fontSize: 10, lineHeight: 1.6 }}>
               <div style={{ color: "var(--sm-text)", fontWeight: 900 }}>{rateLabel}パチンコ ・ 1,000円で{Number(rentBalls).toLocaleString("ja-JP")}玉</div>
               <div>交換：100円あたり{(Number(exRate) / 10).toLocaleString("ja-JP", { maximumFractionDigits: 1 })}玉</div>

@@ -96,3 +96,9 @@ test("店舗未選択ならアプリ設定を使い、カスタム貸玉も表�
   assert.equal(result.source, "app");
   assert.equal(formatPachinkoRateLabel(result.rentBalls), "2.5円");
 });
+
+test("範囲外の店舗貸玉は採用せず、正常なアプリ値または4円貸しへ戻す", () => {
+  assert.equal(resolvePachinkoRateContext({ stores: [{ id: 1, rentBalls: 39 }], selectedStoreId: 1, rentBalls: 400 }).rentBalls, 400);
+  assert.equal(resolvePachinkoRateContext({ stores: [{ id: 1, rentBalls: 39 }], selectedStoreId: 1, rentBalls: 39 }).rentBalls, 250);
+  assert.equal(resolvePachinkoRateContext({ stores: [{ id: 1, rentBalls: 333 }], selectedStoreId: 1, rentBalls: 250 }).rentBalls, 333);
+});

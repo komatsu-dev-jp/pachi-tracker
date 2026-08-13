@@ -29,7 +29,7 @@ test("move-table destination preserves blank, zero, negative, and decimal input 
         moveMochiBalls: "", moveMachineName: "  ", moveMachineNum: "", moveStartRot: "-1.5", moveYutimeTarget: null, picked: null, S, ...dependencies,
     }), {
         mochi: 0,
-        dest: { machineName: "", machineNum: "", startRot: 0, rentBalls: undefined, exRate: undefined, investPace: undefined, yutimeSession: null, yutimeLowSpins: 0 },
+        dest: { machineName: "", machineNum: "", startRot: 0, rentBalls: 250, exRate: undefined, investPace: undefined, yutimeSession: null, yutimeLowSpins: 0 },
     });
     assert.equal(createMoveTableDestination({
         moveMochiBalls: "12.6", moveMachineName: " 台 ", moveMachineNum: " 7 ", moveStartRot: "0", moveYutimeTarget: null, picked: null, S, ...dependencies,
@@ -42,7 +42,7 @@ test("move-table destination preserves yutime payload priority, calculations, an
     const S = { synthDenom: 777, border: 18, spec1R: 1500, specAvgRounds: 7, specSapo: 40, rentBalls: 4, exRate: 3.5, currentMochiBalls: 10, currentChodama: 0 };
     const session = { targetingEnabled: true, triggerLowSpins: 100, expectedNetBalls: 1200, assumedStart1K: 20, pachinkoRateLabel: "4円", pachinkoRateSource: "machine" };
     const picked = { synthDenom: 888, spec1R: 1600, specAvgRounds: 8, specSapo: 60, rentBalls: 1, exRate: 1, investPace: 10, yutimeSession: { targetingEnabled: false } };
-    const moveYutimeTarget = { currentLowSpins: 350, rentBalls: 2, exRate: 2.5, investPace: 16, session, decision: { version: 7, machineName: "old", currentLowSpins: 1, spec: { old: true }, untouched: "kept" } };
+    const moveYutimeTarget = { currentLowSpins: 350, rentBalls: 2, exRate: 2.5, investPace: 16, session, decision: { version: 7, machineName: "old", currentLowSpins: 1, rentBalls: 39, spec: { old: true }, untouched: "kept" } };
     const dependencies = {
         calculateYutimeEV: (args) => { calculateArgs.push(args); return { valid: true, selectedEV: 500 }; },
         deriveNormalExpectedNetBalls: (args) => { deriveArgs.push(args); return 900; },
@@ -58,18 +58,18 @@ test("move-table destination preserves yutime payload priority, calculations, an
     assert.equal(dest.startRot, 50);
     assert.equal(dest.yutimeLowSpins, 350);
     assert.equal(dest.yutimeSession, session);
-    assert.equal(dest.rentBalls, 2);
+    assert.equal(dest.rentBalls, 250);
     assert.equal(dest.exRate, 2.5);
     assert.equal(dest.investPace, 16);
     assert.deepEqual(deriveArgs, [{ spec1R: 1600, specAvgRounds: 8, specSapo: 60 }]);
-    assert.deepEqual(calculateArgs, [{ probabilityDenom: 888, triggerLowSpins: 100, currentLowSpins: 350, start1K: 20, normalExpectedNetBalls: 900, yutimeExpectedNetBalls: 1200, rentBalls: 2, exRate: 2.5, playMode: "mochi" }]);
-    assert.deepEqual(dest.yutimeDecision, { ...moveYutimeTarget.decision, machineName: "新台", currentLowSpins: 350, spec: session });
+    assert.deepEqual(calculateArgs, [{ probabilityDenom: 888, triggerLowSpins: 100, currentLowSpins: 350, start1K: 20, normalExpectedNetBalls: 900, yutimeExpectedNetBalls: 1200, rentBalls: 250, exRate: 2.5, playMode: "mochi" }]);
+    assert.deepEqual(dest.yutimeDecision, { ...moveYutimeTarget.decision, machineName: "新台", currentLowSpins: 350, rentBalls: 250, spec: session });
 
     const automatic = createMoveTableDestination({
         moveMochiBalls: "0", moveMachineName: "新台", moveMachineNum: "7", moveStartRot: "50", moveYutimeTarget: { currentLowSpins: 350, session }, picked, S: { ...S, currentMochiBalls: 0, currentChodama: 5 }, ...dependencies,
     }).dest.yutimeDecision;
     assert.equal(typeof automatic.createdAt, "string");
-    assert.deepEqual({ ...automatic, createdAt: undefined }, { version: 2, createdAt: undefined, machineName: "新台", currentLowSpins: 350, assumedStart1K: 20, rateSource: "assumed", playMode: "chodama", rentBalls: 1, exRate: 1, pachinkoRateLabel: "4円", pachinkoRateSource: "machine", spec: session, result: { valid: true, selectedEV: 500 } });
+    assert.deepEqual({ ...automatic, createdAt: undefined }, { version: 2, createdAt: undefined, machineName: "新台", currentLowSpins: 350, assumedStart1K: 20, rateSource: "assumed", playMode: "chodama", rentBalls: 250, exRate: 1, pachinkoRateLabel: "4円", pachinkoRateSource: "machine", spec: session, result: { valid: true, selectedEV: 500 } });
 });
 
 test("RotTab wires the entry and confirmation actions through the guard", async () => {

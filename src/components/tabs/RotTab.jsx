@@ -27,13 +27,15 @@ import MachinePickerSheet from "./MachinePickerSheet";
 import SessionScheduleEditor from "./SessionScheduleEditor";
 import CashLimitGuide, { useLiveCashLimitGuide } from "./CashLimitGuide";
 import { createOneTimeStartGuard, createSameDayResumeStart, matchSameDayResumeCandidate } from "../../sameDayResume";
-import { normalizeChodamaBalls, resolveRecordStartChodama, resolveRecordStartSpecSapo, setupInitialChodamaFromDraft } from "../../recordStartFlow";
+import { normalizeChodamaBalls, normalizeRecordStartRentBallsContext, resolveRecordStartChodama, resolveRecordStartRentBallsContext, resolveRecordStartSpecSapo, setupInitialChodamaFromDraft } from "../../recordStartFlow";
 import { getHitWizardPresentation } from "./hitWizardPresentation";
 import SameDayResumePrompt, { CashCorrectionPrompt } from "./SameDayResumePrompt";
 import RotationModeEditor from "./RotationModeEditor";
 import { correctRotationMode, createRotationModeFingerprint, isEditableRotationModeRow, resolveNextPlayMode } from "../../rotationModeCorrection";
 import { createMoveTableActionGuard } from "./moveTableActionGuard";
 import { createMoveTableDestination } from "./moveTableDestination";
+import { resolveRentBalls } from "../../rentBalls";
+import { E, N, R } from "./RentBallsFallbackNotices";
 
 
 export function RotTab({ rows, setRows, S, ev, border }) {
@@ -229,6 +231,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     const [editSynthDenom, setEditSynthDenom] = useState("");
     const [editSpec1R, setEditSpec1R] = useState("");
     const [editRentBalls, setEditRentBalls] = useState("");
+    const [editRentBallsWarning, setEditRentBallsWarning] = useState(false);
     const [editExRate, setEditExRate] = useState("");
     const [editStoreDD, setEditStoreDD] = useState(false);
     const [editMachineDD, setEditMachineDD] = useState(false);
@@ -783,6 +786,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     const [setupMachineName, setSetupMachineName] = useState("");
     const [setupStartRot, setSetupStartRot] = useState("");
     const [setupInitialBalls, setSetupInitialBalls] = useState(null);
+    const [setupRentBallsContext, setSetupRentBallsContext] = useState(() => ({ value: S.rentBalls, source: "app", warning: !!S.rentBallsWarning, commitOnStart: false }));
     // 未登録機種用の任意スペック入力（合成確率 / ボーダー1k・4円等価）。
     // 入力時のみ deriveSpecForMachine で spec を逆算して適用する（未入力なら既定スペックのまま記録可能）。
     const [setupSynthDenom, setSetupSynthDenom] = useState("");
@@ -809,6 +813,12 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         setSetupMachineName(String(draft.machineName || ""));
         setSetupStartRot(String(draft.startRot || ""));
         setSetupInitialBalls(setupInitialChodamaFromDraft(draft));
+        const draftRentContext = draft.rentBallsContext;
+        const setupRentContext = normalizeRecordStartRentBallsContext(draftRentContext, {
+            appRentBalls: S.rentBalls,
+            appWarning: S.rentBallsWarning,
+        });
+        setSetupRentBallsContext(setupRentContext);
         setSetupClosingTime(String(draft.closingTime || ""));
         setSetupPlannedStart1K(Number(draft.plannedStart1K) > 0 ? String(draft.plannedStart1K) : "");
         setSetupEndTime(timeValueFromDate(defaultEnd));
@@ -816,7 +826,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         setSetupHandoffSource(draft.source || "selection");
         setupHandoffRestoreRef.current = {
             selectedStoreId: S.selectedStoreId,
-            rentBalls: S.rentBalls,
             exRate: S.exRate,
             investPace: S.investPace,
             ballVal: S.ballVal,
@@ -828,7 +837,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             yutimeDecision: S.yutimeDecision,
         };
         if (draft.storeId != null) S.setSelectedStoreId(draft.storeId);
-        if (Number(draft.rentBalls) > 0) S.setRentBalls(Number(draft.rentBalls));
         if (Number(draft.exRate) > 0) {
             S.setExRate(Number(draft.exRate));
             S.setBallVal(1000 / Number(draft.exRate));
@@ -872,7 +880,6 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         const previous = setupHandoffRestoreRef.current;
         if (!previous) return;
         S.setSelectedStoreId(previous.selectedStoreId);
-        S.setRentBalls(previous.rentBalls);
         S.setExRate(previous.exRate);
         S.setInvestPace(previous.investPace);
         S.setBallVal(previous.ballVal);
@@ -890,6 +897,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         setSetupMachineName("");
         setSetupStartRot("");
         setSetupInitialBalls(null);
+        setSetupRentBallsContext({ value: S.rentBalls, source: "app", warning: !!S.rentBallsWarning, commitOnStart: false });
         setSetupSynthDenom("");
         setSetupBorder1k("");
         setSetupYutimeLowSpins("");
@@ -925,7 +933,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         specAvgRounds: S.specAvgRounds,
         specSapo: S.specSapo,
         exRate: S.exRate,
-        rentBalls: S.rentBalls,
+        rentBalls: setupRentBallsContext.value,
         rotPerHour: S.rotPerHour,
         playMode: setupPlayMode,
     });
@@ -1018,11 +1026,8 @@ export function RotTab({ rows, setRows, S, ev, border }) {
     const ballsPerRecord = ballsForInvestment(investPace, rentBalls);
     const rentalRateYen = rentalYenPerBall(rentBalls);
 
-    const applyRatePreset = (preset) => {
-        if (S.requestSessionContextChange?.(["貸玉", "交換率"])) return;
-        S.setRentBalls(preset.rentBalls);
-        S.setExRate(preset.rentBalls);
-        S.setBallVal(1000 / preset.rentBalls);
+    const applySetupRatePreset = (preset) => {
+        setSetupRentBallsContext({ value: preset.rentBalls, source: "selection", warning: false, commitOnStart: true });
         S.setInvestPace(preset.recommendedInvestPace);
     };
 
@@ -1219,6 +1224,8 @@ export function RotTab({ rows, setRows, S, ev, border }) {
             return;
         }
         if (!startSessionLockRef.current.claim()) return;
+        const startRentBalls = Number(setupRentBallsContext.value);
+        if (setupRentBallsContext.commitOnStart) S.setRentBalls(startRentBalls);
         const val = Number(setupStartRot) || 0;
         const yutimeLowSpins = setupYutimeLowSpins === "" ? val : Math.max(0, Math.round(Number(setupYutimeLowSpins) || 0));
         const sameDayMatch = matchSameDayResumeCandidate(S.sameDayResumeCandidate, {
@@ -1282,7 +1289,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                     specSapo: S.specSapo,
                 }),
                 yutimeExpectedNetBalls: nextYutimeSession.expectedNetBalls,
-                rentBalls: S.rentBalls,
+                rentBalls: startRentBalls,
                 exRate: S.exRate,
                 playMode: startPlayMode,
             });
@@ -1327,6 +1334,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
         setSetupMachineName("");
         setSetupStartRot("");
         setSetupInitialBalls(null);
+        setSetupRentBallsContext({ value: S.rentBalls, source: "app", warning: !!S.rentBallsWarning, commitOnStart: false });
         setSetupSynthDenom("");
         setSetupBorder1k("");
         setSetupYutimeLowSpins("");
@@ -1938,9 +1946,10 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                                         if (S.requestSessionContextChange?.(["店舗", "貸玉", "交換率"])) return;
                                                         setSetupStore(name);
                                                         if (typeof st === "object") {
-                                                            if (st.rentBalls) {
-                                                                S.setRentBalls(st.rentBalls);
-                                                                const ratePreset = PACHINKO_RATE_PRESETS.find((preset) => preset.rentBalls === Number(st.rentBalls));
+                                                            const storeRateContext = resolveRecordStartRentBallsContext({ storeRentBalls: st.rentBalls, appRentBalls: S.rentBalls });
+                                                            setSetupRentBallsContext(storeRateContext);
+                                                            if (storeRateContext.commitOnStart) {
+                                                                const ratePreset = PACHINKO_RATE_PRESETS.find((preset) => preset.rentBalls === storeRateContext.value);
                                                                 if (ratePreset) S.setInvestPace(ratePreset.recommendedInvestPace);
                                                             }
                                                             if (st.exRate) {
@@ -1970,14 +1979,14 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>貸玉レート</div>
                                     <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
                                         {PACHINKO_RATE_PRESETS.map((preset) => {
-                                            const active = Number(S.rentBalls) === preset.rentBalls;
+                                            const active = Number(setupRentBallsContext.value) === preset.rentBalls;
                                             return (
                                                 <button
                                                     key={preset.rentBalls}
                                                     type="button"
                                                     className="b"
                                                     aria-pressed={active}
-                                                    onClick={() => applyRatePreset(preset)}
+                                                    onClick={() => applySetupRatePreset(preset)}
                                                     style={{
                                                         minHeight: 44, borderRadius: 10, fontSize: 13, fontWeight: 800,
                                                         background: active ? C.blue : C.surfaceHi,
@@ -1991,8 +2000,9 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                             );
                                         })}
                                     </div>
+                                    {setupRentBallsContext.warning && <N/>}
                                     <div style={{ fontSize: 10, color: C.sub, marginTop: 7, lineHeight: 1.5 }}>
-                                        現在 {rentalRateYen.toFixed(2)}円/玉 ・ 1回の記録 {Number(investPace).toLocaleString()}円（{formatBallQuantity(ballsPerRecord)}玉）
+                                        現在 {rentalYenPerBall(setupRentBallsContext.value).toFixed(2)}円/玉 ・ 1回の記録 {Number(investPace).toLocaleString()}円（{formatBallQuantity(ballsForInvestment(investPace, setupRentBallsContext.value))}玉）
                                     </div>
                                 </div>
 
@@ -4454,7 +4464,9 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             setEditMachineName(S.machineName || "");
                             setEditSynthDenom(S.synthDenom != null ? String(S.synthDenom) : "");
                             setEditSpec1R(S.spec1R != null ? String(S.spec1R) : "");
-                            setEditRentBalls(S.rentBalls != null ? String(S.rentBalls) : "");
+                            const rentResolution = resolveRentBalls(S.rentBalls);
+                            setEditRentBalls(String(rentResolution.value));
+                            setEditRentBallsWarning(rentResolution.isAbnormal || !!S.rentBallsWarning);
                             setEditExRate(S.exRate != null ? String(S.exRate) : "");
                             setEditMachineQuery("");
                             setEditError("");
@@ -4529,7 +4541,9 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                                 <button key={(st && st.id) || i} className="b" onClick={() => {
                                                     setEditStore(name);
                                                     if (typeof st === "object") {
-                                                        if (st.rentBalls) setEditRentBalls(String(st.rentBalls));
+                                                        const rentResolution = resolveRentBalls(st.rentBalls);
+                                                        setEditRentBalls(String(rentResolution.value));
+                                                        setEditRentBallsWarning(rentResolution.isAbnormal);
                                                         if (st.exRate) setEditExRate(String(st.exRate));
                                                     }
                                                     setEditStoreDD(false);
@@ -4680,6 +4694,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                                         className="b"
                                                         onClick={() => {
                                                              setEditRentBalls(String(p.rb));
+                                                             setEditRentBallsWarning(false);
                                                              // 貸玉レート変更時は等価交換率を既定としてセット（その後ユーザが交換率チップで上書き可能）
                                                              setEditExRate(String(p.rb));
                                                         }}
@@ -4711,6 +4726,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                             })()}
 
                             {/* 貸玉数・交換率（数値入力 — カスタム値や微調整用） */}
+                            {editRentBallsWarning && <E/>}
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
                                 <div>
                                     <div style={{ fontSize: 11, color: C.sub, marginBottom: 6, fontWeight: 700, letterSpacing: 0.5 }}>貸玉数 (玉/K)</div>
@@ -4718,7 +4734,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                         type="tel"
                                         inputMode="numeric"
                                         value={editRentBalls}
-                                        onChange={e => setEditRentBalls(e.target.value)}
+                                        onChange={e => { const value = e.target.value; setEditRentBalls(value); setEditRentBallsWarning(!resolveRentBalls(value).isAbnormal ? false : editRentBallsWarning); }}
                                         placeholder="250"
                                         style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `2px solid ${C.borderHi}`, borderRadius: 12, padding: "14px", fontSize: 18, color: C.text, fontFamily: mono, outline: "none", textAlign: "center" }}
                                     />
@@ -4742,7 +4758,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
 
                             {/* ボタン */}
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                                <button className="b" onClick={() => setShowEditModal(false)} style={{
+                                <button className="b" onClick={() => { setEditRentBallsWarning(false); setShowEditModal(false); }} style={{
                                     background: "var(--surface-hi)", border: `1px solid ${C.borderHi}`, borderRadius: 14, color: C.text, fontSize: 15, fontWeight: 700, padding: "16px 0", fontFamily: font
                                 }}>キャンセル</button>
                                  <button className="b btn-premium btn-secondary" onClick={() => {
@@ -4753,7 +4769,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     const ex = parseNum(editExRate);
                                      if (!Number.isFinite(synth) || synth <= 0 ||
                                         !Number.isFinite(r1) || r1 <= 0 ||
-                                        !Number.isFinite(rb) || rb <= 0 ||
+                                        !Number.isFinite(rb) || rb < 250 || rb > 2000 ||
                                         !Number.isFinite(ex) || ex <= 0) {
                                         setEditError("合成確率・1R出玉・貸玉数・交換率を正しく入力してください");
                                          return;
@@ -4777,6 +4793,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                                     }
                                     S.setYutimeSession(picked?.yutimeSession || null);
                                     S.setYutimeDecision(null);
+                                    setEditRentBallsWarning(false);
                                     setEditError("");
                                     setShowEditModal(false);
                                 }}>
@@ -4938,6 +4955,7 @@ export function RotTab({ rows, setRows, S, ev, border }) {
                         <div style={{ fontSize: 12, color: C.sub, marginBottom: 12, lineHeight: 1.6 }}>
                             回転数を記録するたびに使った金額を選びます。現在は1玉 {rentalRateYen.toFixed(2)}円です。
                         </div>
+                        {S.rentBallsWarning && <R onConfirm={S.confirmRentBallsFallback}/>}
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 14 }}>
                             {[100, 200, 500, 1000, 2000].map(pace => {
                                 const active = Number(investPace) === pace;

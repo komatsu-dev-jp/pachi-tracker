@@ -7,7 +7,9 @@ import {
   findRecordStartStore,
   normalizeChodamaBalls,
   normalizeOptionalFiniteNumber,
+  normalizeRecordStartRentBallsContext,
   resolveRecordStartChodama,
+  resolveRecordStartRentBallsContext,
   resolveRecordStartSpecSapo,
   resolveYutimeStartChodama,
   setupInitialChodamaFromDraft,
@@ -120,4 +122,19 @@ test("strategy-map yutime context keeps the displayed store and selected machine
   assert.equal(draft.storeId, "B");
   assert.equal(draft.machineNum, "668");
   assert.equal(draft.initialChodama, 700);
+});
+
+test("record start rental context commits only explicit valid selection or store values", () => {
+  assert.deepEqual(resolveRecordStartRentBallsContext({ appRentBalls: 250 }), { value: 250, source: "app", warning: false, commitOnStart: false });
+  assert.deepEqual(resolveRecordStartRentBallsContext({ storeRentBalls: 1000, appRentBalls: 250 }), { value: 1000, source: "store", warning: false, commitOnStart: true });
+  assert.deepEqual(resolveRecordStartRentBallsContext({ storeRentBalls: 39, appRentBalls: 250 }), { value: 250, source: "store-fallback-app", warning: true, commitOnStart: false });
+  assert.deepEqual(resolveRecordStartRentBallsContext({ selectionRentBalls: 500, storeRentBalls: 1000, appRentBalls: 250 }), { value: 500, source: "selection", warning: false, commitOnStart: true });
+});
+
+test("received rental contexts are reconstructed from source, not forged flags", () => {
+  assert.deepEqual(normalizeRecordStartRentBallsContext({ source: "store", value: 1000, commitOnStart: false }), { value: 1000, source: "store", warning: false, commitOnStart: true });
+  assert.deepEqual(normalizeRecordStartRentBallsContext({ source: "app", value: 1000, commitOnStart: true }), { value: 1000, source: "app", warning: false, commitOnStart: false });
+  assert.deepEqual(normalizeRecordStartRentBallsContext({ source: "app-fallback", value: 1000 }, { appRentBalls: 1000 }), { value: 250, source: "app-fallback", warning: true, commitOnStart: false });
+  assert.deepEqual(normalizeRecordStartRentBallsContext({ source: "store-fallback-app", value: 39 }, { appRentBalls: 250 }), { value: 250, source: "store-fallback-app", warning: true, commitOnStart: false });
+  assert.deepEqual(normalizeRecordStartRentBallsContext({ source: "unknown", value: 39 }, { appRentBalls: 250 }), { value: 250, source: "app", warning: true, commitOnStart: false });
 });

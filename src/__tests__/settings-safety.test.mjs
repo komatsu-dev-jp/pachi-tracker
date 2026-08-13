@@ -236,3 +236,67 @@ test("設定トップはダークA案とライトB案を発光なしで切り替
   assert.match(cardBlock, /background: "var\(--settings-card\)"/);
   assert.doesNotMatch(cardBlock, /backdropFilter|linear-gradient|boxShadow/);
 });
+
+test("貸玉の安全補正は保存値を起動時に書き戻さず、訂正導線を表示する", async () => {
+  const appPath = fileURLToPath(new URL("../App.jsx", import.meta.url));
+  const tabsPath = fileURLToPath(new URL("../components/tabs/SettingsTab.jsx", import.meta.url));
+  const rotPath = fileURLToPath(new URL("../components/tabs/RotTab.jsx", import.meta.url));
+  const noticesPath = fileURLToPath(new URL("../components/tabs/RentBallsFallbackNotices.jsx", import.meta.url));
+  const [app, tabs, rot, notices] = await Promise.all([
+    readFile(appPath, "utf8"),
+    readFile(tabsPath, "utf8"),
+    readFile(rotPath, "utf8"),
+    readFile(noticesPath, "utf8"),
+  ]);
+  assert.match(app, /storedRentBalls/);
+  assert.match(app, /return previousStoredValue/);
+  assert.match(app, /rentBallsWarning/);
+  assert.match(tabs, /25〜200玉\/100円/);
+  assert.match(notices, /role="alert"/);
+  assert.match(notices, /保存値が範囲外のため4円貸しで仮表示中です/);
+  assert.match(notices, /minHeight: 44/);
+  assert.match(notices, /onClick=\{onConfirm\}/);
+  assert.match(rot, /R onConfirm=\{S\.confirmRentBallsFallback\}/);
+  assert.doesNotMatch(rot, /onClick=\{\(\) => S\.setRentBalls\(250\)\}/);
+  assert.match(notices, /4円貸し（250玉\/K）で確定/);
+  assert.doesNotMatch(rot.slice(rot.indexOf("const draft = S.recordStartDraft"), rot.indexOf("const restoreHandoffGlobals")), /S\.setRentBalls\(Number\(draft\.rentBalls\)\)/);
+  assert.match(app, /const confirmRentBallsFallback = useCallback/);
+  assert.match(app, /setRentBalls\(Number\(rentBalls\)\)/);
+  assert.match(app, /confirmRentBallsFallback/);
+  assert.equal([...notices.matchAll(/4円貸し（250玉\/K）で確定/g)].length, 1);
+  const confirmBlock = app.slice(app.indexOf("const confirmRentBallsFallback"), app.indexOf("const [exRate"));
+  assert.match(confirmBlock, /canConfirmRentBallsFallback/);
+  assert.match(confirmBlock, /setRentBalls\(Number\(rentBalls\)\)/);
+  assert.match(rot, /setSetupRentBallsContext/);
+  assert.match(rot, /rentBalls: setupRentBallsContext\.value/);
+  assert.match(rot, /setSetupRentBallsContext\(storeRateContext\)/);
+  assert.doesNotMatch(rot, /warning: storeRateContext\.warning \|\| !!S\.rentBallsWarning/);
+  assert.match(rot, /normalizeRecordStartRentBallsContext\(draftRentContext/);
+  const storeDetailBlock = app.slice(app.indexOf("onStartRecord={() =>"), app.indexOf("onOpenStrategy"));
+  assert.match(storeDetailBlock, /startRecordFromSelection\(\{ storeId: store\.id, storeName: store\.name \|\| "" \}\)/);
+  assert.doesNotMatch(storeDetailBlock, /setRentBalls|setExRate|setBallVal|setSessionClosingTime/);
+  assert.doesNotMatch(rot.slice(rot.indexOf("const restoreHandoffGlobals"), rot.indexOf("const clearSetupDraftFields")), /setRentBalls/);
+  assert.match(tabs, /resolveRentBalls\(store\.rentBalls\)\.value/);
+  assert.match(tabs, /現在は仮補正表示です。更新すると250玉\/Kへ訂正されます/);
+});
+
+test("店舗CSVは面値変換後に貸玉を検証し、保存値を変えずに補正通知する", async () => {
+  const tabsPath = fileURLToPath(new URL("../components/tabs/SettingsTab.jsx", import.meta.url));
+  const source = await readFile(tabsPath, "utf8");
+
+  assert.match(source, /const rentResolution = resolveRentBalls\(st\.rentBalls\)/);
+  assert.match(source, /rentResolution\.value\s*\/\s*10/);
+  assert.match(source, /isJp \? Math\.round\(parsed \* 10\) : parsed/);
+  assert.match(source, /isValidRentBalls\(internal\)/);
+  assert.match(source, /店舗保存値は未変更/);
+});
+
+test("記録編集は範囲外貸玉を250へ安全表示し、正常入力で警告を消す", async () => {
+  const rotPath = fileURLToPath(new URL("../components/tabs/RotTab.jsx", import.meta.url));
+  const source = await readFile(rotPath, "utf8");
+
+  assert.match(source, /const \[editRentBallsWarning, setEditRentBallsWarning\]/);
+  assert.match(source, /resolveRentBalls\(st\.rentBalls\)/);
+  assert.match(source, /role="alert"/);
+  assert.match(source, /setEditRentBallsWarning\(false\)/);
+});

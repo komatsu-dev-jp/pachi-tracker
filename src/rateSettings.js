@@ -8,6 +8,8 @@ export const PACHINKO_RATE_PRESETS = Object.freeze([
   { label: "0.5円", rentBalls: 2000, recommendedInvestPace: 100 },
 ]);
 
+import { DEFAULT_RENT_BALLS, isValidRentBalls } from "./rentBalls.js";
+
 const positiveNumber = (value, fallback = 0) => {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? n : fallback;
@@ -70,8 +72,8 @@ export function resolvePachinkoRateContext({
     && selectedStoreId != null
     && String(item.id) === String(selectedStoreId)
   )) || null;
-  const fallbackRentBalls = positiveNumber(rentBalls, 250);
-  const storeRentBalls = positiveNumber(store?.rentBalls);
+  const fallbackRentBalls = isValidRentBalls(rentBalls) ? Number(rentBalls) : DEFAULT_RENT_BALLS;
+  const storeRentBalls = isValidRentBalls(store?.rentBalls) ? Number(store.rentBalls) : 0;
   const resolvedRentBalls = storeRentBalls || fallbackRentBalls;
   const resolvedExRate = storeRentBalls
     ? positiveNumber(store?.exRate, resolvedRentBalls)
