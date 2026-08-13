@@ -308,46 +308,56 @@
 
 /* ================================================================
    戦略マップ（台選びタブ）デザイントークン
-   StrategyMapDashboard のパレット定数 P が参照する。ダーク値 = 従来の固定値。
+   StrategyMapDashboard のパレット定数 P が参照する。
+   出典モック: docs/design-review/pachi-ios-redesign.html
+   値は iOS システムカラー。記録モード（.rec-ios）／分析ページ（.analytics-terminal）
+   と同じ考え方で、トークン名は互換のまま値だけ iOS 系へ差し替えてある。
+   トークン名から色を推測しないこと（--sm-cyan の実体は systemBlue）。
 ================================================================ */
 .strategy-map,
 .yutime-sheet {
-  --sm-bg: #050A14;
-  --sm-card: #0B1220;
-  --sm-card-hi: #0E1626;
-  --sm-line: rgba(255, 255, 255, 0.08);
-  --sm-line-hi: rgba(255, 255, 255, 0.14);
-  --sm-text: #E6EDF6;
-  --sm-sub: #64748B;
-  --sm-sub-hi: #94A3B8;
-  --sm-green: #22C55E;
-  --sm-yellow: #EAB308;
-  --sm-red: #EF4444;
-  --sm-gray: #64748B;
-  --sm-cyan: #06B6D4;
-  --sm-cyan-hi: #0ea5c4;
-  --sm-on-cyan: #04141a;
-  --sm-map-bg: #070D1A;
+  --sm-bg: #000000;
+  --sm-card: #1c1c1e;
+  --sm-card-hi: #2c2c2e;
+  --sm-line: rgba(84, 84, 88, 0.48);
+  --sm-line-hi: rgba(84, 84, 88, 0.72);
+  --sm-text: #ffffff;
+  --sm-sub: rgba(235, 235, 245, 0.6);
+  --sm-sub-hi: rgba(235, 235, 245, 0.78);
+  --sm-faint: rgba(235, 235, 245, 0.36);
+  --sm-green: #30d158;
+  --sm-yellow: #ffd60a;
+  --sm-red: #ff453a;
+  --sm-gray: rgba(235, 235, 245, 0.36);
+  --sm-cyan: #0a84ff;
+  --sm-cyan-hi: #0a84ff;
+  --sm-on-cyan: #ffffff;
+  --sm-map-bg: #1c1c1e;
+  --sm-panel-3: #3a3a3c;
+  --sm-purple: #bf5af2;
 }
 
 [data-theme="light"] .strategy-map,
 [data-theme="light"] .yutime-sheet {
-  --sm-bg: #f2f5f9;
+  --sm-bg: #f2f2f7;
   --sm-card: #ffffff;
-  --sm-card-hi: #eef2f7;
-  --sm-line: rgba(16, 24, 40, 0.10);
-  --sm-line-hi: rgba(16, 24, 40, 0.18);
-  --sm-text: #101828;
-  --sm-sub: #667085;
-  --sm-sub-hi: #475467;
-  --sm-green: #16a34a;
-  --sm-yellow: #b45309;
-  --sm-red: #dc2626;
-  --sm-gray: #98a1b3;
-  --sm-cyan: #0891b2;
-  --sm-cyan-hi: #0e7490;
+  --sm-card-hi: #f2f2f7;
+  --sm-line: rgba(60, 60, 67, 0.2);
+  --sm-line-hi: rgba(60, 60, 67, 0.34);
+  --sm-text: #000000;
+  --sm-sub: rgba(60, 60, 67, 0.6);
+  --sm-sub-hi: rgba(60, 60, 67, 0.78);
+  --sm-faint: rgba(60, 60, 67, 0.36);
+  --sm-green: #248a3d;
+  --sm-yellow: #b25000;
+  --sm-red: #d70015;
+  --sm-gray: rgba(60, 60, 67, 0.36);
+  --sm-cyan: #007aff;
+  --sm-cyan-hi: #007aff;
   --sm-on-cyan: #ffffff;
-  --sm-map-bg: #e8edf4;
+  --sm-map-bg: #ffffff;
+  --sm-panel-3: #e5e5ea;
+  --sm-purple: #8944ab;
 }
 
 /* レイヤー外の * リセットは Tailwind v4 の @layer utilities より常に優先されてしまい、
