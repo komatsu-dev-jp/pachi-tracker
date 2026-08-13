@@ -1,3 +1,5 @@
+import { DEFAULT_RENT_BALLS, isValidRentBalls } from "./rentBalls.js";
+
 export function normalizeChodamaBalls(value) {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? Math.round(number) : 0;
@@ -27,6 +29,11 @@ export function findRecordStartStore(stores, storeId) {
 export function createRecordStartDraft({ selection, stores, rentBalls, exRate, id }) {
   const selectedStore = findRecordStartStore(stores, selection?.storeId);
   const isYutime = selection?.source === "yutime-calculator";
+  const rentBallsContext = resolveRecordStartRentBallsContext({
+    selectionRentBalls: isYutime ? selection?.rentBalls : undefined,
+    storeRentBalls: selectedStore?.rentBalls,
+    appRentBalls: rentBalls,
+  });
   return {
     id,
     source: isYutime ? "yutime-calculator" : "strategy-map",
@@ -34,7 +41,8 @@ export function createRecordStartDraft({ selection, stores, rentBalls, exRate, i
     storeName: String(selection?.storeName || selectedStore?.name || ""),
     machineName: String(selection?.machineName || ""),
     machineNum: String(selection?.machineNum ?? selection?.num ?? ""),
-    rentBalls: isYutime ? (Number(selection?.rentBalls) || Number(selectedStore?.rentBalls) || Number(rentBalls) || 250) : (Number(selectedStore?.rentBalls) || Number(rentBalls) || 250),
+    rentBalls: rentBallsContext.value,
+    rentBallsContext,
     exRate: isYutime ? (Number(selection?.exRate) || Number(selectedStore?.exRate) || Number(exRate) || 250) : (Number(selectedStore?.exRate) || Number(exRate) || 250),
     closingTime: String(selectedStore?.closingTime || ""),
     plannedStart1K: Number(selection?.plannedStart1K ?? selection?.rot) || 0,
@@ -103,4 +111,29 @@ export function resolveYutimeStartChodama({ startAction, stores, storeId, curren
   if (startAction === "start") return resolveRecordStartChodama(stores, storeId, null);
   if (startAction === "replace") return resolveRecordStartChodama(stores, storeId, currentChodama ?? 0);
   return null;
+}
+export function resolveRecordStartRentBallsContext({ selectionRentBalls, storeRentBalls, appRentBalls } = {}) {
+  const selectionPresent = selectionRentBalls !== undefined && selectionRentBalls !== null && selectionRentBalls !== "";
+  if (selectionPresent && isValidRentBalls(selectionRentBalls)) return { value: Number(selectionRentBalls), source: "selection", warning: false, commitOnStart: true };
+  const storePresent = storeRentBalls !== undefined && storeRentBalls !== null && storeRentBalls !== "";
+  if (storePresent && isValidRentBalls(storeRentBalls)) return { value: Number(storeRentBalls), source: "store", warning: selectionPresent, commitOnStart: true };
+  if (isValidRentBalls(appRentBalls)) return { value: Number(appRentBalls), source: selectionPresent || storePresent ? "store-fallback-app" : "app", warning: selectionPresent || storePresent, commitOnStart: false };
+  return { value: DEFAULT_RENT_BALLS, source: "app-fallback", warning: true, commitOnStart: false };
+}
+
+export function normalizeRecordStartRentBallsContext(context, { appRentBalls, appWarning } = {}) {
+  const source = context?.source;
+  const value = context?.value;
+  if ((source === "selection" || source === "store") && isValidRentBalls(value)) {
+    return { value: Number(value), source, warning: false, commitOnStart: true };
+  }
+  if (source === "app-fallback") return { value: DEFAULT_RENT_BALLS, source, warning: true, commitOnStart: false };
+  if (source === "store-fallback-app" && isValidRentBalls(appRentBalls)) {
+    return { value: Number(appRentBalls), source, warning: true, commitOnStart: false };
+  }
+  if (source === "app" && isValidRentBalls(value)) {
+    return { value: Number(value), source, warning: !!context.warning || !!appWarning, commitOnStart: false };
+  }
+  if (isValidRentBalls(appRentBalls)) return { value: Number(appRentBalls), source: "app", warning: true, commitOnStart: false };
+  return { value: DEFAULT_RENT_BALLS, source: "app-fallback", warning: true, commitOnStart: false };
 }

@@ -179,6 +179,7 @@ export function buildStoreDetailPanels(data) {
       subtitle: "100円で借りられる玉数から貸玉単価を表示します。",
       hero: { label: "貸玉", value: `${data.currentSettings?.rentalYenPer100 || 0}円パチンコ` },
       sections: [{ title: "計算根拠", rows: [
+        ...(data.rentBallsWarning ? [{ label: "状態", value: "範囲外の保存値を4円貸しで仮表示中" }] : []),
         { label: "100円あたり", value: balls(data.exchangeInfo?.rentalBallsPer100) },
         { label: "1玉あたり", value: `${data.currentSettings?.rentalYenPer100 || 0}円` },
       ] }],

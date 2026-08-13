@@ -145,3 +145,21 @@ test("店舗詳細へ複数貸玉レート・確認日・参照元・未確認�
   assert.equal(result.exchangeInfo.rateResearch.checkedAt, "2026-07-25");
   assert.equal(result.exchangeInfo.rateResearch.sourceUrl, "https://minpachi.com/example/");
 });
+
+test("範囲外の保存貸玉は4円貸しとして安全表示し、適用済みにしない", () => {
+  const raw = { ...store, rentBalls: 39 };
+  const result = resolveStoreDetail([raw], raw.id, { currentRentBalls: 250, currentExRate: 280 });
+  assert.equal(result.rentBallsWarning, true);
+  assert.equal(result.currentSettings.rentalYenPer100, 4);
+  assert.equal(result.exchangeInfo.rentalBallsPer100, 25);
+  assert.equal(result.currentSettings.appliedToCurrentSession, false);
+  assert.equal(raw.rentBalls, 39);
+});
+
+test("正常な貸玉は安全警告なしで面値を維持する", () => {
+  for (const rentBalls of [250, 333, 400, 500, 1000, 2000]) {
+    const result = resolveStoreDetail([{ ...store, rentBalls }], store.id);
+    assert.equal(result.rentBallsWarning, false);
+    assert.equal(result.exchangeInfo.rentalBallsPer100, rentBalls / 10);
+  }
+});

@@ -1,3 +1,5 @@
+import { resolveRentBalls } from "../../rentBalls.js";
+
 export function createMoveTableDestination({
     moveMochiBalls,
     moveMachineName,
@@ -13,12 +15,20 @@ export function createMoveTableDestination({
     const mochi = Math.max(0, Math.round(Number(moveMochiBalls) || 0));
     const yutimeLowSpins = moveYutimeTarget?.currentLowSpins
         ?? Math.max(0, Math.round(Number(moveStartRot) || 0));
+    const rentBallsResolution = resolveRentBalls(
+        moveYutimeTarget?.rentBalls
+        ?? picked?.rentBalls
+        ?? moveYutimeTarget?.session?.rentBalls
+        ?? picked?.yutimeSession?.rentBalls
+        ?? S?.rentBalls,
+    );
+    const effectiveRentBalls = rentBallsResolution.value;
     const dest = {
         machineName: (moveMachineName || "").trim(),
         machineNum: (moveMachineNum || "").trim(),
         startRot: Math.max(0, Math.round(Number(moveStartRot) || 0)),
         ...(picked || {}),
-        rentBalls: moveYutimeTarget?.rentBalls ?? picked?.rentBalls,
+        rentBalls: effectiveRentBalls,
         exRate: moveYutimeTarget?.exRate ?? picked?.exRate,
         investPace: moveYutimeTarget?.investPace ?? picked?.investPace,
         yutimeSession: moveYutimeTarget?.session || picked?.yutimeSession || null,
@@ -29,6 +39,7 @@ export function createMoveTableDestination({
             ...moveYutimeTarget.decision,
             machineName: dest.machineName,
             currentLowSpins: yutimeLowSpins,
+            rentBalls: effectiveRentBalls,
             spec: dest.yutimeSession,
         };
     }
@@ -44,7 +55,7 @@ export function createMoveTableDestination({
                 specSapo: dest.specSapo ?? S.specSapo,
             }),
             yutimeExpectedNetBalls: dest.yutimeSession.expectedNetBalls,
-            rentBalls: dest.rentBalls || dest.yutimeSession?.rentBalls || S.rentBalls,
+            rentBalls: effectiveRentBalls,
             exRate: dest.exRate || dest.yutimeSession?.exRate || S.exRate,
             playMode: S.currentMochiBalls > 0 ? "mochi" : S.currentChodama > 0 ? "chodama" : "cash",
         });
@@ -56,7 +67,7 @@ export function createMoveTableDestination({
             assumedStart1K: dest.yutimeSession.assumedStart1K || S.border,
             rateSource: "assumed",
             playMode: S.currentMochiBalls > 0 ? "mochi" : S.currentChodama > 0 ? "chodama" : "cash",
-            rentBalls: dest.rentBalls || dest.yutimeSession?.rentBalls || S.rentBalls,
+            rentBalls: effectiveRentBalls,
             exRate: dest.exRate || dest.yutimeSession?.exRate || S.exRate,
             pachinkoRateLabel: dest.yutimeSession?.pachinkoRateLabel || "",
             pachinkoRateSource: dest.yutimeSession?.pachinkoRateSource || "app",

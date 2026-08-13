@@ -31,6 +31,20 @@ test("持ち玉と回収額の不整合を、予測信頼度とは別の品質�
   assert.equal(result.adoption.explicitlyExcluded, false);
 });
 
+test("invalid store rent balls produces a manual-correction warning without inferring 39", () => {
+  const archive = { ...base, settings: { rentBalls: 250, exRate: 250 } };
+  const result = evaluateArchiveDataQuality(archive, {
+    stores: [{ id: "store-1", rentBalls: 39, exRate: 1000 }],
+  });
+  const invalid = result.issues.find((item) => item.ruleId === "store-rent-balls-invalid");
+  assert.equal(invalid.severity, "warning");
+  assert.deepEqual(invalid.inferredValues, {});
+  assert.ok(result.issues.every((item) => !Object.values(item.inferredValues).includes(39)));
+  const rate = result.issues.find((item) => item.ruleId === "store-rate");
+  assert.deepEqual(rate?.inferredValues, { "settings.exRate": 1000 });
+  assert.equal(archive.settings.rentBalls, 250);
+});
+
 test("検出だけでは自動除外せず、明示操作のときだけ予測から除外する", () => {
   const snap = attachDataQualitySnapshot({ ...base, machineNum: "" });
   assert.equal(shouldUseArchiveForPrediction(snap), true);

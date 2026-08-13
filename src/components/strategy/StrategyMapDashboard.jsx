@@ -8,6 +8,7 @@ import {
   resolveStrategyPlanHandoff,
 } from "./strategyMapData";
 import { localDateStr } from "../../constants";
+import { resolveRentBalls } from "../../rentBalls";
 import { estimateStrategyNonCashRatio } from "../../economics";
 import "./StrategyMapDashboard.css";
 import {
@@ -632,6 +633,7 @@ function SelectedOutcomeSection({ machine, islandAvgRot, plan, onStartRecord, se
             <span>{plan.isSkip ? "本日は稼働しない設定" : `${fmt(plan.plannedHours, 1)}時間・約${fmt(plan.sessionSpins)}回転`}</span>
             <span>現金上限 {plan.cashLimit > 0 ? `${fmt(plan.cashLimit)}円` : "未設定"}</span>
             <span>貸玉 {fmt(plan.rentBalls)}玉/千円・交換 {fmt(plan.exRate)}玉/千円</span>
+            {plan.rentBallsWarning && <div role="alert" style={{ color: P.yellow, fontSize: 10, lineHeight: 1.5 }}>貸玉保存値が範囲外のため250玉/千円（25玉/100円）で仮計算しています。店舗設定で訂正してください。</div>}
             <span>持ち玉・貯玉見込み {fmt(plan.nonCashRatio * 100)}%</span>
             <em>
               換金前提：{nonCashSourceLabel(plan.nonCashRatioSource)}
@@ -2170,7 +2172,8 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord, onSelec
   const strategyPlan = useMemo(() => {
     const date = entryPlanContext?.date || localDateStr(new Date());
     const selectedStore = savedStores.find((store) => String(store?.id) === String(strategyStoreId)) || null;
-    const rentBalls = Number(selectedStore?.rentBalls ?? S?.rentBalls);
+    const rentBallsResolution = resolveRentBalls(selectedStore ? selectedStore.rentBalls : S?.rentBalls);
+    const rentBalls = rentBallsResolution.value;
     const exchangeRate = Number(selectedStore?.exRate ?? exchangeRateRaw);
     const fallbackBallValue = Number(ballValueRaw);
     const ballValueYen = exchangeRate > 0 ? 1000 / exchangeRate : (fallbackBallValue > 0 ? fallbackBallValue : 4);
@@ -2189,6 +2192,7 @@ export default function StrategyMapDashboard({ S, onBack, onStartRecord, onSelec
       defaultCashLimit: 0,
       ballValueYen: isDemo ? 4 : ballValueYen,
       rentBalls: isDemo ? 250 : rentBalls,
+      rentBallsWarning: isDemo ? false : rentBallsResolution.isAbnormal,
       exRate: isDemo ? 250 : exchangeRate,
       nonCashRatio: nonCashEstimate.nonCashRatio,
       nonCashRatioSource: nonCashEstimate.source,

@@ -106,6 +106,7 @@ import {
   mergeSessionContextRequest,
   shouldBlockSessionContextChange,
 } from "./sessionContextGuard";
+import { canConfirmRentBallsFallback, resolveRentBalls } from "./rentBalls";
 
 const HomeDashboard = lazy(() => import("./components/home/HomeDashboard"));
 const AnalysisDashboard = lazy(() => import("./components/analysis/AnalysisDashboard"));
@@ -313,7 +314,36 @@ export default function App() {
   }, [hapticFeedback]);
 
   // Settings
-  const [rentBalls, setRentBalls] = useLS("pt_rentBalls", 250);
+  const [storedRentBalls, setStoredRentBalls] = useLS("pt_rentBalls", 250);
+  const [invalidRentBallsInput, setInvalidRentBallsInput] = useState(null);
+  const rentBallsResolution = invalidRentBallsInput == null
+    ? resolveRentBalls(storedRentBalls)
+    : resolveRentBalls(invalidRentBallsInput);
+  const rentBalls = rentBallsResolution.value;
+  const rentBallsWarning = rentBallsResolution.isAbnormal;
+  const setRentBalls = useCallback((nextValue) => {
+    setStoredRentBalls((previousStoredValue) => {
+      const candidate = nextValue instanceof Function
+        ? nextValue(resolveRentBalls(previousStoredValue).value)
+        : nextValue;
+      const resolution = resolveRentBalls(candidate);
+      if (!resolution.isValid) {
+        setInvalidRentBallsInput(candidate);
+        return previousStoredValue;
+      }
+      setInvalidRentBallsInput(null);
+      return resolution.value;
+    });
+  }, [setStoredRentBalls]);
+  const confirmRentBallsFallback = useCallback(() => {
+    if (!canConfirmRentBallsFallback({
+      isAbnormal: rentBallsWarning,
+      candidate: rentBalls,
+      effectiveValue: rentBalls,
+    })) return false;
+    setRentBalls(Number(rentBalls));
+    return true;
+  }, [rentBallsWarning, rentBalls, setRentBalls]);
   const [exRate, setExRate] = useLS("pt_exRate", 250);
   const [synthDenom, setSynthDenom] = useLS("pt_synthDenom", 319.6);
   const [rotPerHour, setRotPerHour] = useLS("pt_rotPerHour", 250);
@@ -1205,7 +1235,9 @@ export default function App() {
     const matchedMachine = findExactMachine(matchedMachines, exactMachineName);
     const settlementStore = (stores || []).find((store) => store && typeof store === "object"
       && settlement?.storeId != null && String(store.id) === String(settlement.storeId));
-    const archiveRentBalls = Number(settlementStore?.rentBalls) > 0 ? Number(settlementStore.rentBalls) : rentBalls;
+    const archiveRentBalls = resolveRentBalls(settlementStore?.rentBalls).isValid
+      ? Number(settlementStore.rentBalls)
+      : rentBalls;
     const archiveExRate = Number(settlementStore?.exRate) > 0 ? Number(settlementStore.exRate) : exRate;
     const archiveBallVal = archiveExRate > 0 ? 1000 / archiveExRate : ballVal;
     const riskBallValueYen = archiveExRate > 0 ? 1000 / archiveExRate : (Number(archiveBallVal) > 0 ? Number(archiveBallVal) : 4);
@@ -1679,7 +1711,7 @@ export default function App() {
   }, [sessionStarted, stores, rentBalls, exRate, setCurrentMode]);
 
   const S = {
-    rentBalls, setRentBalls: guardedSetRentBalls,
+    rentBalls, setRentBalls: guardedSetRentBalls, rentBallsWarning, confirmRentBallsFallback,
     exRate, setExRate: guardedSetExRate,
     synthDenom, setSynthDenom: guardedSetSynthDenom,
     rotPerHour, setRotPerHour,
@@ -1961,17 +1993,11 @@ export default function App() {
                 return;
               }
               if (store) {
-                setSelectedStoreId(store.id);
-                setStoreName(store.name || "");
-                if (Number(store.rentBalls) > 0) setRentBalls(Number(store.rentBalls));
-                if (Number(store.exRate) > 0) {
-                  setExRate(Number(store.exRate));
-                  setBallVal(1000 / Number(store.exRate));
-                }
-                if (store.closingTime) setSessionClosingTime(store.closingTime);
+                startRecordFromSelection({ storeId: store.id, storeName: store.name || "" });
+              } else {
+                handleModeChange("record");
               }
               setStoreDetailId(null);
-              handleModeChange("record");
             }}
             onOpenStrategy={() => {
               setAnalysisStoreId(storeDetailId);

@@ -1,3 +1,5 @@
+import { isValidRentBalls } from "./rentBalls.js";
+
 const QUALITY_VERSION = 1;
 
 export const DATA_QUALITY_ACTIONS = Object.freeze({
@@ -33,6 +35,12 @@ export const DATA_QUALITY_RULES = Object.freeze([
     label: "記録と店舗設定の貸玉・交換率",
     fields: ["storeId", "settings.rentBalls", "settings.exRate"],
     adoption: "店舗設定との差を表示し、どちらを採用するかユーザーが決める",
+  },
+  {
+    id: "store-rent-balls-invalid",
+    label: "店舗貸玉の保存値が範囲外",
+    fields: ["storeId", "settings.rentBalls"],
+    adoption: "店舗設定で貸玉を手動訂正してください。保存値は自動変更しません。",
   },
   {
     id: "session-time",
@@ -176,8 +184,20 @@ export function evaluateArchiveDataQuality(archive, { archives = [], stores = []
 
   const store = selectedStore(archive, stores);
   if (store) {
+    if (!isValidRentBalls(store.rentBalls)) {
+      issues.push(issue(archive, "store-rent-balls-invalid", {
+        severity: "warning",
+        possibility: "店舗の貸玉保存値が250〜2000玉/千円の範囲外です",
+        evidence: `store.rentBalls=${store.rentBalls}`,
+        impact: "店舗レートを使う計算は4円貸しの仮値で表示されます",
+        suggestions: ["店舗設定で貸玉を手動訂正してください"],
+        fields: ["storeId", "settings.rentBalls"],
+        inferredValues: {},
+      }));
+    }
     const rateDiffs = [];
-    if (Number(store.rentBalls) > 0 && Number(archive.settings?.rentBalls) > 0
+    const storeRentBallsValid = isValidRentBalls(store.rentBalls);
+    if (storeRentBallsValid && Number(archive.settings?.rentBalls) > 0
       && Number(store.rentBalls) !== Number(archive.settings.rentBalls)) {
       rateDiffs.push(`貸玉 ${archive.settings.rentBalls}→店舗設定 ${store.rentBalls}`);
     }
@@ -193,7 +213,10 @@ export function evaluateArchiveDataQuality(archive, { archives = [], stores = []
         impact: "当時のレート変更なら正常です。誤入力の場合は収支換算がずれます。",
         suggestions: ["実践当時のレートなら「確認済み」にする", "誤入力なら記録のレートを修正する"],
         fields: ["storeId", "settings.rentBalls", "settings.exRate"],
-        inferredValues: { "settings.rentBalls": store.rentBalls, "settings.exRate": store.exRate },
+        inferredValues: {
+          ...(storeRentBallsValid && Number(store.rentBalls) > 0 ? { "settings.rentBalls": Number(store.rentBalls) } : {}),
+          ...(Number(store.exRate) > 0 ? { "settings.exRate": store.exRate } : {}),
+        },
       }));
     }
   }

@@ -15,6 +15,7 @@ import IslandMapManager from "../select/IslandMapManager";
 import { getStoreIslands, setStoreIslands } from "../select/hallMapSelectors";
 import { createYutimeSessionFromMachine } from "../yutime/yutimeCalculator";
 import PushSyncSettings from "../PushSyncSettings";
+import { isValidRentBalls, resolveRentBalls } from "../../rentBalls";
 
 export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     const [confirming, setConfirming] = useState(false);
@@ -174,9 +175,10 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     const emptyStore = { name: "", address: "", closingTime: "", rentBalls: 25, exRate: 25, memo: "", chodama: 0, chodamaMax: 0, lastVisit: "", replayBalls: 0, todaySettle: 0, memberCard: { ...emptyMemberCard } };
     const [storeFormData, setStoreFormData] = useState(emptyStore);
     const [storeFormErrors, setStoreFormErrors] = useState({});
-    const validateStoreNumberField = (field, value) => validateSettingNumber(value, {
-        allowZero: !["rentBalls", "exRate"].includes(field),
-    });
+    const validateStoreNumberField = (field, value) => {
+        if (field === "rentBalls") return isValidRentBalls(Number(value) * 10) ? "" : "貸玉は25〜200玉/100円で入力してください";
+        return validateSettingNumber(value, { allowZero: field !== "exRate" });
+    };
     const setStoreNumberValue = (field, value) => {
         setStoreFormData((prev) => ({ ...prev, [field]: value }));
         setStoreFormErrors((prev) => ({ ...prev, [field]: "" }));
@@ -328,7 +330,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
             // 内部値（×10）をフォーム用の面値（÷10）に変換してセット
             setStoreFormData({
                 ...emptyStore, ...store,
-                rentBalls: Number(store.rentBalls || 250) / 10,
+                rentBalls: resolveRentBalls(store.rentBalls).value / 10,
                 exRate: Number(store.exRate || 250) / 10,
             });
         } else {
@@ -401,10 +403,14 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
         }
         // 日本語ヘッダー・表示値（貸玉/交換は100円あたり玉数の面値）でエクスポート。
         // みんパチ調査は複数レート・確認状態・確認日・参照元を別列で保持する。
-        const rows = normalizedStores.map(st => toCsvRow([
+        let correctedCount = 0;
+        const rows = normalizedStores.map(st => {
+            const rentResolution = resolveRentBalls(st.rentBalls);
+            if (rentResolution.isAbnormal) correctedCount += 1;
+            return toCsvRow([
             st.name || "",
             st.address || "",
-            Number(st.rentBalls || 250) / 10,
+            rentResolution.value / 10,
             Number(st.exRate || 250) / 10,
             st.memo || "",
             st.chodama || 0,
@@ -412,9 +418,11 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
             st.rateResearch ? storeRateStatusLabel(st.rateResearch.status) : "未登録",
             st.rateResearch?.checkedAt || "",
             st.rateResearch?.sourceUrl || "",
-        ]));
+            ]);
+        });
         const csvContent = ["店舗名,住所,貸玉,交換,メモ,貯玉,みんパチ貸玉・交換率,確認状態,確認日,参照元", ...rows].join("\n");
         downloadCSV(csvContent, "stores.csv");
+        if (correctedCount > 0) showToast(`${correctedCount}件を25玉/100円で仮補正して出力（店舗保存値は未変更）`, "warn");
     };
 
     // CSVダウンロード共通関数
@@ -476,7 +484,17 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
             const getName = d => isJp ? d["店舗名"] : d["name"];
             // 日本語形式: 貸玉/交換は表示値（25玉）→ 内部値（250）に変換
             // 英語形式: 既に内部値（250）のまま
-            const getRentBalls = d => isJp ? Math.round((parseFloat(d["貸玉"]) || 25) * 10) : (parseFloat(d["rentBalls"]) || 250);
+            let correctedRentBalls = 0;
+            const getRentBalls = d => {
+                const raw = isJp ? d["貸玉"] : d["rentBalls"];
+                const parsed = Number.parseFloat(raw);
+                const internal = raw === "" || raw == null ? 250 : (isJp ? Math.round(parsed * 10) : parsed);
+                if (!isValidRentBalls(internal)) {
+                    correctedRentBalls += 1;
+                    return 250;
+                }
+                return internal;
+            };
             const getExRate   = d => isJp ? Math.round((parseFloat(d["交換"])  || 25) * 10) : (parseFloat(d["exRate"])    || 250);
             const getChodama  = d => isJp ? (parseInt(d["貯玉"]) || 0) : (parseInt(d["chodama"]) || 0);
             const candidates = data.filter(d => getName(d)).map((d, index) => ({
@@ -495,6 +513,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                 known.add(key);
                 return true;
             });
+            if (correctedRentBalls > 0) showToast(`${correctedRentBalls}件の貸玉を25玉/100円に補正して取り込みました`, "warn");
             if (newStores.length > 0) {
                 s.setStores(prev => [...prev.filter(st => typeof st === "object"), ...newStores]);
                 showToast(`${newStores.length}件の店舗をインポートしました`);
@@ -888,7 +907,8 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
     // Store detail view
     if (selectedStore) {
         const st = selectedStore;
-        const faceRent = Number(st.rentBalls || 250) / 10;
+        const rentResolution = resolveRentBalls(st.rentBalls);
+        const faceRent = rentResolution.value / 10;
         const faceEx = Number(st.exRate || 250) / 10;
         const yenPerBall = faceRent > 0 ? 100 / faceRent : 0;        // 1玉あたりの貸玉単価（円）
         const rentLabel = `${Number.isInteger(yenPerBall) ? yenPerBall : yenPerBall.toFixed(1)}円パチンコ`;
@@ -1050,7 +1070,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
 
                 {/* ② 会員カード情報 */}
                 <Card style={cardSt}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
                         <div style={secTitle}>会員カード情報</div>
                         <span style={{
                             fontSize: 10, fontWeight: 800, padding: "4px 12px", borderRadius: 999,
@@ -1166,6 +1186,7 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                             }} bg={C.green} fg="#06120d" bd="none" />
                         </div>
                     )}
+                    {rentResolution.isAbnormal && <div role="alert" style={{ marginBottom: 12, padding: 10, borderRadius: 8, background: `${C.yellow}22`, color: C.text, fontSize: 11 }}>保存値が範囲外のため4円貸しで仮表示中です。</div>}
                 </Card>
 
                 {/* ③ 貯玉・精算管理 */}
@@ -1276,6 +1297,9 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                     <div style={{ fontSize: 16, fontWeight: 800, color: C.text, marginBottom: 16 }}>
                         {editingStore ? "店舗を編集" : "新規店舗登録"}
                     </div>
+                    {editingStore && resolveRentBalls(editingStore.rentBalls).isAbnormal && <div role="alert" style={{ marginBottom: 12, padding: 10, borderRadius: 8, background: `${C.yellow}22`, color: C.text, fontSize: 11, lineHeight: 1.5 }}>
+                        現在は仮補正表示です。更新すると250玉/Kへ訂正されます。
+                    </div>}
 
                     {/* 店舗名 */}
                     <div style={{ marginBottom: 12 }}>
@@ -1308,7 +1332,8 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
 
                     {/* 貸玉100円 */}
                     <div style={{ marginBottom: 8 }}>
-                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>貸玉（玉/100円）</div>
+                        <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>100円で借りる玉数（玉/100円）</div>
+                        <div style={{ fontSize: 10, color: C.sub, marginBottom: 4 }}>4円貸しは25を入力（3.9ではありません）</div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                             <input type="text" inputMode="decimal"
                                 aria-label="店舗の貸玉100円あたりの玉数" aria-invalid={storeFormErrors.rentBalls ? "true" : undefined}
@@ -2415,14 +2440,18 @@ export function SettingsTab({ s, onReset, onOpenStoreDetail }) {
                 <SubHeader title="基本設定" onBack={() => setShowGameSettingsView(false)} />
                 <div style={{ flex: 1, overflowY: "auto", padding: "0 14px calc(84px + env(safe-area-inset-bottom))" }}>
                     <SectionLabel label="貸玉・交換率" />
+                    {s.rentBallsWarning && <div role="alert" style={{ margin: "0 0 10px", padding: 10, borderRadius: 8, background: `${C.yellow}22`, color: C.text, fontSize: 12, lineHeight: 1.5 }}>
+                        保存値が範囲外のため4円貸しで仮表示中です。貸玉を25〜200玉/100円で手動訂正してください。
+                    </div>}
                     <Section>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
                             <div>
-                                <div style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>貸玉100円</div>
+                                <div style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>100円で借りる玉数（玉/100円）</div>
+                                <div style={{ fontSize: 10, color: C.sub }}>4円貸しは25を入力（3.9ではありません）</div>
                                 <div style={{ fontSize: 11, color: C.sub }}>{(100 / ((s.rentBalls || 250) / 10)).toFixed(2)}円/玉</div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                <NI ariaLabel="貸玉100円あたりの玉数" validate={validatePositive} v={Number(s.rentBalls || 250) / 10} set={(v) => s.setRentBalls(Math.round(Number(v) * 10))} w={80} center />
+                                <NI ariaLabel="貸玉100円あたりの玉数" validate={(v) => isValidRentBalls(Number(v) * 10) ? "" : "25〜200で入力してください"} v={Number(s.rentBalls || 250) / 10} set={(v) => s.setRentBalls(Math.round(Number(v) * 10))} w={80} center />
                                 <span style={{ fontSize: 11, color: C.sub, minWidth: 40 }}>玉/100円</span>
                             </div>
                         </div>

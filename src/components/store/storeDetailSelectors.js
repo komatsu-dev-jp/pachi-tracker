@@ -1,5 +1,6 @@
 import { MOCK_STORE_DETAIL } from "../../data/mockStoreDetail.js";
 import { getEvAmount } from "../analysis/analysisSelectors.js";
+import { resolveRentBalls } from "../../rentBalls.js";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 const TIME_SLOT_DEFINITIONS = [
@@ -242,7 +243,8 @@ export function resolveStoreDetail(stores, storeId, opts = {}) {
     };
   }
 
-  const faceRent = toNumber(store.rentBalls || 250) / 10;
+  const rentBallsResolution = resolveRentBalls(store.rentBalls);
+  const faceRent = rentBallsResolution.value / 10;
   const faceEx = toNumber(store.exRate || 250) / 10;
   const yenPerBall = faceRent > 0 ? 100 / faceRent : 0;
   const exYenPerBall = faceEx > 0 ? 100 / faceEx : 0;
@@ -274,7 +276,8 @@ export function resolveStoreDetail(stores, storeId, opts = {}) {
   const appliedToCurrentSession = (
     currentRentBalls != null
     && currentExRate != null
-    && toNumber(store.rentBalls || 250) === toNumber(currentRentBalls)
+    && !rentBallsResolution.isAbnormal
+    && rentBallsResolution.value === toNumber(currentRentBalls)
     && toNumber(store.exRate || 250) === toNumber(currentExRate)
   );
 
@@ -331,6 +334,7 @@ export function resolveStoreDetail(stores, storeId, opts = {}) {
       pachinkoRates,
       rateResearch,
     },
+    rentBallsWarning: rentBallsResolution.isAbnormal,
     isRealStore: true,
   };
 }
