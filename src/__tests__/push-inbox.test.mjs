@@ -6,12 +6,14 @@ import {
   AUTO_HEADER_CONTEXT_ENGINE_VERSION,
   AUTO_HEADER_CONTEXT_SOURCE,
   canonicalJson,
+  createPushInboxDiagnostic,
   decodeDeltaImportPayload,
   decodeReviewNoticePayload,
   findSupersededReviewResolutions,
   hasTrustedHeaderContextEvidence,
   isLegacyRejectedReviewNotice,
   isStrictAutoImportCandidate,
+  orderPushInboxDiagnostics,
   parsePairingRequestText,
   sha256Digest,
   selectProcessablePushRecords,
@@ -22,6 +24,101 @@ import {
 } from "../pushInbox.js";
 
 const FIXED_NOW = Date.parse("2026-07-30T04:00:00.000Z");
+
+test("push inbox diagnostics expose only permitted batch metadata", () => {
+  const record = {
+    batchId: "diagnostic-delta-1",
+    receivedAt: "2026-07-30T03:01:00.000Z",
+    statusUpdatedAt: "2026-07-30T03:02:00.000Z",
+    status: "pending",
+    statusDetails: {
+      reasonCodes: ["needs-review", "ambiguous-header", "x".repeat(300), 42],
+      errors: ["sensitive full error"],
+      sourceFingerprint: "should-not-be-read",
+    },
+    envelope: {
+      digest: `sha256:${"A".repeat(64)}`,
+      payload: {
+        schema: "pachi-tracker.delta-import",
+        scan: {
+          id: "scan-20260730-1",
+          date: "2026-07-30",
+          sourceFingerprint: { hash: "b".repeat(64) },
+          rows: [{ num: "123", val: 5000, image: "forbidden" }],
+        },
+        subscription: { endpoint: "https://forbidden.example" },
+      },
+    },
+  };
+  const original = structuredClone(record);
+  const diagnostic = createPushInboxDiagnostic(record);
+
+  assert.deepEqual(diagnostic, {
+    batchId: "diagnostic-delta-1",
+    status: "pending",
+    reasonCodes: ["needs-review", "ambiguous-header", "x".repeat(300)],
+    payloadSchema: "pachi-tracker.delta-import",
+    date: "2026-07-30",
+    jobId: null,
+    scanId: "scan-20260730-1",
+    sourceFingerprint: "b".repeat(64),
+    digest: `sha256:${"a".repeat(64)}`,
+  });
+  assert.deepEqual(record, original);
+  assert.equal("envelope" in diagnostic, false);
+  assert.equal("payload" in diagnostic, false);
+  assert.equal("rows" in diagnostic, false);
+  assert.equal("subscription" in diagnostic, false);
+});
+
+test("push inbox diagnostics extract review data and reject malformed hashes", () => {
+  const reasonCodes = Array.from({ length: 10 }, (_, index) => `reason-${index}`);
+  const diagnostic = createPushInboxDiagnostic({
+    batchId: "diagnostic-review-1",
+    status: "review",
+    statusDetails: { reasonCodes },
+    envelope: {
+      digest: "sha256:not-a-hash",
+      payload: {
+        schema: "pachi-tracker.review-notice",
+        notice: {
+          jobId: "job-20260730-review-1",
+          date: "2026-07-30",
+          sourceFingerprint: { hash: "not-a-hash" },
+        },
+      },
+    },
+  });
+
+  assert.equal(diagnostic.date, "2026-07-30");
+  assert.equal(diagnostic.jobId, "job-20260730-review-1");
+  assert.equal(diagnostic.scanId, null);
+  assert.deepEqual(diagnostic.reasonCodes, reasonCodes.slice(0, 8));
+  assert.equal(diagnostic.sourceFingerprint, null);
+  assert.equal(diagnostic.digest, null);
+});
+
+test("push inbox diagnostics keep old pending/review batches ahead of newer completed batches", () => {
+  const completed = Array.from({ length: 20 }, (_, index) => ({
+    batchId: `completed-${index}`,
+    status: "imported",
+  }));
+  const diagnostics = [
+    ...completed,
+    { batchId: "old-pending", status: "pending" },
+    { batchId: "older-review", status: "review" },
+  ];
+  const original = structuredClone(diagnostics);
+
+  const ordered = orderPushInboxDiagnostics(diagnostics, { limit: 20 });
+
+  assert.deepEqual(
+    ordered.slice(0, 2).map((diagnostic) => diagnostic.batchId),
+    ["old-pending", "older-review"],
+  );
+  assert.equal(ordered.length, 20);
+  assert.deepEqual(diagnostics, original);
+});
 
 async function sourceSetHash(fileHashes) {
   const bytes = new TextEncoder().encode([...new Set(fileHashes)].sort().join("\n"));
