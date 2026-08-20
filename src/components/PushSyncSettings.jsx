@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createPairingResponse,
   downloadPairingResponse,
   getPushInboxSummary,
   isHomeScreenPwa,
+  listPushInboxDiagnostics,
   parsePairingRequestText,
   savePairingResponseFile,
   sharePairingResponse,
@@ -38,6 +39,7 @@ export default function PushSyncSettings({ requestConfirmation }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [summary, setSummary] = useState(null);
+  const [diagnostics, setDiagnostics] = useState([]);
   const standalone = isHomeScreenPwa();
   const supported = typeof window !== "undefined"
     && "serviceWorker" in navigator
@@ -58,12 +60,19 @@ export default function PushSyncSettings({ requestConfirmation }) {
     };
   }, [supported]);
 
+  const readInboxStatus = useCallback(() => Promise.all([
+    getPushInboxSummary(),
+    listPushInboxDiagnostics(),
+  ]), []);
+
   useEffect(() => {
     let active = true;
     const refresh = () => {
-      getPushInboxSummary()
-        .then((nextSummary) => {
-          if (active) setSummary(nextSummary);
+      readInboxStatus()
+        .then(([nextSummary, nextDiagnostics]) => {
+          if (!active) return;
+          setSummary(nextSummary);
+          setDiagnostics(nextDiagnostics);
         })
         .catch(() => {});
     };
@@ -73,7 +82,21 @@ export default function PushSyncSettings({ requestConfirmation }) {
       active = false;
       window.removeEventListener("pachi:push-import-summary", refresh);
     };
-  }, []);
+  }, [readInboxStatus]);
+
+  const refreshDiagnostics = () => {
+    readInboxStatus()
+      .then(([nextSummary, nextDiagnostics]) => {
+        setSummary(nextSummary);
+        setDiagnostics(nextDiagnostics);
+      })
+      .catch(() => {});
+  };
+
+  const orderedDiagnostics = [
+    ...diagnostics.filter(({ status }) => status === "pending" || status === "review"),
+    ...diagnostics.filter(({ status }) => status !== "pending" && status !== "review"),
+  ];
 
   const loadRequest = async (file) => {
     setError("");
@@ -194,6 +217,64 @@ export default function PushSyncSettings({ requestConfirmation }) {
           ))}
         </div>
       )}
+
+      <details style={{ marginBottom: 12 }}>
+        <summary
+          style={{
+            color: "var(--text)",
+            fontSize: 13,
+            fontWeight: 800,
+            minHeight: 44,
+            padding: "10px 12px",
+            display: "flex",
+            alignItems: "center",
+            boxSizing: "border-box",
+            overflowWrap: "anywhere",
+            cursor: "pointer",
+          }}
+        >
+          受信データ診断（読み取り専用）
+        </summary>
+        <p style={{ margin: "8px 0", fontSize: 12, lineHeight: 1.6, color: "var(--sub-hi)" }}>
+          画面の保留は台数ではなく受信バッチ数です。
+        </p>
+        <button
+          type="button"
+          onClick={refreshDiagnostics}
+          style={{ ...button, width: "100%", marginBottom: 8 }}
+        >
+          診断を更新する（読み取り専用）
+        </button>
+        {orderedDiagnostics.length === 0 ? (
+          <div style={{ color: "var(--sub-hi)", fontSize: 12 }}>診断情報はありません</div>
+        ) : (
+          <div style={{ display: "grid", gap: 8 }}>
+            {orderedDiagnostics.map((diagnostic, index) => (
+              <div
+                key={`${diagnostic.batchId || "unknown"}-${index}`}
+                style={{
+                  border: "1px solid var(--border)",
+                  borderRadius: 9,
+                  padding: 10,
+                  color: "var(--sub-hi)",
+                  fontSize: 11,
+                  lineHeight: 1.6,
+                  overflowWrap: "anywhere",
+                }}
+              >
+                <div><strong style={{ color: "var(--text)" }}>状態:</strong> {diagnostic.status || "—"}</div>
+                <div><strong style={{ color: "var(--text)" }}>batchId:</strong> {diagnostic.batchId || "—"}</div>
+                <div><strong style={{ color: "var(--text)" }}>payload schema:</strong> {diagnostic.payloadSchema || "—"}</div>
+                <div><strong style={{ color: "var(--text)" }}>日付:</strong> {diagnostic.date || "—"}</div>
+                <div><strong style={{ color: "var(--text)" }}>jobId / scanId:</strong> {diagnostic.jobId || diagnostic.scanId || "—"}</div>
+                <div><strong style={{ color: "var(--text)" }}>reasonCodes:</strong> {diagnostic.reasonCodes.length ? diagnostic.reasonCodes.join(", ") : "—"}</div>
+                <div><strong style={{ color: "var(--text)" }}>sourceFingerprint:</strong> {diagnostic.sourceFingerprint || "—"}</div>
+                <div><strong style={{ color: "var(--text)" }}>digest:</strong> {diagnostic.digest || "—"}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </details>
 
       {!supported && (
         <div role="alert" style={{ color: "var(--red)", fontSize: 12, lineHeight: 1.6 }}>

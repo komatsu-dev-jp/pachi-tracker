@@ -987,6 +987,63 @@ async function listPushInboxWithStatuses() {
   });
 }
 
+function diagnosticSha256Hash(value) {
+  const hash = String(value || "");
+  return HEX_64.test(hash) ? hash.toLowerCase() : null;
+}
+
+function diagnosticEnvelopeDigest(value) {
+  const match = /^sha256:([a-f0-9]{64})$/iu.exec(String(value || ""));
+  return match ? `sha256:${match[1].toLowerCase()}` : null;
+}
+
+// This DTO deliberately copies only batch-level metadata. Keep raw envelopes,
+// rows, and subscription details out of the diagnostics surface.
+export function createPushInboxDiagnostic(record) {
+  const payload = record?.envelope?.payload;
+  const scan = payload?.scan;
+  const notice = payload?.notice;
+  const reasonCodes = Array.isArray(record?.statusDetails?.reasonCodes)
+    ? record.statusDetails.reasonCodes.filter((reason) => typeof reason === "string").slice(0, 8)
+    : [];
+
+  return {
+    batchId: typeof record?.batchId === "string" ? record.batchId : null,
+    status: typeof record?.status === "string" ? record.status : null,
+    reasonCodes,
+    payloadSchema: typeof payload?.schema === "string" ? payload.schema : null,
+    date: typeof scan?.date === "string"
+      ? scan.date
+      : (typeof notice?.date === "string" ? notice.date : null),
+    jobId: typeof notice?.jobId === "string" ? notice.jobId : null,
+    scanId: typeof scan?.id === "string" ? scan.id : null,
+    sourceFingerprint: diagnosticSha256Hash(
+      scan?.sourceFingerprint?.hash || notice?.sourceFingerprint?.hash,
+    ),
+    digest: diagnosticEnvelopeDigest(record?.envelope?.digest),
+  };
+}
+
+export function orderPushInboxDiagnostics(diagnostics, { limit = 20 } = {}) {
+  const safeLimit = integerInRange(limit, 1, 500) ? limit : 20;
+  const source = Array.isArray(diagnostics) ? diagnostics : [];
+  const pendingOrReview = source.filter((diagnostic) => (
+    diagnostic?.status === "pending" || diagnostic?.status === "review"
+  ));
+  const completedOrOther = source.filter((diagnostic) => (
+    diagnostic?.status !== "pending" && diagnostic?.status !== "review"
+  ));
+  return [...pendingOrReview, ...completedOrOther].slice(0, safeLimit);
+}
+
+export async function listPushInboxDiagnostics({ limit = 20 } = {}) {
+  const records = await listPushInboxWithStatuses();
+  return orderPushInboxDiagnostics(
+    records.map(createPushInboxDiagnostic),
+    { limit },
+  );
+}
+
 export async function listPendingPushBatches({ limit = 500 } = {}) {
   const safeLimit = integerInRange(limit, 1, 500) ? limit : 500;
   const records = await listPushInboxWithStatuses();
