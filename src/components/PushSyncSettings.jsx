@@ -11,6 +11,12 @@ import {
   subscribeFromPairingRequest,
   unsubscribeFromPush,
 } from "../pushInbox.js";
+import {
+  getRecheckStatus,
+  PUSH_RECHECK_TIMEOUT_MS,
+  toRecentImportSummary,
+  waitForInboxStatus,
+} from "./pushInboxDiagnosticState.js";
 
 const panel = {
   border: "1px solid var(--border)",
@@ -30,8 +36,24 @@ const button = {
   cursor: "pointer",
 };
 
+const reasonGuidance = {
+  "store-not-registered": "現在の店舗が登録されているか確認してください。",
+  "store-name-ambiguous": "店舗名を一意に照合できません。現在の店舗設定を確認してください。",
+  "store-layout-review": "島設定の確認が必要です。現在の島設定を確認してください。",
+  "machine-not-registered": "機種が登録されているか確認してください。",
+  "app-save-path-unavailable": "この端末では安全な保存経路を確認できません。アプリを開き直してから再確認してください。",
+  "app-save-not-completed": "安全な保存が完了していません。アプリの状態を確認してから再確認してください。",
+  "processing-error": "安全な確認処理を完了できませんでした。時間をおいて診断を更新してください。",
+  "unsupported-payload-schema": "この通知形式には対応していません。データ行は登録していません。",
+  "review-required": "追加の照合が必要です。データ行は登録していません。",
+  "bounded-delta": "照合専用の通知です。データ行は登録していません。",
+  "ambiguous-header": "通知の見出しを一意に照合できません。データ行は登録していません。",
+  unknown: "原因は断定できません。診断情報を確認してください。",
+};
+
 export default function PushSyncSettings({ requestConfirmation }) {
   const inputRef = useRef(null);
+  const recheckTimerRef = useRef(null);
   const [request, setRequest] = useState(null);
   const [response, setResponse] = useState(null);
   const [subscribed, setSubscribed] = useState(false);
@@ -40,6 +62,8 @@ export default function PushSyncSettings({ requestConfirmation }) {
   const [error, setError] = useState("");
   const [summary, setSummary] = useState(null);
   const [diagnostics, setDiagnostics] = useState([]);
+  const [recentImportSummary, setRecentImportSummary] = useState(null);
+  const [recheckStatus, setRecheckStatus] = useState("");
   const standalone = isHomeScreenPwa();
   const supported = typeof window !== "undefined"
     && "serviceWorker" in navigator
@@ -67,20 +91,45 @@ export default function PushSyncSettings({ requestConfirmation }) {
 
   useEffect(() => {
     let active = true;
-    const refresh = () => {
-      readInboxStatus()
-        .then(([nextSummary, nextDiagnostics]) => {
+    const refresh = (event) => {
+      const nextRecentImportSummary = toRecentImportSummary(event?.detail);
+      if (nextRecentImportSummary) {
+        setRecentImportSummary(nextRecentImportSummary);
+        if (recheckTimerRef.current) {
+          window.clearTimeout(recheckTimerRef.current);
+          recheckTimerRef.current = null;
+        }
+      }
+      if (!nextRecentImportSummary) {
+        readInboxStatus()
+          .then(([nextSummary, nextDiagnostics]) => {
+            if (!active) return;
+            setSummary(nextSummary);
+            setDiagnostics(nextDiagnostics);
+          })
+          .catch(() => {});
+        return;
+      }
+
+      waitForInboxStatus(readInboxStatus(), PUSH_RECHECK_TIMEOUT_MS)
+        .then((result) => {
           if (!active) return;
+          if (result.status !== "resolved") {
+            setRecheckStatus(getRecheckStatus({ refreshFailed: true }));
+            return;
+          }
+          const [nextSummary, nextDiagnostics] = result.value;
           setSummary(nextSummary);
           setDiagnostics(nextDiagnostics);
-        })
-        .catch(() => {});
+          setRecheckStatus(getRecheckStatus({ summary: nextSummary }));
+        });
     };
     refresh();
     window.addEventListener("pachi:push-import-summary", refresh);
     return () => {
       active = false;
       window.removeEventListener("pachi:push-import-summary", refresh);
+      if (recheckTimerRef.current) window.clearTimeout(recheckTimerRef.current);
     };
   }, [readInboxStatus]);
 
@@ -97,6 +146,29 @@ export default function PushSyncSettings({ requestConfirmation }) {
     ...diagnostics.filter(({ status }) => status === "pending" || status === "review"),
     ...diagnostics.filter(({ status }) => status !== "pending" && status !== "review"),
   ];
+
+  const guidanceForDiagnostic = (diagnostic) => {
+    if (diagnostic.status === "review") {
+      return "この通知は照合専用で、データ行を登録しません。Windowsの最終deltaが同じ出所として厳密に確認できる場合だけ解消されます。";
+    }
+    const guidance = diagnostic.reasonCodes
+      .map((reasonCode) => reasonGuidance[reasonCode])
+      .filter(Boolean);
+    const pendingGuidance = guidance.length
+      ? [...new Set(guidance)].join(" ")
+      : reasonGuidance.unknown;
+    return `現在の店舗・機種・島設定などを既存の安全判定で再確認します。 ${pendingGuidance}`;
+  };
+
+  const recheckPendingInbox = () => {
+    if (recheckTimerRef.current) window.clearTimeout(recheckTimerRef.current);
+    setRecheckStatus("受信箱を再確認しています。曖昧なデータは登録しません。");
+    recheckTimerRef.current = window.setTimeout(() => {
+      recheckTimerRef.current = null;
+      setRecheckStatus("完了結果を受信できません。診断を更新してください。");
+    }, PUSH_RECHECK_TIMEOUT_MS);
+    window.dispatchEvent(new Event("pachi:process-push-inbox"));
+  };
 
   const loadRequest = async (file) => {
     setError("");
@@ -218,6 +290,31 @@ export default function PushSyncSettings({ requestConfirmation }) {
         </div>
       )}
 
+      {recentImportSummary && (
+        <div
+          aria-label="直近の自動確認結果"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+            gap: 6,
+            marginBottom: 12,
+            fontSize: 12,
+            lineHeight: 1.7,
+            color: "var(--sub-hi)",
+          }}
+        >
+          <strong style={{ gridColumn: "1 / -1", color: "var(--text)" }}>直近の自動確認結果</strong>
+          {[
+            ["自動登録", recentImportSummary.imported],
+            ["既存と重複", recentImportSummary.duplicate],
+            ["照合を解消", recentImportSummary.resolved],
+            ["保留", recentImportSummary.waiting],
+            ["安全のため拒否", recentImportSummary.rejected],
+            ["確認エラー", recentImportSummary.errors],
+          ].map(([label, value]) => <span key={label}>{label}: {value}件</span>)}
+        </div>
+      )}
+
       <details style={{ marginBottom: 12 }}>
         <summary
           style={{
@@ -270,6 +367,11 @@ export default function PushSyncSettings({ requestConfirmation }) {
                 <div><strong style={{ color: "var(--text)" }}>reasonCodes:</strong> {diagnostic.reasonCodes.length ? diagnostic.reasonCodes.join(", ") : "—"}</div>
                 <div><strong style={{ color: "var(--text)" }}>sourceFingerprint:</strong> {diagnostic.sourceFingerprint || "—"}</div>
                 <div><strong style={{ color: "var(--text)" }}>digest:</strong> {diagnostic.digest || "—"}</div>
+                {(diagnostic.status === "pending" || diagnostic.status === "review") && (
+                  <div style={{ marginTop: 6, color: "var(--text)", fontSize: 12 }}>
+                    {guidanceForDiagnostic(diagnostic)}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -374,16 +476,18 @@ export default function PushSyncSettings({ requestConfirmation }) {
 
       {subscribed && (
         <>
+          {recheckStatus && (
+            <div role="status" style={{ marginTop: 10, color: "var(--sub-hi)", fontSize: 12, lineHeight: 1.6 }}>
+              {recheckStatus}
+            </div>
+          )}
           <button
             type="button"
             disabled={busy}
-            onClick={() => {
-              window.dispatchEvent(new Event("pachi:process-push-inbox"));
-              setMessage("受信箱を再確認しています。曖昧なデータは登録しません。");
-            }}
+            onClick={recheckPendingInbox}
             style={{ ...button, width: "100%", marginTop: 14 }}
           >
-            保留中の受信データを再確認
+            保留を再確認（既存の安全処理）
           </button>
           <button
             type="button"
